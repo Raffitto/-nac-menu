@@ -917,8 +917,37 @@ if (adminMode) {
   }}
 >
       <div className="lang-switch">
-        <button className={lang === "en" ? "active" : ""} onClick={() => setLang("en")}>EN</button>
-        <button className={lang === "ar" ? "active" : ""} onClick={() => setLang("ar")}>AR</button>
+      <button
+  className={lang === "en" ? "active" : ""}
+  onClick={() => {
+    if (lang === "en") return;
+    trackEvent({
+      event_type: "language_button_click",
+      language: lang,
+      metadata: { from: lang, to: "en" },
+    });
+
+    setLang("en");
+  }}
+>
+  EN
+</button>
+
+<button
+  className={lang === "ar" ? "active" : ""}
+  onClick={() => {
+    if (lang === "ar") return;
+    trackEvent({
+      event_type: "language_button_click",
+      language: lang,
+      metadata: { from: lang, to: "ar" },
+    });
+
+    setLang("ar");
+  }}
+>
+  AR
+</button>
       </div>
 
       <AnimatePresence mode="wait">
@@ -1068,7 +1097,17 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
 }}
 />          
 <div className="allergy-bar">
-  <button onClick={() => setAllergyOpen(true)}>
+<button
+  onClick={() => {
+    setAllergyOpen(true);
+
+    trackEvent({
+      event_type: "allergy_modal_open",
+      language: lang,
+      category_id: activeCategory,
+    });
+  }}
+>
    {isArabic ? "الحساسية والتفضيلات" : "Allergies & Preferences"}
   </button>
 
@@ -1076,6 +1115,17 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
     <button
       className="clear-filter"
       onClick={() => {
+        trackEvent({
+          event_type: "filter_clear",
+          language: lang,
+          category_id: activeCategory,
+          selected_allergens:
+            selectedAllergens.length > 0 ? [...selectedAllergens] : null,
+          metadata: {
+            diet: selectedDiet || null,
+          },
+        });
+      
         setSelectedAllergens([]);
         setSelectedDiet("");
       }}
@@ -1399,6 +1449,17 @@ localStorage.setItem(
   JSON.stringify(addonConversions)
 );
   if (rec.previewImage) {
+    trackEvent({
+      event_type: "addon_preview_view",
+      language: lang,
+      category_id: activeCategory,
+      item_name_en: activeItem.en,
+      item_name_ar: activeItem.ar,
+      add_on_name: rec.en,
+      metadata: {
+        preview_image: rec.previewImage,
+      },
+    });
     setActiveItem({
       ...activeItem,
       image:
