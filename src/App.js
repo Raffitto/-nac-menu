@@ -11,7 +11,9 @@ import {
   getSessionStartTime,
   trackTimeSpent,
 } from "./lib/analytics";
-const categories = [
+import { useMenuData } from "./lib/useMenuData";
+
+const _fallbackCategories = [
   {
     id: "brunch",
     en: "Brunch",
@@ -151,7 +153,7 @@ const section = (en, ar, items) => ({
   title: { en, ar },
   items,
 });
-const allergenLabels = {
+const _fallbackAllergenLabels = {
   g: { en: "Gluten", ar: "جلوتين" },
   d: { en: "Dairy", ar: "ألبان" },
   e: { en: "Eggs", ar: "بيض" },
@@ -163,7 +165,7 @@ const allergenLabels = {
   f: { en: "Fish", ar: "سمك" },
   su: { en: "Sulphites", ar: "كبريتيت" },
 };
-const menuData = {
+const _fallbackMenuData = {
   breakfast: [
     section("Grains", "الحبوب", [
       item("Greek Yogurt", "زبادي يوناني", "House granola, raspberries, caramel toast.", "جرانولا منزلية، توت، توست كراميل.", 817, "52 SAR", "/greek-yogurt.jpg", [], ["g", "d", "n"], ["vegetarian"]),
@@ -469,9 +471,9 @@ section("Tea", "شاي", [
 ],
 };
 
-function findSectionTitleEnForItem(categoryId, menuItem) {
+function findSectionTitleEnForItem(categoryId, menuItem, menuDataRef) {
   if (!categoryId || !menuItem) return "";
-  for (const sec of menuData[categoryId] || []) {
+  for (const sec of (menuDataRef || _fallbackMenuData)[categoryId] || []) {
     if (
       sec.items.some(
         (i) => i.en === menuItem.en && i.image === menuItem.image
@@ -483,9 +485,12 @@ function findSectionTitleEnForItem(categoryId, menuItem) {
   return "";
 }
 
+const _fallback = { categories: _fallbackCategories, menuData: _fallbackMenuData, addOns, allergenLabels: _fallbackAllergenLabels };
+
 export default function App() {
   const [adminMode, setAdminMode] = useState(false);
 
+  const { categories, menuData, allergenLabels } = useMenuData(_fallback);
 
 const [activeCategory, setActiveCategory] = useState(null);
 const [activeItem, setActiveItem] = useState(null);
@@ -604,7 +609,7 @@ useEffect(() => {
 
   });
 
-}, [activeCategory]);
+}, [activeCategory, menuData]);
 const [allergyOpen, setAllergyOpen] = useState(false);
 const [selectedAllergens, setSelectedAllergens] = useState([]);
 const [selectedDiet, setSelectedDiet] = useState("");
@@ -687,7 +692,7 @@ const matchesSearch =
         setActiveItem(null);
         return;
       }
-      const sectionEn = findSectionTitleEnForItem(activeCategory, activeItem);
+      const sectionEn = findSectionTitleEnForItem(activeCategory, activeItem, menuData);
       const sectionSlug = sectionEn
         ? sectionEn.toLowerCase().replaceAll(" ", "-")
         : null;
@@ -706,7 +711,7 @@ const matchesSearch =
       });
       setActiveItem(null);
     },
-    [activeItem, activeCategory, lang]
+    [activeItem, activeCategory, lang, menuData]
   );
 
   const openMenuItem = useCallback(
@@ -1390,7 +1395,8 @@ onDragEnd={(e, info) => {
     if (info.offset.y > 100 || info.velocity.y > 700) {
       const sectionEn = findSectionTitleEnForItem(
         activeCategory,
-        activeItem
+        activeItem,
+        menuData
       );
       const sectionSlug = sectionEn
         ? sectionEn.toLowerCase().replaceAll(" ", "-")
@@ -1476,7 +1482,7 @@ onClick={(e) => {
     item_id: activeCategory
       ? makeMenuItemId(
           activeCategory,
-          findSectionTitleEnForItem(activeCategory, activeItem),
+          findSectionTitleEnForItem(activeCategory, activeItem, menuData),
           activeItem.en
         )
       : null,

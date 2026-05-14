@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import AnalyticsDashboard from "./AnalyticsDashboard";
+import MenuManager from "./MenuManager";
 import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -212,7 +213,7 @@ export default function AdminDashboard({ onBack }) {
     <div
       className="admin-shell"
       style={
-        adminView === "analytics"
+        adminView === "analytics" || adminView === "menu-manager"
           ? { overflow: "auto", minHeight: "100vh" }
           : undefined
       }
@@ -226,7 +227,8 @@ export default function AdminDashboard({ onBack }) {
             {sidebar.map((item) => {
               const isActive =
                 (adminView === "overview" && item.label === "Dashboard") ||
-                (adminView === "analytics" && item.label === "Analytics");
+                (adminView === "analytics" && item.label === "Analytics") ||
+                (adminView === "menu-manager" && item.label === "Menu Manager");
               return (
                 <motion.button
                   key={item.label}
@@ -237,6 +239,7 @@ export default function AdminDashboard({ onBack }) {
                   onClick={() => {
                     if (item.label === "Dashboard") setAdminView("overview");
                     else if (item.label === "Analytics") setAdminView("analytics");
+                    else if (item.label === "Menu Manager") setAdminView("menu-manager");
                   }}
                 >
                   {item.icon}
@@ -252,13 +255,15 @@ export default function AdminDashboard({ onBack }) {
       <main
         className="admin-content"
         style={
-          adminView === "analytics"
+          adminView === "analytics" || adminView === "menu-manager"
             ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
             : undefined
         }
       >
         {adminView === "analytics" ? (
           <AnalyticsDashboard />
+        ) : adminView === "menu-manager" ? (
+          <MenuManager />
         ) : (
           <>
             {/* TOPBAR */}
