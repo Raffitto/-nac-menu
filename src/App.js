@@ -824,8 +824,37 @@ useEffect(() => {
   }
 }, [activeItem, dragY]);
 
+// Heatmap prep: track max scroll depth per category visit
+const maxScrollDepth = useRef(0);
+const scrollDepthCategory = useRef(null);
 
+useEffect(() => {
+  if (!activeCategory) {
+    if (scrollDepthCategory.current && maxScrollDepth.current > 5) {
+      trackEvent({
+        event_type: "scroll_depth",
+        category_id: scrollDepthCategory.current,
+        language: lang,
+        metadata: { depth_percent: maxScrollDepth.current },
+      });
+    }
+    maxScrollDepth.current = 0;
+    scrollDepthCategory.current = null;
+    return;
+  }
+  scrollDepthCategory.current = activeCategory;
+  maxScrollDepth.current = 0;
 
+  const trackDepth = () => {
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (docHeight > 0) {
+      const pct = Math.round((window.scrollY / docHeight) * 100);
+      if (pct > maxScrollDepth.current) maxScrollDepth.current = pct;
+    }
+  };
+  window.addEventListener("scroll", trackDepth, { passive: true });
+  return () => window.removeEventListener("scroll", trackDepth);
+}, [activeCategory, lang]);
 
 useEffect(() => {
   const handleScroll = () => {
@@ -850,9 +879,34 @@ useEffect(() => {
   return () => window.removeEventListener("scroll", handleScroll);
 }, [activeCategory, visibleSections]);
 
+// Heatmap prep: section visibility duration
+const sectionEnterTime = useRef(null);
+const lastTrackedSection = useRef(null);
+
 useEffect(() => {
   lastSectionEvent.current = { cat: null, sec: null };
+  sectionEnterTime.current = null;
+  lastTrackedSection.current = null;
 }, [activeCategory]);
+
+useEffect(() => {
+  if (!activeCategory || !activeSection) return;
+  const now = Date.now();
+  if (lastTrackedSection.current && lastTrackedSection.current !== activeSection && sectionEnterTime.current) {
+    const elapsed = Math.round((now - sectionEnterTime.current) / 1000);
+    if (elapsed >= 2) {
+      trackEvent({
+        event_type: "section_visibility_time",
+        category_id: activeCategory,
+        section_id: lastTrackedSection.current,
+        language: lang,
+        metadata: { seconds: elapsed },
+      });
+    }
+  }
+  lastTrackedSection.current = activeSection;
+  sectionEnterTime.current = now;
+}, [activeSection, activeCategory, lang]);
 
 useEffect(() => {
   if (!activeCategory || !activeSection) return;
