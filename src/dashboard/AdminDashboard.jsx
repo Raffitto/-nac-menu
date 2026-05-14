@@ -36,6 +36,7 @@ import {
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import AnalyticsDashboard from "./AnalyticsDashboard";
 import MenuManager from "./MenuManager";
+import AIInsights from "./AIInsights";
 import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -213,7 +214,7 @@ export default function AdminDashboard({ onBack }) {
     <div
       className="admin-shell"
       style={
-        adminView === "analytics" || adminView === "menu-manager"
+        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights"
           ? { overflow: "auto", minHeight: "100vh" }
           : undefined
       }
@@ -228,7 +229,8 @@ export default function AdminDashboard({ onBack }) {
               const isActive =
                 (adminView === "overview" && item.label === "Dashboard") ||
                 (adminView === "analytics" && item.label === "Analytics") ||
-                (adminView === "menu-manager" && item.label === "Menu Manager");
+                (adminView === "menu-manager" && item.label === "Menu Manager") ||
+                (adminView === "ai-insights" && item.label === "AI Insights");
               return (
                 <motion.button
                   key={item.label}
@@ -240,6 +242,7 @@ export default function AdminDashboard({ onBack }) {
                     if (item.label === "Dashboard") setAdminView("overview");
                     else if (item.label === "Analytics") setAdminView("analytics");
                     else if (item.label === "Menu Manager") setAdminView("menu-manager");
+                    else if (item.label === "AI Insights") setAdminView("ai-insights");
                   }}
                 >
                   {item.icon}
@@ -255,7 +258,7 @@ export default function AdminDashboard({ onBack }) {
       <main
         className="admin-content"
         style={
-          adminView === "analytics" || adminView === "menu-manager"
+          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights"
             ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
             : undefined
         }
@@ -264,6 +267,8 @@ export default function AdminDashboard({ onBack }) {
           <AnalyticsDashboard />
         ) : adminView === "menu-manager" ? (
           <MenuManager />
+        ) : adminView === "ai-insights" ? (
+          <AIInsights />
         ) : (
           <>
             {/* TOPBAR */}
