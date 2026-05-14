@@ -115,6 +115,18 @@ as $$
         ) w
       ),
       '[]'::jsonb
+    ),
+    'today_unique_sessions', (
+      select count(distinct session_id)::bigint
+      from public.menu_events
+      where created_at >= date_trunc('day', now())
+        and coalesce(trim(session_id), '') <> ''
+    ),
+    'today_qr_sessions', (
+      select count(*)::bigint
+      from public.menu_events
+      where event_type = 'qr_session_start'
+        and created_at >= date_trunc('day', now())
     )
   );
 $$;

@@ -342,6 +342,9 @@ export default function AnalyticsDashboard() {
   const itemOpenCount = eventCount(byEventType, "item_open");
   const addOnClickCount = eventCount(byEventType, "add_on_click");
   const languageChangeCount = eventCount(byEventType, "language_change");
+  const qrSessionStarts = eventCount(byEventType, "qr_session_start");
+  const todayUniqueSessions = Number(aggregates?.today_unique_sessions) || 0;
+  const todayQrSessions = Number(aggregates?.today_qr_sessions) || 0;
 
   const animEvents = useAnimatedInt(totalEvents, Boolean(aggregates) && !loading);
   const animSessions = useAnimatedInt(
@@ -630,6 +633,40 @@ export default function AnalyticsDashboard() {
                   {languageChangeCount.toLocaleString()}
                 </div>
                 <p className="text-xs text-white/40 mt-2">event_type = language_change</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.14 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Users size={14} className="text-gold" />
+                  QR Sessions (all time)
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {qrSessionStarts.toLocaleString()}
+                </div>
+                <p className="text-xs text-white/40 mt-2">Approximate QR scans / unique opens</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.16 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Activity size={14} className="text-gold" />
+                  Today's opens
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {todayQrSessions.toLocaleString()}
+                </div>
+                <p className="text-xs text-white/40 mt-2">
+                  {todayUniqueSessions} unique sessions today
+                </p>
               </motion.div>
             </div>
 

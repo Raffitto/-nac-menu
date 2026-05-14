@@ -3,7 +3,14 @@ import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls 
 import { ChevronRight, ArrowLeft, X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
-import { trackEvent, makeMenuItemId } from "./lib/analytics";
+import {
+  trackEvent,
+  makeMenuItemId,
+  isNewSession,
+  markSessionLogged,
+  getSessionStartTime,
+  trackTimeSpent,
+} from "./lib/analytics";
 const categories = [
   {
     id: "brunch",
@@ -512,15 +519,58 @@ const [activeSection, setActiveSection] = useState("");
 const pageViewLogged = useRef(false);
 const skipFirstLanguageChange = useRef(true);
 const lastSectionEvent = useRef({ cat: null, sec: null });
+const timeSpentFired = useRef(false);
 
 useEffect(() => {
   if (pageViewLogged.current) return;
   pageViewLogged.current = true;
+
+  // qr_session_start: fires once per new anonymous session
+  if (isNewSession()) {
+    trackEvent({
+      event_type: "qr_session_start",
+      language: lang,
+      metadata: { returning: false },
+    });
+    markSessionLogged();
+  } else {
+    trackEvent({
+      event_type: "qr_session_start",
+      language: lang,
+      metadata: { returning: true },
+    });
+  }
+
+  // page_view for initial home load
   trackEvent({
     event_type: "page_view",
     language: lang,
+    metadata: { page: "home" },
   });
-  // Intentionally once per mount (lang is correct from lazy initial state).
+
+  // session start time
+  getSessionStartTime();
+
+  // time_spent: fire once on page hide or beforeunload
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === "hidden" && !timeSpentFired.current) {
+      timeSpentFired.current = true;
+      trackTimeSpent(lang);
+    }
+  };
+  const handleBeforeUnload = () => {
+    if (!timeSpentFired.current) {
+      timeSpentFired.current = true;
+      trackTimeSpent(lang);
+    }
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  window.addEventListener("beforeunload", handleBeforeUnload);
+
+  return () => {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    window.removeEventListener("beforeunload", handleBeforeUnload);
+  };
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 
@@ -680,6 +730,13 @@ const matchesSearch =
         item_name_en: menuItem.en,
         item_name_ar: menuItem.ar,
       });
+      trackEvent({
+        event_type: "page_view",
+        language: lang,
+        category_id: activeCategory,
+        item_name_en: menuItem.en,
+        metadata: { page: "item_modal" },
+      });
     },
     [activeCategory, lang, dragY]
   );
@@ -693,10 +750,16 @@ const matchesSearch =
       if (activeItem) {
         closeActiveItem("swipe");
       } else if (activeCategory) {
+        trackEvent({
+          event_type: "menu_exit",
+          language: lang,
+          category_id: activeCategory,
+          metadata: { page: "home", from_category: activeCategory, method: "swipe" },
+        });
         setActiveCategory(null);
       }
     }
-  }, [activeItem, activeCategory, closeActiveItem]);
+  }, [activeItem, activeCategory, closeActiveItem, lang]);
 
 const goToNextItem = () => {
   if (!activeItem) return;
@@ -708,7 +771,22 @@ const goToNextItem = () => {
   const nextIndex =
     (currentIndex + 1) % allVisibleItems.length;
 
-  setActiveItem(allVisibleItems[nextIndex]);
+  const nextItem = allVisibleItems[nextIndex];
+
+  trackEvent({
+    event_type: "item_navigation",
+    language: lang,
+    category_id: activeCategory,
+    item_name_en: nextItem.en,
+    item_name_ar: nextItem.ar,
+    metadata: {
+      direction: "next",
+      from_item: activeItem.en,
+      to_item: nextItem.en,
+    },
+  });
+
+  setActiveItem(nextItem);
 };
 
 const goToPrevItem = () => {
@@ -722,7 +800,22 @@ const goToPrevItem = () => {
     (currentIndex - 1 + allVisibleItems.length) %
     allVisibleItems.length;
 
-  setActiveItem(allVisibleItems[prevIndex]);
+  const prevItem = allVisibleItems[prevIndex];
+
+  trackEvent({
+    event_type: "item_navigation",
+    language: lang,
+    category_id: activeCategory,
+    item_name_en: prevItem.en,
+    item_name_ar: prevItem.ar,
+    metadata: {
+      direction: "previous",
+      from_item: activeItem.en,
+      to_item: prevItem.en,
+    },
+  });
+
+  setActiveItem(prevItem);
 };
 
 useEffect(() => {
@@ -879,6 +972,13 @@ if (adminMode) {
     language: lang,
   });
 
+  trackEvent({
+    event_type: "page_view",
+    language: lang,
+    category_id: cat.id,
+    metadata: { page: cat.id },
+  });
+
   const categoryAnalytics =
     JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
 
@@ -915,7 +1015,20 @@ if (adminMode) {
           </motion.main>
         ) : (
           <motion.main key="menu" className="menu-page" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ duration: 0.32 }}>
-            <button className="back-button" onClick={() => setActiveCategory(null)}>
+            <button className="back-button" onClick={() => {
+              trackEvent({
+                event_type: "menu_exit",
+                language: lang,
+                category_id: activeCategory,
+                metadata: { page: "home", from_category: activeCategory },
+              });
+              trackEvent({
+                event_type: "page_view",
+                language: lang,
+                metadata: { page: "home" },
+              });
+              setActiveCategory(null);
+            }}>
               <ArrowLeft size={18} /> {isArabic ? "العودة" : "Back"}
             </button>
 

@@ -1,6 +1,8 @@
 import { supabase } from "./supabase";
 
 const SESSION_KEY = "nac_menu_session_id";
+const SESSION_START_KEY = "nac_menu_session_start";
+const SESSION_LOGGED_KEY = "nac_menu_qr_session_logged";
 const DEFAULT_BRANCH_ID =
   process.env.REACT_APP_NAC_BRANCH_ID || "khobar";
 
@@ -18,6 +20,41 @@ function getOrCreateSessionId() {
   } catch {
     return `session-${Date.now()}`;
   }
+}
+
+/**
+ * Returns true the first time it's called for a new session (new session_id).
+ * Used to fire qr_session_start only once per unique visitor.
+ */
+export function isNewSession() {
+  try {
+    return localStorage.getItem(SESSION_LOGGED_KEY) !== "true";
+  } catch {
+    return false;
+  }
+}
+
+export function markSessionLogged() {
+  try {
+    localStorage.setItem(SESSION_LOGGED_KEY, "true");
+  } catch {}
+}
+
+export function getSessionStartTime() {
+  try {
+    let t = localStorage.getItem(SESSION_START_KEY);
+    if (!t) {
+      t = String(Date.now());
+      localStorage.setItem(SESSION_START_KEY, t);
+    }
+    return Number(t);
+  } catch {
+    return Date.now();
+  }
+}
+
+export function getSessionDurationSeconds() {
+  return Math.round((Date.now() - getSessionStartTime()) / 1000);
 }
 
 function getDeviceType() {
@@ -97,10 +134,39 @@ export function trackEvent(payload) {
     .catch(() => {});
 }
 
-/** Optional helper for future review / Maps / booking links. */
+/** Helper for review button clicks (wire to actual button when it exists). */
+export function trackReviewClick(language) {
+  trackEvent({
+    event_type: "review_click",
+    language,
+    metadata: { target: "google_review" },
+  });
+}
+
+/** Helper for reservation button clicks (wire to actual button when it exists). */
+export function trackReservationClick(language) {
+  trackEvent({
+    event_type: "reservation_click",
+    language,
+    metadata: { target: "reservation_link" },
+  });
+}
+
+/** Generic external link click (Maps, social, etc.). */
 export function trackExternalLinkClick(label, href) {
   trackEvent({
     event_type: "external_link_click",
     metadata: { label, href },
+  });
+}
+
+/** Track time_spent once on page hide / unload. */
+export function trackTimeSpent(language) {
+  trackEvent({
+    event_type: "time_spent",
+    language,
+    metadata: {
+      duration_seconds: getSessionDurationSeconds(),
+    },
   });
 }
