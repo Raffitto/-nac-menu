@@ -10,8 +10,11 @@ import {
   LogOut,
   PlusCircle,
   RefreshCw,
+  Search,
   Sparkles,
+  TrendingUp,
   Users,
+  Zap,
   Lock,
 } from "lucide-react";
 import {
@@ -346,6 +349,20 @@ export default function AnalyticsDashboard() {
   const todayUniqueSessions = Number(aggregates?.today_unique_sessions) || 0;
   const todayQrSessions = Number(aggregates?.today_qr_sessions) || 0;
 
+  // Advanced session intelligence
+  const avgTimeSpent = Number(aggregates?.avg_time_spent) || 0;
+  const avgItemsPerSession = Number(aggregates?.avg_items_per_session) || 0;
+  const bounceSessions = Number(aggregates?.bounce_sessions) || 0;
+  const deepSessions = Number(aggregates?.deep_sessions) || 0;
+  const bouncePercent = totalSessions > 0 ? Math.round((bounceSessions / totalSessions) * 100) : 0;
+  const deepPercent = totalSessions > 0 ? Math.round((deepSessions / totalSessions) * 100) : 0;
+  const topSearches = aggregates?.top_searches || [];
+  const returningSessions = Number(aggregates?.returning_sessions) || 0;
+  const returningPercent = qrSessionStarts > 0 ? Math.round((returningSessions / qrSessionStarts) * 100) : 0;
+  const modalEngagementEvents = Number(aggregates?.modal_engagement_events) || 0;
+  const addOnConversionRate = itemOpenCount > 0 ? ((addOnClickCount / itemOpenCount) * 100).toFixed(1) : "0";
+  const modalEngagementRate = itemOpenCount > 0 ? ((modalEngagementEvents / itemOpenCount) * 100).toFixed(1) : "0";
+
   const animEvents = useAnimatedInt(totalEvents, Boolean(aggregates) && !loading);
   const animSessions = useAnimatedInt(
     totalSessions,
@@ -669,6 +686,157 @@ export default function AnalyticsDashboard() {
                 </p>
               </motion.div>
             </div>
+
+            {/* Session Intelligence */}
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Zap size={14} className="text-gold" />
+                  Avg time spent
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {avgTimeSpent >= 60
+                    ? `${Math.floor(avgTimeSpent / 60)}m ${avgTimeSpent % 60}s`
+                    : avgTimeSpent > 0 ? `${avgTimeSpent}s` : "—"}
+                </div>
+                <p className="text-xs text-white/40 mt-2">From time_spent events</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Layers size={14} className="text-gold" />
+                  Avg items / session
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {avgItemsPerSession > 0 ? avgItemsPerSession : "—"}
+                </div>
+                <p className="text-xs text-white/40 mt-2">item_open ÷ sessions</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.22 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <TrendingUp size={14} className="text-gold" />
+                  Bounce sessions
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {bounceSessions > 0 ? `${bouncePercent}%` : "—"}
+                </div>
+                <p className="text-xs text-white/40 mt-2">
+                  {bounceSessions.toLocaleString()} of {totalSessions.toLocaleString()} (1 event only)
+                </p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.24 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Sparkles size={14} className="text-gold" />
+                  Deep engagement
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {deepSessions > 0 ? `${deepPercent}%` : "—"}
+                </div>
+                <p className="text-xs text-white/40 mt-2">
+                  {deepSessions.toLocaleString()} sessions with 8+ events
+                </p>
+              </motion.div>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.26 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <PlusCircle size={14} className="text-gold" />
+                  Add-on conversion
+                </div>
+                <div className="nac-an__stat-value text-3xl">{addOnConversionRate}%</div>
+                <p className="text-xs text-white/40 mt-2">
+                  {addOnClickCount.toLocaleString()} clicks ÷ {itemOpenCount.toLocaleString()} item opens
+                </p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.28 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Activity size={14} className="text-gold" />
+                  Modal engagement
+                </div>
+                <div className="nac-an__stat-value text-3xl">{modalEngagementRate}%</div>
+                <p className="text-xs text-white/40 mt-2">
+                  Drag-close + navigation ÷ item opens
+                </p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Users size={14} className="text-gold" />
+                  Returning sessions
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {qrSessionStarts > 0 ? `${returningPercent}%` : "—"}
+                </div>
+                <p className="text-xs text-white/40 mt-2">
+                  {returningSessions.toLocaleString()} returning of {qrSessionStarts.toLocaleString()} total
+                </p>
+              </motion.div>
+            </div>
+
+            {topSearches.length > 0 && (
+              <motion.div
+                className="nac-an__card mb-6"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.32 }}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <Search size={18} className="text-gold" />
+                  <h3 className="text-base font-semibold">Most searched keywords</h3>
+                </div>
+                <p className="text-sm text-white/50 mb-2">Top 10 from search_used events</p>
+                <div className="nac-an__list">
+                  {topSearches.map((row, i) => (
+                    <div className="nac-an__row" key={row.query}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="nac-an__row-rank">{i + 1}</span>
+                        <span className="text-sm font-medium truncate">&ldquo;{row.query}&rdquo;</span>
+                      </div>
+                      <span className="text-gold text-sm shrink-0">{row.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
 
             <div className="grid gap-5 lg:grid-cols-2 mb-6">
               <motion.div

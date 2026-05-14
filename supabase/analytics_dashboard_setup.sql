@@ -127,6 +127,74 @@ as $$
       from public.menu_events
       where event_type = 'qr_session_start'
         and created_at >= date_trunc('day', now())
+    ),
+    'avg_time_spent', (
+      select round(avg(
+        (metadata->>'duration_seconds')::numeric
+      ))::bigint
+      from public.menu_events
+      where event_type = 'time_spent'
+        and metadata->>'duration_seconds' is not null
+        and (metadata->>'duration_seconds')::numeric > 0
+    ),
+    'avg_items_per_session', (
+      select round(avg(item_cnt)::numeric, 1)
+      from (
+        select session_id, count(*)::numeric as item_cnt
+        from public.menu_events
+        where event_type = 'item_open'
+          and coalesce(trim(session_id), '') <> ''
+        group by session_id
+      ) x
+    ),
+    'bounce_sessions', (
+      select count(*)::bigint
+      from (
+        select session_id
+        from public.menu_events
+        where coalesce(trim(session_id), '') <> ''
+        group by session_id
+        having count(*) = 1
+      ) b
+    ),
+    'deep_sessions', (
+      select count(*)::bigint
+      from (
+        select session_id
+        from public.menu_events
+        where coalesce(trim(session_id), '') <> ''
+        group by session_id
+        having count(*) >= 8
+      ) d
+    ),
+    'top_searches', coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object('query', sq.q, 'count', sq.cnt)
+          ORDER BY sq.cnt DESC NULLS LAST
+        )
+        from (
+          select lower(trim(search_query)) as q, count(*)::bigint as cnt
+          from public.menu_events
+          where event_type in ('search_used', 'search_submit')
+            and coalesce(trim(search_query), '') <> ''
+          group by 1
+          order by cnt desc
+          limit 10
+        ) sq
+      ),
+      '[]'::jsonb
+    ),
+    'returning_sessions', (
+      select count(*)::bigint
+      from public.menu_events
+      where event_type = 'qr_session_start'
+        and metadata->>'returning' = 'true'
+    ),
+    'modal_engagement_events', (
+      select count(*)::bigint
+      from public.menu_events
+      where event_type in ('modal_drag_close', 'item_navigation')
     )
   );
 $$;
