@@ -22,7 +22,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Crown,
-  Clock,
+  Info,
 } from "lucide-react";
 import {
   BarChart,
@@ -53,6 +53,16 @@ const sidebar = [
   { icon: <Bell size={18} />, label: "AI Insights" },
   { icon: <Settings size={18} />, label: "Settings" },
 ];
+
+function InfoTip({ text }) {
+  const [show, setShow] = React.useState(false);
+  return (
+    <span className="nac-bi-infotip-wrap" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} onClick={() => setShow((s) => !s)}>
+      <Info size={14} className="nac-bi-infotip-icon" />
+      {show && <span className="nac-bi-infotip-bubble">{text}</span>}
+    </span>
+  );
+}
 
 const TOOLTIP_STYLE = {
   background: "rgba(10,10,10,0.88)",
@@ -324,50 +334,46 @@ export default function AdminDashboard({ onBack }) {
                 <p className="bi-section-title"><Crown size={14} /> Executive Summary</p>
                 <div className="nac-bi-exec-grid">
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
-                    <p className="nac-bi-exec-label"><Activity size={13} /> Total Engagement</p>
-                    <p className="nac-bi-exec-value">{totalEvents.toLocaleString()}</p>
-                    <p className="nac-bi-exec-sub">{totalSessions.toLocaleString()} sessions · {qrSessionStarts.toLocaleString()} QR scans</p>
+                    <p className="nac-bi-exec-label"><Users size={13} /> QR Scans</p>
+                    <p className="nac-bi-exec-value">{qrSessionStarts.toLocaleString()}</p>
+                    <p className="nac-bi-exec-sub">{totalSessions.toLocaleString()} unique sessions</p>
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
-                    <p className="nac-bi-exec-label"><TrendingUp size={13} /> Add-on Monetization</p>
-                    <p className="nac-bi-exec-value"><span className="nac-bi-exec-highlight">{addOnRate}%</span> conversion</p>
-                    <p className="nac-bi-exec-sub">
-                      {topAddon ? `Best: ${topAddon.item} + ${topAddon.addon}` : "No data yet"}
-                    </p>
+                    <p className="nac-bi-exec-label"><Layers size={13} /> Item Opens</p>
+                    <p className="nac-bi-exec-value">{itemOpenCount.toLocaleString()}</p>
+                    <p className="nac-bi-exec-sub">{Number(data?.avg_items_per_session) > 0 ? `${data.avg_items_per_session} avg per session` : "—"}</p>
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-                    <p className="nac-bi-exec-label"><Timer size={13} /> Avg Session</p>
-                    <p className="nac-bi-exec-value">{formatDuration(avgTimeSpent)}</p>
-                    <p className="nac-bi-exec-sub">
-                      {Number(data?.avg_items_per_session) > 0 ? `${data.avg_items_per_session} items/session` : "—"}
-                    </p>
+                    <p className="nac-bi-exec-label"><TrendingUp size={13} /> Add-on Conversion</p>
+                    <p className="nac-bi-exec-value"><span className="nac-bi-exec-highlight">{addOnRate}%</span></p>
+                    <p className="nac-bi-exec-sub">{topAddon ? `Top: ${topAddon.addon}` : "No data yet"}</p>
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-                    <p className="nac-bi-exec-label"><Clock size={13} /> Peak Hour</p>
-                    <p className="nac-bi-exec-value">
-                      {strongestHour != null ? `${strongestHour > 12 ? strongestHour - 12 : strongestHour || 12} ${strongestHour >= 12 ? "PM" : "AM"}` : "—"}
+                    <p className="nac-bi-exec-label"><Timer size={13} /> Avg Session</p>
+                    <p className="nac-bi-exec-value">{formatDuration(avgTimeSpent)}</p>
+                    <p className="nac-bi-exec-sub">
+                      {strongestHour != null ? `Peak at ${strongestHour > 12 ? strongestHour - 12 : strongestHour || 12} ${strongestHour >= 12 ? "PM" : "AM"}` : "—"}
                     </p>
-                    <p className="nac-bi-exec-sub">Highest event volume hour</p>
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
                     <p className="nac-bi-exec-label"><Users size={13} /> Returning Guests</p>
                     <p className="nac-bi-exec-value">{qrSessionStarts > 0 ? <><span className="nac-bi-exec-highlight">{returningPct}%</span></> : "—"}</p>
-                    <p className="nac-bi-exec-sub">{returningSessions.toLocaleString()} of {qrSessionStarts.toLocaleString()} sessions</p>
+                    <p className="nac-bi-exec-sub">{returningSessions.toLocaleString()} returning</p>
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                    <p className="nac-bi-exec-label"><Languages size={13} /> Language Split</p>
+                    <p className="nac-bi-exec-label"><Languages size={13} /> Language</p>
                     <p className="nac-bi-exec-value">
                       {totalLangEvents > 0 ? <>{englishPct}% <span style={{ color: "rgba(249,249,247,0.4)", fontSize: 18 }}>EN</span> · {arabicPct}% <span style={{ color: "#d7bc8a", fontSize: 18 }}>AR</span></> : "—"}
                     </p>
                     <p className="nac-bi-exec-sub">
                       {langBehavior?.ar?.avg_events && langBehavior?.en?.avg_events
-                        ? `AR ${langBehavior.ar.avg_events} avg events · EN ${langBehavior.en.avg_events} avg events`
-                        : `${totalLangEvents.toLocaleString()} events with language`}
+                        ? `AR ${langBehavior.ar.avg_events} avg · EN ${langBehavior.en.avg_events} avg events`
+                        : `${totalLangEvents.toLocaleString()} events`}
                     </p>
                   </motion.div>
                 </div>
@@ -458,7 +464,7 @@ export default function AdminDashboard({ onBack }) {
                 <div className="bi-row-grid">
                   <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                     <h4><FolderOpen size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Most Opened Categories</h4>
-                    <p className="bi-table-sub">category_open events</p>
+                    <p className="bi-table-sub">Ranked by guest interest</p>
                     <div className="bi-list">
                       {topCategories.length === 0 ? <p className="bi-empty">No data yet</p> : topCategories.map((row, i) => (
                         <div className="bi-list-item" key={row.id}>
@@ -537,28 +543,36 @@ export default function AdminDashboard({ onBack }) {
                     <div className="bi-row-grid">
                       {deadZones.length > 0 && (
                         <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                          <h4><AlertTriangle size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7a84a" }} />Menu Dead Zones</h4>
-                          <p className="bi-table-sub">Categories with low item engagement after opening</p>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <h4><AlertTriangle size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7a84a" }} />Menu Dead Zones</h4>
+                            <InfoTip text="Measures how often guests open items after entering a category. Low % means guests leave without exploring." />
+                          </div>
+                          <p className="bi-table-sub">Category engagement breakdown</p>
                           <div className="bi-list">
                             {deadZones.map((dz) => {
                               const ratio = Number(dz.engagement_ratio) || 0;
-                              const color = ratio < 20 ? "nac-bi-deadzone-critical" : ratio < 50 ? "nac-bi-deadzone-low" : "nac-bi-deadzone-ok";
+                              const opens = Number(dz.opens) || 0;
+                              const itemOpens = Number(dz.item_opens) || 0;
+                              const colorClass = ratio < 20 ? "nac-bi-deadzone-critical" : ratio < 50 ? "nac-bi-deadzone-low" : "nac-bi-deadzone-ok";
+                              const colorHex = ratio < 20 ? "#b05050" : ratio < 50 ? "#d7a84a" : "#76d69f";
                               return (
                                 <div className="nac-bi-deadzone-item" key={dz.category}>
-                                  <span className="bi-list-name" style={{ minWidth: 80 }}>{CATEGORY_NAMES[dz.category] || dz.category}</span>
-                                  <div className="nac-bi-deadzone-bar">
-                                    <div className={`nac-bi-deadzone-fill ${color}`} style={{ width: `${Math.min(ratio, 100)}%` }} />
+                                  <div style={{ minWidth: 0, flex: "0 0 auto" }}>
+                                    <div className="bi-list-name" style={{ fontWeight: 600, marginBottom: 3 }}>{CATEGORY_NAMES[dz.category] || dz.category}</div>
+                                    <div style={{ fontSize: 11, color: "rgba(249,249,247,0.45)" }}>
+                                      {opens} opens · {itemOpens} item views
+                                    </div>
                                   </div>
-                                  <span style={{ fontSize: 12, color: ratio < 20 ? "#b05050" : ratio < 50 ? "#d7a84a" : "#76d69f", fontWeight: 600, minWidth: 40, textAlign: "right" }}>
+                                  <div className="nac-bi-deadzone-bar" style={{ flex: 1 }}>
+                                    <div className={`nac-bi-deadzone-fill ${colorClass}`} style={{ width: `${Math.min(ratio, 100)}%` }} />
+                                  </div>
+                                  <span style={{ fontSize: 13, color: colorHex, fontWeight: 700, minWidth: 44, textAlign: "right" }}>
                                     {ratio}%
                                   </span>
                                 </div>
                               );
                             })}
                           </div>
-                          <p className="bi-card-sub" style={{ marginTop: 12 }}>
-                            Low % = guests open category but rarely view items. Consider reorganizing menu sections.
-                          </p>
                         </motion.div>
                       )}
 
@@ -582,9 +596,7 @@ export default function AdminDashboard({ onBack }) {
                               </div>
                             ))}
                           </div>
-                          <p className="bi-card-sub" style={{ marginTop: 12 }}>
-                            Consider adding these items or improving search visibility.
-                          </p>
+                          
                         </motion.div>
                       )}
                     </div>

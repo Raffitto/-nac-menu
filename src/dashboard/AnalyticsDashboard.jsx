@@ -189,8 +189,7 @@ export default function AnalyticsDashboard() {
   const [aggregates, setAggregates] = useState(null);
   const [feed, setFeed] = useState([]);
   const [topAddons, setTopAddons] = useState([]);
-  const [usedRpc, setUsedRpc] = useState(true);
-  const [sampleNote, setSampleNote] = useState("");
+  
 
   const configured = isSupabaseConfigured();
 
@@ -213,7 +212,7 @@ export default function AnalyticsDashboard() {
     if (!supabase || !session) return;
     setLoading(true);
     setError("");
-    setSampleNote("");
+    
 
     try {
       const { data: rpcData, error: rpcError } = await supabase.rpc(
@@ -223,9 +222,9 @@ export default function AnalyticsDashboard() {
       let agg = null;
       if (!rpcError && rpcData && typeof rpcData === "object") {
         agg = rpcData;
-        setUsedRpc(true);
+        
       } else {
-        setUsedRpc(false);
+        
         const { count: headCount, error: countErr } = await supabase
           .from("menu_events")
           .select("*", { count: "exact", head: true });
@@ -241,11 +240,7 @@ export default function AnalyticsDashboard() {
 
         if (rowsErr) throw rowsErr;
         agg = aggregateClientSide(rows || [], headCount ?? undefined);
-        if ((headCount ?? 0) > (rows?.length || 0)) {
-          setSampleNote(
-            "Some charts use a recent sample of events; run the SQL RPC for exact aggregates."
-          );
-        }
+        
       }
 
       setAggregates(agg);
@@ -346,7 +341,6 @@ export default function AnalyticsDashboard() {
   const addOnClickCount = eventCount(byEventType, "add_on_click");
   const languageChangeCount = eventCount(byEventType, "language_change");
   const qrSessionStarts = eventCount(byEventType, "qr_session_start");
-  const todayUniqueSessions = Number(aggregates?.today_unique_sessions) || 0;
   const todayQrSessions = Number(aggregates?.today_qr_sessions) || 0;
 
   // Advanced session intelligence
@@ -429,8 +423,7 @@ export default function AnalyticsDashboard() {
                 <p className="text-xs text-gold mb-1 tracking-wide">NAC Analytics</p>
                 <h2 className="text-lg font-semibold">Sign in</h2>
                 <p className="text-sm text-white/50 mt-1">
-                  Use a Supabase Auth user with read access to{" "}
-                  <code className="text-gold">menu_events</code>.
+                  Authorized team members only
                 </p>
               </div>
             </div>
@@ -502,15 +495,12 @@ export default function AnalyticsDashboard() {
             <p className="text-xs text-gold mb-2 tracking-wide">NAC KHOBAR</p>
             <h1 className="text-4xl font-semibold mb-2">Live analytics</h1>
             <p className="text-sm text-white/55 max-w-xl">
-              Supabase <code className="text-gold">menu_events</code>
-              {usedRpc ? " · server aggregates" : " · client sample"}
+              Real-time guest behavior data
               {session?.user?.email && (
                 <span className="text-white/40"> · {session.user.email}</span>
               )}
             </p>
-            {sampleNote && (
-              <p className="nac-an__hint max-w-xl">{sampleNote}</p>
-            )}
+            
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <span className="nac-an__pill">
@@ -569,7 +559,7 @@ export default function AnalyticsDashboard() {
                   Total events
                 </div>
                 <div className="nac-an__stat-value">{animEvents.toLocaleString()}</div>
-                <p className="text-xs text-white/40 mt-2">All rows in menu_events</p>
+                
               </motion.div>
 
               <motion.div
@@ -585,7 +575,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value">
                   {animSessions.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">Distinct session_id</p>
+                
               </motion.div>
 
               <motion.div
@@ -601,7 +591,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {categoryOpenCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">event_type = category_open</p>
+                
               </motion.div>
 
               <motion.div
@@ -617,7 +607,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {itemOpenCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">event_type = item_open</p>
+                
               </motion.div>
 
               <motion.div
@@ -633,7 +623,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {addOnClickCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">event_type = add_on_click</p>
+                
               </motion.div>
 
               <motion.div
@@ -649,7 +639,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {languageChangeCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">event_type = language_change</p>
+                
               </motion.div>
 
               <motion.div
@@ -665,7 +655,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {qrSessionStarts.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">Approximate QR scans / unique opens</p>
+                
               </motion.div>
 
               <motion.div
@@ -681,9 +671,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {todayQrSessions.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">
-                  {todayUniqueSessions} unique sessions today
-                </p>
+                
               </motion.div>
             </div>
 
@@ -704,7 +692,7 @@ export default function AnalyticsDashboard() {
                     ? `${Math.floor(avgTimeSpent / 60)}m ${avgTimeSpent % 60}s`
                     : avgTimeSpent > 0 ? `${avgTimeSpent}s` : "—"}
                 </div>
-                <p className="text-xs text-white/40 mt-2">From time_spent events</p>
+                
               </motion.div>
 
               <motion.div
@@ -720,7 +708,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {avgItemsPerSession > 0 ? avgItemsPerSession : "—"}
                 </div>
-                <p className="text-xs text-white/40 mt-2">item_open ÷ sessions</p>
+                
               </motion.div>
 
               <motion.div
@@ -736,9 +724,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {bounceSessions > 0 ? `${bouncePercent}%` : "—"}
                 </div>
-                <p className="text-xs text-white/40 mt-2">
-                  {bounceSessions.toLocaleString()} of {totalSessions.toLocaleString()} (1 event only)
-                </p>
+                
               </motion.div>
 
               <motion.div
@@ -754,9 +740,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {deepSessions > 0 ? `${deepPercent}%` : "—"}
                 </div>
-                <p className="text-xs text-white/40 mt-2">
-                  {deepSessions.toLocaleString()} sessions with 8+ events
-                </p>
+                
               </motion.div>
             </div>
 
@@ -772,9 +756,7 @@ export default function AnalyticsDashboard() {
                   Add-on conversion
                 </div>
                 <div className="nac-an__stat-value text-3xl">{addOnConversionRate}%</div>
-                <p className="text-xs text-white/40 mt-2">
-                  {addOnClickCount.toLocaleString()} clicks ÷ {itemOpenCount.toLocaleString()} item opens
-                </p>
+                
               </motion.div>
 
               <motion.div
@@ -788,9 +770,7 @@ export default function AnalyticsDashboard() {
                   Modal engagement
                 </div>
                 <div className="nac-an__stat-value text-3xl">{modalEngagementRate}%</div>
-                <p className="text-xs text-white/40 mt-2">
-                  Drag-close + navigation ÷ item opens
-                </p>
+                
               </motion.div>
 
               <motion.div
@@ -806,9 +786,7 @@ export default function AnalyticsDashboard() {
                 <div className="nac-an__stat-value text-3xl">
                   {qrSessionStarts > 0 ? `${returningPercent}%` : "—"}
                 </div>
-                <p className="text-xs text-white/40 mt-2">
-                  {returningSessions.toLocaleString()} returning of {qrSessionStarts.toLocaleString()} total
-                </p>
+                
               </motion.div>
             </div>
 
@@ -823,7 +801,7 @@ export default function AnalyticsDashboard() {
                   <Search size={18} className="text-gold" />
                   <h3 className="text-base font-semibold">Most searched keywords</h3>
                 </div>
-                <p className="text-sm text-white/50 mb-2">Top 10 from search_used events</p>
+                <p className="text-sm text-white/50 mb-2">Top 10 search queries</p>
                 <div className="nac-an__list">
                   {topSearches.map((row, i) => (
                     <div className="nac-an__row" key={row.query}>
@@ -886,10 +864,7 @@ export default function AnalyticsDashboard() {
                   <Languages size={18} className="text-gold" />
                   <h3 className="text-base font-semibold">Language usage</h3>
                 </div>
-                <p className="text-sm text-white/50 mb-2">
-                  Each event’s <code className="text-gold">language</code> field (all
-                  event types).
-                </p>
+                <p className="text-sm text-white/50 mb-2">English vs Arabic split</p>
                 <div className="nac-an__chart-wrap" style={{ height: 240 }}>
                   {langChartData.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/40">
@@ -932,10 +907,7 @@ export default function AnalyticsDashboard() {
                   <BarChart3 size={18} className="text-gold" />
                   <h3 className="text-base font-semibold">Event type counts</h3>
                 </div>
-                <p className="text-sm text-white/50 mb-2">
-                  Rows in <code className="text-gold">menu_events</code> grouped by{" "}
-                  <code className="text-gold">event_type</code>.
-                </p>
+                <p className="text-sm text-white/50 mb-2">Events by type</p>
                 <div className="nac-an__chart-wrap" style={{ height: 260 }}>
                   {eventTypeData.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/40">
@@ -973,7 +945,7 @@ export default function AnalyticsDashboard() {
                 transition={{ delay: 0.22 }}
               >
                 <h3 className="text-base font-semibold mb-1">Top viewed items</h3>
-                <p className="text-sm text-white/50 mb-2">From item_open events</p>
+                <p className="text-sm text-white/50 mb-2">Most opened dishes</p>
                 <div className="nac-an__list">
                   {(aggregates.top_items || []).length === 0 ? (
                     <p className="text-sm text-white/40">No item views yet</p>
@@ -998,7 +970,7 @@ export default function AnalyticsDashboard() {
                 transition={{ delay: 0.26 }}
               >
                 <h3 className="text-base font-semibold mb-1">Top categories</h3>
-                <p className="text-sm text-white/50 mb-2">From category_open events</p>
+                <p className="text-sm text-white/50 mb-2">Most browsed sections</p>
                 <div className="nac-an__list">
                   {(aggregates.top_categories || []).length === 0 ? (
                     <p className="text-sm text-white/40">No category opens yet</p>
@@ -1026,11 +998,7 @@ export default function AnalyticsDashboard() {
               transition={{ delay: 0.27 }}
             >
               <h3 className="text-base font-semibold mb-1">Top add-ons</h3>
-              <p className="text-sm text-white/50 mb-2">
-                From <code className="text-gold">add_on_click</code> events with{" "}
-                <code className="text-gold">add_on_name</code> (ranked from up to 25k
-                matching rows).
-              </p>
+              <p className="text-sm text-white/50 mb-2">Most clicked add-ons</p>
               <div className="nac-an__list">
                 {topAddons.length === 0 ? (
                   <p className="text-sm text-white/40">No add-on clicks with a name yet</p>
@@ -1055,10 +1023,7 @@ export default function AnalyticsDashboard() {
               transition={{ delay: 0.29 }}
             >
               <h3 className="text-base font-semibold mb-1">Recent activity</h3>
-              <p className="text-sm text-white/50 mb-2">
-                Latest rows from <code className="text-gold">menu_events</code> (newest
-                45).
-              </p>
+              <p className="text-sm text-white/50 mb-2">Latest guest interactions</p>
               <div className="nac-an__feed">
                 {feed.length === 0 ? (
                   <p className="text-sm text-white/40">No rows returned</p>
