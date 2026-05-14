@@ -4,9 +4,11 @@ import {
   Activity,
   AlertCircle,
   BarChart3,
+  FolderOpen,
   Languages,
   Layers,
   LogOut,
+  PlusCircle,
   RefreshCw,
   Sparkles,
   Users,
@@ -90,6 +92,27 @@ function formatHourLabel(iso) {
   });
 }
 
+function eventCount(byEventType, key) {
+  if (!byEventType || typeof byEventType !== "object") return 0;
+  const v = byEventType[key];
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  const n = Number(v);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function aggregateTopAddonsFromRows(rows) {
+  const m = {};
+  (rows || []).forEach((r) => {
+    const k = (r.add_on_name || "").trim();
+    if (!k) return;
+    m[k] = (m[k] || 0) + 1;
+  });
+  return Object.entries(m)
+    .map(([name, clicks]) => ({ name, clicks }))
+    .sort((a, b) => b.clicks - a.clicks)
+    .slice(0, 12);
+}
+
 function aggregateClientSide(rows, totalEventsExact) {
   const sessions = new Set();
   const byLang = {};
@@ -162,6 +185,7 @@ export default function AnalyticsDashboard() {
   const [error, setError] = useState("");
   const [aggregates, setAggregates] = useState(null);
   const [feed, setFeed] = useState([]);
+  const [topAddons, setTopAddons] = useState([]);
   const [usedRpc, setUsedRpc] = useState(true);
   const [sampleNote, setSampleNote] = useState("");
 
@@ -223,6 +247,19 @@ export default function AnalyticsDashboard() {
 
       setAggregates(agg);
 
+      const { data: addRows, error: addOnErr } = await supabase
+        .from("menu_events")
+        .select("add_on_name")
+        .eq("event_type", "add_on_click")
+        .not("add_on_name", "is", null)
+        .limit(25000);
+
+      if (addOnErr) {
+        setTopAddons([]);
+      } else {
+        setTopAddons(aggregateTopAddonsFromRows(addRows));
+      }
+
       const { data: recent, error: feedErr } = await supabase
         .from("menu_events")
         .select(
@@ -237,6 +274,7 @@ export default function AnalyticsDashboard() {
       setError(e?.message || "Failed to load analytics.");
       setAggregates(null);
       setFeed([]);
+      setTopAddons([]);
     } finally {
       setLoading(false);
     }
@@ -247,6 +285,7 @@ export default function AnalyticsDashboard() {
     else {
       setAggregates(null);
       setFeed([]);
+      setTopAddons([]);
     }
   }, [session, loadData]);
 
@@ -268,6 +307,7 @@ export default function AnalyticsDashboard() {
     await supabase.auth.signOut();
     setAggregates(null);
     setFeed([]);
+    setTopAddons([]);
   };
 
   const langChartData = useMemo(() => {
@@ -292,12 +332,16 @@ export default function AnalyticsDashboard() {
     return raw.map((row) => ({
       label: formatHourLabel(row.hour),
       count: Number(row.count) || 0,
-      sort: new Date(row.hour).getTime() || 0,
     }));
   }, [aggregates]);
 
   const totalEvents = aggregates?.total_events ?? 0;
   const totalSessions = aggregates?.total_sessions ?? 0;
+  const byEventType = aggregates?.by_event_type || {};
+  const categoryOpenCount = eventCount(byEventType, "category_open");
+  const itemOpenCount = eventCount(byEventType, "item_open");
+  const addOnClickCount = eventCount(byEventType, "add_on_click");
+  const languageChangeCount = eventCount(byEventType, "language_change");
 
   const animEvents = useAnimatedInt(totalEvents, Boolean(aggregates) && !loading);
   const animSessions = useAnimatedInt(
@@ -481,8 +525,8 @@ export default function AnalyticsDashboard() {
         )}
 
         {loading && !aggregates && (
-          <div className="grid gap-4 lg:grid-cols-4 sm:grid-cols-2">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="nac-an__card">
                 <div className="nac-an__skeleton h-4 w-24 mb-4" />
                 <div className="nac-an__skeleton h-10 w-20" />
@@ -493,7 +537,7 @@ export default function AnalyticsDashboard() {
 
         {aggregates && (
           <>
-            <div className="grid gap-4 lg:grid-cols-4 sm:grid-cols-2 mb-6">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
               <motion.div
                 className="nac-an__card"
                 initial={{ opacity: 0, y: 12 }}
@@ -505,14 +549,14 @@ export default function AnalyticsDashboard() {
                   Total events
                 </div>
                 <div className="nac-an__stat-value">{animEvents.toLocaleString()}</div>
-                <p className="text-xs text-white/40 mt-2">All time</p>
+                <p className="text-xs text-white/40 mt-2">All rows in menu_events</p>
               </motion.div>
 
               <motion.div
                 className="nac-an__card"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.06 }}
+                transition={{ delay: 0.04 }}
               >
                 <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
                   <Users size={14} className="text-gold" />
@@ -528,32 +572,64 @@ export default function AnalyticsDashboard() {
                 className="nac-an__card"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
+                transition={{ delay: 0.06 }}
               >
                 <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
-                  <Languages size={14} className="text-gold" />
-                  Languages
+                  <FolderOpen size={14} className="text-gold" />
+                  Category opens
                 </div>
                 <div className="nac-an__stat-value text-3xl">
-                  {Object.keys(aggregates.by_language || {}).length}
+                  {categoryOpenCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">Tracked codes</p>
+                <p className="text-xs text-white/40 mt-2">event_type = category_open</p>
               </motion.div>
 
               <motion.div
                 className="nac-an__card"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.14 }}
+                transition={{ delay: 0.08 }}
               >
                 <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
-                  <BarChart3 size={14} className="text-gold" />
-                  Event types
+                  <Layers size={14} className="text-gold" />
+                  Item opens
                 </div>
                 <div className="nac-an__stat-value text-3xl">
-                  {Object.keys(aggregates.by_event_type || {}).length}
+                  {itemOpenCount.toLocaleString()}
                 </div>
-                <p className="text-xs text-white/40 mt-2">Unique event_type</p>
+                <p className="text-xs text-white/40 mt-2">event_type = item_open</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <PlusCircle size={14} className="text-gold" />
+                  Add-on clicks
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {addOnClickCount.toLocaleString()}
+                </div>
+                <p className="text-xs text-white/40 mt-2">event_type = add_on_click</p>
+              </motion.div>
+
+              <motion.div
+                className="nac-an__card"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.12 }}
+              >
+                <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
+                  <Languages size={14} className="text-gold" />
+                  Language toggles
+                </div>
+                <div className="nac-an__stat-value text-3xl">
+                  {languageChangeCount.toLocaleString()}
+                </div>
+                <p className="text-xs text-white/40 mt-2">event_type = language_change</p>
               </motion.div>
             </div>
 
@@ -603,8 +679,12 @@ export default function AnalyticsDashboard() {
               >
                 <div className="flex items-center gap-2 mb-2">
                   <Languages size={18} className="text-gold" />
-                  <h3 className="text-base font-semibold">Language split</h3>
+                  <h3 className="text-base font-semibold">Language usage</h3>
                 </div>
+                <p className="text-sm text-white/50 mb-2">
+                  Each event’s <code className="text-gold">language</code> field (all
+                  event types).
+                </p>
                 <div className="nac-an__chart-wrap" style={{ height: 240 }}>
                   {langChartData.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/40">
@@ -644,9 +724,13 @@ export default function AnalyticsDashboard() {
                 transition={{ delay: 0.2 }}
               >
                 <div className="flex items-center gap-2 mb-2">
-                  <Layers size={18} className="text-gold" />
-                  <h3 className="text-base font-semibold">Event types</h3>
+                  <BarChart3 size={18} className="text-gold" />
+                  <h3 className="text-base font-semibold">Event type counts</h3>
                 </div>
+                <p className="text-sm text-white/50 mb-2">
+                  Rows in <code className="text-gold">menu_events</code> grouped by{" "}
+                  <code className="text-gold">event_type</code>.
+                </p>
                 <div className="nac-an__chart-wrap" style={{ height: 260 }}>
                   {eventTypeData.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/40">
@@ -731,13 +815,45 @@ export default function AnalyticsDashboard() {
             </div>
 
             <motion.div
+              className="nac-an__card mb-6"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.27 }}
+            >
+              <h3 className="text-base font-semibold mb-1">Top add-ons</h3>
+              <p className="text-sm text-white/50 mb-2">
+                From <code className="text-gold">add_on_click</code> events with{" "}
+                <code className="text-gold">add_on_name</code> (ranked from up to 25k
+                matching rows).
+              </p>
+              <div className="nac-an__list">
+                {topAddons.length === 0 ? (
+                  <p className="text-sm text-white/40">No add-on clicks with a name yet</p>
+                ) : (
+                  topAddons.map((row, i) => (
+                    <div className="nac-an__row" key={row.name}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="nac-an__row-rank">{i + 1}</span>
+                        <span className="text-sm font-medium truncate">{row.name}</span>
+                      </div>
+                      <span className="text-gold text-sm shrink-0">{row.clicks}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+
+            <motion.div
               className="nac-an__card"
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.28 }}
+              transition={{ delay: 0.29 }}
             >
               <h3 className="text-base font-semibold mb-1">Recent activity</h3>
-              <p className="text-sm text-white/50 mb-2">Latest events across the menu</p>
+              <p className="text-sm text-white/50 mb-2">
+                Latest rows from <code className="text-gold">menu_events</code> (newest
+                45).
+              </p>
               <div className="nac-an__feed">
                 {feed.length === 0 ? (
                   <p className="text-sm text-white/40">No rows returned</p>
