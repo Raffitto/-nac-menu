@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls 
 import { ChevronRight, ArrowLeft, X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
+import ImpressionTracked from "./components/ImpressionTracked";
 import {
   trackEvent,
   makeMenuItemId,
@@ -1241,12 +1242,16 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
   )}
 
   {sec.items.map((menuItem, index) => (
-            <div
+            <ImpressionTracked
               key={`${menuItem.en}-${index}`}
+              asMotion={false}
               className="drink-row"
-              onClick={() => {
-  openMenuItem(menuItem, sec.title.en);
-}}
+              categoryId={activeCategory}
+              sectionTitleEn={sec.title.en}
+              menuItem={menuItem}
+              language={lang}
+              enabled={Boolean(activeCategory)}
+              onClick={() => openMenuItem(menuItem, sec.title.en)}
             >
               <div className="drink-left">
   <span className="drink-name">
@@ -1258,7 +1263,7 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
 <span className="drink-price">
   {menuItem.price}
 </span>
-            </div>
+            </ImpressionTracked>
           ))}
         </div>
       </div>
@@ -1285,27 +1290,17 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
     show: { transition: { staggerChildren: 0.045 } }
   }}
 >
-        {sec.items.map((menuItem, index) => (
-          <motion.div
+  {sec.items.map((menuItem, index) => (
+            <ImpressionTracked
             key={`${menuItem.en}-${index}`}
             layoutId={`card-${menuItem.en}`}
             className="menu-card"
-            onClick={() => {
-
-  openMenuItem(menuItem, sec.title.en);
-
-  const analytics =
-    JSON.parse(localStorage.getItem("nacAnalytics")) || {};
-
-  analytics[menuItem.en] =
-    (analytics[menuItem.en] || 0) + 1;
-
-  localStorage.setItem(
-    "nacAnalytics",
-    JSON.stringify(analytics)
-  );
-
-}}
+            categoryId={activeCategory}
+            sectionTitleEn={sec.title.en}
+            menuItem={menuItem}
+            language={lang}
+            enabled={Boolean(activeCategory)}
+            onClick={() => openMenuItem(menuItem, sec.title.en)}
             variants={{
               hidden: { opacity: 0, y: 18 },
               show: { opacity: 1, y: 0 }
@@ -1326,7 +1321,7 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
             </div>
 
             <ChevronRight className="chevron" />
-          </motion.div>
+          </ImpressionTracked>
         ))}
       </motion.div>
     </section>

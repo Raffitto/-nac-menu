@@ -22,16 +22,16 @@ export function buildRecommendations(intelligence, menuEngineering = []) {
 
   (intelligence.attention?.hiddenGems || []).slice(0, 2).forEach((h) => {
     opportunities.push({
-      title: `Hidden gem: ${h.item_name}`,
-      action: "Feature higher in menu — strong orders vs low views.",
+      title: `Hidden opportunity: ${h.item_name}`,
+      action: "Elevate placement — strong sales relative to visibility.",
       impact: "high",
     });
   });
 
   (intelligence.attention?.menuTraps || []).slice(0, 2).forEach((t) => {
     risks.push({
-      title: `Menu trap: ${t.item_name}`,
-      action: "High views, weak conversion — fix presentation or pricing.",
+      title: `${t.item_name}: attention without sales`,
+      action: "Review pricing, photo, and description — high visibility, weak conversion.",
       impact: "high",
     });
   });
@@ -41,20 +41,49 @@ export function buildRecommendations(intelligence, menuEngineering = []) {
   });
 
   (intelligence.search?.insights || []).filter((i) => i.type === "unmet").slice(0, 1).forEach((s) => {
-    operations.push({ title: "Search gap", action: s.message, quadrant: "search" });
+    operations.push({
+      title: "Search friction",
+      action: "Guests search for terms with weak results — add Arabic/English synonyms to improve discovery.",
+      quadrant: "search",
+    });
   });
 
   return { urgent, opportunities, risks, operations };
 }
 
 export function buildManagementBriefing(intelligence, recommendations, forecasts) {
+  const working = (intelligence?.attention?.elite || []).slice(0, 3).map((e) => e.item_name);
+  if (!working.length && intelligence?.funnels?.length) {
+    intelligence.funnels
+      .filter((f) => f.behavior_type === "Visual Seller" || f.behavior_type === "Discovery Seller")
+      .slice(0, 2)
+      .forEach((f) => working.push(f.item_name));
+  }
+
+  const weakest = (intelligence?.attention?.menuTraps || []).slice(0, 3).map((t) => t.item_name);
+  if (!weakest.length) {
+    (intelligence?.funnels || [])
+      .filter((f) => f.behavior_type === "Menu Trap")
+      .slice(0, 2)
+      .forEach((f) => weakest.push(f.item_name));
+  }
+
   return {
-    strongest: (intelligence?.attention?.elite || []).slice(0, 3).map((e) => e.item_name),
-    weakest: (intelligence?.attention?.menuTraps || []).slice(0, 3).map((t) => t.item_name),
-    changed: forecasts?.narratives?.[0]?.message || "Trend analysis improves as more sessions are collected.",
+    strongest: working,
+    weakest,
+    working,
+    needsAttention: weakest,
+    changed: forecasts?.narratives?.[0]?.message || "Patterns will clarify as more guest sessions are collected.",
     todayActions: recommendations?.urgent?.slice(0, 2).map((u) => u.action) || [],
+    monitor: [
+      ...(recommendations?.opportunities?.slice(0, 1).map((o) => o.title) || []),
+      "Impression trends and Foodics batch comparison",
+    ],
     opportunities: recommendations?.opportunities?.slice(0, 2).map((o) => o.title) || [],
     risks: recommendations?.risks?.slice(0, 2).map((r) => r.title) || [],
-    focus: recommendations?.urgent[0]?.title || recommendations?.opportunities[0]?.title || "Monitor conversion and search demand.",
+    focus:
+      recommendations?.urgent[0]?.action ||
+      recommendations?.opportunities[0]?.title ||
+      "Monitor guest attention and sales alignment.",
   };
 }

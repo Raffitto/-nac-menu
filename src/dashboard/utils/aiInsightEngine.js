@@ -1,7 +1,9 @@
 import { formatDuration } from "./formatters";
 import { buildRestaurantIntelligence } from "../engines/analyticsEngine";
 import { answerForecastQuestion } from "../engines/forecastingEngine";
-import { computeTrustConfidence, buildDataContext, clampMetric } from "./intelligenceSanity";
+import { computeTrustConfidence, buildDataContext, clampMetric, hasVisibilityTracking } from "./intelligenceSanity";
+import { normalizeTopItems } from "./topItemsNormalize";
+import { BEHAVIOR, prefixSignal, buildExportCommentary } from "./itemBehaviorEngine";
 
 const CATEGORY_LABELS = {
   breakfast: "Breakfast",
@@ -242,7 +244,7 @@ export function buildInsightCards(data) {
         group: "Search Intent",
         title: `Guests searched "${query}"${count > 1 ? ` ${count} times` : ""} — not found`,
         explanation: "This search returned no results. Guests want something you may not offer or named differently.",
-        action: `Add "${query}" to the menu, or create an alias so existing items appear for this search.`,
+        action: "Guests repeatedly search for terms that do not return strong results. Add Arabic/English synonyms in Menu Manager to improve search success.",
         whyMatters: "High search activity around specific terms means guests expect to find those items easily.",
         impact: { revenue: "high", ux: "medium", urgency: count > 5 ? "Today" : "This Week" },
         confidence: count > 3 ? "high" : "medium",
@@ -399,7 +401,7 @@ export function buildInsightCards(data) {
   return cards;
 }
 
-/** Insight cards from latest Foodics import + menu click comparison */
+/** Insight cards from latest Foodics import + visibility vs sales */
 export function buildFoodicsInsightCards(foodics) {
   if (!foodics?.hasImports || !foodics.conversionRows?.length) return [];
 
@@ -414,7 +416,7 @@ export function buildFoodicsInsightCards(foodics) {
       id: "foodics-hi-lo",
       group: "Revenue Opportunities",
       title: `${hiLo.item_name}: high menu interest, weaker orders`,
-      explanation: `${hiLo.item_views} menu views and ${hiLo.quantity_sold} Foodics orders. ${hiLo.conversion_display || `${hiLo.menu_conversion_pct ?? hiLo.conversion_rate}% menu conversion`}.`,
+      explanation: `${hiLo.item_impressions ?? hiLo.item_views} impressions and ${hiLo.quantity_sold} Foodics orders. ${hiLo.conversion_display || `${hiLo.impression_conversion_pct ?? hiLo.menu_conversion_pct ?? hiLo.conversion_rate}% visibility-to-sales`}.`,
       action: hiLo.suggestion,
       whyMatters: "Digital attention is not converting to POS sales for this item.",
       impact: { revenue: "high", ux: "medium", urgency: "This Week" },
@@ -430,7 +432,7 @@ export function buildFoodicsInsightCards(foodics) {
       id: "foodics-lo-hi",
       group: "Revenue Opportunities",
       title: `${loHi.item_name}: sells well but low menu visibility`,
-      explanation: `${loHi.quantity_sold} orders from Foodics but only ${loHi.item_views} menu views.`,
+      explanation: `${loHi.quantity_sold} orders from Foodics but only ${loHi.item_impressions ?? loHi.item_views} impressions.`,
       action: loHi.suggestion,
       whyMatters: "Offline demand exists — digital menu is under-promoting a winner.",
       impact: { revenue: "high", ux: "high", urgency: "This Week" },
@@ -446,7 +448,7 @@ export function buildFoodicsInsightCards(foodics) {
       id: "foodics-best-conv",
       group: "Guest Behavior",
       title: `Strong converter: ${bestConv.item_name}`,
-      explanation: `${bestConv.menu_conversion_pct ?? bestConv.conversion_rate}% menu conversion with ${bestConv.net_sales?.toFixed?.(0) ?? bestConv.net_sales} SAR net sales.`,
+      explanation: `${bestConv.impression_conversion_pct ?? bestConv.menu_conversion_pct ?? bestConv.conversion_rate}% visibility-to-sales with ${bestConv.net_sales?.toFixed?.(0) ?? bestConv.net_sales} SAR net sales.`,
       action: "Feature this item and replicate its presentation on weaker items.",
       whyMatters: "Proven path from browse to purchase.",
       impact: { revenue: "medium", ux: "low", urgency: "Monitor" },
@@ -454,6 +456,140 @@ export function buildFoodicsInsightCards(foodics) {
       severity: "low",
       source: "conversion_rate",
       metric: `${bestConv.conversion_rate}% conversion`,
+    });
+  }
+
+  return cards;
+}
+
+/** Visibility-first insight cards (impressions + opens + Foodics) */
+export function buildVisibilityInsightCards(data, foodics = null) {
+  const cards = [];
+  const topItems = normalizeTopItems(data?.top_items || []);
+  const visibilityReady = hasVisibilityTracking(topItems, data?.by_event_type);
+
+  if (!visibilityReady && topItems.length > 0) {
+    cards.push({
+      id: "visibility-collecting",
+      group: "Guest Behavior",
+      title: "Visibility tracking is warming up",
+      explanation:
+        "Collecting visibility signals — impression data will sharpen guest attention metrics. Until then, deep interest (opens) is used as a fallback.",
+      action: "Keep the guest menu live — passive impressions will sharpen visibility vs sales within a few days.",
+      whyMatters: "Accurate visibility separates glance-at-menu from true disinterest.",
+      impact: { revenue: "low", ux: "medium", urgency: "Monitor" },
+      confidence: "low",
+      severity: "low",
+      source: "item_impression",
+      metric: "collecting",
+    });
+    return cards;
+  }
+
+  const visualConfidence = topItems
+    .filter((t) => t.impressions >= 25 && t.opens > 0 && t.opens / t.impressions < 0.12)
+    .sort((a, b) => b.impressions - a.impressions)[0];
+
+  if (visualConfidence) {
+    cards.push({
+      id: "vis-visual-confidence",
+      group: "Guest Behavior",
+      title: `${visualConfidence.name}: seen, rarely opened`,
+      explanation: `Guests frequently view ${visualConfidence.name} without opening details (${visualConfidence.impressions} impressions, ${visualConfidence.opens} opens), suggesting the visual presentation already builds confidence.`,
+      action: "Keep hero imagery strong; test subtle CTA only if you want more add-on or modifier discovery.",
+      whyMatters: "Self-explanatory items need less modal friction.",
+      impact: { revenue: "medium", ux: "high", urgency: "Monitor" },
+      confidence: visualConfidence.impressions > 40 ? "high" : "medium",
+      severity: "low",
+      source: "item_impression / item_open",
+      metric: `${Math.round((visualConfidence.opens / visualConfidence.impressions) * 100)}% open rate`,
+    });
+  }
+
+  const star = topItems
+    .filter((t) => t.impressions >= 20 && t.opens >= 5)
+    .sort((a, b) => b.impressions - a.impressions)[0];
+
+  if (star && foodics?.conversionRows?.length) {
+    const row = foodics.conversionRows.find(
+      (r) => r.item_name?.toLowerCase() === star.name?.toLowerCase(),
+    );
+    if (row && (row.impression_conversion_pct ?? 0) >= 8) {
+      cards.push({
+        id: "vis-star",
+        group: "Revenue Opportunities",
+        title: `${star.name}: efficient visibility-to-sales`,
+        explanation: `${star.name} receives strong impressions (${star.impressions}) and strong sales, indicating highly efficient menu placement.`,
+        action: row.suggestion || "Protect placement and replicate presentation on weaker items.",
+        whyMatters: "High visibility plus conversion is the ideal menu outcome.",
+        impact: { revenue: "high", ux: "medium", urgency: "This Week" },
+        confidence: "high",
+        severity: "low",
+        source: "item_impression + Foodics",
+        metric: `${row.impression_conversion_pct}% impression conversion`,
+      });
+    }
+  }
+
+  const habitual = (foodics?.conversionRows || []).find(
+    (r) => (r.item_impressions || 0) < 8 && r.quantity_sold >= 12,
+  );
+  if (habitual) {
+    cards.push({
+      id: "vis-habitual",
+      group: "Revenue Opportunities",
+      title: `${habitual.item_name}: habitual ordering`,
+      explanation: `Some items like ${habitual.item_name} convert with almost no menu interaction (${habitual.quantity_sold} orders, ${habitual.item_impressions || 0} impressions), suggesting habitual ordering behavior.`,
+      action: habitual.suggestion,
+      whyMatters: "Waiter-driven and repeat-order items are under-counted by click-only metrics.",
+      impact: { revenue: "high", ux: "low", urgency: "This Week" },
+      confidence: "medium",
+      severity: "medium",
+      source: "Foodics + item_impression",
+      metric: `${habitual.quantity_sold} orders`,
+    });
+  }
+
+  const dessertTrap = topItems.find(
+    (t) =>
+      t.name &&
+      /dessert|cookie|pavlova|toast|cake/i.test(t.name) &&
+      t.impressions >= 15 &&
+      t.opens > 0 &&
+      t.opens / t.impressions < 0.15
+  );
+  if (dessertTrap) {
+    cards.push({
+      id: "vis-dessert-attention",
+      group: "Menu Problems",
+      title: `${dessertTrap.name}: visual attention, weaker deep engagement`,
+      explanation: `Dessert-style items such as ${dessertTrap.name} generate strong visual attention (${dessertTrap.impressions} impressions) but weaker deep engagement (${dessertTrap.opens} opens).`,
+      action: "Test shorter descriptions, bundle pricing, or staff dessert prompts.",
+      whyMatters: "Guests notice desserts; the gap is moving from browse to order.",
+      impact: { revenue: "medium", ux: "medium", urgency: "This Week" },
+      confidence: "medium",
+      severity: "medium",
+      source: "item_impression",
+      metric: `${Math.round((dessertTrap.opens / dessertTrap.impressions) * 100)}% deep interest`,
+    });
+  }
+
+  const menuTrap = (foodics?.conversionRows || []).find(
+    (r) => (r.item_impressions || r.item_views || 0) >= 25 && (r.impression_conversion_pct ?? 100) < 5,
+  );
+  if (menuTrap) {
+    cards.push({
+      id: "vis-menu-trap",
+      group: "Menu Problems",
+      title: prefixSignal(menuTrap.signal_strength, `${menuTrap.item_name}: attention without sales`),
+      explanation: `${menuTrap.item_name} draws visibility (${menuTrap.item_impressions || menuTrap.item_views} impressions) but weak sales conversion (${menuTrap.impression_conversion_pct ?? 0}%). Zero opens does not mean zero interest — guests may still be evaluating.`,
+      action: menuTrap.suggestion,
+      whyMatters: "High visibility with weak sales wastes prime menu real estate.",
+      impact: { revenue: "high", ux: "high", urgency: "Today" },
+      confidence: "high",
+      severity: "high",
+      source: "item_impression + Foodics",
+      metric: `${menuTrap.impression_conversion_pct}% impression conversion`,
     });
   }
 
@@ -502,8 +638,7 @@ export function buildManagementSummary(data) {
   if (avgTime < 60 && totalSessions > 10) weak.push(`Short sessions (${formatDuration(avgTime)}) — guests not browsing enough.`);
 
   if (lostSearches.length > 0) {
-    const q = lostSearches[0].query || lostSearches[0].term || lostSearches[0].q;
-    if (q) improve.push(`Add "${q}" to the menu or fix naming — guests searched for it.`);
+    improve.push("Search friction detected — add Arabic/English synonyms so repeated guest terms return strong results.");
   }
   if (Number(addOnRate) < 10) improve.push("Improve add-on visibility with preview images and better positioning.");
   if (bounceRate > 30) improve.push("Improve landing experience — faster load, better hero category.");
@@ -512,7 +647,20 @@ export function buildManagementSummary(data) {
   monitor.push("Add-on conversion trend week over week.");
   if (deadZones.length > 0) monitor.push("Dead zone categories after any menu changes.");
 
-  return { working, weak, improve, monitor, qrStarts, totalSessions, totalEvents, avgTime, addOnRate, bounceRate, returningRate };
+  return {
+    working,
+    weak,
+    needsAttention: weak,
+    improve,
+    monitor,
+    qrStarts,
+    totalSessions,
+    totalEvents,
+    avgTime,
+    addOnRate,
+    bounceRate,
+    returningRate,
+  };
 }
 
 export function getBestAction(data) {
@@ -534,8 +682,8 @@ export function getBestAction(data) {
     const count = Number(top.count) || Number(top.searches) || 0;
     if (q && count > 2) {
       return {
-        action: `Add "${q}" to the menu or create a search alias. Guests searched for it ${count} times.`,
-        reason: "Unmet demand is the fastest revenue opportunity.",
+        action: "Address search friction: guests repeat terms that do not return strong results. Add Arabic/English synonyms in Menu Manager.",
+        reason: `Repeated searches (${count}×) signal demand that the menu is not surfacing clearly.`,
         source: "lost_searches",
         urgency: "Today",
       };
@@ -663,8 +811,13 @@ function metaResponse({ answer, confidence, intent, metric, periodHours = 0 }) {
 
 function convLabel(row) {
   if (row.trust_label && row.offline_driven) return row.trust_label;
-  const pct = clampMetric(row.menu_conversion_pct ?? row.conversion_rate, 0, 100);
-  return `${pct}% menu conversion`;
+  const pct = clampMetric(row.impression_conversion_pct ?? row.menu_conversion_pct ?? row.conversion_rate, 0, 100);
+  const imp = row.item_impressions ?? row.item_views;
+  const opens = row.item_modal_opens;
+  if (imp > 0 && opens != null) {
+    return `${pct}% impression conversion (${opens} opens / ${imp} impressions)`;
+  }
+  return `${pct}% impression conversion`;
 }
 
 function resolvePeakHour(data) {
@@ -710,12 +863,24 @@ const INTENT_RULES = [
     },
   },
   {
+    id: "visibility",
+    score(q) {
+      let s = 0;
+      if (/\b(sell visually|visual seller|visual efficiency|photo.*work|card.*sell|which item photo)\b/.test(q)) s += 14;
+      if (/\b(need more explanation|more detail|deep interest|guests investigate)\b/.test(q)) s += 12;
+      if (/\b(waiter.?driven|staff recommend|habitual order|habit order|offline seller)\b/.test(q)) s += 13;
+      if (/\b(attract.*attention|attention.*don.?t sell|menu trap|visibility.*not sell|high attention.*low)\b/.test(q)) s += 13;
+      if (/\b(impression|visibility vs|guest attention|passive exposure)\b/.test(q)) s += 6;
+      return s;
+    },
+  },
+  {
     id: "foodics",
     score(q) {
       let s = 0;
-      if (/\b(foodics|pos sales|sold offline|orders vs|conversion rate|revenue per)\b/.test(q)) s += 12;
-      if (/\b(high clicks.*low orders|low clicks.*high orders|menu views.*orders)\b/.test(q)) s += 11;
-      if (/\b(selling well|not getting clicks|wasting menu|best conversion|worst conversion)\b/.test(q)) s += 8;
+      if (/\b(foodics|pos sales|sold offline|orders vs|revenue per)\b/.test(q)) s += 12;
+      if (/\b(high clicks.*low orders|high attention.*low sales|low visibility.*high sales)\b/.test(q)) s += 11;
+      if (/\b(selling well|wasting menu|best conversion|worst conversion|visibility vs sales)\b/.test(q)) s += 8;
       if (/\b(this week sales|foodics show)\b/.test(q)) s += 9;
       return s;
     },
@@ -783,7 +948,7 @@ const INTENT_RULES = [
       let s = 0;
       if (/\b(menu item|dish|item)\b/.test(q)) s += 5;
       if (/\b(promote|promotion|highlight|push)\b/.test(q)) s += 8;
-      if (/\b(most viewed|top item|popular item|high click)\b/.test(q)) s += 9;
+      if (/\b(most viewed|top item|popular item|high impression|most impressions)\b/.test(q)) s += 9;
       if (/\b(viewed|views|opens)\b/.test(q) && /\b(item)\b/.test(q)) s += 6;
       return s;
     },
@@ -941,44 +1106,44 @@ function answerItem(data, q, periodHours, foodics) {
 
   if (foodics?.hasImports && foodics.conversionRows?.length) {
     const rows = foodics.conversionRows;
-    if (/\b(high click|low order|clicks.*order)\b/.test(q)) {
-      const hit = rows.find((r) => r.item_views >= 10 && (r.menu_conversion_pct ?? r.conversion_rate) < 5 && !r.offline_driven) || rows[0];
+    if (/\b(high click|low order|high attention|clicks.*order|attention.*low sales)\b/.test(q)) {
+      const hit = rows.find((r) => (r.item_impressions ?? r.item_views) >= 10 && (r.impression_conversion_pct ?? r.menu_conversion_pct ?? r.conversion_rate) < 5 && !r.offline_driven) || rows[0];
       return metaResponse({
-        answer: `${hit.item_name} has high menu interest but weaker sales conversion: ${hit.item_views} menu views and ${hit.quantity_sold} orders. ${convLabel(hit)}. ${hit.suggestion}`,
-        confidence: "high",
+        answer: `${prefixSignal(hit.signal_strength, hit.item_name)}: high guest attention (${hit.item_impressions ?? hit.item_views} impressions) with ${hit.quantity_sold} orders. ${convLabel(hit)}. ${hit.suggestion}`,
+        confidence: hit.signal_strength === "Strong signal" ? "high" : "medium",
         intent: "foodics",
-        metric: "item_open vs quantity_sold",
+        metric: "impressions vs quantity_sold",
         periodHours,
       });
     }
-    if (/\b(low click|high order|selling well)\b/.test(q)) {
-      const hit = rows.find((r) => r.item_views < 10 && r.quantity_sold >= 5)
+    if (/\b(low click|high order|selling well|low visibility)\b/.test(q)) {
+      const hit = rows.find((r) => (r.item_impressions ?? r.item_views) < 10 && r.quantity_sold >= 5)
         || [...rows].sort((a, b) => b.quantity_sold - a.quantity_sold)[0];
       return metaResponse({
-        answer: `${hit.item_name} sells well in Foodics (${hit.quantity_sold} orders) but only ${hit.item_views} menu views. ${hit.suggestion}`,
+        answer: `${hit.item_name} sells well in Foodics (${hit.quantity_sold} orders) with limited visibility (${hit.item_impressions ?? hit.item_views} impressions). ${hit.suggestion}`,
         confidence: "high",
         intent: "foodics",
-        metric: "quantity_sold vs item_open",
+        metric: "quantity_sold vs impressions",
         periodHours,
       });
     }
-    if (/\b(best conversion|convert)\b/.test(q)) {
-      const hit = [...rows].filter((r) => r.item_views >= 5 && !r.offline_driven).sort((a, b) => (b.menu_conversion_pct ?? 0) - (a.menu_conversion_pct ?? 0))[0];
+    if (/\b(best conversion|convert|visibility vs)\b/.test(q)) {
+      const hit = [...rows].filter((r) => (r.item_impressions ?? r.item_views) >= 5 && !r.offline_driven).sort((a, b) => (b.impression_conversion_pct ?? b.menu_conversion_pct ?? 0) - (a.impression_conversion_pct ?? a.menu_conversion_pct ?? 0))[0];
       if (hit) {
         return metaResponse({
-          answer: `${hit.item_name} has the best menu conversion: ${convLabel(hit)} (${hit.quantity_sold} orders / ${hit.item_views} views). Net sales ${hit.net_sales?.toFixed?.(0) ?? hit.net_sales} SAR.`,
+          answer: `${hit.item_name} leads visibility-to-sales: ${convLabel(hit)} (${hit.quantity_sold} orders). Net sales ${hit.net_sales?.toFixed?.(0) ?? hit.net_sales} SAR. Behavior: ${hit.behavior_type || "—"}.`,
           confidence: "high",
           intent: "foodics",
-          metric: "conversion_rate",
+          metric: "impression_conversion_pct",
           periodHours,
         });
       }
     }
     if (wantPromote) {
-      const hit = rows.find((r) => r.status === "High interest, low orders")
-        || rows.sort((a, b) => b.item_views - a.item_views)[0];
+      const hit = rows.find((r) => r.behavior_type === BEHAVIOR.MENU_TRAP || r.behavior_type === BEHAVIOR.HIDDEN_OPPORTUNITY)
+        || rows.sort((a, b) => (b.item_impressions ?? b.item_views) - (a.item_impressions ?? a.item_views))[0];
       return metaResponse({
-        answer: `Promote "${hit.item_name}" this week: ${hit.item_views} menu views. ${convLabel(hit)}. ${hit.suggestion}`,
+        answer: `Promote "${hit.item_name}" this week: ${hit.item_impressions ?? hit.item_views} impressions. ${convLabel(hit)}. ${hit.suggestion}`,
         confidence: "high",
         intent: "foodics",
         metric: "conversion + item_views",
@@ -991,8 +1156,8 @@ function answerItem(data, q, periodHours, foodics) {
     const top = topItems[0];
     return metaResponse({
       answer: wantPromote
-        ? `Promote "${top.name}" — ${top.opens} menu views in this period. Pair with a visible add-on upsell.`
-        : `"${top.name}" is the most viewed item with ${top.opens} item opens.`,
+        ? `Promote "${top.name}" — ${top.impressions ?? top.opens} impressions in this period. Pair with a visible add-on upsell.`
+        : `"${top.name}" leads guest attention with ${top.impressions ?? top.opens} impressions (${top.opens} deep opens).`,
       confidence: "high",
       intent: "item",
       metric: "top_items (item_open)",
@@ -1036,6 +1201,105 @@ function answerAddon(data, periodHours) {
   });
 }
 
+function answerVisibilityBehavior(foodics, q, data, periodHours) {
+  const rows = foodics?.conversionRows || [];
+  const topItems = normalizeTopItems(data?.top_items || []);
+
+  const pick = (filter, sortFn) => {
+    const list = rows.filter(filter);
+    if (!list.length) return null;
+    return [...list].sort(sortFn)[0];
+  };
+
+  if (/\b(sell visually|visual seller|photo.*work|card.*sell|which item photo)\b/.test(q)) {
+    const hit =
+      pick(
+        (r) => r.behavior_type === BEHAVIOR.VISUAL_SELLER || (r.visual_efficiency_score ?? 0) >= 60,
+        (a, b) => (b.visual_efficiency_score ?? 0) - (a.visual_efficiency_score ?? 0),
+      ) ||
+      topItems.filter((t) => t.impressions >= 20 && t.opens / Math.max(t.impressions, 1) < 0.12).sort((a, b) => b.impressions - a.impressions)[0];
+    if (hit) {
+      const name = hit.item_name || hit.name;
+      const ve = hit.visual_efficiency_score;
+      const note = buildExportCommentary(hit) || hit.visual_efficiency_note || "The card builds confidence — guests order with little need for extra detail.";
+      return metaResponse({
+        answer: `${prefixSignal(hit.signal_strength, name)}: ${note}${ve != null ? ` Visual Efficiency ${ve}/100.` : ""}`,
+        confidence: hit.order_confidence === "High confidence" ? "high" : "medium",
+        intent: "visibility",
+        metric: "visual_efficiency_score",
+        periodHours,
+      });
+    }
+  }
+
+  if (/\b(need more explanation|more detail|guests investigate|deep interest)\b/.test(q)) {
+    const hit = pick(
+      (r) => r.behavior_type === BEHAVIOR.DISCOVERY_SELLER || ((r.item_modal_opens ?? 0) >= 10 && (r.deep_interest_rate ?? 0) >= 12),
+      (a, b) => (b.item_modal_opens ?? 0) - (a.item_modal_opens ?? 0),
+    );
+    if (hit) {
+      return metaResponse({
+        answer: `${hit.item_name} attracts deep interest (${hit.item_modal_opens ?? 0} opens / ${hit.item_impressions ?? hit.item_views} impressions) — guests investigate before ordering. ${hit.suggestion}`,
+        confidence: "medium",
+        intent: "visibility",
+        metric: "deep_interest_rate",
+        periodHours,
+      });
+    }
+  }
+
+  if (/\b(waiter.?driven|staff recommend|habitual|habit order)\b/.test(q)) {
+    const hit = pick(
+      (r) => [BEHAVIOR.WAITER_DRIVEN, BEHAVIOR.HABIT_ORDER].includes(r.behavior_type),
+      (a, b) => b.quantity_sold - a.quantity_sold,
+    );
+    if (hit) {
+      return metaResponse({
+        answer: `${hit.item_name} is ${hit.behavior_type}: ${hit.quantity_sold} orders with limited menu discovery (${hit.item_impressions ?? hit.item_views} impressions). Strong POS sales with low passive exposure often reflect staff recommendation or repeat guest habits — not a menu failure.`,
+        confidence: hit.order_confidence === "High confidence" ? "high" : "medium",
+        intent: "visibility",
+        metric: "behavior_type",
+        periodHours,
+      });
+    }
+  }
+
+  if (/\b(attract.*attention|attention.*don.?t sell|menu trap|don.?t sell)\b/.test(q)) {
+    const hit = pick(
+      (r) => r.behavior_type === BEHAVIOR.MENU_TRAP || ((r.item_impressions ?? r.item_views ?? 0) >= 20 && (r.impression_conversion_pct ?? 100) < 5),
+      (a, b) => (b.item_impressions ?? b.item_views) - (a.item_impressions ?? a.item_views),
+    );
+    if (hit) {
+      return metaResponse({
+        answer: `${prefixSignal(hit.signal_strength, hit.item_name)}: ${buildExportCommentary(hit) || hit.suggestion}`,
+        confidence: "medium",
+        intent: "visibility",
+        metric: "impression_conversion_pct",
+        periodHours,
+      });
+    }
+  }
+
+  if (rows.length) {
+    const top = [...rows].sort((a, b) => (b.visual_efficiency_score ?? 0) - (a.visual_efficiency_score ?? 0))[0];
+    return metaResponse({
+      answer: `Top Visual Efficiency: ${top.item_name} (${top.visual_efficiency_score ?? "—"}/100). ${top.visual_efficiency_note || top.suggestion}`,
+      confidence: "medium",
+      intent: "visibility",
+      metric: "visual_efficiency_score",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: "Import Foodics sales and collect more impressions to rank visual sellers, discovery items, and menu traps.",
+    confidence: "low",
+    intent: "visibility",
+    metric: null,
+    periodHours,
+  });
+}
+
 function answerSearch(data, periodHours) {
   const lostSearches = data.lost_searches || [];
   const topSearches = data.top_searches || [];
@@ -1047,7 +1311,7 @@ function answerSearch(data, periodHours) {
       .filter(Boolean)
       .join(", ");
     return metaResponse({
-      answer: `Yes — guests searched for ${terms} but did not open an item afterward. Add these items or fix naming/aliases.`,
+      answer: `Search friction detected — guests searched for ${terms} without strong results. Add Arabic/English synonyms in Menu Manager rather than duplicating items.`,
       confidence: "high",
       intent: "search",
       metric: "lost_searches",
@@ -1135,10 +1399,10 @@ function answerManagement(data, periodHours) {
     });
   }
   const bullets = [];
-  if (summary.working.length) bullets.push(`Working: ${summary.working.join(" ")}`);
-  if (summary.weak.length) bullets.push(`Weak: ${summary.weak.join(" ")}`);
-  if (summary.improve.length) bullets.push(`Improve today: ${summary.improve.join(" ")}`);
-  if (summary.monitor.length) bullets.push(`Monitor: ${summary.monitor.join(" ")}`);
+  if (summary.working.length) bullets.push(`What is working: ${summary.working.join(" ")}`);
+  if (summary.weak.length) bullets.push(`Needs attention: ${summary.weak.join(" ")}`);
+  if (summary.improve.length) bullets.push(`Do today: ${summary.improve.join(" ")}`);
+  if (summary.monitor.length) bullets.push(`Monitor next: ${summary.monitor.join(" ")}`);
   return metaResponse({
     answer: bullets.join(" | ") || "Performance is steady.",
     confidence: "high",
@@ -1151,7 +1415,7 @@ function answerManagement(data, periodHours) {
 function answerFoodics(foodics, q, periodHours) {
   if (!foodics?.hasImports) {
     return metaResponse({
-      answer: "No Foodics imports yet. Upload a weekly Sales by Product export in Sales Intelligence to unlock click-vs-order answers.",
+      answer: "No Foodics imports yet. Upload a weekly Sales by Product export in Sales Intelligence to unlock visibility vs sales answers.",
       confidence: "low",
       intent: "foodics",
       metric: "foodics_sales_items",
@@ -1211,7 +1475,7 @@ function answerImproveToday(data, periodHours) {
 }
 
 const FALLBACK_MSG =
-  "I don't have enough matching data for that exact question yet. Try asking about scans, peak time, categories, items, searches, add-ons, language, bounce rate, forecasts, revenue, or Foodics sales conversion.";
+  "I don't have enough matching data for that exact question yet. Try asking about scans, peak time, categories, visibility vs sales, visual sellers, searches, add-ons, forecasts, revenue, or Foodics sales.";
 
 function answerForecast(question, data, foodics, periodHours) {
   const intelligence = buildRestaurantIntelligence(data, foodics);
@@ -1241,7 +1505,7 @@ function answerRevenue(data, foodics, periodHours) {
     .sort((a, b) => b.revenue_per_view - a.revenue_per_view)[0];
   if (top) {
     return metaResponse({
-      answer: `Best revenue efficiency: "${top.item_name}" at ${top.revenue_per_view} SAR per menu view (${top.orders} orders from ${top.item_opens} views).`,
+      answer: `Best revenue efficiency: "${top.item_name}" at ${top.revenue_per_view} SAR per impression (${top.orders} orders from ${top.item_impressions ?? top.item_opens} visibility events). Visual Efficiency ${top.visual_efficiency_score ?? "—"}/100.`,
       confidence: "high",
       intent: "revenue",
       metric: "revenue_per_view",
@@ -1258,7 +1522,7 @@ function answerRevenue(data, foodics, periodHours) {
     });
   }
   return metaResponse({
-    answer: "Import Foodics sales data to compare menu views with actual revenue.",
+    answer: "Import Foodics sales data to compare impressions and deep interest with actual revenue.",
     confidence: "low",
     intent: "revenue",
     metric: null,
@@ -1316,6 +1580,7 @@ export function answerQuestion(question, data, options = {}) {
   const route = (fn) => enrichResponse(fn(), data, foodics, intent_debug);
 
   if (intent === "time_peak") return route(() => answerTimePeak(data, periodHours));
+  if (intent === "visibility") return route(() => answerVisibilityBehavior(foodics, question.toLowerCase(), data, periodHours));
   if (intent === "foodics") return route(() => answerFoodics(foodics, question.toLowerCase(), periodHours));
   if (intent === "management") return route(() => answerManagement(data, periodHours));
   if (intent === "search") return route(() => answerSearch(data, periodHours));

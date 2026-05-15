@@ -27,7 +27,10 @@ import {
 import { parseFoodicsFile, detectColumnMapping, rowsFromMappedData } from "./utils/foodicsParser";
 import { matchImportRows } from "./utils/foodicsMatcher";
 import { buildConversionRows, getConversionOpportunities } from "./utils/foodicsConversion";
+import { normalizeTopItems } from "./utils/topItemsNormalize";
+import { hasVisibilityTracking } from "./utils/intelligenceSanity";
 import { exportCSV } from "./utils/formatters";
+import { buildExportCommentary } from "./utils/itemBehaviorEngine";
 import "./styles/foodics-intelligence.css";
 
 const PERIOD_TYPES = [
@@ -102,7 +105,7 @@ export default function FoodicsIntelligence() {
       setMenuItems(items);
       setAddOns(addons);
       setManualMaps(maps);
-      if (rpc.data?.top_items) setAnalyticsItems(rpc.data.top_items);
+      if (rpc.data?.top_items) setAnalyticsItems(normalizeTopItems(rpc.data.top_items));
 
       const activeId = latest?.id;
       if (activeId) {
@@ -127,6 +130,11 @@ export default function FoodicsIntelligence() {
   }, [salesItems, analyticsItems]);
 
   const opportunities = useMemo(() => getConversionOpportunities(conversionRows), [conversionRows]);
+
+  const visibilityReady = useMemo(
+    () => hasVisibilityTracking(analyticsItems, null),
+    [analyticsItems],
+  );
 
   const importableRows = useMemo(
     () => previewRows.filter((r) => r.import_status !== "ignored"),
@@ -258,23 +266,31 @@ export default function FoodicsIntelligence() {
   const exportConversion = () => {
     const headers = [
       "Item",
-      "Menu Views",
+      "Impressions",
+      "Opens",
+      "Deep Interest %",
       "Orders",
-      "Conversion %",
+      "Visibility vs Sales %",
+      "Visual Efficiency",
+      "Behavior Type",
+      "Confidence",
       "Net Sales",
-      "Gross Sales",
-      "Revenue/View",
-      "Status",
+      "Revenue/Impression",
+      "AI Commentary",
     ];
     const rows = conversionRows.map((r) => [
       r.item_name,
-      r.item_views,
+      r.item_impressions ?? r.item_views,
+      r.item_modal_opens ?? 0,
+      r.modal_open_rate ?? r.deep_interest_rate ?? "",
       r.quantity_sold,
-      r.conversion_rate,
+      r.impression_conversion_pct ?? r.conversion_rate,
+      r.visual_efficiency_score ?? "",
+      r.behavior_type || "",
+      r.confidence_combined || r.signal_strength || "",
       r.net_sales,
-      r.gross_sales,
       r.revenue_per_view ?? "",
-      r.status,
+      buildExportCommentary(r),
     ]);
     exportCSV("nac-foodics-conversion.csv", headers, rows);
   };
@@ -528,32 +544,42 @@ export default function FoodicsIntelligence() {
       {/* Opportunities */}
       {conversionRows.length > 0 && (
         <>
+          {!visibilityReady && (
+            <p className="fi-visibility-note">
+              Collecting visibility signals — impression data will sharpen guest attention metrics. Until then, deep interest (opens) is used as a fallback.
+            </p>
+          )}
           <section className="fi-opps">
             <OpportunityCard
               icon={<Eye size={16} />}
-              title="High clicks, low orders"
-              rows={opportunities.highClicksLowOrders}
+              title="High attention, low sales"
+              rows={opportunities.highVisibilityLowOrders || opportunities.highClicksLowOrders}
             />
             <OpportunityCard
               icon={<ShoppingCart size={16} />}
-              title="High orders, low clicks"
-              rows={opportunities.highOrdersLowClicks}
+              title="Strong sales, low visibility"
+              rows={opportunities.highOrdersLowVisibility || opportunities.highOrdersLowClicks}
             />
             <OpportunityCard
               icon={<TrendingUp size={16} />}
-              title="Best conversion"
+              title="Visual sellers"
+              rows={opportunities.visualSellers}
+            />
+            <OpportunityCard
+              icon={<TrendingUp size={16} />}
+              title="Strong visibility efficiency"
               rows={opportunities.bestConversion}
             />
             <OpportunityCard
               icon={<AlertTriangle size={16} />}
-              title="Worst conversion"
+              title="Needs sales attention"
               rows={opportunities.worstConversion}
             />
           </section>
 
           <section className="fi-card">
             <motion.div className="fi-card-head" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <h2>Click vs order conversion</h2>
+              <h2>Visibility vs sales</h2>
               <button type="button" className="fi-secondary" onClick={exportConversion}>
                 <Download size={14} /> Export CSV
               </button>
@@ -563,26 +589,30 @@ export default function FoodicsIntelligence() {
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th>Views</th>
+                    <th>Impressions</th>
+                    <th>Opens</th>
+                    <th>Open rate</th>
                     <th>Orders</th>
-                    <th>Menu conv</th>
-                    <th>Offline</th>
+                    <th>Imp. conv</th>
+                    <th>Visual eff.</th>
+                    <th>Behavior</th>
+                    <th>Confidence</th>
                     <th>Net SAR</th>
-                    <th>Rev/view</th>
-                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {conversionRows.slice(0, 50).map((row) => (
                     <tr key={row.item_name}>
                       <td>{row.item_name}</td>
-                      <td>{row.item_views}</td>
+                      <td>{row.item_impressions ?? row.item_views ?? "—"}</td>
+                      <td>{row.item_modal_opens ?? "—"}</td>
+                      <td>{row.modal_open_rate != null ? `${row.modal_open_rate}%` : "—"}</td>
                       <td>{row.quantity_sold}</td>
-                      <td className="fi-conv-cell">{row.conversion_display || (row.menu_conversion_pct != null ? `${row.menu_conversion_pct}%` : "—")}</td>
-                      <td>{row.offline_ratio_pct > 0 ? `${row.offline_ratio_pct}%` : "—"}</td>
+                      <td className="fi-conv-cell">{row.conversion_display || (row.impression_conversion_pct != null ? `${row.impression_conversion_pct}%` : "—")}</td>
+                      <td>{row.visual_efficiency_score ?? row.attention_score ?? "—"}</td>
+                      <td><span className="fi-behavior-type">{row.behavior_type || "—"}</span></td>
+                      <td className="fi-confidence">{row.signal_strength || "—"}</td>
                       <td>{row.net_sales?.toFixed?.(0) ?? row.net_sales}</td>
-                      <td>{row.revenue_per_view ?? "—"}</td>
-                      <td><span className="fi-status">{row.status}</span></td>
                     </tr>
                   ))}
                 </tbody>

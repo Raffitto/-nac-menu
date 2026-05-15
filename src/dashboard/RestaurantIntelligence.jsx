@@ -163,6 +163,7 @@ export default function RestaurantIntelligence() {
             {intelligence?.validation && (
               <p className="ri-trust-bar">
                 Based on {intelligence.validation.events.toLocaleString()} menu events · {intelligence.validation.sessions.toLocaleString()} sessions
+                {intelligence.visibilityReady === false && " · collecting visibility signals"}
                 {intelligence.hasFoodics && " · Foodics linked"}
                 {intelligence.foodicsCompared && " · compared to previous import"}
                 {intelligence.generated_at && ` · updated ${new Date(intelligence.generated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
@@ -194,10 +195,10 @@ export default function RestaurantIntelligence() {
           {mgmtOpen && briefing && (
             <motion.div className="ri-mgmt-body" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
               <motion.div className="ri-mgmt-grid" initial={{ y: 8 }} animate={{ y: 0 }}>
-                <BriefBlock title="Strongest" items={briefing.strongest} icon={<Star size={14} />} tone="good" />
-                <BriefBlock title="Weakest" items={briefing.weakest} icon={<AlertTriangle size={14} />} tone="warn" />
+                <BriefBlock title="What is working" items={briefing.working || briefing.strongest} icon={<Star size={14} />} tone="good" />
+                <BriefBlock title="Needs attention" items={briefing.needsAttention || briefing.weakest} icon={<AlertTriangle size={14} />} tone="warn" />
                 <BriefBlock title="Do today" items={briefing.todayActions} icon={<Zap size={14} />} tone="action" />
-                <BriefBlock title="Focus" items={[briefing.focus]} icon={<TrendingUp size={14} />} tone="neutral" />
+                <BriefBlock title="Monitor next" items={briefing.monitor || [briefing.focus]} icon={<TrendingUp size={14} />} tone="neutral" />
               </motion.div>
             </motion.div>
           )}
@@ -216,9 +217,9 @@ export default function RestaurantIntelligence() {
 
       {/* Quick insights */}
       <div className="ri-cards">
-        <InsightStrip title="Elite performers" items={intelligence?.attention?.elite} field="item_name" />
-        <InsightStrip title="Menu traps" items={intelligence?.attention?.menuTraps} field="item_name" />
-        <InsightStrip title="Offline sellers" items={intelligence?.offlineSellers} field="item_name" />
+        <InsightStrip title="Visual & discovery sellers" items={intelligence?.funnels?.filter((f) => f.behavior_type === "Visual Seller" || f.behavior_type === "Discovery Seller").slice(0, 3)} field="item_name" />
+        <InsightStrip title="Needs attention" items={intelligence?.attention?.menuTraps} field="item_name" />
+        <InsightStrip title="Waiter-driven & hidden" items={intelligence?.offlineSellers} field="item_name" />
       </div>
 
       {/* Charts — minimal (skip heavy render until data ready) */}
@@ -264,7 +265,7 @@ export default function RestaurantIntelligence() {
           {deepOpen && (
             <motion.div className="ri-deep-body" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {conversionChart.length > 0 && (
-                <ChartCard title="Conversion ranking" note="Views vs Foodics orders">
+                <ChartCard title="Visibility vs sales" note="Impressions vs Foodics orders">
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={conversionChart} layout="vertical">
                       <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />

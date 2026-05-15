@@ -6,6 +6,10 @@ const SESSION_LOGGED_KEY = "nac_menu_qr_session_logged";
 const DEFAULT_BRANCH_ID =
   process.env.REACT_APP_NAC_BRANCH_ID || "khobar";
 
+export function getSessionId() {
+  return getOrCreateSessionId();
+}
+
 function getOrCreateSessionId() {
   try {
     let id = localStorage.getItem(SESSION_KEY);

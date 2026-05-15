@@ -21,7 +21,14 @@ import {
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
-import { buildInsightCards, buildManagementSummary, getBestAction, answerQuestion, buildFoodicsInsightCards } from "./utils/aiInsightEngine";
+import {
+  buildInsightCards,
+  buildManagementSummary,
+  getBestAction,
+  answerQuestion,
+  buildFoodicsInsightCards,
+  buildVisibilityInsightCards,
+} from "./utils/aiInsightEngine";
 import "./styles/ai-insights.css";
 
 const GROUP_ICONS = {
@@ -46,11 +53,11 @@ const TIME_FILTERS = [
 const SUGGESTED_QUESTIONS = [
   "What time did the most scans happen?",
   "What should I improve today?",
-  "Which menu item should I promote?",
-  "Which item has high clicks but low orders?",
+  "Which items sell visually?",
+  "Which items attract attention but don't sell?",
+  "Which items are waiter driven?",
   "Are guests searching for something we do not offer?",
-  "Which category is weak?",
-  "What is the bounce rate?",
+  "Which items need more explanation?",
   "What should I tell management?",
 ];
 
@@ -110,7 +117,8 @@ export default function AIInsights() {
   const insightCards = useMemo(() => {
     const base = buildInsightCards(data);
     const foodicsCards = buildFoodicsInsightCards(foodics);
-    return [...base, ...foodicsCards];
+    const visibilityCards = buildVisibilityInsightCards(data, foodics);
+    return [...base, ...foodicsCards, ...visibilityCards];
   }, [data, foodics]);
   const managementSummary = useMemo(() => buildManagementSummary(data), [data]);
   const bestAction = useMemo(() => getBestAction(data), [data]);
@@ -276,10 +284,10 @@ export default function AIInsights() {
               <div className="ai-mgmt-kpi"><span className="ai-mgmt-kpi-val">{managementSummary.returningRate}%</span><span className="ai-mgmt-kpi-label">Returning</span></div>
             </div>
             <div className="ai-management-grid">
-              <SummarySection title="What's Working" items={managementSummary.working} color="#4ecdc4" />
-              <SummarySection title="What's Weak" items={managementSummary.weak} color="#ff6b6b" />
-              <SummarySection title="What to Improve Today" items={managementSummary.improve} color="#f5a623" />
-              <SummarySection title="Monitor Next" items={managementSummary.monitor} color="#8b5cf6" />
+              <SummarySection title="What is working" items={managementSummary.working} color="#4ecdc4" />
+              <SummarySection title="Needs attention" items={managementSummary.needsAttention || managementSummary.weak} color="#ff6b6b" />
+              <SummarySection title="Do today" items={managementSummary.improve} color="#f5a623" />
+              <SummarySection title="Monitor next" items={managementSummary.monitor} color="#8b5cf6" />
             </div>
           </motion.div>
         )}

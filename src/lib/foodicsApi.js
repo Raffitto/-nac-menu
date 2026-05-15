@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
 import { buildConversionRows, getConversionOpportunities } from "../dashboard/utils/foodicsConversion";
+import { normalizeTopItems } from "../dashboard/utils/topItemsNormalize";
+import { hasVisibilityTracking } from "../dashboard/utils/intelligenceSanity";
 
 export async function getImportBatches(limit = 20) {
   const { data, error } = await supabase
@@ -160,9 +162,10 @@ export async function getFoodicsIntelligenceContext(analyticsData) {
       previousSales = await getBatchSalesItems(previousBatch.id);
     }
 
-    const topItems = analyticsData?.top_items || [];
+    const topItems = normalizeTopItems(analyticsData?.top_items || []);
     const conversionRows = buildConversionRows(salesItems, topItems, previousSales);
     const opportunities = getConversionOpportunities(conversionRows);
+    const visibilityReady = hasVisibilityTracking(topItems, analyticsData?.by_event_type);
 
     return {
       hasImports: true,
@@ -171,6 +174,8 @@ export async function getFoodicsIntelligenceContext(analyticsData) {
       salesItems,
       conversionRows,
       opportunities,
+      visibilityReady,
+      topItems,
     };
   } catch {
     return { hasImports: false, batches: [], conversionRows: [], opportunities: null };

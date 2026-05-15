@@ -5,7 +5,11 @@ import {
   validateInsightData,
   clampMetric,
   safeNumber,
+  hasVisibilityTracking,
+  buildTopItemVisibilityMap,
 } from "../utils/intelligenceSanity";
+import { normalizeTopItems } from "../utils/topItemsNormalize";
+import { classifyItemBehavior } from "../utils/itemBehaviorEngine";
 
 function grade(score) {
   if (score >= 80) return "A";
@@ -22,38 +26,54 @@ export function buildItemFunnels(biData, conversionRows = []) {
   const fromFoodics = conversionRows.map((row) =>
     sanitizeFunnelRow({
       item_name: row.item_name,
-      item_opens: row.item_views,
-      impressions: row.item_views,
+      item_impressions: row.item_impressions,
+      item_modal_opens: row.item_modal_opens,
+      impressions: row.item_impressions,
+      item_opens: row.item_modal_opens,
       orders: row.quantity_sold,
       net_sales: row.net_sales,
-      conversion_pct: row.menu_conversion_pct ?? row.conversion_rate,
+      conversion_pct: row.impression_conversion_pct ?? row.menu_conversion_pct,
       revenue_per_view: row.revenue_per_view,
       order_trend_pct: row.order_trend_pct,
       offline_driven: row.offline_driven,
       trust_label: row.trust_label,
       offline_ratio_pct: row.offline_ratio_pct,
+      deep_interest_rate: row.deep_interest_rate,
+      visible_duration_ms: row.visible_duration_ms,
+      impression_sessions: row.impression_sessions,
+      attention_score: row.attention_score,
     }),
   );
 
+  const visMap = buildTopItemVisibilityMap(topItems);
   const extras = topItems
     .filter((t) => !conversionRows.some((r) => r.item_name?.toLowerCase() === t.name?.toLowerCase()))
-    .map((t) =>
-      sanitizeFunnelRow({
+    .map((t) => {
+      const vis = visMap[t.name?.toLowerCase()] || { impressions: 0, opens: t.opens || 0, visibility: t.opens || 0 };
+      return sanitizeFunnelRow({
         item_name: t.name,
-        item_opens: t.opens,
-        impressions: t.opens,
+        item_impressions: vis.impressions,
+        item_modal_opens: vis.opens,
+        impressions: vis.impressions,
+        item_opens: vis.opens,
         orders: 0,
         net_sales: 0,
-      }),
-    );
+        impression_sessions: vis.impression_sessions,
+        visible_duration_ms: vis.visible_duration_ms,
+      });
+    });
 
   return [...fromFoodics, ...extras]
     .sort((a, b) => b.item_opens - a.item_opens)
     .slice(0, 40)
-    .map((f) => ({
-      ...f,
-      revenue_per_session: safePct(f.orders * (f.revenue_per_view || 0), totalSessions),
-    }));
+    .map((f) => {
+      const behavior = classifyItemBehavior(f);
+      return {
+        ...f,
+        ...behavior,
+        revenue_per_session: safePct(f.orders * (f.revenue_per_view || 0), totalSessions),
+      };
+    });
 }
 
 /** Attention efficiency: elite, hidden gems, traps, dead weight */
@@ -76,7 +96,12 @@ export function buildAttentionScores(funnels = []) {
   const elite = sorted.filter((s) => s.attention_score >= 70 && s.orders > 0).slice(0, 5);
   const hiddenGems = sorted.filter((s) => s.item_opens < 15 && s.orders >= 8).slice(0, 5);
   const menuTraps = sorted
-    .filter((s) => s.item_opens >= 25 && s.conversion_pct < 5 && !s.offline_driven)
+    .filter(
+      (s) =>
+        (s.impressions || s.item_opens) >= 25 &&
+        s.conversion_pct < 5 &&
+        !s.offline_driven,
+    )
     .slice(0, 5);
   const deadWeight = sorted.filter((s) => s.item_opens >= 15 && s.orders === 0).slice(0, 5);
 
@@ -96,7 +121,7 @@ export function buildFrictionInsights(biData, funnels = []) {
       insights.push({
         id: `friction-${f.item_name}`,
         title: `Guests hesitate on ${f.item_name}`,
-        explanation: `${f.item_opens} opens with ${f.conversion_pct}% menu conversion. Description or price may create resistance.`,
+        explanation: `${f.item_impressions ?? f.item_opens} impressions with ${f.conversion_pct}% visibility-to-sales. Description or price may create resistance.`,
         action: "Improve photo, shorten description, test price positioning, or staff recommendation.",
         severity: "high",
       });
@@ -118,9 +143,9 @@ export function buildFrictionInsights(biData, funnels = []) {
     if (q) {
       insights.push({
         id: `search-friction-${q}`,
-        title: `Repeated unmet search: "${q}"`,
+        title: `Search friction: "${q}"`,
         explanation: "Guests search but may not find a matching item.",
-        action: `Add or alias "${q}" in the menu.`,
+        action: "Guests repeatedly search for terms that do not return strong results. Add Arabic/English synonyms to improve search success.",
         severity: "medium",
       });
     }
@@ -252,9 +277,12 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null) {
   if (!biData) return null;
 
   const validation = validateInsightData(biData);
+  const topItems = normalizeTopItems(biData?.top_items || []);
   const conversionRows = foodicsContext?.conversionRows || [];
-  const funnels = buildItemFunnels(biData, conversionRows);
+  const funnels = buildItemFunnels({ ...biData, top_items: topItems }, conversionRows);
   const attention = buildAttentionScores(funnels);
+
+  const visibilityReady = hasVisibilityTracking(topItems, biData?.by_event_type);
 
   return {
     funnels,
@@ -266,9 +294,15 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null) {
     time: buildTimeIntelligence(biData),
     language: buildLanguageIntelligence(biData),
     addons: buildAddonIntelligence(biData),
+    visibilityReady,
+    visibilityMessage: visibilityReady
+      ? null
+      : "Collecting visibility signals — impression data will sharpen guest attention metrics. Deep interest (opens) is used until then.",
     kpis: {
       sessions: validation.sessions,
       events: validation.events,
+      impressions: Number(biData?.by_event_type?.item_impression) || 0,
+      modal_opens: Number(biData?.by_event_type?.item_open) || 0,
       qr: Number(biData.by_event_type?.qr_session_start) || 0,
       bounce_pct: safePct(Number(biData.bounce_sessions), validation.sessions),
       avg_time: Number(biData.avg_time_spent) || 0,
