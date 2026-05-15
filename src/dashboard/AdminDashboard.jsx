@@ -6,7 +6,6 @@ import {
   BarChart3,
   Store,
   Star,
-  Bell,
   Settings,
   RefreshCw,
   Activity,

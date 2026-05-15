@@ -90,13 +90,19 @@
   color: rgba(249, 249, 247, 0.4);
 }
 
-.fi-period-row input[type="date"] {
+.fi-period-row input[type="date"],
+.fi-period-row input[type="text"] {
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(249, 249, 247, 0.12);
   border-radius: 8px;
   color: #f9f9f7;
   padding: 6px 10px;
   font-size: 12px;
+}
+
+.fi-notes-label {
+  flex: 1 1 200px;
+  min-width: 180px;
 }
 
 .fi-pill {

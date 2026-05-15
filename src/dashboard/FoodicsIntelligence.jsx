@@ -293,6 +293,15 @@ export default function FoodicsIntelligence() {
             To
             <input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
           </label>
+          <label className="fi-notes-label">
+            Notes
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional — e.g. Saturday weekly close"
+            />
+          </label>
         </div>
 
         <motion.div
