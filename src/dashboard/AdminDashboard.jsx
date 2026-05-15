@@ -18,6 +18,7 @@ import {
   Timer,
   Zap,
   Sparkles,
+  Brain,
   FileSpreadsheet,
   TrendingUp,
   AlertTriangle,
@@ -38,6 +39,7 @@ import AnalyticsDashboard from "./AnalyticsDashboard";
 import MenuManager from "./MenuManager";
 import AIInsights from "./AIInsights";
 import FoodicsIntelligence from "./FoodicsIntelligence";
+import RestaurantIntelligence from "./RestaurantIntelligence";
 import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -54,6 +56,7 @@ const sidebar = [
   { icon: <Store size={18} />, label: "Branches" },
   { icon: <Star size={18} />, label: "Reviews" },
   { icon: <Sparkles size={18} />, label: "AI Insights" },
+  { icon: <Brain size={18} />, label: "Restaurant Intelligence" },
   { icon: <FileSpreadsheet size={18} />, label: "Sales Intelligence" },
   { icon: <Settings size={18} />, label: "Settings" },
 ];
@@ -216,7 +219,7 @@ export default function AdminDashboard({ onBack }) {
     <div
       className="admin-shell"
       style={
-        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "sales-intelligence"
+        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence"
           ? { overflow: "auto", minHeight: "100vh" }
           : undefined
       }
@@ -233,6 +236,7 @@ export default function AdminDashboard({ onBack }) {
                 (adminView === "analytics" && item.label === "Analytics") ||
                 (adminView === "menu-manager" && item.label === "Menu Manager") ||
                 (adminView === "ai-insights" && item.label === "AI Insights") ||
+                (adminView === "restaurant-intelligence" && item.label === "Restaurant Intelligence") ||
                 (adminView === "sales-intelligence" && item.label === "Sales Intelligence");
               return (
                 <motion.button
@@ -246,6 +250,7 @@ export default function AdminDashboard({ onBack }) {
                     else if (item.label === "Analytics") setAdminView("analytics");
                     else if (item.label === "Menu Manager") setAdminView("menu-manager");
                     else if (item.label === "AI Insights") setAdminView("ai-insights");
+                    else if (item.label === "Restaurant Intelligence") setAdminView("restaurant-intelligence");
                     else if (item.label === "Sales Intelligence") setAdminView("sales-intelligence");
                   }}
                 >
@@ -262,7 +267,7 @@ export default function AdminDashboard({ onBack }) {
       <main
         className="admin-content"
         style={
-          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "sales-intelligence"
+          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence"
             ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
             : undefined
         }
@@ -273,6 +278,8 @@ export default function AdminDashboard({ onBack }) {
           <MenuManager />
         ) : adminView === "ai-insights" ? (
           <AIInsights />
+        ) : adminView === "restaurant-intelligence" ? (
+          <RestaurantIntelligence />
         ) : adminView === "sales-intelligence" ? (
           <FoodicsIntelligence />
         ) : (

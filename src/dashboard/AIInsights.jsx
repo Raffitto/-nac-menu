@@ -324,11 +324,17 @@ export default function AIInsights() {
                 <ConfidenceMeter level={answer.confidence} />
               </div>
               <p className="ai-answer-text">{displayedAnswer}<span className="ai-cursor" /></p>
+              {(answer.trustPhrase || answer.dataContext) && (
+                <p className="ai-answer-trust">
+                  {answer.trustPhrase && <span>{answer.trustPhrase}.</span>}
+                  {answer.dataContext && <span className="ai-answer-data">{answer.dataContext}</span>}
+                </p>
+              )}
               {(answer.intent || answer.metric || answer.period) && (
                 <motion.div className="ai-answer-meta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-                  {answer.intent && <span>Intent: {answer.intent.replace(/_/g, " ")}</span>}
-                  {answer.metric && <span>Metric: {answer.metric}</span>}
+                  {answer.confidence && <span>Confidence: {answer.confidence}</span>}
                   {answer.period && <span>Period: {answer.period}</span>}
+                  {answer.metric && <span>Source: {answer.metric}</span>}
                 </motion.div>
               )}
             </motion.div>
@@ -357,8 +363,8 @@ export default function AIInsights() {
         </div>
         <p className="ai-wc-body">
           {totalSessions > 50
-            ? `Tracking ${totalEvents.toLocaleString()} events across ${totalSessions} sessions. Insights are based on the selected time range — switch between Today, 7D, 30D to compare trends manually.`
-            : "Menu OS is still learning guest behavior. More accurate comparisons will appear after more sessions are collected."
+            ? `Based on ${totalEvents.toLocaleString()} menu events across ${totalSessions.toLocaleString()} sessions. Switch Today / 7D / 30D to compare periods.${foodics?.previousBatch ? " Foodics trends compare against your previous import." : ""}`
+            : "Early signal — more accurate comparisons will appear after more sessions are collected."
           }
         </p>
       </motion.div>

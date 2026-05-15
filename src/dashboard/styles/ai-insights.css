@@ -275,6 +275,17 @@
   line-height: 1.7;
   margin: 0;
 }
+.ai-answer-trust {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: rgba(249, 249, 247, 0.45);
+  line-height: 1.5;
+}
+.ai-answer-data {
+  display: block;
+  margin-top: 4px;
+  color: rgba(215, 188, 138, 0.7);
+}
 .ai-answer-meta {
   display: flex;
   flex-wrap: wrap;

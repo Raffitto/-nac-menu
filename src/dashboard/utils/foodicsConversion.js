@@ -1,22 +1,29 @@
-function pct(num, den) {
-  if (!den || den <= 0) return 0;
-  return Math.round((num / den) * 1000) / 10;
-}
-
-function trendPct(current, previous) {
-  if (previous == null || previous === 0) return null;
-  return Math.round(((current - previous) / previous) * 1000) / 10;
-}
+import {
+  computeConversionMetrics,
+  trendPct,
+} from "./intelligenceSanity";
 
 export function classifyConversion(row) {
   const views = Number(row.item_views) || 0;
   const orders = Number(row.quantity_sold) || 0;
-  const rate = Number(row.conversion_rate) || 0;
+  const rate = Number(row.menu_conversion_pct ?? row.conversion_rate) || 0;
+  const offlineRatio = Number(row.offline_ratio_pct) || 0;
 
   if (views === 0 && orders > 0) {
     return {
-      status: "Offline seller / menu visibility opportunity",
+      status: "Offline-driven seller",
       suggestion: "Item sells well offline. Make it more visible in the digital menu.",
+    };
+  }
+  if (orders > views && views > 0) {
+    const label =
+      offlineRatio >= 50
+        ? "Strong waiter-driven demand"
+        : "Habit order behavior";
+    return {
+      status: label,
+      suggestion:
+        "Orders exceed menu opens — likely waiter-driven, repeat guests, or habitual orders. Increase digital visibility.",
     };
   }
   if (views > 0 && orders === 0) {
@@ -27,39 +34,36 @@ export function classifyConversion(row) {
   }
   if (views >= 20 && rate < 5) {
     return {
-      status: "High Interest, Low Orders",
+      status: "High interest, low orders",
       suggestion: "Improve photo, description, price positioning, or staff recommendation.",
     };
   }
   if (views < 10 && orders >= 15) {
     return {
-      status: "Low Interest, High Orders",
+      status: "Low visibility, high orders",
       suggestion: "Item sells well offline. Feature it higher in the menu and category hero slots.",
     };
   }
   if (rate >= 12) {
     return {
-      status: "Strong Converter",
+      status: "Strong converter",
       suggestion: "Keep visibility and consider pairing with add-ons or combos.",
     };
   }
   if (views >= 15 && rate >= 5 && rate < 12) {
     return {
-      status: "Hidden Opportunity",
+      status: "Hidden opportunity",
       suggestion: "Solid conversion with room to grow — test featured placement.",
     };
   }
   return {
-    status: "Menu Problem",
+    status: "Review presentation",
     suggestion: "Review menu presentation and operational alignment for this item.",
   };
 }
 
 /**
  * Merge Foodics sales with menu analytics item opens.
- * @param {Array} salesItems - foodics_sales_items for batch
- * @param {Array} topItems - { name, opens } from get_bi_dashboard
- * @param {Array} [previousSales] - prior batch aggregated by name
  */
 export function buildConversionRows(salesItems = [], topItems = [], previousSales = []) {
   const viewsByName = {};
@@ -94,7 +98,6 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
     byItem[key].gross_sales += Number(s.gross_sales) || 0;
   });
 
-  // Items with views but no Foodics sales
   Object.entries(viewsByName).forEach(([key, views]) => {
     if (!byItem[key] && views > 0) {
       const top = topItems.find((t) => t.name.toLowerCase() === key);
@@ -112,46 +115,49 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
 
   return Object.values(byItem)
     .map((row) => {
-      const conversion_rate = pct(row.quantity_sold, row.item_views);
-      const revenue_per_view =
-        row.item_views > 0 ? Math.round((row.net_sales / row.item_views) * 100) / 100 : null;
-      const prevOrders = prevByName[row.item_name.toLowerCase()] ?? null;
-      const order_trend_pct = trendPct(row.quantity_sold, prevOrders);
-      const classified = classifyConversion({ ...row, conversion_rate });
+      const metrics = computeConversionMetrics({
+        views: row.item_views,
+        orders: row.quantity_sold,
+        impressions: row.item_views,
+        netSales: row.net_sales,
+      });
+      const order_trend_pct = trendPct(row.quantity_sold, prevByName[row.item_name.toLowerCase()] ?? null);
+      const classified = classifyConversion({ ...row, ...metrics });
       return {
         ...row,
-        conversion_rate,
-        revenue_per_view,
+        ...metrics,
         order_trend_pct,
         status: classified.status,
         suggestion: classified.suggestion,
+        conversion_display: metrics.trust_label || `${metrics.menu_conversion_pct ?? 0}%`,
       };
     })
     .sort((a, b) => (b.item_views || 0) - (a.item_views || 0));
 }
 
 export function getConversionOpportunities(rows) {
-  const sorted = [...rows];
+  const menuRows = [...rows];
+
   return {
-    highClicksLowOrders: sorted
-      .filter((r) => r.item_views >= 10 && r.conversion_rate < 5)
+    highClicksLowOrders: menuRows
+      .filter((r) => r.item_views >= 10 && (r.menu_conversion_pct ?? r.conversion_rate ?? 0) < 5 && !r.offline_driven)
       .sort((a, b) => b.item_views - a.item_views)
       .slice(0, 5),
-    highOrdersLowClicks: sorted
-      .filter((r) => r.item_views < 10 && r.quantity_sold >= 5)
+    highOrdersLowClicks: menuRows
+      .filter((r) => r.offline_driven || (r.item_views < 10 && r.quantity_sold >= 5))
       .sort((a, b) => b.quantity_sold - a.quantity_sold)
       .slice(0, 5),
-    bestRevenuePerClick: sorted
+    bestRevenuePerClick: menuRows
       .filter((r) => r.revenue_per_view != null && r.item_views >= 5)
       .sort((a, b) => b.revenue_per_view - a.revenue_per_view)
       .slice(0, 5),
-    bestConversion: sorted
-      .filter((r) => r.item_views >= 5)
-      .sort((a, b) => b.conversion_rate - a.conversion_rate)
+    bestConversion: menuRows
+      .filter((r) => r.item_views >= 5 && !r.offline_driven)
+      .sort((a, b) => (b.menu_conversion_pct ?? 0) - (a.menu_conversion_pct ?? 0))
       .slice(0, 5),
-    worstConversion: sorted
-      .filter((r) => r.item_views >= 10)
-      .sort((a, b) => a.conversion_rate - b.conversion_rate)
+    worstConversion: menuRows
+      .filter((r) => r.item_views >= 10 && !r.offline_driven)
+      .sort((a, b) => (a.menu_conversion_pct ?? 0) - (b.menu_conversion_pct ?? 0))
       .slice(0, 5),
   };
 }

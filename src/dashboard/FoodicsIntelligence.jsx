@@ -400,6 +400,7 @@ export default function FoodicsIntelligence() {
                     <th>Net sales</th>
                     <th>Gross sales</th>
                     <th>Match</th>
+                    <th>Type</th>
                     <th>Confidence</th>
                     <th>Status</th>
                   </tr>
@@ -412,6 +413,7 @@ export default function FoodicsIntelligence() {
                       <td>{row.net_sales ?? "—"}</td>
                       <td>{row.gross_sales ?? "—"}</td>
                       <td>{row.matched_menu_item_name || "—"}</td>
+                      <td><span className="fi-match-type">{row.match_type || "—"}</span></td>
                       <td>{row.match_confidence ? `${Math.round(row.match_confidence * 100)}%` : "—"}</td>
                       <td>
                         <span className={`fi-status-pill ${row.import_status}`}>
@@ -563,7 +565,8 @@ export default function FoodicsIntelligence() {
                     <th>Item</th>
                     <th>Views</th>
                     <th>Orders</th>
-                    <th>Conv %</th>
+                    <th>Menu conv</th>
+                    <th>Offline</th>
                     <th>Net SAR</th>
                     <th>Rev/view</th>
                     <th>Status</th>
@@ -575,7 +578,8 @@ export default function FoodicsIntelligence() {
                       <td>{row.item_name}</td>
                       <td>{row.item_views}</td>
                       <td>{row.quantity_sold}</td>
-                      <td>{row.conversion_rate}%</td>
+                      <td className="fi-conv-cell">{row.conversion_display || (row.menu_conversion_pct != null ? `${row.menu_conversion_pct}%` : "—")}</td>
+                      <td>{row.offline_ratio_pct > 0 ? `${row.offline_ratio_pct}%` : "—"}</td>
                       <td>{row.net_sales?.toFixed?.(0) ?? row.net_sales}</td>
                       <td>{row.revenue_per_view ?? "—"}</td>
                       <td><span className="fi-status">{row.status}</span></td>
@@ -600,7 +604,7 @@ function OpportunityCard({ icon, title, rows }) {
         {rows.map((r) => (
           <li key={r.item_name}>
             <strong>{r.item_name}</strong>
-            <span>{r.item_views} views · {r.quantity_sold} orders · {r.conversion_rate}%</span>
+            <span>{r.item_views} views · {r.quantity_sold} orders · {r.conversion_display || `${r.menu_conversion_pct ?? r.conversion_rate}%`}</span>
           </li>
         ))}
       </ul>

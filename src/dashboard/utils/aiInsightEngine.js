@@ -1,4 +1,7 @@
 import { formatDuration } from "./formatters";
+import { buildRestaurantIntelligence } from "../engines/analyticsEngine";
+import { answerForecastQuestion } from "../engines/forecastingEngine";
+import { computeTrustConfidence, buildDataContext, clampMetric } from "./intelligenceSanity";
 
 const CATEGORY_LABELS = {
   breakfast: "Breakfast",
@@ -411,7 +414,7 @@ export function buildFoodicsInsightCards(foodics) {
       id: "foodics-hi-lo",
       group: "Revenue Opportunities",
       title: `${hiLo.item_name}: high menu interest, weaker orders`,
-      explanation: `${hiLo.item_views} menu views but only ${hiLo.quantity_sold} Foodics orders (${hiLo.conversion_rate}% conversion).`,
+      explanation: `${hiLo.item_views} menu views and ${hiLo.quantity_sold} Foodics orders. ${hiLo.conversion_display || `${hiLo.menu_conversion_pct ?? hiLo.conversion_rate}% menu conversion`}.`,
       action: hiLo.suggestion,
       whyMatters: "Digital attention is not converting to POS sales for this item.",
       impact: { revenue: "high", ux: "medium", urgency: "This Week" },
@@ -443,7 +446,7 @@ export function buildFoodicsInsightCards(foodics) {
       id: "foodics-best-conv",
       group: "Guest Behavior",
       title: `Strong converter: ${bestConv.item_name}`,
-      explanation: `${bestConv.conversion_rate}% click-to-order conversion with ${bestConv.net_sales?.toFixed?.(0) ?? bestConv.net_sales} SAR net sales.`,
+      explanation: `${bestConv.menu_conversion_pct ?? bestConv.conversion_rate}% menu conversion with ${bestConv.net_sales?.toFixed?.(0) ?? bestConv.net_sales} SAR net sales.`,
       action: "Feature this item and replicate its presentation on weaker items.",
       whyMatters: "Proven path from browse to purchase.",
       impact: { revenue: "medium", ux: "low", urgency: "Monitor" },
@@ -593,6 +596,61 @@ function periodLabel(hours) {
   return "All time";
 }
 
+const INTENT_SOURCE_METRICS = {
+  time_peak: ["by_hour", "strongest_hour", "qr_session_start"],
+  foodics: ["foodics_sales", "item_open", "conversion_rows"],
+  management: ["executive_summary", "kpis"],
+  search: ["lost_searches", "top_searches"],
+  language: ["by_language", "lang_behavior"],
+  addon: ["add_on_click", "item_open"],
+  session: ["bounce_sessions", "total_sessions"],
+  category: ["top_categories", "dead_zones"],
+  item: ["top_items", "foodics_conversion"],
+  improve_today: ["priority_rules"],
+  forecast: ["forecastingEngine"],
+  revenue: ["revenue_per_view", "foodics"],
+  comparison: ["order_trend_pct", "foodics_batches"],
+  fallback: [],
+};
+
+const ROUTING_CONFLICTS = {
+  time_peak: /\b(category|foodics|search|language|add-?on|revenue|forecast)\b/,
+  category: /\b(peak hour|what time|foodics|forecast)\b/,
+  foodics: /\b(peak hour|bounce rate|language)\b/,
+  language: /\b(foodics|category|peak hour)\b/,
+  search: /\b(foodics|peak hour)\b/,
+  management: /\b(peak hour|which item|forecast)\b/,
+  forecast: /\b(bounce|category weak)\b/,
+  revenue: /\b(peak hour|bounce)\b/,
+};
+
+function enrichResponse(response, data, foodics, intentDebug) {
+  const events = Number(data?.total_events) || 0;
+  const sessions = Number(data?.total_sessions) || 0;
+  const trust = computeTrustConfidence({
+    baseLevel: response.confidence,
+    sampleSize: events,
+    hasHistory: Boolean(foodics?.previousBatch),
+    hasFoodics: Boolean(foodics?.hasImports),
+  });
+  const dataContext = buildDataContext({
+    events,
+    sessions,
+    period: response.period,
+    foodicsBatch: Boolean(foodics?.previousBatch),
+  });
+  if (process.env.NODE_ENV === "development" && intentDebug) {
+    // eslint-disable-next-line no-console
+    console.debug("[AI Insights routing]", intentDebug);
+  }
+  return {
+    ...response,
+    confidence: trust.level,
+    trustPhrase: trust.phrase,
+    dataContext,
+  };
+}
+
 function metaResponse({ answer, confidence, intent, metric, periodHours = 0 }) {
   return {
     answer,
@@ -601,6 +659,12 @@ function metaResponse({ answer, confidence, intent, metric, periodHours = 0 }) {
     metric,
     period: periodLabel(periodHours),
   };
+}
+
+function convLabel(row) {
+  if (row.trust_label && row.offline_driven) return row.trust_label;
+  const pct = clampMetric(row.menu_conversion_pct ?? row.conversion_rate, 0, 100);
+  return `${pct}% menu conversion`;
 }
 
 function resolvePeakHour(data) {
@@ -733,20 +797,72 @@ const INTENT_RULES = [
       return s;
     },
   },
+  {
+    id: "forecast",
+    score(q) {
+      let s = 0;
+      if (/\b(forecast|predict|next week|trending|declining|likely to)\b/.test(q)) s += 10;
+      if (/\b(trend|projection|outlook)\b/.test(q)) s += 7;
+      return s;
+    },
+  },
+  {
+    id: "revenue",
+    score(q) {
+      let s = 0;
+      if (/\b(revenue|sales|sar|profit|money)\b/.test(q)) s += 9;
+      if (/\b(per view|revenue per)\b/.test(q)) s += 8;
+      return s;
+    },
+  },
+  {
+    id: "comparison",
+    score(q) {
+      let s = 0;
+      if (/\b(compare|vs|versus|changed|change from|what changed)\b/.test(q)) s += 9;
+      if (/\b(difference|delta|period over)\b/.test(q)) s += 7;
+      return s;
+    },
+  },
 ];
 
 function detectIntent(question) {
   const q = question.toLowerCase().trim();
-  const scored = INTENT_RULES.map((rule) => ({ id: rule.id, score: rule.score(q) }))
+  const scored = INTENT_RULES.map((rule) => {
+    let score = rule.score(q);
+    const conflict = ROUTING_CONFLICTS[rule.id];
+    if (conflict?.test(q)) score -= 6;
+    return { id: rule.id, score: Math.max(0, score) };
+  })
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  if (!scored.length || scored[0].score < 5) return { intent: "fallback", score: 0 };
-  if (scored.length > 1 && scored[0].score - scored[1].score <= 1) {
-    const timeFirst = scored.find((s) => s.id === "time_peak");
-    if (timeFirst && timeFirst.score >= scored[0].score - 1) return { intent: "time_peak", score: timeFirst.score };
+  const MIN_SCORE = 5;
+  let intent = "fallback";
+  let score = 0;
+
+  if (scored.length && scored[0].score >= MIN_SCORE) {
+    intent = scored[0].id;
+    score = scored[0].score;
+    if (scored.length > 1 && scored[0].score - scored[1].score <= 1) {
+      const timeFirst = scored.find((s) => s.id === "time_peak");
+      if (timeFirst && /\b(hour|time|peak|scan)\b/.test(q) && timeFirst.score >= scored[0].score - 1) {
+        intent = "time_peak";
+        score = timeFirst.score;
+      }
+    }
   }
-  return { intent: scored[0].id, score: scored[0].score };
+
+  const routingConfidence = score >= 10 ? "high" : score >= 6 ? "medium" : "low";
+  const intent_debug = {
+    detected_intent: intent,
+    matched_keywords: scored.slice(0, 3).map((s) => s.id),
+    confidence: routingConfidence,
+    source_metrics: INTENT_SOURCE_METRICS[intent] || [],
+    scores: scored.slice(0, 5),
+  };
+
+  return { intent, score, intent_debug };
 }
 
 function answerTimePeak(data, periodHours) {
@@ -826,9 +942,9 @@ function answerItem(data, q, periodHours, foodics) {
   if (foodics?.hasImports && foodics.conversionRows?.length) {
     const rows = foodics.conversionRows;
     if (/\b(high click|low order|clicks.*order)\b/.test(q)) {
-      const hit = rows.find((r) => r.item_views >= 10 && r.conversion_rate < 5) || rows[0];
+      const hit = rows.find((r) => r.item_views >= 10 && (r.menu_conversion_pct ?? r.conversion_rate) < 5 && !r.offline_driven) || rows[0];
       return metaResponse({
-        answer: `${hit.item_name} has high menu interest but weaker sales conversion: ${hit.item_views} menu views and ${hit.quantity_sold} orders (${hit.conversion_rate}% conversion). ${hit.suggestion}`,
+        answer: `${hit.item_name} has high menu interest but weaker sales conversion: ${hit.item_views} menu views and ${hit.quantity_sold} orders. ${convLabel(hit)}. ${hit.suggestion}`,
         confidence: "high",
         intent: "foodics",
         metric: "item_open vs quantity_sold",
@@ -847,10 +963,10 @@ function answerItem(data, q, periodHours, foodics) {
       });
     }
     if (/\b(best conversion|convert)\b/.test(q)) {
-      const hit = [...rows].filter((r) => r.item_views >= 5).sort((a, b) => b.conversion_rate - a.conversion_rate)[0];
+      const hit = [...rows].filter((r) => r.item_views >= 5 && !r.offline_driven).sort((a, b) => (b.menu_conversion_pct ?? 0) - (a.menu_conversion_pct ?? 0))[0];
       if (hit) {
         return metaResponse({
-          answer: `${hit.item_name} has the best conversion: ${hit.conversion_rate}% (${hit.quantity_sold} orders / ${hit.item_views} views). Net sales ${hit.net_sales?.toFixed?.(0) ?? hit.net_sales} SAR.`,
+          answer: `${hit.item_name} has the best menu conversion: ${convLabel(hit)} (${hit.quantity_sold} orders / ${hit.item_views} views). Net sales ${hit.net_sales?.toFixed?.(0) ?? hit.net_sales} SAR.`,
           confidence: "high",
           intent: "foodics",
           metric: "conversion_rate",
@@ -859,10 +975,10 @@ function answerItem(data, q, periodHours, foodics) {
       }
     }
     if (wantPromote) {
-      const hit = rows.find((r) => r.status === "High Interest, Low Orders")
+      const hit = rows.find((r) => r.status === "High interest, low orders")
         || rows.sort((a, b) => b.item_views - a.item_views)[0];
       return metaResponse({
-        answer: `Promote "${hit.item_name}" this week: ${hit.item_views} menu views and ${hit.conversion_rate}% conversion. ${hit.suggestion}`,
+        answer: `Promote "${hit.item_name}" this week: ${hit.item_views} menu views. ${convLabel(hit)}. ${hit.suggestion}`,
         confidence: "high",
         intent: "foodics",
         metric: "conversion + item_views",
@@ -1095,7 +1211,86 @@ function answerImproveToday(data, periodHours) {
 }
 
 const FALLBACK_MSG =
-  "I don't have enough matching data for that exact question yet. Try asking about scans, peak time, categories, items, searches, add-ons, language, bounce rate, or Foodics sales conversion.";
+  "I don't have enough matching data for that exact question yet. Try asking about scans, peak time, categories, items, searches, add-ons, language, bounce rate, forecasts, revenue, or Foodics sales conversion.";
+
+function answerForecast(question, data, foodics, periodHours) {
+  const intelligence = buildRestaurantIntelligence(data, foodics);
+  const fc = answerForecastQuestion(question, data, intelligence, foodics);
+  if (fc?.answer) {
+    return metaResponse({
+      answer: fc.answer,
+      confidence: fc.confidence || "medium",
+      intent: "forecast",
+      metric: "forecastingEngine",
+      periodHours,
+    });
+  }
+  return metaResponse({
+    answer: "Not enough trend data for a reliable forecast yet. Import Foodics sales or collect more sessions.",
+    confidence: "low",
+    intent: "forecast",
+    metric: null,
+    periodHours,
+  });
+}
+
+function answerRevenue(data, foodics, periodHours) {
+  const intelligence = buildRestaurantIntelligence(data, foodics);
+  const top = [...(intelligence?.funnels || [])]
+    .filter((f) => f.revenue_per_view > 0)
+    .sort((a, b) => b.revenue_per_view - a.revenue_per_view)[0];
+  if (top) {
+    return metaResponse({
+      answer: `Best revenue efficiency: "${top.item_name}" at ${top.revenue_per_view} SAR per menu view (${top.orders} orders from ${top.item_opens} views).`,
+      confidence: "high",
+      intent: "revenue",
+      metric: "revenue_per_view",
+      periodHours,
+    });
+  }
+  if (foodics?.hasImports) {
+    return metaResponse({
+      answer: "Foodics is linked — map more menu items to unlock revenue-per-view rankings.",
+      confidence: "medium",
+      intent: "revenue",
+      metric: "foodics",
+      periodHours,
+    });
+  }
+  return metaResponse({
+    answer: "Import Foodics sales data to compare menu views with actual revenue.",
+    confidence: "low",
+    intent: "revenue",
+    metric: null,
+    periodHours,
+  });
+}
+
+function answerComparison(data, foodics, periodHours) {
+  const intelligence = buildRestaurantIntelligence(data, foodics);
+  const withTrend = [...(intelligence?.funnels || [])].filter((f) => f.order_trend_pct != null);
+  const up = withTrend.find((f) => f.order_trend_pct > 0);
+  const down = withTrend.find((f) => f.order_trend_pct < 0);
+  if (up || down) {
+    const parts = [];
+    if (up) parts.push(`"${up.item_name}" orders up ${up.order_trend_pct}% vs prior Foodics batch`);
+    if (down) parts.push(`"${down.item_name}" orders down ${Math.abs(down.order_trend_pct)}%`);
+    return metaResponse({
+      answer: `${parts.join(". ")}.`,
+      confidence: "medium",
+      intent: "comparison",
+      metric: "order_trend_pct",
+      periodHours,
+    });
+  }
+  return metaResponse({
+    answer: "Switch the time filter (Today / 7D / 30D) to compare menu periods. Foodics trends need two import batches.",
+    confidence: "low",
+    intent: "comparison",
+    metric: null,
+    periodHours,
+  });
+}
 
 export function answerQuestion(question, data, options = {}) {
   const periodHours = Number(options.periodHours) || 0;
@@ -1116,37 +1311,42 @@ export function answerQuestion(question, data, options = {}) {
   }
 
   const totalSessions = Number(data.total_sessions) || 0;
-  const { intent } = detectIntent(question);
+  const { intent, intent_debug } = detectIntent(question);
 
-  if (intent === "time_peak") return answerTimePeak(data, periodHours);
-  if (intent === "foodics") return answerFoodics(foodics, question.toLowerCase(), periodHours);
-  if (intent === "management") return answerManagement(data, periodHours);
-  if (intent === "search") return answerSearch(data, periodHours);
-  if (intent === "language") return answerLanguage(data, periodHours);
-  if (intent === "addon") return answerAddon(data, periodHours);
-  if (intent === "session") return answerSession(data, periodHours);
-  if (intent === "category") return answerCategory(data, question.toLowerCase(), periodHours);
-  if (intent === "item") return answerItem(data, question.toLowerCase(), periodHours, foodics);
-  if (intent === "improve_today") return answerImproveToday(data, periodHours);
+  const route = (fn) => enrichResponse(fn(), data, foodics, intent_debug);
+
+  if (intent === "time_peak") return route(() => answerTimePeak(data, periodHours));
+  if (intent === "foodics") return route(() => answerFoodics(foodics, question.toLowerCase(), periodHours));
+  if (intent === "management") return route(() => answerManagement(data, periodHours));
+  if (intent === "search") return route(() => answerSearch(data, periodHours));
+  if (intent === "language") return route(() => answerLanguage(data, periodHours));
+  if (intent === "addon") return route(() => answerAddon(data, periodHours));
+  if (intent === "session") return route(() => answerSession(data, periodHours));
+  if (intent === "category") return route(() => answerCategory(data, question.toLowerCase(), periodHours));
+  if (intent === "item") return route(() => answerItem(data, question.toLowerCase(), periodHours, foodics));
+  if (intent === "improve_today") return route(() => answerImproveToday(data, periodHours));
+  if (intent === "forecast") return route(() => answerForecast(question, data, foodics, periodHours));
+  if (intent === "revenue") return route(() => answerRevenue(data, foodics, periodHours));
+  if (intent === "comparison") return route(() => answerComparison(data, foodics, periodHours));
 
   if (intent === "fallback") {
     if (totalSessions < 5) {
-      return metaResponse({
+      return route(() => metaResponse({
         answer: "Not enough session data yet. Collect more guest sessions first.",
         confidence: "low",
         intent: "fallback",
         metric: "total_sessions",
         periodHours,
-      });
+      }));
     }
-    return metaResponse({
+    return route(() => metaResponse({
       answer: FALLBACK_MSG,
       confidence: "low",
       intent: "fallback",
       metric: null,
       periodHours,
-    });
+    }));
   }
 
-  return metaResponse({ answer: FALLBACK_MSG, confidence: "low", intent: "fallback", metric: null, periodHours });
+  return route(() => metaResponse({ answer: FALLBACK_MSG, confidence: "low", intent: "fallback", metric: null, periodHours }));
 }

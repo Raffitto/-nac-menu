@@ -184,6 +184,19 @@
   font-size: 12px;
 }
 
+.fi-match-type {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: rgba(215, 188, 138, 0.8);
+}
+
+.fi-conv-cell {
+  max-width: 140px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .fi-table-wrap {
   overflow-x: auto;
   margin-bottom: 12px;
@@ -427,8 +440,16 @@
 @media (max-width: 768px) {
   .fi-page {
     padding: 20px 16px 40px;
+    overflow-x: hidden;
   }
   .fi-opps {
     grid-template-columns: 1fr;
+  }
+  .fi-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fi-conv-table {
+    min-width: 520px;
   }
 }

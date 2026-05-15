@@ -1,5 +1,23 @@
 const STOP_WORDS = new Set(["the", "a", "an", "with", "and", "or", "of", "sar", "pcs", "pc"]);
 
+/** Never auto-import below this confidence */
+const AUTO_MATCH_MIN = 0.85;
+/** Suggest match for manual review */
+const REVIEW_MIN = 0.72;
+
+function normalizeMatchType(type) {
+  const map = {
+    manual_map: "manual",
+    token_similarity: "token",
+    includes: "fuzzy",
+    alias_ambiguous: "alias",
+    alias_needs_review: "alias",
+    unmatched: "unmatched",
+    ignored: "ignored",
+  };
+  return map[type] || type;
+}
+
 /** Report / summary rows — never import */
 const IGNORED_PRODUCTS = new Set(
   [
@@ -140,15 +158,16 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps) {
     const addon = findAddOnByName(addOns, manual.menu_item_name_en);
     const target = menuItem || addon;
     if (target) {
+      const conf = Number(manual.confidence) || 1;
       return {
         matched: {
           id: manual.menu_item_id || target.id || null,
           name_en: manual.menu_item_name_en,
           kind: menuItem ? "item" : "addon",
         },
-        confidence: Number(manual.confidence) || 1,
-        matchType: "manual_map",
-        needsReview: false,
+        confidence: conf,
+        matchType: "manual",
+        needsReview: conf < AUTO_MATCH_MIN,
       };
     }
   }
@@ -176,11 +195,12 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps) {
     }
 
     if (menuNorm.includes(normalized) || normalized.includes(menuNorm)) {
-      const score = 0.88;
+      const lenRatio = Math.min(menuNorm.length, normalized.length) / Math.max(menuNorm.length, normalized.length);
+      const score = lenRatio >= 0.85 ? 0.9 : 0.78;
       if (score > bestScore) {
         bestScore = score;
         best = item;
-        matchType = "includes";
+        matchType = "fuzzy";
       }
       continue;
     }
@@ -189,20 +209,21 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps) {
     if (sim > bestScore) {
       bestScore = sim;
       best = item;
-      matchType = "token_similarity";
+      matchType = "token";
     }
   }
 
-  if (best && bestScore >= 0.55) {
+  if (best && bestScore >= REVIEW_MIN) {
+    const confidence = Math.round(bestScore * 100) / 100;
     return {
       matched: { id: best.id, name_en: best.name_en, kind: best.kind },
-      confidence: Math.round(bestScore * 100) / 100,
-      matchType,
-      needsReview: bestScore < 0.75,
+      confidence,
+      matchType: normalizeMatchType(matchType),
+      needsReview: confidence < AUTO_MATCH_MIN,
     };
   }
 
-  return { matched: null, confidence: 0, matchType: "unmatched", needsReview: false };
+  return { matched: null, confidence: 0, matchType: "unmatched", needsReview: true };
 }
 
 /**
@@ -291,7 +312,7 @@ export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
         matched_menu_item_id: result.matched.id || null,
         matched_menu_item_name: result.matched.name_en,
         match_confidence: result.confidence,
-        match_type: result.matchType,
+        match_type: normalizeMatchType(result.matchType),
         needs_review: false,
         import_status: "matched",
       };
@@ -304,7 +325,7 @@ export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
         matched_menu_item_id: result.matched.id || null,
         matched_menu_item_name: result.matched.name_en,
         match_confidence: result.confidence,
-        match_type: result.matchType,
+        match_type: normalizeMatchType(result.matchType),
         needs_review: true,
         import_status: "needs_review",
       };
@@ -316,9 +337,9 @@ export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
       matched_menu_item_id: null,
       matched_menu_item_name: null,
       match_confidence: 0,
-      match_type: "ignored",
-      needs_review: false,
-      import_status: "ignored",
+      match_type: "unmatched",
+      needs_review: true,
+      import_status: "needs_review",
     };
   });
 }
