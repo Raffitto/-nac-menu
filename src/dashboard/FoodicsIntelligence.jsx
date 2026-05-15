@@ -233,7 +233,7 @@ export default function FoodicsIntelligence() {
     await saveNameMapping({
       raw_name: rawName,
       menu_item_name_en: menuItemName,
-      menu_item_id: item?.id || addon?.id,
+      menu_item_id: item?.id || null,
       confidence: 1,
     });
     const maps = await getNameMappings();
@@ -243,7 +243,7 @@ export default function FoodicsIntelligence() {
         r.raw_item_name === rawName
           ? {
               ...r,
-              matched_menu_item_id: item?.id || addon?.id || null,
+              matched_menu_item_id: item?.id ? String(item.id) : addon?.id ? String(addon.id) : null,
               matched_menu_item_name: menuItemName,
               match_confidence: 1,
               match_type: "manual_map",

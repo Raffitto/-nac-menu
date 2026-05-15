@@ -31,7 +31,7 @@ create table if not exists public.foodics_sales_items (
   period_end date not null,
   raw_item_name text not null,
   normalized_item_name text,
-  matched_menu_item_id uuid references public.menu_items (id) on delete set null,
+  matched_menu_item_id text,
   matched_menu_item_name text,
   category text,
   quantity_sold numeric not null default 0,

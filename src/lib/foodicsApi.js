@@ -60,6 +60,7 @@ export async function saveNameMapping({ raw_name, menu_item_name_en, menu_item_i
         raw_name,
         normalized_name,
         menu_item_name_en,
+        // menu_item_name_map.menu_item_id FK is menu_items only — add-on mappings use name only
         menu_item_id: menu_item_id || null,
         confidence,
       },
@@ -69,6 +70,28 @@ export async function saveNameMapping({ raw_name, menu_item_name_en, menu_item_i
     .single();
   if (error) throw error;
   return data;
+}
+
+function toSalesItemPayload(row, batch, meta) {
+  const matchedName = (row.matched_menu_item_name || row.raw_item_name || "").trim() || null;
+  const rawId = row.matched_menu_item_id;
+  const matchedId = rawId != null && String(rawId).trim() !== "" ? String(rawId).trim() : null;
+
+  return {
+    batch_id: batch.id,
+    branch_id: meta.branch_id || "khobar",
+    period_start: meta.period_start,
+    period_end: meta.period_end,
+    raw_item_name: row.raw_item_name,
+    normalized_item_name: row.normalized_item_name,
+    matched_menu_item_name: matchedName,
+    matched_menu_item_id: matchedId,
+    category: row.category || null,
+    quantity_sold: row.quantity_sold || 0,
+    net_sales: row.net_sales,
+    gross_sales: row.gross_sales,
+    discount: row.discount,
+  };
 }
 
 export async function createImportBatch(meta, salesRows) {
@@ -87,21 +110,9 @@ export async function createImportBatch(meta, salesRows) {
     .single();
   if (batchErr) throw batchErr;
 
-  const payload = salesRows.map((row) => ({
-    batch_id: batch.id,
-    branch_id: meta.branch_id || "khobar",
-    period_start: meta.period_start,
-    period_end: meta.period_end,
-    raw_item_name: row.raw_item_name,
-    normalized_item_name: row.normalized_item_name,
-    matched_menu_item_id: row.matched_menu_item_id || null,
-    matched_menu_item_name: row.matched_menu_item_name || null,
-    category: row.category || null,
-    quantity_sold: row.quantity_sold || 0,
-    net_sales: row.net_sales,
-    gross_sales: row.gross_sales,
-    discount: row.discount,
-  }));
+  const payload = salesRows
+    .map((row) => toSalesItemPayload(row, batch, meta))
+    .filter((row) => row.matched_menu_item_name);
 
   if (payload.length) {
     const { error: itemsErr } = await supabase.from("foodics_sales_items").insert(payload);
