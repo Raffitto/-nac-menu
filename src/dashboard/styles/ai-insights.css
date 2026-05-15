@@ -275,6 +275,23 @@
   line-height: 1.7;
   margin: 0;
 }
+.ai-answer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(249, 249, 247, 0.08);
+}
+.ai-answer-meta span {
+  font-size: 10px;
+  color: rgba(249, 249, 247, 0.4);
+  background: rgba(249, 249, 247, 0.04);
+  border: 1px solid rgba(249, 249, 247, 0.08);
+  border-radius: 6px;
+  padding: 4px 8px;
+  text-transform: capitalize;
+}
 .ai-cursor {
   display: inline-block;
   width: 2px;

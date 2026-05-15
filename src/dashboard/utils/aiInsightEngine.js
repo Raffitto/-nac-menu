@@ -396,6 +396,67 @@ export function buildInsightCards(data) {
   return cards;
 }
 
+/** Insight cards from latest Foodics import + menu click comparison */
+export function buildFoodicsInsightCards(foodics) {
+  if (!foodics?.hasImports || !foodics.conversionRows?.length) return [];
+
+  const cards = [];
+  const opps = foodics.opportunities || {};
+  const hiLo = opps.highClicksLowOrders?.[0];
+  const loHi = opps.highOrdersLowClicks?.[0];
+  const bestConv = opps.bestConversion?.[0];
+
+  if (hiLo) {
+    cards.push({
+      id: "foodics-hi-lo",
+      group: "Revenue Opportunities",
+      title: `${hiLo.item_name}: high menu interest, weaker orders`,
+      explanation: `${hiLo.item_views} menu views but only ${hiLo.quantity_sold} Foodics orders (${hiLo.conversion_rate}% conversion).`,
+      action: hiLo.suggestion,
+      whyMatters: "Digital attention is not converting to POS sales for this item.",
+      impact: { revenue: "high", ux: "medium", urgency: "This Week" },
+      confidence: hiLo.item_views > 30 ? "high" : "medium",
+      severity: "high",
+      source: "Foodics + item_open",
+      metric: `${hiLo.quantity_sold} orders / ${hiLo.item_views} views`,
+    });
+  }
+
+  if (loHi) {
+    cards.push({
+      id: "foodics-lo-hi",
+      group: "Revenue Opportunities",
+      title: `${loHi.item_name}: sells well but low menu visibility`,
+      explanation: `${loHi.quantity_sold} orders from Foodics but only ${loHi.item_views} menu views.`,
+      action: loHi.suggestion,
+      whyMatters: "Offline demand exists — digital menu is under-promoting a winner.",
+      impact: { revenue: "high", ux: "high", urgency: "This Week" },
+      confidence: "medium",
+      severity: "medium",
+      source: "Foodics + item_open",
+      metric: `${loHi.item_views} views / ${loHi.quantity_sold} orders`,
+    });
+  }
+
+  if (bestConv) {
+    cards.push({
+      id: "foodics-best-conv",
+      group: "Guest Behavior",
+      title: `Strong converter: ${bestConv.item_name}`,
+      explanation: `${bestConv.conversion_rate}% click-to-order conversion with ${bestConv.net_sales?.toFixed?.(0) ?? bestConv.net_sales} SAR net sales.`,
+      action: "Feature this item and replicate its presentation on weaker items.",
+      whyMatters: "Proven path from browse to purchase.",
+      impact: { revenue: "medium", ux: "low", urgency: "Monitor" },
+      confidence: "high",
+      severity: "low",
+      source: "conversion_rate",
+      metric: `${bestConv.conversion_rate}% conversion`,
+    });
+  }
+
+  return cards;
+}
+
 export function buildManagementSummary(data) {
   if (!data) return null;
 
@@ -517,118 +578,575 @@ export function getBestAction(data) {
   };
 }
 
-export function answerQuestion(question, data) {
-  if (!data || !question) return { answer: "Not enough data yet. Collect more sessions before making a confident decision.", confidence: "low" };
+function formatHour12(hour) {
+  const h = Number(hour);
+  if (Number.isNaN(h)) return null;
+  const period = h >= 12 ? "PM" : "AM";
+  const display = h % 12 || 12;
+  return `${display} ${period}`;
+}
 
-  const q = question.toLowerCase().trim();
+function periodLabel(hours) {
+  if (hours === 24) return "Today";
+  if (hours === 168) return "Last 7 days";
+  if (hours === 720) return "Last 30 days";
+  return "All time";
+}
+
+function metaResponse({ answer, confidence, intent, metric, periodHours = 0 }) {
+  return {
+    answer,
+    confidence,
+    intent,
+    metric,
+    period: periodLabel(periodHours),
+  };
+}
+
+function resolvePeakHour(data) {
+  const byHour = data.by_hour || [];
   const byType = data.by_event_type || {};
-  const totalSessions = Number(data.total_sessions) || 0;
+  const qrScans = Number(byType.qr_session_start) || 0;
+
+  if (byHour.length > 0) {
+    let best = byHour[0];
+    for (const row of byHour) {
+      if (Number(row.count) > Number(best.count)) best = row;
+    }
+    const d = best.hour ? new Date(best.hour) : null;
+    const label = d && !Number.isNaN(d.getTime())
+      ? d.toLocaleString(undefined, { hour: "numeric", hour12: true })
+      : formatHour12(data.strongest_hour) || "peak hour";
+    return { label, count: Number(best.count), metric: "by_hour (menu activity)" };
+  }
+
+  if (data.strongest_hour != null && data.strongest_hour !== "") {
+    const label = formatHour12(data.strongest_hour);
+    return {
+      label: label || String(data.strongest_hour),
+      count: qrScans || Number(data.total_events) || 0,
+      metric: "strongest_hour + qr_session_start",
+    };
+  }
+
+  return null;
+}
+
+const INTENT_RULES = [
+  {
+    id: "time_peak",
+    score(q) {
+      let s = 0;
+      if (/\b(what time|which hour|busiest hour|peak hour|peak time|busiest time)\b/.test(q)) s += 12;
+      if (/\b(when do|when are|when is).*(scan|qr|guest|busy)\b/.test(q)) s += 10;
+      if (/\b(most scans|most qr|qr.*most|scan.*most)\b/.test(q)) s += 10;
+      if (/\b(hour|time|morning|afternoon|evening|night|pm|am)\b/.test(q)) s += 4;
+      if (/\b(busy|busiest|peak)\b/.test(q)) s += 3;
+      return s;
+    },
+  },
+  {
+    id: "foodics",
+    score(q) {
+      let s = 0;
+      if (/\b(foodics|pos sales|sold offline|orders vs|conversion rate|revenue per)\b/.test(q)) s += 12;
+      if (/\b(high clicks.*low orders|low clicks.*high orders|menu views.*orders)\b/.test(q)) s += 11;
+      if (/\b(selling well|not getting clicks|wasting menu|best conversion|worst conversion)\b/.test(q)) s += 8;
+      if (/\b(this week sales|foodics show)\b/.test(q)) s += 9;
+      return s;
+    },
+  },
+  {
+    id: "management",
+    score(q) {
+      let s = 0;
+      if (/\b(management|executive|meeting|tell management|30 second|brief)\b/.test(q)) s += 10;
+      if (/\b(summary|report)\b/.test(q) && !/\b(search)\b/.test(q)) s += 6;
+      return s;
+    },
+  },
+  {
+    id: "search",
+    score(q) {
+      let s = 0;
+      if (/\b(search|searched|searching|looking for)\b/.test(q)) s += 8;
+      if (/\b(not offer|don't have|do not have|missing item|unmet)\b/.test(q)) s += 9;
+      if (/\b(lost search|no results)\b/.test(q)) s += 10;
+      return s;
+    },
+  },
+  {
+    id: "language",
+    score(q) {
+      let s = 0;
+      if (/\b(arabic|english|language|bilingual|rtl)\b/.test(q)) s += 9;
+      if (/\b(lang)\b/.test(q) && !/\b(slang)\b/.test(q)) s += 4;
+      return s;
+    },
+  },
+  {
+    id: "addon",
+    score(q) {
+      let s = 0;
+      if (/\b(add-?on|upsell|pairing)\b/.test(q)) s += 9;
+      if (/\b(conversion).*(add|upsell)\b/.test(q)) s += 7;
+      return s;
+    },
+  },
+  {
+    id: "session",
+    score(q) {
+      let s = 0;
+      if (/\b(bounce|bouncing)\b/.test(q)) s += 10;
+      if (/\b(session|engaged|engagement|spend time|time spent|duration)\b/.test(q)) s += 7;
+      if (/\b(power user|deep session|casual)\b/.test(q)) s += 8;
+      return s;
+    },
+  },
+  {
+    id: "category",
+    score(q) {
+      let s = 0;
+      if (/\b(category|categories|section|dead zone)\b/.test(q)) s += 8;
+      if (/\b(strongest|weakest|weak|worst|dead)\b/.test(q) && /\b(category|section)\b/.test(q)) s += 10;
+      if (/\b(which category)\b/.test(q)) s += 9;
+      return s;
+    },
+  },
+  {
+    id: "item",
+    score(q) {
+      let s = 0;
+      if (/\b(menu item|dish|item)\b/.test(q)) s += 5;
+      if (/\b(promote|promotion|highlight|push)\b/.test(q)) s += 8;
+      if (/\b(most viewed|top item|popular item|high click)\b/.test(q)) s += 9;
+      if (/\b(viewed|views|opens)\b/.test(q) && /\b(item)\b/.test(q)) s += 6;
+      return s;
+    },
+  },
+  {
+    id: "improve_today",
+    score(q) {
+      let s = 0;
+      if (/\b(what should i improve|improve today|what to do today|priority today)\b/.test(q)) s += 10;
+      if (/\b(improve)\b/.test(q) && /\b(today)\b/.test(q)) s += 8;
+      return s;
+    },
+  },
+];
+
+function detectIntent(question) {
+  const q = question.toLowerCase().trim();
+  const scored = INTENT_RULES.map((rule) => ({ id: rule.id, score: rule.score(q) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scored.length || scored[0].score < 5) return { intent: "fallback", score: 0 };
+  if (scored.length > 1 && scored[0].score - scored[1].score <= 1) {
+    const timeFirst = scored.find((s) => s.id === "time_peak");
+    if (timeFirst && timeFirst.score >= scored[0].score - 1) return { intent: "time_peak", score: timeFirst.score };
+  }
+  return { intent: scored[0].id, score: scored[0].score };
+}
+
+function answerTimePeak(data, periodHours) {
+  const peak = resolvePeakHour(data);
+  const byType = data.by_event_type || {};
+  const qrScans = Number(byType.qr_session_start) || 0;
+  if (!peak) {
+    return metaResponse({
+      answer: "Not enough hourly activity data yet. Collect more sessions across different times of day.",
+      confidence: "low",
+      intent: "time_peak",
+      metric: "by_hour / strongest_hour",
+      periodHours,
+    });
+  }
+  const scanNote = qrScans > 0 ? ` There were ${qrScans} QR session starts in this period.` : "";
+  return metaResponse({
+    answer: `Most menu activity happened around ${peak.label} with ${peak.count} events in that hour bucket.${scanNote}`,
+    confidence: peak.count > 10 ? "high" : "medium",
+    intent: "time_peak",
+    metric: peak.metric,
+    periodHours,
+  });
+}
+
+function answerCategory(data, q, periodHours) {
+  const topCategories = data.top_categories || [];
+  const deadZones = data.dead_zones || [];
+  const wantWeak = /\b(weak|weakest|worst|dead|problem)\b/.test(q);
+  const wantStrong = /\b(strong|strongest|best|top)\b/.test(q);
+
+  if (wantWeak && deadZones.length > 0) {
+    const worst = deadZones.reduce((a, b) => {
+      const aR = Number(a.engagement_ratio ?? a.item_opens / (a.opens || 1)) || 100;
+      const bR = Number(b.engagement_ratio ?? b.item_opens / (b.opens || 1)) || 100;
+      return aR < bR ? a : b;
+    });
+    const label = catName(worst.category_id || worst.category || worst.id);
+    const eng = Number(worst.engagement_ratio) || pct(Number(worst.item_opens || 0), Number(worst.opens || 0));
+    if (label) {
+      return metaResponse({
+        answer: `${label} is the weakest category at ${eng}% item engagement (${worst.item_opens || 0} item views / ${worst.opens} category opens). Guests enter but rarely click items.`,
+        confidence: "high",
+        intent: "category",
+        metric: "dead_zones.engagement_ratio",
+        periodHours,
+      });
+    }
+  }
+
+  if (topCategories.length > 0) {
+    const pick = wantWeak && !wantStrong ? topCategories[topCategories.length - 1] : topCategories[0];
+    const label = catName(pick.id) || "Unmapped Category";
+    const role = wantWeak && !wantStrong ? "weakest" : "strongest";
+    return metaResponse({
+      answer: `${label} is the ${role} category with ${pick.opens} category opens in this period.`,
+      confidence: "high",
+      intent: "category",
+      metric: "top_categories",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: "Not enough category open data yet to rank categories.",
+    confidence: "low",
+    intent: "category",
+    metric: "top_categories",
+    periodHours,
+  });
+}
+
+function answerItem(data, q, periodHours, foodics) {
+  const topItems = data.top_items || [];
+  const wantPromote = /\b(promote|push|highlight)\b/.test(q);
+
+  if (foodics?.hasImports && foodics.conversionRows?.length) {
+    const rows = foodics.conversionRows;
+    if (/\b(high click|low order|clicks.*order)\b/.test(q)) {
+      const hit = rows.find((r) => r.item_views >= 10 && r.conversion_rate < 5) || rows[0];
+      return metaResponse({
+        answer: `${hit.item_name} has high menu interest but weaker sales conversion: ${hit.item_views} menu views and ${hit.quantity_sold} orders (${hit.conversion_rate}% conversion). ${hit.suggestion}`,
+        confidence: "high",
+        intent: "foodics",
+        metric: "item_open vs quantity_sold",
+        periodHours,
+      });
+    }
+    if (/\b(low click|high order|selling well)\b/.test(q)) {
+      const hit = rows.find((r) => r.item_views < 10 && r.quantity_sold >= 5)
+        || [...rows].sort((a, b) => b.quantity_sold - a.quantity_sold)[0];
+      return metaResponse({
+        answer: `${hit.item_name} sells well in Foodics (${hit.quantity_sold} orders) but only ${hit.item_views} menu views. ${hit.suggestion}`,
+        confidence: "high",
+        intent: "foodics",
+        metric: "quantity_sold vs item_open",
+        periodHours,
+      });
+    }
+    if (/\b(best conversion|convert)\b/.test(q)) {
+      const hit = [...rows].filter((r) => r.item_views >= 5).sort((a, b) => b.conversion_rate - a.conversion_rate)[0];
+      if (hit) {
+        return metaResponse({
+          answer: `${hit.item_name} has the best conversion: ${hit.conversion_rate}% (${hit.quantity_sold} orders / ${hit.item_views} views). Net sales ${hit.net_sales?.toFixed?.(0) ?? hit.net_sales} SAR.`,
+          confidence: "high",
+          intent: "foodics",
+          metric: "conversion_rate",
+          periodHours,
+        });
+      }
+    }
+    if (wantPromote) {
+      const hit = rows.find((r) => r.status === "High Interest, Low Orders")
+        || rows.sort((a, b) => b.item_views - a.item_views)[0];
+      return metaResponse({
+        answer: `Promote "${hit.item_name}" this week: ${hit.item_views} menu views and ${hit.conversion_rate}% conversion. ${hit.suggestion}`,
+        confidence: "high",
+        intent: "foodics",
+        metric: "conversion + item_views",
+        periodHours,
+      });
+    }
+  }
+
+  if (topItems.length > 0) {
+    const top = topItems[0];
+    return metaResponse({
+      answer: wantPromote
+        ? `Promote "${top.name}" — ${top.opens} menu views in this period. Pair with a visible add-on upsell.`
+        : `"${top.name}" is the most viewed item with ${top.opens} item opens.`,
+      confidence: "high",
+      intent: "item",
+      metric: "top_items (item_open)",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: "Not enough item view data yet.",
+    confidence: "low",
+    intent: "item",
+    metric: "top_items",
+    periodHours,
+  });
+}
+
+function answerAddon(data, periodHours) {
+  const byType = data.by_event_type || {};
   const itemOpens = Number(byType.item_open) || 0;
   const addOnClicks = Number(byType.add_on_click) || 0;
-  const topCategories = data.top_categories || [];
-  const topItems = data.top_items || [];
-  const topAddonPairs = data.top_addon_pairs || [];
-  const lostSearches = data.lost_searches || [];
-  const deadZones = data.dead_zones || [];
-  const bounceSessions = Number(data.bounce_sessions) || 0;
-  const langBehavior = data.lang_behavior || {};
-  const byLang = data.by_language || {};
   const addOnRate = itemOpens > 0 ? ((addOnClicks / itemOpens) * 100).toFixed(1) : "0";
+  const topAddonPairs = data.top_addon_pairs || [];
+
+  if (topAddonPairs.length > 0) {
+    const best = topAddonPairs[0];
+    return metaResponse({
+      answer: `Best add-on pairing: "${best.addon}" on "${best.item}" (${best.clicks || best.count || 0} clicks). Overall add-on conversion is ${addOnRate}% (${addOnClicks} / ${itemOpens} item views).`,
+      confidence: "high",
+      intent: "addon",
+      metric: "add_on_click / item_open",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: `Add-on conversion is ${addOnRate}% (${addOnClicks} clicks / ${itemOpens} item views). ${Number(addOnRate) < 12 ? "This is low — add preview images and place upsells higher." : "Healthy — test new premium add-ons."}`,
+    confidence: itemOpens > 20 ? "medium" : "low",
+    intent: "addon",
+    metric: "add_on_click / item_open",
+    periodHours,
+  });
+}
+
+function answerSearch(data, periodHours) {
+  const lostSearches = data.lost_searches || [];
+  const topSearches = data.top_searches || [];
+
+  if (lostSearches.length > 0) {
+    const terms = lostSearches
+      .slice(0, 3)
+      .map((s) => `"${s.query || s.term || s.q}" (${s.sessions || s.count || 0}×)`)
+      .filter(Boolean)
+      .join(", ");
+    return metaResponse({
+      answer: `Yes — guests searched for ${terms} but did not open an item afterward. Add these items or fix naming/aliases.`,
+      confidence: "high",
+      intent: "search",
+      metric: "lost_searches",
+      periodHours,
+    });
+  }
+
+  if (topSearches.length > 0) {
+    const top = topSearches[0];
+    return metaResponse({
+      answer: `Top search: "${top.query}" (${top.count}×). No lost searches detected — menu naming matches demand.`,
+      confidence: "medium",
+      intent: "search",
+      metric: "top_searches",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: "No search data in this period yet.",
+    confidence: "low",
+    intent: "search",
+    metric: "search_used",
+    periodHours,
+  });
+}
+
+function answerLanguage(data, periodHours) {
+  const byLang = data.by_language || {};
+  const langBehavior = data.lang_behavior || {};
+  const enCount = Number(byLang.en) || 0;
+  const arCount = Number(byLang.ar) || 0;
+  const total = enCount + arCount;
+  if (total <= 0) {
+    return metaResponse({
+      answer: "Not enough language data in this period.",
+      confidence: "low",
+      intent: "language",
+      metric: "by_language",
+      periodHours,
+    });
+  }
+  const arPct = pct(arCount, total);
+  const dominant = arPct > 50 ? "Arabic" : "English";
+  const enAvg = Number(langBehavior.en?.avg_events) || 0;
+  const arAvg = Number(langBehavior.ar?.avg_events) || 0;
+  const moreEngaged = arAvg > enAvg ? "Arabic" : "English";
+  return metaResponse({
+    answer: `${dominant} dominates at ${Math.max(arPct, 100 - arPct)}% of tracked events (${arCount} Arabic / ${enCount} English). ${moreEngaged} users explore more items per session — keep ${dominant} UX as priority.`,
+    confidence: total > 30 ? "high" : "medium",
+    intent: "language",
+    metric: "by_language + lang_behavior",
+    periodHours,
+  });
+}
+
+function answerSession(data, periodHours) {
+  const totalSessions = Number(data.total_sessions) || 0;
+  const bounceSessions = Number(data.bounce_sessions) || 0;
   const bounceRate = totalSessions > 0 ? Math.round((bounceSessions / totalSessions) * 100) : 0;
+  const avgTime = Number(data.avg_time_spent) || 0;
+  const sq = data.session_quality || {};
+  const deep = Number(sq.deep) || 0;
+  const power = Number(sq.power) || 0;
+  const engagedPct = totalSessions > 0 ? pct(deep + power, totalSessions) : 0;
 
-  if (totalSessions < 5) {
-    return { answer: "Not enough data yet. Collect more sessions before making a confident decision.", confidence: "low" };
+  return metaResponse({
+    answer: `Bounce rate is ${bounceRate}% (${bounceSessions} / ${totalSessions} sessions). Average time on menu is ${formatDuration(avgTime)}. ${engagedPct}% of sessions are deep/power engaged.`,
+    confidence: totalSessions > 20 ? "high" : "medium",
+    intent: "session",
+    metric: "bounce_sessions + avg_time_spent + session_quality",
+    periodHours,
+  });
+}
+
+function answerManagement(data, periodHours) {
+  const summary = buildManagementSummary(data);
+  if (!summary) {
+    return metaResponse({
+      answer: "Not enough data for a management summary.",
+      confidence: "low",
+      intent: "management",
+      metric: "management_summary",
+      periodHours,
+    });
+  }
+  const bullets = [];
+  if (summary.working.length) bullets.push(`Working: ${summary.working.join(" ")}`);
+  if (summary.weak.length) bullets.push(`Weak: ${summary.weak.join(" ")}`);
+  if (summary.improve.length) bullets.push(`Improve today: ${summary.improve.join(" ")}`);
+  if (summary.monitor.length) bullets.push(`Monitor: ${summary.monitor.join(" ")}`);
+  return metaResponse({
+    answer: bullets.join(" | ") || "Performance is steady.",
+    confidence: "high",
+    intent: "management",
+    metric: "aggregated KPIs",
+    periodHours,
+  });
+}
+
+function answerFoodics(foodics, q, periodHours) {
+  if (!foodics?.hasImports) {
+    return metaResponse({
+      answer: "No Foodics imports yet. Upload a weekly Sales by Product export in Sales Intelligence to unlock click-vs-order answers.",
+      confidence: "low",
+      intent: "foodics",
+      metric: "foodics_sales_items",
+      periodHours,
+    });
   }
 
-  if (q.includes("improve") || q.includes("today") || q.includes("should i do")) {
-    const best = getBestAction(data);
-    if (best) return { answer: best.action + " " + best.reason, confidence: "high" };
+  const batch = foodics.latestBatch;
+  const periodNote = batch
+    ? ` Foodics period: ${batch.period_start} → ${batch.period_end}.`
+    : "";
+
+  if (/\b(foodics show|this week sales|sales this week)\b/.test(q)) {
+    const totalOrders = (foodics.salesItems || []).reduce((s, r) => s + (Number(r.quantity_sold) || 0), 0);
+    const totalNet = (foodics.salesItems || []).reduce((s, r) => s + (Number(r.net_sales) || 0), 0);
+    return metaResponse({
+      answer: `Latest Foodics import: ${totalOrders} items sold, ${totalNet.toFixed(0)} SAR net sales.${periodNote}`,
+      confidence: "high",
+      intent: "foodics",
+      metric: "foodics_sales_items",
+      periodHours,
+    });
   }
 
-  if (q.includes("promote") || q.includes("push") || q.includes("highlight")) {
-    if (topItems.length > 0) {
-      const top = topItems[0];
-      return { answer: `Promote "${top.name}" — it has ${top.opens} views and strong interest. Pair it with an add-on upsell to maximize revenue.`, confidence: "high" };
-    }
-    return { answer: "Not enough item data to recommend a promotion target.", confidence: "low" };
+  const rows = foodics.conversionRows || [];
+  if (!rows.length) {
+    return metaResponse({
+      answer: `Foodics import exists but no matched conversion rows yet. Review unmatched items in Sales Intelligence.${periodNote}`,
+      confidence: "medium",
+      intent: "foodics",
+      metric: "conversion_rows",
+      periodHours,
+    });
   }
 
-  if (q.includes("search") || q.includes("not offer") || q.includes("missing") || q.includes("looking for")) {
-    if (lostSearches.length > 0) {
-      const terms = lostSearches.slice(0, 3).map((s) => `"${s.query || s.term || s.q}"`).filter(Boolean).join(", ");
-      return { answer: `Yes. Guests searched for ${terms} but found nothing. Consider adding these items or fixing naming.`, confidence: "high" };
-    }
-    return { answer: "No unmet searches detected. Your menu naming matches guest expectations well.", confidence: "medium" };
-  }
+  return answerItem({ top_items: [] }, q, periodHours, foodics);
+}
 
-  if (q.includes("weak") || q.includes("worst") || q.includes("dead") || q.includes("problem")) {
-    if (deadZones.length > 0) {
-      const worst = deadZones[0];
-      const label = catName(worst.category || worst.id) || "a category";
-      const engPct = Number(worst.opens) > 0 ? pct(Number(worst.item_views || 0), Number(worst.opens)) : 0;
-      return { answer: `${label} is the weakest at ${engPct}% engagement. Guests open it but don't click items. Needs better visuals and a hero item.`, confidence: "high" };
-    }
-    if (topCategories.length > 1) {
-      const last = topCategories[topCategories.length - 1];
-      const label = catName(last.id) || "the least popular category";
-      return { answer: `${label} has the fewest opens at ${last.opens}. Consider promoting it or improving its position.`, confidence: "medium" };
-    }
-  }
-
-  if (q.includes("add-on") || q.includes("addon") || q.includes("upsell")) {
-    if (topAddonPairs.length > 0) {
-      const best = topAddonPairs[0];
-      return { answer: `Best add-on: "${best.addon}" on "${best.item}". Overall rate is ${addOnRate}%. ${Number(addOnRate) < 12 ? "This is low — improve add-on visibility with images." : "Healthy — maintain and test new pairings."}`, confidence: "high" };
-    }
-    return { answer: `Add-on conversion is ${addOnRate}%. ${Number(addOnRate) < 12 ? "Below average. Add preview images and better positioning." : "Performing well. Consider adding premium options."}`, confidence: "medium" };
-  }
-
-  if (q.includes("arabic") || q.includes("english") || q.includes("language") || q.includes("lang")) {
-    const enCount = Number(byLang.en) || 0;
-    const arCount = Number(byLang.ar) || 0;
-    const total = enCount + arCount;
-    if (total > 0) {
-      const arPct = pct(arCount, total);
-      const dominant = arPct > 50 ? "Arabic" : "English";
-      const enAvg = Number(langBehavior.en?.avg_events) || 0;
-      const arAvg = Number(langBehavior.ar?.avg_events) || 0;
-      const moreEngaged = arAvg > enAvg ? "Arabic" : "English";
-      return { answer: `${dominant} is used by ${Math.max(arPct, 100 - arPct)}% of guests. ${moreEngaged} users explore more items per session. Prioritize ${dominant} content quality but maintain both.`, confidence: "high" };
-    }
-  }
-
-  if (q.includes("biggest") || q.includes("issue") || q.includes("critical") || q.includes("urgent")) {
-    if (bounceRate > 40) return { answer: `Bounce rate at ${bounceRate}% is critical. You're losing nearly half your guests before they browse. Fix loading speed and first-screen appeal.`, confidence: "high" };
-    if (Number(addOnRate) < 8) return { answer: `Add-on conversion at ${addOnRate}% is the biggest revenue gap. Guests view items but don't click add-ons. Add images and better prompts.`, confidence: "high" };
-    if (deadZones.length > 0) {
-      const worst = deadZones[0];
-      const label = catName(worst.category || worst.id) || "A category";
-      return { answer: `${label} is a dead zone — guests open it but nothing catches their eye. Needs a complete visual refresh.`, confidence: "high" };
-    }
-    return { answer: "No critical issues detected. Focus on gradual improvement of add-on conversion and engagement depth.", confidence: "medium" };
-  }
-
-  if (q.includes("management") || q.includes("summary") || q.includes("meeting") || q.includes("report")) {
-    const summary = buildManagementSummary(data);
-    if (summary) {
-      const parts = [];
-      if (summary.working.length > 0) parts.push("Working well: " + summary.working[0]);
-      if (summary.weak.length > 0) parts.push("Needs attention: " + summary.weak[0]);
-      if (summary.improve.length > 0) parts.push("Action item: " + summary.improve[0]);
-      return { answer: parts.join(" ") || "Performance is steady. No urgent concerns.", confidence: "high" };
-    }
-  }
-
-  if (q.includes("strong") || q.includes("best") || q.includes("top") || q.includes("popular")) {
-    if (topCategories.length > 0) {
-      const top = topCategories[0];
-      const label = catName(top.id) || "Top category";
-      return { answer: `${label} is your strongest category with ${top.opens} opens. ${topItems.length > 0 ? `Top item: "${topItems[0].name}".` : ""}`, confidence: "high" };
-    }
-  }
-
+function answerImproveToday(data, periodHours) {
   const best = getBestAction(data);
-  if (best) return { answer: `Based on current data: ${best.action}`, confidence: "medium" };
+  if (!best) {
+    return metaResponse({
+      answer: "Not enough data to recommend a priority action today.",
+      confidence: "low",
+      intent: "improve_today",
+      metric: "getBestAction",
+      periodHours,
+    });
+  }
+  return metaResponse({
+    answer: `${best.action} ${best.reason}`,
+    confidence: "high",
+    intent: "improve_today",
+    metric: best.source,
+    periodHours,
+  });
+}
 
-  return { answer: "I don't have enough specific data to answer that precisely. Try asking about categories, add-ons, searches, language, or engagement.", confidence: "low" };
+const FALLBACK_MSG =
+  "I don't have enough matching data for that exact question yet. Try asking about scans, peak time, categories, items, searches, add-ons, language, bounce rate, or Foodics sales conversion.";
+
+export function answerQuestion(question, data, options = {}) {
+  const periodHours = Number(options.periodHours) || 0;
+  const foodics = options.foodics || null;
+
+  if (!question?.trim()) {
+    return metaResponse({ answer: FALLBACK_MSG, confidence: "low", intent: "fallback", metric: null, periodHours });
+  }
+
+  if (!data || typeof data !== "object") {
+    return metaResponse({
+      answer: "Not enough analytics data yet. Collect more sessions before making a confident decision.",
+      confidence: "low",
+      intent: "fallback",
+      metric: null,
+      periodHours,
+    });
+  }
+
+  const totalSessions = Number(data.total_sessions) || 0;
+  const { intent } = detectIntent(question);
+
+  if (intent === "time_peak") return answerTimePeak(data, periodHours);
+  if (intent === "foodics") return answerFoodics(foodics, question.toLowerCase(), periodHours);
+  if (intent === "management") return answerManagement(data, periodHours);
+  if (intent === "search") return answerSearch(data, periodHours);
+  if (intent === "language") return answerLanguage(data, periodHours);
+  if (intent === "addon") return answerAddon(data, periodHours);
+  if (intent === "session") return answerSession(data, periodHours);
+  if (intent === "category") return answerCategory(data, question.toLowerCase(), periodHours);
+  if (intent === "item") return answerItem(data, question.toLowerCase(), periodHours, foodics);
+  if (intent === "improve_today") return answerImproveToday(data, periodHours);
+
+  if (intent === "fallback") {
+    if (totalSessions < 5) {
+      return metaResponse({
+        answer: "Not enough session data yet. Collect more guest sessions first.",
+        confidence: "low",
+        intent: "fallback",
+        metric: "total_sessions",
+        periodHours,
+      });
+    }
+    return metaResponse({
+      answer: FALLBACK_MSG,
+      confidence: "low",
+      intent: "fallback",
+      metric: null,
+      periodHours,
+    });
+  }
+
+  return metaResponse({ answer: FALLBACK_MSG, confidence: "low", intent: "fallback", metric: null, periodHours });
 }

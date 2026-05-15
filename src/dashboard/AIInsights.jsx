@@ -20,7 +20,8 @@ import {
   Activity,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { buildInsightCards, buildManagementSummary, getBestAction, answerQuestion } from "./utils/aiInsightEngine";
+import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
+import { buildInsightCards, buildManagementSummary, getBestAction, answerQuestion, buildFoodicsInsightCards } from "./utils/aiInsightEngine";
 import "./styles/ai-insights.css";
 
 const GROUP_ICONS = {
@@ -43,13 +44,13 @@ const TIME_FILTERS = [
 ];
 
 const SUGGESTED_QUESTIONS = [
+  "What time did the most scans happen?",
   "What should I improve today?",
   "Which menu item should I promote?",
+  "Which item has high clicks but low orders?",
   "Are guests searching for something we do not offer?",
   "Which category is weak?",
-  "Which add-on has the best opportunity?",
-  "Is Arabic or English more important?",
-  "What is the biggest issue in the menu?",
+  "What is the bounce rate?",
   "What should I tell management?",
 ];
 
@@ -66,6 +67,7 @@ export default function AIInsights() {
   const [answering, setAnswering] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showMgmt, setShowMgmt] = useState(false);
+  const [foodics, setFoodics] = useState(null);
   const streamRef = useRef(null);
 
   const configured = isSupabaseConfigured();
@@ -92,6 +94,8 @@ export default function AIInsights() {
       if (rpcErr) throw rpcErr;
       if (!rpc || typeof rpc !== "object") throw new Error("Empty response");
       setData(rpc);
+      const foodicsCtx = await getFoodicsIntelligenceContext(rpc);
+      setFoodics(foodicsCtx);
     } catch (e) {
       setError(e?.message || "Failed to load data");
     } finally {
@@ -103,7 +107,11 @@ export default function AIInsights() {
     loadData();
   }, [loadData]);
 
-  const insightCards = useMemo(() => buildInsightCards(data), [data]);
+  const insightCards = useMemo(() => {
+    const base = buildInsightCards(data);
+    const foodicsCards = buildFoodicsInsightCards(foodics);
+    return [...base, ...foodicsCards];
+  }, [data, foodics]);
   const managementSummary = useMemo(() => buildManagementSummary(data), [data]);
   const bestAction = useMemo(() => getBestAction(data), [data]);
 
@@ -149,12 +157,12 @@ export default function AIInsights() {
     setDisplayedAnswer("");
     setQuestion(query);
     setTimeout(() => {
-      const result = answerQuestion(query, data);
+      const result = answerQuestion(query, data, { periodHours: timeRange, foodics });
       setAnswer(result);
       setAnswering(false);
       streamText(result.answer);
     }, 900);
-  }, [question, data, streamText]);
+  }, [question, data, foodics, timeRange, streamText]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === "Enter") handleAsk();
@@ -316,6 +324,13 @@ export default function AIInsights() {
                 <ConfidenceMeter level={answer.confidence} />
               </div>
               <p className="ai-answer-text">{displayedAnswer}<span className="ai-cursor" /></p>
+              {(answer.intent || answer.metric || answer.period) && (
+                <motion.div className="ai-answer-meta" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+                  {answer.intent && <span>Intent: {answer.intent.replace(/_/g, " ")}</span>}
+                  {answer.metric && <span>Metric: {answer.metric}</span>}
+                  {answer.period && <span>Period: {answer.period}</span>}
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

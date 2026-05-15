@@ -1,0 +1,366 @@
+.fi-page {
+  padding: 32px 36px 60px;
+  max-width: 1100px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+.fi-loading,
+.fi-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 16px;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.fi-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f9f9f7;
+  margin: 0 0 6px;
+}
+
+.fi-header p {
+  font-size: 13px;
+  color: rgba(249, 249, 247, 0.45);
+  margin: 0;
+}
+
+.fi-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: rgba(255, 107, 107, 0.08);
+  border: 1px solid rgba(255, 107, 107, 0.25);
+  color: #ff9b9b;
+  font-size: 13px;
+}
+
+.fi-card {
+  background: rgba(249, 249, 247, 0.03);
+  border: 1px solid rgba(249, 249, 247, 0.08);
+  border-radius: 18px;
+  padding: 22px 24px;
+  margin-bottom: 20px;
+}
+
+.fi-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #f9f9f7;
+  margin: 0 0 16px;
+}
+
+.fi-card h3 {
+  font-size: 13px;
+  color: rgba(249, 249, 247, 0.7);
+  margin: 16px 0 10px;
+}
+
+.fi-muted {
+  font-size: 13px;
+  color: rgba(249, 249, 247, 0.45);
+  line-height: 1.6;
+}
+
+.fi-period-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.fi-period-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: rgba(249, 249, 247, 0.4);
+}
+
+.fi-period-row input[type="date"] {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(249, 249, 247, 0.12);
+  border-radius: 8px;
+  color: #f9f9f7;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.fi-pill {
+  background: rgba(249, 249, 247, 0.04);
+  border: 1px solid rgba(249, 249, 247, 0.08);
+  border-radius: 8px;
+  color: rgba(249, 249, 247, 0.55);
+  padding: 6px 12px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fi-pill.active {
+  background: rgba(215, 188, 138, 0.14);
+  border-color: rgba(215, 188, 138, 0.35);
+  color: #d7bc8a;
+}
+
+.fi-dropzone {
+  border: 2px dashed rgba(215, 188, 138, 0.25);
+  border-radius: 16px;
+  padding: 36px 24px;
+  text-align: center;
+  color: rgba(249, 249, 247, 0.5);
+  transition: all 0.25s;
+}
+
+.fi-dropzone.over {
+  border-color: rgba(78, 205, 196, 0.5);
+  background: rgba(78, 205, 196, 0.04);
+}
+
+.fi-dropzone svg {
+  color: #d7bc8a;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.fi-file-btn {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  background: rgba(215, 188, 138, 0.12);
+  border: 1px solid rgba(215, 188, 138, 0.25);
+  color: #d7bc8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fi-file-name {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: #4ecdc4;
+}
+
+.fi-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.fi-map-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.4);
+}
+
+.fi-map-grid select {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(249, 249, 247, 0.12);
+  border-radius: 8px;
+  color: #f9f9f7;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.fi-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+
+.fi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.fi-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: rgba(249, 249, 247, 0.4);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid rgba(249, 249, 247, 0.08);
+}
+
+.fi-table td {
+  padding: 10px;
+  color: rgba(249, 249, 247, 0.75);
+  border-bottom: 1px solid rgba(249, 249, 247, 0.04);
+}
+
+.fi-table tr.needs-review td {
+  color: #f5a623;
+}
+
+.fi-table select {
+  width: 100%;
+  min-width: 160px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(249, 249, 247, 0.12);
+  border-radius: 8px;
+  color: #f9f9f7;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.fi-primary,
+.fi-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.fi-primary {
+  background: rgba(78, 205, 196, 0.15);
+  border: 1px solid rgba(78, 205, 196, 0.35);
+  color: #4ecdc4;
+}
+
+.fi-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fi-secondary {
+  background: rgba(249, 249, 247, 0.05);
+  border: 1px solid rgba(249, 249, 247, 0.12);
+  color: rgba(249, 249, 247, 0.7);
+}
+
+.fi-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.fi-card-head h2 {
+  margin: 0;
+}
+
+.fi-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fi-batch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(249, 249, 247, 0.02);
+  border: 1px solid rgba(249, 249, 247, 0.06);
+  color: #f9f9f7;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.fi-batch:hover,
+.fi-batch.active {
+  border-color: rgba(215, 188, 138, 0.3);
+  background: rgba(215, 188, 138, 0.06);
+}
+
+.fi-batch-meta {
+  font-size: 11px;
+  color: rgba(249, 249, 247, 0.4);
+  margin-top: 2px;
+}
+
+.fi-opps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.fi-opp-card {
+  background: rgba(249, 249, 247, 0.025);
+  border: 1px solid rgba(249, 249, 247, 0.07);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.fi-opp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #d7bc8a;
+}
+
+.fi-opp-head h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f9f9f7;
+  margin: 0;
+}
+
+.fi-opp-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fi-opp-card li {
+  font-size: 11px;
+  color: rgba(249, 249, 247, 0.55);
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(249, 249, 247, 0.04);
+}
+
+.fi-opp-card li strong {
+  display: block;
+  color: #f9f9f7;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.fi-status {
+  font-size: 10px;
+  color: #4ecdc4;
+}
+
+.fi-spin {
+  animation: fi-spin 0.8s linear infinite;
+}
+
+@keyframes fi-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .fi-page {
+    padding: 20px 16px 40px;
+  }
+  .fi-opps {
+    grid-template-columns: 1fr;
+  }
+}
