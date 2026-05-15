@@ -11,6 +11,7 @@ import {
   TrendingUp,
   Eye,
   ShoppingCart,
+  ChevronDown,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
@@ -21,6 +22,7 @@ import {
   saveNameMapping,
   createImportBatch,
   getMenuItemsForMatching,
+  getAddOnsForMatching,
 } from "../lib/foodicsApi";
 import { parseFoodicsFile, detectColumnMapping, rowsFromMappedData } from "./utils/foodicsParser";
 import { matchImportRows } from "./utils/foodicsMatcher";
@@ -52,7 +54,9 @@ export default function FoodicsIntelligence() {
   const [selectedBatchId, setSelectedBatchId] = useState(null);
   const [salesItems, setSalesItems] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
+  const [addOns, setAddOns] = useState([]);
   const [manualMaps, setManualMaps] = useState([]);
+  const [showIgnored, setShowIgnored] = useState(false);
   const [analyticsItems, setAnalyticsItems] = useState([]);
 
   const [file, setFile] = useState(null);
@@ -60,7 +64,6 @@ export default function FoodicsIntelligence() {
   const [headers, setHeaders] = useState([]);
   const [mapping, setMapping] = useState({});
   const [previewRows, setPreviewRows] = useState([]);
-  const [unmatched, setUnmatched] = useState([]);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -86,9 +89,10 @@ export default function FoodicsIntelligence() {
         return;
       }
 
-      const [batchList, items, maps, latest, rpc] = await Promise.all([
+      const [batchList, items, addons, maps, latest, rpc] = await Promise.all([
         getImportBatches(),
         getMenuItemsForMatching(),
+        getAddOnsForMatching(),
         getNameMappings(),
         getLatestBatch(),
         supabase.rpc("get_bi_dashboard", { p_branch: null, p_hours: 0 }),
@@ -96,6 +100,7 @@ export default function FoodicsIntelligence() {
 
       setBatches(batchList);
       setMenuItems(items);
+      setAddOns(addons);
       setManualMaps(maps);
       if (rpc.data?.top_items) setAnalyticsItems(rpc.data.top_items);
 
@@ -123,25 +128,45 @@ export default function FoodicsIntelligence() {
 
   const opportunities = useMemo(() => getConversionOpportunities(conversionRows), [conversionRows]);
 
+  const importableRows = useMemo(
+    () => previewRows.filter((r) => r.import_status !== "ignored"),
+    [previewRows],
+  );
+  const ignoredRows = useMemo(
+    () => previewRows.filter((r) => r.import_status === "ignored"),
+    [previewRows],
+  );
+  const needsReviewRows = useMemo(
+    () => previewRows.filter((r) => r.import_status === "needs_review"),
+    [previewRows],
+  );
+
+  const applyMatching = useCallback(
+    (rows, columnMapping) => {
+      const matched = matchImportRows(rows, menuItems, manualMaps, addOns);
+      setPreviewRows(matched);
+    },
+    [menuItems, manualMaps, addOns],
+  );
+
   const handleFile = useCallback(async (f) => {
     if (!f) return;
     setFile(f);
     setError("");
+    setShowIgnored(false);
     try {
       const parsed = await parseFoodicsFile(f);
       setRawRows(parsed.rawRows);
       setHeaders(parsed.headers);
-      const detected = detectColumnMapping(parsed.headers);
+      const detected = parsed.mapping || detectColumnMapping(parsed.headers);
       setMapping(detected);
       const { rows, error: mapErr } = rowsFromMappedData(parsed.rawRows, detected);
       if (mapErr) setError(mapErr);
-      const matched = matchImportRows(rows, menuItems, manualMaps);
-      setPreviewRows(matched);
-      setUnmatched(matched.filter((r) => r.needs_review));
+      else applyMatching(rows, detected);
     } catch (e) {
       setError(e?.message || "Could not parse file");
     }
-  }, [menuItems, manualMaps]);
+  }, [applyMatching]);
 
   const onDrop = useCallback(
     (e) => {
@@ -159,17 +184,21 @@ export default function FoodicsIntelligence() {
       setError(mapErr);
       return;
     }
-    const matched = matchImportRows(rows, menuItems, manualMaps);
-    setPreviewRows(matched);
-    setUnmatched(matched.filter((r) => r.needs_review));
-  }, [rawRows, mapping, menuItems, manualMaps]);
+    applyMatching(rows, mapping);
+  }, [rawRows, mapping, applyMatching]);
 
   useEffect(() => {
     if (rawRows.length && mapping.name) remapPreview();
   }, [mapping, rawRows, remapPreview]);
 
   const handleImport = async () => {
-    if (!previewRows.length) return;
+    const toSave = previewRows.filter(
+      (r) => r.import_status === "matched" && r.matched_menu_item_name,
+    );
+    if (!toSave.length) {
+      setError("No matched menu items to save. Resolve items in Needs review first.");
+      return;
+    }
     setImporting(true);
     setError("");
     try {
@@ -185,12 +214,11 @@ export default function FoodicsIntelligence() {
           uploaded_by: email,
           notes,
         },
-        previewRows,
+        toSave,
       );
       setFile(null);
       setRawRows([]);
       setPreviewRows([]);
-      setUnmatched([]);
       await loadAll();
     } catch (e) {
       setError(e?.message || "Import failed");
@@ -201,15 +229,30 @@ export default function FoodicsIntelligence() {
 
   const handleManualMap = async (rawName, menuItemName) => {
     const item = menuItems.find((m) => m.name_en === menuItemName);
+    const addon = addOns.find((a) => a.name_en === menuItemName);
     await saveNameMapping({
       raw_name: rawName,
       menu_item_name_en: menuItemName,
-      menu_item_id: item?.id,
+      menu_item_id: item?.id || addon?.id,
       confidence: 1,
     });
     const maps = await getNameMappings();
     setManualMaps(maps);
-    remapPreview();
+    setPreviewRows((prev) =>
+      prev.map((r) =>
+        r.raw_item_name === rawName
+          ? {
+              ...r,
+              matched_menu_item_id: item?.id || addon?.id || null,
+              matched_menu_item_name: menuItemName,
+              match_confidence: 1,
+              match_type: "manual_map",
+              needs_review: false,
+              import_status: "matched",
+            }
+          : r,
+      ),
+    );
   };
 
   const exportConversion = () => {
@@ -342,28 +385,39 @@ export default function FoodicsIntelligence() {
           </div>
         )}
 
-        {previewRows.length > 0 && (
+        {importableRows.length > 0 && (
           <div className="fi-preview">
-            <h3>Preview ({previewRows.length} rows)</h3>
+            <h3>
+              Preview ({importableRows.length} importable
+              {ignoredRows.length > 0 ? `, ${ignoredRows.length} ignored` : ""})
+            </h3>
             <motion.div className="fi-table-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <table className="fi-table">
                 <thead>
                   <tr>
-                    <th>Product</th>
+                    <th>Foodics item</th>
                     <th>Qty</th>
-                    <th>Net</th>
+                    <th>Net sales</th>
+                    <th>Gross sales</th>
                     <th>Match</th>
                     <th>Confidence</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {previewRows.slice(0, 12).map((row, i) => (
-                    <tr key={i} className={row.needs_review ? "needs-review" : ""}>
+                  {importableRows.slice(0, 20).map((row, i) => (
+                    <tr key={`${row.raw_item_name}-${i}`} className={row.import_status === "needs_review" ? "needs-review" : ""}>
                       <td>{row.raw_item_name}</td>
                       <td>{row.quantity_sold}</td>
                       <td>{row.net_sales ?? "—"}</td>
-                      <td>{row.matched_menu_item_name || "Unmatched"}</td>
+                      <td>{row.gross_sales ?? "—"}</td>
+                      <td>{row.matched_menu_item_name || "—"}</td>
                       <td>{row.match_confidence ? `${Math.round(row.match_confidence * 100)}%` : "—"}</td>
+                      <td>
+                        <span className={`fi-status-pill ${row.import_status}`}>
+                          {row.import_status?.replace("_", " ")}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -371,17 +425,41 @@ export default function FoodicsIntelligence() {
             </motion.div>
             <button type="button" className="fi-primary" onClick={handleImport} disabled={importing}>
               {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
-              Save import
+              Save import ({previewRows.filter((r) => r.import_status === "matched").length} matched)
             </button>
           </div>
+        )}
+
+        {ignoredRows.length > 0 && (
+          <motion.div className="fi-ignored">
+            <button type="button" className="fi-ignored-toggle" onClick={() => setShowIgnored(!showIgnored)}>
+              <ChevronDown size={14} className={showIgnored ? "open" : ""} />
+              Ignored operational rows ({ignoredRows.length})
+            </button>
+            <AnimatePresence>
+              {showIgnored && (
+                <motion.ul
+                  className="fi-ignored-list"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                >
+                  {ignoredRows.slice(0, 40).map((row) => (
+                    <li key={row.raw_item_name}>{row.raw_item_name}</li>
+                  ))}
+                  {ignoredRows.length > 40 && <li>…and {ignoredRows.length - 40} more</li>}
+                </motion.ul>
+              )}
+            </AnimatePresence>
+          </motion.div>
         )}
       </section>
 
       {/* Unmatched review */}
       <AnimatePresence>
-        {unmatched.length > 0 && (
+        {needsReviewRows.length > 0 && (
           <motion.section className="fi-card" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0 }}>
-            <h2>Needs review ({unmatched.length})</h2>
+            <h2>Needs review ({needsReviewRows.length})</h2>
             <div className="fi-table-wrap">
               <table className="fi-table">
                 <thead>
@@ -391,7 +469,7 @@ export default function FoodicsIntelligence() {
                   </tr>
                 </thead>
                 <tbody>
-                  {unmatched.slice(0, 20).map((row) => (
+                  {needsReviewRows.slice(0, 20).map((row) => (
                     <tr key={row.raw_item_name}>
                       <td>{row.raw_item_name}</td>
                       <td>
@@ -404,6 +482,9 @@ export default function FoodicsIntelligence() {
                           <option value="">Select menu item…</option>
                           {menuItems.map((m) => (
                             <option key={m.id} value={m.name_en}>{m.name_en}</option>
+                          ))}
+                          {addOns.map((a) => (
+                            <option key={a.id} value={a.name_en}>{a.name_en} (add-on)</option>
                           ))}
                         </select>
                       </td>

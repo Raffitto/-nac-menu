@@ -121,6 +121,16 @@ export async function getMenuItemsForMatching() {
   return data || [];
 }
 
+export async function getAddOnsForMatching() {
+  const { data, error } = await supabase
+    .from("add_ons")
+    .select("id, name_en, slug, active")
+    .eq("active", true)
+    .order("name_en");
+  if (error) throw error;
+  return data || [];
+}
+
 /** Load latest Foodics + conversion context for AI Insights */
 export async function getFoodicsIntelligenceContext(analyticsData) {
   try {
