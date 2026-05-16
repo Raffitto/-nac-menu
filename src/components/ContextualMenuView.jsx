@@ -1,8 +1,20 @@
 import React, { useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import FoodMenuCard from "./FoodMenuCard";
 import DrinkMenuCard from "./DrinkMenuCard";
 import { makeSectionDomId, sectionSlug } from "../lib/sectionNav";
+
+const SUBSECTION_CATEGORIES = new Set(["drinks", "desserts"]);
+
+function mapSectionNavItems(block, isArabic) {
+  return block.sections.map((sec) => ({
+    catId: block.catId,
+    titleEn: sec.title.en,
+    titleAr: sec.title.ar,
+    domId: makeSectionDomId(block.catId, sec.title.en),
+    label: isArabic ? sec.title.ar : sec.title.en,
+  }));
+}
 
 export default function ContextualMenuView({
   flow,
@@ -46,26 +58,36 @@ export default function ContextualMenuView({
       .filter((b) => b.sections.length > 0);
   }, [exploreOnlyCategory, flow.categories, menuData, search, isAllowed, categoryMeta]);
 
-  const sectionNavItems = useMemo(
-    () =>
-      blocks.flatMap((block) =>
-        block.sections.map((sec) => ({
-          catId: block.catId,
-          titleEn: sec.title.en,
-          titleAr: sec.title.ar,
-          domId: makeSectionDomId(block.catId, sec.title.en),
-          label: isArabic ? sec.title.ar : sec.title.en,
-        })),
-      ),
-    [blocks, isArabic],
+  const activeBlock = useMemo(
+    () => blocks.find((b) => b.catId === activeCategory),
+    [blocks, activeCategory],
   );
+
+  const foodSectionNavItems = useMemo(() => {
+    if (!activeBlock || SUBSECTION_CATEGORIES.has(activeCategory)) return [];
+    return mapSectionNavItems(activeBlock, isArabic);
+  }, [activeBlock, activeCategory, isArabic]);
+
+  const subsectionNavItems = useMemo(() => {
+    if (!activeBlock || !SUBSECTION_CATEGORIES.has(activeCategory)) return [];
+    if (activeBlock.sections.length <= 1) return [];
+    return mapSectionNavItems(activeBlock, isArabic);
+  }, [activeBlock, activeCategory, isArabic]);
 
   const scrollToCategory = useCallback(
     (catId) => {
       setActiveCategory(catId);
+      const block = blocks.find((b) => b.catId === catId);
+      const firstSection = block?.sections?.[0];
+      if (SUBSECTION_CATEGORIES.has(catId) && firstSection) {
+        const domId = makeSectionDomId(catId, firstSection.title.en);
+        onSectionNavigate?.(catId, firstSection.title.en, domId);
+        document.getElementById(domId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
       document.getElementById(`nac-cat-${catId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
-    [setActiveCategory],
+    [setActiveCategory, blocks, onSectionNavigate],
   );
 
   const scrollToSection = useCallback(
@@ -76,9 +98,24 @@ export default function ContextualMenuView({
     [onSectionNavigate],
   );
 
+  const renderSectionNav = (items, className, ariaLabel) => (
+    <nav className={className} aria-label={ariaLabel}>
+      {items.map((item) => (
+        <button
+          key={item.domId}
+          type="button"
+          className={activeSection === item.domId ? "active active-section" : ""}
+          onClick={() => scrollToSection(item)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+
   return (
     <div className="contextual-menu">
-      <div className="contextual-menu-bar">
+      <div className="contextual-menu-bar contextual-menu-bar-primary">
         {exploreOnlyCategory ? (
           <button type="button" className="contextual-pill contextual-pill-back" onClick={onBackToContextual}>
             {isArabic ? "القائمة النشطة" : "Active Menu"}
@@ -101,20 +138,31 @@ export default function ContextualMenuView({
         )}
       </div>
 
-      {sectionNavItems.length > 0 && (
-        <nav className="section-nav contextual-section-nav" aria-label={isArabic ? "أقسام القائمة" : "Menu sections"}>
-          {sectionNavItems.map((item) => (
-            <button
-              key={item.domId}
-              type="button"
-              className={activeSection === item.domId ? "active active-section" : ""}
-              onClick={() => scrollToSection(item)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      )}
+      {foodSectionNavItems.length > 0 &&
+        renderSectionNav(
+          foodSectionNavItems,
+          "section-nav contextual-section-nav contextual-section-nav-secondary",
+          isArabic ? "أقسام القائمة" : "Menu sections",
+        )}
+
+      <AnimatePresence initial={false}>
+        {subsectionNavItems.length > 0 && (
+          <motion.div
+            key={`subsection-${activeCategory}`}
+            className="contextual-subsection-wrap"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            {renderSectionNav(
+              subsectionNavItems,
+              "section-nav contextual-section-nav contextual-subsection-nav",
+              isArabic ? "أقسام المشروبات" : "Drink sections",
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {blocks.map((block) => (
         <div key={block.catId} id={`nac-cat-${block.catId}`} className="contextual-category-block">
@@ -131,7 +179,11 @@ export default function ContextualMenuView({
                 id={sectionDomId}
                 data-section-slug={sectionSlug(sec.title.en)}
                 data-category-id={block.catId}
-                className={block.catId === "drinks" ? "drink-section-block contextual-menu-section" : "menu-section contextual-menu-section"}
+                className={
+                  block.catId === "drinks"
+                    ? "drink-section-block contextual-menu-section"
+                    : "menu-section contextual-menu-section"
+                }
               >
                 <h3 className="section-title no-arabic-spacing">{isArabic ? sec.title.ar : sec.title.en}</h3>
 

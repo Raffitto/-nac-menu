@@ -915,7 +915,12 @@ useEffect(() => {
       }
     });
 
-    if (current) setActiveSection(current);
+    if (current) {
+      setActiveSection(current);
+      const el = document.getElementById(current);
+      const catId = el?.dataset?.categoryId;
+      if (catId) setActiveCategory(catId);
+    }
   };
 
   handleScroll();
