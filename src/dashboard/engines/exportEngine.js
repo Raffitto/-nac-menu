@@ -393,3 +393,70 @@ export function exportIntelligenceCSV(intelligence) {
   }
   exportCSV("nac-visibility-export.csv", headers, rows);
 }
+
+/** Unified review + branch + employee export */
+export function exportUnifiedIntelligenceXLSX({
+  review,
+  unified,
+  comparison = [],
+  employees = [],
+  diagnostics,
+}) {
+  const wb = XLSX.utils.book_new();
+  const generated = new Date().toLocaleString();
+
+  const summary = [
+    ["NAC Unified Restaurant Intelligence"],
+    ["Generated", generated],
+    ["Business day", unified?.business_day_key || ""],
+    [],
+    ["Review KPIs", "Value"],
+    ["Reviews generated", review?.reviews_generated ?? 0],
+    ["Google clicks", review?.google_clicks ?? 0],
+    ["Review conversion %", review?.conversion_pct ?? 0],
+    ["Menu sessions", unified?.sessions ?? 0],
+    ["Impressions", unified?.impressions ?? 0],
+    ["Sales (Foodics)", unified?.sales ?? 0],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
+
+  if (employees.length) {
+    const empSheet = employees.map((e) => ({
+      Employee: e.name,
+      Role: e.role,
+      Classification: e.classification?.label,
+      Reviews: e.metrics.reviews_generated,
+      "Google %": e.metrics.review_conversion_pct,
+      Confidence: e.metrics.confidence,
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empSheet), "Employees");
+  }
+
+  if (comparison.length) {
+    const branchSheet = comparison.map((b) => ({
+      Branch: b.branch_id,
+      Sessions: b.sessions,
+      "Visual conv %": b.visual_conversion_pct,
+      Reviews: b.reviews,
+      Sales: b.sales,
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(branchSheet), "Branches");
+  }
+
+  const commentary = [
+    ["Executive commentary"],
+    [
+      review?.conversion_pct < 20 && review?.reviews_generated > 5
+        ? "Review generation is healthy but Google click-through needs stronger post-copy CTAs."
+        : "Review funnel metrics within expected range for current sample.",
+    ],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(commentary), "Commentary");
+
+  if (diagnostics?.issues?.length) {
+    const dq = diagnostics.issues.map((i) => ({ Code: i.code, Message: i.message, Severity: i.severity }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dq), "Diagnostics");
+  }
+
+  XLSX.writeFile(wb, "nac-unified-intelligence.xlsx");
+}

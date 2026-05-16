@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
+import { fetchReviewIntelligence, fetchBranchComparison } from "./utils/unifiedIntelligenceApi";
+import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import {
   buildInsightCards,
   buildManagementSummary,
@@ -59,6 +61,10 @@ const SUGGESTED_QUESTIONS = [
   "Are guests searching for something we do not offer?",
   "Which items need more explanation?",
   "What should I tell management?",
+  "Which employees drive reviews best?",
+  "Which waiters influence dessert sales?",
+  "Which branches convert browsing into sales best?",
+  "How does Khobar compare to Riyadh visually?",
 ];
 
 export default function AIInsights() {
@@ -75,6 +81,8 @@ export default function AIInsights() {
   const [showFilters, setShowFilters] = useState(false);
   const [showMgmt, setShowMgmt] = useState(false);
   const [foodics, setFoodics] = useState(null);
+  const [reviewIntel, setReviewIntel] = useState(null);
+  const [branchComparison, setBranchComparison] = useState([]);
   const streamRef = useRef(null);
 
   const configured = isSupabaseConfigured();
@@ -103,6 +111,17 @@ export default function AIInsights() {
       setData(rpc);
       const foodicsCtx = await getFoodicsIntelligenceContext(rpc);
       setFoodics(foodicsCtx);
+      try {
+        const [rev, branches] = await Promise.all([
+          fetchReviewIntelligence(process.env.REACT_APP_NAC_BRANCH_ID || "khobar", timeRange || 24),
+          fetchBranchComparison(timeRange || 24),
+        ]);
+        setReviewIntel(rev);
+        setBranchComparison(Array.isArray(branches) ? branches : []);
+      } catch {
+        setReviewIntel(null);
+        setBranchComparison([]);
+      }
     } catch (e) {
       setError(e?.message || "Failed to load data");
     } finally {
@@ -165,12 +184,19 @@ export default function AIInsights() {
     setDisplayedAnswer("");
     setQuestion(query);
     setTimeout(() => {
-      const result = answerQuestion(query, data, { periodHours: timeRange, foodics });
+      const employees = buildEmployeePerformance(reviewIntel?.top_employees || []);
+      const result = answerQuestion(query, data, {
+        periodHours: timeRange,
+        foodics,
+        reviewIntelligence: reviewIntel,
+        branchComparison,
+        employees,
+      });
       setAnswer(result);
       setAnswering(false);
       streamText(result.answer);
     }, 900);
-  }, [question, data, foodics, timeRange, streamText]);
+  }, [question, data, foodics, timeRange, streamText, reviewIntel, branchComparison]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === "Enter") handleAsk();

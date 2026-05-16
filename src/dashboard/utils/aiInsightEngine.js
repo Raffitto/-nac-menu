@@ -989,6 +989,27 @@ const INTENT_RULES = [
       return s;
     },
   },
+  {
+    id: "employee_review",
+    score(q) {
+      let s = 0;
+      if (/\b(employee|waiter|waitress|staff|receptionist|server).*(review|google)\b/.test(q)) s += 14;
+      if (/\b(who|which).*(drive|generates?).*review\b/.test(q)) s += 13;
+      if (/\b(dessert|beverage).*(waiter|staff|employee)\b/.test(q)) s += 12;
+      if (/\b(guest engagement|table closer|review hunter)\b/.test(q)) s += 11;
+      return s;
+    },
+  },
+  {
+    id: "branch_compare",
+    score(q) {
+      let s = 0;
+      if (/\b(khobar|riyadh|jeddah).*(vs|compare|outperform)\b/.test(q)) s += 14;
+      if (/\b(branch|location).*(compare|strongest|weakest|visual)\b/.test(q)) s += 12;
+      if (/\b(cross.?branch|multi.?branch)\b/.test(q)) s += 11;
+      return s;
+    },
+  },
 ];
 
 function detectIntent(question) {
@@ -1530,6 +1551,116 @@ function answerRevenue(data, foodics, periodHours) {
   });
 }
 
+function answerEmployeeReview(question, reviewIntel, employees, periodHours) {
+  const q = question.toLowerCase();
+  const top = reviewIntel?.top_employees?.[0];
+  const empList = Array.isArray(employees) ? employees : [];
+
+  if (/\b(dessert|beverage)\b/.test(q) && empList.length) {
+    const specialist = empList.find((e) => e.classification?.label === "Upsell Specialist");
+    if (specialist) {
+      return metaResponse({
+        answer: `${specialist.name} shows upsell patterns in linked menu sessions — prioritize dessert/beverage QR coaching for this profile (${specialist.metrics.confidence}).`,
+        confidence: specialist.metrics.confidence.includes("strong") ? "high" : "medium",
+        intent: "employee_review",
+        metric: "dessert_beverage_attachment",
+        periodHours,
+      });
+    }
+  }
+
+  if (top?.name) {
+    const conv = top.generated > 0 ? pct(top.google_clicks || 0, top.generated) : 0;
+    return metaResponse({
+      answer: `${top.name} leads review generation with ${top.generated} drafts and ${conv}% Google click-through in this period. ${conv < 20 ? "Receptionists and hosts often show strong scans but weak Google follow-through — tighten the post-copy CTA." : "Conversion is healthy for current sample size."}`,
+      confidence: top.generated >= 10 ? "high" : "medium",
+      intent: "employee_review",
+      metric: "top_employees",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: "Not enough employee-tagged review events yet. Ensure review QR links include staff attribution.",
+    confidence: "low",
+    intent: "employee_review",
+    metric: null,
+    periodHours,
+  });
+}
+
+function answerBranchCompare(comparison, question, periodHours) {
+  const rows = Array.isArray(comparison) ? comparison : [];
+  if (!rows.length) {
+    return metaResponse({
+      answer: "Branch comparison needs data from Khobar, Riyadh, and Jeddah. Run the unified intelligence migration in Supabase first.",
+      confidence: "low",
+      intent: "branch_compare",
+      metric: null,
+      periodHours,
+    });
+  }
+
+  const q = question.toLowerCase();
+  const byVisual = [...rows].sort((a, b) => (b.visual_conversion_pct || 0) - (a.visual_conversion_pct || 0));
+  const byBrowse = [...rows].sort((a, b) => (b.browse_to_open_pct || 0) - (a.browse_to_open_pct || 0));
+
+  if (/\b(visual|image|photo)\b/.test(q) && byVisual[0]) {
+    const a = byVisual[0];
+    const b = byVisual[1];
+    const note = b ? ` ${b.branch_id} trails at ${b.visual_conversion_pct}% image_expand efficiency.` : "";
+    return metaResponse({
+      answer: `${a.branch_id} leads visual conversion at ${a.visual_conversion_pct}% image_expand per impression.${note}`,
+      confidence: "medium",
+      intent: "branch_compare",
+      metric: "visual_conversion_pct",
+      periodHours,
+    });
+  }
+
+  const best = byBrowse[0];
+  const worst = byBrowse[byBrowse.length - 1];
+  if (best && worst && best.branch_id !== worst.branch_id) {
+    return metaResponse({
+      answer: `${best.branch_id} converts browsing into item opens best (${best.browse_to_open_pct}%). ${worst.branch_id} desserts and beverages may need stronger evening visuals if attention is high but opens lag — validate with category drills.`,
+      confidence: "medium",
+      intent: "branch_compare",
+      metric: "browse_to_open_pct",
+      periodHours,
+    });
+  }
+
+  return metaResponse({
+    answer: rows.map((r) => `${r.branch_id}: ${r.sessions} sessions, ${r.reviews} reviews, ${r.visual_conversion_pct}% visual conv.`).join(" · "),
+    confidence: "medium",
+    intent: "branch_compare",
+    metric: "branch_comparison",
+    periodHours,
+  });
+}
+
+export function buildExecutiveCommentary({ reviewIntel, branchComparison, intelligence }) {
+  const lines = [];
+  const top = reviewIntel?.top_employees?.[0];
+  if (top?.name && top.generated >= 5) {
+    const conv = top.generated > 0 ? pct(top.google_clicks || 0, top.generated) : 0;
+    if (conv < 20) {
+      lines.push(`${top.name} generates strong review drafts but weak Google click-through — coach the final tap.`);
+    }
+  }
+  const branches = Array.isArray(branchComparison) ? branchComparison : [];
+  const khobar = branches.find((b) => b.branch_id === "khobar");
+  const riyadh = branches.find((b) => b.branch_id === "riyadh");
+  if (khobar && riyadh && khobar.visual_conversion_pct < riyadh.visual_conversion_pct) {
+    lines.push(`Riyadh beverage visuals outperform Khobar in image_expand efficiency (${riyadh.visual_conversion_pct}% vs ${khobar.visual_conversion_pct}%).`);
+  }
+  const trap = (intelligence?.funnels || []).find((f) => (f.impressions || 0) > 30 && (f.conversion_pct || 0) < 5);
+  if (trap?.item_name) {
+    lines.push(`"${trap.item_name}" receives high visual attention with weak conversion — menu trap candidate.`);
+  }
+  return lines;
+}
+
 function answerComparison(data, foodics, periodHours) {
   const intelligence = buildRestaurantIntelligence(data, foodics);
   const withTrend = [...(intelligence?.funnels || [])].filter((f) => f.order_trend_pct != null);
@@ -1593,6 +1724,12 @@ export function answerQuestion(question, data, options = {}) {
   if (intent === "forecast") return route(() => answerForecast(question, data, foodics, periodHours));
   if (intent === "revenue") return route(() => answerRevenue(data, foodics, periodHours));
   if (intent === "comparison") return route(() => answerComparison(data, foodics, periodHours));
+  if (intent === "employee_review") {
+    return route(() => answerEmployeeReview(question, options.reviewIntelligence, options.employees, periodHours));
+  }
+  if (intent === "branch_compare") {
+    return route(() => answerBranchCompare(options.branchComparison, question, periodHours));
+  }
 
   if (intent === "fallback") {
     if (totalSessions < 5) {

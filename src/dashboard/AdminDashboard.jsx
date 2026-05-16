@@ -50,6 +50,7 @@ const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
 const AIInsights = lazy(() => import("./AIInsights"));
 const FoodicsIntelligence = lazy(() => import("./FoodicsIntelligence"));
 const RestaurantIntelligence = lazy(() => import("./RestaurantIntelligence"));
+const ReviewIntelligence = lazy(() => import("./ReviewIntelligence"));
 
 function ViewFallback({ label }) {
   return (
@@ -235,7 +236,7 @@ export default function AdminDashboard({ onBack }) {
     <div
       className="admin-shell"
       style={
-        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence"
+        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence" || adminView === "reviews"
           ? { overflow: "auto", minHeight: "100vh" }
           : undefined
       }
@@ -253,7 +254,8 @@ export default function AdminDashboard({ onBack }) {
                 (adminView === "menu-manager" && item.label === "Menu Manager") ||
                 (adminView === "ai-insights" && item.label === "AI Insights") ||
                 (adminView === "restaurant-intelligence" && item.label === "Restaurant Intelligence") ||
-                (adminView === "sales-intelligence" && item.label === "Sales Intelligence");
+                (adminView === "sales-intelligence" && item.label === "Sales Intelligence") ||
+                (adminView === "reviews" && item.label === "Reviews");
               return (
                 <motion.button
                   key={item.label}
@@ -268,6 +270,7 @@ export default function AdminDashboard({ onBack }) {
                     else if (item.label === "AI Insights") setAdminView("ai-insights");
                     else if (item.label === "Restaurant Intelligence") setAdminView("restaurant-intelligence");
                     else if (item.label === "Sales Intelligence") setAdminView("sales-intelligence");
+                    else if (item.label === "Reviews") setAdminView("reviews");
                   }}
                 >
                   {item.icon}
@@ -283,7 +286,7 @@ export default function AdminDashboard({ onBack }) {
       <main
         className="admin-content"
         style={
-          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence"
+          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence" || adminView === "reviews"
             ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
             : undefined
         }
@@ -305,6 +308,10 @@ export default function AdminDashboard({ onBack }) {
         ) : adminView === "sales-intelligence" ? (
           <Suspense fallback={<ViewFallback label="Loading sales intelligence…" />}>
             <FoodicsIntelligence />
+          </Suspense>
+        ) : adminView === "reviews" ? (
+          <Suspense fallback={<ViewFallback label="Loading review intelligence…" />}>
+            <ReviewIntelligence />
           </Suspense>
         ) : (
           <>

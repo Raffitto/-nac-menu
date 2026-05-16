@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { markMenuActivity } from "./sessionAttribution";
 
 const SESSION_KEY = "nac_menu_session_id";
 const SESSION_START_KEY = "nac_menu_session_start";
@@ -91,6 +92,7 @@ export function makeMenuItemId(categoryId, sectionTitleEn, itemNameEn) {
 export function trackEvent(payload) {
   if (!supabase || !payload?.event_type) return;
 
+  markMenuActivity();
   const session_id = getOrCreateSessionId();
   const branch_id = payload.branch_id ?? DEFAULT_BRANCH_ID;
 
