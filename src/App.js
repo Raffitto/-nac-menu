@@ -15,7 +15,8 @@ import {
   trackTimeSpent,
 } from "./lib/analytics";
 import { useMenuData } from "./lib/useMenuData";
-import { applyMenuOrdering, getCategoryCardIcon } from "./lib/menuPresentation";
+import { applyMenuOrdering, getMenuPreviewItems } from "./lib/menuPresentation";
+import CategoryCardPreview from "./components/CategoryCardPreview";
 
 const _fallbackCategories = [
   {
@@ -767,6 +768,7 @@ const isAllowed = (menuItem) => {
 
   const openMenuItem = useCallback(
     (menuItem, sectionTitleEn, categoryIdOverride) => {
+      if (!menuItem?.en) return;
       const catId = categoryIdOverride || effectiveCategory;
       if (!catId) return;
       setItemCategoryId(catId);
@@ -1119,13 +1121,12 @@ if (adminMode) {
   whileHover={{ y: -8, scale: 1.03 }}
   whileTap={{ scale: 0.94 }}
 >
-                  <img
-  src={getCategoryCardIcon(cat, menuData, isArabic)}
-  alt={isArabic ? cat.ar : cat.en}
-  className={`category-icon ${isArabic ? "arabic-icon" : ""} ${cat.id} ${
-    cat.id === "drinks" || cat.id === "desserts" ? "category-icon-product" : ""
-  }`}
-/>
+                  <CategoryCardPreview
+                    category={cat}
+                    previewItems={getMenuPreviewItems(cat.id, menuData, 3)}
+                    isArabic={isArabic}
+                  />
+                  <span className="category-card-title">{isArabic ? cat.ar : cat.en}</span>
                   <small className="category-time">
   {isArabic ? cat.timeAr : cat.timeEn}
 </small>
@@ -1258,7 +1259,6 @@ onDragEnd={(e, info) => {
              
 <motion.div
   className="lux-image"
-  layoutId={`card-${modalCategoryId}-${activeItem.en}`}
   transition={{ duration: 0.18, ease: "easeOut" }}
   drag="y"
   dragDirectionLock
@@ -1298,17 +1298,21 @@ onDragEnd={(e, info) => {
     }
   }}
 >
-  <AnimatePresence mode="wait">
-  <motion.img
-    key={activeItem.image}
-    src={activeItem.image}
-    alt={activeItem.en}
-    initial={{ opacity: 0.15, scale: 1.02 }}
-    animate={{ opacity: 1, scale: 1 }}
-    exit={{ opacity: 0 }}
-    transition={{ duration: 0.22 }}
-  />
-</AnimatePresence>
+  {activeItem.image?.trim() ? (
+    <AnimatePresence mode="wait">
+      <motion.img
+        key={activeItem.image}
+        src={activeItem.image}
+        alt={activeItem.en}
+        initial={{ opacity: 0.15, scale: 1.02 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.22 }}
+      />
+    </AnimatePresence>
+  ) : (
+    <div className="lux-image-placeholder" aria-hidden />
+  )}
 </motion.div>
 
               <motion.div className="lux-info" style={{ opacity: infoOpacity }}>

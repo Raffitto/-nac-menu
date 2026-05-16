@@ -12,6 +12,8 @@ const DESSERT_ORDER_RANK = Object.fromEntries(
   DESSERT_ORDER.map((name, index) => [name, index]),
 );
 
+const SERVICE_MENUS = new Set(["breakfast", "brunch", "daytime", "evening"]);
+
 export function sortDessertItems(items) {
   if (!items?.length) return items;
   return [...items].sort(
@@ -21,9 +23,7 @@ export function sortDessertItems(items) {
 }
 
 function sectionHasDessertCatalog(items) {
-  return items?.some(
-    (i) => DESSERT_ORDER_RANK[i.en] !== undefined,
-  );
+  return items?.some((i) => DESSERT_ORDER_RANK[i.en] !== undefined);
 }
 
 /** Apply dessert ordering everywhere dessert catalog items appear. */
@@ -40,28 +40,63 @@ export function applyMenuOrdering(menuData) {
   return next;
 }
 
-function categoryItems(menuData, categoryId) {
-  return (menuData[categoryId] || []).flatMap((sec) => sec.items || []).filter((i) => i?.image);
+/** Which menu categories feed an All Menus preview card. */
+export function getMenuPreviewCategoryIds(categoryId) {
+  if (categoryId === "drinks") return ["drinks"];
+  if (categoryId === "desserts") return ["desserts"];
+  if (SERVICE_MENUS.has(categoryId)) {
+    return [categoryId, "drinks", "desserts"];
+  }
+  return [categoryId];
+}
+
+function collectItemsFromCategories(menuData, categoryIds) {
+  const items = [];
+  for (const catId of categoryIds) {
+    for (const sec of menuData[catId] || []) {
+      for (const menuItem of sec.items || []) {
+        if (menuItem?.image?.trim()) {
+          items.push(menuItem);
+        }
+      }
+    }
+  }
+  return items;
 }
 
 /**
- * Category selector icons: Drinks/Desserts use in-category product art only.
+ * Preview items for All Menus category cards only.
+ * Service menus: primary + drinks + desserts. Drinks/desserts: own catalog only.
  */
-export function getCategoryCardIcon(cat, menuData, isArabic) {
-  const fallback = (isArabic && cat.iconAr) || cat.icon || "";
-  if (cat.id !== "drinks" && cat.id !== "desserts") return fallback;
+export function getMenuPreviewItems(categoryId, menuData, limit = 3) {
+  const ids = getMenuPreviewCategoryIds(categoryId);
+  const raw = collectItemsFromCategories(menuData, ids);
 
-  const items = categoryItems(menuData, cat.id);
-  if (!items.length) return fallback;
-
-  if (cat.id === "drinks") {
-    const pick =
-      items.find((i) => i.en === "Coca Cola") ||
-      items.find((i) => /Espresso|Classic Mojito|Iced Latte/i.test(i.en)) ||
-      items[0];
-    return pick.image;
+  const seen = new Set();
+  const unique = [];
+  for (const menuItem of raw) {
+    const key = menuItem.image;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(menuItem);
+    if (unique.length >= limit) break;
   }
 
-  const sorted = sortDessertItems(items);
-  return sorted[0]?.image || fallback;
+  if (categoryId === "desserts") {
+    return sortDessertItems(unique).slice(0, limit);
+  }
+
+  if (categoryId === "drinks") {
+    const preferred =
+      unique.find((i) => i.en === "Coca Cola") ||
+      unique.find((i) => /Espresso|Classic Mojito|Latte/i.test(i.en)) ||
+      unique[0];
+    return preferred ? [preferred, ...unique.filter((i) => i !== preferred)].slice(0, limit) : unique;
+  }
+
+  return unique.slice(0, limit);
+}
+
+export function getCategoryFallbackIcon(cat, isArabic) {
+  return (isArabic && cat.iconAr) || cat.icon || "";
 }
