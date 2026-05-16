@@ -78,12 +78,14 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
         visibleDurationMs: row.visible_duration_ms,
       });
       const behavior = classifyItemBehavior({ ...row, ...metrics });
-      const attention_score = computeAttentionScore({
+      const attention = computeAttentionScore({
         impressions: metrics.item_impressions,
         modalOpens: metrics.item_modal_opens,
         orders: row.quantity_sold,
         visibleDurationMs: row.visible_duration_ms,
         impressionSessions: row.impression_sessions,
+        avgVisibleDurationMs: row.avg_visible_duration_ms,
+        netSales: row.net_sales,
       });
       const order_trend_pct = trendPct(row.quantity_sold, prevByName[row.item_name.toLowerCase()] ?? null);
 
@@ -91,7 +93,8 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
         ...row,
         ...metrics,
         ...behavior,
-        attention_score,
+        attention_score: attention.score,
+        attention_subscores: attention,
         order_trend_pct,
         conversion_display:
           metrics.trust_label ||

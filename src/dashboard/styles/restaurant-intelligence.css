@@ -176,6 +176,39 @@
   color: #f9f9f7;
 }
 
+.ri-diag-body {
+  padding: 12px 16px 20px;
+}
+
+.ri-diag-health {
+  font-size: 13px;
+  margin-bottom: 12px;
+  color: rgba(249, 249, 247, 0.75);
+}
+
+.ri-diag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+.ri-diag-list li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.ri-diag-list li.ok span:last-child {
+  color: rgba(78, 205, 196, 0.85);
+}
+
+.ri-diag-list li.warn span:last-child {
+  color: rgba(215, 188, 138, 0.9);
+}
+
 .ri-kpi-label {
   font-size: 10px;
   text-transform: uppercase;

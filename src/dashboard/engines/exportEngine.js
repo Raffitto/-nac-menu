@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { exportCSV } from "../utils/formatters";
 import { exportCell, clampMetric } from "../utils/intelligenceSanity";
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
+import { businessDayExportNote } from "../utils/businessDay";
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -20,15 +21,26 @@ function formatConvExport(f) {
   return pct > 0 ? `${pct}%` : "—";
 }
 
-/** Premium multi-sheet XLSX — Visibility vs Sales */
-export function exportExecutiveXLSX({ briefing, intelligence, menuEngineering, forecasts, kpis }) {
+/** Premium multi-sheet XLSX — boardroom structure */
+export function exportExecutiveXLSX({
+  briefing,
+  intelligence,
+  menuEngineering,
+  forecasts,
+  kpis,
+  categoryGrades,
+  searchIntel,
+  cannibalization,
+}) {
   const wb = XLSX.utils.book_new();
   const generated = new Date().toLocaleString();
   const funnels = intelligence?.funnels || [];
+  const bizNote = intelligence?.businessDay?.note || businessDayExportNote();
 
   const summaryRows = [
-    ["NAC Menu OS — Guest Attention vs Orders"],
+    ["NAC Menu OS — Operational Intelligence"],
     ["Generated", generated],
+    ["Business day", bizNote],
     [],
     ["Management Brief"],
     ["What is working", exportCell((briefing?.strongest || []).join("; "))],
@@ -82,6 +94,68 @@ export function exportExecutiveXLSX({ briefing, intelligence, menuEngineering, f
     );
   }
 
+  if (categoryGrades?.length || intelligence?.categoryGrades?.length) {
+    const grades = categoryGrades || intelligence.categoryGrades;
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        grades.map((g) => ({
+          Category: g.name,
+          Grade: g.grade,
+          Score: g.score,
+          Reason: g.reason,
+          "Strongest item": g.strongest_item,
+          "Weakest item": g.weakest_item,
+          Action: g.action,
+          Confidence: g.confidence,
+        })),
+      ),
+      "Category Grades",
+    );
+  }
+
+  const search = searchIntel || intelligence?.search?.advanced;
+  if (search) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet([
+        { Metric: "Search friction score", Value: search.searchFrictionScore },
+        { Metric: "Unmet demand score", Value: search.unmetDemandScore },
+        ...search.topFailed.slice(0, 8).map((s) => ({ Type: "Failed", Query: s.query, Count: s.count })),
+        ...search.topSuccessful.slice(0, 5).map((s) => ({ Type: "Success", Query: s.query, Count: s.count })),
+      ]),
+      "Search Intelligence",
+    );
+  }
+
+  if (forecasts?.narratives?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["Forecast signals"],
+        ...forecasts.narratives.map((n) => [n.message, n.confidence || ""]),
+      ]),
+      "Forecast",
+    );
+  }
+
+  const cann = cannibalization || intelligence?.cannibalization;
+  if (cann?.groups?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        cann.groups.map((g) => ({
+          Group: g.competing_group,
+          Dominant: g.dominant_item,
+          Weaker: g.weaker_item,
+          Recommendation: g.recommendation,
+          Confidence: g.confidence,
+        })),
+      ),
+      "Cannibalization",
+    );
+  }
+
   if (menuEngineering?.length) {
     XLSX.utils.book_append_sheet(
       wb,
@@ -98,6 +172,24 @@ export function exportExecutiveXLSX({ briefing, intelligence, menuEngineering, f
     );
   }
 
+  if (funnels.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        funnels.map((f) => ({
+          Item: f.item_name,
+          Impressions: f.impressions ?? f.item_impressions,
+          Opens: f.item_modal_opens ?? f.item_opens,
+          Orders: f.orders,
+          "Behavior Type": f.behavior_type,
+          "Attention Score": f.attention_score,
+          Note: buildExportCommentary(f),
+        })),
+      ),
+      "Raw Data",
+    );
+  }
+
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   downloadBlob(
     new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
@@ -105,11 +197,24 @@ export function exportExecutiveXLSX({ briefing, intelligence, menuEngineering, f
   );
 }
 
-export function exportExecutivePDF({ briefing, intelligence, menuEngineering, kpis }) {
+export function exportExecutivePDF({
+  briefing,
+  intelligence,
+  menuEngineering,
+  kpis,
+  forecasts,
+  categoryGrades,
+  searchIntel,
+  cannibalization,
+}) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const margin = 48;
   let y = margin;
   const funnels = intelligence?.funnels || [];
+  const bizNote = intelligence?.businessDay?.note || businessDayExportNote();
+  const grades = categoryGrades || intelligence?.categoryGrades || [];
+  const search = searchIntel || intelligence?.search?.advanced;
+  const cann = cannibalization || intelligence?.cannibalization;
 
   doc.setFontSize(18);
   doc.setTextColor(40, 90, 85);
@@ -117,10 +222,12 @@ export function exportExecutivePDF({ briefing, intelligence, menuEngineering, kp
   y += 22;
   doc.setFontSize(11);
   doc.setTextColor(80, 80, 80);
-  doc.text("Guest Attention vs Orders", margin, y);
+  doc.text("Operational Intelligence — Visibility vs Sales", margin, y);
   y += 14;
   doc.setFontSize(9);
   doc.text(`Generated ${new Date().toLocaleString()}`, margin, y);
+  y += 12;
+  doc.text(bizNote, margin, y);
   y += 22;
 
   doc.setFontSize(10);
@@ -161,21 +268,94 @@ export function exportExecutivePDF({ briefing, intelligence, menuEngineering, kp
     margin: { left: margin, right: margin },
   });
 
-  const tableStart = doc.lastAutoTable.finalY + 24;
+  let tableStart = doc.lastAutoTable.finalY + 20;
   if (funnels.length) {
+    doc.setFontSize(10);
+    doc.text("Visibility vs Sales", margin, tableStart);
+    tableStart += 12;
     autoTable(doc, {
-      startY: tableStart > 680 ? margin : tableStart,
-      head: [["Item", "Impr.", "Orders", "Behavior", "Visual Eff."]],
-      body: funnels.slice(0, 14).map((f) => [
+      startY: tableStart,
+      head: [["Item", "Impr.", "Orders", "Behavior", "Attention"]],
+      body: funnels.slice(0, 12).map((f) => [
         exportCell(f.item_name),
         exportCell(f.impressions ?? f.item_impressions),
         exportCell(f.orders),
         exportCell(f.behavior_type),
-        f.visual_efficiency_score != null ? String(f.visual_efficiency_score) : "—",
+        exportCell(f.attention_score),
       ]),
       styles: { fontSize: 7, cellPadding: 3 },
       headStyles: { fillColor: [45, 95, 90] },
       margin: { left: margin, right: margin },
+    });
+    const cmt = funnels[0] ? buildExportCommentary(funnels[0]) : "";
+    if (cmt) {
+      let cy = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(8);
+      doc.setTextColor(90, 90, 90);
+      doc.splitTextToSize(cmt, 500).forEach((ln) => {
+        doc.text(ln, margin, cy);
+        cy += 10;
+      });
+    }
+  }
+
+  if (grades.length) {
+    let gy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 24 : y + 200;
+    if (gy > 700) { doc.addPage(); gy = margin; }
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    doc.text("Category Grades", margin, gy);
+    autoTable(doc, {
+      startY: gy + 10,
+      head: [["Category", "Grade", "Action"]],
+      body: grades.slice(0, 8).map((g) => [g.name, g.grade, g.action]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [215, 188, 138] },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if (search?.insights?.length) {
+    let sy = doc.lastAutoTable.finalY + 16;
+    if (sy > 720) { doc.addPage(); sy = margin; }
+    doc.text("Search Friction", margin, sy);
+    sy += 12;
+    search.insights.slice(0, 3).forEach((i) => {
+      doc.setFontSize(8);
+      doc.splitTextToSize(`• ${i.message}`, 500).forEach((ln) => {
+        doc.text(ln, margin, sy);
+        sy += 10;
+      });
+    });
+  }
+
+  if (forecasts?.narratives?.length) {
+    let fy = (doc.lastAutoTable?.finalY || y) + 16;
+    if (fy > 720) { doc.addPage(); fy = margin; }
+    doc.setFontSize(10);
+    doc.text("Forecast Signals", margin, fy);
+    fy += 12;
+    forecasts.narratives.slice(0, 4).forEach((n) => {
+      doc.setFontSize(8);
+      doc.splitTextToSize(`• ${n.message} (${n.confidence || "signal"})`, 500).forEach((ln) => {
+        doc.text(ln, margin, fy);
+        fy += 10;
+      });
+    });
+  }
+
+  if (cann?.risks?.length) {
+    let cy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 16 : margin + 400;
+    if (cy > 720) { doc.addPage(); cy = margin; }
+    doc.setFontSize(10);
+    doc.text("Cannibalization Risks", margin, cy);
+    cy += 12;
+    cann.risks.slice(0, 3).forEach((r) => {
+      doc.setFontSize(8);
+      doc.splitTextToSize(`• ${r.title}: ${r.detail}`, 500).forEach((ln) => {
+        doc.text(ln, margin, cy);
+        cy += 10;
+      });
     });
   }
 

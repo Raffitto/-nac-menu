@@ -4,10 +4,10 @@ import { Download, RefreshCw } from "lucide-react";
 
 const BRANCHES = ["Khobar", "Riyadh", "Jeddah", "All"];
 const TIME_RANGES = [
-  { label: "Today", value: 24 },
-  { label: "7D", value: 168 },
-  { label: "30D", value: 720 },
-  { label: "All", value: 0 },
+  { label: "Today", value: 24, title: "NAC business day · 3:00 AM – 2:59 AM (Riyadh)" },
+  { label: "7D", value: 168, title: "Last 7 business-day windows" },
+  { label: "30D", value: 720, title: "Last 30 business-day windows" },
+  { label: "All", value: 0, title: "All time" },
 ];
 
 export default function FilterBar({
@@ -46,6 +46,7 @@ export default function FilterBar({
             key={t.value}
             className={`nac-bi-filter-pill ${timeRange === t.value ? "nac-bi-filter-active nac-bi-filter-active--time" : ""}`}
             onClick={() => setTimeRange?.(t.value)}
+            title={t.title}
           >
             {t.label}
           </button>

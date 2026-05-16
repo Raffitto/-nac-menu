@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from "react";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -35,11 +35,8 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import AnalyticsDashboard from "./AnalyticsDashboard";
 import MenuManager from "./MenuManager";
-import AIInsights from "./AIInsights";
-import FoodicsIntelligence from "./FoodicsIntelligence";
-import RestaurantIntelligence from "./RestaurantIntelligence";
+
 import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -48,6 +45,25 @@ import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, formatHourLabel, exportCSV } from "./utils/formatters";
 import { generateInsights } from "./utils/insights";
 import "./styles/admin-dashboard.css";
+
+const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
+const AIInsights = lazy(() => import("./AIInsights"));
+const FoodicsIntelligence = lazy(() => import("./FoodicsIntelligence"));
+const RestaurantIntelligence = lazy(() => import("./RestaurantIntelligence"));
+
+function ViewFallback({ label }) {
+  return (
+    <motion.div
+      className="nac-bi-loading"
+      style={{ minHeight: 200, display: "flex", alignItems: "center", justifyContent: "center" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <RefreshCw size={20} className="nac-bi-spin" />
+      <span style={{ marginLeft: 8 }}>{label}</span>
+    </motion.div>
+  );
+}
 
 const sidebar = [
   { icon: <LayoutDashboard size={18} />, label: "Dashboard" },
@@ -273,15 +289,23 @@ export default function AdminDashboard({ onBack }) {
         }
       >
         {adminView === "analytics" ? (
-          <AnalyticsDashboard />
+          <Suspense fallback={<ViewFallback label="Loading analytics…" />}>
+            <AnalyticsDashboard />
+          </Suspense>
         ) : adminView === "menu-manager" ? (
           <MenuManager />
         ) : adminView === "ai-insights" ? (
-          <AIInsights />
+          <Suspense fallback={<ViewFallback label="Loading AI insights…" />}>
+            <AIInsights />
+          </Suspense>
         ) : adminView === "restaurant-intelligence" ? (
-          <RestaurantIntelligence />
+          <Suspense fallback={<ViewFallback label="Loading restaurant intelligence…" />}>
+            <RestaurantIntelligence />
+          </Suspense>
         ) : adminView === "sales-intelligence" ? (
-          <FoodicsIntelligence />
+          <Suspense fallback={<ViewFallback label="Loading sales intelligence…" />}>
+            <FoodicsIntelligence />
+          </Suspense>
         ) : (
           <>
             {/* TOPBAR */}

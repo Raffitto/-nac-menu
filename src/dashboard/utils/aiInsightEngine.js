@@ -4,6 +4,7 @@ import { answerForecastQuestion } from "../engines/forecastingEngine";
 import { computeTrustConfidence, buildDataContext, clampMetric, hasVisibilityTracking } from "./intelligenceSanity";
 import { normalizeTopItems } from "./topItemsNormalize";
 import { BEHAVIOR, prefixSignal, buildExportCommentary } from "./itemBehaviorEngine";
+import { periodLabelFromHours } from "./businessDay";
 
 const CATEGORY_LABELS = {
   breakfast: "Breakfast",
@@ -738,10 +739,7 @@ function formatHour12(hour) {
 }
 
 function periodLabel(hours) {
-  if (hours === 24) return "Today";
-  if (hours === 168) return "Last 7 days";
-  if (hours === 720) return "Last 30 days";
-  return "All time";
+  return periodLabelFromHours(hours);
 }
 
 const INTENT_SOURCE_METRICS = {

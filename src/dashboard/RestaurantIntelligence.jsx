@@ -32,7 +32,7 @@ import {
   categoryChartSeries,
   conversionChartSeries,
 } from "./engines/chartEngine";
-import { exportExecutivePDF, exportExecutiveXLSX, exportIntelligenceCSV } from "./engines/exportEngine";
+import { businessDayExportNote } from "./utils/businessDay";
 import "./styles/restaurant-intelligence.css";
 
 const TOOLTIP = {
@@ -50,6 +50,7 @@ export default function RestaurantIntelligence() {
   const [foodics, setFoodics] = useState(null);
   const [mgmtOpen, setMgmtOpen] = useState(true);
   const [deepOpen, setDeepOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
 
   const configured = isSupabaseConfigured();
 
@@ -121,9 +122,19 @@ export default function RestaurantIntelligence() {
       menuEngineering,
       forecasts,
       kpis: intelligence?.kpis,
+      categoryGrades: intelligence?.categoryGrades,
+      searchIntel: intelligence?.search?.advanced,
+      cannibalization: intelligence?.cannibalization,
     }),
     [briefing, intelligence, menuEngineering, forecasts],
   );
+
+  const runExport = async (type) => {
+    const mod = await import("./engines/exportEngine");
+    if (type === "csv") mod.exportIntelligenceCSV(intelligence);
+    else if (type === "xlsx") mod.exportExecutiveXLSX(exportPayload);
+    else mod.exportExecutivePDF(exportPayload);
+  };
 
   if (!configured) {
     return (
@@ -163,6 +174,7 @@ export default function RestaurantIntelligence() {
             {intelligence?.validation && (
               <p className="ri-trust-bar">
                 Based on {intelligence.validation.events.toLocaleString()} menu events · {intelligence.validation.sessions.toLocaleString()} sessions
+                {intelligence.businessDay?.key && ` · business day ${intelligence.businessDay.key} (3AM–3AM)`}
                 {intelligence.visibilityReady === false && " · collecting visibility signals"}
                 {intelligence.hasFoodics && " · Foodics linked"}
                 {intelligence.foodicsCompared && " · compared to previous import"}
@@ -172,13 +184,13 @@ export default function RestaurantIntelligence() {
           </div>
         </div>
         <div className="ri-export-btns">
-          <button type="button" className="ri-btn" onClick={() => exportIntelligenceCSV(intelligence)}>
+          <button type="button" className="ri-btn" onClick={() => runExport("csv")}>
             <Download size={14} /> CSV
           </button>
-          <button type="button" className="ri-btn" onClick={() => exportExecutiveXLSX(exportPayload)}>
+          <button type="button" className="ri-btn" onClick={() => runExport("xlsx")}>
             <FileText size={14} /> XLSX
           </button>
-          <button type="button" className="ri-btn ri-btn-gold" onClick={() => exportExecutivePDF(exportPayload)}>
+          <button type="button" className="ri-btn ri-btn-gold" onClick={() => runExport("pdf")}>
             <Download size={14} /> PDF
           </button>
         </div>
@@ -209,7 +221,8 @@ export default function RestaurantIntelligence() {
       {intelligence?.kpis && (
         <div className="ri-kpis">
           <KpiCard label="Sessions" value={intelligence.kpis.sessions} />
-          <KpiCard label="QR Scans" value={intelligence.kpis.qr} />
+          <KpiCard label="Impressions" value={intelligence.kpis.impressions} />
+          <KpiCard label="QR Today" value={intelligence.kpis.today_qr ?? intelligence.kpis.qr} />
           <KpiCard label="Bounce" value={`${intelligence.kpis.bounce_pct}%`} />
           <KpiCard label="Foodics" value={foodics?.hasImports ? "Linked" : "—"} />
         </div>
@@ -254,6 +267,30 @@ export default function RestaurantIntelligence() {
       </div>
       )}
 
+      <section className="ri-deep ri-diagnostics">
+        <button type="button" className="ri-deep-toggle" onClick={() => setDiagOpen(!diagOpen)}>
+          <BarChart3 size={16} />
+          Visibility Diagnostics
+          <ChevronDown size={14} className={diagOpen ? "open" : ""} />
+        </button>
+        <AnimatePresence>
+          {diagOpen && intelligence?.visibilityDiagnostics && (
+            <motion.div className="ri-deep-body ri-diag-body" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <p className="ri-diag-health">Traffic quality: <strong>{intelligence.visibilityDiagnostics.health}</strong></p>
+              <ul className="ri-diag-list">
+                {intelligence.visibilityDiagnostics.checks.map((c) => (
+                  <li key={c.label} className={c.ok ? "ok" : "warn"}>
+                    <span>{c.label}</span>
+                    <span>{c.value}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="ri-chart-note">{businessDayExportNote()}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+
       {/* Deep Analysis — collapsed */}
       <section className="ri-deep">
         <button type="button" className="ri-deep-toggle" onClick={() => setDeepOpen(!deepOpen)}>
@@ -294,15 +331,59 @@ export default function RestaurantIntelligence() {
                 </motion.div>
               </div>
 
+              {intelligence?.categoryGrades?.length > 0 && (
+                <motion.div className="ri-forecast">
+                  <h3>Category grades</h3>
+                  <ul>
+                    {intelligence.categoryGrades.slice(0, 6).map((g) => (
+                      <li key={g.category_id}><strong>{g.grade}</strong> {g.name} — {g.action}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+
+              {intelligence?.placement?.insights?.length > 0 && (
+                <motion.div className="ri-forecast">
+                  <h3>Placement intelligence</h3>
+                  <ul>
+                    {intelligence.placement.insights.map((p, i) => (
+                      <li key={i}>{p.message}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+
+              {intelligence?.cannibalization?.risks?.length > 0 && (
+                <motion.div className="ri-forecast">
+                  <h3>Cannibalization risks</h3>
+                  <ul>
+                    {intelligence.cannibalization.risks.map((r, i) => (
+                      <li key={i}>{r.title}: {r.detail}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+
+              {intelligence?.operational?.signals?.length > 0 && (
+                <motion.div className="ri-forecast">
+                  <h3>Operational signals</h3>
+                  <ul>
+                    {intelligence.operational.signals.slice(0, 6).map((s, i) => (
+                      <li key={i}>{s.message}</li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+
               {forecasts?.narratives?.length > 0 && (
-                <div className="ri-forecast">
+                <motion.div className="ri-forecast">
                   <h3>Forecast signals</h3>
                   <ul>
                     {forecasts.narratives.map((n, i) => (
                       <li key={i}>{n.message}</li>
                     ))}
                   </ul>
-                </div>
+                </motion.div>
               )}
             </motion.div>
           )}

@@ -67,33 +67,57 @@ export function hasVisibilityTracking(topItems = [], byEventType = {}) {
   return Number(byEventType?.item_impression) > 0;
 }
 
-/** Attention score 0–100 from visibility + depth + sales signals */
+/** Attention score 0–100 with sub-scores (visibility, duration, deep interest, sales, revenue) */
 export function computeAttentionScore({
   impressions = 0,
   modalOpens = 0,
   orders = 0,
   visibleDurationMs = 0,
   impressionSessions = 0,
+  avgVisibleDurationMs = 0,
+  netSales = 0,
+  addonOpens = 0,
 }) {
   const imp = safeNumber(impressions);
   const opens = safeNumber(modalOpens);
   const o = safeNumber(orders);
-  if (!imp && !opens && !o) return 0;
-  const impConv = imp > 0 ? safePct(Math.min(o, imp), imp) : 0;
-  const deep = imp > 0 ? safePct(opens, imp) : 0;
-  const durationBonus = Math.min(12, Math.round(safeNumber(visibleDurationMs) / 2500));
-  const repeatBonus = Math.min(8, safeNumber(impressionSessions) * 2);
-  return Math.min(
+  if (!imp && !opens && !o) {
+    return { score: 0, visibility_score: 0, duration_score: 0, deep_interest_score: 0, sales_score: 0, revenue_score: 0 };
+  }
+
+  const visibility_score = Math.min(100, Math.round(Math.min(imp, 120) * 0.35));
+  const deep_interest_score = imp > 0 ? Math.min(100, Math.round(safePct(opens, imp) * 1.1)) : 0;
+  const avgDur = avgVisibleDurationMs > 0
+    ? avgVisibleDurationMs
+    : impressionSessions > 0
+      ? visibleDurationMs / impressionSessions
+      : 0;
+  const duration_score = Math.min(100, Math.round(Math.min(avgDur, 15000) / 150));
+  const sales_score = Math.min(100, Math.round(Math.min(o, 25) * 3.2 + safePct(Math.min(o, imp), Math.max(imp, 1)) * 0.35));
+  const revPerImp = imp > 0 ? safeNumber(netSales) / imp : 0;
+  const revenue_score = Math.min(100, Math.round(revPerImp * 4.5));
+  const addonBonus = opens > 0 ? Math.min(8, safePct(addonOpens, opens) * 0.15) : 0;
+
+  const score = Math.min(
     100,
     Math.round(
-      Math.min(imp, 35) * 0.4 +
-        impConv * 0.28 +
-        deep * 0.18 +
-        Math.min(o, 15) * 0.55 +
-        durationBonus +
-        repeatBonus,
+      visibility_score * 0.22 +
+        duration_score * 0.12 +
+        deep_interest_score * 0.18 +
+        sales_score * 0.32 +
+        revenue_score * 0.14 +
+        addonBonus,
     ),
   );
+
+  return {
+    score,
+    visibility_score,
+    duration_score,
+    deep_interest_score,
+    sales_score,
+    revenue_score,
+  };
 }
 
 /**
@@ -186,12 +210,15 @@ export function sanitizeFunnelRow(row = {}) {
     visibleDurationMs: row.visible_duration_ms,
     addonOpens: row.addon_opens,
   });
-  const attention_score = computeAttentionScore({
+  const attention = computeAttentionScore({
     impressions: metrics.item_impressions,
     modalOpens: metrics.item_modal_opens,
     orders,
     visibleDurationMs: metrics.visible_duration_ms,
     impressionSessions: row.impression_sessions,
+    avgVisibleDurationMs: row.avg_visible_duration_ms,
+    netSales: row.net_sales ?? 0,
+    addonOpens: row.addon_opens,
   });
 
   return {
@@ -213,7 +240,8 @@ export function sanitizeFunnelRow(row = {}) {
     revenue_per_view: metrics.revenue_per_view ?? safeNumber(row.revenue_per_view, 0),
     trust_label: metrics.trust_label,
     offline_driven: metrics.offline_driven || row.offline_driven,
-    attention_score,
+    attention_score: attention.score,
+    attention_subscores: attention,
     order_trend_pct: row.order_trend_pct != null ? clampMetric(row.order_trend_pct, -999, 999) : null,
   };
 }

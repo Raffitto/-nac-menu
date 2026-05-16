@@ -1223,8 +1223,8 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
 {activeCategory === "drinks" ? (
 
   <div className="drinks-layout">
-{visibleSections.map((sec) => (
-      <div
+{visibleSections.map((sec, sectionIndex) => (
+      <motion.div
   key={sec.title.en}
   id={sec.title.en.toLowerCase().replaceAll(" ", "-")}
   className="drink-section"
@@ -1248,6 +1248,8 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
               className="drink-row"
               categoryId={activeCategory}
               sectionTitleEn={sec.title.en}
+              sectionIndex={sectionIndex}
+              itemIndex={index}
               menuItem={menuItem}
               language={lang}
               enabled={Boolean(activeCategory)}
@@ -1266,13 +1268,13 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
             </ImpressionTracked>
           ))}
         </div>
-      </div>
+      </motion.div>
     ))}
   </div>
 
 ) : (
 
-  visibleSections.map((sec) => (
+  visibleSections.map((sec, sectionIndex) => (
     <section
       key={sec.title.en}
       id={sec.title.en.toLowerCase().replaceAll(" ", "-")}
@@ -1297,6 +1299,8 @@ onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
             className="menu-card"
             categoryId={activeCategory}
             sectionTitleEn={sec.title.en}
+            sectionIndex={sectionIndex}
+            itemIndex={index}
             menuItem={menuItem}
             language={lang}
             enabled={Boolean(activeCategory)}

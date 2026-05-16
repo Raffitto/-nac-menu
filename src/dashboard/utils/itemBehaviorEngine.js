@@ -7,6 +7,7 @@ export const BEHAVIOR = {
   HABIT_ORDER: "Habit Order",
   MENU_TRAP: "Menu Trap",
   HIDDEN_OPPORTUNITY: "Hidden Opportunity",
+  NEEDS_EXPLANATION: "Needs Explanation",
   EARLY_SIGNAL: "Early Signal",
 };
 
@@ -30,7 +31,6 @@ export function prefixSignal(label, text) {
   return `${label}: ${text}`;
 }
 
-/** 0–100: card/photo sells without needing modal opens */
 export function computeVisualEfficiency(row = {}) {
   const imp = Number(row.item_impressions ?? row.impressions ?? row.item_views) || 0;
   const opens = Number(row.item_modal_opens ?? row.item_opens) || 0;
@@ -70,63 +70,108 @@ export function classifyItemBehavior(row = {}) {
   const orders = Number(row.quantity_sold ?? row.orders) || 0;
   const rate = Number(row.impression_conversion_pct ?? row.menu_conversion_pct ?? row.conversion_rate) || 0;
   const deep = imp > 0 ? (opens / imp) * 100 : 0;
+  const avgDur = Number(row.avg_visible_duration_ms) || (
+    row.impression_sessions > 0 ? (row.visible_duration_ms || 0) / row.impression_sessions : 0
+  );
 
   const impSignal = getImpressionSignalStrength(imp);
   const orderSignal = getOrderSignalStrength(orders);
   const visualEfficiency = computeVisualEfficiency(row);
+  const hasImpressions = imp > 0 || row.hasImpressionData;
 
   let behaviorType = BEHAVIOR.EARLY_SIGNAL;
   let suggestion = "Continue collecting visibility and sales data before making major changes.";
+  let reason = "Insufficient sample for a firm classification.";
+  let false_positive_risk = "high";
+  let recommended_action = suggestion;
 
-  if (imp < 30 || (imp < 50 && orders < 5)) {
+  if (!hasImpressions && orders > 0) {
     behaviorType = BEHAVIOR.EARLY_SIGNAL;
+    reason = "Visibility data still collecting — POS sales exist but impressions are not yet reliable.";
+    suggestion = "Keep the guest menu live; avoid repositioning until impression data matures.";
+    false_positive_risk = "high";
+  } else if (imp < 30 || (imp < 50 && orders < 5)) {
+    behaviorType = BEHAVIOR.EARLY_SIGNAL;
+    reason = impSignal.label;
     suggestion = "Sample size is still small — monitor before repositioning or repricing.";
+    false_positive_risk = "high";
+  } else if (imp >= 15 && opens >= 10 && orders < 5 && avgDur >= 3500) {
+    behaviorType = BEHAVIOR.NEEDS_EXPLANATION;
+    reason = "High deep interest and visible time without matching sales.";
+    suggestion = "Clarify description, portion, or price — guests investigate but hesitate to order.";
+    false_positive_risk = orderSignal.level === "low" ? "medium" : "low";
   } else if (imp < 12 && orders >= 10) {
     behaviorType = orders >= 20 ? BEHAVIOR.HABIT_ORDER : BEHAVIOR.HIDDEN_OPPORTUNITY;
+    reason = "Sales exceed passive menu visibility.";
     suggestion =
       behaviorType === BEHAVIOR.HABIT_ORDER
-        ? "Guests order habitually with little menu browsing — protect availability and table mention."
+        ? "Habitual ordering — protect availability and table mention."
         : "Strong sales with low visibility — feature higher in category and hero slots.";
+    false_positive_risk = "low";
   } else if (imp < 15 && orders >= 8 && opens < 3) {
     behaviorType = BEHAVIOR.WAITER_DRIVEN;
-    suggestion = "Sales outpace menu discovery — train staff recommendations and improve card placement.";
+    reason = "Orders outpace menu discovery with minimal opens.";
+    suggestion = "Train staff recommendations and improve card placement.";
+    false_positive_risk = "low";
   } else if (imp >= 20 && deep < 12 && orders >= 5 && rate >= 5) {
     behaviorType = BEHAVIOR.VISUAL_SELLER;
-    suggestion = "Photo and card layout build confidence — guests order without opening details often.";
+    reason = "Low modal-open rate with healthy sales — card/photo builds confidence.";
+    suggestion = "Photo and card layout sell the item — guests order without opening details often.";
+    false_positive_risk = "low";
   } else if (imp >= 15 && deep >= 12 && orders >= 5 && rate >= 6) {
     behaviorType = BEHAVIOR.DISCOVERY_SELLER;
-    suggestion = "Guests investigate and still order — strong discovery-to-sale path; keep quality consistent.";
-  } else if (imp >= 25 && rate < 5 && orders < Math.max(3, imp * 0.04)) {
+    reason = "Guests investigate and still order.";
+    suggestion = "Strong discovery-to-sale path; keep quality and description consistent.";
+    false_positive_risk = "low";
+  } else if (imp >= 30 && rate < 5 && orders < Math.max(3, imp * 0.04)) {
     behaviorType = BEHAVIOR.MENU_TRAP;
-    suggestion = "Attracts attention but underperforms in sales — review price, photo, and description.";
-  } else if (imp >= 15 && opens >= 10 && rate < 5) {
+    reason = "Meaningful impressions with weak sales conversion.";
+    suggestion = "Attracts attention but underperforms — review price, photo, and description.";
+    false_positive_risk = orderSignal.level === "low" ? "high" : "medium";
+  } else if (imp >= 20 && opens >= 8 && rate < 5 && orders < 5) {
     behaviorType = BEHAVIOR.MENU_TRAP;
-    suggestion = "Strong deep interest but weak sales — friction in price, portion, or expectations.";
+    reason = "Strong deep interest but weak sales in this period.";
+    suggestion = "Friction in price, portion, or expectations — test offer or staff prompt.";
+    false_positive_risk = "medium";
   } else if (orders > imp && imp > 0 && orders >= 8) {
     behaviorType = deep < 8 ? BEHAVIOR.WAITER_DRIVEN : BEHAVIOR.HABIT_ORDER;
+    reason = "Orders exceed passive visibility — staff or repeat behavior likely.";
     suggestion =
       behaviorType === BEHAVIOR.WAITER_DRIVEN
-        ? "Orders exceed passive visibility — likely staff-led or repeat guest behavior."
-        : "Repeat or habitual ordering — item may not need heavy menu promotion.";
-  } else if (imp > 0 && orders === 0) {
+        ? "Staff-led or repeat guest behavior — not a visibility failure."
+        : "Repeat ordering — may not need heavy menu promotion.";
+    false_positive_risk = "low";
+  } else if (imp >= 15 && orders === 0 && impSignal.level !== "very_low") {
     behaviorType = BEHAVIOR.MENU_TRAP;
-    suggestion = "Visible on the menu but no matching sales — test offer, photo, or placement.";
+    reason = "Visible on menu with no matching Foodics sales.";
+    suggestion = "Test offer, photo, or placement — confirm Foodics mapping.";
+    false_positive_risk = "high";
   } else if (imp >= 20 && rate >= 10) {
     behaviorType = deep >= 10 ? BEHAVIOR.DISCOVERY_SELLER : BEHAVIOR.VISUAL_SELLER;
-    suggestion = "Healthy visibility-to-sales efficiency — maintain placement and quality.";
+    reason = "Healthy visibility-to-sales efficiency.";
+    suggestion = "Maintain placement and quality.";
+    false_positive_risk = "low";
+  } else {
+    false_positive_risk = "medium";
   }
 
+  recommended_action = suggestion;
+  const confidence = `${impSignal.label} · ${orderSignal.label}`;
   const statusLabel = prefixSignal(impSignal.label, behaviorType);
 
   return {
     behavior_type: behaviorType,
     status: statusLabel,
     suggestion: prefixSignal(impSignal.label, suggestion),
+    reason,
+    confidence,
+    false_positive_risk,
+    recommended_action,
     signal_strength: impSignal.label,
     order_confidence: orderSignal.label,
     visual_efficiency_score: visualEfficiency.score,
     visual_efficiency_note: visualEfficiency.explanation,
-    confidence_combined: `${impSignal.label} · ${orderSignal.label}`,
+    confidence_combined: confidence,
   };
 }
 
@@ -143,5 +188,8 @@ export function buildExportCommentary(row) {
   if (b === BEHAVIOR.HIDDEN_OPPORTUNITY) {
     return `${name} sells well with limited visibility — consider elevating placement in the menu.`;
   }
-  return row.visual_efficiency_note || row.suggestion || "";
+  if (b === BEHAVIOR.NEEDS_EXPLANATION) {
+    return `${name} draws deep interest — guests may need clearer explanation before ordering.`;
+  }
+  return row.visual_efficiency_note || row.suggestion || row.reason || "";
 }

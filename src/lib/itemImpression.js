@@ -23,9 +23,25 @@ function markImpressed(sessionId, itemId) {
   }
 }
 
+function getScrollDepth() {
+  if (typeof window === "undefined") return 0;
+  const doc = document.documentElement;
+  const scrollTop = window.scrollY || doc.scrollTop || 0;
+  const max = Math.max(doc.scrollHeight - window.innerHeight, 1);
+  return Math.round((scrollTop / max) * 100);
+}
+
+function approximatePosition(itemIndex, sectionIndex) {
+  const ii = Number(itemIndex) || 0;
+  const si = Number(sectionIndex) || 0;
+  if (si === 0 && ii < 3) return "top";
+  if (ii >= 6 || si >= 2) return "lower";
+  if (ii >= 3) return "middle";
+  return "top";
+}
+
 /**
  * Attach visibility tracking to a menu card element.
- * Returns a ref callback for the card root.
  */
 export function createItemImpressionRef({
   itemId,
@@ -35,6 +51,8 @@ export function createItemImpressionRef({
   sectionId,
   language,
   enabled = true,
+  itemIndex = null,
+  sectionIndex = null,
 }) {
   let observer = null;
   let element = null;
@@ -51,6 +69,16 @@ export function createItemImpressionRef({
     visibleSince = null;
   };
 
+  const placementMeta = () => ({
+    category_id: categoryId,
+    item_index: itemIndex,
+    section_index: sectionIndex,
+    approximate_position: approximatePosition(itemIndex, sectionIndex),
+    viewport_width: typeof window !== "undefined" ? window.innerWidth : null,
+    viewport_height: typeof window !== "undefined" ? window.innerHeight : null,
+    scroll_depth_at_impression: getScrollDepth(),
+  });
+
   const flushDuration = () => {
     if (!visibleSince || !itemId) return;
     accumulatedMs += Date.now() - visibleSince;
@@ -64,7 +92,10 @@ export function createItemImpressionRef({
         item_id: itemId,
         item_name_en: itemNameEn,
         item_name_ar: itemNameAr,
-        metadata: { visible_duration_ms: Math.round(accumulatedMs) },
+        metadata: {
+          visible_duration_ms: Math.round(accumulatedMs),
+          ...placementMeta(),
+        },
       });
     }
     accumulatedMs = 0;
@@ -88,6 +119,7 @@ export function createItemImpressionRef({
             item_name_ar: itemNameAr,
             metadata: {
               intersection_ratio: Math.round(entry.intersectionRatio * 100) / 100,
+              ...placementMeta(),
             },
           });
         }
@@ -116,6 +148,8 @@ export function makeImpressionProps({
   menuItem,
   language,
   enabled,
+  itemIndex,
+  sectionIndex,
 }) {
   const sectionSlug = sectionTitleEn?.toLowerCase?.().replaceAll(" ", "-") ?? null;
   const itemId =
@@ -130,5 +164,7 @@ export function makeImpressionProps({
     sectionId: sectionSlug,
     language,
     enabled: Boolean(enabled && itemId),
+    itemIndex,
+    sectionIndex,
   };
 }

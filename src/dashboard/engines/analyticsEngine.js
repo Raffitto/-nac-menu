@@ -10,6 +10,13 @@ import {
 } from "../utils/intelligenceSanity";
 import { normalizeTopItems } from "../utils/topItemsNormalize";
 import { classifyItemBehavior } from "../utils/itemBehaviorEngine";
+import { buildSearchIntelligence as buildAdvancedSearch } from "./searchIntelligenceEngine";
+import { buildCategoryGrades } from "./categoryGradeEngine";
+import { buildPlacementIntelligence } from "./placementIntelligenceEngine";
+import { detectCannibalization } from "./cannibalizationEngine";
+import { buildOperationalIntelligence } from "./operationalIntelligenceEngine";
+import { buildVisibilityDiagnostics } from "../utils/visibilityDiagnosticsEngine";
+import { getBusinessDayRange, periodLabelFromHours } from "../utils/businessDay";
 
 function grade(score) {
   if (score >= 80) return "A";
@@ -80,17 +87,10 @@ export function buildItemFunnels(biData, conversionRows = []) {
 export function buildAttentionScores(funnels = []) {
   if (!funnels.length) return { elite: [], hiddenGems: [], menuTraps: [], deadWeight: [] };
 
-  const scored = funnels.map((f) => {
-    const views = f.item_opens || 0;
-    const orders = f.orders || 0;
-    const conv = clampMetric(f.conversion_pct || 0, 0, 100);
-    const revView = f.revenue_per_view || 0;
-    const score = Math.min(
-      100,
-      Math.round(views * 0.25 + conv * 2.5 + revView * 8 + Math.min(orders, 12) + (f.offline_driven ? 15 : 0)),
-    );
-    return { ...f, attention_score: score };
-  });
+  const scored = funnels.map((f) => ({
+    ...f,
+    attention_score: f.attention_score ?? 0,
+  }));
 
   const sorted = [...scored].sort((a, b) => b.attention_score - a.attention_score);
   const elite = sorted.filter((s) => s.attention_score >= 70 && s.orders > 0).slice(0, 5);
@@ -273,7 +273,7 @@ export function buildAddonIntelligence(biData) {
 }
 
 /** Full restaurant intelligence bundle */
-export function buildRestaurantIntelligence(biData, foodicsContext = null) {
+export function buildRestaurantIntelligence(biData, foodicsContext = null, options = {}) {
   if (!biData) return null;
 
   const validation = validateInsightData(biData);
@@ -281,8 +281,19 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null) {
   const conversionRows = foodicsContext?.conversionRows || [];
   const funnels = buildItemFunnels({ ...biData, top_items: topItems }, conversionRows);
   const attention = buildAttentionScores(funnels);
+  const searchAdvanced = buildAdvancedSearch(biData);
+  const categoryGrades = buildCategoryGrades(biData, funnels, searchAdvanced);
+  const placement = buildPlacementIntelligence(biData);
+  const cannibalization = detectCannibalization(funnels);
+  const operational = buildOperationalIntelligence(funnels, biData);
+  const visibilityDiagnostics = buildVisibilityDiagnostics(biData);
 
   const visibilityReady = hasVisibilityTracking(topItems, biData?.by_event_type);
+  const businessDay = biData?.business_day || {
+    key: getBusinessDayRange().key,
+    note: "Operational day 03:00 – 02:59 (Asia/Riyadh)",
+  };
+  const periodHours = options.periodHours ?? 0;
 
   return {
     funnels,
@@ -290,7 +301,15 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null) {
     friction: buildFrictionInsights(biData, funnels),
     offlineSellers: buildOfflineSellers(funnels),
     categoryHealth: buildCategoryHealth(biData),
-    search: buildSearchIntelligence(biData),
+    categoryGrades,
+    search: {
+      ...buildSearchIntelligence(biData),
+      advanced: searchAdvanced,
+    },
+    placement,
+    cannibalization,
+    operational,
+    visibilityDiagnostics,
     time: buildTimeIntelligence(biData),
     language: buildLanguageIntelligence(biData),
     addons: buildAddonIntelligence(biData),
@@ -298,12 +317,16 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null) {
     visibilityMessage: visibilityReady
       ? null
       : "Collecting visibility signals — impression data will sharpen guest attention metrics. Deep interest (opens) is used until then.",
+    businessDay,
+    periodLabel: periodLabelFromHours(periodHours),
     kpis: {
       sessions: validation.sessions,
       events: validation.events,
       impressions: Number(biData?.by_event_type?.item_impression) || 0,
       modal_opens: Number(biData?.by_event_type?.item_open) || 0,
       qr: Number(biData.by_event_type?.qr_session_start) || 0,
+      today_qr: Number(biData?.today_qr_sessions) || 0,
+      today_sessions: Number(biData?.today_unique_sessions) || 0,
       bounce_pct: safePct(Number(biData.bounce_sessions), validation.sessions),
       avg_time: Number(biData.avg_time_spent) || 0,
     },

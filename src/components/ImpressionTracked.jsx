@@ -14,11 +14,13 @@ export default function ImpressionTracked({
   menuItem,
   language,
   enabled = true,
+  itemIndex = null,
+  sectionIndex = null,
   ...rest
 }) {
   const impProps = useMemo(
-    () => makeImpressionProps({ categoryId, sectionTitleEn, menuItem, language, enabled }),
-    [categoryId, sectionTitleEn, menuItem, language, enabled],
+    () => makeImpressionProps({ categoryId, sectionTitleEn, menuItem, language, enabled, itemIndex, sectionIndex }),
+    [categoryId, sectionTitleEn, menuItem, language, enabled, itemIndex, sectionIndex],
   );
 
   const impressionRef = useMemo(() => createItemImpressionRef(impProps), [impProps]);
