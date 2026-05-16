@@ -915,12 +915,7 @@ useEffect(() => {
       }
     });
 
-    if (current) {
-      setActiveSection(current);
-      const el = document.getElementById(current);
-      const catId = el?.dataset?.categoryId;
-      if (catId) setActiveCategory(catId);
-    }
+    if (current) setActiveSection(current);
   };
 
   handleScroll();
