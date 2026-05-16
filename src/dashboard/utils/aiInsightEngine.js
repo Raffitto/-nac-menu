@@ -864,7 +864,9 @@ const INTENT_RULES = [
     id: "visibility",
     score(q) {
       let s = 0;
-      if (/\b(sell visually|visual seller|visual efficiency|photo.*work|card.*sell|which item photo)\b/.test(q)) s += 14;
+      if (/\b(sell visually|visual seller|visual efficiency|photo.*work|card.*sell|which item photo|photos work|item photos)\b/.test(q)) s += 14;
+      if (/\b(visually attract|visual curiosity|curiosity.*conversion|stronger visuals)\b/.test(q)) s += 12;
+      if (/\b(sell without explanation|without opening|confidence item)\b/.test(q)) s += 11;
       if (/\b(need more explanation|more detail|deep interest|guests investigate)\b/.test(q)) s += 12;
       if (/\b(waiter.?driven|staff recommend|habitual order|habit order|offline seller)\b/.test(q)) s += 13;
       if (/\b(attract.*attention|attention.*don.?t sell|menu trap|visibility.*not sell|high attention.*low)\b/.test(q)) s += 13;

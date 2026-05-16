@@ -8,8 +8,44 @@ export const BEHAVIOR = {
   MENU_TRAP: "Menu Trap",
   HIDDEN_OPPORTUNITY: "Hidden Opportunity",
   NEEDS_EXPLANATION: "Needs Explanation",
+  CURIOSITY_ITEM: "Curiosity Item",
+  CONFIDENCE_ITEM: "Confidence Item",
+  NEEDS_BETTER_PHOTO: "Needs Better Photo",
+  VISUAL_TRAP: "Visual Trap",
   EARLY_SIGNAL: "Early Signal",
 };
+
+export function computeVisualCuriosityMetrics(row = {}) {
+  const imp = Number(row.item_impressions ?? row.impressions) || 0;
+  const expands = Number(row.image_expands) || 0;
+  const opens = Number(row.item_modal_opens ?? row.item_opens) || 0;
+  const orders = Number(row.quantity_sold ?? row.orders) || 0;
+
+  const image_expand_rate = imp > 0 ? Math.round((expands / imp) * 1000) / 10 : null;
+  const impression_to_expand_ratio = image_expand_rate;
+  const expand_to_order_ratio = expands > 0 ? Math.round((orders / expands) * 1000) / 10 : null;
+  const visual_curiosity_score =
+    imp > 0
+      ? Math.min(100, Math.round((image_expand_rate || 0) * 0.45 + Math.min(opens, imp) / imp * 35))
+      : null;
+  const card_confidence_score =
+    imp > 0 && orders > 0
+      ? Math.min(100, Math.round((orders / imp) * 100 * 0.6 + (100 - (opens / imp) * 100) * 0.25))
+      : null;
+  const visual_to_order_efficiency =
+    imp > 0 && orders > 0
+      ? Math.min(100, Math.round((orders / imp) * 100 * 0.7 + (100 - (expands / imp) * 100) * 0.15))
+      : null;
+
+  return {
+    image_expand_rate,
+    impression_to_expand_ratio,
+    expand_to_order_ratio,
+    visual_curiosity_score,
+    card_confidence_score,
+    visual_to_order_efficiency,
+  };
+}
 
 export function getImpressionSignalStrength(impressions) {
   const imp = Number(impressions) || 0;
@@ -67,9 +103,12 @@ export function computeVisualEfficiency(row = {}) {
 export function classifyItemBehavior(row = {}) {
   const imp = Number(row.item_impressions ?? row.impressions ?? row.item_views) || 0;
   const opens = Number(row.item_modal_opens ?? row.item_opens) || 0;
+  const expands = Number(row.image_expands) || 0;
   const orders = Number(row.quantity_sold ?? row.orders) || 0;
   const rate = Number(row.impression_conversion_pct ?? row.menu_conversion_pct ?? row.conversion_rate) || 0;
   const deep = imp > 0 ? (opens / imp) * 100 : 0;
+  const expandRate = imp > 0 ? (expands / imp) * 100 : 0;
+  const visualMetrics = computeVisualCuriosityMetrics(row);
   const avgDur = Number(row.avg_visible_duration_ms) || (
     row.impression_sessions > 0 ? (row.visible_duration_ms || 0) / row.impression_sessions : 0
   );
@@ -113,6 +152,26 @@ export function classifyItemBehavior(row = {}) {
     reason = "Orders outpace menu discovery with minimal opens.";
     suggestion = "Train staff recommendations and improve card placement.";
     false_positive_risk = "low";
+  } else if (imp >= 25 && expandRate >= 15 && orders < Math.max(3, imp * 0.04) && expands >= 8) {
+    behaviorType = BEHAVIOR.VISUAL_TRAP;
+    reason = "High image curiosity with weak sales — photo attracts but does not convert.";
+    suggestion = "Test photo, price, and portion expectations — visual pull without order confidence.";
+    false_positive_risk = orderSignal.level === "low" ? "high" : "medium";
+  } else if (imp >= 20 && expandRate >= 12 && deep >= 10 && orders < 5) {
+    behaviorType = BEHAVIOR.CURIOSITY_ITEM;
+    reason = "Guests expand and open details but orders lag — intrigued but hesitant.";
+    suggestion = "Clarify value on the card or train staff to recommend — reduce hesitation.";
+    false_positive_risk = "medium";
+  } else if (imp >= 20 && expandRate < 8 && deep < 10 && orders >= 5) {
+    behaviorType = BEHAVIOR.CONFIDENCE_ITEM;
+    reason = "Strong sales with low interaction — guests trust the item at a glance.";
+    suggestion = "Card and photo build instant confidence — protect placement.";
+    false_positive_risk = "low";
+  } else if (imp >= 15 && opens >= 10 && expandRate < 6 && orders < 5) {
+    behaviorType = BEHAVIOR.NEEDS_BETTER_PHOTO;
+    reason = "Modal detail attracts more than the photo — description drives interest.";
+    suggestion = "Upgrade hero photography — guests need the modal to understand the item.";
+    false_positive_risk = "medium";
   } else if (imp >= 20 && deep < 12 && orders >= 5 && rate >= 5) {
     behaviorType = BEHAVIOR.VISUAL_SELLER;
     reason = "Low modal-open rate with healthy sales — card/photo builds confidence.";
@@ -172,6 +231,7 @@ export function classifyItemBehavior(row = {}) {
     visual_efficiency_score: visualEfficiency.score,
     visual_efficiency_note: visualEfficiency.explanation,
     confidence_combined: confidence,
+    ...visualMetrics,
   };
 }
 

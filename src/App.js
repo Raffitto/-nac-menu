@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls } from "framer-motion";
-import { ChevronRight, ArrowLeft, X } from "lucide-react";
+import { X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
-import ImpressionTracked from "./components/ImpressionTracked";
+import ContextualMenuView from "./components/ContextualMenuView";
+import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
 import {
   trackEvent,
   makeMenuItemId,
@@ -493,7 +494,11 @@ export default function App() {
 
   const { categories, menuData, allergenLabels } = useMenuData(_fallback);
 
-const [activeCategory, setActiveCategory] = useState(null);
+const [contextualFlow] = useState(() => getContextualFlow());
+const [showCategorySelector, setShowCategorySelector] = useState(false);
+const [exploreCategory, setExploreCategory] = useState(null);
+const [activeCategory, setActiveCategory] = useState(contextualFlow.primary);
+const [itemCategoryId, setItemCategoryId] = useState(null);
 const [activeItem, setActiveItem] = useState(null);
 const [search, setSearch] = useState("");
 const dragY = useMotionValue(0);
@@ -592,9 +597,14 @@ useEffect(() => {
 }, [lang]);
 useEffect(() => {
 
-  if (!activeCategory) return;
+  const preloadCats = exploreCategory
+    ? [exploreCategory]
+    : showCategorySelector
+      ? []
+      : contextualFlow.categories;
+  if (!preloadCats.length) return;
 
-  const images = menuData[activeCategory]
+  const images = preloadCats.flatMap((cat) => menuData[cat] || [])
   .flatMap((sec) => sec.items)
   .flatMap((item) => [
     item.image,
@@ -610,15 +620,16 @@ useEffect(() => {
 
   });
 
-}, [activeCategory, menuData]);
+}, [exploreCategory, showCategorySelector, contextualFlow, menuData]);
 const [allergyOpen, setAllergyOpen] = useState(false);
 const [selectedAllergens, setSelectedAllergens] = useState([]);
 const [selectedDiet, setSelectedDiet] = useState("");
 const touchStartX = useRef(0);
 const touchEndX = useRef(0);
 
-  const currentCategory = categories.find((cat) => cat.id === activeCategory);
-  const sections = activeCategory ? menuData[activeCategory] : [];
+  const effectiveCategory = exploreCategory || activeCategory;
+  const sections = effectiveCategory ? menuData[effectiveCategory] : [];
+  const modalCategoryId = itemCategoryId || effectiveCategory;
 
   const isArabic = lang === "ar";
   const now = new Date();
@@ -661,31 +672,30 @@ const isAllowed = (menuItem) => {
   return true;
 };
 
+  const menuCategoryIds = showCategorySelector
+    ? []
+    : exploreCategory
+      ? [exploreCategory]
+      : contextualFlow.categories;
+
+  const itemMatchesFilters = (menuItem) => {
+    if (!isAllowed(menuItem)) return false;
+    const searchTerm = search.toLowerCase().trim();
+    if (!searchTerm) return true;
+    const searchableText = `${menuItem.en} ${menuItem.ar} ${menuItem.descEn} ${menuItem.descAr}`.toLowerCase();
+    return searchableText.includes(searchTerm);
+  };
+
   const visibleSections = sections
-  .map((sec) => ({
-    ...sec,
-    items: sec.items.filter((menuItem) => {
-      const matchesAllergy = isAllowed(menuItem);
+    .map((sec) => ({
+      ...sec,
+      items: sec.items.filter(itemMatchesFilters),
+    }))
+    .filter((sec) => sec.items.length > 0);
 
-      const searchTerm = search.toLowerCase().trim();
-
-const searchableText = `
-  ${menuItem.en}
-  ${menuItem.ar}
-  ${menuItem.descEn}
-  ${menuItem.descAr}
-`
-  .toLowerCase();
-
-const matchesSearch =
-  searchTerm === "" ||
-  searchableText.includes(searchTerm);
-
-      return matchesAllergy && matchesSearch;
-    }),
-  }))
-  .filter((sec) => sec.items.length > 0);
-  const allVisibleItems = visibleSections.flatMap((sec) => sec.items);
+  const allVisibleItems = menuCategoryIds.flatMap((catId) =>
+    (menuData[catId] || []).flatMap((sec) => sec.items.filter(itemMatchesFilters)),
+  );
 
   const closeActiveItem = useCallback(
     (reason) => {
@@ -693,18 +703,18 @@ const matchesSearch =
         setActiveItem(null);
         return;
       }
-      const sectionEn = findSectionTitleEnForItem(activeCategory, activeItem, menuData);
+      const sectionEn = findSectionTitleEnForItem(modalCategoryId, activeItem, menuData);
       const sectionSlug = sectionEn
         ? sectionEn.toLowerCase().replaceAll(" ", "-")
         : null;
       trackEvent({
         event_type: "item_close",
         language: lang,
-        category_id: activeCategory,
+        category_id: modalCategoryId,
         section_id: sectionSlug,
         item_id:
-          activeCategory && sectionEn
-            ? makeMenuItemId(activeCategory, sectionEn, activeItem.en)
+          modalCategoryId && sectionEn
+            ? makeMenuItemId(modalCategoryId, sectionEn, activeItem.en)
             : null,
         item_name_en: activeItem.en,
         item_name_ar: activeItem.ar,
@@ -712,39 +722,35 @@ const matchesSearch =
       });
       setActiveItem(null);
     },
-    [activeItem, activeCategory, lang, menuData]
+    [activeItem, modalCategoryId, lang, menuData]
   );
 
   const openMenuItem = useCallback(
-    (menuItem, sectionTitleEn) => {
+    (menuItem, sectionTitleEn, categoryIdOverride) => {
+      const catId = categoryIdOverride || effectiveCategory;
+      if (!catId) return;
+      setItemCategoryId(catId);
       dragY.set(0);
       setActiveItem(menuItem);
-      if (!activeCategory) return;
-      const sectionSlug = sectionTitleEn
-        .toLowerCase()
-        .replaceAll(" ", "-");
+      const sectionSlug = sectionTitleEn.toLowerCase().replaceAll(" ", "-");
       trackEvent({
         event_type: "item_open",
         language: lang,
-        category_id: activeCategory,
+        category_id: catId,
         section_id: sectionSlug,
-        item_id: makeMenuItemId(
-          activeCategory,
-          sectionTitleEn,
-          menuItem.en
-        ),
+        item_id: makeMenuItemId(catId, sectionTitleEn, menuItem.en),
         item_name_en: menuItem.en,
         item_name_ar: menuItem.ar,
       });
       trackEvent({
         event_type: "page_view",
         language: lang,
-        category_id: activeCategory,
+        category_id: catId,
         item_name_en: menuItem.en,
         metadata: { page: "item_modal" },
       });
     },
-    [activeCategory, lang, dragY]
+    [effectiveCategory, lang, dragY]
   );
 
   const handleSwipe = useCallback(() => {
@@ -755,17 +761,11 @@ const matchesSearch =
     if (diff > 90) {
       if (activeItem) {
         closeActiveItem("swipe");
-      } else if (activeCategory) {
-        trackEvent({
-          event_type: "menu_exit",
-          language: lang,
-          category_id: activeCategory,
-          metadata: { page: "home", from_category: activeCategory, method: "swipe" },
-        });
-        setActiveCategory(null);
+      } else if (!showCategorySelector) {
+        setShowCategorySelector(true);
       }
     }
-  }, [activeItem, activeCategory, closeActiveItem, lang]);
+  }, [activeItem, showCategorySelector, closeActiveItem]);
 
 const goToNextItem = () => {
   if (!activeItem) return;
@@ -903,7 +903,7 @@ useEffect(() => {
     if (elapsed >= 2) {
       trackEvent({
         event_type: "section_visibility_time",
-        category_id: activeCategory,
+        category_id: modalCategoryId,
         section_id: lastTrackedSection.current,
         language: lang,
         metadata: { seconds: elapsed },
@@ -912,7 +912,7 @@ useEffect(() => {
   }
   lastTrackedSection.current = activeSection;
   sectionEnterTime.current = now;
-}, [activeSection, activeCategory, lang]);
+}, [activeSection, activeCategory, modalCategoryId, lang]);
 
 useEffect(() => {
   if (!activeCategory || !activeSection) return;
@@ -949,21 +949,6 @@ useEffect(() => {
   return () => clearTimeout(t);
 }, [search, lang, activeCategory]);
 
-  const scrollToSection = (title) => {
-  const id = title.en.toLowerCase().replaceAll(" ", "-");
-  setActiveSection(id);
-  lastSectionEvent.current = { cat: activeCategory, sec: id };
-  if (activeCategory) {
-    trackEvent({
-      event_type: "section_view",
-      category_id: activeCategory,
-      section_id: id,
-      language: lang,
-      metadata: { source: "nav_click" },
-    });
-  }
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-};
 if (adminMode) {
   return <AdminDashboard onBack={() => setAdminMode(false)} />;
 }
@@ -1011,7 +996,7 @@ if (adminMode) {
       </div>
 
       <AnimatePresence mode="wait">
-        {!activeCategory ? (
+        {showCategorySelector ? (
           <motion.main key="home" className="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.28, ease: "easeOut" }}>
             <img src="/logo.png" alt="NAC" className="logo" />
             <button
@@ -1053,32 +1038,14 @@ if (adminMode) {
   key={cat.id}
   className="category-card"
   onClick={() => {
+  setShowCategorySelector(false);
   setActiveCategory(cat.id);
-
-  trackEvent({
-    event_type: "category_open",
-    category_id: cat.id,
-    language: lang,
-  });
-
-  trackEvent({
-    event_type: "page_view",
-    language: lang,
-    category_id: cat.id,
-    metadata: { page: cat.id },
-  });
-
-  const categoryAnalytics =
-    JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
-
-  categoryAnalytics[cat.en] =
-    (categoryAnalytics[cat.en] || 0) + 1;
-
-  localStorage.setItem(
-    "nacCategoryAnalytics",
-    JSON.stringify(categoryAnalytics)
-  );
-
+  setExploreCategory(contextualFlow.categories.includes(cat.id) ? null : cat.id);
+  trackEvent({ event_type: "category_open", category_id: cat.id, language: lang });
+  trackEvent({ event_type: "page_view", language: lang, category_id: cat.id, metadata: { page: cat.id, explore: !contextualFlow.categories.includes(cat.id) } });
+  const categoryAnalytics = JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
+  categoryAnalytics[cat.en] = (categoryAnalytics[cat.en] || 0) + 1;
+  localStorage.setItem("nacCategoryAnalytics", JSON.stringify(categoryAnalytics));
 }}
   initial={{ opacity: 0, y: 30 }}
   animate={{ opacity: 1, y: 0 }}
@@ -1103,235 +1070,82 @@ if (adminMode) {
             </motion.div>
           </motion.main>
         ) : (
-          <motion.main key="menu" className="menu-page" initial={{ opacity: 0, scale: 0.985 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.985 }} transition={{ duration: 0.32 }}>
-            <button className="back-button" onClick={() => {
-              trackEvent({
-                event_type: "menu_exit",
-                language: lang,
-                category_id: activeCategory,
-                metadata: { page: "home", from_category: activeCategory },
-              });
-              trackEvent({
-                event_type: "page_view",
-                language: lang,
-                metadata: { page: "home" },
-              });
-              setActiveCategory(null);
-            }}>
-              <ArrowLeft size={18} /> {isArabic ? "العودة" : "Back"}
-            </button>
+          <motion.main key="contextual" className="contextual-page menu-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.32 }}>
+            <section className="home-hero">
+              <img src="/logo.png" alt="NAC" className="logo logo-compact" />
+              <motion.h1 className="branch-title" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                {isArabic ? "الخبر" : "KHOBAR"}
+              </motion.h1>
+              <p className="contextual-greeting">{getContextualGreeting(contextualFlow, isArabic)}</p>
+            </section>
 
-            <div className="menu-header">
-              <p>NAC KHOBAR</p>
-              <h1>{isArabic ? currentCategory.ar : currentCategory.en}</h1>
-              <span>{isArabic ? currentCategory.timeAr : currentCategory.timeEn}</span>
-            </div>
-  <input
-  type="text"
-  className="menu-search"
-  onFocus={(e) => e.target.parentElement.classList.add("search-active")}
-onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
-  placeholder={
-    isArabic
-      ? "ابحث في القائمة..."
-      : "Search the menu..."
-  }
-  value={search}
-  onChange={(e) => {
-  const value = e.target.value;
+            <input
+              type="text"
+              className="menu-search"
+              onFocus={(e) => e.target.parentElement.classList.add("search-active")}
+              onBlur={(e) => e.target.parentElement.classList.remove("search-active")}
+              placeholder={isArabic ? "ابحث في القائمة..." : "Search the menu..."}
+              value={search}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSearch(value);
+                if (value.length > 2) {
+                  const searches = JSON.parse(localStorage.getItem("nacSearchAnalytics")) || {};
+                  searches[value.toLowerCase()] = (searches[value.toLowerCase()] || 0) + 1;
+                  localStorage.setItem("nacSearchAnalytics", JSON.stringify(searches));
+                }
+              }}
+            />
 
-  setSearch(value);
-
-  if (value.length > 2) {
-    const searches =
-      JSON.parse(localStorage.getItem("nacSearchAnalytics")) || {};
-
-    searches[value.toLowerCase()] =
-      (searches[value.toLowerCase()] || 0) + 1;
-
-    localStorage.setItem(
-      "nacSearchAnalytics",
-      JSON.stringify(searches)
-    );
-  }
-}}
-/>          
-<div className="allergy-bar">
-<button
-  onClick={() => {
-    setAllergyOpen(true);
-
-    trackEvent({
-      event_type: "allergy_modal_open",
-      language: lang,
-      category_id: activeCategory,
-    });
-  }}
->
-   {isArabic ? "الحساسية والتفضيلات" : "Allergies & Preferences"}
-  </button>
-
-  {(selectedAllergens.length > 0 || selectedDiet) && (
-    <button
-      className="clear-filter"
-      onClick={() => {
-        trackEvent({
-          event_type: "filter_clear",
-          language: lang,
-          category_id: activeCategory,
-          selected_allergens:
-            selectedAllergens.length > 0 ? [...selectedAllergens] : null,
-          metadata: {
-            diet: selectedDiet || null,
-          },
-        });
-      
-        setSelectedAllergens([]);
-        setSelectedDiet("");
-      }}
-    >
-      {isArabic ? "مسح الفلتر" : "Clear Filters"}
-    </button>
-  )}
-</div>
-            <div className="section-nav">
-  {visibleSections.map((sec) => {
-    const id = sec.title.en.toLowerCase().replaceAll(" ", "-");
-
-    return (
-      <motion.button
-  key={sec.title.en}
-  className={activeSection === id ? "active" : ""}
-  onClick={() => scrollToSection(sec.title)}
-  whileTap={{ scale: 0.92 }}
-  animate={{
-    scale: activeSection === id ? 1.06 : 1,
-    y: activeSection === id ? -2 : 0,
-  }}
-  transition={{ duration: 0.18 }}
->
-        {isArabic ? sec.title.ar : sec.title.en}
-      </motion.button>
-    );
-  })}
-</div>
-{visibleSections.length === 0 && (
-  <p className="empty-state">
-    {isArabic ? "لا توجد نتائج مطابقة" : "No matching results"}
-  </p>
-)}
-{activeCategory === "drinks" ? (
-
-  <div className="drinks-layout">
-{visibleSections.map((sec, sectionIndex) => (
-      <motion.div
-  key={sec.title.en}
-  id={sec.title.en.toLowerCase().replaceAll(" ", "-")}
-  className="drink-section"
->
-        <h2 className="drink-title">
-          {isArabic ? sec.title.ar : sec.title.en}
-        </h2>
-
-        <div className="drink-list">
-
-  {sec.items.filter(isAllowed).length === 0 && (
-    <p className="empty-state">
-      {isArabic ? "لا توجد عناصر مناسبة" : "No matching items"}
-    </p>
-  )}
-
-  {sec.items.map((menuItem, index) => (
-            <ImpressionTracked
-              key={`${menuItem.en}-${index}`}
-              asMotion={false}
-              className="drink-row"
-              categoryId={activeCategory}
-              sectionTitleEn={sec.title.en}
-              sectionIndex={sectionIndex}
-              itemIndex={index}
-              menuItem={menuItem}
-              language={lang}
-              enabled={Boolean(activeCategory)}
-              onClick={() => openMenuItem(menuItem, sec.title.en)}
-            >
-              <div className="drink-left">
-  <span className="drink-name">
-    {isArabic ? menuItem.ar : menuItem.en}
-  </span>
-  <span className="drink-dots"></span>
-</div>
-
-<span className="drink-price">
-  {menuItem.price}
-</span>
-            </ImpressionTracked>
-          ))}
-        </div>
-      </motion.div>
-    ))}
-  </div>
-
-) : (
-
-  visibleSections.map((sec, sectionIndex) => (
-    <section
-      key={sec.title.en}
-      id={sec.title.en.toLowerCase().replaceAll(" ", "-")}
-      className="menu-section"
-    >
-      <h2 className="section-title no-arabic-spacing">
-        {isArabic ? sec.title.ar : sec.title.en}
-      </h2>
-
-      <motion.div
-  className="menu-grid"
-  initial="show"
-  animate="show"
-  variants={{
-    show: { transition: { staggerChildren: 0.045 } }
-  }}
->
-  {sec.items.map((menuItem, index) => (
-            <ImpressionTracked
-            key={`${menuItem.en}-${index}`}
-            layoutId={`card-${menuItem.en}`}
-            className="menu-card"
-            categoryId={activeCategory}
-            sectionTitleEn={sec.title.en}
-            sectionIndex={sectionIndex}
-            itemIndex={index}
-            menuItem={menuItem}
-            language={lang}
-            enabled={Boolean(activeCategory)}
-            onClick={() => openMenuItem(menuItem, sec.title.en)}
-            variants={{
-              hidden: { opacity: 0, y: 18 },
-              show: { opacity: 1, y: 0 }
-            }}
-          >
-            <img src={menuItem.image} alt={menuItem.en} />
-
-            <div className="menu-card-info">
-              <div>
-                <h3>{isArabic ? menuItem.ar : menuItem.en}</h3>
-                <p>{isArabic ? menuItem.descAr : menuItem.descEn}</p>
-              </div>
-
-              <div className="menu-card-bottom">
-                <span>{menuItem.calories} cal</span>
-                <strong>{menuItem.price}</strong>
-              </div>
+            <div className="allergy-bar">
+              <button
+                type="button"
+                onClick={() => {
+                  setAllergyOpen(true);
+                  trackEvent({ event_type: "allergy_modal_open", language: lang, category_id: activeCategory });
+                }}
+              >
+                {isArabic ? "الحساسية والتفضيلات" : "Allergies & Preferences"}
+              </button>
+              {(selectedAllergens.length > 0 || selectedDiet) && (
+                <button
+                  type="button"
+                  className="clear-filter"
+                  onClick={() => {
+                    trackEvent({
+                      event_type: "filter_clear",
+                      language: lang,
+                      category_id: activeCategory,
+                      selected_allergens: selectedAllergens.length > 0 ? [...selectedAllergens] : null,
+                      metadata: { diet: selectedDiet || null },
+                    });
+                    setSelectedAllergens([]);
+                    setSelectedDiet("");
+                  }}
+                >
+                  {isArabic ? "مسح الفلتر" : "Clear Filters"}
+                </button>
+              )}
             </div>
 
-            <ChevronRight className="chevron" />
-          </ImpressionTracked>
-        ))}
-      </motion.div>
-    </section>
-  ))
-
-)}
+            <ContextualMenuView
+              flow={contextualFlow}
+              categories={categories}
+              menuData={menuData}
+              activeCategory={activeCategory}
+              setActiveCategory={setActiveCategory}
+              isArabic={isArabic}
+              lang={lang}
+              search={search}
+              isAllowed={isAllowed}
+              onOpenItem={openMenuItem}
+              onShowAllMenus={() => setShowCategorySelector(true)}
+              exploreOnlyCategory={exploreCategory}
+              onBackToContextual={() => {
+                setExploreCategory(null);
+                setActiveCategory(contextualFlow.primary);
+              }}
+            />
 
             <p className="footer-note">
               {isArabic
@@ -1379,7 +1193,7 @@ onDragEnd={(e, info) => {
              
 <motion.div
   className="lux-image"
-  layoutId={`card-${activeItem.en}`}
+  layoutId={`card-${modalCategoryId}-${activeItem.en}`}
   transition={{ duration: 0.18, ease: "easeOut" }}
   drag="y"
   dragDirectionLock
@@ -1403,11 +1217,11 @@ onDragEnd={(e, info) => {
       trackEvent({
         event_type: "modal_drag_close",
         language: lang,
-        category_id: activeCategory,
+        category_id: modalCategoryId,
         section_id: sectionSlug,
         item_id:
-          activeCategory && sectionEn
-            ? makeMenuItemId(activeCategory, sectionEn, activeItem.en)
+          modalCategoryId && sectionEn
+            ? makeMenuItemId(modalCategoryId, sectionEn, activeItem.en)
             : null,
         item_name_en: activeItem?.en,
         item_name_ar: activeItem?.ar,
@@ -1481,7 +1295,7 @@ onClick={(e) => {
     item_id: activeCategory
       ? makeMenuItemId(
           activeCategory,
-          findSectionTitleEnForItem(activeCategory, activeItem, menuData),
+          findSectionTitleEnForItem(modalCategoryId, activeItem, menuData),
           activeItem.en
         )
       : null,
