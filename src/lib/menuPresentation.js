@@ -26,6 +26,54 @@ export function getBrandCategoryImage(categoryId) {
   return BRAND_CATEGORY_IMAGES[categoryId] || "";
 }
 
+const FOOD_PLUS_DRINKS_CATEGORIES = new Set(["breakfast", "daytime", "brunch"]);
+
+/** Sections shown for a category (breakfast/daytime/brunch include drinks catalog). */
+export function getDisplaySections(categoryId, menuData) {
+  const base = menuData?.[categoryId] || [];
+  if (!menuData || !FOOD_PLUS_DRINKS_CATEGORIES.has(categoryId)) {
+    return base;
+  }
+  const drinkSections = (menuData.drinks || []).map((sec) => ({
+    ...sec,
+    displayAsDrinks: true,
+  }));
+  return [...base, ...drinkSections];
+}
+
+/** Menu data with merged drink sections for breakfast, daytime, brunch. */
+export function buildDisplayMenuData(menuData) {
+  if (!menuData) return menuData;
+  const next = { ...menuData };
+  for (const id of FOOD_PLUS_DRINKS_CATEGORIES) {
+    if (menuData[id]) {
+      next[id] = getDisplaySections(id, menuData);
+    }
+  }
+  return next;
+}
+
+/** Category card icon — language-specific only (no cross-language fallback). */
+export function resolveCategoryIcon(category, isArabic) {
+  if (!category) return "";
+  return isArabic ? category.iconAr || "" : category.icon || "";
+}
+
+/** Resolve English section title for an item (uses display sections when merged). */
+export function findSectionTitleEnForItem(categoryId, menuItem, menuDataRef) {
+  if (!categoryId || !menuItem) return "";
+  for (const sec of getDisplaySections(categoryId, menuDataRef)) {
+    if (
+      sec.items?.some(
+        (i) => i.en === menuItem.en && i.image === menuItem.image,
+      )
+    ) {
+      return sec.title?.en || "";
+    }
+  }
+  return "";
+}
+
 export function sortDessertItems(items) {
   if (!items?.length) return items;
   return [...items].sort(

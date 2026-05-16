@@ -1113,7 +1113,8 @@ box-shadow: 0 12px 40px rgba(48,72,78,0.06);
   transform: none;
 }
 
-.home .category-icon.category-brand-icon {
+.home .category-icon.category-brand-icon,
+.home .category-icon.category-card-icon {
   width: auto;
   max-width: 92%;
   height: 86px;
@@ -1121,12 +1122,15 @@ box-shadow: 0 12px 40px rgba(48,72,78,0.06);
   object-position: center;
 }
 
-.home .category-icon.category-brand-icon.evening {
+.home .category-icon.category-brand-icon.evening,
+.home .category-icon.category-card-icon.evening {
   height: 92px;
 }
 
 .home .category-icon.category-brand-icon.drinks,
-.home .category-icon.category-brand-icon.desserts {
+.home .category-icon.category-brand-icon.desserts,
+.home .category-icon.category-card-icon.drinks,
+.home .category-icon.category-card-icon.desserts {
   height: 80px;
 }
 

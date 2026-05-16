@@ -172,20 +172,20 @@ export default function ContextualMenuView({
                 data-section-slug={sectionSlug(sec.title.en)}
                 data-category-id={block.catId}
                 className={
-                  block.catId === "drinks"
+                  block.catId === "drinks" || sec.displayAsDrinks
                     ? "drink-section-block contextual-menu-section"
                     : "menu-section contextual-menu-section"
                 }
               >
                 <h3 className="section-title no-arabic-spacing">{isArabic ? sec.title.ar : sec.title.en}</h3>
 
-                {block.catId === "drinks" ? (
+                {block.catId === "drinks" || sec.displayAsDrinks ? (
                   <div className="drink-card-grid">
                     {sec.items.map((menuItem, index) => (
                       <DrinkMenuCard
                         key={`${menuItem.en}-${index}`}
                         menuItem={menuItem}
-                        categoryId={block.catId}
+                        categoryId={sec.displayAsDrinks ? "drinks" : block.catId}
                         sectionTitleEn={sec.title.en}
                         sectionIndex={sectionIndex}
                         itemIndex={index}

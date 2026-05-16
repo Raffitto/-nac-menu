@@ -73,7 +73,7 @@ export default function RestaurantIntelligence() {
       }
       const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
         p_branch: null,
-        p_hours: 0,
+        p_hours: pHours,
       });
       if (rpcErr) throw rpcErr;
       setBiData(rpc);
@@ -84,7 +84,7 @@ export default function RestaurantIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [configured, selectedRange]);
+  }, [configured, pHours]);
 
   useEffect(() => {
     load();
