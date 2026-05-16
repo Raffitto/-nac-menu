@@ -15,6 +15,7 @@ import {
   trackTimeSpent,
 } from "./lib/analytics";
 import { useMenuData } from "./lib/useMenuData";
+import { applyMenuOrdering, getCategoryCardIcon } from "./lib/menuPresentation";
 
 const _fallbackCategories = [
   {
@@ -380,7 +381,7 @@ item("Black Angus Steak Au Poivre", "بلاك أنجوس ستيك بالفلفل
 ],
   desserts: [
     section("Desserts", "حلى", [
-      item("Affogato", "أفوقاتو", "Espresso poured over soft serve.", "إسبريسو فوق سوفت سيرف.", 400, "39 SAR", "/affogato.jpg", [], ["g", "d", "e"], ["vegetarian"]),
+      item("Crushed Milk Chocolate Cookies", "كوكيز شوكولاتة الحليب المطحون", "Frosties soft serve.", "فروستيز ناعم.", 1067, "62 SAR", "/cookies.jpg", [], ["g", "d", "e"], ["vegetarian"]),
 
       item("Churros, Burnt Milk", "شوروز مع الحليب المحروق", "Crispy churros with burnt milk dip.", "شوروز مقرمش مع صوص الحليب المحروق.", 650, "45 SAR", "/churros.jpg", [addOns.darkChocolate], ["g", "d", "e"], ["vegetarian"]),
 
@@ -390,7 +391,7 @@ item("Black Angus Steak Au Poivre", "بلاك أنجوس ستيك بالفلفل
 
       item("Ricotta Pancakes", "فطائر ريكوتا", "Dulce de leche, banana.", "دولسي دي ليتشي مع الموز.", 840, "59 SAR", "/pancakes.jpg", [addOns.darkChocolate, addOns.maple, addOns.dulce], ["g", "d", "e"], ["vegetarian"]),
 
-      item("Crushed Milk Chocolate Cookies", "كوكيز شوكولاتة الحليب المطحون", "Frosties soft serve.", "فروستيز ناعم.", 1067, "62 SAR", "/cookies.jpg", [], ["g", "d", "e"], ["vegetarian"]),
+      item("Affogato", "أفوقاتو", "Espresso poured over soft serve.", "إسبريسو فوق سوفت سيرف.", 400, "39 SAR", "/affogato.jpg", [], ["g", "d", "e"], ["vegetarian"]),
     ]),
   ],
 drinks: [
@@ -493,7 +494,8 @@ const _fallback = { categories: _fallbackCategories, menuData: _fallbackMenuData
 export default function App() {
   const [adminMode, setAdminMode] = useState(false);
 
-  const { categories, menuData, allergenLabels } = useMenuData(_fallback);
+  const { categories, menuData: rawMenuData, allergenLabels } = useMenuData(_fallback);
+  const menuData = useMemo(() => applyMenuOrdering(rawMenuData), [rawMenuData]);
 
 const [contextualFlow] = useState(() => getContextualFlow());
 const [showCategorySelector, setShowCategorySelector] = useState(false);
@@ -1118,9 +1120,11 @@ if (adminMode) {
   whileTap={{ scale: 0.94 }}
 >
                   <img
-  src={isArabic ? cat.iconAr : cat.icon}
+  src={getCategoryCardIcon(cat, menuData, isArabic)}
   alt={isArabic ? cat.ar : cat.en}
-  className={`category-icon ${isArabic ? "arabic-icon" : ""} ${cat.id}`}
+  className={`category-icon ${isArabic ? "arabic-icon" : ""} ${cat.id} ${
+    cat.id === "drinks" || cat.id === "desserts" ? "category-icon-product" : ""
+  }`}
 />
                   <small className="category-time">
   {isArabic ? cat.timeAr : cat.timeEn}

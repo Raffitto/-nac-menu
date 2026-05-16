@@ -871,6 +871,17 @@ box-shadow: 0 12px 40px rgba(48,72,78,0.06);
 .category-icon.arabic-icon.desserts {
   transform: scale(1.55);
 }
+
+.category-icon.category-icon-product {
+  width: 86px;
+  height: 86px;
+  object-fit: contain;
+  object-position: center;
+}
+
+.category-icon.arabic-icon.category-icon-product {
+  transform: scale(1.2);
+}
 .category-card:nth-child(2) .category-icon {
   transform: translateY(14px);
 }
