@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls } from "framer-motion";
 import { X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
+import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
   trackEvent,
   makeMenuItemId,
@@ -628,7 +629,6 @@ const touchStartX = useRef(0);
 const touchEndX = useRef(0);
 
   const effectiveCategory = exploreCategory || activeCategory;
-  const sections = effectiveCategory ? menuData[effectiveCategory] : [];
   const modalCategoryId = itemCategoryId || effectiveCategory;
 
   const isArabic = lang === "ar";
@@ -672,11 +672,15 @@ const isAllowed = (menuItem) => {
   return true;
 };
 
-  const menuCategoryIds = showCategorySelector
-    ? []
-    : exploreCategory
-      ? [exploreCategory]
-      : contextualFlow.categories;
+  const menuCategoryIds = useMemo(
+    () =>
+      showCategorySelector
+        ? []
+        : exploreCategory
+          ? [exploreCategory]
+          : contextualFlow.categories,
+    [showCategorySelector, exploreCategory, contextualFlow.categories],
+  );
 
   const itemMatchesFilters = (menuItem) => {
     if (!isAllowed(menuItem)) return false;
@@ -686,15 +690,49 @@ const isAllowed = (menuItem) => {
     return searchableText.includes(searchTerm);
   };
 
-  const visibleSections = sections
-    .map((sec) => ({
-      ...sec,
-      items: sec.items.filter(itemMatchesFilters),
-    }))
-    .filter((sec) => sec.items.length > 0);
-
   const allVisibleItems = menuCategoryIds.flatMap((catId) =>
     (menuData[catId] || []).flatMap((sec) => sec.items.filter(itemMatchesFilters)),
+  );
+
+  const contextualNavSections = useMemo(() => {
+    if (showCategorySelector) return [];
+    const searchTerm = search.toLowerCase().trim();
+    return menuCategoryIds.flatMap((catId) =>
+      (menuData[catId] || [])
+        .map((sec) => ({
+          catId,
+          title: sec.title,
+          items: sec.items.filter((menuItem) => {
+            const hasBlockedAllergen = menuItem.allergens?.some((a) => selectedAllergens.includes(a));
+            if (hasBlockedAllergen) return false;
+            if (selectedDiet === "vegetarian" && !(menuItem.tags?.includes("vegetarian") || menuItem.tags?.includes("vegan"))) {
+              return false;
+            }
+            if (selectedDiet === "vegan" && !menuItem.tags?.includes("vegan")) return false;
+            if (!searchTerm) return true;
+            const searchableText = `${menuItem.en} ${menuItem.ar} ${menuItem.descEn} ${menuItem.descAr}`.toLowerCase();
+            return searchableText.includes(searchTerm);
+          }),
+        }))
+        .filter((sec) => sec.items.length > 0),
+    );
+  }, [showCategorySelector, menuCategoryIds, menuData, search, selectedAllergens, selectedDiet]);
+
+  const handleSectionNavigate = useCallback(
+    (catId, titleEn, domId) => {
+      const slug = sectionSlug(titleEn);
+      setActiveCategory(catId);
+      setActiveSection(domId);
+      lastSectionEvent.current = { cat: catId, sec: slug };
+      trackEvent({
+        event_type: "section_view",
+        category_id: catId,
+        section_id: slug,
+        language: lang,
+        metadata: { source: "nav_click" },
+      });
+    },
+    [lang],
   );
 
   const closeActiveItem = useCallback(
@@ -863,27 +901,27 @@ useEffect(() => {
 }, [activeCategory, lang]);
 
 useEffect(() => {
+  if (showCategorySelector || contextualNavSections.length === 0) return undefined;
+
   const handleScroll = () => {
     let current = "";
 
-    visibleSections.forEach((sec) => {
-      const id = sec.title.en.toLowerCase().replaceAll(" ", "-");
-      const el = document.getElementById(id);
-
+    contextualNavSections.forEach((sec) => {
+      const domId = makeSectionDomId(sec.catId, sec.title.en);
+      const el = document.getElementById(domId);
       if (el) {
-        const top = el.offsetTop - 120;
-        if (window.scrollY >= top) {
-          current = id;
-        }
+        const top = el.offsetTop - 160;
+        if (window.scrollY >= top) current = domId;
       }
     });
 
     if (current) setActiveSection(current);
   };
 
-  window.addEventListener("scroll", handleScroll);
+  handleScroll();
+  window.addEventListener("scroll", handleScroll, { passive: true });
   return () => window.removeEventListener("scroll", handleScroll);
-}, [activeCategory, visibleSections]);
+}, [showCategorySelector, contextualNavSections]);
 
 // Heatmap prep: section visibility duration
 const sectionEnterTime = useRef(null);
@@ -896,44 +934,53 @@ useEffect(() => {
 }, [activeCategory]);
 
 useEffect(() => {
-  if (!activeCategory || !activeSection) return;
+  setActiveSection("");
+}, [showCategorySelector, exploreCategory, search]);
+
+useEffect(() => {
+  if (!activeSection) return;
+  const el = document.getElementById(activeSection);
+  const slug = el?.dataset?.sectionSlug;
+  const catId = el?.dataset?.categoryId;
+  if (!slug || !catId) return;
+
   const now = Date.now();
-  if (lastTrackedSection.current && lastTrackedSection.current !== activeSection && sectionEnterTime.current) {
+  if (lastTrackedSection.current && lastTrackedSection.current !== slug && sectionEnterTime.current) {
     const elapsed = Math.round((now - sectionEnterTime.current) / 1000);
     if (elapsed >= 2) {
       trackEvent({
         event_type: "section_visibility_time",
-        category_id: modalCategoryId,
+        category_id: catId,
         section_id: lastTrackedSection.current,
         language: lang,
         metadata: { seconds: elapsed },
       });
     }
   }
-  lastTrackedSection.current = activeSection;
+  lastTrackedSection.current = slug;
   sectionEnterTime.current = now;
-}, [activeSection, activeCategory, modalCategoryId, lang]);
+}, [activeSection, lang]);
 
 useEffect(() => {
-  if (!activeCategory || !activeSection) return;
+  if (!activeSection) return;
+  const el = document.getElementById(activeSection);
+  const slug = el?.dataset?.sectionSlug;
+  const catId = el?.dataset?.categoryId;
+  if (!slug || !catId) return;
+
   const handle = setTimeout(() => {
-    if (
-      lastSectionEvent.current.cat === activeCategory &&
-      lastSectionEvent.current.sec === activeSection
-    ) {
-      return;
-    }
-    lastSectionEvent.current = { cat: activeCategory, sec: activeSection };
+    if (lastSectionEvent.current.cat === catId && lastSectionEvent.current.sec === slug) return;
+    lastSectionEvent.current = { cat: catId, sec: slug };
     trackEvent({
       event_type: "section_view",
-      category_id: activeCategory,
-      section_id: activeSection,
+      category_id: catId,
+      section_id: slug,
       language: lang,
       metadata: { source: "scroll_spy" },
     });
   }, 600);
   return () => clearTimeout(handle);
-}, [activeSection, activeCategory, lang]);
+}, [activeSection, lang]);
 
 useEffect(() => {
   const q = search.trim();
@@ -961,8 +1008,19 @@ if (adminMode) {
     handleSwipe();
   }}
 >
-      <div className="lang-switch">
+      <div className="site-top-bar">
+        {!showCategorySelector && (
+          <button
+            type="button"
+            className="all-menus-link"
+            onClick={() => setShowCategorySelector(true)}
+          >
+            {isArabic ? "كل القوائم" : "All Menus"}
+          </button>
+        )}
+        <div className="lang-switch">
       <button
+  type="button"
   className={lang === "en" ? "active" : ""}
   onClick={() => {
     if (lang === "en") return;
@@ -979,6 +1037,7 @@ if (adminMode) {
 </button>
 
 <button
+  type="button"
   className={lang === "ar" ? "active" : ""}
   onClick={() => {
     if (lang === "ar") return;
@@ -993,6 +1052,7 @@ if (adminMode) {
 >
   AR
 </button>
+        </div>
       </div>
 
       <AnimatePresence mode="wait">
@@ -1139,8 +1199,9 @@ if (adminMode) {
               search={search}
               isAllowed={isAllowed}
               onOpenItem={openMenuItem}
-              onShowAllMenus={() => setShowCategorySelector(true)}
               exploreOnlyCategory={exploreCategory}
+              activeSection={activeSection}
+              onSectionNavigate={handleSectionNavigate}
               onBackToContextual={() => {
                 setExploreCategory(null);
                 setActiveCategory(contextualFlow.primary);
