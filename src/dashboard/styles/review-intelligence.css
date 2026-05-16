@@ -2,43 +2,150 @@
   padding: 2rem 2.5rem 4rem;
   max-width: 1200px;
   margin: 0 auto;
+  color: #f5f0e8;
 }
 
 .rev-intel-header {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 1.5rem;
+  flex-direction: column;
+  gap: 1.25rem;
   margin-bottom: 2rem;
+}
+
+.rev-intel-header-top {
+  flex: 1;
+  min-width: 0;
 }
 
 .rev-intel-kicker {
   font-size: 0.7rem;
   letter-spacing: 0.2em;
-  opacity: 0.6;
+  color: rgba(215, 188, 138, 0.85);
   margin: 0 0 0.25rem;
 }
 
+.rev-intel-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #f9f9f7;
+}
+
 .rev-intel-sub {
-  opacity: 0.65;
+  color: rgba(249, 249, 247, 0.72);
   margin-top: 0.35rem;
   font-size: 0.95rem;
 }
 
-.rev-intel-actions {
+/* ── High-contrast control bar ── */
+.rev-intel-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
   align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 16px;
+  background: rgba(12, 14, 16, 0.92);
+  border: 1px solid rgba(215, 188, 138, 0.28);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
 
-.rev-time-pills {
+.rev-ctrl-select {
+  min-width: 118px;
+  padding: 0.55rem 0.85rem;
+  border-radius: 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #f9f9f7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(215, 188, 138, 0.35);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23d7bc8a'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  padding-right: 1.75rem;
+}
+
+.rev-ctrl-select option {
+  background: #1a1c1e;
+  color: #f9f9f7;
+}
+
+.rev-ctrl-group {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.rev-select {
-  min-width: 110px;
+.rev-ctrl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: rgba(249, 249, 247, 0.88);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  white-space: nowrap;
+}
+
+.rev-ctrl-btn:hover:not(:disabled) {
+  color: #f9f9f7;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(215, 188, 138, 0.4);
+}
+
+.rev-ctrl-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rev-ctrl-btn.active {
+  color: #0a0c0e;
+  background: linear-gradient(135deg, #4ecdc4 0%, #3aab9f 100%);
+  border-color: rgba(78, 205, 196, 0.6);
+  box-shadow: 0 0 0 1px rgba(78, 205, 196, 0.25);
+}
+
+.rev-ctrl-btn.rev-ctrl-gold.active {
+  background: linear-gradient(135deg, #d7bc8a 0%, #a8895a 100%);
+  border-color: rgba(215, 188, 138, 0.65);
+  box-shadow: 0 0 0 1px rgba(215, 188, 138, 0.3);
+}
+
+.rev-ctrl-btn.rev-ctrl-action {
+  border-color: rgba(215, 188, 138, 0.35);
+  color: #f5e6c8;
+}
+
+.rev-ctrl-spacer {
+  flex: 1;
+  min-width: 0.5rem;
+}
+
+@media (min-width: 900px) {
+  .rev-intel-header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .rev-intel-controls {
+    width: auto;
+    max-width: 680px;
+    flex-shrink: 0;
+  }
 }
 
 .rev-kpi-grid {
@@ -49,8 +156,8 @@
 }
 
 .rev-kpi-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
   padding: 1.25rem;
   display: flex;
@@ -60,12 +167,13 @@
 
 .rev-kpi-card span {
   font-size: 0.8rem;
-  opacity: 0.65;
+  color: rgba(249, 249, 247, 0.65);
 }
 
 .rev-kpi-card strong {
   font-size: 1.75rem;
   font-weight: 600;
+  color: #f9f9f7;
 }
 
 .rev-section {
@@ -78,6 +186,16 @@
   gap: 0.5rem;
   font-size: 1.1rem;
   margin-bottom: 1rem;
+  color: #f9f9f7;
+}
+
+.rev-chart-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-height: 220px;
 }
 
 .rev-emp-grid {
@@ -87,8 +205,8 @@
 }
 
 .rev-emp-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(215, 188, 138, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(215, 188, 138, 0.22);
   border-radius: 14px;
   padding: 1rem 1.15rem;
 }
@@ -104,19 +222,20 @@
   font-size: 0.65rem;
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
-  background: rgba(215, 188, 138, 0.2);
+  background: rgba(215, 188, 138, 0.25);
+  color: #f5e6c8;
   white-space: nowrap;
 }
 
 .rev-emp-role {
   font-size: 0.8rem;
-  opacity: 0.55;
+  color: rgba(249, 249, 247, 0.55);
   margin: 0.25rem 0;
 }
 
 .rev-emp-reason {
   font-size: 0.85rem;
-  opacity: 0.8;
+  color: rgba(249, 249, 247, 0.78);
   line-height: 1.4;
 }
 
@@ -126,17 +245,18 @@
   gap: 0.75rem;
   margin-top: 0.75rem;
   font-size: 0.75rem;
-  opacity: 0.7;
+  color: rgba(249, 249, 247, 0.7);
 }
 
 .rev-conf {
   font-style: italic;
+  color: #4ecdc4;
 }
 
 .rev-branch-table {
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .rev-branch-row {
@@ -145,20 +265,25 @@
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(249, 249, 247, 0.88);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .rev-branch-row.head {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(215, 188, 138, 0.12);
   font-weight: 600;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  opacity: 0.7;
+  color: rgba(249, 249, 247, 0.75);
+}
+
+.rev-branch-row.rev-branch-highlight {
+  background: rgba(78, 205, 196, 0.08);
 }
 
 .rev-intel-muted {
-  opacity: 0.55;
+  color: rgba(249, 249, 247, 0.55);
 }
 
 .rev-intel-alert {
@@ -167,7 +292,9 @@
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border-radius: 10px;
-  background: rgba(255, 100, 100, 0.1);
+  background: rgba(255, 100, 100, 0.12);
+  border: 1px solid rgba(255, 120, 120, 0.25);
+  color: #ffb4b4;
   margin-bottom: 1rem;
 }
 
@@ -177,6 +304,6 @@
 .rev-dq-list {
   margin: 0.5rem 0 0;
   padding-left: 1.25rem;
-  opacity: 0.75;
+  color: rgba(249, 249, 247, 0.72);
   font-size: 0.85rem;
 }

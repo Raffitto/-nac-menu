@@ -565,10 +565,22 @@ body {
   background: rgba(255,255,255,0.06);
 }
 
-.nac-bi-filter-pill.active {
+.nac-bi-filter-pill.active,
+.nac-bi-filter-pill.nac-bi-filter-active {
   color: #f9f9f7;
   background: rgba(143,122,87,0.22);
   border-color: rgba(143,122,87,0.4);
+}
+
+.nac-bi-filter-pill.nac-bi-filter-active--time {
+  background: rgba(78, 205, 196, 0.2);
+  border-color: rgba(78, 205, 196, 0.45);
+  color: #f9f9f7;
+}
+
+.nac-bi-filter-pill.nac-bi-filter-active--branch {
+  background: rgba(215, 188, 138, 0.22);
+  border-color: rgba(215, 188, 138, 0.5);
 }
 
 .nac-bi-filter-actions {

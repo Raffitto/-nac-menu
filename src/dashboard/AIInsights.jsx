@@ -71,7 +71,7 @@ export default function AIInsights() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [timeRange, setTimeRange] = useState(0);
+  const [timeRange, setTimeRange] = useState(24);
   const [severityFilter, setSeverityFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [question, setQuestion] = useState("");
@@ -113,8 +113,8 @@ export default function AIInsights() {
       setFoodics(foodicsCtx);
       try {
         const [rev, branches] = await Promise.all([
-          fetchReviewIntelligence(process.env.REACT_APP_NAC_BRANCH_ID || "khobar", timeRange || 24),
-          fetchBranchComparison(timeRange || 24),
+          fetchReviewIntelligence(process.env.REACT_APP_NAC_BRANCH_ID || "khobar", timeRange),
+          fetchBranchComparison(timeRange),
         ]);
         setReviewIntel(rev);
         setBranchComparison(Array.isArray(branches) ? branches : []);

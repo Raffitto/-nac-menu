@@ -31,15 +31,18 @@ export function exportExecutiveXLSX({
   categoryGrades,
   searchIntel,
   cannibalization,
+  exportMeta,
 }) {
   const wb = XLSX.utils.book_new();
   const generated = new Date().toLocaleString();
   const funnels = intelligence?.funnels || [];
   const bizNote = intelligence?.businessDay?.note || businessDayExportNote();
+  const reportTitle = exportMeta?.title || "NAC Menu OS — Operational Intelligence";
 
   const summaryRows = [
-    ["NAC Menu OS — Operational Intelligence"],
+    [reportTitle],
     ["Generated", generated],
+    ["Period", exportMeta?.period || bizNote],
     ["Business day", bizNote],
     [],
     ["Management Brief"],
@@ -206,12 +209,14 @@ export function exportExecutivePDF({
   categoryGrades,
   searchIntel,
   cannibalization,
+  exportMeta,
 }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const margin = 48;
   let y = margin;
   const funnels = intelligence?.funnels || [];
   const bizNote = intelligence?.businessDay?.note || businessDayExportNote();
+  const reportTitle = exportMeta?.title || "NAC Visibility Intelligence";
   const grades = categoryGrades || intelligence?.categoryGrades || [];
   const search = searchIntel || intelligence?.search?.advanced;
   const cann = cannibalization || intelligence?.cannibalization;
@@ -222,7 +227,7 @@ export function exportExecutivePDF({
   y += 22;
   doc.setFontSize(11);
   doc.setTextColor(80, 80, 80);
-  doc.text("Operational Intelligence — Visibility vs Sales", margin, y);
+  doc.text(reportTitle, margin, y);
   y += 14;
   doc.setFontSize(9);
   doc.text(`Generated ${new Date().toLocaleString()}`, margin, y);
@@ -394,69 +399,293 @@ export function exportIntelligenceCSV(intelligence) {
   exportCSV("nac-visibility-export.csv", headers, rows);
 }
 
-/** Unified review + branch + employee export */
-export function exportUnifiedIntelligenceXLSX({
+const EXPORT_GOLD = [215, 188, 138];
+const EXPORT_TEAL = [78, 205, 196];
+
+function fallbackRow(msg = "Not enough data for this section yet.") {
+  return [[msg]];
+}
+
+function buildReviewCommentary(review, staffStats) {
+  const lines = [];
+  const conv = review?.conversion_pct ?? 0;
+  const gen = review?.reviews_generated ?? 0;
+  if (gen > 5 && conv < 20) {
+    lines.push("Review generation is healthy but Google click-through needs a stronger post-copy CTA.");
+  } else if (gen > 0) {
+    lines.push("Review funnel metrics are within expected range for the selected period.");
+  }
+  const top = staffStats?.[0];
+  if (top?.name && top.generated >= 3) {
+    lines.push(`${top.name} leads staff volume with ${top.generated} reviews and ${top.conversion_pct}% Google conversion.`);
+  }
+  if (!lines.length) lines.push("Collect more tagged review sessions to unlock executive commentary.");
+  return lines;
+}
+
+function drawBarChart(doc, startX, startY, items, { labelKey, valueKey, barColor, maxBarW = 120 }) {
+  const max = Math.max(...items.map((i) => Number(i[valueKey]) || 0), 1);
+  let y = startY;
+  items.slice(0, 8).forEach((item) => {
+    const label = String(item[labelKey] || "").slice(0, 18);
+    const val = Number(item[valueKey]) || 0;
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
+    doc.text(label, startX, y);
+    const barW = (val / max) * maxBarW;
+    doc.setFillColor(...barColor);
+    doc.rect(startX + 72, y - 3.5, Math.max(barW, val > 0 ? 2 : 0), 5, "F");
+    doc.text(String(val), startX + 72 + maxBarW + 6, y);
+    y += 11;
+  });
+  return y + 4;
+}
+
+/** Context-aware Review Intelligence export (branch + range from current view) */
+export function exportReviewIntelligenceReport({
+  branch,
+  selectedRange,
+  rangeLabel,
   review,
   unified,
   comparison = [],
+  staffStats = [],
   employees = [],
   diagnostics,
+  format = "xlsx",
 }) {
-  const wb = XLSX.utils.book_new();
+  const title = `Review Intelligence — ${branch} — ${rangeLabel}`;
   const generated = new Date().toLocaleString();
+  const commentary = buildReviewCommentary(review, staffStats);
+  const showComparison = comparison.length > 0;
+  const branchRow = comparison.find((b) => b.branch_id === branch.toLowerCase());
 
+  if (format === "pdf") {
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const margin = 48;
+    let y = margin;
+
+    doc.setFontSize(18);
+    doc.setTextColor(30, 30, 30);
+    doc.text(title, margin, y);
+    y += 22;
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated ${generated} · NAC business day logic (Asia/Riyadh)`, margin, y);
+    y += 24;
+
+    doc.setFontSize(11);
+    doc.setTextColor(40, 40, 40);
+    doc.text("Key metrics", margin, y);
+    y += 14;
+    autoTable(doc, {
+      startY: y,
+      head: [["Metric", "Value"]],
+      body: [
+        ["Reviews generated", String(review?.reviews_generated ?? 0)],
+        ["Google clicks", String(review?.google_clicks ?? 0)],
+        ["Review conversion %", `${review?.conversion_pct ?? 0}%`],
+        ["Menu sessions", String(unified?.sessions ?? 0)],
+      ],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: EXPORT_GOLD },
+      margin: { left: margin, right: margin },
+    });
+    y = doc.lastAutoTable.finalY + 18;
+
+    if (staffStats.length) {
+      doc.text("Staff performance", margin, y);
+      y += 12;
+      autoTable(doc, {
+        startY: y,
+        head: [["Staff", "Role", "Scans", "Generated", "Copy", "Google", "Conv %"]],
+        body: staffStats.map((s) => [
+          s.name,
+          s.role || "—",
+          s.opens,
+          s.generated,
+          s.copy,
+          s.google,
+          `${s.conversion_pct}%`,
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: EXPORT_TEAL },
+        margin: { left: margin, right: margin },
+      });
+      y = doc.lastAutoTable.finalY + 16;
+
+      if (y > 620) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.setFontSize(10);
+      doc.text("Scans by staff", margin, y);
+      y = drawBarChart(doc, margin, y + 10, staffStats, {
+        labelKey: "name",
+        valueKey: "opens",
+        barColor: EXPORT_TEAL,
+      });
+      doc.text("Google clicks by staff", margin, y);
+      y = drawBarChart(doc, margin, y + 10, staffStats, {
+        labelKey: "name",
+        valueKey: "google",
+        barColor: EXPORT_GOLD,
+      });
+    } else {
+      doc.setFontSize(9);
+      doc.text("Not enough staff-tagged data for charts yet.", margin, y);
+      y += 20;
+    }
+
+    if (showComparison) {
+      if (y > 640) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.setFontSize(10);
+      doc.text("Cross-branch benchmark", margin, y);
+      y += 10;
+      autoTable(doc, {
+        startY: y,
+        head: [["Branch", "Sessions", "Visual %", "Reviews", "Sales"]],
+        body: comparison.map((b) => [
+          b.branch_id,
+          b.sessions,
+          `${b.visual_conversion_pct}%`,
+          b.reviews,
+          b.sales ? Number(b.sales).toLocaleString() : "—",
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [120, 120, 120] },
+        margin: { left: margin, right: margin },
+      });
+      y = doc.lastAutoTable.finalY + 14;
+    }
+
+    doc.setFontSize(10);
+    doc.text("Executive commentary", margin, y);
+    y += 12;
+    commentary.forEach((line) => {
+      doc.setFontSize(9);
+      doc.splitTextToSize(`• ${line}`, 500).forEach((ln) => {
+        if (y > 750) {
+          doc.addPage();
+          y = margin;
+        }
+        doc.text(ln, margin, y);
+        y += 11;
+      });
+    });
+
+    const safeBranch = branch.replace(/\s+/g, "-").toLowerCase();
+    doc.save(`nac-review-intelligence-${safeBranch}-${selectedRange}.pdf`);
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
   const summary = [
-    ["NAC Unified Restaurant Intelligence"],
+    [title],
     ["Generated", generated],
-    ["Business day", unified?.business_day_key || ""],
+    ["Branch", branch],
+    ["Period", rangeLabel],
     [],
-    ["Review KPIs", "Value"],
+    ["Metric", "Value"],
     ["Reviews generated", review?.reviews_generated ?? 0],
     ["Google clicks", review?.google_clicks ?? 0],
     ["Review conversion %", review?.conversion_pct ?? 0],
     ["Menu sessions", unified?.sessions ?? 0],
-    ["Impressions", unified?.impressions ?? 0],
-    ["Sales (Foodics)", unified?.sales ?? 0],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
 
-  if (employees.length) {
-    const empSheet = employees.map((e) => ({
-      Employee: e.name,
-      Role: e.role,
-      Classification: e.classification?.label,
-      Reviews: e.metrics.reviews_generated,
-      "Google %": e.metrics.review_conversion_pct,
-      Confidence: e.metrics.confidence,
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(empSheet), "Employees");
+  if (staffStats.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        staffStats.map((s) => ({
+          Staff: s.name,
+          Role: s.role,
+          Branch: branch,
+          "Page opens": s.opens,
+          "Reviews generated": s.generated,
+          "Copy events": s.copy,
+          "Google clicks": s.google,
+          "Conversion %": s.conversion_pct,
+        }))
+      ),
+      "Staff"
+    );
+  } else {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fallbackRow()), "Staff");
   }
 
-  if (comparison.length) {
-    const branchSheet = comparison.map((b) => ({
+  if (employees.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        employees.map((e) => ({
+          Employee: e.name,
+          Classification: e.classification?.label,
+          "Reviews generated": e.metrics?.reviews_generated,
+          "Google %": e.metrics?.review_conversion_pct,
+          Confidence: e.metrics?.confidence,
+        }))
+      ),
+      "Classifications"
+    );
+  }
+
+  if (showComparison) {
+    const rows = comparison.map((b) => ({
       Branch: b.branch_id,
+      "This branch": b.branch_id === branch.toLowerCase() ? "Yes" : "",
       Sessions: b.sessions,
       "Visual conv %": b.visual_conversion_pct,
       Reviews: b.reviews,
       Sales: b.sales,
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(branchSheet), "Branches");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Branch benchmark");
   }
 
-  const commentary = [
-    ["Executive commentary"],
-    [
-      review?.conversion_pct < 20 && review?.reviews_generated > 5
-        ? "Review generation is healthy but Google click-through needs stronger post-copy CTAs."
-        : "Review funnel metrics within expected range for current sample.",
-    ],
-  ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(commentary), "Commentary");
+  if (branchRow) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        [`${branch} focus`],
+        ["Sessions", branchRow.sessions],
+        ["Reviews", branchRow.reviews],
+        ["Visual conversion %", branchRow.visual_conversion_pct],
+      ]),
+      branch
+    );
+  }
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([["Commentary"], ...commentary.map((c) => [c])]),
+    "Commentary"
+  );
 
   if (diagnostics?.issues?.length) {
-    const dq = diagnostics.issues.map((i) => ({ Code: i.code, Message: i.message, Severity: i.severity }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dq), "Diagnostics");
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        diagnostics.issues.map((i) => ({
+          Code: i.code,
+          Message: i.message,
+          Severity: i.severity,
+        }))
+      ),
+      "Data quality"
+    );
+  } else {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fallbackRow()), "Data quality");
   }
 
-  XLSX.writeFile(wb, "nac-unified-intelligence.xlsx");
+  const safeBranch = branch.replace(/\s+/g, "-").toLowerCase();
+  XLSX.writeFile(wb, `nac-review-intelligence-${safeBranch}-${selectedRange}.xlsx`);
+}
+
+/** @deprecated use exportReviewIntelligenceReport */
+export function exportUnifiedIntelligenceXLSX(ctx) {
+  exportReviewIntelligenceReport({ ...ctx, format: "xlsx" });
 }

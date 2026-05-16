@@ -33,6 +33,7 @@ import {
   conversionChartSeries,
 } from "./engines/chartEngine";
 import { businessDayExportNote } from "./utils/businessDay";
+import { DEFAULT_RANGE, RANGE_OPTIONS, rangeToHours, rangeExportLabel } from "./utils/rangeState";
 import "./styles/restaurant-intelligence.css";
 
 const TOOLTIP = {
@@ -51,8 +52,10 @@ export default function RestaurantIntelligence() {
   const [mgmtOpen, setMgmtOpen] = useState(true);
   const [deepOpen, setDeepOpen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
+  const [selectedRange, setSelectedRange] = useState(DEFAULT_RANGE);
 
   const configured = isSupabaseConfigured();
+  const pHours = rangeToHours(selectedRange);
 
   const load = useCallback(async () => {
     if (!supabase || !configured) {
@@ -81,7 +84,7 @@ export default function RestaurantIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [configured]);
+  }, [configured, selectedRange]);
 
   useEffect(() => {
     load();
@@ -125,8 +128,12 @@ export default function RestaurantIntelligence() {
       categoryGrades: intelligence?.categoryGrades,
       searchIntel: intelligence?.search?.advanced,
       cannibalization: intelligence?.cannibalization,
+      exportMeta: {
+        title: `Restaurant Intelligence — ${rangeExportLabel(selectedRange)}`,
+        period: rangeExportLabel(selectedRange),
+      },
     }),
-    [briefing, intelligence, menuEngineering, forecasts],
+    [briefing, intelligence, menuEngineering, forecasts, selectedRange],
   );
 
   const runExport = async (type) => {
@@ -183,16 +190,31 @@ export default function RestaurantIntelligence() {
             )}
           </div>
         </div>
-        <div className="ri-export-btns">
-          <button type="button" className="ri-btn" onClick={() => runExport("csv")}>
-            <Download size={14} /> CSV
-          </button>
-          <button type="button" className="ri-btn" onClick={() => runExport("xlsx")}>
-            <FileText size={14} /> XLSX
-          </button>
-          <button type="button" className="ri-btn ri-btn-gold" onClick={() => runExport("pdf")}>
-            <Download size={14} /> PDF
-          </button>
+        <div className="ri-header-actions">
+          <div className="ri-range-pills">
+            {RANGE_OPTIONS.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                title={r.title}
+                className={`ri-btn ri-btn-sm ${selectedRange === r.id ? "ri-btn-gold" : ""}`}
+                onClick={() => setSelectedRange(r.id)}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <div className="ri-export-btns">
+            <button type="button" className="ri-btn" onClick={() => runExport("csv")}>
+              <Download size={14} /> CSV
+            </button>
+            <button type="button" className="ri-btn" onClick={() => runExport("xlsx")}>
+              <FileText size={14} /> XLSX
+            </button>
+            <button type="button" className="ri-btn ri-btn-gold" onClick={() => runExport("pdf")}>
+              <Download size={14} /> PDF
+            </button>
+          </div>
         </div>
       </header>
 

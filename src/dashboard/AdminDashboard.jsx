@@ -109,7 +109,7 @@ export default function AdminDashboard({ onBack }) {
 
   // Filter state
   const [branch, setBranch] = useState(null);
-  const [timeRange, setTimeRange] = useState(0);
+  const [timeRange, setTimeRange] = useState(24);
   const [liveMode, setLiveMode] = useState(false);
 
   const configured = isSupabaseConfigured();

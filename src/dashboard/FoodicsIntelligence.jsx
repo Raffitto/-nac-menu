@@ -98,7 +98,7 @@ export default function FoodicsIntelligence() {
         getAddOnsForMatching(),
         getNameMappings(),
         getLatestBatch(),
-        supabase.rpc("get_bi_dashboard", { p_branch: null, p_hours: 0 }),
+        supabase.rpc("get_bi_dashboard", { p_branch: null, p_hours: 24 }),
       ]);
 
       setBatches(batchList);
@@ -292,7 +292,11 @@ export default function FoodicsIntelligence() {
       r.revenue_per_view ?? "",
       buildExportCommentary(r),
     ]);
-    exportCSV("nac-foodics-conversion.csv", headers, rows);
+    const batch = batches.find((b) => b.id === selectedBatchId);
+    const batchLabel = batch
+      ? `${batch.period_start || "batch"}_${batch.period_end || ""}`.replace(/\s+/g, "")
+      : "selected-batch";
+    exportCSV(`nac-sales-intelligence-foodics-${batchLabel}.csv`, headers, rows);
   };
 
   if (!configured) {
