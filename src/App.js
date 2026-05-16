@@ -15,8 +15,7 @@ import {
   trackTimeSpent,
 } from "./lib/analytics";
 import { useMenuData } from "./lib/useMenuData";
-import { applyMenuOrdering, getMenuPreviewItems } from "./lib/menuPresentation";
-import CategoryCardPreview from "./components/CategoryCardPreview";
+import { applyMenuOrdering, getBrandCategoryImage } from "./lib/menuPresentation";
 
 const _fallbackCategories = [
   {
@@ -500,7 +499,8 @@ export default function App() {
 
 const [contextualFlow] = useState(() => getContextualFlow());
 const [showCategorySelector, setShowCategorySelector] = useState(false);
-const [exploreCategory, setExploreCategory] = useState(null);
+const [menuMode, setMenuMode] = useState("contextual");
+const [manualCategory, setManualCategory] = useState(null);
 const [activeCategory, setActiveCategory] = useState(contextualFlow.primary);
 const [itemCategoryId, setItemCategoryId] = useState(null);
 const [activeItem, setActiveItem] = useState(null);
@@ -601,10 +601,10 @@ useEffect(() => {
 }, [lang]);
 useEffect(() => {
 
-  const preloadCats = exploreCategory
-    ? [exploreCategory]
-    : showCategorySelector
-      ? []
+  const preloadCats = showCategorySelector
+    ? []
+    : menuMode === "manual" && manualCategory
+      ? [manualCategory]
       : contextualFlow.categories;
   if (!preloadCats.length) return;
 
@@ -624,14 +624,21 @@ useEffect(() => {
 
   });
 
-}, [exploreCategory, showCategorySelector, contextualFlow, menuData]);
+}, [manualCategory, menuMode, showCategorySelector, contextualFlow, menuData]);
 const [allergyOpen, setAllergyOpen] = useState(false);
 const [selectedAllergens, setSelectedAllergens] = useState([]);
 const [selectedDiet, setSelectedDiet] = useState("");
 const touchStartX = useRef(0);
 const touchEndX = useRef(0);
 
-  const effectiveCategory = exploreCategory || activeCategory;
+  const effectiveCategory =
+    menuMode === "manual" && manualCategory ? manualCategory : activeCategory;
+
+  const displayCategoryIds = useMemo(() => {
+    if (showCategorySelector) return [];
+    if (menuMode === "manual" && manualCategory) return [manualCategory];
+    return contextualFlow.categories;
+  }, [showCategorySelector, menuMode, manualCategory, contextualFlow.categories]);
   const modalCategoryId = itemCategoryId || effectiveCategory;
 
   const isArabic = lang === "ar";
@@ -675,15 +682,7 @@ const isAllowed = (menuItem) => {
   return true;
 };
 
-  const menuCategoryIds = useMemo(
-    () =>
-      showCategorySelector
-        ? []
-        : exploreCategory
-          ? [exploreCategory]
-          : contextualFlow.categories,
-    [showCategorySelector, exploreCategory, contextualFlow.categories],
-  );
+  const menuCategoryIds = displayCategoryIds;
 
   const itemMatchesFilters = (menuItem) => {
     if (!isAllowed(menuItem)) return false;
@@ -939,7 +938,7 @@ useEffect(() => {
 
 useEffect(() => {
   setActiveSection("");
-}, [showCategorySelector, exploreCategory, search]);
+}, [showCategorySelector, menuMode, manualCategory, search]);
 
 useEffect(() => {
   if (!activeSection) return;
@@ -1017,7 +1016,9 @@ if (adminMode) {
           <button
             type="button"
             className="all-menus-link"
-            onClick={() => setShowCategorySelector(true)}
+            onClick={() => {
+              setShowCategorySelector(true);
+            }}
           >
             {isArabic ? "كل القوائم" : "All Menus"}
           </button>
@@ -1103,10 +1104,12 @@ if (adminMode) {
   className="category-card"
   onClick={() => {
   setShowCategorySelector(false);
+  setMenuMode("manual");
+  setManualCategory(cat.id);
   setActiveCategory(cat.id);
-  setExploreCategory(contextualFlow.categories.includes(cat.id) ? null : cat.id);
+  setActiveSection("");
   trackEvent({ event_type: "category_open", category_id: cat.id, language: lang });
-  trackEvent({ event_type: "page_view", language: lang, category_id: cat.id, metadata: { page: cat.id, explore: !contextualFlow.categories.includes(cat.id) } });
+  trackEvent({ event_type: "page_view", language: lang, category_id: cat.id, metadata: { page: cat.id, menu_mode: "manual" } });
   const categoryAnalytics = JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
   categoryAnalytics[cat.en] = (categoryAnalytics[cat.en] || 0) + 1;
   localStorage.setItem("nacCategoryAnalytics", JSON.stringify(categoryAnalytics));
@@ -1121,10 +1124,12 @@ if (adminMode) {
   whileHover={{ y: -8, scale: 1.03 }}
   whileTap={{ scale: 0.94 }}
 >
-                  <CategoryCardPreview
-                    category={cat}
-                    previewItems={getMenuPreviewItems(cat.id, menuData, 3)}
-                    isArabic={isArabic}
+                  <img
+                    src={getBrandCategoryImage(cat.id)}
+                    alt={isArabic ? cat.ar : cat.en}
+                    className={`category-icon category-brand-icon ${cat.id}`}
+                    loading="lazy"
+                    decoding="async"
                   />
                   <span className="category-card-title">{isArabic ? cat.ar : cat.en}</span>
                   <small className="category-time">
@@ -1141,7 +1146,14 @@ if (adminMode) {
               <motion.h1 className="branch-title" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 {isArabic ? "الخبر" : "KHOBAR"}
               </motion.h1>
-              <p className="contextual-greeting">{getContextualGreeting(contextualFlow, isArabic)}</p>
+              <p className="contextual-greeting">
+                {menuMode === "manual" && manualCategory
+                  ? (() => {
+                      const meta = categories.find((c) => c.id === manualCategory);
+                      return meta ? (isArabic ? meta.ar : meta.en) : "";
+                    })()
+                  : getContextualGreeting(contextualFlow, isArabic)}
+              </p>
             </section>
 
             <input
@@ -1194,7 +1206,8 @@ if (adminMode) {
             </div>
 
             <ContextualMenuView
-              flow={contextualFlow}
+              categoryIds={displayCategoryIds}
+              isManualMode={menuMode === "manual"}
               categories={categories}
               menuData={menuData}
               activeCategory={activeCategory}
@@ -1204,12 +1217,13 @@ if (adminMode) {
               search={search}
               isAllowed={isAllowed}
               onOpenItem={openMenuItem}
-              exploreOnlyCategory={exploreCategory}
               activeSection={activeSection}
               onSectionNavigate={handleSectionNavigate}
               onBackToContextual={() => {
-                setExploreCategory(null);
+                setMenuMode("contextual");
+                setManualCategory(null);
                 setActiveCategory(contextualFlow.primary);
+                setActiveSection("");
               }}
             />
 

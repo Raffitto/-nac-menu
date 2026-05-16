@@ -17,7 +17,8 @@ function mapSectionNavItems(block, isArabic) {
 }
 
 export default function ContextualMenuView({
-  flow,
+  categoryIds,
+  isManualMode,
   categories,
   menuData,
   activeCategory,
@@ -27,7 +28,6 @@ export default function ContextualMenuView({
   search,
   isAllowed,
   onOpenItem,
-  exploreOnlyCategory,
   onBackToContextual,
   activeSection,
   onSectionNavigate,
@@ -38,9 +38,8 @@ export default function ContextualMenuView({
   );
 
   const blocks = useMemo(() => {
-    const displayCategoryIds = exploreOnlyCategory ? [exploreOnlyCategory] : flow.categories;
     const term = search.toLowerCase().trim();
-    return displayCategoryIds
+    return (categoryIds || [])
       .map((catId) => {
         const sections = (menuData[catId] || [])
           .map((sec) => ({
@@ -56,7 +55,7 @@ export default function ContextualMenuView({
         return { catId, meta: categoryMeta[catId], sections };
       })
       .filter((b) => b.sections.length > 0);
-  }, [exploreOnlyCategory, flow.categories, menuData, search, isAllowed, categoryMeta]);
+  }, [categoryIds, menuData, search, isAllowed, categoryMeta]);
 
   const activeBlock = useMemo(
     () => blocks.find((b) => b.catId === activeCategory),
@@ -120,12 +119,12 @@ export default function ContextualMenuView({
     <div className="contextual-menu">
       <div className="contextual-nav-stack">
         <div className="contextual-menu-bar contextual-menu-bar-primary">
-          {exploreOnlyCategory ? (
+          {isManualMode ? (
             <button type="button" className="contextual-pill contextual-pill-back" onClick={onBackToContextual}>
               {isArabic ? "القائمة النشطة" : "Active Menu"}
             </button>
           ) : (
-            flow.categories.map((catId) => {
+            categoryIds.map((catId) => {
               const meta = categoryMeta[catId];
               if (!meta) return null;
               return (
