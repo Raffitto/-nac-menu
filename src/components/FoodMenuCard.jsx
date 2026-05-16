@@ -1,10 +1,9 @@
-import React, { useRef, useState, lazy, Suspense } from "react";
+import React, { useState, lazy, Suspense } from "react";
 import { ChevronRight, Maximize2 } from "lucide-react";
 import ImpressionTracked from "./ImpressionTracked";
 import { trackImageExpand } from "../lib/imageExpand";
 
 const ImageLightbox = lazy(() => import("./ImageLightbox"));
-const LONG_PRESS_MS = 520;
 
 export default function FoodMenuCard({
   menuItem,
@@ -19,9 +18,10 @@ export default function FoodMenuCard({
   variants,
 }) {
   const [lightbox, setLightbox] = useState(false);
-  const longPressTimer = useRef(null);
 
-  const openLightbox = () => {
+  const handleExpandClick = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
     trackImageExpand({
       categoryId,
       sectionTitleEn,
@@ -29,28 +29,6 @@ export default function FoodMenuCard({
       language,
     });
     setLightbox(true);
-  };
-
-  const handleExpandClick = (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    openLightbox();
-  };
-
-  const clearLongPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handleTouchStart = (e) => {
-    e.stopPropagation();
-    clearLongPress();
-    longPressTimer.current = setTimeout(() => {
-      longPressTimer.current = null;
-      openLightbox();
-    }, LONG_PRESS_MS);
   };
 
   return (
@@ -68,13 +46,8 @@ export default function FoodMenuCard({
         onClick={() => onOpenItem(menuItem, sectionTitleEn, categoryId)}
         variants={variants}
       >
-        <div
-          className="menu-card-media"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={clearLongPress}
-          onTouchCancel={clearLongPress}
-        >
-          <img src={menuItem.image} alt={menuItem.en} loading="lazy" decoding="async" />
+        <div className="menu-card-media">
+          <img src={menuItem.image} alt="" loading="lazy" decoding="async" draggable={false} />
           <button
             type="button"
             className="card-image-expand"
@@ -91,7 +64,7 @@ export default function FoodMenuCard({
             <strong className="menu-card-price">{menuItem.price}</strong>
           </div>
         </div>
-        <ChevronRight className="chevron" />
+        <ChevronRight className="chevron" aria-hidden />
       </ImpressionTracked>
       <Suspense fallback={null}>
         <ImageLightbox
