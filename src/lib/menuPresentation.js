@@ -26,8 +26,8 @@ export function getBrandCategoryImage(categoryId) {
   return BRAND_CATEGORY_IMAGES[categoryId] || "";
 }
 
-/** English breakfast card icon — must match public/menu-icons/breakfast.jpeg */
-export const BREAKFAST_ICON_EN = "/menu-icons/breakfast.jpeg";
+/** English breakfast card icon — must match public/menu-icons/breakfast-en.png */
+export const BREAKFAST_ICON_EN = "/menu-icons/breakfast-en.png";
 export const BREAKFAST_ICON_AR = "/menu-icons-ar/Breakfast.png";
 
 const MENU_TAB_HOSTS = new Set(["evening", "daytime", "breakfast", "brunch"]);

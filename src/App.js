@@ -18,6 +18,7 @@ import { useMenuData } from "./lib/useMenuData";
 import {
   applyMenuOrdering,
   BREAKFAST_ICON_EN,
+  BREAKFAST_ICON_AR,
   findSectionTitleEnForItem,
   getMenuLevelTabs,
   hasMenuLevelTabs,
@@ -51,7 +52,7 @@ const _fallbackCategories = [
     timeEn: "9–12 AM",
     timeAr: "٩–١٢ ص",
     icon: BREAKFAST_ICON_EN,
-    iconAr: "/menu-icons-ar/Breakfast.png",
+    iconAr: BREAKFAST_ICON_AR,
   },
   {
     id: "evening",
