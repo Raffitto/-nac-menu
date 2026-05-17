@@ -26,83 +26,91 @@ export function getBrandCategoryImage(categoryId) {
   return BRAND_CATEGORY_IMAGES[categoryId] || "";
 }
 
-const DRINKS_APPEND_CATEGORIES = new Set(["breakfast", "brunch", "daytime"]);
-const EVENING_APPEND_CATEGORIES = new Set(["evening"]);
+/** English breakfast card icon — must match public/menu-icons/breakfast.jpeg */
+export const BREAKFAST_ICON_EN = "/menu-icons/breakfast.jpeg";
+export const BREAKFAST_ICON_AR = "/menu-icons-ar/Breakfast.png";
 
-export const DRINKS_SECTION_TITLE = { en: "Drinks", ar: "مشروبات" };
-const DESSERTS_SECTION_TITLE = { en: "Desserts", ar: "حلى" };
+const MENU_TAB_HOSTS = new Set(["evening", "daytime", "breakfast", "brunch"]);
 
-const CATEGORY_ICON_OVERRIDES = {
+const MENU_TAB_SOURCES = {
+  evening: ["evening", "desserts", "drinks"],
+  daytime: ["daytime", "desserts", "drinks"],
+  breakfast: ["breakfast", "drinks"],
+  brunch: ["brunch", "drinks"],
+};
+
+const MENU_TAB_LABELS = {
+  evening: {
+    evening: { en: "Dinner", ar: "العشاء" },
+    desserts: { en: "Desserts", ar: "حلى" },
+    drinks: { en: "Drinks", ar: "مشروبات" },
+  },
+  daytime: {
+    daytime: { en: "Daytime", ar: "النهار" },
+    desserts: { en: "Desserts", ar: "حلى" },
+    drinks: { en: "Drinks", ar: "مشروبات" },
+  },
   breakfast: {
-    icon: "/menu-icons/breakfast.jpeg",
-    iconAr: "/menu-icons-ar/Breakfast.png",
+    breakfast: { en: "Breakfast", ar: "الفطور" },
+    drinks: { en: "Drinks", ar: "مشروبات" },
+  },
+  brunch: {
+    brunch: { en: "Brunch", ar: "برانش" },
+    drinks: { en: "Drinks", ar: "مشروبات" },
   },
 };
 
-function hasSectionTitle(sections, titleEn) {
-  const needle = titleEn.trim().toLowerCase();
-  return sections.some((s) => s.title?.en?.trim().toLowerCase() === needle);
+const CATEGORY_ICON_OVERRIDES = {
+  breakfast: {
+    icon: BREAKFAST_ICON_EN,
+    iconAr: BREAKFAST_ICON_AR,
+  },
+};
+
+export function hasMenuLevelTabs(hostCategoryId) {
+  return MENU_TAB_HOSTS.has(hostCategoryId);
 }
 
-function buildDrinksSection(menuData) {
-  const items = (menuData.drinks || []).flatMap((sec) => sec.items || []);
-  if (!items.length) return null;
-  return {
-    title: { en: DRINKS_SECTION_TITLE.en, ar: DRINKS_SECTION_TITLE.ar },
-    items,
-    displayAsDrinks: true,
-    sourceCategoryId: "drinks",
-  };
+/** Top-level menu tabs (Dinner | Desserts | Drinks, etc.) for a host category. */
+export function getMenuLevelTabs(hostCategoryId, isArabic) {
+  const sources = MENU_TAB_SOURCES[hostCategoryId];
+  if (!sources) return [];
+  const labels = MENU_TAB_LABELS[hostCategoryId] || {};
+  return sources.map((sourceCategoryId) => ({
+    id: sourceCategoryId,
+    sourceCategoryId,
+    label: isArabic
+      ? labels[sourceCategoryId]?.ar || sourceCategoryId
+      : labels[sourceCategoryId]?.en || sourceCategoryId,
+  }));
 }
 
-function buildDessertsSection(menuData) {
-  const items = (menuData.desserts || []).flatMap((sec) => sec.items || []);
-  if (!items.length) return null;
-  return {
-    title: { en: DESSERTS_SECTION_TITLE.en, ar: DESSERTS_SECTION_TITLE.ar },
-    items,
-    sourceCategoryId: "desserts",
-  };
+/** Sections for the selected menu tab (raw catalog — no merged append). */
+export function getMenuTabSections(sourceCategoryId, menuData) {
+  return menuData?.[sourceCategoryId] || [];
 }
 
-/** Sections shown for a category (merged drinks/desserts per category rules). */
-export function getDisplaySections(categoryId, menuData) {
-  const base = menuData?.[categoryId] || [];
-  if (!menuData) return base;
+export function isDrinksCatalog(sourceCategoryId) {
+  return sourceCategoryId === "drinks";
+}
 
-  if (DRINKS_APPEND_CATEGORIES.has(categoryId)) {
-    const drinks = buildDrinksSection(menuData);
-    if (!drinks || hasSectionTitle(base, DRINKS_SECTION_TITLE.en)) return base;
-    return [...base, drinks];
-  }
-
-  if (EVENING_APPEND_CATEGORIES.has(categoryId)) {
-    let sections = [...base];
-    const desserts = buildDessertsSection(menuData);
-    if (desserts && !hasSectionTitle(sections, DESSERTS_SECTION_TITLE.en)) {
-      sections = [...sections, desserts];
+/** Resolve English section title for an item across all catalogs. */
+export function findSectionTitleEnForItem(categoryId, menuItem, menuData) {
+  if (!menuItem || !menuData) return "";
+  const catalogs = categoryId && menuData[categoryId]
+    ? [categoryId, "evening", "daytime", "breakfast", "brunch", "desserts", "drinks"]
+    : Object.keys(menuData);
+  const seen = new Set();
+  for (const catId of catalogs) {
+    if (seen.has(catId)) continue;
+    seen.add(catId);
+    for (const sec of menuData[catId] || []) {
+      if (sec.items?.some((i) => i.en === menuItem.en && i.image === menuItem.image)) {
+        return sec.title?.en || "";
+      }
     }
-    const drinks = buildDrinksSection(menuData);
-    if (drinks && !hasSectionTitle(sections, DRINKS_SECTION_TITLE.en)) {
-      sections = [...sections, drinks];
-    }
-    return sections;
   }
-
-  return base;
-}
-
-/** Menu data with merged sections for breakfast, brunch, daytime, and evening. */
-export function buildDisplayMenuData(menuData) {
-  if (!menuData) return menuData;
-  const next = { ...menuData };
-  for (const id of DRINKS_APPEND_CATEGORIES) {
-    next[id] = getDisplaySections(id, menuData);
-  }
-  for (const id of EVENING_APPEND_CATEGORIES) {
-    next[id] = getDisplaySections(id, menuData);
-  }
-  return next;
+  return "";
 }
 
 /** Normalize category icons (CMS may ship stale breakfast paths). */
@@ -121,18 +129,10 @@ export function normalizeCategoryIcons(category) {
 export function resolveCategoryIcon(category, isArabic) {
   if (!category) return "";
   const normalized = normalizeCategoryIcons(category);
-  return isArabic ? normalized.iconAr || "" : normalized.icon || "";
-}
-
-/** Resolve English section title for an item (uses display sections when merged). */
-export function findSectionTitleEnForItem(categoryId, menuItem, menuDataRef) {
-  if (!categoryId || !menuItem) return "";
-  for (const sec of menuDataRef?.[categoryId] || []) {
-    if (sec.items?.some((i) => i.en === menuItem.en && i.image === menuItem.image)) {
-      return sec.title?.en || "";
-    }
+  if (category.id === "breakfast") {
+    return isArabic ? BREAKFAST_ICON_AR : BREAKFAST_ICON_EN;
   }
-  return "";
+  return isArabic ? normalized.iconAr || "" : normalized.icon || "";
 }
 
 export function sortDessertItems(items) {

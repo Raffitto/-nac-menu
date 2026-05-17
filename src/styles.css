@@ -1957,6 +1957,10 @@ text-transform: uppercase;
   background: transparent;
 }
 
+.contextual-menu-bar-back {
+  margin-top: -4px;
+}
+
 .contextual-pill {
   border: 1px solid rgba(48, 72, 78, 0.14);
   background: rgba(255, 255, 255, 0.7);

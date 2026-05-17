@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 
 const MENU_CACHE_KEY = "nac-menu-cache";
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -208,14 +209,8 @@ export async function getFullMenu() {
     ar: c.name_ar,
     timeEn: c.time_en || "",
     timeAr: c.time_ar || "",
-    icon:
-      c.slug === "breakfast"
-        ? "/menu-icons/breakfast.jpeg"
-        : c.icon || "",
-    iconAr:
-      c.slug === "breakfast"
-        ? "/menu-icons-ar/Breakfast.png"
-        : c.icon_ar || "",
+    icon: c.slug === "breakfast" ? BREAKFAST_ICON_EN : c.icon || "",
+    iconAr: c.slug === "breakfast" ? BREAKFAST_ICON_AR : c.icon_ar || "",
   }));
 
   const result = {

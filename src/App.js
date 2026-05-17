@@ -17,8 +17,10 @@ import {
 import { useMenuData } from "./lib/useMenuData";
 import {
   applyMenuOrdering,
-  buildDisplayMenuData,
+  BREAKFAST_ICON_EN,
   findSectionTitleEnForItem,
+  getMenuLevelTabs,
+  hasMenuLevelTabs,
   resolveCategoryIcon,
   normalizeCategoryIcons,
 } from "./lib/menuPresentation";
@@ -48,7 +50,7 @@ const _fallbackCategories = [
     ar: "الفطور",
     timeEn: "9–12 AM",
     timeAr: "٩–١٢ ص",
-    icon: "/menu-icons/breakfast.jpeg",
+    icon: BREAKFAST_ICON_EN,
     iconAr: "/menu-icons-ar/Breakfast.png",
   },
   {
@@ -488,13 +490,12 @@ export default function App() {
 
   const { categories, menuData: rawMenuData, allergenLabels } = useMenuData(_fallback);
   const menuData = useMemo(() => applyMenuOrdering(rawMenuData), [rawMenuData]);
-  const displayMenuData = useMemo(() => buildDisplayMenuData(menuData), [menuData]);
-
 const [contextualFlow] = useState(() => getContextualFlow());
 const [showCategorySelector, setShowCategorySelector] = useState(false);
 const [menuMode, setMenuMode] = useState("contextual");
 const [manualCategory, setManualCategory] = useState(null);
 const [activeCategory, setActiveCategory] = useState(contextualFlow.primary);
+const [activeMenuTab, setActiveMenuTab] = useState(null);
 const [itemCategoryId, setItemCategoryId] = useState(null);
 const [activeItem, setActiveItem] = useState(null);
 const [search, setSearch] = useState("");
@@ -601,7 +602,7 @@ useEffect(() => {
       : contextualFlow.categories;
   if (!preloadCats.length) return;
 
-  const images = preloadCats.flatMap((cat) => displayMenuData[cat] || [])
+  const images = preloadCats.flatMap((cat) => menuData[cat] || [])
   .flatMap((sec) => sec.items)
   .flatMap((item) => [
     item.image,
@@ -617,33 +618,44 @@ useEffect(() => {
 
   });
 
-}, [manualCategory, menuMode, showCategorySelector, contextualFlow, displayMenuData]);
+}, [manualCategory, menuMode, showCategorySelector, contextualFlow, menuData]);
 const [allergyOpen, setAllergyOpen] = useState(false);
 const [selectedAllergens, setSelectedAllergens] = useState([]);
 const [selectedDiet, setSelectedDiet] = useState("");
 const touchStartX = useRef(0);
 const touchEndX = useRef(0);
 
+  const isArabic = lang === "ar";
+
   const effectiveCategory =
     menuMode === "manual" && manualCategory ? manualCategory : activeCategory;
-
-  useEffect(() => {
-    if (!activeCategory) return;
-    console.log(
-      "DISPLAY SECTIONS",
-      activeCategory,
-      displayMenuData[activeCategory]?.map((s) => s.title?.en),
-    );
-  }, [activeCategory, displayMenuData]);
 
   const displayCategoryIds = useMemo(() => {
     if (showCategorySelector) return [];
     if (menuMode === "manual" && manualCategory) return [manualCategory];
+    const { primary } = contextualFlow;
+    if (hasMenuLevelTabs(primary)) return [primary];
     return contextualFlow.categories;
-  }, [showCategorySelector, menuMode, manualCategory, contextualFlow.categories]);
-  const modalCategoryId = itemCategoryId || effectiveCategory;
+  }, [showCategorySelector, menuMode, manualCategory, contextualFlow]);
 
-  const isArabic = lang === "ar";
+  const menuHostId = displayCategoryIds[0] || effectiveCategory;
+
+  useEffect(() => {
+    if (!menuHostId || !hasMenuLevelTabs(menuHostId)) {
+      setActiveMenuTab(null);
+      return;
+    }
+    const tabs = getMenuLevelTabs(menuHostId, isArabic);
+    setActiveMenuTab(tabs[0]?.id ?? null);
+    setActiveSection("");
+  }, [menuHostId, isArabic, menuMode, manualCategory]);
+
+  const navSourceCategoryId = useMemo(() => {
+    if (menuHostId && hasMenuLevelTabs(menuHostId) && activeMenuTab) return activeMenuTab;
+    return menuHostId;
+  }, [menuHostId, activeMenuTab]);
+  const modalCategoryId = itemCategoryId || navSourceCategoryId || effectiveCategory;
+
   const now = new Date();
 const currentMinutes = now.getHours() * 60 + now.getMinutes();
 const isEveningShift = currentMinutes >= 16 * 60 + 30;
@@ -687,8 +699,6 @@ const isAllowed = (menuItem) => {
   return true;
 };
 
-  const menuCategoryIds = displayCategoryIds;
-
   const itemMatchesFilters = (menuItem) => {
     if (!isAllowed(menuItem)) return false;
     const searchTerm = search.toLowerCase().trim();
@@ -697,19 +707,20 @@ const isAllowed = (menuItem) => {
     return searchableText.includes(searchTerm);
   };
 
-  const allVisibleItems = menuCategoryIds.flatMap((catId) =>
-    (displayMenuData[catId] || []).flatMap((sec) =>
+  const allVisibleItems = useMemo(() => {
+    if (!navSourceCategoryId) return [];
+    return (menuData[navSourceCategoryId] || []).flatMap((sec) =>
       (sec.items || []).filter(itemMatchesFilters),
-    ),
-  );
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- itemMatchesFilters tracks filter state
+  }, [navSourceCategoryId, menuData, search, selectedAllergens, selectedDiet]);
 
   const contextualNavSections = useMemo(() => {
-    if (showCategorySelector) return [];
+    if (showCategorySelector || !navSourceCategoryId) return [];
     const searchTerm = search.toLowerCase().trim();
-    return menuCategoryIds.flatMap((catId) =>
-      (displayMenuData[catId] || [])
+    return (menuData[navSourceCategoryId] || [])
         .map((sec) => ({
-          catId,
+          catId: navSourceCategoryId,
           title: sec.title,
           items: (sec.items || []).filter((menuItem) => {
             const hasBlockedAllergen = menuItem.allergens?.some((a) => selectedAllergens.includes(a));
@@ -723,19 +734,17 @@ const isAllowed = (menuItem) => {
             return searchableText.includes(searchTerm);
           }),
         }))
-        .filter((sec) => sec.items.length > 0),
-    );
-  }, [showCategorySelector, menuCategoryIds, displayMenuData, search, selectedAllergens, selectedDiet]);
+        .filter((sec) => sec.items.length > 0);
+  }, [showCategorySelector, navSourceCategoryId, menuData, search, selectedAllergens, selectedDiet]);
 
   const handleSectionNavigate = useCallback(
-    (catId, titleEn, domId) => {
+    (sourceCatId, titleEn, domId) => {
       const slug = sectionSlug(titleEn);
-      setActiveCategory(catId);
       setActiveSection(domId);
-      lastSectionEvent.current = { cat: catId, sec: slug };
+      lastSectionEvent.current = { cat: sourceCatId, sec: slug };
       trackEvent({
         event_type: "section_view",
-        category_id: catId,
+        category_id: sourceCatId,
         section_id: slug,
         language: lang,
         metadata: { source: "nav_click" },
@@ -750,7 +759,7 @@ const isAllowed = (menuItem) => {
         setActiveItem(null);
         return;
       }
-      const sectionEn = findSectionTitleEnForItem(modalCategoryId, activeItem, displayMenuData);
+      const sectionEn = findSectionTitleEnForItem(modalCategoryId, activeItem, menuData);
       const sectionSlug = sectionEn
         ? sectionEn.toLowerCase().replaceAll(" ", "-")
         : null;
@@ -769,7 +778,7 @@ const isAllowed = (menuItem) => {
       });
       setActiveItem(null);
     },
-    [activeItem, modalCategoryId, lang, displayMenuData]
+    [activeItem, modalCategoryId, lang, menuData]
   );
 
   const openMenuItem = useCallback(
@@ -1134,7 +1143,7 @@ if (adminMode) {
                   <img
                     src={
                       cat.id === "breakfast" && !isArabic
-                        ? "/menu-icons/breakfast.jpeg"
+                        ? BREAKFAST_ICON_EN
                         : resolveCategoryIcon(cat, isArabic)
                     }
                     alt={isArabic ? cat.ar : cat.en}
@@ -1220,9 +1229,12 @@ if (adminMode) {
               categoryIds={displayCategoryIds}
               isManualMode={menuMode === "manual"}
               categories={categories}
-              displayMenuData={displayMenuData}
+              menuData={menuData}
               activeCategory={activeCategory}
               setActiveCategory={setActiveCategory}
+              activeMenuTab={activeMenuTab}
+              setActiveMenuTab={setActiveMenuTab}
+              setActiveSection={setActiveSection}
               isArabic={isArabic}
               lang={lang}
               search={search}
@@ -1297,9 +1309,9 @@ onDragEnd={(e, info) => {
   onDragEnd={(event, info) => {
     if (info.offset.y > 100 || info.velocity.y > 700) {
       const sectionEn = findSectionTitleEnForItem(
-        activeCategory,
+        modalCategoryId,
         activeItem,
-        displayMenuData
+        menuData
       );
       const sectionSlug = sectionEn
         ? sectionEn.toLowerCase().replaceAll(" ", "-")
@@ -1389,7 +1401,7 @@ onClick={(e) => {
     item_id: activeCategory
       ? makeMenuItemId(
           activeCategory,
-          findSectionTitleEnForItem(modalCategoryId, activeItem, displayMenuData),
+          findSectionTitleEnForItem(modalCategoryId, activeItem, menuData),
           activeItem.en
         )
       : null,
