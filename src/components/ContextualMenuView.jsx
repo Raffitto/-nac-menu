@@ -20,7 +20,7 @@ export default function ContextualMenuView({
   categoryIds,
   isManualMode,
   categories,
-  menuData,
+  displayMenuData,
   activeCategory,
   setActiveCategory,
   isArabic,
@@ -41,7 +41,7 @@ export default function ContextualMenuView({
     const term = search.toLowerCase().trim();
     return (categoryIds || [])
       .map((catId) => {
-        const sections = (menuData[catId] || [])
+        const sections = (displayMenuData[catId] || [])
           .map((sec) => ({
             ...sec,
             items: sec.items.filter((item) => {
@@ -55,7 +55,7 @@ export default function ContextualMenuView({
         return { catId, meta: categoryMeta[catId], sections };
       })
       .filter((b) => b.sections.length > 0);
-  }, [categoryIds, menuData, search, isAllowed, categoryMeta]);
+  }, [categoryIds, displayMenuData, search, isAllowed, categoryMeta]);
 
   const activeBlock = useMemo(
     () => blocks.find((b) => b.catId === activeCategory),
@@ -117,8 +117,8 @@ export default function ContextualMenuView({
 
   return (
     <div className="contextual-menu">
-      <div className="contextual-nav-stack">
-        <div className="contextual-menu-bar contextual-menu-bar-primary">
+      <motion.div className="contextual-nav-stack">
+        <motion.div className="contextual-menu-bar contextual-menu-bar-primary">
           {isManualMode ? (
             <button type="button" className="contextual-pill contextual-pill-back" onClick={onBackToContextual}>
               {isArabic ? "القائمة النشطة" : "Active Menu"}
@@ -139,7 +139,7 @@ export default function ContextualMenuView({
               );
             })
           )}
-        </div>
+        </motion.div>
 
         {subsectionNavItems.length > 0 &&
           renderSectionNav(
@@ -154,7 +154,7 @@ export default function ContextualMenuView({
             "section-nav contextual-section-nav-secondary",
             isArabic ? "أقسام القائمة" : "Menu sections",
           )}
-      </div>
+      </motion.div>
 
       {blocks.map((block) => (
         <div key={block.catId} id={`nac-cat-${block.catId}`} className="contextual-category-block">
@@ -165,6 +165,8 @@ export default function ContextualMenuView({
 
           {block.sections.map((sec, sectionIndex) => {
             const sectionDomId = makeSectionDomId(block.catId, sec.title.en);
+            const isDrinksSection = block.catId === "drinks" || sec.displayAsDrinks;
+
             return (
               <section
                 key={`${block.catId}-${sec.title.en}`}
@@ -172,20 +174,20 @@ export default function ContextualMenuView({
                 data-section-slug={sectionSlug(sec.title.en)}
                 data-category-id={block.catId}
                 className={
-                  block.catId === "drinks" || sec.displayAsDrinks
+                  isDrinksSection
                     ? "drink-section-block contextual-menu-section"
                     : "menu-section contextual-menu-section"
                 }
               >
                 <h3 className="section-title no-arabic-spacing">{isArabic ? sec.title.ar : sec.title.en}</h3>
 
-                {block.catId === "drinks" || sec.displayAsDrinks ? (
+                {isDrinksSection ? (
                   <div className="drink-card-grid">
                     {sec.items.map((menuItem, index) => (
                       <DrinkMenuCard
                         key={`${menuItem.en}-${index}`}
                         menuItem={menuItem}
-                        categoryId={sec.displayAsDrinks ? "drinks" : block.catId}
+                        categoryId={sec.sourceCategoryId || "drinks"}
                         sectionTitleEn={sec.title.en}
                         sectionIndex={sectionIndex}
                         itemIndex={index}

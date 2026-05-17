@@ -2040,6 +2040,26 @@ text-transform: uppercase;
   }
 }
 
+.contextual-drinks-group {
+  margin-top: 8px;
+}
+
+.contextual-drinks-subsection {
+  margin-top: 20px;
+}
+
+.contextual-drinks-subsection:first-of-type {
+  margin-top: 12px;
+}
+
+.section-subtitle {
+  font-family: "Saveur Sans Bold", Arial, sans-serif;
+  font-size: 13px;
+  color: rgba(74, 109, 118, 0.9);
+  margin: 0 0 10px;
+  letter-spacing: 0.2px;
+}
+
 .menu-card-image-btn,
 .drink-card-image-btn {
   display: none;

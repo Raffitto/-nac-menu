@@ -208,8 +208,14 @@ export async function getFullMenu() {
     ar: c.name_ar,
     timeEn: c.time_en || "",
     timeAr: c.time_ar || "",
-    icon: c.icon || "",
-    iconAr: c.icon_ar || "",
+    icon:
+      c.slug === "breakfast"
+        ? "/menu-icons/breakfast.png"
+        : c.icon || "",
+    iconAr:
+      c.slug === "breakfast"
+        ? "/menu-icons-ar/Breakfast.png"
+        : c.icon_ar || "",
   }));
 
   const result = {

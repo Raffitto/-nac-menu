@@ -20,6 +20,7 @@ import {
   buildDisplayMenuData,
   findSectionTitleEnForItem,
   resolveCategoryIcon,
+  normalizeCategoryIcons,
 } from "./lib/menuPresentation";
 
 const _fallbackCategories = [
@@ -626,6 +627,15 @@ const touchEndX = useRef(0);
   const effectiveCategory =
     menuMode === "manual" && manualCategory ? manualCategory : activeCategory;
 
+  useEffect(() => {
+    if (!effectiveCategory) return;
+    console.log(
+      "ACTIVE SECTIONS",
+      effectiveCategory,
+      displayMenuData[effectiveCategory]?.map((s) => s.title?.en),
+    );
+  }, [effectiveCategory, displayMenuData]);
+
   const displayCategoryIds = useMemo(() => {
     if (showCategorySelector) return [];
     if (menuMode === "manual" && manualCategory) return [manualCategory];
@@ -638,16 +648,19 @@ const touchEndX = useRef(0);
 const currentMinutes = now.getHours() * 60 + now.getMinutes();
 const isEveningShift = currentMinutes >= 16 * 60 + 30;
 
-const displayCategories = isEveningShift
-  ? [
-      categories.find((cat) => cat.id === "evening"),
-      categories.find((cat) => cat.id === "drinks"),
-      categories.find((cat) => cat.id === "desserts"),
-      categories.find((cat) => cat.id === "breakfast"),
-      categories.find((cat) => cat.id === "brunch"),
-      categories.find((cat) => cat.id === "daytime"),
-    ].filter(Boolean)
-  : categories;
+const displayCategories = useMemo(() => {
+  const list = isEveningShift
+    ? [
+        categories.find((cat) => cat.id === "evening"),
+        categories.find((cat) => cat.id === "drinks"),
+        categories.find((cat) => cat.id === "desserts"),
+        categories.find((cat) => cat.id === "breakfast"),
+        categories.find((cat) => cat.id === "brunch"),
+        categories.find((cat) => cat.id === "daytime"),
+      ].filter(Boolean)
+    : categories;
+  return list.map(normalizeCategoryIcons);
+}, [categories, isEveningShift]);
 const toggleAllergen = (code) => {
   setSelectedAllergens((prev) =>
     prev.includes(code)
@@ -685,7 +698,9 @@ const isAllowed = (menuItem) => {
   };
 
   const allVisibleItems = menuCategoryIds.flatMap((catId) =>
-    (displayMenuData[catId] || []).flatMap((sec) => sec.items.filter(itemMatchesFilters)),
+    (displayMenuData[catId] || []).flatMap((sec) =>
+      (sec.items || []).filter(itemMatchesFilters),
+    ),
   );
 
   const contextualNavSections = useMemo(() => {
@@ -696,7 +711,7 @@ const isAllowed = (menuItem) => {
         .map((sec) => ({
           catId,
           title: sec.title,
-          items: sec.items.filter((menuItem) => {
+          items: (sec.items || []).filter((menuItem) => {
             const hasBlockedAllergen = menuItem.allergens?.some((a) => selectedAllergens.includes(a));
             if (hasBlockedAllergen) return false;
             if (selectedDiet === "vegetarian" && !(menuItem.tags?.includes("vegetarian") || menuItem.tags?.includes("vegan"))) {
@@ -1117,7 +1132,11 @@ if (adminMode) {
   whileTap={{ scale: 0.94 }}
 >
                   <img
-                    src={resolveCategoryIcon(cat, isArabic)}
+                    src={
+                      cat.id === "breakfast" && !isArabic
+                        ? "/menu-icons/breakfast.png"
+                        : resolveCategoryIcon(cat, isArabic)
+                    }
                     alt={isArabic ? cat.ar : cat.en}
                     className={`category-icon category-card-icon ${cat.id}`}
                     loading="lazy"
@@ -1201,7 +1220,7 @@ if (adminMode) {
               categoryIds={displayCategoryIds}
               isManualMode={menuMode === "manual"}
               categories={categories}
-              menuData={displayMenuData}
+              displayMenuData={displayMenuData}
               activeCategory={activeCategory}
               setActiveCategory={setActiveCategory}
               isArabic={isArabic}
