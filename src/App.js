@@ -48,7 +48,7 @@ const _fallbackCategories = [
     ar: "الفطور",
     timeEn: "9–12 AM",
     timeAr: "٩–١٢ ص",
-    icon: "/menu-icons/breakfast.png",
+    icon: "/menu-icons/breakfast.jpeg",
     iconAr: "/menu-icons-ar/Breakfast.png",
   },
   {
@@ -628,13 +628,13 @@ const touchEndX = useRef(0);
     menuMode === "manual" && manualCategory ? manualCategory : activeCategory;
 
   useEffect(() => {
-    if (!effectiveCategory) return;
+    if (!activeCategory) return;
     console.log(
-      "ACTIVE SECTIONS",
-      effectiveCategory,
-      displayMenuData[effectiveCategory]?.map((s) => s.title?.en),
+      "DISPLAY SECTIONS",
+      activeCategory,
+      displayMenuData[activeCategory]?.map((s) => s.title?.en),
     );
-  }, [effectiveCategory, displayMenuData]);
+  }, [activeCategory, displayMenuData]);
 
   const displayCategoryIds = useMemo(() => {
     if (showCategorySelector) return [];
@@ -1134,7 +1134,7 @@ if (adminMode) {
                   <img
                     src={
                       cat.id === "breakfast" && !isArabic
-                        ? "/menu-icons/breakfast.png"
+                        ? "/menu-icons/breakfast.jpeg"
                         : resolveCategoryIcon(cat, isArabic)
                     }
                     alt={isArabic ? cat.ar : cat.en}

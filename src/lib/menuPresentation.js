@@ -26,49 +26,86 @@ export function getBrandCategoryImage(categoryId) {
   return BRAND_CATEGORY_IMAGES[categoryId] || "";
 }
 
-const FOOD_PLUS_DRINKS_CATEGORIES = new Set(["breakfast", "daytime", "brunch"]);
+const DRINKS_APPEND_CATEGORIES = new Set(["breakfast", "brunch", "daytime"]);
+const EVENING_APPEND_CATEGORIES = new Set(["evening"]);
 
 export const DRINKS_SECTION_TITLE = { en: "Drinks", ar: "مشروبات" };
+const DESSERTS_SECTION_TITLE = { en: "Desserts", ar: "حلى" };
 
 const CATEGORY_ICON_OVERRIDES = {
   breakfast: {
-    icon: "/menu-icons/breakfast.png",
+    icon: "/menu-icons/breakfast.jpeg",
     iconAr: "/menu-icons-ar/Breakfast.png",
   },
 };
 
-/** Sections shown for a category (breakfast/daytime/brunch include drinks catalog). */
-export function getDisplaySections(categoryId, menuData) {
-  const base = menuData?.[categoryId] || [];
-  if (!menuData || !FOOD_PLUS_DRINKS_CATEGORIES.has(categoryId)) {
-    return base;
-  }
-
-  const drinkItems = (menuData.drinks || []).flatMap((sec) => sec.items || []);
-  if (!drinkItems.length) return base;
-
-  return [
-    ...base,
-    {
-      title: { en: DRINKS_SECTION_TITLE.en, ar: DRINKS_SECTION_TITLE.ar },
-      items: drinkItems,
-      displayAsDrinks: true,
-      sourceCategoryId: "drinks",
-    },
-  ];
+function hasSectionTitle(sections, titleEn) {
+  const needle = titleEn.trim().toLowerCase();
+  return sections.some((s) => s.title?.en?.trim().toLowerCase() === needle);
 }
 
-/** Menu data with merged drink sections for breakfast, daytime, brunch. */
+function buildDrinksSection(menuData) {
+  const items = (menuData.drinks || []).flatMap((sec) => sec.items || []);
+  if (!items.length) return null;
+  return {
+    title: { en: DRINKS_SECTION_TITLE.en, ar: DRINKS_SECTION_TITLE.ar },
+    items,
+    displayAsDrinks: true,
+    sourceCategoryId: "drinks",
+  };
+}
+
+function buildDessertsSection(menuData) {
+  const items = (menuData.desserts || []).flatMap((sec) => sec.items || []);
+  if (!items.length) return null;
+  return {
+    title: { en: DESSERTS_SECTION_TITLE.en, ar: DESSERTS_SECTION_TITLE.ar },
+    items,
+    sourceCategoryId: "desserts",
+  };
+}
+
+/** Sections shown for a category (merged drinks/desserts per category rules). */
+export function getDisplaySections(categoryId, menuData) {
+  const base = menuData?.[categoryId] || [];
+  if (!menuData) return base;
+
+  if (DRINKS_APPEND_CATEGORIES.has(categoryId)) {
+    const drinks = buildDrinksSection(menuData);
+    if (!drinks || hasSectionTitle(base, DRINKS_SECTION_TITLE.en)) return base;
+    return [...base, drinks];
+  }
+
+  if (EVENING_APPEND_CATEGORIES.has(categoryId)) {
+    let sections = [...base];
+    const desserts = buildDessertsSection(menuData);
+    if (desserts && !hasSectionTitle(sections, DESSERTS_SECTION_TITLE.en)) {
+      sections = [...sections, desserts];
+    }
+    const drinks = buildDrinksSection(menuData);
+    if (drinks && !hasSectionTitle(sections, DRINKS_SECTION_TITLE.en)) {
+      sections = [...sections, drinks];
+    }
+    return sections;
+  }
+
+  return base;
+}
+
+/** Menu data with merged sections for breakfast, brunch, daytime, and evening. */
 export function buildDisplayMenuData(menuData) {
   if (!menuData) return menuData;
   const next = { ...menuData };
-  for (const id of FOOD_PLUS_DRINKS_CATEGORIES) {
+  for (const id of DRINKS_APPEND_CATEGORIES) {
+    next[id] = getDisplaySections(id, menuData);
+  }
+  for (const id of EVENING_APPEND_CATEGORIES) {
     next[id] = getDisplaySections(id, menuData);
   }
   return next;
 }
 
-/** Normalize category icons (CMS may ship stale breakfast.svg paths). */
+/** Normalize category icons (CMS may ship stale breakfast paths). */
 export function normalizeCategoryIcons(category) {
   if (!category) return category;
   const override = CATEGORY_ICON_OVERRIDES[category.id];

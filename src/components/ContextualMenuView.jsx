@@ -63,9 +63,11 @@ export default function ContextualMenuView({
   );
 
   const foodSectionNavItems = useMemo(() => {
-    if (!activeBlock || SUBSECTION_CATEGORIES.has(activeCategory)) return [];
-    return mapSectionNavItems(activeBlock, isArabic);
-  }, [activeBlock, activeCategory, isArabic]);
+    if (!activeCategory || SUBSECTION_CATEGORIES.has(activeCategory)) return [];
+    const sections = displayMenuData[activeCategory] || [];
+    if (!sections.length) return [];
+    return mapSectionNavItems({ catId: activeCategory, sections }, isArabic);
+  }, [displayMenuData, activeCategory, isArabic]);
 
   const subsectionNavItems = useMemo(() => {
     if (!activeBlock || !SUBSECTION_CATEGORIES.has(activeCategory)) return [];

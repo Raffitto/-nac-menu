@@ -210,7 +210,7 @@ export async function getFullMenu() {
     timeAr: c.time_ar || "",
     icon:
       c.slug === "breakfast"
-        ? "/menu-icons/breakfast.png"
+        ? "/menu-icons/breakfast.jpeg"
         : c.icon || "",
     iconAr:
       c.slug === "breakfast"
