@@ -69,8 +69,6 @@ export default function ReviewIntelligence() {
   const [dailyTrend, setDailyTrend] = useState([]);
   const [branchScans, setBranchScans] = useState([]);
   const [branchComparison, setBranchComparison] = useState([]);
-  const [eventTypeCounts, setEventTypeCounts] = useState([]);
-  const [debugEvents, setDebugEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [error, setError] = useState("");
@@ -103,29 +101,21 @@ export default function ReviewIntelligence() {
         .order("created_at", { ascending: false })
         .limit(8000);
 
-      let debugQ = supabase
-        .from("review_events")
-        .select("created_at,branch_id,employee_name,employee_role,event_type")
-        .eq("branch_id", branch)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
       if (since) {
         reviewQ = reviewQ.gte("created_at", since);
         reviewAllQ = reviewAllQ.gte("created_at", since);
-        debugQ = debugQ.gte("created_at", since);
       }
 
-      const [{ data: branchEvents }, { data: allEvents }, { data: debugRows }] =
-        await Promise.all([reviewQ, reviewAllQ, debugQ]);
+      const [{ data: branchEvents }, { data: allEvents }] = await Promise.all([
+        reviewQ,
+        reviewAllQ,
+      ]);
 
       const events = branchEvents || [];
       const all = allEvents || [];
 
       const branchKpis = computeReviewKpis(events);
       setKpis(branchKpis);
-      setEventTypeCounts(branchKpis.by_event_type);
-      setDebugEvents(debugRows || []);
 
       const granular = aggregateStaffReviewStats(events, branch);
       setStaffMerged(mergeStaffStats([], granular));
@@ -272,7 +262,7 @@ export default function ReviewIntelligence() {
           <p className="rev-intel-kicker">NAC REVIEW OS</p>
           <h1>Review Intelligence</h1>
           <p className="rev-intel-sub">
-            {branchLabel} · {rangeLabel} · review_events only
+            {branchLabel} · {rangeLabel}
             {selectedRange === "today" ? " · 3:00 AM – 2:59 AM (Asia/Riyadh)" : ""}
           </p>
         </motion.div>
@@ -333,7 +323,7 @@ export default function ReviewIntelligence() {
       )}
 
       {loading ? (
-        <p className="rev-intel-muted">Loading review_events…</p>
+        <p className="rev-intel-muted">Loading…</p>
       ) : (
         <>
           <motion.div className="rev-kpi-grid" layout>
@@ -375,25 +365,6 @@ export default function ReviewIntelligence() {
             )}
           </motion.div>
 
-          <section className="rev-section rev-debug-panel">
-            <h2>Debug — review_events by type</h2>
-            <p className="rev-intel-muted">
-              Raw counts for {branchLabel} ({rangeLabel}) — same source as KPIs
-            </p>
-            <motion.div className="rev-event-counts">
-              {eventTypeCounts.length === 0 ? (
-                <p className="rev-intel-muted">No review_events in this period.</p>
-              ) : (
-                eventTypeCounts.map((row) => (
-                  <div key={row.event_type} className="rev-event-count-row">
-                    <span className="rev-event-type">{row.event_type}</span>
-                    <strong>{row.count}</strong>
-                  </div>
-                ))
-              )}
-            </motion.div>
-          </section>
-
           {branchScans.length > 0 && (
             <section className="rev-section">
               <h2>
@@ -402,7 +373,7 @@ export default function ReviewIntelligence() {
               <motion.div className="rev-branch-table">
                 <motion.div className="rev-branch-row head">
                   <span>Branch</span>
-                  <span>qr_scan</span>
+                  <span>Scans</span>
                 </motion.div>
                 {branchScans.map((row) => (
                   <div
@@ -458,43 +429,6 @@ export default function ReviewIntelligence() {
               </div>
             </section>
           )}
-
-          <section className="rev-section rev-debug-panel">
-            <h2>Debug — latest review events</h2>
-            <p className="rev-intel-muted">Last 20 rows for {branchLabel}</p>
-            <div className="rev-staff-table-wrap">
-              <table className="rev-staff-table rev-debug-table">
-                <thead>
-                  <tr>
-                    <th>created_at</th>
-                    <th>branch</th>
-                    <th>employee_name</th>
-                    <th>employee_role</th>
-                    <th>event_type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {debugEvents.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="rev-intel-muted">
-                        No review_events for this branch yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    debugEvents.map((row, i) => (
-                      <tr key={`${row.created_at}-${row.event_type}-${i}`}>
-                        <td>{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</td>
-                        <td>{row.branch_id || "—"}</td>
-                        <td>{row.employee_name || <em className="rev-missing">empty</em>}</td>
-                        <td>{row.employee_role || "—"}</td>
-                        <td>{row.event_type}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
 
           <div className="rev-charts-grid">
             {leaderboardData.length > 0 && (
@@ -562,7 +496,7 @@ export default function ReviewIntelligence() {
             </h2>
             <div className="rev-emp-grid">
               {staffMerged.length === 0 ? (
-                <p className="rev-intel-muted">No employee-tagged review_events yet.</p>
+                <p className="rev-intel-muted">No staff activity in this period yet.</p>
               ) : (
                 staffMerged.map((emp) => {
                   const perf = employees.find((e) => e.name === emp.name);
@@ -575,11 +509,11 @@ export default function ReviewIntelligence() {
                       <p className="rev-emp-role">{emp.role || perf?.role || "Staff"}</p>
                       {perf && <p className="rev-emp-reason">{perf.classification.reason}</p>}
                       <div className="rev-emp-metrics">
-                        <span>{emp.scans} qr_scans</span>
+                        <span>{emp.scans} scans</span>
                         <span>{emp.generated} generated</span>
                         <span>{emp.copy} copies</span>
                         <span>{emp.google} Google</span>
-                        <span>{emp.conversion_pct}% conv.</span>
+                        <span>{emp.conversion_pct}% conversion</span>
                       </div>
                     </motion.div>
                   );
@@ -590,7 +524,7 @@ export default function ReviewIntelligence() {
 
           <section className="rev-section">
             <h2>
-              <GitBranch size={18} /> Branch comparison (review_events)
+              <GitBranch size={18} /> Branch comparison
             </h2>
             <div className="rev-branch-table">
               <motion.div className="rev-branch-row head">
@@ -614,25 +548,6 @@ export default function ReviewIntelligence() {
               ))}
             </div>
           </section>
-
-          {diag && (
-            <section className="rev-section">
-              <h2>
-                <Star size={18} /> Review data quality
-              </h2>
-              <p className={`rev-dq-status ${diag.healthy ? "ok" : "warn"}`}>
-                {diag.healthy ? "Healthy" : `${diag.issue_count} issue(s) detected`}
-              </p>
-              <p className="rev-intel-muted">{diag.review_event_count} review_events checked</p>
-              <ul className="rev-dq-list">
-                {diag.issues.length === 0 ? (
-                  <li>No issues detected for this period.</li>
-                ) : (
-                  diag.issues.map((i) => <li key={i.code}>{i.message}</li>)
-                )}
-              </ul>
-            </section>
-          )}
         </>
       )}
     </motion.div>
