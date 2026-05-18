@@ -2,6 +2,8 @@
  * Runs before the React bundle. Sets window.__NAC_REVIEW_MODE__ and optional redirect.
  * Keep in sync with src/lib/reviewPortalParams.js (detectReviewQrMode).
  */
+console.log("NAC REVIEW ROUTING LOADED", window.location.href);
+
 (function (w) {
   var CANONICAL_REVIEW_ORIGIN = "https://nacmenu.netlify.app";
 

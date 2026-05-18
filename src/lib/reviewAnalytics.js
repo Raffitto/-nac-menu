@@ -2,6 +2,8 @@ import { supabase } from "./supabase";
 import { getMenuSessionIdOptional } from "./analytics";
 import { getBusinessDayKey } from "../dashboard/utils/businessDay";
 
+console.log("REVIEW ANALYTICS MODULE LOADED", window.location?.href || "");
+
 const REVIEW_SESSION_KEY = "nac_review_session_id";
 const DEDUPE_PREFIX = "nac_review_dedupe_";
 const INSERT_TEST_KEY = "nac_review_insert_self_test_done";
