@@ -185,20 +185,11 @@ export async function insertReviewEvent(ctx = {}) {
     });
   }
 
-  const { data, error } = await supabase
-    .from("review_events")
-    .insert(payload)
-    .select();
+  const { error } = await supabase.from("review_events").insert(payload);
 
-  console.log("REVIEW EVENT RESULT", data);
+  console.log("REVIEW EVENT INSERT OK", !error);
   if (error) {
     console.error("REVIEW EVENT ERROR", error);
-    console.error("REVIEW EVENT ERROR DETAILS", {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-    });
   }
 
   if (!error) {
@@ -217,7 +208,7 @@ export async function insertReviewEvent(ctx = {}) {
       });
   }
 
-  return { data, error };
+  return { data: null, error };
 }
 
 /**
@@ -254,19 +245,16 @@ export async function runReviewEventsInsertSelfTest(branchId = DEFAULT_BRANCH) {
     return { data: null, error: new Error("supabase not configured") };
   }
 
-  const { data, error } = await supabase
-    .from("review_events")
-    .insert(payload)
-    .select();
+  const { error } = await supabase.from("review_events").insert(payload);
 
-  console.log("REVIEW EVENT RESULT (self-test)", data);
+  console.log("REVIEW EVENT INSERT OK", !error);
   if (error) {
-    console.error("REVIEW EVENT ERROR (self-test)", error);
+    console.error("REVIEW EVENT ERROR", error);
   } else {
     console.log("REVIEW INSERT SELF-TEST OK");
   }
 
-  return { data, error };
+  return { data: null, error };
 }
 
 export function trackReviewEvent(ctx = {}) {
