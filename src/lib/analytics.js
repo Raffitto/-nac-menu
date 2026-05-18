@@ -27,6 +27,7 @@ export function getSessionId() {
 }
 
 function getOrCreateSessionId() {
+  if (isReviewQrVisit()) return getMenuSessionIdOptional();
   try {
     let id = localStorage.getItem(SESSION_KEY);
     if (!id) {
@@ -61,6 +62,7 @@ export function markSessionLogged() {
 }
 
 export function getSessionStartTime() {
+  if (isReviewQrVisit()) return Date.now();
   try {
     let t = localStorage.getItem(SESSION_START_KEY);
     if (!t) {

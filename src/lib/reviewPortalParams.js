@@ -9,17 +9,34 @@ const STAFF_PARAM_KEYS = [
   "employee",
   "employee_name",
   "emp",
-  "slug",
+  "name",
 ];
 
-export function isReviewDomain(hostname) {
+const REVIEW_ONLY_HOST_PATTERNS = [
+  /-reviews\.netlify\.app$/i,
+  /reviews\.netlify\.app$/i,
+];
+
+export function isReviewOnlyHostname(hostname) {
   const h = (hostname || "").toLowerCase();
-  return h.includes("review");
+  return REVIEW_ONLY_HOST_PATTERNS.some((re) => re.test(h));
+}
+
+export function isReviewDomain(hostname) {
+  return isReviewOnlyHostname(hostname);
 }
 
 function paramHasValue(params, key) {
   const val = params.get(key);
   return val != null && String(val).trim() !== "";
+}
+
+export function branchFromHostname(hostname) {
+  const h = (hostname || "").toLowerCase();
+  if (h.includes("khobar")) return "khobar";
+  if (h.includes("jeddah")) return "jeddah";
+  if (h.includes("riyadh")) return "riyadh";
+  return null;
 }
 
 export function normalizeBranchFromStore(storeName) {
@@ -33,6 +50,55 @@ export function normalizeBranchFromStore(storeName) {
   return null;
 }
 
+/**
+ * True when URL must load ReviewPortal (staff review QR), not the menu app.
+ * Must match public/review-routing.js.
+ */
+export function detectReviewQrMode(search, hostname) {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.__NAC_DETECT_REVIEW_QR_MODE__ === "function"
+  ) {
+    return window.__NAC_DETECT_REVIEW_QR_MODE__(
+      search != null ? search : window.location.search,
+      hostname != null ? hostname : window.location.hostname,
+    );
+  }
+
+  const params = new URLSearchParams(
+    search != null
+      ? search
+      : typeof window !== "undefined"
+        ? window.location.search
+        : "",
+  );
+  const host = (
+    hostname != null
+      ? hostname
+      : typeof window !== "undefined"
+        ? window.location.hostname
+        : ""
+  ).toLowerCase();
+
+  if (params.get("app") === "review") return true;
+  if (isReviewOnlyHostname(host)) return true;
+
+  if (STAFF_PARAM_KEYS.some((key) => paramHasValue(params, key))) return true;
+
+  if (
+    paramHasValue(params, "role") &&
+    (paramHasValue(params, "store") || paramHasValue(params, "branch"))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isReviewQrUrl(search, hostname) {
+  return detectReviewQrMode(search, hostname);
+}
+
 export function parseReviewPortalParams(search) {
   const qs =
     search != null
@@ -41,6 +107,8 @@ export function parseReviewPortalParams(search) {
         ? window.location.search
         : "";
   const params = new URLSearchParams(qs);
+  const hostname =
+    typeof window !== "undefined" ? window.location.hostname : "";
 
   const employeeName =
     params.get("s") ||
@@ -59,6 +127,7 @@ export function parseReviewPortalParams(search) {
   const normalizedBranch =
     normalizeBranchFromStore(storeName) ||
     normalizeBranchFromStore(params.get("branch")) ||
+    branchFromHostname(hostname) ||
     (process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase();
 
   const cleanName = employeeName
@@ -78,54 +147,14 @@ export function parseReviewPortalParams(search) {
   };
 }
 
-/**
- * True when URL must load ReviewPortal (staff review QR), not the menu app.
- * Checked before menu analytics / App bundle initializes.
- */
-export function isReviewQrUrl(search, hostname) {
-  if (typeof window === "undefined" && search == null) return false;
-
-  const params = new URLSearchParams(
-    search != null
-      ? search
-      : typeof window !== "undefined"
-        ? window.location.search
-        : "",
-  );
-  const host = (
-    hostname != null
-      ? hostname
-      : typeof window !== "undefined"
-        ? window.location.hostname
-        : ""
-  ).toLowerCase();
-
-  if (params.get("app") === "review") return true;
-
-  if (STAFF_PARAM_KEYS.some((key) => paramHasValue(params, key))) return true;
-
-  if (
-    paramHasValue(params, "role") &&
-    (paramHasValue(params, "store") || paramHasValue(params, "branch"))
-  ) {
-    return true;
-  }
-
-  if (
-    isReviewDomain(host) &&
-    (paramHasValue(params, "store") ||
-      paramHasValue(params, "branch") ||
-      paramHasValue(params, "s"))
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
 /** Set global flag so menu analytics never runs on review QR visits. */
 export function applyReviewRoutingMode(isReviewQr) {
   if (typeof window === "undefined") return;
   window.__NAC_REVIEW_MODE__ = Boolean(isReviewQr);
-  console.log("ROUTING MODE", isReviewQr ? "review" : "menu");
+  console.log(
+    "ROUTING MODE",
+    isReviewQr ? "review" : "menu",
+    window.location.hostname,
+    window.location.search,
+  );
 }

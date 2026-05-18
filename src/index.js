@@ -1,13 +1,16 @@
 import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import { applyReviewRoutingMode, isReviewQrUrl } from "./lib/reviewPortalParams";
+import {
+  applyReviewRoutingMode,
+  detectReviewQrMode,
+} from "./lib/reviewPortalParams";
 
-// Decide route BEFORE loading the menu App (avoids qr_session_start / menu_events).
+// Route BEFORE loading menu App (prevents qr_session_start / menu_events).
 const isReviewQr =
   typeof window !== "undefined" &&
   (window.__NAC_REVIEW_MODE__ === true ||
-    isReviewQrUrl(window.location.search, window.location.hostname));
+    detectReviewQrMode(window.location.search, window.location.hostname));
 
 applyReviewRoutingMode(isReviewQr);
 

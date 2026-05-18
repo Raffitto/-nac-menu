@@ -95,11 +95,18 @@ export function trackReviewEvent(ctx = {}) {
   const { employee_name, employee_role } = resolveStaff(ctx);
   const menu_session_id = getMenuSessionIdOptional();
 
+  const store_name =
+    ctx.storeName || ctx.store_name || ctx.store || null;
+
   const payload = {
     event_type,
     branch_id,
     employee_name,
     employee_role,
+    store_name:
+      store_name && String(store_name).trim()
+        ? String(store_name).trim()
+        : null,
     review_session_id,
     session_id: menu_session_id,
     language: ctx.language || null,
@@ -168,11 +175,11 @@ export function trackReviewRegenerate(textLength, ctx = {}) {
 }
 
 export function trackReviewCopy(ctx = {}) {
-  trackReviewEvent({ event_type: "review_copy", ...ctx });
+  trackReviewEvent({ event_type: "copy_review", ...ctx });
 }
 
 export function trackReviewGoogleClick(ctx = {}) {
-  trackReviewEvent({ event_type: "review_google_click", ...ctx });
+  trackReviewEvent({ event_type: "google_redirect", ...ctx });
 }
 
 export function trackReviewLanguageChange(language, ctx = {}) {

@@ -5,6 +5,9 @@ alter table public.review_events
 alter table public.review_events
   add column if not exists employee_role text;
 
+alter table public.review_events
+  add column if not exists store_name text;
+
 -- Allow QR + alias event types used by review portal
 alter table public.review_events drop constraint if exists review_events_event_type_check;
 

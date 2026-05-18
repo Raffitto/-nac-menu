@@ -36,29 +36,7 @@
     <title>NAC Khobar</title>
   </head>
   <body>
-    <script>
-      (function (w) {
-        var params = new URLSearchParams(w.location.search || "");
-        var host = (w.location.hostname || "").toLowerCase();
-        var reviewDomain = host.indexOf("review") !== -1;
-        function has(k) {
-          var v = params.get(k);
-          return v != null && String(v).trim() !== "";
-        }
-        var isReview =
-          params.get("app") === "review" ||
-          has("s") ||
-          has("staff") ||
-          has("employee") ||
-          has("employee_name") ||
-          has("emp") ||
-          has("slug") ||
-          (has("role") && (has("store") || has("branch"))) ||
-          (reviewDomain && (has("store") || has("branch") || has("s")));
-        w.__NAC_REVIEW_MODE__ = isReview;
-        console.log("ROUTING MODE", isReview ? "review" : "menu");
-      })(window);
-    </script>
+    <script src="%PUBLIC_URL%/review-routing.js"></script>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <!--
