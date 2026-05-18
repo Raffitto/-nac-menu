@@ -29,6 +29,34 @@ export function rangeExportLabel(range) {
   return match?.label ?? "Today";
 }
 
+/** { since: Date, until: Date } for the selected range (business-day aware). */
+export function getRangeBounds(range, referenceDate = new Date()) {
+  const until = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  if (range === "today") {
+    const { start } = getBusinessDayRange(referenceDate);
+    return { since: start, until };
+  }
+  if (range === "month") {
+    return { since: getCurrentMonthStart(referenceDate), until };
+  }
+  if (range === "7d") {
+    const cur = getBusinessDayRange(referenceDate);
+    return {
+      since: new Date(cur.start.getTime() - 6 * 24 * 60 * 60 * 1000),
+      until,
+    };
+  }
+  const hours = rangeToHours(range);
+  if (hours === 24) {
+    const { start } = getBusinessDayRange(referenceDate);
+    return { since: start, until };
+  }
+  if (hours === MONTH_HOURS) {
+    return { since: getCurrentMonthStart(referenceDate), until };
+  }
+  return { since: new Date(until.getTime() - hours * 3600000), until };
+}
+
 /** ISO timestamp lower bound for client-side Supabase queries */
 export function rangeToSince(range, referenceDate = new Date()) {
   if (range === "today") {

@@ -34,7 +34,9 @@ import {
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { applyPlatformFilters } from "./utils/platformFilterApply";
-import { rangeToSince } from "./utils/rangeState";
+import { rangeToSince, rangeToHours, getRangeBounds } from "./utils/rangeState";
+import { mapBiToSessionAggregates } from "./utils/sessionAnalyticsMap";
+import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
 import "./styles/analytics-dashboard.css";
 
 const CATEGORY_NAMES = {
@@ -119,7 +121,9 @@ function aggregateTopAddonsFromRows(rows) {
     .slice(0, 12);
 }
 
-function aggregateClientSide(rows, totalEventsExact) {
+function aggregateClientSide(rows, totalEventsExact, rangeBounds = null) {
+  const sinceMs = rangeBounds?.since ? new Date(rangeBounds.since).getTime() : null;
+  const untilMs = rangeBounds?.until ? new Date(rangeBounds.until).getTime() : null;
   const sessions = new Set();
   const byLang = {};
   const byType = {};
@@ -163,13 +167,13 @@ function aggregateClientSide(rows, totalEventsExact) {
     }
     if (r.created_at) {
       const d = new Date(r.created_at);
-      if (!Number.isNaN(d.getTime())) {
-        const age = Date.now() - d.getTime();
-        if (age >= 0 && age < 24 * 60 * 60 * 1000) {
-          d.setMinutes(0, 0, 0);
-          const key = d.toISOString();
-          hourly[key] = (hourly[key] || 0) + 1;
-        }
+      const t = d.getTime();
+      if (!Number.isNaN(t)) {
+        if (sinceMs != null && t < sinceMs) return;
+        if (untilMs != null && t > untilMs) return;
+        d.setMinutes(0, 0, 0);
+        const key = d.toISOString();
+        hourly[key] = (hourly[key] || 0) + 1;
       }
     }
   });
@@ -239,7 +243,6 @@ export default function AnalyticsDashboard() {
   const [aggregates, setAggregates] = useState(null);
   const [feed, setFeed] = useState([]);
   const [topAddons, setTopAddons] = useState([]);
-  
 
   const configured = isSupabaseConfigured();
 
@@ -263,40 +266,70 @@ export default function AnalyticsDashboard() {
     setLoading(true);
     setError("");
 
-    const since = rangeToSince(filters?.selectedRange || "today");
-    const branch = filters?.branch;
+    const selectedRange = filters?.selectedRange || "today";
+    const since = rangeToSince(selectedRange);
+    const rangeBounds = getRangeBounds(selectedRange);
+    const branch = filters?.branch || null;
+    const pHours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
+    const hasExtendedFilters = Boolean(
+      filters &&
+        ((filters.language && filters.language !== "all") ||
+          (filters.shift && filters.shift !== "all") ||
+          (filters.eventType && filters.eventType !== "all") ||
+          (filters.dayType && filters.dayType !== "all") ||
+          (filters.role && filters.role !== "all")),
+    );
+
+    const menuSelect =
+      "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata, branch_id, employee_role";
 
     try {
-      const { data: rpcData, error: rpcError } = await supabase.rpc(
-        "get_dashboard_aggregates"
-      );
+      const { data: bi, error: biErr } = await supabase.rpc("get_bi_dashboard", {
+        p_branch: branch,
+        p_hours: pHours,
+      });
 
-      let agg = null;
-      if (!rpcError && rpcData && typeof rpcData === "object") {
-        agg = rpcData;
-        
+      if (biErr) throw biErr;
+
+      const biPayload = Array.isArray(bi) ? bi[0] : bi;
+      let agg = mapBiToSessionAggregates(biPayload);
+
+      let rowsQ = supabase
+        .from("menu_events")
+        .select(menuSelect)
+        .order("created_at", { ascending: false })
+        .limit(15000);
+      if (since) rowsQ = rowsQ.gte("created_at", since);
+      if (branch) rowsQ = rowsQ.eq("branch_id", branch);
+      const { data: rows, error: rowsErr } = await rowsQ;
+      if (rowsErr) throw rowsErr;
+
+      const filtered = applyPlatformFilters(rows || [], filters);
+      const clientAgg = aggregateClientSide(filtered, null, rangeBounds);
+
+      if (!agg || hasExtendedFilters) {
+        agg = clientAgg;
       } else {
-        
-        const { count: headCount, error: countErr } = await supabase
-          .from("menu_events")
-          .select("*", { count: "exact", head: true });
-        if (countErr) throw countErr;
-
-        let rowsQ = supabase
-          .from("menu_events")
-          .select(
-            "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata, branch_id"
-          )
-          .order("created_at", { ascending: false })
-          .limit(12000);
-        if (since) rowsQ = rowsQ.gte("created_at", since);
-        if (branch) rowsQ = rowsQ.eq("branch_id", branch);
-        const { data: rows, error: rowsErr } = await rowsQ;
-
-        if (rowsErr) throw rowsErr;
-        const filtered = applyPlatformFilters(rows || [], filters);
-        agg = aggregateClientSide(filtered, headCount ?? undefined);
-        
+        agg = {
+          ...agg,
+          total_events: clientAgg.total_events || agg.total_events,
+          total_sessions: clientAgg.total_sessions || agg.total_sessions,
+          by_language: Object.keys(clientAgg.by_language || {}).length
+            ? clientAgg.by_language
+            : agg.by_language,
+          by_event_type: Object.keys(clientAgg.by_event_type || {}).length
+            ? clientAgg.by_event_type
+            : agg.by_event_type,
+          top_items: clientAgg.top_items?.length ? clientAgg.top_items : agg.top_items,
+          top_categories: clientAgg.top_categories?.length ? clientAgg.top_categories : agg.top_categories,
+          by_hour: clientAgg.by_hour?.length ? clientAgg.by_hour : agg.by_hour,
+          menu_tab_engagement: clientAgg.menu_tab_engagement?.length
+            ? clientAgg.menu_tab_engagement
+            : agg.menu_tab_engagement,
+          drinks_vs_food_pct: clientAgg.drinks_vs_food_pct || agg.drinks_vs_food_pct,
+          top_sections: clientAgg.top_sections?.length ? clientAgg.top_sections : agg.top_sections,
+          today_qr_sessions: clientAgg.by_event_type?.qr_session_start ?? agg.today_qr_sessions,
+        };
       }
 
       setAggregates(agg);
@@ -562,7 +595,11 @@ export default function AnalyticsDashboard() {
                 <span className="text-white/40"> · {session.user.email}</span>
               )}
             </p>
-            
+            <p className="text-xs text-white/40 mt-2">
+              {periodLabelFromHours(filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"))}
+              {" · "}
+              {businessDayExportNote()}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <span className="nac-an__pill">

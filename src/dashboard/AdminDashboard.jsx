@@ -311,7 +311,9 @@ function AdminDashboardContent({ onBack }) {
 
             {overviewTab === "sessions" ? (
               <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
-                <AnalyticsDashboard />
+                <AnalyticsDashboard
+                  key={`${filters.selectedRange}-${filters.timeRangeHours}-${filters.branch || "all"}-${filters.language}-${filters.shift}-${filters.eventType}-${filters.dayType}-${filters.role}`}
+                />
               </Suspense>
             ) : (
           <>

@@ -7,6 +7,8 @@ const NET_HEADERS = ["net sales", "net", "net total", "net amount"];
 const GROSS_HEADERS = ["gross sales", "gross", "gross total", "gross amount", "total sales"];
 const DISCOUNT_HEADERS = ["discount amount", "discount", "discounts", "disc"];
 const CATEGORY_HEADERS = ["category", "product category", "menu category", "group"];
+const WAITER_HEADERS = ["waiter", "server", "employee", "staff", "cashier", "user", "sold by"];
+const TIMESTAMP_HEADERS = ["date", "time", "datetime", "timestamp", "order date", "business date"];
 
 function normHeader(h) {
   return String(h || "")
@@ -106,6 +108,8 @@ export function detectColumnMapping(headers) {
     grossSales: findColumnExact(h, ["gross sales"]) || findColumn(h, GROSS_HEADERS, { exclude: ["gross sales without tax"] }),
     discount: findColumnExact(h, ["discount amount"]) || findColumn(h, DISCOUNT_HEADERS),
     category: findColumn(h, CATEGORY_HEADERS),
+    waiter: findColumn(h, WAITER_HEADERS),
+    timestamp: findColumn(h, TIMESTAMP_HEADERS),
     allHeaders: h,
   };
 }
@@ -131,6 +135,8 @@ export function rowsFromMappedData(rawRows, mapping) {
       gross_sales: mapping.grossSales ? parseNumber(raw[mapping.grossSales]) : null,
       discount: mapping.discount ? parseNumber(raw[mapping.discount]) : null,
       category: mapping.category ? normCell(raw[mapping.category]) || null : null,
+      waiter_name: mapping.waiter ? normCell(raw[mapping.waiter]) || null : null,
+      sold_at: mapping.timestamp ? normCell(raw[mapping.timestamp]) || null : null,
     });
   }
   return { rows, error: rows.length ? null : "No valid product rows found." };

@@ -219,7 +219,7 @@ export default function FoodicsIntelligence() {
       const email = session?.session?.user?.email || "admin";
       await createImportBatch(
         {
-          branch_id: "khobar",
+          branch_id: (platform?.branch || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
           period_type: periodType,
           period_start: periodStart,
           period_end: periodEnd,

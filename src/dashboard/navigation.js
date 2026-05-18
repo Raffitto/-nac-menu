@@ -12,7 +12,8 @@ export const NAV_ITEMS = [
 export const INTELLIGENCE_TABS = [
   { id: "ai", label: "AI Insights" },
   { id: "restaurant", label: "Restaurant" },
-  { id: "sales", label: "Sales" },
+  { id: "imports", label: "Sales Imports" },
+  { id: "sales", label: "Foodics" },
   { id: "menu", label: "Menu Intelligence" },
   { id: "predictive", label: "Predictive" },
   { id: "operations", label: "Operations" },

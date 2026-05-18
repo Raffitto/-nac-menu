@@ -89,6 +89,8 @@ function toSalesItemPayload(row, batch, meta) {
     matched_menu_item_name: matchedName,
     matched_menu_item_id: matchedId,
     category: row.category || null,
+    waiter_name: row.waiter_name || null,
+    sold_at: row.sold_at ? new Date(row.sold_at).toISOString() : null,
     quantity_sold: row.quantity_sold || 0,
     net_sales: row.net_sales,
     gross_sales: row.gross_sales,
