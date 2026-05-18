@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { getSessionId } from "./analytics";
+import { getMenuSessionIdOptional } from "./analytics";
 import { getBusinessDayKey } from "../dashboard/utils/businessDay";
 
 const REVIEW_SESSION_KEY = "nac_review_session_id";
@@ -93,7 +93,7 @@ export function trackReviewEvent(ctx = {}) {
 
   const branch_id = resolveBranch(ctx);
   const { employee_name, employee_role } = resolveStaff(ctx);
-  const menu_session_id = getSessionId();
+  const menu_session_id = getMenuSessionIdOptional();
 
   const payload = {
     event_type,

@@ -1,32 +1,41 @@
-import React, { Suspense, lazy } from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
-import reportWebVitals from './reportWebVitals';
+import React, { Suspense, lazy } from "react";
+import ReactDOM from "react-dom/client";
+import "./index.css";
+import { applyReviewRoutingMode, isReviewQrUrl } from "./lib/reviewPortalParams";
 
-import { isReviewQrUrl } from './lib/reviewPortalParams';
+// Decide route BEFORE loading the menu App (avoids qr_session_start / menu_events).
+const isReviewQr =
+  typeof window !== "undefined" &&
+  (window.__NAC_REVIEW_MODE__ === true ||
+    isReviewQrUrl(window.location.search, window.location.hostname));
 
-const isReviewPortal =
-  typeof window !== 'undefined' && isReviewQrUrl(window.location.search);
+applyReviewRoutingMode(isReviewQr);
 
-const ReviewPortal = lazy(() => import('./review/ReviewPortal'));
+const ReviewPortal = lazy(() => import("./review/ReviewPortal"));
+const MenuApp = lazy(() => import("./App"));
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root = ReactDOM.createRoot(document.getElementById("root"));
 
-if (isReviewPortal) {
+if (isReviewQr) {
   root.render(
     <React.StrictMode>
-      <Suspense fallback={<div style={{ minHeight: '100vh', background: '#0a0908' }} />}>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
         <ReviewPortal />
       </Suspense>
-    </React.StrictMode>
+    </React.StrictMode>,
   );
 } else {
   root.render(
     <React.StrictMode>
-      <App />
-    </React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#f9f9f7" }} />}>
+        <MenuApp />
+      </Suspense>
+    </React.StrictMode>,
   );
 }
 
-reportWebVitals();
+if (!isReviewQr) {
+  import("./reportWebVitals").then(({ default: reportWebVitals }) => {
+    reportWebVitals();
+  });
+}

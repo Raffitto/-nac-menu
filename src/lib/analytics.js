@@ -7,7 +7,22 @@ const SESSION_LOGGED_KEY = "nac_menu_qr_session_logged";
 const DEFAULT_BRANCH_ID =
   process.env.REACT_APP_NAC_BRANCH_ID || "khobar";
 
+/** Review QR visits must not create menu_events or menu sessions. */
+export function isReviewQrVisit() {
+  return typeof window !== "undefined" && window.__NAC_REVIEW_MODE__ === true;
+}
+
+/** Existing menu session id only — never creates one (for review portal linking). */
+export function getMenuSessionIdOptional() {
+  try {
+    return localStorage.getItem(SESSION_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getSessionId() {
+  if (isReviewQrVisit()) return getMenuSessionIdOptional();
   return getOrCreateSessionId();
 }
 
@@ -91,6 +106,7 @@ export function makeMenuItemId(categoryId, sectionTitleEn, itemNameEn) {
  */
 export function trackEvent(payload) {
   if (!supabase || !payload?.event_type) return;
+  if (isReviewQrVisit()) return;
 
   markMenuActivity();
   const session_id = getOrCreateSessionId();
