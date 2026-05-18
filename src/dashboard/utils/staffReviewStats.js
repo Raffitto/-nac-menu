@@ -1,5 +1,7 @@
 /** Aggregate per-staff review funnel from raw review_events rows */
 
+import { staffNameForTracking } from "../../review/reviewGeneratorShared";
+
 const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
 const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
 const COPY_TYPES = new Set(["review_copy", "copy_review"]);
@@ -12,16 +14,17 @@ function dayKey(iso) {
   return d.toISOString().slice(0, 10);
 }
 
-function hasStaffName(e) {
-  return Boolean((e.employee_name || "").trim());
+function eventStaffName(e) {
+  const raw = (e.employee_name || "").trim();
+  if (!raw) return null;
+  return staffNameForTracking(raw) || raw;
 }
 
 export function aggregateStaffReviewStats(events = []) {
   const map = {};
   (events || []).forEach((e) => {
-    if (!hasStaffName(e)) return;
-
-    const name = e.employee_name.trim();
+    const name = eventStaffName(e);
+    if (!name) return;
     const branch = (e.branch_id || "").toLowerCase();
 
     if (!map[name]) {

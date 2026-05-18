@@ -1,5 +1,7 @@
 /** Parse review QR URL params and normalize branch / staff fields. */
 
+import { staffNameForTracking } from "../review/reviewGeneratorShared";
+
 const BRANCH_KEYS = ["khobar", "riyadh", "jeddah"];
 
 const STAFF_PARAM_KEYS = [
@@ -150,6 +152,28 @@ export function parseReviewPortalParams(search) {
     normalizedBranch,
     slug: params.get("slug") || "",
     lang: params.get("lang") || "en",
+  };
+}
+
+/**
+ * Stable payload for review_events inserts from parsed QR URL (?s= & role=).
+ * @param {object} [overrides] — optional { employeeName, employeeRole } from portal state
+ */
+export function buildReviewTrackingContext(params, overrides = {}) {
+  const p = params || parseReviewPortalParams();
+  const branch_id = (p.normalizedBranch || "khobar").toLowerCase();
+  const nameRaw = overrides.employeeName ?? p.employeeName;
+  const roleRaw = overrides.employeeRole ?? p.employeeRole;
+  const employee_name = staffNameForTracking(nameRaw);
+  const employee_role = roleRaw
+    ? String(roleRaw).trim().toLowerCase()
+    : null;
+
+  return {
+    branch_id,
+    employee_name,
+    employee_role,
+    storeName: p.storeName,
   };
 }
 

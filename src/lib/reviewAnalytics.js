@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { getMenuSessionIdOptional } from "./analytics";
 import { getBusinessDayKey } from "../dashboard/utils/businessDay";
+import { staffNameForTracking } from "../review/reviewGeneratorShared";
 
 console.log("REVIEW ANALYTICS MODULE LOADED", window.location?.href || "");
 
@@ -66,10 +67,18 @@ export function getReviewSessionId() {
   }
 }
 
-function shouldDedupe(eventType, reviewSessionId) {
+/** One qr_scan / page_open per browser session per branch per staff (not global per session). */
+function buildDedupeStorageKey(eventType, reviewSessionId, ctx = {}) {
+  const branch = resolveBranch(ctx);
+  const { employee_name } = resolveStaff(ctx);
+  const staffKey = (employee_name || "_no_staff").toLowerCase();
+  return `${DEDUPE_PREFIX}${eventType}_${reviewSessionId}_${branch}_${staffKey}`;
+}
+
+function shouldDedupe(eventType, reviewSessionId, ctx = {}) {
   if (!ONCE_PER_SESSION.has(eventType)) return false;
   try {
-    const key = `${DEDUPE_PREFIX}${eventType}_${reviewSessionId}`;
+    const key = buildDedupeStorageKey(eventType, reviewSessionId, ctx);
     if (sessionStorage.getItem(key)) return true;
     sessionStorage.setItem(key, "1");
     return false;
@@ -83,12 +92,14 @@ function resolveBranch(ctx) {
 }
 
 function resolveStaff(ctx) {
-  const name = ctx.employee_name || ctx.employeeName || null;
-  const role = ctx.employee_role || ctx.employeeRole || null;
-  return {
-    employee_name: name && String(name).trim() ? String(name).trim() : null,
-    employee_role: role && String(role).trim() ? String(role).trim() : null,
-  };
+  const rawName = ctx.employee_name ?? ctx.employeeName ?? null;
+  const rawRole = ctx.employee_role ?? ctx.employeeRole ?? null;
+  const employee_name = staffNameForTracking(rawName);
+  const employee_role =
+    rawRole && String(rawRole).trim()
+      ? String(rawRole).trim().toLowerCase()
+      : null;
+  return { employee_name, employee_role };
 }
 
 function buildReviewEventPayload(ctx = {}) {
@@ -148,14 +159,31 @@ export async function insertReviewEvent(ctx = {}) {
   }
 
   const review_session_id = getReviewSessionId();
-  if (shouldDedupe(event_type, review_session_id)) {
-    console.log("REVIEW EVENT DEDUPED (skipped insert)", event_type, review_session_id);
+  if (shouldDedupe(event_type, review_session_id, ctx)) {
+    console.log("REVIEW EVENT DEDUPED (skipped insert)", {
+      event_type,
+      review_session_id,
+      dedupe_key: buildDedupeStorageKey(event_type, review_session_id, ctx),
+      employee_name: resolveStaff(ctx).employee_name,
+      branch_id: resolveBranch(ctx),
+    });
     return { data: null, error: null, deduped: true };
   }
 
   const payload = buildReviewEventPayload({ ...ctx, review_session_id });
 
-  console.log("REVIEW EVENT PAYLOAD", payload);
+  console.log("FINAL REVIEW EVENT PAYLOAD", payload);
+  if (event_type === "qr_scan") {
+    console.log("QR_SCAN SUPABASE INSERT PAYLOAD", {
+      event_type: payload.event_type,
+      branch_id: payload.branch_id,
+      employee_name: payload.employee_name,
+      employee_role: payload.employee_role,
+      store_name: payload.store_name,
+      review_session_id: payload.review_session_id,
+      source_url: payload.source_url,
+    });
+  }
 
   const { data, error } = await supabase
     .from("review_events")

@@ -24,9 +24,16 @@ export function canonName(raw) {
   if (NAME_CANON[low]) return NAME_CANON[low];
   if (!t) return "Team";
   return t
-    .split(" ")
-    .map((x) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x))
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((x) => (x ? x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() : x))
     .join(" ");
+}
+
+/** Trim + canonical form for review_events and dashboard staff rows (null if missing). */
+export function staffNameForTracking(raw) {
+  const c = canonName(raw);
+  return c === "Team" ? null : c;
 }
 
 function isFemaleReceptionist(name) {

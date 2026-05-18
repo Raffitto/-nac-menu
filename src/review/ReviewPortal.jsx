@@ -9,7 +9,10 @@ import {
   trackReviewGoogleClick,
   trackReviewLanguageChange,
 } from "../lib/reviewAnalytics";
-import { parseReviewPortalParams } from "../lib/reviewPortalParams";
+import {
+  buildReviewTrackingContext,
+  parseReviewPortalParams,
+} from "../lib/reviewPortalParams";
 import { fetchReviewPortalStaff } from "../dashboard/utils/unifiedIntelligenceApi";
 import {
   canonName,
@@ -69,14 +72,24 @@ export default function ReviewPortal() {
   const resolvedRole = staffRole || portalParams.employeeRole || "";
   const displayName = canonName(resolvedStaff);
 
+  const trackingCtx = useMemo(
+    () =>
+      buildReviewTrackingContext(portalParams, {
+        employeeName: staffName || portalParams.employeeName,
+        employeeRole: staffRole || portalParams.employeeRole,
+      }),
+    [portalParams, staffName, staffRole],
+  );
+
   const ctx = useMemo(
     () => ({
-      branch_id: portalParams.normalizedBranch,
-      employee_name: displayName !== "Team" ? displayName : null,
-      employee_role: resolvedRole || null,
+      ...trackingCtx,
+      employee_role: resolvedRole
+        ? String(resolvedRole).trim().toLowerCase()
+        : trackingCtx.employee_role,
       storeName: portalParams.storeName,
     }),
-    [portalParams, displayName, resolvedRole],
+    [trackingCtx, resolvedRole, portalParams.storeName],
   );
 
   const copy = COPY[language] || COPY.en;
@@ -101,17 +114,19 @@ export default function ReviewPortal() {
   );
 
   useEffect(() => {
-    console.log("QR PARAMS", {
-      storeName: portalParams.storeName,
-      normalizedBranch: portalParams.normalizedBranch,
+    console.log("PARSED URL PARAMS", {
+      raw: typeof window !== "undefined" ? window.location.search : "",
       employeeName: portalParams.employeeName,
       employeeRole: portalParams.employeeRole,
+      storeName: portalParams.storeName,
+      normalizedBranch: portalParams.normalizedBranch,
     });
+    console.log("REVIEW TRACKING CONTEXT (mount)", trackingCtx);
 
     (async () => {
       await runReviewEventsInsertSelfTest(portalParams.normalizedBranch);
-      trackReviewQrScan(ctx);
-      trackReviewPageOpen(ctx);
+      trackReviewQrScan(trackingCtx);
+      trackReviewPageOpen(trackingCtx);
     })();
 
     if (portalParams.slug && !staffName && !portalParams.employeeName) {
@@ -125,8 +140,7 @@ export default function ReviewPortal() {
         })
         .catch(() => {});
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [portalParams, trackingCtx, staffName]);
 
   useEffect(() => {
     const generated = generatePersonalizedReview({
