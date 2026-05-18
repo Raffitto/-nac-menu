@@ -5,7 +5,6 @@ import {
   trackReviewQrScan,
   trackReviewPageOpen,
   trackReviewGenerate,
-  trackReviewRegenerate,
   trackReviewCopy,
   trackReviewGoogleClick,
   trackReviewLanguageChange,
@@ -27,7 +26,6 @@ const COPY = {
     subtitle: "Tap or scan to leave a review",
     placeholder: "Your review text will appear here…",
     generate: "Generate",
-    regenerate: "Regenerate",
     copy: "Copy",
     google: "Google Review",
   },
@@ -35,8 +33,7 @@ const COPY = {
     title: "ملاحظاتكم تعني لنا الكثير",
     subtitle: "اضغط أو امسح الرمز لترك تقييم",
     placeholder: "سيظهر نص المراجعة هنا…",
-    generate: "إنشاء",
-    regenerate: "إنشاء نص آخر",
+    generate: "إنشاء نص آخر",
     copy: "نسخ",
     google: "تقييم قوقل",
   },
@@ -131,23 +128,28 @@ export default function ReviewPortal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const runGenerate = useCallback(
-    (isRegen) => {
-      const generated = generatePersonalizedReview({
-        staffName: displayName,
-        role: resolvedRole,
-        branchId: portalParams.normalizedBranch,
-        language,
-      });
-      setText(generated);
-      if (isRegen) {
-        trackReviewRegenerate(generated.length, { ...ctx, language });
-      } else {
-        trackReviewGenerate(generated.length, { ...ctx, language });
-      }
-    },
-    [displayName, resolvedRole, portalParams.normalizedBranch, language, ctx],
-  );
+  useEffect(() => {
+    const generated = generatePersonalizedReview({
+      staffName: displayName,
+      role: resolvedRole,
+      branchId: portalParams.normalizedBranch,
+      language,
+    });
+    setText(generated);
+    trackReviewGenerate(generated.length, { ...ctx, language });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayName, resolvedRole, portalParams.normalizedBranch]);
+
+  const runGenerate = useCallback(() => {
+    const generated = generatePersonalizedReview({
+      staffName: displayName,
+      role: resolvedRole,
+      branchId: portalParams.normalizedBranch,
+      language,
+    });
+    setText(generated);
+    trackReviewGenerate(generated.length, { ...ctx, language });
+  }, [displayName, resolvedRole, portalParams.normalizedBranch, language, ctx]);
 
   const switchLang = (lang) => {
     setLanguage(lang);
@@ -208,30 +210,24 @@ export default function ReviewPortal() {
           <h1>{copy.title}</h1>
           <p className="nac-review-sub">{copy.subtitle}</p>
 
-          <textarea
-            className="nac-review-text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={copy.placeholder}
-            dir={language === "ar" ? "rtl" : "ltr"}
-          />
+          <div className="nac-review-text-wrap">
+            <textarea
+              className="nac-review-text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={copy.placeholder}
+              dir={language === "ar" ? "rtl" : "ltr"}
+            />
+          </div>
 
           <motion.div className="nac-review-actions">
             <motion.button
               type="button"
-              className="nac-review-btn"
+              className="nac-review-btn nac-review-btn-primary"
               whileTap={{ scale: 0.97 }}
-              onClick={() => runGenerate(false)}
+              onClick={runGenerate}
             >
               {copy.generate}
-            </motion.button>
-            <motion.button
-              type="button"
-              className="nac-review-btn"
-              whileTap={{ scale: 0.97 }}
-              onClick={() => runGenerate(true)}
-            >
-              {copy.regenerate}
             </motion.button>
             <motion.button
               type="button"

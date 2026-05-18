@@ -1,6 +1,16 @@
 /**
- * Personalized NAC review text generator (ported from legacy staff QR apps).
+ * Personalized NAC review text generator.
+ * Khobar uses real menu-only generator; other branches use legacy pools.
  */
+
+import { generateKhobarReview } from "./reviewGeneratorKhobar";
+import {
+  canonName,
+  withHonorificEN,
+  withHonorificAR,
+} from "./reviewGeneratorShared";
+
+export { canonName, withHonorificEN, withHonorificAR };
 
 export const GOOGLE_PLACE_IDS = {
   khobar: "ChIJp_zLEdvpST4RPD2r1GX-ASw",
@@ -12,41 +22,6 @@ const BRANCH_LABELS = {
   khobar: { en: "NAC Khobar", ar: "NAC الخبر" },
   jeddah: { en: "NAC Jeddah", ar: "NAC جدة" },
   riyadh: { en: "NAC Riyadh", ar: "NAC الرياض" },
-};
-
-const FEMALE_RECEPTIONISTS = new Set([
-  "angel",
-  "boyboy",
-  "boy boy",
-  "lyn",
-  "leen",
-  "amal",
-  "madina",
-]);
-
-const NAME_CANON = {
-  "boy boy": "Boyboy",
-  boyboy: "Boyboy",
-  leen: "Lyn",
-  lyn: "Lyn",
-  angel: "Angel",
-  "ousama khalil": "Ousama Khalil",
-  turki: "Turki",
-  jr: "JR",
-  shankar: "Shankar",
-  marlon: "Marlon",
-  amin: "Amin",
-  amal: "Amal",
-  madina: "Madina",
-  "abdul aziz": "Abdul Aziz",
-  arslan: "Arslan",
-  herzul: "Herzul",
-  "mark lan": "Mark Lan",
-  allan: "Allan",
-  wasim: "Wasim",
-  javed: "Javed",
-  umar: "Umar",
-  nabarahj: "Nabarahj",
 };
 
 const FOODS = [
@@ -219,34 +194,6 @@ function maybeEmoji(isAr) {
     ? ["😍", "👌", "🔥", "💛", "✨", "😋", "👏", "✅"]
     : ["😍", "👌", "🔥", "💛", "✨", "😋", "👏", "✅", "🥰"];
   return ` ${pick(e)}`;
-}
-
-export function canonName(raw) {
-  const t = (raw || "").trim();
-  const low = t.toLowerCase();
-  if (NAME_CANON[low]) return NAME_CANON[low];
-  if (!t) return "Team";
-  return t
-    .split(" ")
-    .map((x) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x))
-    .join(" ");
-}
-
-function isFemaleReceptionist(name) {
-  const k = String(name || "")
-    .trim()
-    .toLowerCase();
-  return FEMALE_RECEPTIONISTS.has(k);
-}
-
-export function withHonorificEN(name) {
-  if (!name || name === "Team") return name;
-  return `${isFemaleReceptionist(name) ? "Miss " : "Mr "}${name}`;
-}
-
-export function withHonorificAR(name) {
-  if (!name || name === "Team") return name;
-  return `${isFemaleReceptionist(name) ? "مس " : "مستر "}${name}`;
 }
 
 function branchLabel(branchId, isAr) {
@@ -490,9 +437,12 @@ function generateUnique(staff, roleRaw, branchId, isAr) {
  * @param {{ staffName?: string, role?: string, branchId?: string, language?: string }} opts
  */
 export function generatePersonalizedReview(opts = {}) {
+  const branchId = (opts.branchId || "khobar").toLowerCase();
+  if (branchId === "khobar") {
+    return generateKhobarReview(opts);
+  }
   const staff = canonName(opts.staffName);
   const roleRaw = normRole(opts.role);
-  const branchId = (opts.branchId || "khobar").toLowerCase();
   const isAr = opts.language === "ar";
   return generateUnique(staff, roleRaw, branchId, isAr);
 }
