@@ -1,62 +1,66 @@
-# Netlify deploy — all sites must use this repo
+# Netlify deploy — printed QR URLs must keep working
 
-## Critical: `nac-khobar-reviews.netlify.app` is NOT this app today
+## Printed card URL (do not change)
 
-As of commit `b317b4e`, live checks show:
+Example that **must** keep working forever:
 
-| URL | Serves |
-|-----|--------|
-| `nacmenu.netlify.app` | This CRA build (`build-id`, `review-routing.js`, React) |
-| `nac-khobar-reviews.netlify.app` | **Legacy static HTML** (“NAC Khobar Review”, no React) |
-| `nac-khobar-reviews…/review-routing.js` | **404** |
+```
+https://nac-khobar-reviews.netlify.app/?store=NAC%20Khobar&s=Boy%20Boy&role=receptionist
+```
 
-No amount of pushes to `-nac-menu` will update khobar-reviews until that **Netlify site** is re-linked to this repo (or QR codes use `nacmenu.netlify.app` only).
+Expected `review_events` on scan:
 
-### Fix khobar-reviews Netlify site
+- `qr_scan`, `review_page_open`
+- `branch_id` = `khobar`
+- `employee_name` = `Boy Boy`
+- `employee_role` = `receptionist`
 
-1. Netlify → **nac-khobar-reviews** site → **Site configuration** → **Build & deploy**
-2. **Link repository** → `Raffitto/-nac-menu` (same as nacmenu)
-3. **Branch:** `main`
-4. **Build command:** `npm run build` (or “Use `netlify.toml`”)
-5. **Publish directory:** `build`
-6. **Environment variables:** copy `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` from nacmenu
-7. **Deploys** → **Trigger deploy** → **Clear cache and deploy site**
+## Option A (implemented): same URL, same host
 
-After fix, View Source must include `NAC HTML SHELL LOADED` and `review-routing.js?v=…`.
+`*-reviews.netlify.app` (including `nac-khobar-reviews`) **does not redirect**. It serves this React app in place so the printed URL stays valid.
+
+## Option B (branch menu sites only)
+
+`nacriyadh.netlify.app` / `nac-jeddah.netlify.app` with `s=` + `role` + `store` redirect to:
+
+`https://nacmenu.netlify.app/?app=review&…` (all query params preserved).
 
 ---
 
-Every NAC site should be a **separate Netlify site** pointing at the **same GitHub repo**:
+## One-time fix: link `nac-khobar-reviews` to this repo
 
-| Site | Branch | Build command | Publish |
-|------|--------|---------------|---------|
-| nacmenu.netlify.app | `main` | `npm run build` | `build` |
-| nac-khobar-reviews.netlify.app | `main` | `npm run build` | `build` |
-| nacriyadh.netlify.app | `main` | `npm run build` | `build` |
-| nac-jeddah.netlify.app | `main` | `npm run build` | `build` |
+If the site still shows the old static “NAC Khobar Review” page, **no code push will help** until Netlify serves this build.
 
-`netlify.toml` in the repo root applies when **“Use config file settings”** is enabled.
+1. Netlify → **nac-khobar-reviews** → **Build & deploy** → **Link repository** → `Raffitto/-nac-menu`
+2. **Branch:** `main` · **Publish:** `build` · use **`netlify.toml`**
+3. **Environment variables** (copy from nacmenu):
+   - `REACT_APP_SUPABASE_URL`
+   - `REACT_APP_SUPABASE_ANON_KEY`
+   - `REACT_APP_NAC_BRANCH_ID` = `khobar` (optional)
+4. **Deploys** → **Clear cache and deploy site**
 
-## Verify deploy after push
+### Success check
 
-1. Netlify → each site → **Deploys** → latest deploy commit matches `git log -1` on `main`.
-2. Open site → View deploy log → confirm `REACT_APP_BUILD_ID` / `[generate-build-id]` in build output.
-3. Hard refresh review QR URL → browser console **must** show (in order):
-   - `NAC HTML SHELL LOADED`
-   - `NAC REVIEW ROUTING LOADED`
-   - `NAC INDEX BOOT`
-   - `REVIEW ANALYTICS MODULE LOADED`
+Open the printed URL → View Source must include:
 
-If none appear, the site is **not** serving this build (wrong repo, branch, or cached old deploy).
+- `NAC HTML SHELL LOADED`
+- `NAC PRINTED QR HOST`
+- `review-routing.js?v=…`
 
-## Env vars (set on every site)
+Console must show:
 
-- `REACT_APP_SUPABASE_URL`
-- `REACT_APP_SUPABASE_ANON_KEY`
-- `REACT_APP_NAC_BRANCH_ID` (optional: `khobar` | `riyadh` | `jeddah`)
+- `ROUTING MODE review … (printed QR host — in place)`
+- `REVIEW EVENT PAYLOAD` with `employee_name: "Boy Boy"`
 
-Use the **same Supabase project** as the admin dashboard.
+---
 
-## Trigger redeploy
+## All sites (same repo, same `main`)
 
-Netlify → Deploys → **Trigger deploy** → **Clear cache and deploy site**.
+| Site | Printed QR? | Behavior |
+|------|-------------|----------|
+| nacmenu.netlify.app | Optional `?app=review` | Menu + ReviewPortal |
+| nac-khobar-reviews.netlify.app | **Yes** | ReviewPortal in place |
+| nacriyadh.netlify.app | Staff params | Redirect → nacmenu review |
+| nac-jeddah.netlify.app | Staff params | Redirect → nacmenu review |
+
+Run `supabase/review_events_rls_fix.sql` once in Supabase.

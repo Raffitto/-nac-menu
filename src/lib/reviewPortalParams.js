@@ -12,6 +12,11 @@ const STAFF_PARAM_KEYS = [
   "name",
 ];
 
+/** Printed QR/NFC card domains — serve ReviewPortal in place (no canonical redirect). */
+export const PRINTED_QR_REVIEW_HOSTS = new Set([
+  "nac-khobar-reviews.netlify.app",
+]);
+
 const REVIEW_ONLY_HOST_PATTERNS = [
   /-reviews\.netlify\.app$/i,
   /reviews\.netlify\.app$/i,
@@ -19,6 +24,7 @@ const REVIEW_ONLY_HOST_PATTERNS = [
 
 export function isReviewOnlyHostname(hostname) {
   const h = (hostname || "").toLowerCase();
+  if (PRINTED_QR_REVIEW_HOSTS.has(h)) return true;
   return REVIEW_ONLY_HOST_PATTERNS.some((re) => re.test(h));
 }
 

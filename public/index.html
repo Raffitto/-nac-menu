@@ -24,6 +24,14 @@
     <title>NAC Khobar</title>
     <script>
       console.log("NAC HTML SHELL LOADED", window.location.href);
+      (function (h) {
+        h = (h || "").toLowerCase();
+        if (/-reviews\.netlify\.app$/i.test(h) || h === "nac-khobar-reviews.netlify.app") {
+          window.__NAC_REVIEW_MODE__ = true;
+          window.__NAC_PRINTED_QR_HOST__ = true;
+          console.log("NAC PRINTED QR HOST", h);
+        }
+      })(window.location.hostname);
     </script>
     <script src="%PUBLIC_URL%/review-routing.js?v=%REACT_APP_BUILD_ID%"></script>
   </head>
