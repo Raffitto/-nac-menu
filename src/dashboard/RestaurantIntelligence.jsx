@@ -34,6 +34,7 @@ import {
 } from "./engines/chartEngine";
 import { businessDayExportNote } from "./utils/businessDay";
 import { DEFAULT_RANGE, RANGE_OPTIONS, rangeToHours, rangeExportLabel } from "./utils/rangeState";
+import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import "./styles/restaurant-intelligence.css";
 
 const TOOLTIP = {
@@ -52,10 +53,13 @@ export default function RestaurantIntelligence() {
   const [mgmtOpen, setMgmtOpen] = useState(true);
   const [deepOpen, setDeepOpen] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
-  const [selectedRange, setSelectedRange] = useState(DEFAULT_RANGE);
+  const platform = usePlatformFiltersOptional();
+  const [selectedRangeLocal, setSelectedRangeLocal] = useState(DEFAULT_RANGE);
+  const selectedRange = platform?.selectedRange ?? selectedRangeLocal;
+  const setSelectedRange = platform ? platform.setSelectedRange : setSelectedRangeLocal;
 
   const configured = isSupabaseConfigured();
-  const pHours = rangeToHours(selectedRange);
+  const pHours = platform?.timeRangeHours ?? rangeToHours(selectedRange);
 
   const load = useCallback(async () => {
     if (!supabase || !configured) {
@@ -72,7 +76,7 @@ export default function RestaurantIntelligence() {
         return;
       }
       const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: null,
+        p_branch: platform?.branch || null,
         p_hours: pHours,
       });
       if (rpcErr) throw rpcErr;
@@ -84,7 +88,7 @@ export default function RestaurantIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [configured, pHours]);
+  }, [configured, pHours, platform?.branch]);
 
   useEffect(() => {
     load();
@@ -191,6 +195,7 @@ export default function RestaurantIntelligence() {
           </div>
         </div>
         <div className="ri-header-actions">
+          {!platform && (
           <div className="ri-range-pills">
             {RANGE_OPTIONS.map((r) => (
               <button
@@ -204,6 +209,7 @@ export default function RestaurantIntelligence() {
               </button>
             ))}
           </div>
+          )}
           <div className="ri-export-btns">
             <button type="button" className="ri-btn" onClick={() => runExport("csv")}>
               <Download size={14} /> CSV

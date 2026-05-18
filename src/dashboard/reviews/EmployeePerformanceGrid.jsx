@@ -3,8 +3,9 @@ import { motion } from "framer-motion";
 import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
-import { branchDisplayName, defaultBranchId, rangeToSince } from "../utils/rangeState";
+import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { applyPlatformFilters } from "../utils/platformFilterApply";
 
 const SELECT = "event_type,employee_name,employee_role,branch_id,created_at";
 
@@ -32,7 +33,7 @@ export default function EmployeePerformanceGrid() {
   const [sort, setSort] = useState("scans");
   const [loading, setLoading] = useState(true);
 
-  const branch = filters?.branch || defaultBranchId();
+  const branch = filters?.branch || null;
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -48,12 +49,13 @@ export default function EmployeePerformanceGrid() {
         let q = supabase
           .from("review_events")
           .select(SELECT)
-          .eq("branch_id", branch)
           .order("created_at", { ascending: false })
           .limit(5000);
+        if (branch) q = q.eq("branch_id", branch);
         if (since) q = q.gte("created_at", since);
 
-        const { data } = await q;
+        const { data: raw } = await q;
+        const data = applyPlatformFilters(raw || [], filters);
         if (cancelled) return;
 
         const prevSince = new Date(since);
@@ -63,14 +65,15 @@ export default function EmployeePerformanceGrid() {
         let pq = supabase
           .from("review_events")
           .select(SELECT)
-          .eq("branch_id", branch)
           .gte("created_at", prevStart)
           .lt("created_at", since)
           .limit(3000);
-        const { data: prevData } = await pq;
+        if (branch) pq = pq.eq("branch_id", branch);
+        const { data: prevRaw } = await pq;
+        const prevData = applyPlatformFilters(prevRaw || [], filters);
 
-        setStaff(aggregateStaffReviewStats(data || []));
-        setPrevStaff(aggregateStaffReviewStats(prevData || []));
+        setStaff(aggregateStaffReviewStats(data));
+        setPrevStaff(aggregateStaffReviewStats(prevData));
       } catch {
         setStaff([]);
       } finally {
@@ -81,7 +84,7 @@ export default function EmployeePerformanceGrid() {
     return () => {
       cancelled = true;
     };
-  }, [branch, filters?.selectedRange]);
+  }, [branch, filters]);
 
   const sorted = useMemo(() => {
     const list = [...staff];

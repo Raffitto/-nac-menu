@@ -35,7 +35,8 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import MenuManager from "./MenuManager";
-import { PlatformFiltersProvider } from "./context/PlatformFiltersContext";
+import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
+import GlobalFilterBar from "./components/GlobalFilterBar";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
 import HubTabs from "./components/HubTabs";
 import IntelligenceHub from "./views/IntelligenceHub";
@@ -43,7 +44,6 @@ import ReviewsHub from "./views/ReviewsHub";
 import BranchesView from "./views/BranchesView";
 import SettingsView from "./views/SettingsView";
 
-import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
 import SessionQuality from "./components/SessionQuality";
@@ -100,7 +100,15 @@ function ev(byType, key) {
   return Number(byType?.[key]) || 0;
 }
 
-export default function AdminDashboard({ onBack }) {
+export default function AdminDashboard(props) {
+  return (
+    <PlatformFiltersProvider>
+      <AdminDashboardContent {...props} />
+    </PlatformFiltersProvider>
+  );
+}
+
+function AdminDashboardContent({ onBack }) {
   const [adminView, setAdminView] = useState("overview");
   const [overviewTab, setOverviewTab] = useState("operations");
   const [loading, setLoading] = useState(false);
@@ -108,10 +116,10 @@ export default function AdminDashboard({ onBack }) {
   const [error, setError] = useState("");
   const [session, setSession] = useState(null);
 
-  // Filter state
-  const [branch, setBranch] = useState(null);
-  const [timeRange, setTimeRange] = useState(24);
-  const [liveMode, setLiveMode] = useState(false);
+  const filters = usePlatformFilters();
+  const branch = filters.branch;
+  const timeRange = filters.timeRangeHours;
+  const liveMode = filters.liveMode;
 
   const configured = isSupabaseConfigured();
 
@@ -236,7 +244,6 @@ export default function AdminDashboard({ onBack }) {
   const scrollable = isScrollableView(adminView);
 
   return (
-    <PlatformFiltersProvider>
     <motion.div
       className="admin-shell"
       style={scrollable ? { overflow: "auto", minHeight: "100vh" } : undefined}
@@ -293,6 +300,15 @@ export default function AdminDashboard({ onBack }) {
 
             <HubTabs tabs={OVERVIEW_TABS} active={overviewTab} onChange={setOverviewTab} />
 
+            {session && (
+              <GlobalFilterBar
+                variant="extended"
+                onRefresh={loadDashboard}
+                onExport={handleExport}
+                loading={loading}
+              />
+            )}
+
             {overviewTab === "sessions" ? (
               <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
                 <AnalyticsDashboard />
@@ -314,21 +330,6 @@ export default function AdminDashboard({ onBack }) {
                 {liveMode && <div className="glass-pill" style={{ display: "flex", alignItems: "center", gap: 6 }}><span className="nac-bi-live-pulse" style={{ width: 8, height: 8, display: "inline-block" }} />Live</div>}
               </div>
             </div>
-
-            {/* FILTER BAR */}
-            {session && (
-              <FilterBar
-                branch={branch}
-                setBranch={setBranch}
-                timeRange={timeRange}
-                setTimeRange={setTimeRange}
-                liveMode={liveMode}
-                setLiveMode={setLiveMode}
-                onRefresh={loadDashboard}
-                onExport={handleExport}
-                loading={loading}
-              />
-            )}
 
             {/* STATE MESSAGES */}
             {!configured && (
@@ -655,6 +656,5 @@ export default function AdminDashboard({ onBack }) {
         )}
       </main>
     </motion.div>
-    </PlatformFiltersProvider>
   );
 }

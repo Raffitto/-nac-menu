@@ -32,6 +32,7 @@ import { hasVisibilityTracking } from "./utils/intelligenceSanity";
 import { exportCSV } from "./utils/formatters";
 import { buildExportCommentary } from "./utils/itemBehaviorEngine";
 import "./styles/foodics-intelligence.css";
+import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 
 const PERIOD_TYPES = [
   { value: "weekly", label: "Weekly" },
@@ -51,6 +52,7 @@ function weekAgoISO() {
 }
 
 export default function FoodicsIntelligence() {
+  const platform = usePlatformFiltersOptional();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [batches, setBatches] = useState([]);
@@ -98,7 +100,10 @@ export default function FoodicsIntelligence() {
         getAddOnsForMatching(),
         getNameMappings(),
         getLatestBatch(),
-        supabase.rpc("get_bi_dashboard", { p_branch: null, p_hours: 24 }),
+        supabase.rpc("get_bi_dashboard", {
+          p_branch: platform?.branch || null,
+          p_hours: platform?.timeRangeHours ?? 24,
+        }),
       ]);
 
       setBatches(batchList);
@@ -118,7 +123,7 @@ export default function FoodicsIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [configured]);
+  }, [configured, platform?.branch, platform?.timeRangeHours]);
 
   useEffect(() => {
     loadAll();

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   QrCode,
@@ -12,6 +12,7 @@ import {
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { applyPlatformFilters } from "../utils/platformFilterApply";
 
 const ICONS = {
   qr_scan: QrCode,
@@ -44,25 +45,30 @@ function eventLabel(row) {
   if (t === "google_redirect" || t === "review_google_click") return `Google review click${staff}${branch}`;
   if (t === "item_open") return `Item viewed${row.metadata?.item_name ? `: ${row.metadata.item_name}` : ""}${branch}`;
   if (t === "category_open") return `Category opened${branch}`;
-  if (t === "language_button_click") return `Language changed${branch}`;
+  if (t === "language_button_click") {
+    const lang = row.language || row.metadata?.language;
+    return `Language → ${lang || "switched"}${branch}`;
+  }
   if (t === "add_on_click") return `Add-on selected${branch}`;
   return `${t.replace(/_/g, " ")}${staff}${branch}`;
 }
 
 function normalizeRow(row, source) {
+  const meta = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
   return {
     id: row.id || `${source}-${row.created_at}-${row.event_type}`,
     event_type: row.event_type,
     created_at: row.created_at,
-    branch_id: row.branch_id,
-    employee_name: row.employee_name,
-    employee_role: row.employee_role,
-    metadata: row.metadata,
+    branch_id: row.branch_id || meta.branch_id || meta.branch,
+    employee_name: row.employee_name || meta.employee_name || meta.staff_name,
+    employee_role: row.employee_role || meta.employee_role || meta.role,
+    language: row.language || meta.language,
+    metadata: meta,
     source,
   };
 }
 
-export default function LiveActivityFeed({ maxItems = 25 }) {
+function LiveActivityFeed({ maxItems = 25 }) {
   const filters = usePlatformFiltersOptional();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -100,10 +106,13 @@ export default function LiveActivityFeed({ maxItems = 25 }) {
       const [{ data: menu }, { data: review }] = await Promise.all([menuQ, reviewQ]);
       if (!mounted.current) return;
 
-      const merged = [
-        ...(menu || []).map((r) => normalizeRow(r, "menu")),
-        ...(review || []).map((r) => normalizeRow(r, "review")),
-      ]
+      const merged = applyPlatformFilters(
+        [
+          ...(menu || []).map((r) => normalizeRow(r, "menu")),
+          ...(review || []).map((r) => normalizeRow(r, "review")),
+        ],
+        filters,
+      )
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(0, maxItems);
 
@@ -113,7 +122,7 @@ export default function LiveActivityFeed({ maxItems = 25 }) {
     } finally {
       if (mounted.current) setLoading(false);
     }
-  }, [filters?.selectedRange, filters?.branch, maxItems]);
+  }, [maxItems, filters]);
 
   useEffect(() => {
     mounted.current = true;
@@ -184,10 +193,12 @@ export default function LiveActivityFeed({ maxItems = 25 }) {
                   </motion.div>
                   <div>
                     <div style={{ fontSize: "0.88rem", color: "#f9f9f7" }}>{eventLabel(row)}</div>
-                    <motion.div className="nac-live-feed-meta">
+                    <div className="nac-live-feed-meta">
+                      {row.employee_name ? `${row.employee_name} · ` : ""}
                       {row.employee_role ? `${row.employee_role} · ` : ""}
+                      {row.branch_id ? `${branchDisplayName(row.branch_id)} · ` : ""}
                       {row.source === "review" ? "Reviews" : "Menu"}
-                    </motion.div>
+                    </div>
                   </div>
                   <span className="nac-live-feed-time">{formatRelative(row.created_at)}</span>
                 </motion.div>
@@ -199,3 +210,5 @@ export default function LiveActivityFeed({ maxItems = 25 }) {
     </div>
   );
 }
+
+export default memo(LiveActivityFeed);

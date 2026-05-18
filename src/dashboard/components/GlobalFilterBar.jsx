@@ -129,6 +129,15 @@ export default function GlobalFilterBar({
               Export
             </button>
           )}
+
+          <button
+            type="button"
+            className={`nac-filter-range-btn ${filters.liveMode ? "active" : ""}`}
+            onClick={() => filters.setLiveMode(!filters.liveMode)}
+            title="Auto-refresh Overview every 30 seconds"
+          >
+            Live
+          </button>
         </div>
       )}
     </motion.div>

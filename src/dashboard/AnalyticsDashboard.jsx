@@ -32,6 +32,9 @@ import {
 } from "recharts";
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import { applyPlatformFilters } from "./utils/platformFilterApply";
+import { rangeToSince } from "./utils/rangeState";
 import "./styles/analytics-dashboard.css";
 
 const CATEGORY_NAMES = {
@@ -223,6 +226,7 @@ function aggregateClientSide(rows, totalEventsExact) {
 }
 
 export default function AnalyticsDashboard() {
+  const filters = usePlatformFiltersOptional();
   const [session, setSession] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [email, setEmail] = useState("");
@@ -258,7 +262,9 @@ export default function AnalyticsDashboard() {
     if (!supabase || !session) return;
     setLoading(true);
     setError("");
-    
+
+    const since = rangeToSince(filters?.selectedRange || "today");
+    const branch = filters?.branch;
 
     try {
       const { data: rpcData, error: rpcError } = await supabase.rpc(
@@ -276,44 +282,54 @@ export default function AnalyticsDashboard() {
           .select("*", { count: "exact", head: true });
         if (countErr) throw countErr;
 
-        const { data: rows, error: rowsErr } = await supabase
+        let rowsQ = supabase
           .from("menu_events")
           .select(
-            "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata"
+            "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata, branch_id"
           )
           .order("created_at", { ascending: false })
           .limit(12000);
+        if (since) rowsQ = rowsQ.gte("created_at", since);
+        if (branch) rowsQ = rowsQ.eq("branch_id", branch);
+        const { data: rows, error: rowsErr } = await rowsQ;
 
         if (rowsErr) throw rowsErr;
-        agg = aggregateClientSide(rows || [], headCount ?? undefined);
+        const filtered = applyPlatformFilters(rows || [], filters);
+        agg = aggregateClientSide(filtered, headCount ?? undefined);
         
       }
 
       setAggregates(agg);
 
-      const { data: addRows, error: addOnErr } = await supabase
+      let addQ = supabase
         .from("menu_events")
-        .select("add_on_name")
+        .select("add_on_name, created_at, language, branch_id, event_type")
         .eq("event_type", "add_on_click")
         .not("add_on_name", "is", null)
         .limit(25000);
+      if (since) addQ = addQ.gte("created_at", since);
+      if (branch) addQ = addQ.eq("branch_id", branch);
+      const { data: addRows, error: addOnErr } = await addQ;
 
       if (addOnErr) {
         setTopAddons([]);
       } else {
-        setTopAddons(aggregateTopAddonsFromRows(addRows));
+        setTopAddons(aggregateTopAddonsFromRows(applyPlatformFilters(addRows || [], filters)));
       }
 
-      const { data: recent, error: feedErr } = await supabase
+      let feedQ = supabase
         .from("menu_events")
         .select(
-          "id, created_at, event_type, language, category_id, item_name_en, item_name_ar, search_query, add_on_name"
+          "id, created_at, event_type, language, category_id, item_name_en, item_name_ar, search_query, add_on_name, branch_id, metadata"
         )
         .order("created_at", { ascending: false })
-        .limit(45);
+        .limit(80);
+      if (since) feedQ = feedQ.gte("created_at", since);
+      if (branch) feedQ = feedQ.eq("branch_id", branch);
+      const { data: recent, error: feedErr } = await feedQ;
 
       if (feedErr) throw feedErr;
-      setFeed(recent || []);
+      setFeed(applyPlatformFilters(recent || [], filters).slice(0, 45));
     } catch (e) {
       setError(e?.message || "Failed to load analytics.");
       setAggregates(null);
@@ -322,7 +338,7 @@ export default function AnalyticsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [session]);
+  }, [session, filters]);
 
   useEffect(() => {
     if (session) loadData();

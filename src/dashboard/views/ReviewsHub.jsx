@@ -7,6 +7,7 @@ import { REVIEWS_TABS } from "../navigation";
 import LiveActivityFeed from "../reviews/LiveActivityFeed";
 import EmployeePerformanceGrid from "../reviews/EmployeePerformanceGrid";
 import BranchBattle from "../reviews/BranchBattle";
+import ReviewSnapshotPanel from "../reviews/ReviewSnapshotPanel";
 import "../styles/platform-os.css";
 
 const ReviewIntelligence = lazy(() => import("../ReviewIntelligence"));
@@ -48,9 +49,12 @@ export default function ReviewsHub() {
       <HubTabs tabs={REVIEWS_TABS} active={tab} onChange={setTab} />
 
       {tab === "performance" && (
-        <Suspense fallback={<ViewFallback label="Loading review performance…" />}>
-          <ReviewIntelligence embedded />
-        </Suspense>
+        <>
+          <Suspense fallback={<ViewFallback label="Loading review performance…" />}>
+            <ReviewIntelligence embedded />
+          </Suspense>
+          <ReviewSnapshotPanel />
+        </>
       )}
       {tab === "live" && <LiveActivityFeed />}
       {tab === "team" && <EmployeePerformanceGrid />}

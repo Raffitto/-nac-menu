@@ -35,6 +35,8 @@ import {
   defaultBranchId,
   rangeExportLabel,
 } from "./utils/rangeState";
+import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import { applyPlatformFilters } from "./utils/platformFilterApply";
 import {
   aggregateStaffReviewStats,
   mergeStaffStats,
@@ -61,8 +63,13 @@ const CHART_TOOLTIP = {
 };
 
 export default function ReviewIntelligence({ embedded = false }) {
-  const [branch, setBranch] = useState(defaultBranchId());
-  const [selectedRange, setSelectedRange] = useState(DEFAULT_RANGE);
+  const platform = usePlatformFiltersOptional();
+  const [branchLocal, setBranchLocal] = useState(defaultBranchId());
+  const [rangeLocal, setRangeLocal] = useState(DEFAULT_RANGE);
+  const branch = embedded && platform ? (platform.branch || defaultBranchId()) : branchLocal;
+  const selectedRange = embedded && platform ? platform.selectedRange : rangeLocal;
+  const setBranch = embedded && platform ? () => {} : setBranchLocal;
+  const setSelectedRange = embedded && platform ? () => {} : setRangeLocal;
 
   const [kpis, setKpis] = useState(null);
   const [staffMerged, setStaffMerged] = useState([]);
@@ -88,12 +95,17 @@ export default function ReviewIntelligence({ embedded = false }) {
     try {
       const since = rangeToSince(selectedRange);
 
+      const activeBranch = embedded && platform ? platform.branch : branch;
+
       let reviewQ = supabase
         .from("review_events")
         .select(REVIEW_EVENT_SELECT)
-        .eq("branch_id", branch)
         .order("created_at", { ascending: false })
         .limit(5000);
+
+      if (activeBranch) {
+        reviewQ = reviewQ.eq("branch_id", activeBranch);
+      }
 
       let reviewAllQ = supabase
         .from("review_events")
@@ -111,8 +123,8 @@ export default function ReviewIntelligence({ embedded = false }) {
         reviewAllQ,
       ]);
 
-      const events = branchEvents || [];
-      const all = allEvents || [];
+      const events = applyPlatformFilters(branchEvents || [], embedded ? platform : null);
+      const all = applyPlatformFilters(allEvents || [], embedded ? platform : null);
 
       const branchKpis = computeReviewKpis(events);
       setKpis(branchKpis);
@@ -129,7 +141,7 @@ export default function ReviewIntelligence({ embedded = false }) {
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, configured]);
+  }, [branch, selectedRange, configured, embedded, platform]);
 
   useEffect(() => {
     load();

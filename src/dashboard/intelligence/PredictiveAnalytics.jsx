@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { computeReviewKpis } from "../utils/reviewEventMetrics";
 import { rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { applyPlatformFilters } from "../utils/platformFilterApply";
 
 function ProgressRing({ pct, label, sub }) {
   const r = 44;
@@ -42,16 +43,19 @@ export default function PredictiveAnalytics() {
     let cancelled = false;
     (async () => {
       const since = rangeToSince(filters?.selectedRange || "7d");
-      let q = supabase.from("review_events").select("event_type,created_at,branch_id").limit(5000);
+      let q = supabase
+        .from("review_events")
+        .select("event_type,created_at,branch_id,employee_role,language")
+        .limit(5000);
       if (since) q = q.gte("created_at", since);
       if (filters?.branch) q = q.eq("branch_id", filters.branch);
       const { data } = await q;
-      if (!cancelled) setKpis(computeReviewKpis(data || []));
+      if (!cancelled) setKpis(computeReviewKpis(applyPlatformFilters(data || [], filters)));
     })();
     return () => {
       cancelled = true;
     };
-  }, [filters?.selectedRange, filters?.branch]);
+  }, [filters]);
 
   const forecast = useMemo(() => {
     const scans = kpis?.qr_scans || 0;

@@ -32,6 +32,7 @@ import {
   buildVisibilityInsightCards,
 } from "./utils/aiInsightEngine";
 import "./styles/ai-insights.css";
+import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 
 const GROUP_ICONS = {
   "Revenue Opportunities": <TrendingUp size={16} />,
@@ -68,10 +69,13 @@ const SUGGESTED_QUESTIONS = [
 ];
 
 export default function AIInsights() {
+  const platform = usePlatformFiltersOptional();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [timeRange, setTimeRange] = useState(24);
+  const [timeRangeLocal, setTimeRangeLocal] = useState(24);
+  const timeRange = platform?.timeRangeHours ?? timeRangeLocal;
+  const setTimeRange = platform ? (h) => platform.setTimeRangeHours(h) : setTimeRangeLocal;
   const [severityFilter, setSeverityFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [question, setQuestion] = useState("");
@@ -103,7 +107,7 @@ export default function AIInsights() {
         return;
       }
       const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: null,
+        p_branch: platform?.branch || null,
         p_hours: timeRange,
       });
       if (rpcErr) throw rpcErr;
@@ -127,7 +131,7 @@ export default function AIInsights() {
     } finally {
       setLoading(false);
     }
-  }, [timeRange, configured]);
+  }, [timeRange, configured, platform?.branch]);
 
   useEffect(() => {
     loadData();
@@ -264,6 +268,7 @@ export default function AIInsights() {
       <AnimatePresence>
         {showFilters && (
           <motion.div className="ai-filters" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            {!platform && (
             <div className="ai-filter-group">
               <span className="ai-filter-label">Time</span>
               <div className="ai-filter-pills">
@@ -272,6 +277,7 @@ export default function AIInsights() {
                 ))}
               </div>
             </div>
+            )}
             <div className="ai-filter-group">
               <span className="ai-filter-label">Severity</span>
               <div className="ai-filter-pills">

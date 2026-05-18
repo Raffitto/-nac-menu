@@ -293,6 +293,117 @@
   transition: width 0.6s ease;
 }
 
+/* Snapshot share cards */
+.nac-snapshot-wrap {
+  margin-top: 1.5rem;
+}
+
+.nac-snapshot-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.nac-snapshot-card {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  aspect-ratio: 4 / 5;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem;
+  border-radius: 20px;
+  background: linear-gradient(165deg, #12100e 0%, #0a0908 55%, #141210 100%);
+  border: 1px solid rgba(215, 188, 138, 0.35);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  color: #f9f9f7;
+}
+
+.nac-snapshot-glow {
+  position: absolute;
+  top: -40%;
+  right: -30%;
+  width: 70%;
+  height: 70%;
+  background: radial-gradient(circle, rgba(215, 188, 138, 0.2), transparent 70%);
+  pointer-events: none;
+}
+
+.nac-snapshot-brand {
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.85);
+  margin: 0 0 0.75rem;
+}
+
+.nac-snapshot-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.nac-snapshot-sub {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.nac-snapshot-highlight {
+  margin: 1rem 0 0;
+  font-size: 0.95rem;
+  color: #f5e6c8;
+}
+
+.nac-snapshot-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.nac-snapshot-metric {
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nac-snapshot-metric span {
+  display: block;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.nac-snapshot-metric strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.nac-snapshot-footer {
+  position: absolute;
+  bottom: 1.25rem;
+  left: 1.5rem;
+  right: 1.5rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.4);
+  text-align: center;
+}
+
+.nac-glass-panel {
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.nac-glass-panel:hover {
+  border-color: rgba(215, 188, 138, 0.22);
+}
+
 @media (max-width: 768px) {
   .nac-filter-row {
     flex-direction: column;
@@ -308,5 +419,18 @@
     overflow-x: auto;
     flex-wrap: nowrap;
     padding-bottom: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nac-platform-header h1 {
+    font-size: 1.45rem;
+  }
+
+  .nac-emp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nac-snapshot-card {
+    max-width: 100%;
   }
 }
