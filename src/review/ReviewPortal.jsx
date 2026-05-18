@@ -12,23 +12,33 @@ import {
 } from "../lib/reviewAnalytics";
 import { parseReviewPortalParams } from "../lib/reviewPortalParams";
 import { fetchReviewPortalStaff } from "../dashboard/utils/unifiedIntelligenceApi";
+import {
+  canonName,
+  generatePersonalizedReview,
+  getGoogleReviewUrl,
+  withHonorificEN,
+  withHonorificAR,
+} from "./reviewGenerator";
 import "./review-portal.css";
-
-const SAMPLE_REVIEWS = {
-  en: "An exceptional dining experience at NAC — attentive service, beautiful presentation, and flavors that linger.",
-  ar: "تجربة طعام استثنائية في NAC — خدمة راقية وتقديم جميل ونكهات لا تُنسى.",
-};
 
 const COPY = {
   en: {
     title: "Your feedback means a lot to us",
     subtitle: "Tap or scan to leave a review",
     placeholder: "Your review text will appear here…",
+    generate: "Generate",
+    regenerate: "Regenerate",
+    copy: "Copy",
+    google: "Google Review",
   },
   ar: {
     title: "ملاحظاتكم تعني لنا الكثير",
     subtitle: "اضغط أو امسح الرمز لترك تقييم",
     placeholder: "سيظهر نص المراجعة هنا…",
+    generate: "إنشاء",
+    regenerate: "إنشاء نص آخر",
+    copy: "نسخ",
+    google: "تقييم قوقل",
   },
 };
 
@@ -51,12 +61,6 @@ function formatRoleLabel(role, lang) {
   return pretty.charAt(0).toUpperCase() + pretty.slice(1);
 }
 
-function formatStaffName(name) {
-  if (!name || !String(name).trim()) return null;
-  const t = String(name).trim();
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
 export default function ReviewPortal() {
   const portalParams = useMemo(() => parseReviewPortalParams(), []);
   const [language, setLanguage] = useState(portalParams.lang === "ar" ? "ar" : "en");
@@ -64,24 +68,40 @@ export default function ReviewPortal() {
   const [staffName, setStaffName] = useState(portalParams.employeeName || "");
   const [staffRole, setStaffRole] = useState(portalParams.employeeRole || "");
 
+  const resolvedStaff = staffName || portalParams.employeeName || "";
+  const resolvedRole = staffRole || portalParams.employeeRole || "";
+  const displayName = canonName(resolvedStaff);
+
   const ctx = useMemo(
     () => ({
       branch_id: portalParams.normalizedBranch,
-      employee_name: staffName || portalParams.employeeName || null,
-      employee_role: staffRole || portalParams.employeeRole || null,
+      employee_name: displayName !== "Team" ? displayName : null,
+      employee_role: resolvedRole || null,
       storeName: portalParams.storeName,
     }),
-    [portalParams, staffName, staffRole],
+    [portalParams, displayName, resolvedRole],
   );
 
   const copy = COPY[language] || COPY.en;
-  const displayName = formatStaffName(staffName || portalParams.employeeName);
   const storeLabel =
     portalParams.storeName ||
     (portalParams.normalizedBranch
       ? `NAC ${portalParams.normalizedBranch.charAt(0).toUpperCase()}${portalParams.normalizedBranch.slice(1)}`
       : "NAC");
-  const roleLabel = formatRoleLabel(staffRole || portalParams.employeeRole, language);
+  const roleLabel = formatRoleLabel(resolvedRole, language);
+  const chipStaffLabel =
+    displayName !== "Team"
+      ? language === "ar"
+        ? withHonorificAR(displayName)
+        : withHonorificEN(displayName)
+      : language === "ar"
+        ? "الموظف"
+        : "Staff";
+
+  const googleReviewUrl = useMemo(
+    () => getGoogleReviewUrl(portalParams.normalizedBranch),
+    [portalParams.normalizedBranch],
+  );
 
   useEffect(() => {
     console.log("QR PARAMS", {
@@ -111,19 +131,42 @@ export default function ReviewPortal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const generate = useCallback(
+  const runGenerate = useCallback(
     (isRegen) => {
-      const sample = SAMPLE_REVIEWS[language] || SAMPLE_REVIEWS.en;
-      setText(sample);
-      if (isRegen) trackReviewRegenerate(sample.length, { ...ctx, language });
-      else trackReviewGenerate(sample.length, { ...ctx, language });
+      const generated = generatePersonalizedReview({
+        staffName: displayName,
+        role: resolvedRole,
+        branchId: portalParams.normalizedBranch,
+        language,
+      });
+      setText(generated);
+      if (isRegen) {
+        trackReviewRegenerate(generated.length, { ...ctx, language });
+      } else {
+        trackReviewGenerate(generated.length, { ...ctx, language });
+      }
     },
-    [language, ctx],
+    [displayName, resolvedRole, portalParams.normalizedBranch, language, ctx],
   );
 
   const switchLang = (lang) => {
     setLanguage(lang);
     trackReviewLanguageChange(lang, ctx);
+    const generated = generatePersonalizedReview({
+      staffName: displayName,
+      role: resolvedRole,
+      branchId: portalParams.normalizedBranch,
+      language: lang,
+    });
+    setText(generated);
+  };
+
+  const handleGoogleClick = (e) => {
+    trackReviewGoogleClick({ ...ctx, language });
+    if (!googleReviewUrl) {
+      e.preventDefault();
+      console.error("REVIEW EVENT ERROR", "Missing Google Place ID for branch");
+    }
   };
 
   return (
@@ -140,7 +183,9 @@ export default function ReviewPortal() {
             <motion.div className="nac-review-chips">
               <span className="nac-review-chip">{storeLabel}</span>
               <span className="nac-review-chip">{roleLabel}</span>
-              {displayName && <span className="nac-review-chip">{displayName}</span>}
+              {displayName !== "Team" && (
+                <span className="nac-review-chip">{chipStaffLabel}</span>
+              )}
             </motion.div>
             <motion.div className="nac-review-lang">
               <button
@@ -176,17 +221,17 @@ export default function ReviewPortal() {
               type="button"
               className="nac-review-btn"
               whileTap={{ scale: 0.97 }}
-              onClick={() => generate(false)}
+              onClick={() => runGenerate(false)}
             >
-              Generate
+              {copy.generate}
             </motion.button>
             <motion.button
               type="button"
               className="nac-review-btn"
               whileTap={{ scale: 0.97 }}
-              onClick={() => generate(true)}
+              onClick={() => runGenerate(true)}
             >
-              Regenerate
+              {copy.regenerate}
             </motion.button>
             <motion.button
               type="button"
@@ -197,17 +242,17 @@ export default function ReviewPortal() {
                 trackReviewCopy({ ...ctx, language });
               }}
             >
-              Copy
+              {copy.copy}
             </motion.button>
             <motion.a
               className="nac-review-btn google"
-              href="https://g.page"
+              href={googleReviewUrl || "#"}
               target="_blank"
               rel="noopener noreferrer"
               whileTap={{ scale: 0.97 }}
-              onClick={() => trackReviewGoogleClick({ ...ctx, language })}
+              onClick={handleGoogleClick}
             >
-              Google Review
+              {copy.google}
             </motion.a>
           </motion.div>
         </motion.div>
