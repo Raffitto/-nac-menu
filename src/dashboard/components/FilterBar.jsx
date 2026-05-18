@@ -6,7 +6,7 @@ const BRANCHES = ["Khobar", "Riyadh", "Jeddah", "All"];
 const TIME_RANGES = [
   { label: "Today", value: 24, title: "NAC business day · 3:00 AM – 2:59 AM (Riyadh)" },
   { label: "7D", value: 168, title: "Last 7 business-day windows" },
-  { label: "30D", value: 720, title: "Last 30 business-day windows" },
+  { label: "This Month", value: 999, title: "Calendar month to date (Asia/Riyadh)" },
   { label: "All", value: 0, title: "All time" },
 ];
 

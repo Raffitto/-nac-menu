@@ -48,7 +48,7 @@ const IMPACT_COLORS = { high: "#ff6b6b", medium: "#f5a623", low: "#4ecdc4" };
 const TIME_FILTERS = [
   { label: "Today", value: 24 },
   { label: "7D", value: 168 },
-  { label: "30D", value: 720 },
+  { label: "This Month", value: 999 },
   { label: "All", value: 0 },
 ];
 
@@ -397,7 +397,7 @@ export default function AIInsights() {
         </div>
         <p className="ai-wc-body">
           {totalSessions > 50
-            ? `Based on ${totalEvents.toLocaleString()} menu events across ${totalSessions.toLocaleString()} sessions. Switch Today / 7D / 30D to compare periods.${foodics?.previousBatch ? " Foodics trends compare against your previous import." : ""}`
+            ? `Based on ${totalEvents.toLocaleString()} menu events across ${totalSessions.toLocaleString()} sessions. Switch Today / 7D / This Month to compare periods.${foodics?.previousBatch ? " Foodics trends compare against your previous import." : ""}`
             : "Early signal — more accurate comparisons will appear after more sessions are collected."
           }
         </p>

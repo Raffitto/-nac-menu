@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import FoodMenuCard from "./FoodMenuCard";
 import DrinkMenuCard from "./DrinkMenuCard";
 import { makeSectionDomId, sectionSlug } from "../lib/sectionNav";
@@ -53,6 +53,7 @@ export default function ContextualMenuView({
   activeMenuTab,
   setActiveMenuTab,
   setActiveSection,
+  onMenuTabOpen,
 }) {
   const categoryMeta = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
@@ -86,6 +87,7 @@ export default function ContextualMenuView({
     (tab) => {
       setActiveMenuTab(tab.id);
       setActiveSection("");
+      onMenuTabOpen?.(tab);
       const sections = filterSections(
         getMenuTabSections(tab.sourceCategoryId, menuData),
         "",
@@ -94,7 +96,11 @@ export default function ContextualMenuView({
       const first = sections[0];
       if (first) {
         const domId = makeSectionDomId(tab.sourceCategoryId, first.title.en);
-        onSectionNavigate?.(tab.sourceCategoryId, first.title.en, domId);
+        onSectionNavigate?.(tab.sourceCategoryId, first.title.en, domId, {
+          source: "nav_click",
+          hostCategoryId,
+          menuTabId: tab.id,
+        });
         requestAnimationFrame(() => {
           document.getElementById(domId)?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
@@ -102,15 +108,19 @@ export default function ContextualMenuView({
         document.getElementById(`nac-menu-${hostCategoryId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     },
-    [setActiveMenuTab, setActiveSection, hostCategoryId, menuData, isAllowed, onSectionNavigate],
+    [setActiveMenuTab, setActiveSection, hostCategoryId, menuData, isAllowed, onSectionNavigate, onMenuTabOpen],
   );
 
   const scrollToSection = useCallback(
     (item) => {
-      onSectionNavigate?.(item.sourceCategoryId, item.titleEn, item.domId);
+      onSectionNavigate?.(item.sourceCategoryId, item.titleEn, item.domId, {
+        source: "nav_click",
+        hostCategoryId,
+        menuTabId: activeMenuTab,
+      });
       document.getElementById(item.domId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     },
-    [onSectionNavigate],
+    [onSectionNavigate, hostCategoryId, activeMenuTab],
   );
 
   const renderSectionNav = (items, className, ariaLabel) => (
@@ -193,6 +203,15 @@ export default function ContextualMenuView({
           </div>
         )}
 
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${hostCategoryId}-${sourceCategoryId}`}
+            className="contextual-menu-panel"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
+          >
         {visibleSections.map((sec, sectionIndex) => {
           const sectionDomId = makeSectionDomId(sourceCategoryId, sec.title.en);
 
@@ -255,8 +274,10 @@ export default function ContextualMenuView({
                 </motion.div>
               )}
             </section>
-          );
-        })}
+            );
+          })}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       {visibleSections.length === 0 && (

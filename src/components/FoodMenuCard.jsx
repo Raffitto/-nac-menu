@@ -1,6 +1,7 @@
 import React, { useState, lazy, Suspense } from "react";
 import { ChevronRight, Maximize2 } from "lucide-react";
 import ImpressionTracked from "./ImpressionTracked";
+import MenuImage from "./MenuImage";
 import { trackImageExpand } from "../lib/imageExpand";
 
 const ImageLightbox = lazy(() => import("./ImageLightbox"));
@@ -58,7 +59,7 @@ export default function FoodMenuCard({
       >
         <div className="menu-card-media">
           {hasImageSrc(menuItem) && (
-            <img src={menuItem.image} alt="" loading="lazy" decoding="async" draggable={false} />
+            <MenuImage src={menuItem.image} alt="" />
           )}
           {hasImageSrc(menuItem) && (
             <button

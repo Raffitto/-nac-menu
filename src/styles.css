@@ -1930,10 +1930,46 @@ text-transform: uppercase;
 
 .contextual-nav-stack {
   position: sticky;
-  top: 48px;
+  top: max(48px, env(safe-area-inset-top, 0px) + 44px);
   z-index: 28;
   background: linear-gradient(180deg, rgba(249, 249, 247, 0.98) 82%, rgba(249, 249, 247, 0));
   padding-bottom: 6px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.contextual-menu-panel {
+  min-height: 120px;
+}
+
+.contextual-pill,
+.contextual-section-nav-secondary button {
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.18s ease;
+}
+
+.contextual-pill:active {
+  transform: scale(0.97);
+}
+
+.menu-img-fade {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.menu-img-fade--loaded {
+  opacity: 1;
+}
+
+.menu-card-media .menu-img-fade,
+.drink-card-media .menu-img-fade {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .contextual-menu-bar {

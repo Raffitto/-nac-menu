@@ -122,6 +122,10 @@ function aggregateClientSide(rows, totalEventsExact) {
   const byType = {};
   const itemCounts = {};
   const catCounts = {};
+  const sectionCounts = {};
+  const tabCounts = {};
+  let drinkOpens = 0;
+  let foodItemOpens = 0;
   const hourly = {};
 
   rows.forEach((r) => {
@@ -137,6 +141,22 @@ function aggregateClientSide(rows, totalEventsExact) {
     if (et === "category_open" && r.category_id) {
       const c = r.category_id;
       catCounts[c] = (catCounts[c] || 0) + 1;
+    }
+    if ((et === "section_open" || et === "section_view") && r.section_id) {
+      const key = `${r.category_id || "?"}::${r.section_id}`;
+      sectionCounts[key] = (sectionCounts[key] || 0) + 1;
+    }
+    if (et === "menu_tab_open") {
+      const meta = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
+      const tabId = meta.tab_id || meta.source_category_id || "?";
+      const key = `${r.category_id || "?"}::${tabId}`;
+      tabCounts[key] = (tabCounts[key] || 0) + 1;
+    }
+    if (et === "item_open" && r.category_id === "drinks") {
+      drinkOpens += 1;
+    }
+    if (et === "item_open" && r.category_id && r.category_id !== "drinks") {
+      foodItemOpens += 1;
     }
     if (r.created_at) {
       const d = new Date(r.created_at);
@@ -161,6 +181,27 @@ function aggregateClientSide(rows, totalEventsExact) {
     .sort((a, b) => b.opens - a.opens)
     .slice(0, 10);
 
+  const top_sections = Object.entries(sectionCounts)
+    .map(([key, views]) => {
+      const [cat, sec] = key.split("::");
+      return { category: cat, section: sec, views };
+    })
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 12);
+
+  const menu_tab_engagement = Object.entries(tabCounts)
+    .map(([key, opens]) => {
+      const [host, tab] = key.split("::");
+      return { host, tab, opens };
+    })
+    .sort((a, b) => b.opens - a.opens)
+    .slice(0, 10);
+
+  const drinks_vs_food_pct =
+    foodItemOpens + drinkOpens > 0
+      ? Math.round((drinkOpens / (foodItemOpens + drinkOpens)) * 100)
+      : 0;
+
   const by_hour = Object.entries(hourly)
     .map(([hour, count]) => ({ hour, count }))
     .sort((a, b) => new Date(a.hour) - new Date(b.hour));
@@ -172,6 +213,11 @@ function aggregateClientSide(rows, totalEventsExact) {
     by_event_type: byType,
     top_items,
     top_categories,
+    top_sections,
+    menu_tab_engagement,
+    drinks_vs_food_pct,
+    scroll_depth_events: byType.scroll_depth || 0,
+    time_spent_events: byType.time_spent || 0,
     by_hour,
   };
 }
@@ -233,7 +279,7 @@ export default function AnalyticsDashboard() {
         const { data: rows, error: rowsErr } = await supabase
           .from("menu_events")
           .select(
-            "session_id, language, event_type, category_id, item_name_en, created_at"
+            "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata"
           )
           .order("created_at", { ascending: false })
           .limit(12000);
@@ -937,7 +983,37 @@ export default function AnalyticsDashboard() {
               </motion.div>
             </div>
 
-            <div className="grid gap-5 lg:grid-cols-2 mb-6">
+            <div className="grid gap-5 lg:grid-cols-3 mb-6">
+              <motion.div className="nac-an__card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+                <h3 className="text-base font-semibold mb-1">Menu depth</h3>
+                <p className="text-sm text-white/50 mb-2">Engagement signals</p>
+                <ul className="text-sm text-white/70 space-y-1.5 list-none p-0 m-0">
+                  <li>Drinks vs food opens: {aggregates.drinks_vs_food_pct ?? 0}% drinks</li>
+                  <li>Scroll depth events: {aggregates.scroll_depth_events ?? 0}</li>
+                  <li>Time spent events: {aggregates.time_spent_events ?? 0}</li>
+                </ul>
+              </motion.div>
+              <motion.div className="nac-an__card lg:col-span-2" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+                <h3 className="text-base font-semibold mb-1">Menu tab engagement</h3>
+                <p className="text-sm text-white/50 mb-2">Dinner · Desserts · Drinks</p>
+                <div className="nac-an__list">
+                  {(aggregates.menu_tab_engagement || []).length === 0 ? (
+                    <p className="text-sm text-white/40">No tab opens yet</p>
+                  ) : (
+                    aggregates.menu_tab_engagement.map((row) => (
+                      <div className="nac-an__row" key={`${row.host}-${row.tab}`}>
+                        <span className="text-sm font-medium truncate">
+                          {formatCategoryId(row.host)} → {formatCategoryId(row.tab)}
+                        </span>
+                        <span className="text-gold text-sm shrink-0">{row.opens}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            </div>
+
+            <motion.div className="grid gap-5 lg:grid-cols-2 mb-6">
               <motion.div
                 className="nac-an__card"
                 initial={{ opacity: 0, y: 14 }}
@@ -989,7 +1065,7 @@ export default function AnalyticsDashboard() {
                   )}
                 </div>
               </motion.div>
-            </div>
+            </motion.div>
 
             <motion.div
               className="nac-an__card mb-6"

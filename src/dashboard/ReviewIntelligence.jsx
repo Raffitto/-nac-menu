@@ -9,11 +9,15 @@ import {
   FileDown,
   FileText,
   AlertCircle,
+  Trophy,
+  TrendingUp,
 } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Line,
+  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -29,16 +33,23 @@ import {
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import { runDataQualityDiagnostics } from "./utils/dataQualityDiagnostics";
 import { exportReviewIntelligenceReport } from "./engines/exportEngine";
-import { getBusinessDayKey, getBusinessDayRange } from "./utils/businessDay";
+import { getBusinessDayKey } from "./utils/businessDay";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
   rangeToHours,
+  rangeToSince,
   branchDisplayName,
   defaultBranchId,
   rangeExportLabel,
 } from "./utils/rangeState";
-import { aggregateStaffReviewStats } from "./utils/staffReviewStats";
+import {
+  aggregateStaffReviewStats,
+  mergeStaffStats,
+  buildDailyScanTrend,
+  buildBranchScanTotals,
+  sumScans,
+} from "./utils/staffReviewStats";
 import "./styles/review-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
@@ -58,7 +69,10 @@ export default function ReviewIntelligence() {
   const [reviewData, setReviewData] = useState(null);
   const [unified, setUnified] = useState(null);
   const [comparison, setComparison] = useState([]);
-  const [staffStats, setStaffStats] = useState([]);
+  const [staffMerged, setStaffMerged] = useState([]);
+  const [dailyTrend, setDailyTrend] = useState([]);
+  const [branchScans, setBranchScans] = useState([]);
+  const [allBranchEvents, setAllBranchEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [error, setError] = useState("");
@@ -90,40 +104,48 @@ export default function ReviewIntelligence() {
       setUnified(uni);
       setComparison(Array.isArray(cmp) ? cmp : []);
 
-      const since =
-        selectedRange === "today"
-          ? getBusinessDayRange().start.toISOString()
-          : null;
+      const since = rangeToSince(selectedRange);
+
+      let reviewQ = supabase
+        .from("review_events")
+        .select("event_type,employee_name,employee_role,branch_id,source_url,created_at")
+        .limit(3000);
+      let reviewAllQ = supabase
+        .from("review_events")
+        .select("event_type,employee_name,branch_id,created_at")
+        .limit(5000);
 
       let menuQ = supabase
         .from("menu_events")
         .select("session_id,event_type,category_id,item_name_en,created_at")
         .eq("branch_id", branch)
         .limit(500);
-      let reviewQ = supabase
-        .from("review_events")
-        .select("event_type,employee_name,employee_role,source_url,created_at")
-        .eq("branch_id", branch)
-        .limit(500);
 
       if (since) {
-        menuQ = menuQ.gte("created_at", since);
         reviewQ = reviewQ.gte("created_at", since);
-      } else if (hours > 0) {
-        const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
-        menuQ = menuQ.gte("created_at", cutoff);
-        reviewQ = reviewQ.gte("created_at", cutoff);
+        reviewAllQ = reviewAllQ.gte("created_at", since);
+        menuQ = menuQ.gte("created_at", since);
       }
 
-      const [{ data: menuEvents }, { data: reviewEvents }] = await Promise.all([
-        menuQ,
-        reviewQ,
-      ]);
-      setStaffStats(aggregateStaffReviewStats(reviewEvents || [], branch));
+      reviewQ = reviewQ.eq("branch_id", branch);
+
+      const [{ data: reviewEvents }, { data: reviewAll }, { data: menuEvents }] =
+        await Promise.all([reviewQ, reviewAllQ, menuQ]);
+
+      const branchEvents = reviewEvents || [];
+      const allEvents = reviewAll || [];
+      setAllBranchEvents(allEvents);
+
+      const granular = aggregateStaffReviewStats(branchEvents, branch);
+      const merged = mergeStaffStats(rev?.top_employees || [], granular);
+      setStaffMerged(merged);
+      setDailyTrend(buildDailyScanTrend(branchEvents));
+      setBranchScans(buildBranchScanTotals(allEvents));
+
       setDiag(
         runDataQualityDiagnostics({
           menuEvents: menuEvents || [],
-          reviewEvents: reviewEvents || [],
+          reviewEvents: branchEvents,
           branchId: branch,
         })
       );
@@ -143,16 +165,32 @@ export default function ReviewIntelligence() {
     [reviewData]
   );
 
-  const staffChartData = useMemo(
+  const branchTotalScans = useMemo(
+    () => branchScans.find((b) => b.branch_id === branch)?.scans ?? sumScans(allBranchEvents.filter((e) => e.branch_id === branch)),
+    [branchScans, branch, allBranchEvents]
+  );
+
+  const leaderboardData = useMemo(
     () =>
-      staffStats.slice(0, 8).map((s) => ({
-        name: s.name.length > 12 ? `${s.name.slice(0, 11)}…` : s.name,
-        opens: s.opens,
+      staffMerged.slice(0, 10).map((s) => ({
+        name: s.name.length > 14 ? `${s.name.slice(0, 13)}…` : s.name,
+        scans: s.scans,
         google: s.google,
         conversion: s.conversion_pct,
       })),
-    [staffStats]
+    [staffMerged]
   );
+
+  const reviewsByStaffData = useMemo(
+    () =>
+      staffMerged.slice(0, 8).map((s) => ({
+        name: s.name.length > 12 ? `${s.name.slice(0, 11)}…` : s.name,
+        reviews: s.review_opens,
+      })),
+    [staffMerged]
+  );
+
+  const topStaff = staffMerged[0];
 
   const exportContext = useMemo(
     () => ({
@@ -162,9 +200,12 @@ export default function ReviewIntelligence() {
       review: reviewData,
       unified,
       comparison,
-      staffStats,
+      staffStats: staffMerged,
       employees,
       diagnostics: diag,
+      branchTotalScans,
+      dailyTrend,
+      branchScans,
     }),
     [
       branchLabel,
@@ -173,9 +214,12 @@ export default function ReviewIntelligence() {
       reviewData,
       unified,
       comparison,
-      staffStats,
+      staffMerged,
       employees,
       diag,
+      branchTotalScans,
+      dailyTrend,
+      branchScans,
     ]
   );
 
@@ -210,14 +254,14 @@ export default function ReviewIntelligence() {
   return (
     <motion.div className="rev-intel-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="rev-intel-header">
-        <div className="rev-intel-header-top">
+        <motion.div className="rev-intel-header-top">
           <p className="rev-intel-kicker">NAC REVIEW OS</p>
           <h1>Review Intelligence</h1>
           <p className="rev-intel-sub">
             {branchLabel} · {rangeLabel}
             {selectedRange === "today" ? " · 3:00 AM – 2:59 AM (Asia/Riyadh)" : ""}
           </p>
-        </div>
+        </motion.div>
 
         <motion.div
           className="rev-intel-controls"
@@ -253,21 +297,10 @@ export default function ReviewIntelligence() {
             ))}
           </motion.div>
 
-          <button
-            type="button"
-            className="rev-ctrl-btn rev-ctrl-action"
-            onClick={load}
-            disabled={loading}
-            aria-label="Refresh"
-          >
+          <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={load} disabled={loading} aria-label="Refresh">
             <RefreshCw size={14} className={loading ? "nac-bi-spin" : ""} />
           </button>
-          <button
-            type="button"
-            className="rev-ctrl-btn rev-ctrl-action"
-            onClick={handleSnapshot}
-            disabled={snapshotBusy}
-          >
+          <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleSnapshot} disabled={snapshotBusy}>
             <Camera size={14} /> Snapshot
           </button>
           <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleExportXlsx}>
@@ -280,81 +313,192 @@ export default function ReviewIntelligence() {
       </header>
 
       {error && (
-        <div className="rev-intel-alert">
+        <motion.div className="rev-intel-alert">
           <AlertCircle size={16} /> {error}
-        </div>
+        </motion.div>
       )}
 
       {loading ? (
         <p className="rev-intel-muted">Loading intelligence…</p>
       ) : (
         <>
-          <div className="rev-kpi-grid">
+          <motion.div className="rev-kpi-grid" layout>
+            <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
+              <span>Branch scans ({rangeLabel})</span>
+              <strong>{branchTotalScans}</strong>
+            </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Reviews generated</span>
               <strong>{reviewData?.reviews_generated ?? 0}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Google clicks</span>
+              <span>Google redirects</span>
               <strong>{reviewData?.google_clicks ?? 0}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review conversion</span>
               <strong>{reviewData?.conversion_pct ?? 0}%</strong>
             </motion.div>
+            {topStaff && (
+              <motion.div className="rev-kpi-card rev-kpi-card--highlight" whileHover={{ y: -2 }}>
+                <span>
+                  <Trophy size={14} /> Top staff
+                </span>
+                <strong>{topStaff.name}</strong>
+                <small>{topStaff.scans} scans · {topStaff.conversion_pct}% conv.</small>
+              </motion.div>
+            )}
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Menu sessions</span>
               <strong>{unified?.sessions ?? "—"}</strong>
             </motion.div>
-          </div>
+          </motion.div>
 
-          {staffChartData.length > 0 && (
+          {branchScans.length > 0 && (
             <section className="rev-section">
               <h2>
-                <Users size={18} /> Staff funnel
+                <GitBranch size={18} /> Total scans by branch
               </h2>
-              <div className="rev-chart-box">
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={staffChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                    <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
-                    <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
-                    <Tooltip contentStyle={CHART_TOOLTIP} />
-                    <Bar dataKey="opens" name="Scans" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="google" name="Google" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <motion.div className="rev-branch-table">
+                <div className="rev-branch-row head">
+                  <span>Branch</span>
+                  <span>Scans</span>
+                </div>
+                {branchScans.map((row) => (
+                  <div
+                    key={row.branch_id}
+                    className={`rev-branch-row ${row.branch_id === branch ? "rev-branch-highlight" : ""}`}
+                  >
+                    <span>{branchDisplayName(row.branch_id)}</span>
+                    <span>{row.scans}</span>
+                  </div>
+                ))}
+              </motion.div>
+            </section>
+          )}
+
+          {staffMerged.length > 0 && (
+            <section className="rev-section">
+              <h2>
+                <Users size={18} /> Staff performance table
+              </h2>
+              <div className="rev-staff-table-wrap">
+                <table className="rev-staff-table">
+                  <thead>
+                    <tr>
+                      <th>Staff</th>
+                      <th>Scans</th>
+                      <th>Review opens</th>
+                      <th>Copies</th>
+                      <th>Google redirects</th>
+                      <th>Conversion %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffMerged.map((s) => (
+                      <tr key={s.name}>
+                        <td>
+                          <strong>{s.name}</strong>
+                          {s.role ? <small>{s.role}</small> : null}
+                        </td>
+                        <td>{s.scans}</td>
+                        <td>{s.review_opens}</td>
+                        <td>{s.copy}</td>
+                        <td>{s.google}</td>
+                        <td>{s.conversion_pct}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}
 
+          <div className="rev-charts-grid">
+            {leaderboardData.length > 0 && (
+              <section className="rev-section rev-chart-panel">
+                <h2>
+                  <Users size={18} /> Staff leaderboard
+                </h2>
+                <div className="rev-chart-box">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={leaderboardData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
+                      <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
+                      <Tooltip contentStyle={CHART_TOOLTIP} />
+                      <Bar dataKey="scans" name="Scans" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="google" name="Google" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            )}
+
+            {dailyTrend.length > 0 && (
+              <section className="rev-section rev-chart-panel">
+                <h2>
+                  <TrendingUp size={18} /> Daily scans trend
+                </h2>
+                <motion.div className="rev-chart-box">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={dailyTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="date" tick={{ fill: "rgba(249,249,247,0.55)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
+                      <Tooltip contentStyle={CHART_TOOLTIP} />
+                      <Line type="monotone" dataKey="scans" stroke="#4ecdc4" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </section>
+            )}
+
+            {reviewsByStaffData.length > 0 && (
+              <section className="rev-section rev-chart-panel">
+                <h2>
+                  <Star size={18} /> Reviews opened by staff
+                </h2>
+                <div className="rev-chart-box">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={reviewsByStaffData} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis type="number" tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
+                      <YAxis type="category" dataKey="name" width={72} tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
+                      <Tooltip contentStyle={CHART_TOOLTIP} />
+                      <Bar dataKey="reviews" name="Generated" fill="#d7bc8a" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            )}
+          </div>
+
           <section className="rev-section">
             <h2>
-              <Users size={18} /> Employee performance
+              <Users size={18} /> Employee cards
             </h2>
             <div className="rev-emp-grid">
-              {employees.length === 0 ? (
+              {employees.length === 0 && staffMerged.length === 0 ? (
                 <p className="rev-intel-muted">No employee-tagged review events yet.</p>
               ) : (
-                employees.map((emp) => {
-                  const granular = staffStats.find((s) => s.name === emp.name);
+                (staffMerged.length ? staffMerged : employees.map((e) => ({ name: e.name, role: e.role, scans: 0, review_opens: 0, copy: 0, google: 0, conversion_pct: 0 }))).map((emp) => {
+                  const perf = employees.find((e) => e.name === emp.name);
                   return (
                     <motion.div key={emp.name} className="rev-emp-card" whileHover={{ scale: 1.01 }}>
                       <div className="rev-emp-top">
                         <strong>{emp.name}</strong>
-                        <span className="rev-badge">{emp.classification.label}</span>
+                        {perf && <span className="rev-badge">{perf.classification.label}</span>}
                       </div>
-                      <p className="rev-emp-role">{emp.role || granular?.role || "Staff"}</p>
-                      <p className="rev-emp-reason">{emp.classification.reason}</p>
-                      <motion.div className="rev-emp-metrics">
-                        <span>{granular?.opens ?? emp.metrics.scans_generated} scans</span>
-                        <span>{granular?.generated ?? emp.metrics.reviews_generated} reviews</span>
-                        <span>{granular?.copy ?? 0} copies</span>
-                        <span>
-                          {granular?.conversion_pct ?? emp.metrics.review_conversion_pct}% Google
-                        </span>
-                        <span className="rev-conf">{emp.metrics.confidence}</span>
-                      </motion.div>
+                      <p className="rev-emp-role">{emp.role || perf?.role || "Staff"}</p>
+                      {perf && <p className="rev-emp-reason">{perf.classification.reason}</p>}
+                      <div className="rev-emp-metrics">
+                        <span>{emp.scans} scans</span>
+                        <span>{emp.review_opens} generated</span>
+                        <span>{emp.copy} copies</span>
+                        <span>{emp.google} Google</span>
+                        <span>{emp.conversion_pct}% conv.</span>
+                      </div>
                     </motion.div>
                   );
                 })
@@ -364,16 +508,16 @@ export default function ReviewIntelligence() {
 
           <section className="rev-section">
             <h2>
-              <GitBranch size={18} /> Cross-branch comparison
+              <GitBranch size={18} /> Branch comparison
             </h2>
             <div className="rev-branch-table">
-              <div className="rev-branch-row head">
+              <motion.div className="rev-branch-row head">
                 <span>Branch</span>
                 <span>Sessions</span>
                 <span>Visual conv.</span>
                 <span>Reviews</span>
                 <span>Sales</span>
-              </div>
+              </motion.div>
               {comparison.map((row) => (
                 <div
                   key={row.branch_id}

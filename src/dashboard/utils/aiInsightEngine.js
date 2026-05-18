@@ -1679,7 +1679,7 @@ function answerComparison(data, foodics, periodHours) {
     });
   }
   return metaResponse({
-    answer: "Switch the time filter (Today / 7D / 30D) to compare menu periods. Foodics trends need two import batches.",
+    answer: "Switch the time filter (Today / 7D / This Month) to compare menu periods. Foodics trends need two import batches.",
     confidence: "low",
     intent: "comparison",
     metric: null,

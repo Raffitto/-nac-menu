@@ -52,6 +52,12 @@ function zonedTimeToUtc(y, m, d, h, min = 0, sec = 0, timeZone = NAC_BUSINESS_TZ
   return new Date(Date.UTC(y, m - 1, d, h, min, sec) - offset);
 }
 
+/** Start of current calendar month in Asia/Riyadh (month-to-date lower bound) */
+export function getCurrentMonthStart(date = new Date(), timeZone = NAC_BUSINESS_TZ) {
+  const p = partsInTz(date, timeZone);
+  return zonedTimeToUtc(p.year, p.month, 1, 0, 0, 0, timeZone);
+}
+
 /** { start, end, key, label } for the business day containing `date` */
 export function getBusinessDayRange(date = new Date(), timeZone = NAC_BUSINESS_TZ) {
   const key = getBusinessDayKey(date, timeZone);
@@ -82,7 +88,15 @@ export function periodLabelFromHours(pHours, referenceDate = new Date()) {
     return `Business day ${label} (${key}) · 3:00 AM – 2:59 AM`;
   }
   if (h === 168) return "Last 7 business days · from 3:00 AM anchors";
-  if (h === 720) return "Last 30 business days · from 3:00 AM anchors";
+  if (h === 999 || h === 720) {
+    const start = getCurrentMonthStart(referenceDate);
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: NAC_BUSINESS_TZ,
+      month: "short",
+      day: "numeric",
+    });
+    return `This month · ${fmt.format(start)} – now (Asia/Riyadh)`;
+  }
   return `Last ${h} hours`;
 }
 
@@ -96,9 +110,8 @@ export function filterEventsByBusinessHours(events, pHours, referenceDate = new 
   } else if (h === 168) {
     const cur = getBusinessDayRange(referenceDate);
     since = new Date(cur.start.getTime() - 6 * 24 * 60 * 60 * 1000);
-  } else if (h === 720) {
-    const cur = getBusinessDayRange(referenceDate);
-    since = new Date(cur.start.getTime() - 29 * 24 * 60 * 60 * 1000);
+  } else if (h === 999 || h === 720) {
+    since = getCurrentMonthStart(referenceDate);
   } else {
     since = new Date(referenceDate.getTime() - h * 60 * 60 * 1000);
   }

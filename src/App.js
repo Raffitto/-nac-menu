@@ -8,6 +8,9 @@ import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
   trackEvent,
+  trackMenuTabOpen,
+  trackSectionOpen,
+  trackAddOnOpen,
   makeMenuItemId,
   isNewSession,
   markSessionLogged,
@@ -739,19 +742,42 @@ const isAllowed = (menuItem) => {
   }, [showCategorySelector, navSourceCategoryId, menuData, search, selectedAllergens, selectedDiet]);
 
   const handleSectionNavigate = useCallback(
-    (sourceCatId, titleEn, domId) => {
+    (sourceCatId, titleEn, domId, navMeta = {}) => {
       const slug = sectionSlug(titleEn);
       setActiveSection(domId);
       lastSectionEvent.current = { cat: sourceCatId, sec: slug };
+      if (navMeta.source === "nav_click") {
+        trackSectionOpen({
+          language: lang,
+          sourceCategoryId: sourceCatId,
+          hostCategoryId: navMeta.hostCategoryId || menuHostId,
+          sectionTitleEn: titleEn,
+          menuTabId: navMeta.menuTabId || activeMenuTab,
+        });
+      }
       trackEvent({
         event_type: "section_view",
         category_id: sourceCatId,
         section_id: slug,
         language: lang,
-        metadata: { source: "nav_click" },
+        metadata: { source: navMeta.source || "nav_click", host_category_id: menuHostId },
       });
     },
-    [lang],
+    [lang, menuHostId, activeMenuTab],
+  );
+
+  const handleMenuTabOpen = useCallback(
+    (tab) => {
+      if (!menuHostId || !tab) return;
+      trackMenuTabOpen({
+        language: lang,
+        hostCategoryId: menuHostId,
+        tabId: tab.id,
+        sourceCategoryId: tab.sourceCategoryId,
+        menuMode,
+      });
+    },
+    [lang, menuHostId, menuMode],
   );
 
   const closeActiveItem = useCallback(
@@ -1236,6 +1262,7 @@ if (adminMode) {
               activeMenuTab={activeMenuTab}
               setActiveMenuTab={setActiveMenuTab}
               setActiveSection={setActiveSection}
+              onMenuTabOpen={handleMenuTabOpen}
               isArabic={isArabic}
               lang={lang}
               search={search}
@@ -1395,16 +1422,20 @@ onClick={(e) => {
     JSON.stringify(addonAnalytics)
   );
 
+  const sectionEn = findSectionTitleEnForItem(modalCategoryId, activeItem, menuData);
+  trackAddOnOpen({
+    language: lang,
+    categoryId: modalCategoryId,
+    sectionTitleEn: sectionEn,
+    menuItem: activeItem,
+    addOn: rec,
+  });
   trackEvent({
     event_type: "add_on_click",
     language: lang,
-    category_id: activeCategory,
-    item_id: activeCategory
-      ? makeMenuItemId(
-          activeCategory,
-          findSectionTitleEnForItem(modalCategoryId, activeItem, menuData),
-          activeItem.en
-        )
+    category_id: modalCategoryId,
+    item_id: modalCategoryId
+      ? makeMenuItemId(modalCategoryId, sectionEn, activeItem.en)
       : null,
     item_name_en: activeItem.en,
     item_name_ar: activeItem.ar,

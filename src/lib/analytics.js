@@ -140,6 +140,56 @@ export function trackEvent(payload) {
     .catch(() => {});
 }
 
+/** Top-level menu tab (Dinner | Desserts | Drinks). */
+export function trackMenuTabOpen({ language, hostCategoryId, tabId, sourceCategoryId, menuMode }) {
+  trackEvent({
+    event_type: "menu_tab_open",
+    language,
+    category_id: hostCategoryId,
+    metadata: {
+      tab_id: tabId,
+      source_category_id: sourceCategoryId,
+      menu_mode: menuMode,
+    },
+  });
+}
+
+/** Section entered via pill navigation. */
+export function trackSectionOpen({
+  language,
+  sourceCategoryId,
+  hostCategoryId,
+  sectionTitleEn,
+  menuTabId,
+}) {
+  const slug = String(sectionTitleEn || "")
+    .toLowerCase()
+    .replaceAll(" ", "-");
+  trackEvent({
+    event_type: "section_open",
+    language,
+    category_id: sourceCategoryId,
+    section_id: slug,
+    metadata: {
+      host_category_id: hostCategoryId,
+      menu_tab_id: menuTabId || sourceCategoryId,
+    },
+  });
+}
+
+/** Add-on opened from item modal. */
+export function trackAddOnOpen({ language, categoryId, sectionTitleEn, menuItem, addOn }) {
+  trackEvent({
+    event_type: "add_on_open",
+    language,
+    category_id: categoryId,
+    item_name_en: menuItem?.en,
+    item_name_ar: menuItem?.ar,
+    add_on_name: addOn?.en,
+    metadata: { add_on_name_ar: addOn?.ar },
+  });
+}
+
 /** Helper for review button clicks (wire to actual button when it exists). */
 export function trackReviewClick(language) {
   trackEvent({

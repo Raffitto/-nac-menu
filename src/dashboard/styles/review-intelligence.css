@@ -307,3 +307,60 @@
   color: rgba(249, 249, 247, 0.72);
   font-size: 0.85rem;
 }
+
+.rev-kpi-card--highlight strong {
+  display: block;
+  font-size: 1.1rem;
+}
+
+.rev-kpi-card--highlight small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.rev-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.rev-chart-panel {
+  margin-bottom: 0;
+}
+
+.rev-staff-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.rev-staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.rev-staff-table th,
+.rev-staff-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(249, 249, 247, 0.88);
+}
+
+.rev-staff-table th {
+  background: rgba(215, 188, 138, 0.12);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(249, 249, 247, 0.7);
+}
+
+.rev-staff-table td small {
+  display: block;
+  font-size: 0.7rem;
+  color: rgba(249, 249, 247, 0.45);
+}
