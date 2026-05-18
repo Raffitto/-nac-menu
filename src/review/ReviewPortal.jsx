@@ -19,6 +19,44 @@ const SAMPLE_REVIEWS = {
   ar: "تجربة طعام استثنائية في NAC — خدمة راقية وتقديم جميل ونكهات لا تُنسى.",
 };
 
+const COPY = {
+  en: {
+    title: "Your feedback means a lot to us",
+    subtitle: "Tap or scan to leave a review",
+    placeholder: "Your review text will appear here…",
+  },
+  ar: {
+    title: "ملاحظاتكم تعني لنا الكثير",
+    subtitle: "اضغط أو امسح الرمز لترك تقييم",
+    placeholder: "سيظهر نص المراجعة هنا…",
+  },
+};
+
+const ROLE_LABELS = {
+  rm: { en: "Restaurant Manager", ar: "مدير المطعم" },
+  arm: { en: "Assistant Restaurant Manager", ar: "مساعد مدير المطعم" },
+  supervisor: { en: "Supervisor", ar: "مشرف" },
+  receptionist: { en: "Receptionist", ar: "موظفة استقبال" },
+  waiter: { en: "Waiter", ar: "نادل" },
+  "training waiter": { en: "Training Waiter", ar: "نادل تحت التدريب" },
+  team: { en: "Team", ar: "الفريق" },
+};
+
+function formatRoleLabel(role, lang) {
+  if (!role || !String(role).trim()) return lang === "ar" ? "الفريق" : "Team";
+  const key = String(role).trim().toLowerCase();
+  const mapped = ROLE_LABELS[key];
+  if (mapped) return mapped[lang] || mapped.en;
+  const pretty = String(role).trim();
+  return pretty.charAt(0).toUpperCase() + pretty.slice(1);
+}
+
+function formatStaffName(name) {
+  if (!name || !String(name).trim()) return null;
+  const t = String(name).trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 export default function ReviewPortal() {
   const portalParams = useMemo(() => parseReviewPortalParams(), []);
   const [language, setLanguage] = useState(portalParams.lang === "ar" ? "ar" : "en");
@@ -35,6 +73,15 @@ export default function ReviewPortal() {
     }),
     [portalParams, staffName, staffRole],
   );
+
+  const copy = COPY[language] || COPY.en;
+  const displayName = formatStaffName(staffName || portalParams.employeeName);
+  const storeLabel =
+    portalParams.storeName ||
+    (portalParams.normalizedBranch
+      ? `NAC ${portalParams.normalizedBranch.charAt(0).toUpperCase()}${portalParams.normalizedBranch.slice(1)}`
+      : "NAC");
+  const roleLabel = formatRoleLabel(staffRole || portalParams.employeeRole, language);
 
   useEffect(() => {
     console.log("QR PARAMS", {
@@ -80,64 +127,91 @@ export default function ReviewPortal() {
   };
 
   return (
-    <div className="nac-review-portal">
-      <motion.div
-        className="nac-review-card"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <p className="nac-review-brand">NAC</p>
-        <h1>Share your experience</h1>
-        {staffName && <p className="nac-review-staff">with {staffName}</p>}
+    <motion.div className="nac-review-portal">
+      <motion.div className="nac-review-wrap">
+        <motion.div
+          className={`nac-review-card ${language === "ar" ? "nac-review-card--ar" : ""}`}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+        >
+          <motion.div className="nac-review-top">
+            <img className="nac-review-logo" src="/logo.png" alt="NAC" />
+            <motion.div className="nac-review-chips">
+              <span className="nac-review-chip">{storeLabel}</span>
+              <span className="nac-review-chip">{roleLabel}</span>
+              {displayName && <span className="nac-review-chip">{displayName}</span>}
+            </motion.div>
+            <motion.div className="nac-review-lang">
+              <button
+                type="button"
+                className={language === "en" ? "active" : ""}
+                onClick={() => switchLang("en")}
+              >
+                English
+              </button>
+              <button
+                type="button"
+                className={language === "ar" ? "active" : ""}
+                onClick={() => switchLang("ar")}
+              >
+                العربية
+              </button>
+            </motion.div>
+          </motion.div>
 
-        <motion.div className="nac-review-lang">
-          <button type="button" className={language === "en" ? "active" : ""} onClick={() => switchLang("en")}>
-            English
-          </button>
-          <button type="button" className={language === "ar" ? "active" : ""} onClick={() => switchLang("ar")}>
-            العربية
-          </button>
-        </motion.div>
+          <h1>{copy.title}</h1>
+          <p className="nac-review-sub">{copy.subtitle}</p>
 
-        <textarea
-          className="nac-review-text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={language === "ar" ? "سيظهر نص المراجعة هنا…" : "Your review text will appear here…"}
-          dir={language === "ar" ? "rtl" : "ltr"}
-        />
+          <textarea
+            className="nac-review-text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={copy.placeholder}
+            dir={language === "ar" ? "rtl" : "ltr"}
+          />
 
-        <motion.div className="nac-review-actions">
-          <motion.button type="button" className="nac-review-btn primary" whileTap={{ scale: 0.97 }} onClick={() => generate(false)}>
-            Generate
-          </motion.button>
-          <motion.button type="button" className="nac-review-btn" whileTap={{ scale: 0.97 }} onClick={() => generate(true)}>
-            Regenerate
-          </motion.button>
-          <motion.button
-            type="button"
-            className="nac-review-btn"
-            whileTap={{ scale: 0.97 }}
-            onClick={() => {
-              if (text) navigator.clipboard?.writeText(text);
-              trackReviewCopy({ ...ctx, language });
-            }}
-          >
-            Copy
-          </motion.button>
-          <motion.a
-            className="nac-review-btn google"
-            href="https://g.page"
-            target="_blank"
-            rel="noopener noreferrer"
-            whileTap={{ scale: 0.97 }}
-            onClick={() => trackReviewGoogleClick({ ...ctx, language })}
-          >
-            Google Review
-          </motion.a>
+          <motion.div className="nac-review-actions">
+            <motion.button
+              type="button"
+              className="nac-review-btn"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => generate(false)}
+            >
+              Generate
+            </motion.button>
+            <motion.button
+              type="button"
+              className="nac-review-btn"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => generate(true)}
+            >
+              Regenerate
+            </motion.button>
+            <motion.button
+              type="button"
+              className="nac-review-btn"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => {
+                if (text) navigator.clipboard?.writeText(text);
+                trackReviewCopy({ ...ctx, language });
+              }}
+            >
+              Copy
+            </motion.button>
+            <motion.a
+              className="nac-review-btn google"
+              href="https://g.page"
+              target="_blank"
+              rel="noopener noreferrer"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => trackReviewGoogleClick({ ...ctx, language })}
+            >
+              Google Review
+            </motion.a>
+          </motion.div>
         </motion.div>
       </motion.div>
-    </div>
+    </motion.div>
   );
 }
