@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
+  runReviewEventsInsertSelfTest,
   trackReviewQrScan,
   trackReviewPageOpen,
   trackReviewGenerate,
@@ -43,8 +44,11 @@ export default function ReviewPortal() {
       employeeRole: portalParams.employeeRole,
     });
 
-    trackReviewQrScan(ctx);
-    trackReviewPageOpen(ctx);
+    (async () => {
+      await runReviewEventsInsertSelfTest(portalParams.normalizedBranch);
+      trackReviewQrScan(ctx);
+      trackReviewPageOpen(ctx);
+    })();
 
     if (portalParams.slug && !staffName && !portalParams.employeeName) {
       fetchReviewPortalStaff(portalParams.normalizedBranch)

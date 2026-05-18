@@ -4,6 +4,7 @@ import { getBusinessDayKey } from "../dashboard/utils/businessDay";
 
 const REVIEW_SESSION_KEY = "nac_review_session_id";
 const DEDUPE_PREFIX = "nac_review_dedupe_";
+const INSERT_TEST_KEY = "nac_review_insert_self_test_done";
 const DEFAULT_BRANCH =
   process.env.REACT_APP_NAC_BRANCH_ID || "khobar";
 
@@ -25,6 +26,19 @@ const ONCE_PER_SESSION = new Set([
   "review_page_open",
   "review_open",
 ]);
+
+let supabaseConfigLogged = false;
+
+function logSupabaseConfig() {
+  if (supabaseConfigLogged || typeof window === "undefined") return;
+  supabaseConfigLogged = true;
+  console.log("SUPABASE URL", process.env.REACT_APP_SUPABASE_URL || "(missing)");
+  console.log(
+    "SUPABASE ANON KEY",
+    process.env.REACT_APP_SUPABASE_ANON_KEY ? "set" : "missing",
+  );
+  console.log("SUPABASE CLIENT", supabase ? "ready" : "NOT CONFIGURED");
+}
 
 function getDeviceType() {
   if (typeof navigator === "undefined") return "unknown";
@@ -67,38 +81,23 @@ function resolveBranch(ctx) {
 }
 
 function resolveStaff(ctx) {
-  const name =
-    ctx.employee_name ||
-    ctx.employeeName ||
-    null;
-  const role =
-    ctx.employee_role ||
-    ctx.employeeRole ||
-    null;
+  const name = ctx.employee_name || ctx.employeeName || null;
+  const role = ctx.employee_role || ctx.employeeRole || null;
   return {
     employee_name: name && String(name).trim() ? String(name).trim() : null,
     employee_role: role && String(role).trim() ? String(role).trim() : null,
   };
 }
 
-/**
- * Fire-and-forget review portal analytics. Never throws.
- */
-export function trackReviewEvent(ctx = {}) {
+function buildReviewEventPayload(ctx = {}) {
   const event_type = ctx.event_type;
-  if (!supabase || !event_type || !VALID_EVENTS.has(event_type)) return;
-
-  const review_session_id = getReviewSessionId();
-  if (shouldDedupe(event_type, review_session_id)) return;
-
+  const review_session_id = ctx.review_session_id || getReviewSessionId();
   const branch_id = resolveBranch(ctx);
   const { employee_name, employee_role } = resolveStaff(ctx);
   const menu_session_id = getMenuSessionIdOptional();
+  const store_name = ctx.storeName || ctx.store_name || ctx.store || null;
 
-  const store_name =
-    ctx.storeName || ctx.store_name || ctx.store || null;
-
-  const payload = {
+  return {
     event_type,
     branch_id,
     employee_name,
@@ -124,30 +123,124 @@ export function trackReviewEvent(ctx = {}) {
       store: ctx.storeName || ctx.store || null,
     },
   };
+}
 
-  console.log("REVIEW EVENT INSERT", payload);
+/**
+ * Insert one review_events row with full console diagnostics (no swallowed errors).
+ */
+export async function insertReviewEvent(ctx = {}) {
+  logSupabaseConfig();
 
-  void import("./sessionAttribution")
-    .then(({ tryLinkMenuReviewSession }) =>
-      tryLinkMenuReviewSession({
-        branch_id,
-        menu_session_id,
-        review_session_id,
-        employee_name,
-        employee_role,
-      }),
-    )
-    .catch(() => {});
+  const event_type = ctx.event_type;
+  if (!event_type || !VALID_EVENTS.has(event_type)) {
+    console.error("REVIEW EVENT ERROR", "Invalid or missing event_type", event_type);
+    return { data: null, error: new Error("invalid event_type") };
+  }
 
-  void supabase
+  if (!supabase) {
+    const err = new Error(
+      "Supabase client not configured — check REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY on this deploy",
+    );
+    console.error("REVIEW EVENT ERROR", err.message);
+    return { data: null, error: err };
+  }
+
+  const review_session_id = getReviewSessionId();
+  if (shouldDedupe(event_type, review_session_id)) {
+    console.log("REVIEW EVENT DEDUPED (skipped insert)", event_type, review_session_id);
+    return { data: null, error: null, deduped: true };
+  }
+
+  const payload = buildReviewEventPayload({ ...ctx, review_session_id });
+
+  console.log("REVIEW EVENT PAYLOAD", payload);
+
+  const { data, error } = await supabase
     .from("review_events")
     .insert(payload)
-    .then(({ error }) => {
-      if (error) {
-        console.warn("[reviewAnalytics]", error.message, payload);
-      }
-    })
-    .catch(() => {});
+    .select();
+
+  console.log("REVIEW EVENT RESULT", data);
+  if (error) {
+    console.error("REVIEW EVENT ERROR", error);
+    console.error("REVIEW EVENT ERROR DETAILS", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+  }
+
+  if (!error) {
+    void import("./sessionAttribution")
+      .then(({ tryLinkMenuReviewSession }) =>
+        tryLinkMenuReviewSession({
+          branch_id: payload.branch_id,
+          menu_session_id: payload.session_id,
+          review_session_id: payload.review_session_id,
+          employee_name: payload.employee_name,
+          employee_role: payload.employee_role,
+        }),
+      )
+      .catch((linkErr) => {
+        console.error("REVIEW SESSION LINK ERROR", linkErr);
+      });
+  }
+
+  return { data, error };
+}
+
+/**
+ * One-time manual insert test on review portal load (surfaces RLS / constraint errors).
+ */
+export async function runReviewEventsInsertSelfTest(branchId = DEFAULT_BRANCH) {
+  logSupabaseConfig();
+
+  try {
+    if (sessionStorage.getItem(INSERT_TEST_KEY) === "1") {
+      console.log("REVIEW INSERT SELF-TEST skipped (already ran this session)");
+      return { data: null, error: null, skipped: true };
+    }
+    sessionStorage.setItem(INSERT_TEST_KEY, "1");
+  } catch {
+    /* continue */
+  }
+
+  const branch_id = (branchId || DEFAULT_BRANCH).toLowerCase();
+  const payload = {
+    branch_id,
+    employee_name: "TEST",
+    employee_role: "waiter",
+    event_type: "qr_scan",
+    review_session_id: `test-${Date.now()}`,
+    business_day_key: getBusinessDayKey(),
+    metadata: { self_test: true },
+  };
+
+  console.log("REVIEW INSERT SELF-TEST starting", payload);
+
+  if (!supabase) {
+    console.error("REVIEW EVENT ERROR", "Self-test failed — Supabase not configured");
+    return { data: null, error: new Error("supabase not configured") };
+  }
+
+  const { data, error } = await supabase
+    .from("review_events")
+    .insert(payload)
+    .select();
+
+  console.log("REVIEW EVENT RESULT (self-test)", data);
+  if (error) {
+    console.error("REVIEW EVENT ERROR (self-test)", error);
+  } else {
+    console.log("REVIEW INSERT SELF-TEST OK");
+  }
+
+  return { data, error };
+}
+
+export function trackReviewEvent(ctx = {}) {
+  void insertReviewEvent(ctx);
 }
 
 export function trackReviewQrScan(ctx = {}) {

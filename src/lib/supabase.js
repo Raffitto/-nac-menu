@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 const url = process.env.REACT_APP_SUPABASE_URL;
 const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
+if (typeof window !== "undefined") {
+  console.log("SUPABASE URL", url || "(missing REACT_APP_SUPABASE_URL)");
+}
+
 /**
  * Single browser client: anonymous guests (no sign-in) use the anon JWT for inserts.
  * Staff open Analytics, sign in with Supabase Auth (authenticated JWT) for SELECT on menu_events.
