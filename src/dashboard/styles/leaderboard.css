@@ -1,0 +1,166 @@
+.nac-leaderboard {
+  min-height: 100vh;
+  background: #0a0908;
+  color: #f9f9f7;
+  padding: 2rem 3rem 4rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.nac-leaderboard-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.nac-leaderboard-kicker {
+  letter-spacing: 0.28em;
+  font-size: 0.7rem;
+  color: rgba(215, 188, 138, 0.7);
+  margin: 0 0 0.5rem;
+}
+
+.nac-leaderboard-header h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.nac-leaderboard-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: rgba(249, 249, 247, 0.4);
+}
+
+.nac-leaderboard-section h2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin-bottom: 2rem;
+}
+
+.nac-leaderboard-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.nac-leaderboard-staff-card {
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(215, 188, 138, 0.25);
+  text-align: center;
+}
+
+.nac-leaderboard-rank {
+  display: block;
+  font-size: 0.75rem;
+  color: #d7bc8a;
+  margin-bottom: 0.35rem;
+}
+
+.nac-leaderboard-staff-card strong {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+.nac-leaderboard-staff-card p {
+  margin: 0.35rem 0 0;
+  color: rgba(249, 249, 247, 0.55);
+  font-size: 0.9rem;
+}
+
+.nac-leaderboard-branch-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.nac-leaderboard-branch-card {
+  text-align: center;
+  padding: 2rem;
+  border-radius: 20px;
+  background: linear-gradient(160deg, rgba(215, 188, 138, 0.12), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(215, 188, 138, 0.3);
+}
+
+.nac-leaderboard-big {
+  font-size: 3rem;
+  font-weight: 500;
+  margin: 0.5rem 0;
+  color: #d7bc8a;
+}
+
+.nac-leaderboard-targets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.nac-leaderboard-target-card {
+  padding: 2rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.nac-leaderboard-target-card p {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.nac-leaderboard-target-card strong {
+  font-size: 2.5rem;
+  font-weight: 500;
+}
+
+.nac-leaderboard-dots {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nac-leaderboard-dots button {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  padding: 0;
+}
+
+.nac-leaderboard-dots button.active {
+  background: #d7bc8a;
+  transform: scale(1.2);
+}
+
+.nac-leaderboard-activity {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .nac-leaderboard {
+    padding: 1.25rem;
+  }
+
+  .nac-leaderboard-branch-row,
+  .nac-leaderboard-targets {
+    grid-template-columns: 1fr;
+  }
+}

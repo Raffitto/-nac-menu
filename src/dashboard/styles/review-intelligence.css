@@ -1,3 +1,11 @@
+.rev-intel-wrap--embedded {
+  padding-top: 0;
+}
+
+.rev-intel-wrap--embedded .rev-kpi-grid {
+  margin-top: 0;
+}
+
 .rev-intel-wrap {
   padding: 2rem 2.5rem 4rem;
   max-width: 1200px;

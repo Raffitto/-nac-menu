@@ -16,12 +16,25 @@ const isReviewQr =
 
 applyReviewRoutingMode(isReviewQr);
 
+const isLeaderboard =
+  typeof window !== "undefined" &&
+  window.location.pathname.replace(/\/$/, "") === "/leaderboard";
+
 const ReviewPortal = lazy(() => import("./review/ReviewPortal"));
+const LeaderboardView = lazy(() => import("./dashboard/LeaderboardView"));
 const MenuApp = lazy(() => import("./App"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-if (isReviewQr) {
+if (isLeaderboard) {
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
+        <LeaderboardView />
+      </Suspense>
+    </React.StrictMode>,
+  );
+} else if (isReviewQr) {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>

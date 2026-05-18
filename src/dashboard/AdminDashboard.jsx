@@ -19,7 +19,6 @@ import {
   Zap,
   Sparkles,
   Brain,
-  FileSpreadsheet,
   TrendingUp,
   AlertTriangle,
   Crown,
@@ -36,6 +35,13 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import MenuManager from "./MenuManager";
+import { PlatformFiltersProvider } from "./context/PlatformFiltersContext";
+import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
+import HubTabs from "./components/HubTabs";
+import IntelligenceHub from "./views/IntelligenceHub";
+import ReviewsHub from "./views/ReviewsHub";
+import BranchesView from "./views/BranchesView";
+import SettingsView from "./views/SettingsView";
 
 import FilterBar from "./components/FilterBar";
 import FunnelChart from "./components/FunnelChart";
@@ -45,12 +51,18 @@ import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, formatHourLabel, exportCSV } from "./utils/formatters";
 import { generateInsights } from "./utils/insights";
 import "./styles/admin-dashboard.css";
+import "./styles/platform-os.css";
 
 const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
-const AIInsights = lazy(() => import("./AIInsights"));
-const FoodicsIntelligence = lazy(() => import("./FoodicsIntelligence"));
-const RestaurantIntelligence = lazy(() => import("./RestaurantIntelligence"));
-const ReviewIntelligence = lazy(() => import("./ReviewIntelligence"));
+
+const NAV_ICONS = {
+  overview: LayoutDashboard,
+  intelligence: Brain,
+  reviews: Star,
+  menu: UtensilsCrossed,
+  branches: Store,
+  settings: Settings,
+};
 
 function ViewFallback({ label }) {
   return (
@@ -65,18 +77,6 @@ function ViewFallback({ label }) {
     </motion.div>
   );
 }
-
-const sidebar = [
-  { icon: <LayoutDashboard size={18} />, label: "Dashboard" },
-  { icon: <UtensilsCrossed size={18} />, label: "Menu Manager" },
-  { icon: <BarChart3 size={18} />, label: "Analytics" },
-  { icon: <Store size={18} />, label: "Branches" },
-  { icon: <Star size={18} />, label: "Reviews" },
-  { icon: <Sparkles size={18} />, label: "AI Insights" },
-  { icon: <Brain size={18} />, label: "Restaurant Intelligence" },
-  { icon: <FileSpreadsheet size={18} />, label: "Sales Intelligence" },
-  { icon: <Settings size={18} />, label: "Settings" },
-];
 
 function InfoTip({ text }) {
   const [show, setShow] = React.useState(false);
@@ -102,6 +102,7 @@ function ev(byType, key) {
 
 export default function AdminDashboard({ onBack }) {
   const [adminView, setAdminView] = useState("overview");
+  const [overviewTab, setOverviewTab] = useState("operations");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -232,48 +233,33 @@ export default function AdminDashboard({ onBack }) {
 
   const needsAuth = configured && !session;
 
+  const scrollable = isScrollableView(adminView);
+
   return (
-    <div
+    <PlatformFiltersProvider>
+    <motion.div
       className="admin-shell"
-      style={
-        adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence" || adminView === "reviews"
-          ? { overflow: "auto", minHeight: "100vh" }
-          : undefined
-      }
+      style={scrollable ? { overflow: "auto", minHeight: "100vh" } : undefined}
     >
-      <div className="admin-bg-glow"></div>
+      <div className="admin-bg-glow" />
 
       <aside className="admin-sidebar">
         <div>
-          <p className="sidebar-logo">NAC MENU OS</p>
+          <p className="sidebar-logo">NAC HOSPITALITY OS</p>
           <div className="sidebar-menu">
-            {sidebar.map((item) => {
-              const isActive =
-                (adminView === "overview" && item.label === "Dashboard") ||
-                (adminView === "analytics" && item.label === "Analytics") ||
-                (adminView === "menu-manager" && item.label === "Menu Manager") ||
-                (adminView === "ai-insights" && item.label === "AI Insights") ||
-                (adminView === "restaurant-intelligence" && item.label === "Restaurant Intelligence") ||
-                (adminView === "sales-intelligence" && item.label === "Sales Intelligence") ||
-                (adminView === "reviews" && item.label === "Reviews");
+            {NAV_ITEMS.map((item) => {
+              const Icon = NAV_ICONS[item.id];
+              const isActive = adminView === item.id;
               return (
                 <motion.button
-                  key={item.label}
+                  key={item.id}
                   type="button"
                   className={`sidebar-item ${isActive ? "active" : ""}`}
                   whileHover={{ x: 6 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => {
-                    if (item.label === "Dashboard") setAdminView("overview");
-                    else if (item.label === "Analytics") setAdminView("analytics");
-                    else if (item.label === "Menu Manager") setAdminView("menu-manager");
-                    else if (item.label === "AI Insights") setAdminView("ai-insights");
-                    else if (item.label === "Restaurant Intelligence") setAdminView("restaurant-intelligence");
-                    else if (item.label === "Sales Intelligence") setAdminView("sales-intelligence");
-                    else if (item.label === "Reviews") setAdminView("reviews");
-                  }}
+                  onClick={() => setAdminView(item.id)}
                 >
-                  {item.icon}
+                  {Icon && <Icon size={18} />}
                   <span>{item.label}</span>
                 </motion.button>
               );
@@ -285,41 +271,38 @@ export default function AdminDashboard({ onBack }) {
 
       <main
         className="admin-content"
-        style={
-          adminView === "analytics" || adminView === "menu-manager" || adminView === "ai-insights" || adminView === "restaurant-intelligence" || adminView === "sales-intelligence" || adminView === "reviews"
-            ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
-            : undefined
-        }
+        style={scrollable ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" } : undefined}
       >
-        {adminView === "analytics" ? (
-          <Suspense fallback={<ViewFallback label="Loading analytics…" />}>
-            <AnalyticsDashboard />
-          </Suspense>
-        ) : adminView === "menu-manager" ? (
-          <MenuManager />
-        ) : adminView === "ai-insights" ? (
-          <Suspense fallback={<ViewFallback label="Loading AI insights…" />}>
-            <AIInsights />
-          </Suspense>
-        ) : adminView === "restaurant-intelligence" ? (
-          <Suspense fallback={<ViewFallback label="Loading restaurant intelligence…" />}>
-            <RestaurantIntelligence />
-          </Suspense>
-        ) : adminView === "sales-intelligence" ? (
-          <Suspense fallback={<ViewFallback label="Loading sales intelligence…" />}>
-            <FoodicsIntelligence />
-          </Suspense>
+        {adminView === "intelligence" ? (
+          <IntelligenceHub />
         ) : adminView === "reviews" ? (
-          <Suspense fallback={<ViewFallback label="Loading review intelligence…" />}>
-            <ReviewIntelligence />
-          </Suspense>
+          <ReviewsHub />
+        ) : adminView === "menu" ? (
+          <MenuManager />
+        ) : adminView === "branches" ? (
+          <BranchesView />
+        ) : adminView === "settings" ? (
+          <SettingsView />
         ) : (
           <>
-            {/* TOPBAR */}
+            <header className="nac-platform-header">
+              <p className="nac-platform-kicker">NAC Hospitality OS</p>
+              <h1>Overview</h1>
+              <p className="nac-platform-sub">Operational pulse — menu, sessions, and live performance</p>
+            </header>
+
+            <HubTabs tabs={OVERVIEW_TABS} active={overviewTab} onChange={setOverviewTab} />
+
+            {overviewTab === "sessions" ? (
+              <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
+                <AnalyticsDashboard />
+              </Suspense>
+            ) : (
+          <>
             <div className="topbar">
               <div>
-                <p className="topbar-label">NAC KHOBAR</p>
-                <h1>Dashboard</h1>
+                <p className="topbar-label">LIVE OPERATIONS</p>
+                <h1 style={{ fontSize: "1.35rem" }}>Today at a glance</h1>
               </div>
               <div className="topbar-actions">
                 {session && (
@@ -362,7 +345,7 @@ export default function AdminDashboard({ onBack }) {
               <motion.div className="big-glass-card" style={{ marginTop: 28 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="card-header"><h3>Sign in required</h3></div>
                 <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>
-                  Open <strong style={{ color: "#f9f9f7" }}>Analytics</strong> in the sidebar and sign in.
+                  Open <strong style={{ color: "#f9f9f7" }}>Settings</strong> in the sidebar and sign in.
                 </p>
               </motion.div>
             )}
@@ -667,8 +650,11 @@ export default function AdminDashboard({ onBack }) {
               </>
             )}
           </>
+            )}
+          </>
         )}
       </main>
-    </div>
+    </motion.div>
+    </PlatformFiltersProvider>
   );
 }

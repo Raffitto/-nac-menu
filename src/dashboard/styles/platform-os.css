@@ -1,0 +1,312 @@
+/* NAC Platform OS — shared premium shell & hub styling */
+
+.nac-platform-header {
+  margin-bottom: 1.5rem;
+}
+
+.nac-platform-header .nac-platform-kicker {
+  font-size: 0.68rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.75);
+  margin: 0 0 0.35rem;
+}
+
+.nac-platform-header h1 {
+  margin: 0;
+  font-size: 1.85rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: #f9f9f7;
+}
+
+.nac-platform-header .nac-platform-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.88rem;
+  color: rgba(249, 249, 247, 0.52);
+}
+
+.nac-hub-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 0.25rem;
+}
+
+.nac-hub-tab {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.65);
+  border-radius: 999px;
+  padding: 0.45rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  font-family: inherit;
+}
+
+.nac-hub-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f9f9f7;
+}
+
+.nac-hub-tab.active {
+  background: rgba(215, 188, 138, 0.18);
+  border-color: rgba(215, 188, 138, 0.45);
+  color: #f5e6c8;
+}
+
+.nac-global-filters {
+  margin-bottom: 1.5rem;
+}
+
+.nac-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+.nac-filter-range-group {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nac-filter-range-btn {
+  border: none;
+  background: transparent;
+  color: rgba(249, 249, 247, 0.55);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nac-filter-range-btn.active {
+  background: rgba(215, 188, 138, 0.25);
+  color: #f5e6c8;
+}
+
+.nac-filter-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nac-filter-pill-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(249, 249, 247, 0.4);
+}
+
+.nac-filter-pill select {
+  border: none;
+  background: transparent;
+  color: #f9f9f7;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.nac-filter-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f9f9f7;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.nac-filter-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nac-glass-panel {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 1.25rem 1.35rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.nac-empty-state {
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  color: rgba(249, 249, 247, 0.45);
+  font-size: 0.9rem;
+}
+
+/* Sidebar refresh */
+.sidebar-logo {
+  font-size: 0.72rem !important;
+  letter-spacing: 0.18em !important;
+}
+
+.sidebar-item span {
+  font-weight: 500;
+}
+
+/* Live feed */
+.nac-live-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.nac-live-feed-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.nac-live-feed-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(215, 188, 138, 0.12);
+  color: #d7bc8a;
+}
+
+.nac-live-feed-meta {
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.45);
+  margin-top: 0.2rem;
+}
+
+.nac-live-feed-time {
+  font-size: 0.7rem;
+  color: rgba(249, 249, 247, 0.4);
+  white-space: nowrap;
+}
+
+/* Employee cards */
+.nac-emp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.nac-emp-premium-card {
+  border-radius: 18px;
+  padding: 1.15rem 1.2rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(215, 188, 138, 0.2);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.nac-emp-premium-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.nac-emp-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1rem;
+  background: rgba(215, 188, 138, 0.2);
+  color: #f5e6c8;
+}
+
+.nac-emp-rank {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(215, 188, 138, 0.2);
+  color: #f5e6c8;
+}
+
+/* Branch battle */
+.nac-branch-battle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.nac-branch-battle-card {
+  position: relative;
+  border-radius: 18px;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nac-branch-battle-card.leader {
+  border-color: rgba(215, 188, 138, 0.5);
+  box-shadow: 0 0 0 1px rgba(215, 188, 138, 0.15);
+}
+
+.nac-branch-crown {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  color: #d7bc8a;
+}
+
+.nac-branch-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.nac-branch-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4ecdc4, #d7bc8a);
+  transition: width 0.6s ease;
+}
+
+@media (max-width: 768px) {
+  .nac-filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nac-filter-pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .nac-hub-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.5rem;
+  }
+}

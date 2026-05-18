@@ -879,7 +879,7 @@ export default function MenuManager() {
           <div className="mm-topbar-row">
             <div>
               <h2 className="mm-topbar-title">
-                {selectedCategory ? selectedCategory.name_en : "Menu Manager"}
+                {selectedCategory ? selectedCategory.name_en : "Menu"}
               </h2>
               <p className="mm-topbar-subtitle">
                 {selectedCategory

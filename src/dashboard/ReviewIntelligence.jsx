@@ -60,7 +60,7 @@ const CHART_TOOLTIP = {
   fontSize: 12,
 };
 
-export default function ReviewIntelligence() {
+export default function ReviewIntelligence({ embedded = false }) {
   const [branch, setBranch] = useState(defaultBranchId());
   const [selectedRange, setSelectedRange] = useState(DEFAULT_RANGE);
 
@@ -256,7 +256,8 @@ export default function ReviewIntelligence() {
   }
 
   return (
-    <motion.div className="rev-intel-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div className={`rev-intel-wrap ${embedded ? "rev-intel-wrap--embedded" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {!embedded && (
       <header className="rev-intel-header">
         <motion.div className="rev-intel-header-top">
           <p className="rev-intel-kicker">NAC REVIEW OS</p>
@@ -315,6 +316,7 @@ export default function ReviewIntelligence() {
           </button>
         </motion.div>
       </header>
+      )}
 
       {error && (
         <motion.div className="rev-intel-alert">
