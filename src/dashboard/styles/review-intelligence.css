@@ -172,8 +172,18 @@
 
 .rev-kpi-card strong {
   font-size: 1.75rem;
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   color: #f9f9f7;
+}
+
+.rev-kpi-insight {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: rgba(249, 249, 247, 0.5);
+  letter-spacing: 0.01em;
 }
 
 .rev-section {
@@ -313,11 +323,8 @@
   font-size: 1.1rem;
 }
 
-.rev-kpi-card--highlight small {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 0.72rem;
-  color: rgba(249, 249, 247, 0.55);
+.rev-kpi-card--highlight .rev-kpi-insight {
+  margin-top: 0.35rem;
 }
 
 .rev-charts-grid {
@@ -381,13 +388,6 @@
   font-style: italic;
 }
 
-.rev-kpi-card small {
-  display: block;
-  margin-top: 0.2rem;
-  font-size: 0.68rem;
-  color: rgba(249, 249, 247, 0.45);
-  font-weight: 400;
-}
 
 .rev-event-counts {
   display: grid;

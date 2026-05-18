@@ -338,34 +338,29 @@ export default function ReviewIntelligence() {
         <>
           <motion.div className="rev-kpi-grid" layout>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Branch scans ({rangeLabel})</span>
+              <span>Branch scans</span>
               <strong>{kpis?.qr_scans ?? 0}</strong>
-              <small>event_type = qr_scan</small>
+              <small className="rev-kpi-insight">{rangeLabel}</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Reviews generated</span>
               <strong>{kpis?.reviews_generated ?? 0}</strong>
-              <small>review_generate</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Google redirects</span>
               <strong>{kpis?.google_redirects ?? 0}</strong>
-              <small>google_redirect</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review conversion</span>
               <strong>{kpis?.conversion_pct ?? 0}%</strong>
-              <small>google_redirects ÷ qr_scans</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review page opens</span>
               <strong>{kpis?.review_page_opens ?? 0}</strong>
-              <small>review_page_open</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Unique review visitors</span>
+              <span>Unique visitors</span>
               <strong>{kpis?.unique_review_visitors ?? 0}</strong>
-              <small>distinct review_session_id</small>
             </motion.div>
             {topStaff && (
               <motion.div className="rev-kpi-card rev-kpi-card--highlight" whileHover={{ y: -2 }}>
@@ -373,7 +368,9 @@ export default function ReviewIntelligence() {
                   <Trophy size={14} /> Top staff
                 </span>
                 <strong>{topStaff.name}</strong>
-                <small>{topStaff.scans} qr_scans · {topStaff.conversion_pct}% conv.</small>
+                <small className="rev-kpi-insight">
+                  {topStaff.scans} scans · {topStaff.conversion_pct}% conversion
+                </small>
               </motion.div>
             )}
           </motion.div>
