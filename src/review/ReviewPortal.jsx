@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
+  trackReviewQrScan,
   trackReviewPageOpen,
   trackReviewGenerate,
   trackReviewRegenerate,
@@ -8,19 +9,9 @@ import {
   trackReviewGoogleClick,
   trackReviewLanguageChange,
 } from "../lib/reviewAnalytics";
+import { parseReviewPortalParams } from "../lib/reviewPortalParams";
 import { fetchReviewPortalStaff } from "../dashboard/utils/unifiedIntelligenceApi";
 import "./review-portal.css";
-
-function parsePortalParams() {
-  const p = new URLSearchParams(window.location.search);
-  return {
-    branch: (p.get("branch") || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
-    employee: p.get("employee") || p.get("name") || "",
-    role: p.get("role") || "",
-    slug: p.get("slug") || "",
-    lang: p.get("lang") || "en",
-  };
-}
 
 const SAMPLE_REVIEWS = {
   en: "An exceptional dining experience at NAC — attentive service, beautiful presentation, and flavors that linger.",
@@ -28,27 +19,37 @@ const SAMPLE_REVIEWS = {
 };
 
 export default function ReviewPortal() {
-  const [params] = useState(parsePortalParams);
-  const [language, setLanguage] = useState(params.lang === "ar" ? "ar" : "en");
+  const portalParams = useMemo(() => parseReviewPortalParams(), []);
+  const [language, setLanguage] = useState(portalParams.lang === "ar" ? "ar" : "en");
   const [text, setText] = useState("");
-  const [staffName, setStaffName] = useState(params.employee);
-  const [staffRole, setStaffRole] = useState(params.role);
+  const [staffName, setStaffName] = useState(portalParams.employeeName || "");
+  const [staffRole, setStaffRole] = useState(portalParams.employeeRole || "");
 
   const ctx = useMemo(
     () => ({
-      branch_id: params.branch,
-      employee_name: staffName || null,
-      employee_role: staffRole || null,
+      branch_id: portalParams.normalizedBranch,
+      employee_name: staffName || portalParams.employeeName || null,
+      employee_role: staffRole || portalParams.employeeRole || null,
+      storeName: portalParams.storeName,
     }),
-    [params.branch, staffName, staffRole]
+    [portalParams, staffName, staffRole],
   );
 
   useEffect(() => {
+    console.log("QR PARAMS", {
+      storeName: portalParams.storeName,
+      normalizedBranch: portalParams.normalizedBranch,
+      employeeName: portalParams.employeeName,
+      employeeRole: portalParams.employeeRole,
+    });
+
+    trackReviewQrScan(ctx);
     trackReviewPageOpen(ctx);
-    if (params.slug && !staffName) {
-      fetchReviewPortalStaff(params.branch)
+
+    if (portalParams.slug && !staffName && !portalParams.employeeName) {
+      fetchReviewPortalStaff(portalParams.normalizedBranch)
         .then((rows) => {
-          const match = rows.find((r) => r.url_slug === params.slug);
+          const match = rows.find((r) => r.url_slug === portalParams.slug);
           if (match) {
             setStaffName(match.employee_name);
             setStaffRole(match.role);
@@ -66,7 +67,7 @@ export default function ReviewPortal() {
       if (isRegen) trackReviewRegenerate(sample.length, { ...ctx, language });
       else trackReviewGenerate(sample.length, { ...ctx, language });
     },
-    [language, ctx]
+    [language, ctx],
   );
 
   const switchLang = (lang) => {
@@ -103,7 +104,7 @@ export default function ReviewPortal() {
           dir={language === "ar" ? "rtl" : "ltr"}
         />
 
-        <div className="nac-review-actions">
+        <motion.div className="nac-review-actions">
           <motion.button type="button" className="nac-review-btn primary" whileTap={{ scale: 0.97 }} onClick={() => generate(false)}>
             Generate
           </motion.button>
@@ -131,7 +132,7 @@ export default function ReviewPortal() {
           >
             Google Review
           </motion.a>
-        </div>
+        </motion.div>
       </motion.div>
     </div>
   );

@@ -4,9 +4,10 @@ import './index.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+import { isReviewQrUrl } from './lib/reviewPortalParams';
+
 const isReviewPortal =
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('app') === 'review';
+  typeof window !== 'undefined' && isReviewQrUrl(window.location.search);
 
 const ReviewPortal = lazy(() => import('./review/ReviewPortal'));
 

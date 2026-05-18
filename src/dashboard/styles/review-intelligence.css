@@ -364,3 +364,19 @@
   font-size: 0.7rem;
   color: rgba(249, 249, 247, 0.45);
 }
+
+.rev-debug-panel {
+  border: 1px dashed rgba(215, 188, 138, 0.35);
+  border-radius: 12px;
+  padding: 1rem 1.15rem;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.rev-debug-table {
+  font-size: 0.78rem;
+}
+
+.rev-missing {
+  color: #f5a623;
+  font-style: italic;
+}

@@ -73,6 +73,7 @@ export default function ReviewIntelligence() {
   const [dailyTrend, setDailyTrend] = useState([]);
   const [branchScans, setBranchScans] = useState([]);
   const [allBranchEvents, setAllBranchEvents] = useState([]);
+  const [debugEvents, setDebugEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [error, setError] = useState("");
@@ -129,12 +130,24 @@ export default function ReviewIntelligence() {
 
       reviewQ = reviewQ.eq("branch_id", branch);
 
-      const [{ data: reviewEvents }, { data: reviewAll }, { data: menuEvents }] =
-        await Promise.all([reviewQ, reviewAllQ, menuQ]);
+      let debugQ = supabase
+        .from("review_events")
+        .select("created_at,branch_id,employee_name,employee_role,event_type")
+        .eq("branch_id", branch)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (since) {
+        debugQ = debugQ.gte("created_at", since);
+      }
+
+      const [{ data: reviewEvents }, { data: reviewAll }, { data: menuEvents }, { data: debugRows }] =
+        await Promise.all([reviewQ, reviewAllQ, menuQ, debugQ]);
 
       const branchEvents = reviewEvents || [];
       const allEvents = reviewAll || [];
       setAllBranchEvents(allEvents);
+      setDebugEvents(debugRows || []);
 
       const granular = aggregateStaffReviewStats(branchEvents, branch);
       const merged = mergeStaffStats(rev?.top_employees || [], granular);
@@ -387,8 +400,11 @@ export default function ReviewIntelligence() {
                   <thead>
                     <tr>
                       <th>Staff</th>
+                      <th>Role</th>
+                      <th>Branch</th>
                       <th>Scans</th>
                       <th>Review opens</th>
+                      <th>Generated</th>
                       <th>Copies</th>
                       <th>Google redirects</th>
                       <th>Conversion %</th>
@@ -399,10 +415,12 @@ export default function ReviewIntelligence() {
                       <tr key={s.name}>
                         <td>
                           <strong>{s.name}</strong>
-                          {s.role ? <small>{s.role}</small> : null}
                         </td>
+                        <td>{s.role || "—"}</td>
+                        <td>{s.branch ? branchDisplayName(s.branch) : branchLabel}</td>
                         <td>{s.scans}</td>
                         <td>{s.review_opens}</td>
+                        <td>{s.generated}</td>
                         <td>{s.copy}</td>
                         <td>{s.google}</td>
                         <td>{s.conversion_pct}%</td>
@@ -413,6 +431,43 @@ export default function ReviewIntelligence() {
               </div>
             </section>
           )}
+
+          <section className="rev-section rev-debug-panel">
+            <h2>Debug — latest review events</h2>
+            <p className="rev-intel-muted">Last 20 rows for {branchLabel} (verify employee_name from QR `s=` param)</p>
+            <div className="rev-staff-table-wrap">
+              <table className="rev-staff-table rev-debug-table">
+                <thead>
+                  <tr>
+                    <th>created_at</th>
+                    <th>branch</th>
+                    <th>employee_name</th>
+                    <th>employee_role</th>
+                    <th>event_type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {debugEvents.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="rev-intel-muted">
+                        No review events for this branch yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    debugEvents.map((row) => (
+                      <tr key={`${row.created_at}-${row.event_type}-${row.employee_name}`}>
+                        <td>{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</td>
+                        <td>{row.branch_id || "—"}</td>
+                        <td>{row.employee_name || <em className="rev-missing">empty</em>}</td>
+                        <td>{row.employee_role || "—"}</td>
+                        <td>{row.event_type}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           <div className="rev-charts-grid">
             {leaderboardData.length > 0 && (
