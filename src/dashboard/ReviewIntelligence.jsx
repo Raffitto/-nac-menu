@@ -24,20 +24,12 @@ import {
   YAxis,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import {
-  fetchReviewIntelligence,
-  fetchUnifiedSummary,
-  fetchBranchComparison,
-  generateDailySnapshot,
-} from "./utils/unifiedIntelligenceApi";
+import { generateDailySnapshot } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
-import { runDataQualityDiagnostics } from "./utils/dataQualityDiagnostics";
 import { exportReviewIntelligenceReport } from "./engines/exportEngine";
-import { getBusinessDayKey } from "./utils/businessDay";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
-  rangeToHours,
   rangeToSince,
   branchDisplayName,
   defaultBranchId,
@@ -48,11 +40,18 @@ import {
   mergeStaffStats,
   buildDailyScanTrend,
   buildBranchScanTotals,
-  sumScans,
 } from "./utils/staffReviewStats";
+import {
+  computeReviewKpis,
+  buildBranchReviewComparison,
+  runReviewDataQualityDiagnostics,
+} from "./utils/reviewEventMetrics";
 import "./styles/review-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
+const REVIEW_EVENT_SELECT =
+  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
+
 const CHART_TOOLTIP = {
   background: "rgba(8,10,12,0.94)",
   border: "1px solid rgba(215,188,138,0.35)",
@@ -64,15 +63,13 @@ const CHART_TOOLTIP = {
 export default function ReviewIntelligence() {
   const [branch, setBranch] = useState(defaultBranchId());
   const [selectedRange, setSelectedRange] = useState(DEFAULT_RANGE);
-  const hours = rangeToHours(selectedRange);
 
-  const [reviewData, setReviewData] = useState(null);
-  const [unified, setUnified] = useState(null);
-  const [comparison, setComparison] = useState([]);
+  const [kpis, setKpis] = useState(null);
   const [staffMerged, setStaffMerged] = useState([]);
   const [dailyTrend, setDailyTrend] = useState([]);
   const [branchScans, setBranchScans] = useState([]);
-  const [allBranchEvents, setAllBranchEvents] = useState([]);
+  const [branchComparison, setBranchComparison] = useState([]);
+  const [eventTypeCounts, setEventTypeCounts] = useState([]);
   const [debugEvents, setDebugEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
@@ -91,44 +88,20 @@ export default function ReviewIntelligence() {
     setLoading(true);
     setError("");
     try {
-      const unifiedPromise =
-        selectedRange === "today"
-          ? fetchUnifiedSummary(branch, getBusinessDayKey())
-          : Promise.resolve(null);
-
-      const [rev, uni, cmp] = await Promise.all([
-        fetchReviewIntelligence(branch, hours),
-        unifiedPromise,
-        fetchBranchComparison(hours),
-      ]);
-      setReviewData(rev);
-      setUnified(uni);
-      setComparison(Array.isArray(cmp) ? cmp : []);
-
       const since = rangeToSince(selectedRange);
 
       let reviewQ = supabase
         .from("review_events")
-        .select("event_type,employee_name,employee_role,branch_id,source_url,created_at")
-        .limit(3000);
-      let reviewAllQ = supabase
-        .from("review_events")
-        .select("event_type,employee_name,branch_id,created_at")
+        .select(REVIEW_EVENT_SELECT)
+        .eq("branch_id", branch)
+        .order("created_at", { ascending: false })
         .limit(5000);
 
-      let menuQ = supabase
-        .from("menu_events")
-        .select("session_id,event_type,category_id,item_name_en,created_at")
-        .eq("branch_id", branch)
-        .limit(500);
-
-      if (since) {
-        reviewQ = reviewQ.gte("created_at", since);
-        reviewAllQ = reviewAllQ.gte("created_at", since);
-        menuQ = menuQ.gte("created_at", since);
-      }
-
-      reviewQ = reviewQ.eq("branch_id", branch);
+      let reviewAllQ = supabase
+        .from("review_events")
+        .select(REVIEW_EVENT_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(8000);
 
       let debugQ = supabase
         .from("review_events")
@@ -138,49 +111,110 @@ export default function ReviewIntelligence() {
         .limit(20);
 
       if (since) {
+        reviewQ = reviewQ.gte("created_at", since);
+        reviewAllQ = reviewAllQ.gte("created_at", since);
         debugQ = debugQ.gte("created_at", since);
       }
 
-      const [{ data: reviewEvents }, { data: reviewAll }, { data: menuEvents }, { data: debugRows }] =
-        await Promise.all([reviewQ, reviewAllQ, menuQ, debugQ]);
+      const [{ data: branchEvents }, { data: allEvents }, { data: debugRows }] =
+        await Promise.all([reviewQ, reviewAllQ, debugQ]);
 
-      const branchEvents = reviewEvents || [];
-      const allEvents = reviewAll || [];
-      setAllBranchEvents(allEvents);
+      const events = branchEvents || [];
+      const all = allEvents || [];
+
+      const branchKpis = computeReviewKpis(events);
+      setKpis(branchKpis);
+      setEventTypeCounts(branchKpis.by_event_type);
       setDebugEvents(debugRows || []);
 
-      const granular = aggregateStaffReviewStats(branchEvents, branch);
-      const merged = mergeStaffStats(rev?.top_employees || [], granular);
-      setStaffMerged(merged);
-      setDailyTrend(buildDailyScanTrend(branchEvents));
-      setBranchScans(buildBranchScanTotals(allEvents));
+      const granular = aggregateStaffReviewStats(events, branch);
+      setStaffMerged(mergeStaffStats([], granular));
+      setDailyTrend(buildDailyScanTrend(events));
+      setBranchScans(buildBranchScanTotals(all));
+      setBranchComparison(buildBranchReviewComparison(all));
 
-      setDiag(
-        runDataQualityDiagnostics({
-          menuEvents: menuEvents || [],
-          reviewEvents: branchEvents,
-          branchId: branch,
-        })
-      );
+      setDiag(runReviewDataQualityDiagnostics(events, branch));
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");
     } finally {
       setLoading(false);
     }
-  }, [branch, hours, selectedRange, configured]);
+  }, [branch, selectedRange, configured]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const employees = useMemo(
-    () => buildEmployeePerformance(reviewData?.top_employees || []),
-    [reviewData]
+    () =>
+      buildEmployeePerformance(
+        staffMerged.map((s) => ({
+          name: s.name,
+          role: s.role,
+          generated: s.generated,
+          google_clicks: s.google,
+          opens: s.scans,
+        })),
+      ),
+    [staffMerged],
   );
 
-  const branchTotalScans = useMemo(
-    () => branchScans.find((b) => b.branch_id === branch)?.scans ?? sumScans(allBranchEvents.filter((e) => e.branch_id === branch)),
-    [branchScans, branch, allBranchEvents]
+  const topStaff = staffMerged[0];
+
+  const reviewExportPayload = useMemo(
+    () => ({
+      total_events: kpis
+        ? Object.values(
+            (kpis.by_event_type || []).reduce((acc, row) => {
+              acc[row.event_type] = row.count;
+              return acc;
+            }, {}),
+          ).reduce((a, b) => a + b, 0)
+        : 0,
+      qr_scans: kpis?.qr_scans ?? 0,
+      reviews_generated: kpis?.reviews_generated ?? 0,
+      google_clicks: kpis?.google_redirects ?? 0,
+      conversion_pct: kpis?.conversion_pct ?? 0,
+      review_sessions: kpis?.unique_review_visitors ?? 0,
+      top_employees: staffMerged.map((s) => ({
+        name: s.name,
+        role: s.role,
+        opens: s.scans,
+        generated: s.generated,
+        google_clicks: s.google,
+        conversion_pct: s.conversion_pct,
+      })),
+    }),
+    [kpis, staffMerged],
+  );
+
+  const exportContext = useMemo(
+    () => ({
+      branch: branchLabel,
+      selectedRange,
+      rangeLabel,
+      review: reviewExportPayload,
+      staffStats: staffMerged,
+      employees,
+      diagnostics: diag,
+      branchTotalScans: kpis?.qr_scans ?? 0,
+      dailyTrend,
+      branchScans,
+      branchComparison,
+    }),
+    [
+      branchLabel,
+      selectedRange,
+      rangeLabel,
+      reviewExportPayload,
+      staffMerged,
+      employees,
+      diag,
+      kpis,
+      dailyTrend,
+      branchScans,
+      branchComparison,
+    ],
   );
 
   const leaderboardData = useMemo(
@@ -191,49 +225,16 @@ export default function ReviewIntelligence() {
         google: s.google,
         conversion: s.conversion_pct,
       })),
-    [staffMerged]
+    [staffMerged],
   );
 
   const reviewsByStaffData = useMemo(
     () =>
       staffMerged.slice(0, 8).map((s) => ({
         name: s.name.length > 12 ? `${s.name.slice(0, 11)}…` : s.name,
-        reviews: s.review_opens,
+        reviews: s.generated,
       })),
-    [staffMerged]
-  );
-
-  const topStaff = staffMerged[0];
-
-  const exportContext = useMemo(
-    () => ({
-      branch: branchLabel,
-      selectedRange,
-      rangeLabel,
-      review: reviewData,
-      unified,
-      comparison,
-      staffStats: staffMerged,
-      employees,
-      diagnostics: diag,
-      branchTotalScans,
-      dailyTrend,
-      branchScans,
-    }),
-    [
-      branchLabel,
-      selectedRange,
-      rangeLabel,
-      reviewData,
-      unified,
-      comparison,
-      staffMerged,
-      employees,
-      diag,
-      branchTotalScans,
-      dailyTrend,
-      branchScans,
-    ]
+    [staffMerged],
   );
 
   const handleSnapshot = async () => {
@@ -271,7 +272,7 @@ export default function ReviewIntelligence() {
           <p className="rev-intel-kicker">NAC REVIEW OS</p>
           <h1>Review Intelligence</h1>
           <p className="rev-intel-sub">
-            {branchLabel} · {rangeLabel}
+            {branchLabel} · {rangeLabel} · review_events only
             {selectedRange === "today" ? " · 3:00 AM – 2:59 AM (Asia/Riyadh)" : ""}
           </p>
         </motion.div>
@@ -332,25 +333,39 @@ export default function ReviewIntelligence() {
       )}
 
       {loading ? (
-        <p className="rev-intel-muted">Loading intelligence…</p>
+        <p className="rev-intel-muted">Loading review_events…</p>
       ) : (
         <>
           <motion.div className="rev-kpi-grid" layout>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Branch scans ({rangeLabel})</span>
-              <strong>{branchTotalScans}</strong>
+              <strong>{kpis?.qr_scans ?? 0}</strong>
+              <small>event_type = qr_scan</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Reviews generated</span>
-              <strong>{reviewData?.reviews_generated ?? 0}</strong>
+              <strong>{kpis?.reviews_generated ?? 0}</strong>
+              <small>review_generate</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Google redirects</span>
-              <strong>{reviewData?.google_clicks ?? 0}</strong>
+              <strong>{kpis?.google_redirects ?? 0}</strong>
+              <small>google_redirect</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review conversion</span>
-              <strong>{reviewData?.conversion_pct ?? 0}%</strong>
+              <strong>{kpis?.conversion_pct ?? 0}%</strong>
+              <small>google_redirects ÷ qr_scans</small>
+            </motion.div>
+            <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
+              <span>Review page opens</span>
+              <strong>{kpis?.review_page_opens ?? 0}</strong>
+              <small>review_page_open</small>
+            </motion.div>
+            <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
+              <span>Unique review visitors</span>
+              <strong>{kpis?.unique_review_visitors ?? 0}</strong>
+              <small>distinct review_session_id</small>
             </motion.div>
             {topStaff && (
               <motion.div className="rev-kpi-card rev-kpi-card--highlight" whileHover={{ y: -2 }}>
@@ -358,25 +373,40 @@ export default function ReviewIntelligence() {
                   <Trophy size={14} /> Top staff
                 </span>
                 <strong>{topStaff.name}</strong>
-                <small>{topStaff.scans} scans · {topStaff.conversion_pct}% conv.</small>
+                <small>{topStaff.scans} qr_scans · {topStaff.conversion_pct}% conv.</small>
               </motion.div>
             )}
-            <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Menu sessions</span>
-              <strong>{unified?.sessions ?? "—"}</strong>
-            </motion.div>
           </motion.div>
+
+          <section className="rev-section rev-debug-panel">
+            <h2>Debug — review_events by type</h2>
+            <p className="rev-intel-muted">
+              Raw counts for {branchLabel} ({rangeLabel}) — same source as KPIs
+            </p>
+            <motion.div className="rev-event-counts">
+              {eventTypeCounts.length === 0 ? (
+                <p className="rev-intel-muted">No review_events in this period.</p>
+              ) : (
+                eventTypeCounts.map((row) => (
+                  <div key={row.event_type} className="rev-event-count-row">
+                    <span className="rev-event-type">{row.event_type}</span>
+                    <strong>{row.count}</strong>
+                  </div>
+                ))
+              )}
+            </motion.div>
+          </section>
 
           {branchScans.length > 0 && (
             <section className="rev-section">
               <h2>
-                <GitBranch size={18} /> Total scans by branch
+                <GitBranch size={18} /> QR scans by branch
               </h2>
               <motion.div className="rev-branch-table">
-                <div className="rev-branch-row head">
+                <motion.div className="rev-branch-row head">
                   <span>Branch</span>
-                  <span>Scans</span>
-                </div>
+                  <span>qr_scan</span>
+                </motion.div>
                 {branchScans.map((row) => (
                   <div
                     key={row.branch_id}
@@ -402,8 +432,8 @@ export default function ReviewIntelligence() {
                       <th>Staff</th>
                       <th>Role</th>
                       <th>Branch</th>
-                      <th>Scans</th>
-                      <th>Review opens</th>
+                      <th>QR scans</th>
+                      <th>Page opens</th>
                       <th>Generated</th>
                       <th>Copies</th>
                       <th>Google redirects</th>
@@ -434,7 +464,7 @@ export default function ReviewIntelligence() {
 
           <section className="rev-section rev-debug-panel">
             <h2>Debug — latest review events</h2>
-            <p className="rev-intel-muted">Last 20 rows for {branchLabel} (verify employee_name from QR `s=` param)</p>
+            <p className="rev-intel-muted">Last 20 rows for {branchLabel}</p>
             <div className="rev-staff-table-wrap">
               <table className="rev-staff-table rev-debug-table">
                 <thead>
@@ -450,12 +480,12 @@ export default function ReviewIntelligence() {
                   {debugEvents.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="rev-intel-muted">
-                        No review events for this branch yet.
+                        No review_events for this branch yet.
                       </td>
                     </tr>
                   ) : (
-                    debugEvents.map((row) => (
-                      <tr key={`${row.created_at}-${row.event_type}-${row.employee_name}`}>
+                    debugEvents.map((row, i) => (
+                      <tr key={`${row.created_at}-${row.event_type}-${i}`}>
                         <td>{row.created_at ? new Date(row.created_at).toLocaleString() : "—"}</td>
                         <td>{row.branch_id || "—"}</td>
                         <td>{row.employee_name || <em className="rev-missing">empty</em>}</td>
@@ -482,7 +512,7 @@ export default function ReviewIntelligence() {
                       <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
                       <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
                       <Tooltip contentStyle={CHART_TOOLTIP} />
-                      <Bar dataKey="scans" name="Scans" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="scans" name="QR scans" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="google" name="Google" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -493,7 +523,7 @@ export default function ReviewIntelligence() {
             {dailyTrend.length > 0 && (
               <section className="rev-section rev-chart-panel">
                 <h2>
-                  <TrendingUp size={18} /> Daily scans trend
+                  <TrendingUp size={18} /> Daily QR scan trend
                 </h2>
                 <motion.div className="rev-chart-box">
                   <ResponsiveContainer width="100%" height={200}>
@@ -512,7 +542,7 @@ export default function ReviewIntelligence() {
             {reviewsByStaffData.length > 0 && (
               <section className="rev-section rev-chart-panel">
                 <h2>
-                  <Star size={18} /> Reviews opened by staff
+                  <Star size={18} /> Reviews generated by staff
                 </h2>
                 <div className="rev-chart-box">
                   <ResponsiveContainer width="100%" height={200}>
@@ -534,10 +564,10 @@ export default function ReviewIntelligence() {
               <Users size={18} /> Employee cards
             </h2>
             <div className="rev-emp-grid">
-              {employees.length === 0 && staffMerged.length === 0 ? (
-                <p className="rev-intel-muted">No employee-tagged review events yet.</p>
+              {staffMerged.length === 0 ? (
+                <p className="rev-intel-muted">No employee-tagged review_events yet.</p>
               ) : (
-                (staffMerged.length ? staffMerged : employees.map((e) => ({ name: e.name, role: e.role, scans: 0, review_opens: 0, copy: 0, google: 0, conversion_pct: 0 }))).map((emp) => {
+                staffMerged.map((emp) => {
                   const perf = employees.find((e) => e.name === emp.name);
                   return (
                     <motion.div key={emp.name} className="rev-emp-card" whileHover={{ scale: 1.01 }}>
@@ -548,8 +578,8 @@ export default function ReviewIntelligence() {
                       <p className="rev-emp-role">{emp.role || perf?.role || "Staff"}</p>
                       {perf && <p className="rev-emp-reason">{perf.classification.reason}</p>}
                       <div className="rev-emp-metrics">
-                        <span>{emp.scans} scans</span>
-                        <span>{emp.review_opens} generated</span>
+                        <span>{emp.scans} qr_scans</span>
+                        <span>{emp.generated} generated</span>
                         <span>{emp.copy} copies</span>
                         <span>{emp.google} Google</span>
                         <span>{emp.conversion_pct}% conv.</span>
@@ -563,26 +593,26 @@ export default function ReviewIntelligence() {
 
           <section className="rev-section">
             <h2>
-              <GitBranch size={18} /> Branch comparison
+              <GitBranch size={18} /> Branch comparison (review_events)
             </h2>
             <div className="rev-branch-table">
               <motion.div className="rev-branch-row head">
                 <span>Branch</span>
-                <span>Sessions</span>
-                <span>Visual conv.</span>
-                <span>Reviews</span>
-                <span>Sales</span>
+                <span>QR scans</span>
+                <span>Generated</span>
+                <span>Google</span>
+                <span>Conv. %</span>
               </motion.div>
-              {comparison.map((row) => (
+              {branchComparison.map((row) => (
                 <div
                   key={row.branch_id}
                   className={`rev-branch-row ${row.branch_id === branch ? "rev-branch-highlight" : ""}`}
                 >
-                  <span>{row.branch_id}</span>
-                  <span>{row.sessions}</span>
-                  <span>{row.visual_conversion_pct}%</span>
-                  <span>{row.reviews}</span>
-                  <span>{row.sales ? Number(row.sales).toLocaleString() : "—"}</span>
+                  <span>{branchDisplayName(row.branch_id)}</span>
+                  <span>{row.qr_scans}</span>
+                  <span>{row.reviews_generated}</span>
+                  <span>{row.google_redirects}</span>
+                  <span>{row.conversion_pct}%</span>
                 </div>
               ))}
             </div>
@@ -591,11 +621,12 @@ export default function ReviewIntelligence() {
           {diag && (
             <section className="rev-section">
               <h2>
-                <Star size={18} /> Data quality
+                <Star size={18} /> Review data quality
               </h2>
               <p className={`rev-dq-status ${diag.healthy ? "ok" : "warn"}`}>
                 {diag.healthy ? "Healthy" : `${diag.issue_count} issue(s) detected`}
               </p>
+              <p className="rev-intel-muted">{diag.review_event_count} review_events checked</p>
               <ul className="rev-dq-list">
                 {diag.issues.length === 0 ? (
                   <li>No issues detected for this period.</li>

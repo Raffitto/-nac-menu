@@ -380,3 +380,39 @@
   color: #f5a623;
   font-style: italic;
 }
+
+.rev-kpi-card small {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: rgba(249, 249, 247, 0.45);
+  font-weight: 400;
+}
+
+.rev-event-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.rev-event-count-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rev-event-type {
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.75);
+  font-family: ui-monospace, monospace;
+}
+
+.rev-event-count-row strong {
+  color: #d7bc8a;
+  font-size: 1rem;
+}

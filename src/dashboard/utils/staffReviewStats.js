@@ -1,6 +1,6 @@
 /** Aggregate per-staff review funnel from raw review_events rows */
 
-const SCAN_TYPES = new Set(["qr_scan", "review_page_open", "review_open"]);
+const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
 const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
 const COPY_TYPES = new Set(["review_copy", "copy_review"]);
 const GOOGLE_TYPES = new Set(["review_google_click", "google_redirect"]);
@@ -41,9 +41,8 @@ export function aggregateStaffReviewStats(events = []) {
 
     if (e.event_type === "qr_scan") {
       map[name].scans += 1;
-    } else if (e.event_type === "review_page_open" || e.event_type === "review_open") {
+    } else if (PAGE_OPEN_TYPES.has(e.event_type)) {
       map[name].review_opens += 1;
-      map[name].scans += 1;
     }
     if (GENERATED_TYPES.has(e.event_type)) map[name].generated += 1;
     if (COPY_TYPES.has(e.event_type)) map[name].copy += 1;
@@ -59,42 +58,16 @@ export function aggregateStaffReviewStats(events = []) {
     .sort((a, b) => b.scans - a.scans || b.google - a.google);
 }
 
-/** Merge RPC top_employees with granular client stats (dynamic names from data). */
-export function mergeStaffStats(rpcEmployees = [], granular = []) {
-  const names = new Set(granular.map((g) => g.name));
-  (rpcEmployees || []).forEach((e) => {
-    if ((e.name || "").trim()) names.add(e.name.trim());
-  });
-  if (!names.size) return [];
-
-  const granByName = Object.fromEntries(granular.map((g) => [g.name, g]));
-  const rpcByName = Object.fromEntries(
-    (rpcEmployees || []).map((e) => [e.name, e]).filter(([n]) => (n || "").trim()),
-  );
-
-  return [...names]
-    .filter((name) => name && name.trim())
-    .map((name) => {
-      const g = granByName[name];
-      const r = rpcByName[name];
-      const scans = g?.scans ?? r?.opens ?? 0;
-      const review_opens = g?.review_opens ?? 0;
-      const google = g?.google ?? r?.google_clicks ?? 0;
-      const copy = g?.copy ?? 0;
-      const generated = g?.generated ?? r?.generated ?? 0;
-      return {
-        name,
-        role: g?.role || r?.role || "",
-        branch: g?.branch || "",
-        scans,
-        opens: scans,
-        review_opens,
-        generated,
-        copy,
-        google,
-        conversion_pct: scans > 0 ? Math.round((google / scans) * 100) : r?.conversion_pct ?? 0,
-      };
-    })
+/** Staff stats from review_events only (no menu/RPC merge). */
+export function mergeStaffStats(_rpcEmployees = [], granular = []) {
+  return (granular || [])
+    .filter((g) => g.name && String(g.name).trim())
+    .map((g) => ({
+      ...g,
+      opens: g.scans,
+      conversion_pct:
+        g.scans > 0 ? Math.round((g.google / g.scans) * 100) : 0,
+    }))
     .sort((a, b) => b.scans - a.scans);
 }
 
@@ -102,7 +75,7 @@ export function mergeStaffStats(rpcEmployees = [], granular = []) {
 export function buildDailyScanTrend(events = []) {
   const byDay = {};
   (events || []).forEach((e) => {
-    if (!SCAN_TYPES.has(e.event_type)) return;
+    if (e.event_type !== "qr_scan") return;
     const key = dayKey(e.created_at);
     if (!key) return;
     byDay[key] = (byDay[key] || 0) + 1;
@@ -116,7 +89,7 @@ export function buildDailyScanTrend(events = []) {
 export function buildBranchScanTotals(events = []) {
   const byBranch = {};
   (events || []).forEach((e) => {
-    if (!SCAN_TYPES.has(e.event_type)) return;
+    if (e.event_type !== "qr_scan") return;
     const b = (e.branch_id || "unknown").toLowerCase();
     byBranch[b] = (byBranch[b] || 0) + 1;
   });
@@ -126,5 +99,5 @@ export function buildBranchScanTotals(events = []) {
 }
 
 export function sumScans(events = []) {
-  return (events || []).filter((e) => SCAN_TYPES.has(e.event_type)).length;
+  return (events || []).filter((e) => e.event_type === "qr_scan").length;
 }
