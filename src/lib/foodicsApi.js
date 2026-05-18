@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { buildConversionRows, getConversionOpportunities } from "../dashboard/utils/foodicsConversion";
 import { normalizeTopItems } from "../dashboard/utils/topItemsNormalize";
 import { hasVisibilityTracking } from "../dashboard/utils/intelligenceSanity";
+import { normalizeFoodicsName } from "../dashboard/utils/foodicsNameNormalize";
 
 export async function getImportBatches(limit = 20) {
   const { data, error } = await supabase
@@ -47,22 +48,77 @@ export async function getPreviousBatch(beforeDate) {
   return data;
 }
 
-export async function getNameMappings() {
-  const { data, error } = await supabase.from("menu_item_name_map").select("*");
-  if (error) throw error;
-  return data || [];
+function mapLegacyMapping(row) {
+  return {
+    ...row,
+    foodics_name: row.foodics_name || row.raw_name,
+    normalized_key: row.normalized_key || row.normalized_name,
+    normalized_name: row.normalized_name || row.normalized_key,
+    raw_name: row.raw_name || row.foodics_name,
+    confidence: row.match_confidence ?? row.confidence ?? 1,
+  };
 }
 
-export async function saveNameMapping({ raw_name, menu_item_name_en, menu_item_id, confidence = 1 }) {
-  const normalized_name = raw_name.toLowerCase().trim();
+export async function getNameMappings() {
+  const { data: primary, error: primaryErr } = await supabase
+    .from("foodics_name_mapping")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (!primaryErr && primary?.length) {
+    return primary.map(mapLegacyMapping);
+  }
+
+  const { data: legacy, error: legacyErr } = await supabase.from("menu_item_name_map").select("*");
+  if (legacyErr) throw legacyErr;
+  return (legacy || []).map(mapLegacyMapping);
+}
+
+export async function saveNameMapping({
+  raw_name,
+  menu_item_name_en,
+  menu_item_id,
+  confidence = 1,
+  match_source = "manual",
+}) {
+  const normalized_key = normalizeFoodicsName(raw_name);
+  const payload = {
+    foodics_name: raw_name,
+    normalized_key,
+    menu_item_name_en,
+    menu_item_id: menu_item_id ? String(menu_item_id) : null,
+    match_confidence: confidence,
+    match_source,
+    updated_at: new Date().toISOString(),
+  };
+
   const { data, error } = await supabase
+    .from("foodics_name_mapping")
+    .upsert(payload, { onConflict: "normalized_key" })
+    .select()
+    .single();
+
+  if (!error && data) {
+    await supabase.from("menu_item_name_map").upsert(
+      {
+        raw_name,
+        normalized_name: normalized_key,
+        menu_item_name_en,
+        menu_item_id: menu_item_id || null,
+        confidence,
+      },
+      { onConflict: "raw_name" },
+    );
+    return mapLegacyMapping(data);
+  }
+
+  const { data: legacyData, error: legacyErr } = await supabase
     .from("menu_item_name_map")
     .upsert(
       {
         raw_name,
-        normalized_name,
+        normalized_name: normalized_key,
         menu_item_name_en,
-        // menu_item_name_map.menu_item_id FK is menu_items only — add-on mappings use name only
         menu_item_id: menu_item_id || null,
         confidence,
       },
@@ -70,8 +126,8 @@ export async function saveNameMapping({ raw_name, menu_item_name_en, menu_item_i
     )
     .select()
     .single();
-  if (error) throw error;
-  return data;
+  if (legacyErr) throw legacyErr;
+  return mapLegacyMapping(legacyData);
 }
 
 function toSalesItemPayload(row, batch, meta) {
@@ -123,7 +179,31 @@ export async function createImportBatch(meta, salesRows) {
     if (itemsErr) throw itemsErr;
   }
 
+  await persistImportMappings(salesRows);
+
   return batch;
+}
+
+/** Remember high-confidence matches for future imports */
+export async function persistImportMappings(rows, minConfidence = 0.82) {
+  const seen = new Set();
+  const tasks = [];
+  for (const row of rows || []) {
+    if (!row.matched_menu_item_name || (row.match_confidence || 0) < minConfidence) continue;
+    const key = normalizeFoodicsName(row.raw_item_name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    tasks.push(
+      saveNameMapping({
+        raw_name: row.raw_item_name,
+        menu_item_name_en: row.matched_menu_item_name,
+        menu_item_id: row.matched_menu_item_id,
+        confidence: row.match_confidence || 1,
+        match_source: row.match_type || "import",
+      }),
+    );
+  }
+  if (tasks.length) await Promise.all(tasks);
 }
 
 export async function getMenuItemsForMatching() {

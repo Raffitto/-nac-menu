@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { normalizeFoodicsName } from "./foodicsNameNormalize";
 
 const NAME_HEADERS = ["product", "item", "product name", "menu item", "name", "item name"];
 const QTY_HEADERS = ["net quantity", "quantity", "qty", "qty sold", "sold qty", "quantity sold", "units"];
@@ -130,6 +131,7 @@ export function rowsFromMappedData(rawRows, mapping) {
     if (!name) continue;
     rows.push({
       raw_item_name: name,
+      normalized_item_name: normalizeFoodicsName(name),
       quantity_sold: mapping.quantity ? parseNumber(raw[mapping.quantity]) || 0 : 0,
       net_sales: mapping.netSales ? parseNumber(raw[mapping.netSales]) : null,
       gross_sales: mapping.grossSales ? parseNumber(raw[mapping.grossSales]) : null,

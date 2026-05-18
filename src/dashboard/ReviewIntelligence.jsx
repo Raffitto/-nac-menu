@@ -111,7 +111,7 @@ export default function ReviewIntelligence({ embedded = false }) {
         .from("review_events")
         .select(REVIEW_EVENT_SELECT)
         .order("created_at", { ascending: false })
-        .limit(8000);
+        .limit(3000);
 
       if (since) {
         reviewQ = reviewQ.gte("created_at", since);

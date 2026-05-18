@@ -25,7 +25,7 @@ export default function BranchesView() {
       setLoading(true);
       try {
         const since = rangeToSince(filters?.selectedRange || "today");
-        let reviewQ = supabase.from("review_events").select("event_type,branch_id,created_at").limit(8000);
+        let reviewQ = supabase.from("review_events").select("event_type,branch_id,created_at").limit(3000);
         if (since) reviewQ = reviewQ.gte("created_at", since);
         const { data: reviewData } = await reviewQ;
 

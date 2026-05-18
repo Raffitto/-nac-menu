@@ -27,7 +27,7 @@ export default function BranchBattle() {
           .from("review_events")
           .select("event_type,branch_id,created_at")
           .order("created_at", { ascending: false })
-          .limit(8000);
+          .limit(3000);
         if (since) q = q.gte("created_at", since);
         const { data } = await q;
         if (!cancelled) setRows(buildBranchReviewComparison(data || []));

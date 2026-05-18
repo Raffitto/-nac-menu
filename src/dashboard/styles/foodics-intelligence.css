@@ -451,6 +451,38 @@
   border-bottom: 1px solid rgba(249, 249, 247, 0.04);
 }
 
+.fi-class-pill {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(215, 188, 138, 0.12);
+  color: rgba(215, 188, 138, 0.95);
+  white-space: nowrap;
+}
+
+.fi-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.fi-suggestion-accept {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(78, 205, 196, 0.45);
+  background: rgba(78, 205, 196, 0.12);
+  color: #4ecdc4;
+  cursor: pointer;
+}
+
+.fi-suggestion-accept:hover {
+  background: rgba(78, 205, 196, 0.22);
+}
+
 .fi-spin {
   animation: fi-spin 0.8s linear infinite;
 }

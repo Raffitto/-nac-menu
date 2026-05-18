@@ -26,6 +26,9 @@ import {
 } from "../lib/foodicsApi";
 import { parseFoodicsFile, detectColumnMapping, rowsFromMappedData } from "./utils/foodicsParser";
 import { matchImportRows } from "./utils/foodicsMatcher";
+import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImportDedupe";
+import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
+import { buildFoodicsSelectCatalog, findCatalogOption } from "./utils/foodicsSelectCatalog";
 import { buildConversionRows, getConversionOpportunities } from "./utils/foodicsConversion";
 import { normalizeTopItems } from "./utils/topItemsNormalize";
 import { hasVisibilityTracking } from "./utils/intelligenceSanity";
@@ -150,8 +153,13 @@ export default function FoodicsIntelligence() {
     [previewRows],
   );
   const needsReviewRows = useMemo(
-    () => previewRows.filter((r) => r.import_status === "needs_review"),
+    () => groupNeedsReviewRows(previewRows),
     [previewRows],
+  );
+
+  const mappingCatalog = useMemo(
+    () => buildFoodicsSelectCatalog(menuItems, addOns),
+    [menuItems, addOns],
   );
 
   const applyMatching = useCallback(
@@ -229,6 +237,8 @@ export default function FoodicsIntelligence() {
         },
         toSave,
       );
+      const maps = await getNameMappings();
+      setManualMaps(maps);
       setFile(null);
       setRawRows([]);
       setPreviewRows([]);
@@ -240,31 +250,43 @@ export default function FoodicsIntelligence() {
     }
   };
 
-  const handleManualMap = async (rawName, menuItemName) => {
+  const handleManualMap = async (row, menuItemName, source = "manual") => {
+    const catalogHit = findCatalogOption(mappingCatalog, menuItemName);
     const item = menuItems.find((m) => m.name_en === menuItemName);
     const addon = addOns.find((a) => a.name_en === menuItemName);
-    await saveNameMapping({
-      raw_name: rawName,
-      menu_item_name_en: menuItemName,
-      menu_item_id: item?.id || null,
-      confidence: 1,
-    });
+    const variants = row.raw_variants?.length ? row.raw_variants : [row.raw_item_name];
+    const dedupeKey = foodicsDedupeKey(row.raw_item_name);
+    const menuItemId = catalogHit?.id || item?.id || addon?.id || null;
+
+    await Promise.all(
+      variants.map((rawName) =>
+        saveNameMapping({
+          raw_name: rawName,
+          menu_item_name_en: menuItemName,
+          menu_item_id: menuItemId,
+          confidence: source === "suggestion" ? row.suggested_confidence || 0.85 : 1,
+          match_source: source,
+        }),
+      ),
+    );
+
     const maps = await getNameMappings();
     setManualMaps(maps);
     setPreviewRows((prev) =>
-      prev.map((r) =>
-        r.raw_item_name === rawName
-          ? {
-              ...r,
-              matched_menu_item_id: item?.id ? String(item.id) : addon?.id ? String(addon.id) : null,
-              matched_menu_item_name: menuItemName,
-              match_confidence: 1,
-              match_type: "manual_map",
-              needs_review: false,
-              import_status: "matched",
-            }
-          : r,
-      ),
+      prev.map((r) => {
+        if (foodicsDedupeKey(r.raw_item_name) !== dedupeKey) return r;
+        return {
+          ...r,
+          matched_menu_item_id: menuItemId ? String(menuItemId) : null,
+          matched_menu_item_name: menuItemName,
+          suggested_menu_item_name: menuItemName,
+          suggested_confidence: 1,
+          match_confidence: 1,
+          match_type: "memory",
+          needs_review: false,
+          import_status: "matched",
+        };
+      }),
     );
   };
 
@@ -421,25 +443,27 @@ export default function FoodicsIntelligence() {
                 <thead>
                   <tr>
                     <th>Foodics item</th>
+                    <th>Class</th>
                     <th>Qty</th>
                     <th>Net sales</th>
-                    <th>Gross sales</th>
                     <th>Match</th>
-                    <th>Type</th>
-                    <th>Confidence</th>
+                    <th>Suggested</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {importableRows.slice(0, 20).map((row, i) => (
-                    <tr key={`${row.raw_item_name}-${i}`} className={row.import_status === "needs_review" ? "needs-review" : ""}>
-                      <td>{row.raw_item_name}</td>
+                    <tr key={`${row.normalized_item_name || row.raw_item_name}-${i}`} className={row.import_status === "needs_review" ? "needs-review" : ""}>
+                      <td>{displayFoodicsLabel(row)}</td>
+                      <td><span className="fi-class-pill">{row.foodics_class_label || "—"}</span></td>
                       <td>{row.quantity_sold}</td>
                       <td>{row.net_sales ?? "—"}</td>
-                      <td>{row.gross_sales ?? "—"}</td>
                       <td>{row.matched_menu_item_name || "—"}</td>
-                      <td><span className="fi-match-type">{row.match_type || "—"}</span></td>
-                      <td>{row.match_confidence ? `${Math.round(row.match_confidence * 100)}%` : "—"}</td>
+                      <td>
+                        {row.suggested_menu_item_name && row.import_status === "needs_review"
+                          ? `${row.suggested_menu_item_name} (${Math.round((row.suggested_confidence || 0) * 100)}%)`
+                          : row.suggested_menu_item_name || "—"}
+                      </td>
                       <td>
                         <span className={`fi-status-pill ${row.import_status}`}>
                           {row.import_status?.replace("_", " ")}
@@ -492,26 +516,46 @@ export default function FoodicsIntelligence() {
                 <thead>
                   <tr>
                     <th>Foodics name</th>
-                    <th>Map to menu item</th>
+                    <th>Class</th>
+                    <th>Suggestion</th>
+                    <th>Map to NAC item</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {needsReviewRows.slice(0, 20).map((row) => (
-                    <tr key={row.raw_item_name}>
-                      <td>{row.raw_item_name}</td>
+                  {needsReviewRows.slice(0, 30).map((row) => (
+                    <tr key={row.normalized_item_name || row.raw_item_name}>
+                      <td>{displayFoodicsLabel(row)}</td>
+                      <td><span className="fi-class-pill">{row.foodics_class_label || "—"}</span></td>
+                      <td>
+                        {row.suggested_menu_item_name ? (
+                          <span className="fi-suggestion">
+                            {row.suggested_menu_item_name}
+                            {" · "}
+                            {Math.round((row.suggested_confidence || 0) * 100)}%
+                            <button
+                              type="button"
+                              className="fi-suggestion-accept"
+                              onClick={() => handleManualMap(row, row.suggested_menu_item_name, "suggestion")}
+                            >
+                              Confirm
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="fi-muted">No suggestion</span>
+                        )}
+                      </td>
                       <td>
                         <select
                           defaultValue=""
                           onChange={(e) => {
-                            if (e.target.value) handleManualMap(row.raw_item_name, e.target.value);
+                            if (e.target.value) handleManualMap(row, e.target.value, "manual");
                           }}
                         >
-                          <option value="">Select menu item…</option>
-                          {menuItems.map((m) => (
-                            <option key={m.id} value={m.name_en}>{m.name_en}</option>
-                          ))}
-                          {addOns.map((a) => (
-                            <option key={a.id} value={a.name_en}>{a.name_en} (add-on)</option>
+                          <option value="">Select unique menu option…</option>
+                          {mappingCatalog.options.map((opt) => (
+                            <option key={opt.key} value={opt.value}>
+                              {opt.label}
+                            </option>
                           ))}
                         </select>
                       </td>

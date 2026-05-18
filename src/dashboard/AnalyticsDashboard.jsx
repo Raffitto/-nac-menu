@@ -35,9 +35,13 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { applyPlatformFilters } from "./utils/platformFilterApply";
 import { rangeToSince, rangeToHours, getRangeBounds } from "./utils/rangeState";
-import { mapBiToSessionAggregates } from "./utils/sessionAnalyticsMap";
+import { mapBiToSessionAggregates, mapBiTopAddons } from "./utils/sessionAnalyticsMap";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
+import { hasExtendedPlatformFilters } from "./utils/platformFilterHelpers";
 import "./styles/analytics-dashboard.css";
+
+const EXTENDED_FILTER_ROW_LIMIT = 2500;
+const FEED_LIMIT = 50;
 
 const CATEGORY_NAMES = {
   brunch: "Brunch",
@@ -271,17 +275,10 @@ export default function AnalyticsDashboard() {
     const rangeBounds = getRangeBounds(selectedRange);
     const branch = filters?.branch || null;
     const pHours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
-    const hasExtendedFilters = Boolean(
-      filters &&
-        ((filters.language && filters.language !== "all") ||
-          (filters.shift && filters.shift !== "all") ||
-          (filters.eventType && filters.eventType !== "all") ||
-          (filters.dayType && filters.dayType !== "all") ||
-          (filters.role && filters.role !== "all")),
-    );
+    const hasExtendedFilters = hasExtendedPlatformFilters(filters);
 
     const menuSelect =
-      "session_id, language, event_type, category_id, section_id, item_name_en, created_at, metadata, branch_id, employee_role";
+      "session_id, language, event_type, category_id, section_id, item_name_en, add_on_name, created_at, metadata, branch_id, employee_role";
 
     try {
       const { data: bi, error: biErr } = await supabase.rpc("get_bi_dashboard", {
@@ -293,76 +290,44 @@ export default function AnalyticsDashboard() {
 
       const biPayload = Array.isArray(bi) ? bi[0] : bi;
       let agg = mapBiToSessionAggregates(biPayload);
+      setTopAddons(mapBiTopAddons(biPayload));
 
-      let rowsQ = supabase
-        .from("menu_events")
-        .select(menuSelect)
-        .order("created_at", { ascending: false })
-        .limit(15000);
-      if (since) rowsQ = rowsQ.gte("created_at", since);
-      if (branch) rowsQ = rowsQ.eq("branch_id", branch);
-      const { data: rows, error: rowsErr } = await rowsQ;
-      if (rowsErr) throw rowsErr;
+      if (hasExtendedFilters) {
+        let rowsQ = supabase
+          .from("menu_events")
+          .select(menuSelect)
+          .order("created_at", { ascending: false })
+          .limit(EXTENDED_FILTER_ROW_LIMIT);
+        if (since) rowsQ = rowsQ.gte("created_at", since);
+        if (branch) rowsQ = rowsQ.eq("branch_id", branch);
+        const { data: rows, error: rowsErr } = await rowsQ;
+        if (rowsErr) throw rowsErr;
 
-      const filtered = applyPlatformFilters(rows || [], filters);
-      const clientAgg = aggregateClientSide(filtered, null, rangeBounds);
-
-      if (!agg || hasExtendedFilters) {
-        agg = clientAgg;
-      } else {
-        agg = {
-          ...agg,
-          total_events: clientAgg.total_events || agg.total_events,
-          total_sessions: clientAgg.total_sessions || agg.total_sessions,
-          by_language: Object.keys(clientAgg.by_language || {}).length
-            ? clientAgg.by_language
-            : agg.by_language,
-          by_event_type: Object.keys(clientAgg.by_event_type || {}).length
-            ? clientAgg.by_event_type
-            : agg.by_event_type,
-          top_items: clientAgg.top_items?.length ? clientAgg.top_items : agg.top_items,
-          top_categories: clientAgg.top_categories?.length ? clientAgg.top_categories : agg.top_categories,
-          by_hour: clientAgg.by_hour?.length ? clientAgg.by_hour : agg.by_hour,
-          menu_tab_engagement: clientAgg.menu_tab_engagement?.length
-            ? clientAgg.menu_tab_engagement
-            : agg.menu_tab_engagement,
-          drinks_vs_food_pct: clientAgg.drinks_vs_food_pct || agg.drinks_vs_food_pct,
-          top_sections: clientAgg.top_sections?.length ? clientAgg.top_sections : agg.top_sections,
-          today_qr_sessions: clientAgg.by_event_type?.qr_session_start ?? agg.today_qr_sessions,
-        };
+        const filtered = applyPlatformFilters(rows || [], filters);
+        agg = aggregateClientSide(filtered, null, rangeBounds);
+        setTopAddons(
+          aggregateTopAddonsFromRows(
+            filtered.filter((r) => r.event_type === "add_on_click" && r.add_on_name),
+          ),
+        );
       }
 
       setAggregates(agg);
 
-      let addQ = supabase
-        .from("menu_events")
-        .select("add_on_name, created_at, language, branch_id, event_type")
-        .eq("event_type", "add_on_click")
-        .not("add_on_name", "is", null)
-        .limit(25000);
-      if (since) addQ = addQ.gte("created_at", since);
-      if (branch) addQ = addQ.eq("branch_id", branch);
-      const { data: addRows, error: addOnErr } = await addQ;
-
-      if (addOnErr) {
-        setTopAddons([]);
-      } else {
-        setTopAddons(aggregateTopAddonsFromRows(applyPlatformFilters(addRows || [], filters)));
-      }
-
       let feedQ = supabase
         .from("menu_events")
         .select(
-          "id, created_at, event_type, language, category_id, item_name_en, item_name_ar, search_query, add_on_name, branch_id, metadata"
+          "id, created_at, event_type, language, category_id, item_name_en, item_name_ar, search_query, add_on_name, branch_id, metadata, employee_role"
         )
         .order("created_at", { ascending: false })
-        .limit(80);
+        .limit(FEED_LIMIT);
       if (since) feedQ = feedQ.gte("created_at", since);
       if (branch) feedQ = feedQ.eq("branch_id", branch);
       const { data: recent, error: feedErr } = await feedQ;
 
       if (feedErr) throw feedErr;
-      setFeed(applyPlatformFilters(recent || [], filters).slice(0, 45));
+      const feedRows = hasExtendedFilters ? applyPlatformFilters(recent || [], filters) : recent || [];
+      setFeed(feedRows.slice(0, 45));
     } catch (e) {
       setError(e?.message || "Failed to load analytics.");
       setAggregates(null);

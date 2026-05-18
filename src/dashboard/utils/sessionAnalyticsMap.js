@@ -11,6 +11,20 @@ const CATEGORY_NAMES = {
   drinks: "Drinks",
 };
 
+/** Aggregate top_addon_pairs from get_bi_dashboard → { name, clicks }[] */
+export function mapBiTopAddons(bi) {
+  const pairs = bi?.top_addon_pairs || [];
+  const counts = {};
+  for (const p of pairs) {
+    const name = (p.addon || p.add_on_name || "Unknown").trim() || "Unknown";
+    counts[name] = (counts[name] || 0) + (Number(p.clicks) || 0);
+  }
+  return Object.entries(counts)
+    .map(([name, clicks]) => ({ name, clicks }))
+    .sort((a, b) => b.clicks - a.clicks)
+    .slice(0, 12);
+}
+
 export function mapBiToSessionAggregates(bi) {
   if (!bi || typeof bi !== "object") return null;
 
