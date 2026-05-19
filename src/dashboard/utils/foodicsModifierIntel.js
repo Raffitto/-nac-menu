@@ -12,7 +12,11 @@ const MODIFIER_TRACK_CLASSES = new Set([
  */
 export function extractModifierSalesRows(rows) {
   return (rows || [])
-    .filter((r) => r.track_as_modifier && r.import_status === "matched")
+    .filter(
+      (r) =>
+        r.track_as_modifier &&
+        (r.import_status === "matched" || r.import_status === "paid_modifier"),
+    )
     .map((r) => ({
       raw_item_name: r.raw_item_name,
       normalized_item_name: r.normalized_item_name,

@@ -30,6 +30,7 @@ import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImport
 import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
 import { buildFoodicsSelectCatalog, findCatalogOption } from "./utils/foodicsSelectCatalog";
 import { summarizeModifierIntel } from "./utils/foodicsModifierIntel";
+import { groupIgnoredRows, IMPORT_STATUS } from "./utils/foodicsImportRules";
 import { buildConversionRows, getConversionOpportunities } from "./utils/foodicsConversion";
 import { normalizeTopItems } from "./utils/topItemsNormalize";
 import { hasVisibilityTracking } from "./utils/intelligenceSanity";
@@ -145,12 +146,25 @@ export default function FoodicsIntelligence() {
     [analyticsItems],
   );
 
+  const isIgnoredStatus = (s) =>
+    s === IMPORT_STATUS.IGNORED ||
+    s === IMPORT_STATUS.IGNORED_SELECTION ||
+    s === IMPORT_STATUS.IGNORED_FREE_MODIFIER;
+
   const importableRows = useMemo(
-    () => previewRows.filter((r) => r.import_status !== "ignored"),
+    () =>
+      previewRows.filter(
+        (r) => !isIgnoredStatus(r.import_status) && r.import_status !== IMPORT_STATUS.FUTURE_MENU,
+      ),
     [previewRows],
   );
   const ignoredRows = useMemo(
-    () => previewRows.filter((r) => r.import_status === "ignored"),
+    () => previewRows.filter((r) => isIgnoredStatus(r.import_status)),
+    [previewRows],
+  );
+  const ignoredGroups = useMemo(() => groupIgnoredRows(ignoredRows), [ignoredRows]);
+  const futureMenuRows = useMemo(
+    () => previewRows.filter((r) => r.import_status === IMPORT_STATUS.FUTURE_MENU),
     [previewRows],
   );
   const needsReviewRows = useMemo(
@@ -164,7 +178,12 @@ export default function FoodicsIntelligence() {
   );
 
   const modifierPreview = useMemo(
-    () => summarizeModifierIntel(previewRows.filter((r) => r.import_status === "matched")),
+    () =>
+      summarizeModifierIntel(
+        previewRows.filter(
+          (r) => r.import_status === IMPORT_STATUS.MATCHED || r.import_status === IMPORT_STATUS.PAID_MODIFIER,
+        ),
+      ),
     [previewRows],
   );
 
@@ -220,7 +239,9 @@ export default function FoodicsIntelligence() {
 
   const handleImport = async () => {
     const toSave = previewRows.filter(
-      (r) => r.import_status === "matched" && r.matched_menu_item_name,
+      (r) =>
+        (r.import_status === IMPORT_STATUS.MATCHED || r.import_status === IMPORT_STATUS.PAID_MODIFIER) &&
+        r.matched_menu_item_name,
     );
     if (!toSave.length) {
       setError("No matched menu items to save. Resolve items in Needs review first.");
@@ -480,7 +501,9 @@ export default function FoodicsIntelligence() {
                       </td>
                       <td>
                         <span className={`fi-status-pill ${row.import_status}`}>
-                          {row.import_status?.replace("_", " ")}
+                          {row.import_status === IMPORT_STATUS.PAID_MODIFIER
+                            ? `Paid modifier${row.upsell_hint ? ` · ${row.upsell_hint}` : ""}`
+                            : row.import_status?.replace(/_/g, " ")}
                         </span>
                       </td>
                     </tr>
@@ -490,7 +513,16 @@ export default function FoodicsIntelligence() {
             </motion.div>
             <button type="button" className="fi-primary" onClick={handleImport} disabled={importing}>
               {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
-              Save import ({previewRows.filter((r) => r.import_status === "matched").length} matched)
+              Save import (
+                {
+                  previewRows.filter(
+                    (r) =>
+                      r.import_status === IMPORT_STATUS.MATCHED ||
+                      r.import_status === IMPORT_STATUS.PAID_MODIFIER,
+                  ).length
+                }{" "}
+                matched
+              )
             </button>
           </div>
         )}
@@ -499,24 +531,74 @@ export default function FoodicsIntelligence() {
           <motion.div className="fi-ignored">
             <button type="button" className="fi-ignored-toggle" onClick={() => setShowIgnored(!showIgnored)}>
               <ChevronDown size={14} className={showIgnored ? "open" : ""} />
-              Ignored operational rows ({ignoredRows.length})
+              Ignored operational / selection rows ({ignoredRows.length})
             </button>
             <AnimatePresence>
               {showIgnored && (
-                <motion.ul
-                  className="fi-ignored-list"
+                <motion.div
+                  className="fi-ignored-groups"
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                 >
-                  {ignoredRows.slice(0, 40).map((row) => (
-                    <li key={row.raw_item_name}>{row.raw_item_name}</li>
-                  ))}
-                  {ignoredRows.length > 40 && <li>…and {ignoredRows.length - 40} more</li>}
-                </motion.ul>
+                  {ignoredGroups.tea.length > 0 && (
+                    <motion.div className="fi-ignored-group">
+                      <h4>Tea selections ({ignoredGroups.tea.length})</h4>
+                      <ul className="fi-ignored-list">
+                        {ignoredGroups.tea.map((row) => (
+                          <li key={row.raw_item_name}>{displayFoodicsLabel(row)}</li>
+                        ))}
+                      </ul>
+                    </motion.div>
+                  )}
+                  {ignoredGroups.freeModifier.length > 0 && (
+                    <motion.div className="fi-ignored-group">
+                      <h4>Free modifiers / condiments ({ignoredGroups.freeModifier.length})</h4>
+                      <ul className="fi-ignored-list">
+                        {ignoredGroups.freeModifier.map((row) => (
+                          <li key={row.raw_item_name}>{displayFoodicsLabel(row)}</li>
+                        ))}
+                      </ul>
+                    </motion.div>
+                  )}
+                  {ignoredGroups.promo.length > 0 && (
+                    <motion.div className="fi-ignored-group">
+                      <h4>Promo / campaign ({ignoredGroups.promo.length})</h4>
+                      <ul className="fi-ignored-list">
+                        {ignoredGroups.promo.map((row) => (
+                          <li key={row.raw_item_name}>{row.raw_item_name}</li>
+                        ))}
+                      </ul>
+                    </motion.div>
+                  )}
+                  {ignoredGroups.other.length > 0 && (
+                    <motion.div className="fi-ignored-group">
+                      <h4>Other ignored ({ignoredGroups.other.length})</h4>
+                      <ul className="fi-ignored-list">
+                        {ignoredGroups.other.map((row) => (
+                          <li key={row.raw_item_name}>{row.raw_item_name}</li>
+                        ))}
+                      </ul>
+                    </motion.div>
+                  )}
+                </motion.div>
               )}
             </AnimatePresence>
           </motion.div>
+        )}
+
+        {futureMenuRows.length > 0 && (
+          <motion.section className="fi-card fi-future-menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h2>Future menu items ({futureMenuRows.length})</h2>
+            <p className="fi-muted">Not on the NAC menu yet — excluded from matching until added</p>
+            <ul className="fi-ignored-list">
+              {futureMenuRows.map((row) => (
+                <li key={row.raw_item_name}>
+                  <strong>{displayFoodicsLabel(row)}</strong>
+                </li>
+              ))}
+            </ul>
+          </motion.section>
         )}
       </section>
 

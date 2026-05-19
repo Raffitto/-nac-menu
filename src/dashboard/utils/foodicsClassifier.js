@@ -52,40 +52,14 @@ const META_EXACT = new Set(
 
 /** True operational / prep ingredients (not modifiers sold as extras) */
 const OPERATIONAL_EXACT = new Set(
-  [
-    "cranberry",
-    "olive oil",
-    "chilli flakes",
-    "chili flakes",
-    "mushrooms",
-    "asparagus",
-    "fries",
-    "water",
-    "milk",
-  ].map(normalizeFoodicsName),
+  ["cranberry", "mushrooms", "asparagus", "fries", "water"].map(normalizeFoodicsName),
 );
 
 const MODIFIER_EXACT = new Set(
-  [
-    "honey",
-    "parmesan",
-    "extra shot",
-    "maple syrup",
-    "dulce de leche",
-    "fresh milk",
-    "syrup",
-  ].map(normalizeFoodicsName),
+  ["parmesan", "maple syrup", "dulce de leche", "syrup"].map(normalizeFoodicsName),
 );
 
-const SAUCE_EXACT = new Set(
-  [
-    "chocolate sauce",
-    "truffle mayo",
-    "sriracha sauce",
-    "regular ketchup",
-    "regular mayo",
-  ].map(normalizeFoodicsName),
-);
+const SAUCE_EXACT = new Set(["truffle mayo"].map(normalizeFoodicsName));
 
 const ADDON_EXACT = new Set(["pita bread", "pita"].map(normalizeFoodicsName));
 

@@ -451,6 +451,27 @@
   border-bottom: 1px solid rgba(249, 249, 247, 0.04);
 }
 
+.fi-ignored-groups {
+  margin-top: 0.75rem;
+}
+
+.fi-ignored-group {
+  margin-bottom: 1rem;
+}
+
+.fi-ignored-group h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(215, 188, 138, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fi-future-menu {
+  border-color: rgba(120, 140, 200, 0.25);
+}
+
 .fi-class-pill {
   display: inline-block;
   font-size: 0.68rem;

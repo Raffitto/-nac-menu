@@ -196,6 +196,7 @@ export async function persistImportMappings(rows, minConfidence = 0.72) {
     const menuName = row.matched_menu_item_name;
     const conf = Number(row.match_confidence) || 0;
     if (!menuName || conf < minConfidence) continue;
+    if (row.import_status === "paid_modifier") continue;
 
     const variants = row.raw_variants?.length ? row.raw_variants : [row.raw_item_name];
     for (const rawName of variants) {

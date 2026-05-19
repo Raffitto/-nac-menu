@@ -6,6 +6,16 @@ import {
   resolveAliasFromLookup,
   resolveAmbiguousAlias,
 } from "./foodicsAliasDictionary";
+import {
+  IMPORT_STATUS,
+  IGNORE_REASON,
+  isTeaSelection,
+  isFutureMenuItem,
+  isFreeCondimentName,
+  isZeroRevenue,
+  resolvePaidModifierRule,
+  ignoreReasonLabel,
+} from "./foodicsImportRules";
 
 const STOP_WORDS = new Set(["the", "a", "an", "with", "and", "or", "of", "sar", "pcs", "pc"]);
 
@@ -132,15 +142,109 @@ function resolveAliasTarget(rawName, menuItems, addOns, aliasLookup) {
   return null;
 }
 
-function enrichSemanticFields(row, classification) {
+function enrichSemanticFields(row, classification, extras = {}) {
   return {
     foodics_class: classification.class,
     foodics_class_label: classification.label,
     semantic_class: classification.semantic_class || classification.class,
-    analytics_category: classification.analytics_category,
-    inherited_category: classification.inherited_category,
-    track_as_modifier: classification.track_as_modifier,
+    analytics_category: extras.analytics_category || classification.analytics_category,
+    inherited_category: extras.inherited_category || classification.inherited_category,
+    track_as_modifier: extras.track_as_modifier ?? classification.track_as_modifier,
+    ignore_reason: extras.ignore_reason || null,
+    ignore_reason_label: extras.ignore_reason ? ignoreReasonLabel(extras.ignore_reason) : null,
+    upsell_hint: extras.upsell_hint || null,
   };
+}
+
+function buildIgnoredRow(row, semantic, rawName, importStatus, ignoreReason) {
+  return {
+    ...row,
+    ...semantic,
+    normalized_item_name: normalizeName(rawName),
+    matched_menu_item_id: null,
+    matched_menu_item_name: null,
+    suggested_menu_item_name: null,
+    suggested_confidence: 0,
+    match_confidence: 0,
+    match_type: "ignored",
+    needs_review: false,
+    import_status: importStatus,
+    ignore_reason: ignoreReason,
+    ignore_reason_label: ignoreReasonLabel(ignoreReason),
+  };
+}
+
+function applyBusinessImportRules(row, rawName, classification) {
+  if (isTeaSelection(rawName)) {
+    const semantic = enrichSemanticFields(row, classification, {
+      analytics_category: "beverage",
+      inherited_category: "beverage",
+      track_as_modifier: false,
+      ignore_reason: IGNORE_REASON.TEA_SELECTION,
+    });
+    return buildIgnoredRow(row, semantic, rawName, IMPORT_STATUS.IGNORED_SELECTION, IGNORE_REASON.TEA_SELECTION);
+  }
+
+  if (isFutureMenuItem(rawName)) {
+    const semantic = enrichSemanticFields(row, classification, {
+      ignore_reason: null,
+    });
+    return {
+      ...row,
+      ...semantic,
+      normalized_item_name: normalizeName(rawName),
+      foodics_class_label: "Future menu item",
+      matched_menu_item_id: null,
+      matched_menu_item_name: null,
+      suggested_menu_item_name: null,
+      suggested_confidence: 0,
+      match_confidence: 0,
+      match_type: "future_menu",
+      needs_review: false,
+      import_status: IMPORT_STATUS.FUTURE_MENU,
+    };
+  }
+
+  if (isFreeCondimentName(rawName) && isZeroRevenue(row)) {
+    const semantic = enrichSemanticFields(row, classification, {
+      track_as_modifier: true,
+      analytics_category: "condiment",
+      ignore_reason: IGNORE_REASON.FREE_MODIFIER,
+    });
+    return buildIgnoredRow(
+      row,
+      semantic,
+      rawName,
+      IMPORT_STATUS.IGNORED_FREE_MODIFIER,
+      IGNORE_REASON.FREE_MODIFIER,
+    );
+  }
+
+  const paidRule = resolvePaidModifierRule(rawName);
+  const hasActivity = (Number(row.quantity_sold) || 0) > 0 || !isZeroRevenue(row);
+  if (paidRule && hasActivity) {
+    const semantic = enrichSemanticFields(row, classification, {
+      track_as_modifier: true,
+      analytics_category: paidRule.analyticsCategory,
+      inherited_category: paidRule.analyticsCategory,
+      upsell_hint: paidRule.upsellHint,
+    });
+    return {
+      ...row,
+      ...semantic,
+      normalized_item_name: normalizeName(rawName),
+      matched_menu_item_id: null,
+      matched_menu_item_name: paidRule.trackName,
+      suggested_menu_item_name: paidRule.trackName,
+      suggested_confidence: 1,
+      match_confidence: 1,
+      match_type: "paid_modifier",
+      needs_review: false,
+      import_status: IMPORT_STATUS.PAID_MODIFIER,
+    };
+  }
+
+  return null;
 }
 
 function scoreCandidate(foodicsName, item, { strictMatch }) {
@@ -343,23 +447,21 @@ export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
   return deduped.map((row) => {
     const rawName = row.raw_item_name || row.name;
     const classification = classifyFoodicsRow(rawName, row.category);
-    const semantic = enrichSemanticFields(row, classification);
 
     if (classification.autoIgnore) {
-      return {
-        ...row,
-        ...semantic,
-        normalized_item_name: normalizeName(rawName),
-        matched_menu_item_id: null,
-        matched_menu_item_name: null,
-        suggested_menu_item_name: null,
-        suggested_confidence: 0,
-        match_confidence: 0,
-        match_type: "ignored",
-        needs_review: false,
-        import_status: "ignored",
-      };
+      const promoReason =
+        classification.class === "promo_campaign" ? IGNORE_REASON.PROMO : IGNORE_REASON.META;
+      return buildIgnoredRow(
+        row,
+        enrichSemanticFields(row, classification, { ignore_reason: promoReason }),
+        rawName,
+        IMPORT_STATUS.IGNORED,
+        promoReason,
+      );
     }
+
+    const ruled = applyBusinessImportRules(row, rawName, classification);
+    if (ruled) return ruled;
 
     const result = fuzzyMatchFoodicsItem(
       rawName,
