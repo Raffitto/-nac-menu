@@ -1,4 +1,5 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+import { DEFAULT_WEEKLY_FOCUS_ITEMS } from "../config/weeklyFocusStorage";
 import { motion } from "framer-motion";
 import { Settings2, FileText, Download } from "lucide-react";
 import {
@@ -14,10 +15,13 @@ export default function VisualExportConfig({
   config,
   onChange,
   waiterNames = [],
+  focusCatalog = [],
   onExportPdf,
   onExportXlsx,
   exporting = false,
 }) {
+  const [focusSearch, setFocusSearch] = useState("");
+
   const filteredWaiters = useMemo(() => {
     const q = (config.waiterSearch || "").trim().toLowerCase();
     if (!q) return waiterNames;
@@ -37,6 +41,30 @@ export default function VisualExportConfig({
     if (sel.has(name)) sel.delete(name);
     else sel.add(name);
     set({ selectedWaiters: [...sel], allWaiters: false });
+  };
+
+  const selectedFocus = config.weeklyFocusItems || [];
+
+  const filteredFocusCatalog = useMemo(() => {
+    const q = focusSearch.trim().toLowerCase();
+    const base = focusCatalog.length ? focusCatalog : DEFAULT_WEEKLY_FOCUS_ITEMS.map((label) => ({ id: label, label }));
+    if (!q) return base;
+    return base.filter((item) => item.label.toLowerCase().includes(q));
+  }, [focusCatalog, focusSearch]);
+
+  const toggleFocusItem = (label) => {
+    const sel = new Set(selectedFocus);
+    if (sel.has(label)) sel.delete(label);
+    else sel.add(label);
+    set({ weeklyFocusItems: [...sel] });
+  };
+
+  const selectAllFocusDefaults = () => {
+    set({ weeklyFocusItems: [...DEFAULT_WEEKLY_FOCUS_ITEMS] });
+  };
+
+  const clearFocusItems = () => {
+    set({ weeklyFocusItems: [] });
   };
 
   return (
@@ -127,6 +155,46 @@ export default function VisualExportConfig({
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </select>
+        </div>
+
+        <div className="vi-export-block vi-export-block--wide">
+          <h4>Weekly focus items</h4>
+          <p style={{ margin: "0 0 0.5rem", fontSize: "0.7rem", color: "rgba(249,249,247,0.45)" }}>
+            Choose what staff should push this week — targets and exports use these items
+          </p>
+          <div className="vi-export-row" style={{ marginBottom: "0.5rem", gap: "0.5rem", display: "flex" }}>
+            <button type="button" className="vi-mode-pill" onClick={selectAllFocusDefaults}>
+              Load defaults
+            </button>
+            <button type="button" className="vi-mode-pill" onClick={clearFocusItems}>
+              Clear
+            </button>
+          </div>
+          <input
+            type="search"
+            className="vi-waiter-search"
+            placeholder="Search products / modifiers…"
+            value={focusSearch}
+            onChange={(e) => setFocusSearch(e.target.value)}
+          />
+          <div className="vi-waiter-checks vi-focus-checks">
+            {filteredFocusCatalog.slice(0, 40).map((item) => (
+              <label key={item.id || item.label} className="vi-check">
+                <input
+                  type="checkbox"
+                  checked={selectedFocus.includes(item.label)}
+                  onChange={() => toggleFocusItem(item.label)}
+                />
+                {item.label}
+                {item.isModifier ? " (mod)" : ""}
+              </label>
+            ))}
+          </div>
+          {selectedFocus.length > 0 && (
+            <p style={{ marginTop: "0.5rem", fontSize: "0.72rem", color: "rgba(215,188,138,0.85)" }}>
+              Selected: {selectedFocus.join(" · ")}
+            </p>
+          )}
         </div>
 
         <div className="vi-export-block vi-export-block--wide">

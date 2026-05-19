@@ -31,6 +31,8 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { defaultExportConfig } from "../config/visualExportPresets";
+import { loadWeeklyFocusItems, saveWeeklyFocusItems } from "../config/weeklyFocusStorage";
+import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterTargets } from "../engines/waiterTargetEngine";
 import VisualExportConfig from "../components/VisualExportConfig";
@@ -84,14 +86,16 @@ function rebuildCompetitionIntel(base, list) {
     topUpseller: sorted[0] || null,
     dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
     beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
-    radarTop: sorted.slice(0, 5).map((w) => ({
+    radarTop: sorted.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
       revenue: w.net_sales,
       modifier: w.modifierAttachPct,
       dessert: w.dessertAttachPct,
       beverage: w.beverageAttachPct,
+      foodMix: w.foodMixPct,
       avgCheck: w.avgCheck,
     })),
+    maxSales: sorted[0]?.net_sales || 1,
   };
 }
 
@@ -108,7 +112,7 @@ export default function VisualIntelligenceEngine() {
   const [productItems, setProductItems] = useState([]);
   const [waiterItems, setWaiterItems] = useState([]);
   const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
-  const [exportConfig, setExportConfig] = useState(() => defaultExportConfig());
+  const [exportConfig, setExportConfig] = useState(() => defaultExportConfig([], loadWeeklyFocusItems()));
   const [exporting, setExporting] = useState(false);
   const chartCaptureRef = useRef(null);
 
@@ -174,12 +178,22 @@ export default function VisualIntelligenceEngine() {
     [funnels, productItems, attachment.modifierLeaderboard],
   );
 
+  const focusCatalog = useMemo(
+    () => buildFocusItemCatalog(productItems, waiterItems),
+    [productItems, waiterItems],
+  );
+
+  const weeklyFocusItems = useMemo(
+    () => exportConfig.weeklyFocusItems || [],
+    [exportConfig.weeklyFocusItems],
+  );
+
   const staffIntel = useMemo(
     () =>
       hasWaiterBatch
-        ? buildWaiterSalesIntelligence(waiterItems)
+        ? buildWaiterSalesIntelligence(waiterItems, { focusItems: weeklyFocusItems })
         : { waiters: [], all: [], managers: [], topUpseller: null },
-    [waiterItems, hasWaiterBatch],
+    [waiterItems, hasWaiterBatch, weeklyFocusItems],
   );
 
   const includeManagers = Boolean(exportConfig.includeManagers);
@@ -189,7 +203,10 @@ export default function VisualIntelligenceEngine() {
     return rebuildCompetitionIntel(staffIntel, includeManagers ? part.all : part.waiters);
   }, [staffIntel, includeManagers]);
 
-  const waiterTargets = useMemo(() => buildWaiterTargets(competitionStaff), [competitionStaff]);
+  const waiterTargets = useMemo(
+    () => buildWaiterTargets(competitionStaff, { focusItems: weeklyFocusItems }),
+    [competitionStaff, weeklyFocusItems],
+  );
 
   const waiterNames = useMemo(
     () => (staffIntel.waiters || []).map((w) => w.waiter),
@@ -197,10 +214,27 @@ export default function VisualIntelligenceEngine() {
   );
 
   useEffect(() => {
-    if (waiterNames.length && !exportConfig.selectedWaiters?.length) {
-      setExportConfig((c) => ({ ...c, selectedWaiters: waiterNames }));
+    if (!waiterNames.length) return;
+    setExportConfig((c) => {
+      const current = c.selectedWaiters || [];
+      const missing = waiterNames.filter(
+        (n) => !current.some((sel) => sel.toLowerCase() === n.toLowerCase()),
+      );
+      if (!missing.length && current.length) return c;
+      return {
+        ...c,
+        selectedWaiters: [...new Set([...current, ...waiterNames])],
+        allWaiters: c.allWaiters !== false,
+      };
+    });
+  }, [waiterNames]);
+
+  const handleExportConfigChange = (next) => {
+    if (next.weeklyFocusItems) {
+      saveWeeklyFocusItems(next.weeklyFocusItems);
     }
-  }, [waiterNames, exportConfig.selectedWaiters?.length]);
+    setExportConfig(next);
+  };
 
   const insights = useMemo(
     () => buildVisualInsights({ attachment, timeShift, heat, menuEngineering, waiters: competitionStaff }),
@@ -264,8 +298,9 @@ export default function VisualIntelligenceEngine() {
 
       <VisualExportConfig
         config={exportConfig}
-        onChange={setExportConfig}
+        onChange={handleExportConfigChange}
         waiterNames={waiterNames}
+        focusCatalog={focusCatalog}
         exporting={exporting}
         onExportPdf={() => runExport("pdf")}
         onExportXlsx={() => runExport("xlsx")}
@@ -634,10 +669,13 @@ export default function VisualIntelligenceEngine() {
             <h3>Weekly target cards</h3>
             <p className="vi-subtitle">Per-waiter push recommendations for next week</p>
             <motion.div className="vi-grid-2">
-              {waiterTargets.slice(0, 6).map((t) => (
-                <div key={t.waiter} className={`vi-insight-card ${t.priority === "mentor" ? "win" : "opportunity"}`}>
+              {waiterTargets.map((t) => (
+                <div key={t.waiter} className={`vi-insight-card ${t.priority === "low" ? "win" : "opportunity"}`}>
                   <strong>{t.headline}</strong>
                   <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>{t.action || t.detail}</p>
+                  {t.secondaryNote && (
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.7rem", color: "rgba(249,249,247,0.4)" }}>{t.secondaryNote}</p>
+                  )}
                   <span className="vi-badge medium">Push: {t.pushNextWeek}</span>
                 </div>
               ))}

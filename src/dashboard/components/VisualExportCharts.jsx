@@ -22,7 +22,7 @@ const VisualExportCharts = forwardRef(function VisualExportCharts(
   { waiters = [], attachment, menuEngineering = [], timeShift, heat },
   ref,
 ) {
-  const waiterBars = (waiters || []).slice(0, 8).map((w) => ({
+  const waiterBars = (waiters || []).map((w) => ({
     name: w.waiter?.length > 10 ? `${w.waiter.slice(0, 9)}…` : w.waiter,
     revenue: w.net_sales,
     modifier: w.modifierAttachPct,

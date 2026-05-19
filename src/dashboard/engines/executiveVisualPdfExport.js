@@ -92,23 +92,23 @@ function drawInsightCard(doc, margin, y, ins, maxW = 500) {
   return y + 58;
 }
 
-function drawStaffCard(doc, margin, y, w, staff, rank) {
+function drawStaffCard(doc, margin, y, w, staff, rank, target) {
   const isTop = rank <= 2;
   const accent = isTop ? NAC_GOLD : staff.modifierAttachPct < 8 ? [232, 93, 76] : NAC_TEAL;
-  const h = 72;
+  const h = target ? 96 : 80;
   doc.setFillColor(...CARD_BG);
   doc.setDrawColor(...accent);
   doc.roundedRect(margin, y, w, h, 5, 5, "FD");
   doc.setFontSize(8);
   doc.setTextColor(...accent);
-  doc.text(`${staff.roleLabel || "Waiter"}${rank === 1 ? " · #1" : ""}`, margin + 10, y + 14);
+  doc.text(`${staff.roleLabel || "Waiter"} · #${rank}`, margin + 10, y + 14);
   doc.setFontSize(11);
   doc.setTextColor(...NAC_WHITE);
   doc.text(staff.waiter, margin + 10, y + 28);
   doc.setFontSize(8);
   doc.setTextColor(160, 160, 160);
   doc.text(
-    `${staff.net_sales?.toLocaleString()} SAR · ${staff.quantity} units · Mod ${staff.modifierAttachPct}% · Dessert ${staff.dessertAttachPct}%`,
+    `${staff.net_sales?.toLocaleString()} SAR · ${staff.quantity} units · Mod ${staff.modifierAttachPct}% · Food ${staff.foodMixPct ?? "—"}% · Bev ${staff.beverageMixPct ?? staff.beverageAttachPct}%`,
     margin + 10,
     y + 42,
   );
@@ -117,6 +117,12 @@ function drawStaffCard(doc, margin, y, w, staff, rank) {
     margin + 10,
     y + 54,
   );
+  if (target) {
+    doc.setFontSize(7);
+    doc.setTextColor(...NAC_GOLD);
+    const action = doc.splitTextToSize(target.action || "", w - 20).slice(0, 2);
+    action.forEach((ln, i) => doc.text(ln, margin + 10, y + 68 + i * 9));
+  }
   return y + h + 8;
 }
 
@@ -138,6 +144,7 @@ export function exportExecutiveVisualPDF(payload) {
     sections = {},
     chartImages = {},
     staffOverview,
+    weeklyFocusItems = [],
   } = payload;
 
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
@@ -196,45 +203,109 @@ export function exportExecutiveVisualPDF(payload) {
     y += 48;
   }
 
-  // —— PAGE 2: Staff ——
+  // —— PAGE 2+: Staff (all waiters, no clipping) ——
   if (sectionOn(sections, "waiter") && waiters?.waiters?.length) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "Staff Performance", "Waiters only — managers excluded from competition");
+    y = drawPageTitle(
+      doc,
+      margin,
+      "Staff Performance",
+      `${waiters.waiters.length} waiters · managers ${staffOverview?.includeManagers ? "included" : "excluded"}`,
+    );
 
-    y = embedChart(doc, chartImages.waiterRevenue, margin, y, contentW, 140) || y;
-    if (!chartImages.waiterRevenue) {
-      waiters.waiters.slice(0, 6).forEach((w, i) => {
-        drawHBar(doc, margin, y + 4, contentW - 80, 8, (w.net_sales / (waiters.waiters[0].net_sales || 1)) * 100, NAC_TEAL);
-        doc.setFontSize(8);
-        doc.setTextColor(...NAC_WHITE);
-        doc.text(`${w.waiter} — ${w.net_sales.toLocaleString()} SAR`, margin, y + 12);
-        y += 18;
-      });
-      y += 8;
-    } else {
-      y += 8;
+    if (weeklyFocusItems?.length) {
+      doc.setFontSize(8);
+      doc.setTextColor(...NAC_GOLD);
+      doc.text(`Weekly focus: ${weeklyFocusItems.join(" · ")}`, margin, y);
+      y += 14;
     }
 
-    const podium = waiters.waiters.slice(0, 3);
-    podium.forEach((w, i) => {
-      if (y > 680) y = newPage(doc, margin);
-      y = drawStaffCard(doc, margin, y, contentW, w, i + 1);
+    y = embedChart(doc, chartImages.waiterRevenue, margin, y, contentW, 130) || y;
+    const maxSales = waiters.maxSales || waiters.waiters[0]?.net_sales || 1;
+
+    if (!chartImages.waiterRevenue) {
+      waiters.waiters.forEach((w) => {
+        if (y > 700) y = newPage(doc, margin);
+        const pct = maxSales > 0 ? (w.net_sales / maxSales) * 100 : 0;
+        drawHBar(doc, margin, y + 4, contentW - 80, 8, pct, NAC_TEAL);
+        doc.setFontSize(8);
+        doc.setTextColor(...NAC_WHITE);
+        doc.text(
+          `${w.waiter} — ${w.net_sales.toLocaleString()} SAR · ${w.quantity} u · Mod ${w.modifierAttachPct}%`,
+          margin,
+          y + 12,
+        );
+        y += 18;
+      });
+      y += 6;
+    } else {
+      y += 6;
+    }
+
+    const targetByWaiter = {};
+    (waiterTargets || []).forEach((t) => {
+      targetByWaiter[t.waiter] = t;
     });
 
-    if (sectionOn(sections, "waiterTargets") && waiterTargets?.length) {
-      y += 6;
+    waiters.waiters.forEach((w, i) => {
+      if (y > 620) {
+        doc.addPage();
+        fillPage(doc);
+        y = margin + 20;
+      }
+      y = drawStaffCard(doc, margin, y, contentW, w, i + 1, targetByWaiter[w.waiter]);
+    });
+
+    if (weeklyFocusItems?.length && waiters.waiters[0]?.focusPerformance) {
+      if (y > 640) {
+        doc.addPage();
+        fillPage(doc);
+        y = margin + 20;
+      }
       doc.setTextColor(...NAC_GOLD);
       doc.setFontSize(10);
-      doc.text("Weekly coaching targets", margin, y);
+      doc.text("Weekly focus item performance", margin, y);
       y += 12;
-      waiterTargets.slice(0, 4).forEach((t) => {
-        if (y > 700) y = newPage(doc, margin);
+      autoTable(doc, {
+        startY: y,
+        head: [["Waiter", ...weeklyFocusItems.map((f) => (f.length > 12 ? `${f.slice(0, 10)}…` : f))]],
+        body: waiters.waiters.map((w) => [
+          w.waiter,
+          ...weeklyFocusItems.map((label) => {
+            const fp = (w.focusPerformance || []).find((f) => f.label === label);
+            return String(fp?.qty ?? 0);
+          }),
+        ]),
+        styles: { fontSize: 7, textColor: NAC_WHITE, fillColor: CARD_BG },
+        headStyles: { fillColor: NAC_TEAL },
+        margin: { left: margin, right: margin },
+      });
+      y = doc.lastAutoTable.finalY + 12;
+    }
+
+    if (sectionOn(sections, "waiterTargets") && waiterTargets?.length) {
+      if (y > 640) {
+        doc.addPage();
+        fillPage(doc);
+        y = margin + 20;
+      }
+      doc.setTextColor(...NAC_GOLD);
+      doc.setFontSize(10);
+      doc.text("Weekly coaching targets (food & add-ons)", margin, y);
+      y += 12;
+      waiterTargets.forEach((t) => {
+        if (y > 700) {
+          doc.addPage();
+          fillPage(doc);
+          y = margin + 20;
+        }
+        const body = [t.action, t.impact || "", t.secondaryNote || ""].filter(Boolean).join("\n");
         y = drawInsightCard(doc, margin, y, {
           severity: t.priority || t.severity,
           category: t.category,
           title: t.headline,
-          body: `${t.action}\n${t.impact || ""}`,
+          body,
         });
       });
     }

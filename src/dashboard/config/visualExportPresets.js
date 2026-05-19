@@ -17,8 +17,9 @@ export const WAITER_SORT_OPTIONS = [
   { id: "net_sales", label: "Net sales" },
   { id: "quantity", label: "Quantity sold" },
   { id: "modifierAttachPct", label: "Modifier attachment %" },
-  { id: "dessert_qty", label: "Dessert sales" },
-  { id: "beverage_qty", label: "Beverage sales" },
+  { id: "foodMixPct", label: "Food mix %" },
+  { id: "beverageAttachPct", label: "Beverage attachment %" },
+  { id: "beverage_qty", label: "Beverage units" },
   { id: "modifier_qty", label: "Upsell / modifier units" },
 ];
 
@@ -49,7 +50,7 @@ export const EXPORT_TARGET_MODES = {
     },
     waiterSort: "modifierAttachPct",
     productSort: "revenue",
-    allWaiters: false,
+    allWaiters: true,
   },
   manager_review: {
     id: "manager_review",
@@ -113,7 +114,7 @@ export const EXPORT_TARGET_MODES = {
   },
 };
 
-export function defaultExportConfig(waiterNames = []) {
+export function defaultExportConfig(waiterNames = [], weeklyFocusItems = []) {
   const mode = EXPORT_TARGET_MODES.manager_review;
   return {
     dateFrom: weekAgoISO(),
@@ -123,10 +124,11 @@ export function defaultExportConfig(waiterNames = []) {
     sections: { ...mode.sections },
     waiterSort: mode.waiterSort,
     productSort: mode.productSort,
-    allWaiters: mode.allWaiters,
+    allWaiters: true,
     selectedWaiters: waiterNames,
     waiterSearch: "",
     includeManagers: false,
+    weeklyFocusItems,
   };
 }
 

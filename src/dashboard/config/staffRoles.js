@@ -16,36 +16,66 @@ export const STAFF_ROLE_MAP = {
   "Bashar Ahmed": "manager",
 };
 
+/** Core competition waiters — used to ensure export completeness */
+export const EXPECTED_WAITERS = [
+  "Abu Sofian",
+  "Azhar",
+  "Rana",
+  "Ronald",
+  "Saiful",
+  "Sujan",
+];
+
 export const STAFF_ROLE_LABELS = {
   waiter: "Waiter",
   manager: "Manager",
   admin: "Admin",
 };
 
+const CANONICAL_KEYS = Object.keys(STAFF_ROLE_MAP);
+
 /** Normalize creator name for map lookup */
-function norm(name) {
+export function normStaffName(name) {
   return String(name || "")
     .trim()
     .replace(/\s+/g, " ");
 }
 
 /**
- * Resolve role: mapped → use map; unmapped → waiter (future staff auto-included).
+ * Map Foodics creator variants to canonical roster name (exact / case / first-token).
  */
-export function resolveStaffRole(creatorName) {
-  const raw = norm(creatorName);
-  if (!raw) return "waiter";
+export function canonicalStaffName(creatorName) {
+  const raw = normStaffName(creatorName);
+  if (!raw) return "Unassigned";
 
-  if (STAFF_ROLE_MAP[raw]) return STAFF_ROLE_MAP[raw];
+  if (STAFF_ROLE_MAP[raw]) return raw;
 
   const lower = raw.toLowerCase();
-  for (const [key, role] of Object.entries(STAFF_ROLE_MAP)) {
+  for (const key of CANONICAL_KEYS) {
     const kl = key.toLowerCase();
-    if (lower === kl || lower.includes(kl) || kl.includes(lower)) {
-      return role;
-    }
+    if (lower === kl) return key;
+    if (lower.startsWith(`${kl} `) || lower.startsWith(`${kl}.`)) return key;
   }
 
+  const first = lower.split(/\s+/)[0];
+  for (const key of CANONICAL_KEYS) {
+    if (key.toLowerCase().split(/\s+/)[0] === first && first.length >= 3) return key;
+  }
+
+  return raw;
+}
+
+export function staffNamesMatch(a, b) {
+  return canonicalStaffName(a).toLowerCase() === canonicalStaffName(b).toLowerCase();
+}
+
+/**
+ * Resolve role: mapped canonical name → use map; unmapped → waiter.
+ * Uses exact match only (no substring includes — prevents misclassification).
+ */
+export function resolveStaffRole(creatorName) {
+  const canonical = canonicalStaffName(creatorName);
+  if (STAFF_ROLE_MAP[canonical]) return STAFF_ROLE_MAP[canonical];
   return "waiter";
 }
 
@@ -68,6 +98,7 @@ export function staffRoleLabel(creatorName) {
 export function partitionStaffByRole(staffList = [], { includeManagers = false } = {}) {
   const all = (staffList || []).map((s) => ({
     ...s,
+    waiter: canonicalStaffName(s.waiter),
     role: s.role || resolveStaffRole(s.waiter),
     roleLabel: staffRoleLabel(s.waiter),
   }));

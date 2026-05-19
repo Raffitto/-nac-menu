@@ -41,6 +41,7 @@ export function exportExecutiveVisualXLSX(payload) {
     exportMeta,
     sections = {},
     staffOverview,
+    weeklyFocusItems = [],
   } = payload;
 
   const wb = XLSX.utils.book_new();
@@ -64,6 +65,8 @@ export function exportExecutiveVisualXLSX(payload) {
       ["Missed upsells", attachment?.missedUpsells?.length || 0, attachment?.missedUpsells?.length > 2 ? "HIGH" : "OK"],
       ["Sessions", kpis?.sessions || "—", "—"],
       ["Peak daypart", timeShift?.peakDaypart?.label || "—", "—"],
+      [],
+      ["Weekly focus items", weeklyFocusItems.join(", ") || "General food & add-on upsell", "—"],
     ]),
     "Executive",
   );
@@ -98,13 +101,43 @@ export function exportExecutiveVisualXLSX(payload) {
           "Avg check": w.avgCheck,
           "Modifier %": w.modifierAttachPct,
           "Modifier visual": barCell(w.modifierAttachPct),
-          "Dessert %": w.dessertAttachPct,
+          "Food mix %": w.foodMixPct,
+          "Food mix visual": barCell(w.foodMixPct || 0),
           "Beverage %": w.beverageAttachPct,
+          "Beverage visual": barCell(w.beverageAttachPct),
           Strongest: w.strongestCategory,
           Weakest: w.weakestCategory,
+          ...(weeklyFocusItems || []).reduce((acc, label) => {
+            const fp = (w.focusPerformance || []).find((f) => f.label === label);
+            acc[`Focus: ${label}`] = fp?.qty ?? 0;
+            acc[`Focus SAR: ${label}`] = fp?.revenue ?? 0;
+            return acc;
+          }, {}),
         })),
       ),
       "Waiters",
+    );
+  }
+
+  if (weeklyFocusItems?.length && waiters?.waiters?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        waiters.waiters.flatMap((w) =>
+          weeklyFocusItems.map((label) => {
+            const fp = (w.focusPerformance || []).find((f) => f.label === label);
+            return {
+              Waiter: w.waiter,
+              "Focus item": label,
+              Quantity: fp?.qty ?? 0,
+              Revenue: fp?.revenue ?? 0,
+              "Modifier %": w.modifierAttachPct,
+              "Food mix %": w.foodMixPct,
+            };
+          }),
+        ),
+      ),
+      "Weekly Focus",
     );
   }
 
@@ -119,8 +152,11 @@ export function exportExecutiveVisualXLSX(payload) {
           Headline: t.headline,
           "Coaching action": t.action,
           "Push next week": t.pushNextWeek,
+          "Secondary note": t.secondaryNote || "",
           Revenue: t.net_sales,
           "Modifier %": t.modifierAttachPct,
+          "Food mix %": t.foodMixPct,
+          "Weekly focus weak": (t.focusWeak || []).map((f) => f.label).join(", "),
         })),
       ),
       "Weekly Targets",
