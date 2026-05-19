@@ -37,6 +37,8 @@ import { waiterSalesValue } from "../utils/waiterSalesMetric";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterCoaching } from "../engines/waiterCoachingEngine";
+import { buildStaffOperationalIntelligence } from "../engines/staffOperationalEngine";
+import { calibrateWaiterProfiles, calibrateTeamContext } from "../engines/intelligenceCalibration";
 import VisualExportConfig from "../components/VisualExportConfig";
 import VisualExportCharts from "../components/VisualExportCharts";
 import { captureVisualCharts } from "../utils/captureExportCharts";
@@ -88,7 +90,8 @@ function rebuildCompetitionIntel(base, list, salesMetric = "gross") {
     salesMetric,
     topUpseller: sorted[0] || null,
     dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
-    beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
+    beverageChampion:
+      [...sorted].sort((a, b) => (b.ops?.premiumBevPct || 0) - (a.ops?.premiumBevPct || 0))[0] || null,
     radarTop: sorted.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
       revenue: waiterSalesValue(w, salesMetric),
@@ -214,10 +217,30 @@ export default function VisualIntelligenceEngine() {
     return rebuildCompetitionIntel(staffIntel, includeManagers ? part.all : part.waiters, salesMetric);
   }, [staffIntel, includeManagers, salesMetric]);
 
+  const calibratedStaff = useMemo(() => {
+    if (!hasWaiterBatch || !waiterItems?.length) {
+      return { waiters: competitionStaff.waiters || [], team: {} };
+    }
+    const ops = buildStaffOperationalIntelligence(waiterItems, competitionStaff, timeShift);
+    const team = calibrateTeamContext(ops.team, ops.waiters);
+    const waiters = calibrateWaiterProfiles(ops.waiters, team);
+    return { waiters, team };
+  }, [competitionStaff, waiterItems, timeShift, hasWaiterBatch]);
+
   const waiterTargets = useMemo(
-    () => buildWaiterCoaching(competitionStaff.waiters || [], { focusItems: weeklyFocusItems }),
-    [competitionStaff, weeklyFocusItems],
+    () =>
+      buildWaiterCoaching(calibratedStaff.waiters || [], {
+        focusItems: weeklyFocusItems,
+        team: calibratedStaff.team,
+      }),
+    [calibratedStaff, weeklyFocusItems],
   );
+
+  const premiumBevChampion = useMemo(() => {
+    const list = calibratedStaff.waiters || [];
+    if (!list.length) return null;
+    return [...list].sort((a, b) => (b.ops?.premiumBevPct || 0) - (a.ops?.premiumBevPct || 0))[0];
+  }, [calibratedStaff]);
 
   const waiterNames = useMemo(
     () => (staffIntel.waiters || []).map((w) => w.waiter),
@@ -656,7 +679,7 @@ export default function VisualIntelligenceEngine() {
                   </ResponsiveContainer>
                 </motion.div>
                 <p style={{ fontSize: "0.72rem", marginTop: "0.5rem", color: "rgba(249,249,247,0.45)" }}>
-                  Dessert champion: {competitionStaff.dessertChampion?.waiter || "—"} · Beverage: {competitionStaff.beverageChampion?.waiter || "—"}
+                  Dessert champion: {competitionStaff.dessertChampion?.waiter || "—"} · Premium beverage: {premiumBevChampion?.waiter || "—"}
                 </p>
               </>
             )}
@@ -681,12 +704,25 @@ export default function VisualIntelligenceEngine() {
 
         {hasWaiterBatch && waiterTargets.length > 0 && (
           <div className="vi-panel" style={{ marginTop: "1rem" }}>
-            <h3>Weekly target cards</h3>
-            <p className="vi-subtitle">Per-waiter push recommendations for next week</p>
+            <h3>Operational coaching</h3>
+            <p className="vi-subtitle">Calibrated floor coaching — margin-first, shift-aware</p>
             <motion.div className="vi-grid-2">
               {waiterTargets.map((t) => (
-                <div key={t.waiter} className={`vi-insight-card ${t.priority === "low" ? "win" : "opportunity"}`}>
+                <motion.div
+                  key={t.waiter}
+                  className={`vi-insight-card ${t.severity === "low" ? "win" : t.severity === "high" ? "risk" : "opportunity"}`}
+                >
                   <strong>{t.headline}</strong>
+                  {(t.confidenceLabel || t.revenueQualityScore != null) && (
+                    <motion.div style={{ marginTop: "0.25rem", display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+                      {t.confidenceLabel && (
+                        <span className={`vi-badge ${t.confidence === "low_sample" ? "low" : "medium"}`}>{t.confidenceLabel}</span>
+                      )}
+                      {t.revenueQualityScore != null && (
+                        <span className="vi-badge medium">RQ {t.revenueQualityScore}/100</span>
+                      )}
+                    </motion.div>
+                  )}
                   <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>
                     {t.narrative || t.action || t.detail}
                   </p>
@@ -695,11 +731,7 @@ export default function VisualIntelligenceEngine() {
                       {t.opportunity}
                     </p>
                   )}
-                  {t.secondaryNote && (
-                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.7rem", color: "rgba(249,249,247,0.4)" }}>{t.secondaryNote}</p>
-                  )}
-                  <span className="vi-badge medium">Push: {t.pushNextWeek}</span>
-                </div>
+                </motion.div>
               ))}
             </motion.div>
           </div>

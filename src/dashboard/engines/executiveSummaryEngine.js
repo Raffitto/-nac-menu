@@ -46,5 +46,8 @@ export function buildExecutiveSummary({
     biggestConcern: topRisk?.title || "—",
     operationalScoreLeader: awards?.topOperational?.waiter || "—",
     operationalScore: awards?.topOperational?.operationalScore || 0,
+    revenueQualityLeader: awards?.topOperational?.waiter || "—",
+    revenueQualityScore: awards?.topOperational?.revenueQualityScore || 0,
+    avgRevenueQuality: team.avgRevenueQuality || 0,
   };
 }

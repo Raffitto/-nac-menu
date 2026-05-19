@@ -1,4 +1,5 @@
 import { computeOperationalScore } from "./staffOperationalEngine";
+import { isLowValueBeverageDominant, isPremiumBeverageMeaningful } from "./intelligenceCalibration";
 
 function topBy(list, key, filter = () => true) {
   const eligible = list.filter(filter);
@@ -13,7 +14,7 @@ function topByFn(list, fn, filter = () => true) {
 }
 
 /**
- * KPI awards + operational scores for executive staff intelligence.
+ * KPI awards — calibrated to avoid celebrating low-margin inflation.
  */
 export function buildStaffAwards(waiters = [], team = {}) {
   const list = waiters.filter((w) => w.role === "waiter" || !w.role);
@@ -31,6 +32,13 @@ export function buildStaffAwards(waiters = [], team = {}) {
       format: "sar",
     },
     {
+      id: "revenue_quality",
+      label: "Best revenue quality",
+      winner: topByFn(withScores, (w) => w.revenueQualityScore || 0, (w) => (w.revenueQualityScore || 0) >= 48)?.waiter,
+      value: topByFn(withScores, (w) => w.revenueQualityScore || 0)?.revenueQualityScore,
+      format: "score",
+    },
+    {
       id: "avg_ticket",
       label: "Highest avg ticket",
       winner: topBy(withScores, "avgCheck")?.waiter,
@@ -40,35 +48,47 @@ export function buildStaffAwards(waiters = [], team = {}) {
     {
       id: "modifier",
       label: "Best modifier attachment",
-      winner: topBy(withScores, "modifierAttachPct")?.waiter,
+      winner: topBy(withScores, "modifierAttachPct", (w) => (w.confidence?.modifier || "moderate") !== "low_sample")?.waiter,
       value: topBy(withScores, "modifierAttachPct")?.modifierAttachPct,
       format: "pct",
     },
     {
       id: "premium_bev",
       label: "Strongest premium beverage mix",
-      winner: topByFn(withScores, (w) => w.ops?.premiumBevPct || 0, (w) => (w.ops?.bevGross || 0) > 0)?.waiter,
-      value: topByFn(withScores, (w) => w.ops?.premiumBevPct || 0)?.ops?.premiumBevPct,
+      winner: topByFn(
+        withScores,
+        (w) => w.ops?.premiumBevPct || 0,
+        (w) => (w.ops?.bevGross || 0) > 400 && !isLowValueBeverageDominant(w) && isPremiumBeverageMeaningful(w),
+      )?.waiter,
+      value: topByFn(
+        withScores,
+        (w) => w.ops?.premiumBevPct || 0,
+        (w) => !isLowValueBeverageDominant(w),
+      )?.ops?.premiumBevPct,
       format: "pct",
     },
     {
       id: "breakfast",
-      label: "Best breakfast seller",
-      winner: topByFn(withScores, (w) => w.ops?.breakfastGross || 0)?.waiter,
+      label: "Breakfast gross leader",
+      winner: topByFn(
+        withScores,
+        (w) => w.ops?.breakfastGross || 0,
+        (w) => !w.calibration?.shouldNotCelebrateBreakfast || (w.ops?.premiumBevPct || 0) >= 18,
+      )?.waiter,
       value: topByFn(withScores, (w) => w.ops?.breakfastGross || 0)?.ops?.breakfastGross,
       format: "sar",
     },
     {
       id: "pm",
       label: "Strongest PM / dessert profile",
-      winner: topBy(withScores, "dessertAttachPct")?.waiter,
+      winner: topBy(withScores, "dessertAttachPct", (w) => w.calibration?.pmExpected || (w.ops?.dessertPct || 0) >= 10)?.waiter,
       value: topBy(withScores, "dessertAttachPct")?.dessertAttachPct,
       format: "pct",
     },
     {
       id: "mocktail",
       label: "Strongest mocktail / premium drink",
-      winner: topByFn(withScores, (w) => w.ops?.mocktailGross || 0)?.waiter,
+      winner: topByFn(withScores, (w) => w.ops?.mocktailGross || 0, (w) => (w.ops?.mocktailGross || 0) >= 400)?.waiter,
       value: topByFn(withScores, (w) => w.ops?.mocktailGross || 0)?.ops?.mocktailGross,
       format: "sar",
     },
@@ -85,16 +105,20 @@ export function buildStaffAwards(waiters = [], team = {}) {
       winner: topByFn(
         withScores,
         (w) => w.operationalScore,
-        (w) => w.modifierAttachPct >= 10 && (w.ops?.premiumBevPct || 0) >= 10,
+        (w) =>
+          w.modifierAttachPct >= 10 &&
+          (w.ops?.premiumBevPct || 0) >= 12 &&
+          !isLowValueBeverageDominant(w) &&
+          (w.revenueQualityScore || 0) >= 50,
       )?.waiter,
       value: topByFn(withScores, (w) => w.operationalScore)?.operationalScore,
       format: "score",
     },
     {
       id: "efficiency",
-      label: "Most efficient (score vs volume)",
-      winner: topByFn(withScores, (w) => w.operationalScore, (w) => w.quantity >= 400)?.waiter,
-      value: topByFn(withScores, (w) => w.operationalScore, (w) => w.quantity >= 400)?.operationalScore,
+      label: "Best revenue quality vs volume",
+      winner: topByFn(withScores, (w) => w.revenueQualityScore || 0, (w) => w.quantity >= 400)?.waiter,
+      value: topByFn(withScores, (w) => w.revenueQualityScore || 0, (w) => w.quantity >= 400)?.revenueQualityScore,
       format: "score",
     },
     {
@@ -103,14 +127,18 @@ export function buildStaffAwards(waiters = [], team = {}) {
       winner: topByFn(
         withScores,
         (w) => w.quantity,
-        (w) => w.modifierAttachPct < 12 && w.quantity >= 450,
+        (w) => w.modifierAttachPct < 12 && w.quantity >= 450 && (w.revenueQualityScore || 0) < 50,
       )?.waiter,
-      value: topByFn(withScores, (w) => w.modifierAttachPct, (w) => w.modifierAttachPct < 12)?.modifierAttachPct,
-      format: "pct",
+      value: topByFn(withScores, (w) => w.revenueQualityScore || 0, (w) => (w.revenueQualityScore || 0) < 50)?.revenueQualityScore,
+      format: "score",
     },
   ].filter((a) => a.winner);
 
-  const ranked = [...withScores].sort((a, b) => b.operationalScore - a.operationalScore);
+  const ranked = [...withScores].sort((a, b) => {
+    const rq = (b.revenueQualityScore || 0) - (a.revenueQualityScore || 0);
+    if (Math.abs(rq) > 3) return rq;
+    return b.operationalScore - a.operationalScore;
+  });
 
   return {
     awards,

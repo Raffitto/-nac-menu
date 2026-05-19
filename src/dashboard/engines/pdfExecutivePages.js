@@ -34,6 +34,8 @@ export function drawExecutiveSummaryPage(doc, margin, contentW, summary, period)
     ["Premium bev mix", `${summary.premiumBevPenetration || 0}%`],
     ["Low-value drinks", `${summary.lowValueBevShare || 0}% of bev`],
     ["Est. missed upsell", `${Math.round(summary.estimatedMissedRevenue || 0).toLocaleString()} SAR`],
+    ["Revenue quality lead", `${summary.revenueQualityLeader || "—"} (${summary.revenueQualityScore || "—"}/100)`],
+    ["Team avg RQ", `${summary.avgRevenueQuality || 0}/100`],
     ["Biggest win", (summary.bestWin || "—").slice(0, 42)],
     ["Biggest concern", (summary.biggestConcern || "—").slice(0, 42)],
   ];
@@ -85,7 +87,7 @@ export function drawAwardsGrid(doc, margin, y, contentW, awards = []) {
 }
 
 export function drawCoachingCard(doc, margin, y, w, coaching, rank) {
-  const h = 88;
+  const h = 96;
   if (y > 700) y = newPage(doc, margin);
   const accent =
     coaching.severity === "high" ? [232, 93, 76] : coaching.severity === "low" ? NAC_GOLD : NAC_TEAL;
@@ -94,8 +96,10 @@ export function drawCoachingCard(doc, margin, y, w, coaching, rank) {
   doc.roundedRect(margin, y, w, h, 5, 5, "FD");
   doc.setFontSize(7);
   doc.setTextColor(...accent);
+  const conf = coaching.confidenceLabel || "";
+  const rq = coaching.revenueQualityScore != null ? ` · RQ ${coaching.revenueQualityScore}/100` : "";
   doc.text(
-    `#${rank} · ${coaching.category || "Coaching"} · Score ${coaching.operationalScore ?? "—"} · ${coaching.shiftLean || ""}`,
+    `#${rank} · ${coaching.category || "Coaching"} · Ops ${coaching.operationalScore ?? "—"}${rq}${conf ? ` · ${conf}` : ""}`,
     margin + 10,
     y + 12,
   );
@@ -127,6 +131,7 @@ export function drawOpsSection(doc, margin, y, contentW, title, items, type = "r
       category: type === "risk" ? "Risk" : "Opportunity",
       title: ins.title,
       body: ins.body,
+      confidenceLabel: ins.confidenceLabel,
     });
   });
   return y + 8;

@@ -176,18 +176,25 @@ export function buildStaffOperationalIntelligence(salesItems = [], waiterIntel =
   };
 }
 
-/** Operational score /100 — weighted hospitality KPI */
+/** Operational score /100 — profitability-weighted; blends revenue quality when calibrated */
 export function computeOperationalScore(w, teamAvg = {}) {
-  const revScore = Math.min(30, (w.primarySales || w.gross_sales || 0) / 1200);
-  const modScore = Math.min(20, (w.modifierAttachPct || 0) * 1.2);
-  const premBevScore = Math.min(20, (w.ops?.premiumBevPct || 0) * 0.8);
-  const avgCheckScore = Math.min(15, ((w.avgCheck || 0) / 45) * 15);
-  const balanceScore = Math.min(15, 15 - Math.abs((w.foodMixPct || 50) - 55) / 4);
+  const revScore = Math.min(22, (w.primarySales || w.gross_sales || 0) / 1400);
+  const modScore = Math.min(22, (w.modifierAttachPct || 0) * 1.25);
+  const premBevScore = Math.min(22, (w.ops?.premiumBevPct || 0) * 0.9);
+  const avgCheckScore = Math.min(18, ((w.avgCheck || 0) / 48) * 18);
+  const balanceScore = Math.min(10, 10 - Math.abs((w.foodMixPct || 50) - 55) / 5);
   const penalty =
-    (w.ops?.lowValueBevPct || 0) > 65 && (w.ops?.premiumBevPct || 0) < 12
-      ? 8
-      : (w.modifierAttachPct || 0) < 6
-        ? 5
-        : 0;
-  return Math.round(Math.max(0, Math.min(100, revScore + modScore + premBevScore + avgCheckScore + balanceScore - penalty)));
+    (w.ops?.lowValueBevPct || 0) > 58 && (w.ops?.premiumBevPct || 0) < 14
+      ? 14
+      : (w.quantity || 0) >= 480 && (w.avgCheck || 0) < 36
+        ? 10
+        : (w.modifierAttachPct || 0) < 6
+          ? 6
+          : 0;
+  const legacy = Math.max(0, revScore + modScore + premBevScore + avgCheckScore + balanceScore - penalty);
+  const rq = w.revenueQualityScore;
+  if (rq != null && rq > 0) {
+    return Math.round(Math.max(0, Math.min(100, legacy * 0.42 + rq * 0.58)));
+  }
+  return Math.round(Math.max(0, Math.min(100, legacy)));
 }

@@ -3,6 +3,7 @@ import { buildStaffOperationalIntelligence } from "./staffOperationalEngine";
 import { buildStaffAwards } from "./staffAwardsEngine";
 import { buildExecutiveOpsInsights } from "./executiveOpsInsightsEngine";
 import { buildExecutiveSummary } from "./executiveSummaryEngine";
+import { calibrateWaiterProfiles, calibrateTeamContext } from "./intelligenceCalibration";
 import { buildVisualInsights } from "./visualInsightEngine";
 import { partitionStaffByRole, staffNamesMatch } from "../config/staffRoles";
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
@@ -52,7 +53,8 @@ function rebuildWaiterIntel(base, list, salesMetric = "gross") {
     salesMetric,
     topUpseller: sorted[0] || null,
     dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
-    beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
+    beverageChampion:
+      [...sorted].sort((a, b) => (b.ops?.premiumBevPct || 0) - (a.ops?.premiumBevPct || 0))[0] || null,
     radarTop: sorted.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
       revenue: waiterSalesValue(w, salesMetric),
@@ -117,17 +119,23 @@ export function applyVisualExportConfig(payload, config) {
 
   const salesItems = payload.waiterSalesItems || [];
   const opsIntel = buildStaffOperationalIntelligence(salesItems, waiters, payload.timeShift);
-  waiters = { ...waiters, waiters: opsIntel.waiters };
+  const calibratedTeam = calibrateTeamContext(opsIntel.team, opsIntel.waiters);
+  const calibratedWaiters = calibrateWaiterProfiles(opsIntel.waiters, calibratedTeam);
 
-  const staffAwards = buildStaffAwards(opsIntel.waiters, opsIntel.team);
-  const scoredWaiters = opsIntel.waiters.map((w) => {
+  const staffAwards = buildStaffAwards(calibratedWaiters, calibratedTeam);
+  const scoredWaiters = calibratedWaiters.map((w) => {
     const ranked = staffAwards.ranked.find((r) => r.waiter === w.waiter);
     return { ...w, operationalScore: ranked?.operationalScore ?? w.operationalScore };
   });
-  waiters = { ...waiters, waiters: scoredWaiters };
+  waiters = {
+    ...waiters,
+    waiters: scoredWaiters,
+    beverageChampion:
+      [...scoredWaiters].sort((a, b) => (b.ops?.premiumBevPct || 0) - (a.ops?.premiumBevPct || 0))[0] || null,
+  };
 
   const opsInsights = buildExecutiveOpsInsights({
-    team: opsIntel.team,
+    team: calibratedTeam,
     waiters: scoredWaiters,
     attachment: payload.attachment,
     timeShift: payload.timeShift,
@@ -136,7 +144,7 @@ export function applyVisualExportConfig(payload, config) {
 
   const summary = buildExecutiveSummary({
     waiters,
-    team: opsIntel.team,
+    team: calibratedTeam,
     awards: staffAwards,
     attachment: payload.attachment,
     opsInsights,
@@ -154,7 +162,7 @@ export function applyVisualExportConfig(payload, config) {
 
   const waiterTargets =
     sections.waiterTargets !== false
-      ? buildWaiterCoaching(scoredWaiters, { focusItems, team: opsIntel.team })
+      ? buildWaiterCoaching(scoredWaiters, { focusItems, team: calibratedTeam })
       : [];
   const sortedProducts = sortProducts(payload.heat, payload.funnels, cfg.productSort);
 
@@ -165,7 +173,7 @@ export function applyVisualExportConfig(payload, config) {
     staffOverview,
     waiterTargets,
     staffAwards,
-    opsIntel,
+    opsIntel: { ...opsIntel, team: calibratedTeam, waiters: scoredWaiters },
     executiveSummary: summary,
     opsInsights,
     insights,

@@ -76,7 +76,8 @@ export function drawInsightCard(doc, margin, y, ins, maxW = 500) {
   doc.roundedRect(margin, y, maxW, 52, 4, 4, "FD");
   doc.setFontSize(7);
   doc.setTextColor(...col);
-  doc.text(`${(ins.severity || "medium").toUpperCase()} · ${ins.category || ins.type || "Insight"}`, margin + 8, y + 12);
+  const conf = ins.confidenceLabel ? ` · ${ins.confidenceLabel}` : "";
+  doc.text(`${(ins.severity || "medium").toUpperCase()} · ${ins.category || ins.type || "Insight"}${conf}`, margin + 8, y + 12);
   doc.setFontSize(9);
   doc.setTextColor(...NAC_WHITE);
   doc.text(ins.title || ins.headline || "", margin + 8, y + 24);
