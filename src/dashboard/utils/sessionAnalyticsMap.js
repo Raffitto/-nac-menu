@@ -46,9 +46,12 @@ export function mapBiToSessionAggregates(bi) {
     top_sections: bi.top_sections || [],
     menu_tab_engagement: bi.menu_tab_engagement || [],
     by_hour: (bi.by_hour || []).map((row) => ({
-      hour: row.hour,
+      hour: row.hour ?? row.bucket,
       count: Number(row.count) || 0,
+      granularity: row.granularity,
     })),
+    by_role: bi.by_role || {},
+    by_branch: bi.by_branch || {},
     drinks_vs_food_pct: bi.drinks_vs_food_pct ?? 0,
     scroll_depth_events: Number(byType.scroll_depth) || 0,
     time_spent_events: Number(byType.time_spent) || 0,

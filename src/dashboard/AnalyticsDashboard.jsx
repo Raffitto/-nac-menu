@@ -33,20 +33,10 @@ import {
 
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
-import { applyPlatformFilters } from "./utils/platformFilterApply";
-import { rangeToSince, rangeToHours, getRangeBounds } from "./utils/rangeState";
-import { mapBiToSessionAggregates, mapBiTopAddons } from "./utils/sessionAnalyticsMap";
+import { rangeExportLabel, rangeToHours } from "./utils/rangeState";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
-import { hasExtendedPlatformFilters } from "./utils/platformFilterHelpers";
-import {
-  MENU_EVENTS_EXTENDED_SELECT,
-  MENU_EVENTS_FEED_SELECT,
-  queryMenuEvents,
-} from "../lib/menuEventsQuery";
+import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import "./styles/analytics-dashboard.css";
-
-const EXTENDED_FILTER_ROW_LIMIT = 2500;
-const FEED_LIMIT = 50;
 
 const CATEGORY_NAMES = {
   brunch: "Brunch",
@@ -109,133 +99,19 @@ function formatHourLabel(iso) {
   });
 }
 
+function formatDayLabel(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric" });
+}
+
 function eventCount(byEventType, key) {
   if (!byEventType || typeof byEventType !== "object") return 0;
   const v = byEventType[key];
   if (typeof v === "number" && !Number.isNaN(v)) return v;
   const n = Number(v);
   return Number.isNaN(n) ? 0 : n;
-}
-
-function aggregateTopAddonsFromRows(rows) {
-  const m = {};
-  (rows || []).forEach((r) => {
-    const k = (r.add_on_name || "").trim();
-    if (!k) return;
-    m[k] = (m[k] || 0) + 1;
-  });
-  return Object.entries(m)
-    .map(([name, clicks]) => ({ name, clicks }))
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 12);
-}
-
-function aggregateClientSide(rows, totalEventsExact, rangeBounds = null) {
-  const sinceMs = rangeBounds?.since ? new Date(rangeBounds.since).getTime() : null;
-  const untilMs = rangeBounds?.until ? new Date(rangeBounds.until).getTime() : null;
-  const sessions = new Set();
-  const byLang = {};
-  const byType = {};
-  const itemCounts = {};
-  const catCounts = {};
-  const sectionCounts = {};
-  const tabCounts = {};
-  let drinkOpens = 0;
-  let foodItemOpens = 0;
-  const hourly = {};
-
-  rows.forEach((r) => {
-    if (r.session_id) sessions.add(r.session_id);
-    const lang = (r.language || "unknown").trim() || "unknown";
-    byLang[lang] = (byLang[lang] || 0) + 1;
-    const et = r.event_type || "unknown";
-    byType[et] = (byType[et] || 0) + 1;
-    if (et === "item_open" && r.item_name_en?.trim()) {
-      const n = r.item_name_en.trim();
-      itemCounts[n] = (itemCounts[n] || 0) + 1;
-    }
-    if (et === "category_open" && r.category_id) {
-      const c = r.category_id;
-      catCounts[c] = (catCounts[c] || 0) + 1;
-    }
-    if ((et === "section_open" || et === "section_view") && r.section_id) {
-      const key = `${r.category_id || "?"}::${r.section_id}`;
-      sectionCounts[key] = (sectionCounts[key] || 0) + 1;
-    }
-    if (et === "menu_tab_open") {
-      const meta = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
-      const tabId = meta.tab_id || meta.source_category_id || "?";
-      const key = `${r.category_id || "?"}::${tabId}`;
-      tabCounts[key] = (tabCounts[key] || 0) + 1;
-    }
-    if (et === "item_open" && r.category_id === "drinks") {
-      drinkOpens += 1;
-    }
-    if (et === "item_open" && r.category_id && r.category_id !== "drinks") {
-      foodItemOpens += 1;
-    }
-    if (r.created_at) {
-      const d = new Date(r.created_at);
-      const t = d.getTime();
-      if (!Number.isNaN(t)) {
-        if (sinceMs != null && t < sinceMs) return;
-        if (untilMs != null && t > untilMs) return;
-        d.setMinutes(0, 0, 0);
-        const key = d.toISOString();
-        hourly[key] = (hourly[key] || 0) + 1;
-      }
-    }
-  });
-
-  const top_items = Object.entries(itemCounts)
-    .map(([name, opens]) => ({ name, opens }))
-    .sort((a, b) => b.opens - a.opens)
-    .slice(0, 12);
-
-  const top_categories = Object.entries(catCounts)
-    .map(([id, opens]) => ({ id, opens }))
-    .sort((a, b) => b.opens - a.opens)
-    .slice(0, 10);
-
-  const top_sections = Object.entries(sectionCounts)
-    .map(([key, views]) => {
-      const [cat, sec] = key.split("::");
-      return { category: cat, section: sec, views };
-    })
-    .sort((a, b) => b.views - a.views)
-    .slice(0, 12);
-
-  const menu_tab_engagement = Object.entries(tabCounts)
-    .map(([key, opens]) => {
-      const [host, tab] = key.split("::");
-      return { host, tab, opens };
-    })
-    .sort((a, b) => b.opens - a.opens)
-    .slice(0, 10);
-
-  const drinks_vs_food_pct =
-    foodItemOpens + drinkOpens > 0
-      ? Math.round((drinkOpens / (foodItemOpens + drinkOpens)) * 100)
-      : 0;
-
-  const by_hour = Object.entries(hourly)
-    .map(([hour, count]) => ({ hour, count }))
-    .sort((a, b) => new Date(a.hour) - new Date(b.hour));
-
-  return {
-    total_events: totalEventsExact ?? rows.length,
-    total_sessions: sessions.size,
-    by_language: byLang,
-    by_event_type: byType,
-    top_items,
-    top_categories,
-    top_sections,
-    menu_tab_engagement,
-    drinks_vs_food_pct,
-    scroll_depth_events: byType.scroll_depth || 0,
-    time_spent_events: byType.time_spent || 0,
-    by_hour,
-  };
 }
 
 export default function AnalyticsDashboard() {
@@ -248,10 +124,14 @@ export default function AnalyticsDashboard() {
   const [loginLoading, setLoginLoading] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Aggregating analytics…");
   const [error, setError] = useState("");
+  const [partialNote, setPartialNote] = useState("");
   const [aggregates, setAggregates] = useState(null);
   const [feed, setFeed] = useState([]);
   const [topAddons, setTopAddons] = useState([]);
+  const [byRole, setByRole] = useState({});
+  const [byBranch, setByBranch] = useState({});
 
   const configured = isSupabaseConfigured();
 
@@ -273,72 +153,37 @@ export default function AnalyticsDashboard() {
   const loadData = useCallback(async () => {
     if (!supabase || !session) return;
     setLoading(true);
+    setLoadingMessage("Aggregating analytics…");
     setError("");
-
-    const selectedRange = filters?.selectedRange || "today";
-    const since = rangeToSince(selectedRange);
-    const rangeBounds = getRangeBounds(selectedRange);
-    const branch = filters?.branch || null;
-    const pHours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
-    const hasExtendedFilters = hasExtendedPlatformFilters(filters);
+    setPartialNote("");
 
     try {
-      const { data: bi, error: biErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: branch,
-        p_hours: pHours,
-      });
-
-      if (biErr) throw biErr;
-
-      const biPayload = Array.isArray(bi) ? bi[0] : bi;
-      let agg = mapBiToSessionAggregates(biPayload);
-      setTopAddons(mapBiTopAddons(biPayload));
-
-      if (hasExtendedFilters) {
-        const { data: rows, error: rowsErr } = await queryMenuEvents(
-          supabase,
-          MENU_EVENTS_EXTENDED_SELECT,
-          (q) => {
-            let qq = q.order("created_at", { ascending: false }).limit(EXTENDED_FILTER_ROW_LIMIT);
-            if (since) qq = qq.gte("created_at", since);
-            if (branch) qq = qq.eq("branch_id", branch);
-            return qq;
-          },
-        );
-        if (rowsErr) throw rowsErr;
-
-        const filtered = applyPlatformFilters(rows || [], filters);
-        agg = aggregateClientSide(filtered, null, rangeBounds);
-        setTopAddons(
-          aggregateTopAddonsFromRows(
-            filtered.filter((r) => r.event_type === "add_on_click" && r.add_on_name),
-          ),
-        );
+      const result = await fetchSessionAnalytics(supabase, filters);
+      setAggregates(result.aggregates);
+      setTopAddons(result.topAddons);
+      setFeed(result.feed || []);
+      setByRole(result.byRole || {});
+      setByBranch(result.byBranch || {});
+      if (result.partial && result.note) {
+        setPartialNote(result.note);
       }
-
-      setAggregates(agg);
-
-      const { data: recent, error: feedErr } = await queryMenuEvents(
-        supabase,
-        MENU_EVENTS_FEED_SELECT,
-        (q) => {
-          let qq = q.order("created_at", { ascending: false }).limit(FEED_LIMIT);
-          if (since) qq = qq.gte("created_at", since);
-          if (branch) qq = qq.eq("branch_id", branch);
-          return qq;
-        },
-      );
-
-      if (feedErr) throw feedErr;
-      const feedRows = hasExtendedFilters ? applyPlatformFilters(recent || [], filters) : recent || [];
-      setFeed(feedRows.slice(0, 45));
     } catch (e) {
-      setError(e?.message || "Failed to load analytics.");
+      const msg = e?.message || "Failed to load analytics.";
+      const isTimeout =
+        msg.toLowerCase().includes("timeout") || msg.toLowerCase().includes("canceling statement");
+      setError(
+        isTimeout
+          ? "Analytics query timed out. Try a shorter date range or select a single branch."
+          : msg,
+      );
       setAggregates(null);
       setFeed([]);
       setTopAddons([]);
+      setByRole({});
+      setByBranch({});
     } finally {
       setLoading(false);
+      setLoadingMessage("Aggregating analytics…");
     }
   }, [session, filters]);
 
@@ -388,14 +233,33 @@ export default function AnalyticsDashboard() {
       .slice(0, 14);
   }, [aggregates]);
 
+  const hourlyGranularity = aggregates?.by_hour?.[0]?.granularity || "hour";
+
   const hourlyData = useMemo(() => {
     const raw = aggregates?.by_hour;
     if (!Array.isArray(raw)) return [];
     return raw.map((row) => ({
-      label: formatHourLabel(row.hour),
+      label:
+        hourlyGranularity === "day"
+          ? formatDayLabel(row.hour)
+          : formatHourLabel(row.hour),
       count: Number(row.count) || 0,
     }));
-  }, [aggregates]);
+  }, [aggregates, hourlyGranularity]);
+
+  const roleChartData = useMemo(() => {
+    return Object.entries(byRole || {})
+      .map(([name, value]) => ({ name, value: Number(value) || 0 }))
+      .filter((r) => r.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [byRole]);
+
+  const branchChartData = useMemo(() => {
+    return Object.entries(byBranch || {})
+      .map(([name, value]) => ({ name, value: Number(value) || 0 }))
+      .filter((r) => r.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [byBranch]);
 
   const totalEvents = aggregates?.total_events ?? 0;
   const totalSessions = aggregates?.total_sessions ?? 0;
@@ -595,10 +459,27 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
+        {partialNote && (
+          <motion.div
+            className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            {partialNote}
+          </motion.div>
+        )}
+
         {error && (
           <div className="nac-an__error mb-6 flex items-start gap-2">
             <AlertCircle className="shrink-0 mt-05" size={18} />
             <span>{error}</span>
+          </div>
+        )}
+
+        {loading && !aggregates && (
+          <div className="mb-4 text-sm text-white/50 flex items-center gap-2">
+            <RefreshCw size={16} className="nac-an-spin" />
+            {loadingMessage}
           </div>
         )}
 
@@ -892,10 +773,18 @@ export default function AnalyticsDashboard() {
                 transition={{ delay: 0.12 }}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-base font-semibold">Hourly activity</h3>
-                  <span className="text-xs text-white/45">Last 24 hours</span>
+                  <h3 className="text-base font-semibold">
+                    {hourlyGranularity === "day" ? "Daily activity" : "Hourly activity"}
+                  </h3>
+                  <span className="text-xs text-white/45">
+                    {rangeExportLabel(filters?.selectedRange || "today")}
+                  </span>
                 </div>
-                <p className="text-sm text-white/50 mb-2">Event volume by hour (UTC)</p>
+                <p className="text-sm text-white/50 mb-2">
+                  {hourlyGranularity === "day"
+                    ? "Event volume by day (aggregated)"
+                    : "Event volume by hour"}
+                </p>
                 <div className="nac-an__chart-wrap">
                   {hourlyData.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-sm text-white/40">
@@ -1004,6 +893,39 @@ export default function AnalyticsDashboard() {
                 </div>
               </motion.div>
             </div>
+
+            {(roleChartData.length > 0 || branchChartData.length > 0) && (
+              <div className="grid gap-5 lg:grid-cols-2 mb-6">
+                {roleChartData.length > 0 && (
+                  <motion.div className="nac-an__card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+                    <h3 className="text-base font-semibold mb-1">Role breakdown</h3>
+                    <p className="text-sm text-white/50 mb-2">Events by staff role</p>
+                    <div className="nac-an__list">
+                      {roleChartData.map((row) => (
+                        <div className="nac-an__row" key={row.name}>
+                          <span className="text-sm capitalize">{row.name}</span>
+                          <span className="text-gold text-sm">{row.value.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+                {branchChartData.length > 0 && (
+                  <motion.div className="nac-an__card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+                    <h3 className="text-base font-semibold mb-1">Branch breakdown</h3>
+                    <p className="text-sm text-white/50 mb-2">Events by branch</p>
+                    <div className="nac-an__list">
+                      {branchChartData.map((row) => (
+                        <div className="nac-an__row" key={row.name}>
+                          <span className="text-sm capitalize">{row.name}</span>
+                          <span className="text-gold text-sm">{row.value.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+            )}
 
             <div className="grid gap-5 lg:grid-cols-3 mb-6">
               <motion.div className="nac-an__card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
