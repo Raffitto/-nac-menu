@@ -438,7 +438,236 @@
   color: #d7bc8a;
 }
 
+/* Phase 11 — Operational visuals */
+.vi-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.vi-kpi--compact {
+  padding: 0.75rem 0.9rem;
+}
+
+.vi-kpi--compact .vi-kpi-value {
+  font-size: 1.15rem;
+}
+
+.vi-chart-wrap--scatter {
+  height: 300px;
+}
+
+.vi-chart-wrap--compact {
+  height: 190px !important;
+}
+
+.vi-scatter-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.68rem;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.vi-scatter-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vi-scatter-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.vi-scatter-legend-hint {
+  opacity: 0.65;
+}
+
+.vi-waiter-select {
+  width: 100%;
+  max-width: 220px;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 188, 138, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: #f9f9f7;
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+.vi-radar-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  color: #f9f9f7;
+}
+
+.vi-radar-shift {
+  margin-left: 0.5rem;
+  font-size: 0.68rem;
+  color: var(--vi-gold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vi-grouped-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.vi-grouped-row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 0.65rem;
+  align-items: start;
+}
+
+.vi-grouped-name {
+  font-size: 0.78rem;
+  color: var(--vi-gold);
+  padding-top: 0.15rem;
+}
+
+.vi-grouped-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.45rem 0.65rem;
+}
+
+.vi-grouped-metric-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.62rem;
+  color: rgba(249, 249, 247, 0.45);
+  margin-bottom: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.vi-grouped-raw {
+  color: rgba(249, 249, 247, 0.75);
+  font-weight: 500;
+}
+
+.vi-bar-track--thin {
+  height: 4px;
+}
+
+.vi-leaderboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.vi-leaderboard-row {
+  display: grid;
+  grid-template-columns: 22px 72px 1fr 42px 72px;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.vi-leaderboard-rank {
+  color: rgba(249, 249, 247, 0.35);
+  font-size: 0.68rem;
+}
+
+.vi-leaderboard-name {
+  color: #f9f9f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vi-leaderboard-bar-wrap {
+  min-width: 0;
+}
+
+.vi-leaderboard-val {
+  color: var(--vi-teal);
+  font-weight: 500;
+  text-align: right;
+}
+
+.vi-leaderboard-sub {
+  font-size: 0.65rem;
+  color: rgba(249, 249, 247, 0.4);
+  text-align: right;
+}
+
+.vi-opp-panel {
+  margin-top: 0.75rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(215, 188, 138, 0.22);
+  background: linear-gradient(135deg, rgba(215, 188, 138, 0.06), rgba(12, 12, 14, 0.4));
+}
+
+.vi-opp-label {
+  margin: 0;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.vi-opp-value {
+  margin: 0.35rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--vi-gold);
+  letter-spacing: -0.02em;
+}
+
+.vi-opp-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  color: rgba(249, 249, 247, 0.42);
+  line-height: 1.4;
+}
+
+.vi-opp-breakdown {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vi-opp-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.65);
+  margin-bottom: 0.25rem;
+}
+
+.vi-export-chart-title {
+  color: #d7bc8a;
+  font-size: 11px;
+  margin: 0 0 6px;
+  font-family: system-ui, sans-serif;
+}
+
+.vi-op-dashboard,
+.vi-bev-dashboard {
+  width: 100%;
+}
+
+.vi-op-grid .vi-panel {
+  min-height: 340px;
+}
+
 @media (max-width: 640px) {
   .vi-grid-2 { grid-template-columns: 1fr; }
   .vi-heatmap-grid { grid-template-columns: repeat(4, 1fr); }
+  .vi-grouped-row { grid-template-columns: 1fr; }
+  .vi-leaderboard-row {
+    grid-template-columns: 22px 1fr 48px;
+  }
+  .vi-leaderboard-sub { display: none; }
 }

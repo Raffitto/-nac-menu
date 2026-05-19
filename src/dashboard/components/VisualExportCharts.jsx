@@ -1,4 +1,5 @@
 import React, { forwardRef } from "react";
+import { OperationalVisualExportCharts } from "./OperationalVisualCharts";
 import {
   BarChart,
   Bar,
@@ -19,7 +20,7 @@ const BG = "#0c0c0e";
  * Off-screen chart bundle captured via html2canvas for executive PDF.
  */
 const VisualExportCharts = forwardRef(function VisualExportCharts(
-  { waiters = [], attachment, menuEngineering = [], timeShift, heat },
+  { waiters = [], salesMetric = "gross", attachment, menuEngineering = [], timeShift, heat },
   ref,
 ) {
   const waiterBars = (waiters || []).map((w) => ({
@@ -164,6 +165,8 @@ const VisualExportCharts = forwardRef(function VisualExportCharts(
           </ResponsiveContainer>
         </div>
       )}
+
+      <OperationalVisualExportCharts waiters={waiters} salesMetric={salesMetric} />
 
       {heatBars.length > 0 && (
         <div data-export-chart="heatScore" style={chartBox}>

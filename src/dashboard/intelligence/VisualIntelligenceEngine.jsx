@@ -41,6 +41,7 @@ import { buildStaffOperationalIntelligence } from "../engines/staffOperationalEn
 import { calibrateWaiterProfiles, calibrateTeamContext } from "../engines/intelligenceCalibration";
 import VisualExportConfig from "../components/VisualExportConfig";
 import VisualExportCharts from "../components/VisualExportCharts";
+import { WaiterComparisonDashboard, BeverageMixIntelligence } from "../components/OperationalVisualCharts";
 import { captureVisualCharts } from "../utils/captureExportCharts";
 import { partitionStaffByRole } from "../config/staffRoles";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -629,6 +630,24 @@ export default function VisualIntelligenceEngine() {
         </div>
       </Section>
 
+      {hasWaiterBatch && calibratedStaff.waiters?.length > 0 && (
+        <>
+          <Section
+            title="Operational waiter comparison"
+            subtitle="Revenue quality vs gross · shift-aware · who monetizes vs who inflates volume"
+          >
+            <WaiterComparisonDashboard waiters={calibratedStaff.waiters} salesMetric={salesMetric} />
+          </Section>
+
+          <Section
+            title="Beverage quality intelligence"
+            subtitle="Premium mix vs Pepsi/water — quality of drink revenue, not quantity"
+          >
+            <BeverageMixIntelligence waiters={calibratedStaff.waiters} />
+          </Section>
+        </>
+      )}
+
       {/* Phase 4 — Staff */}
       <Section title="Waiter & staff intelligence" subtitle="Waiters only in competitions — managers excluded unless toggled">
         <label className="vi-check" style={{ marginBottom: "1rem" }}>
@@ -775,7 +794,8 @@ export default function VisualIntelligenceEngine() {
 
       <VisualExportCharts
         ref={chartCaptureRef}
-        waiters={competitionStaff.waiters}
+        waiters={calibratedStaff.waiters?.length ? calibratedStaff.waiters : competitionStaff.waiters}
+        salesMetric={salesMetric}
         attachment={attachment}
         menuEngineering={menuEngineering}
         timeShift={timeShift}

@@ -25,6 +25,8 @@ import {
   drawCoachingCard,
   drawOpsSection,
 } from "./pdfExecutivePages";
+import { appendOperationalVisualPages } from "./pdfVisualIntelligencePages";
+import { estimatePremiumBeverageOpportunity } from "./waiterVisualEngine";
 
 function baseCtx(payload) {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
@@ -65,6 +67,17 @@ function exportWeeklyStaffPDF(payload) {
   if (executiveSummary) {
     doc.addPage();
     drawExecutiveSummaryPage(doc, margin, contentW, executiveSummary, period);
+  }
+
+  const visualWaiters = waiters?.waiters || [];
+  if (visualWaiters.length && (chartImages.rqScatter || chartImages.bevMixStacked)) {
+    appendOperationalVisualPages(
+      doc,
+      margin,
+      contentW,
+      chartImages,
+      estimatePremiumBeverageOpportunity(visualWaiters),
+    );
   }
 
   doc.addPage();
@@ -138,6 +151,11 @@ function exportManagerReviewPDF(payload) {
     meta: `${branch.toUpperCase()} · ${period}`,
     blurb: "Balanced ops view for GMs: attachment gaps, daypart peaks, staff outliers, and menu risks.",
   });
+
+  const mgrWaiters = waiters?.waiters || [];
+  if (mgrWaiters.length && chartImages.rqScatter) {
+    appendOperationalVisualPages(doc, margin, contentW, chartImages, estimatePremiumBeverageOpportunity(mgrWaiters));
+  }
 
   doc.addPage();
   fillPage(doc);
@@ -299,6 +317,11 @@ function exportExecutiveBoardroomPDF(payload) {
   if (executiveSummary) {
     doc.addPage();
     drawExecutiveSummaryPage(doc, margin, contentW, executiveSummary, period);
+  }
+
+  const execWaiters = waiters?.waiters || [];
+  if (execWaiters.length && (chartImages.rqScatter || chartImages.bevMixStacked)) {
+    appendOperationalVisualPages(doc, margin, contentW, chartImages, estimatePremiumBeverageOpportunity(execWaiters));
   }
 
   doc.addPage();
