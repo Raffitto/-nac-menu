@@ -589,6 +589,20 @@
   padding-top: 0.65rem;
 }
 
+.fi-debug-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.85rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.fi-debug-counts strong {
+  color: #f9f9f7;
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .fi-page {
     padding: 20px 16px 40px;

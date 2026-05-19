@@ -28,8 +28,20 @@ function rowToStrings(row) {
   return row.map(normCell);
 }
 
+/** Sales by Creator report header */
+function isWaiterSalesHeaderRow(row) {
+  const cells = rowToStrings(row).map(normHeader);
+  const hasCreator = cells.some((c) => c === "creator");
+  const hasProduct = cells.some((c) => c === "product");
+  const hasGross = cells.some((c) => c === "gross sales");
+  const hasNet = cells.some((c) => c === "net sales");
+  const hasNetQty = cells.some((c) => c === "net quantity");
+  return hasCreator && hasProduct && hasGross && hasNet && hasNetQty;
+}
+
 function isFoodicsHeaderRow(row) {
   const cells = rowToStrings(row).map(normHeader);
+  if (isWaiterSalesHeaderRow(row)) return true;
   const hasProduct = cells.some((c) => c === "product");
   const hasNetQty = cells.some((c) => c === "net quantity" || c.includes("net quantity"));
   const hasGrossSales = cells.some((c) => c === "gross sales" || c.startsWith("gross sales"));
@@ -139,28 +151,54 @@ function parseNumber(val) {
   return Number.isFinite(n) ? n : null;
 }
 
-export function rowsFromMappedData(rawRows, mapping) {
+export function rowsFromMappedData(rawRows, mapping, options = {}) {
   const nameKey = mapping.name;
+  const isWaiter = options.importType === "waiter_product_sales";
   if (!nameKey) return { rows: [], error: "Item name column is required." };
+  if (isWaiter && !mapping.waiter) {
+    return { rows: [], error: "Creator column is required for Sales by Creator imports." };
+  }
 
   const rows = [];
+  let lastCreator = "";
+
   for (const raw of rawRows) {
     const name = normCell(raw[nameKey]);
+    let creator = mapping.waiter ? normCell(raw[mapping.waiter]) : "";
+    if (isWaiter) {
+      if (creator) lastCreator = creator;
+      else if (lastCreator) creator = lastCreator;
+    }
+
     if (!name) continue;
+
+    const qty = mapping.quantity ? parseNumber(raw[mapping.quantity]) || 0 : 0;
+    const gross = mapping.grossSales ? parseNumber(raw[mapping.grossSales]) : null;
+    const net = mapping.netSales ? parseNumber(raw[mapping.netSales]) : null;
+
+    if (isWaiter && !creator) continue;
+
     rows.push({
       raw_item_name: name,
       normalized_item_name: normalizeFoodicsName(name),
       product_sku: mapping.sku ? normCell(raw[mapping.sku]) || null : null,
-      quantity_sold: mapping.quantity ? parseNumber(raw[mapping.quantity]) || 0 : 0,
-      net_sales: mapping.netSales ? parseNumber(raw[mapping.netSales]) : null,
-      gross_sales: mapping.grossSales ? parseNumber(raw[mapping.grossSales]) : null,
+      quantity_sold: qty,
+      net_sales: net,
+      gross_sales: gross,
       discount: mapping.discount ? parseNumber(raw[mapping.discount]) : null,
       category: mapping.category ? normCell(raw[mapping.category]) || null : null,
-      waiter_name: mapping.waiter ? normCell(raw[mapping.waiter]) || null : null,
+      waiter_name: creator || null,
+      creator_name: creator || null,
       sold_at: mapping.timestamp ? normCell(raw[mapping.timestamp]) || null : null,
     });
   }
-  return { rows, error: rows.length ? null : "No valid product rows found." };
+
+  const err = rows.length
+    ? null
+    : isWaiter
+      ? "No valid Sales by Creator rows found. Check Creator, Product, and Gross Sales columns."
+      : "No valid product rows found.";
+  return { rows, error: err };
 }
 
 async function readFileMatrix(file) {

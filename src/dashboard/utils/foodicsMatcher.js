@@ -1,4 +1,6 @@
 import { dedupeImportRows } from "./foodicsImportDedupe";
+import { dedupeWaiterImportRows } from "./waiterImportParse";
+import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { normalizeFoodicsName } from "./foodicsNameNormalize";
 import { classifyFoodicsRow } from "./foodicsClassifier";
 import {
@@ -440,8 +442,9 @@ export function fuzzyMatchFoodicsItem(
   return matchAgainstCatalog(rawName, menuItems, addOns, manualMaps, classification);
 }
 
-export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
-  const deduped = dedupeImportRows(rows);
+export function matchImportRows(rows, menuItems, manualMaps, addOns = [], options = {}) {
+  const isWaiter = options.importType === IMPORT_TYPE.WAITER_PRODUCT_SALES;
+  const deduped = isWaiter ? dedupeWaiterImportRows(rows) : dedupeImportRows(rows);
   const aliasLookup = buildAliasLookup(manualMaps);
 
   return deduped.map((row) => {

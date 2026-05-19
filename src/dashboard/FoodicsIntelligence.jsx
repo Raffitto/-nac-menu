@@ -29,6 +29,7 @@ import { IMPORT_TYPE, IMPORT_LANES } from "./config/foodicsImportTypes";
 import { BRANCH_OPTIONS } from "./config/foodicsImportTypes";
 import { matchImportRows } from "./utils/foodicsMatcher";
 import { buildWaiterImportValidation } from "./utils/waiterImportValidation";
+import { buildWaiterImportDebug } from "./utils/waiterImportParse";
 import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImportDedupe";
 import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
 import { buildFoodicsSelectCatalog, findCatalogOption } from "./utils/foodicsSelectCatalog";
@@ -83,6 +84,7 @@ export default function FoodicsIntelligence({
   const [headers, setHeaders] = useState([]);
   const [mapping, setMapping] = useState({});
   const [previewRows, setPreviewRows] = useState([]);
+  const [parsedRawRows, setParsedRawRows] = useState([]);
   const [importing, setImporting] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
@@ -167,18 +169,28 @@ export default function FoodicsIntelligence({
     [analyticsItems],
   );
 
+  const isWaiterLane = importType === IMPORT_TYPE.WAITER_PRODUCT_SALES;
+
   const isIgnoredStatus = (s) =>
     s === IMPORT_STATUS.IGNORED ||
     s === IMPORT_STATUS.IGNORED_SELECTION ||
     s === IMPORT_STATUS.IGNORED_FREE_MODIFIER;
 
-  const importableRows = useMemo(
-    () =>
-      previewRows.filter(
-        (r) => !isIgnoredStatus(r.import_status) && r.import_status !== IMPORT_STATUS.FUTURE_MENU,
-      ),
-    [previewRows],
-  );
+  const rowHasSales = (r) =>
+    (Number(r.quantity_sold) || 0) > 0 ||
+    (Number(r.gross_sales) || 0) > 0 ||
+    (Number(r.net_sales) || 0) > 0;
+
+  const importableRows = useMemo(() => {
+    if (isWaiterLane) {
+      return previewRows.filter(
+        (r) => (r.waiter_name || "").trim() && rowHasSales(r),
+      );
+    }
+    return previewRows.filter(
+      (r) => !isIgnoredStatus(r.import_status) && r.import_status !== IMPORT_STATUS.FUTURE_MENU,
+    );
+  }, [previewRows, isWaiterLane]);
   const ignoredRows = useMemo(
     () => previewRows.filter((r) => isIgnoredStatus(r.import_status)),
     [previewRows],
@@ -209,11 +221,11 @@ export default function FoodicsIntelligence({
   );
 
   const applyMatching = useCallback(
-    (rows, columnMapping) => {
-      const matched = matchImportRows(rows, menuItems, manualMaps, addOns);
+    (rows) => {
+      const matched = matchImportRows(rows, menuItems, manualMaps, addOns, { importType });
       setPreviewRows(matched);
     },
-    [menuItems, manualMaps, addOns],
+    [menuItems, manualMaps, addOns, importType],
   );
 
   const handleFile = useCallback(async (f) => {
@@ -232,9 +244,14 @@ export default function FoodicsIntelligence({
         detected.waiter = detectColumnMapping(parsed.headers, IMPORT_TYPE.WAITER_PRODUCT_SALES).waiter;
       }
       setMapping({ ...detected, importType: detected.importType || importType });
-      const { rows, error: mapErr } = rowsFromMappedData(parsed.rawRows, detected);
-      if (mapErr) setError(mapErr);
-      else applyMatching(rows, detected);
+      const { rows, error: mapErr } = rowsFromMappedData(parsed.rawRows, detected, { importType });
+      if (mapErr) {
+        setParsedRawRows([]);
+        setError(mapErr);
+      } else {
+        setParsedRawRows(rows);
+        applyMatching(rows);
+      }
     } catch (e) {
       setError(e?.message || "Could not parse file");
     }
@@ -251,30 +268,27 @@ export default function FoodicsIntelligence({
   );
 
   const remapPreview = useCallback(() => {
-    const { rows, error: mapErr } = rowsFromMappedData(rawRows, mapping);
+    const { rows, error: mapErr } = rowsFromMappedData(rawRows, mapping, { importType });
     if (mapErr) {
       setError(mapErr);
       return;
     }
-    applyMatching(rows, mapping);
-  }, [rawRows, mapping, applyMatching]);
+    setParsedRawRows(rows);
+    applyMatching(rows);
+  }, [rawRows, mapping, applyMatching, importType]);
 
   useEffect(() => {
     if (rawRows.length && mapping.name) remapPreview();
   }, [mapping, rawRows, remapPreview]);
 
-  const isWaiterLane = importType === IMPORT_TYPE.WAITER_PRODUCT_SALES;
-
   const importableForSave = useMemo(() => {
     if (isWaiterLane) {
       return previewRows.filter(
         (r) =>
-          !isIgnoredStatus(r.import_status) &&
-          r.import_status !== IMPORT_STATUS.FUTURE_MENU &&
           (r.waiter_name || "").trim() &&
-          ((Number(r.quantity_sold) || 0) > 0 ||
-            (Number(r.gross_sales) || 0) > 0 ||
-            (Number(r.net_sales) || 0) > 0),
+          rowHasSales(r) &&
+          !isIgnoredStatus(r.import_status) &&
+          r.import_status !== IMPORT_STATUS.FUTURE_MENU,
       );
     }
     return previewRows.filter(
@@ -284,10 +298,19 @@ export default function FoodicsIntelligence({
     );
   }, [previewRows, isWaiterLane]);
 
-  const previewValidation = useMemo(() => {
-    if (!isWaiterLane || !importableForSave.length) return null;
-    return buildWaiterImportValidation(importableForSave);
-  }, [isWaiterLane, importableForSave]);
+  const rawValidation = useMemo(() => {
+    if (!isWaiterLane || !parsedRawRows.length) return null;
+    return buildWaiterImportValidation(parsedRawRows);
+  }, [isWaiterLane, parsedRawRows]);
+
+  const importDebug = useMemo(() => {
+    if (!isWaiterLane) return null;
+    return buildWaiterImportDebug({
+      parsedRaw: parsedRawRows,
+      previewRows,
+      importable: importableForSave,
+    });
+  }, [isWaiterLane, parsedRawRows, previewRows, importableForSave]);
 
   const handleImport = async () => {
     const toSave = importableForSave;
@@ -322,6 +345,7 @@ export default function FoodicsIntelligence({
       setFile(null);
       setRawRows([]);
       setPreviewRows([]);
+      setParsedRawRows([]);
       if (isWaiterLane) {
         setLastValidation(buildWaiterImportValidation(toSave));
       }
@@ -540,6 +564,71 @@ export default function FoodicsIntelligence({
           </motion.div>
         )}
 
+        {isWaiterLane && rawValidation && (
+          <motion.div className="fi-validation-panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h4>Raw parsed totals — compare to Foodics pivot (before menu matching)</h4>
+            <p className="fi-muted">
+              Parsed {parsedRawRows.length} rows from file · forward-filled Creator on blank cells
+            </p>
+            {importDebug && (
+              <motion.div className="fi-debug-counts">
+                <span>Raw parsed: <strong>{importDebug.rawRowsParsed}</strong></span>
+                <span>With creator: <strong>{importDebug.rowsWithCreator}</strong></span>
+                <span>Creator + sales: <strong>{importDebug.rowsWithCreatorAndSales}</strong></span>
+                <span>After match: <strong>{importDebug.rowsAfterMatch}</strong></span>
+                <span>To save: <strong>{importDebug.rowsSaved}</strong></span>
+                <span>Ignored (promo/meta): <strong>{importDebug.rowsIgnored}</strong></span>
+                <span>Unmatched but saved: <strong>{importDebug.rowsUnmatchedButSaved}</strong></span>
+                <span>No creator: <strong>{importDebug.rowsWithoutCreator}</strong></span>
+              </motion.div>
+            )}
+            <table className="fi-table fi-table--compact">
+              <thead>
+                <tr>
+                  <th>Creator</th>
+                  <th>Role</th>
+                  <th>Gross SAR</th>
+                  <th>Net SAR</th>
+                  <th>Qty</th>
+                  <th>Rows</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rawValidation.creators.map((c) => (
+                  <tr key={c.waiter}>
+                    <td>{c.waiter}</td>
+                    <td>{c.roleLabel}</td>
+                    <td>{c.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td>{c.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td>{c.quantity}</td>
+                    <td>{c.row_count}</td>
+                  </tr>
+                ))}
+                <tr className="fi-validation-total">
+                  <td colSpan={2}><strong>Grand total</strong></td>
+                  <td>
+                    <strong>
+                      {rawValidation.totals.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </strong>
+                  </td>
+                  <td>
+                    <strong>
+                      {rawValidation.totals.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </strong>
+                  </td>
+                  <td><strong>{rawValidation.totals.quantity}</strong></td>
+                  <td><strong>{rawValidation.totals.row_count}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+            {importDebug && importDebug.rowsIgnored > 0 && (
+              <p className="fi-muted" style={{ marginTop: "0.75rem" }}>
+                {importDebug.rowsIgnored} zero-value promo/meta rows excluded from save but included in raw totals above.
+              </p>
+            )}
+          </motion.div>
+        )}
+
         {importableRows.length > 0 && (
           <div className="fi-preview">
             <h3>
@@ -586,58 +675,6 @@ export default function FoodicsIntelligence({
                 </tbody>
               </table>
             </motion.div>
-            {isWaiterLane && previewValidation && (
-              <motion.div className="fi-validation-panel">
-                <h4>Import validation — compare to Foodics pivot</h4>
-                <p className="fi-muted">
-                  Totals from {importableForSave.length} rows ready to save (Gross Sales · Net Sales · Net Qty)
-                </p>
-                <table className="fi-table fi-table--compact">
-                  <thead>
-                    <tr>
-                      <th>Creator</th>
-                      <th>Role</th>
-                      <th>Gross SAR</th>
-                      <th>Net SAR</th>
-                      <th>Qty</th>
-                      <th>Rows</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewValidation.creators.map((c) => (
-                      <tr key={c.waiter}>
-                        <td>{c.waiter}</td>
-                        <td>{c.roleLabel}</td>
-                        <td>{c.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                        <td>{c.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                        <td>{c.quantity}</td>
-                        <td>{c.row_count}</td>
-                      </tr>
-                    ))}
-                    <tr className="fi-validation-total">
-                      <td colSpan={2}><strong>Grand total</strong></td>
-                      <td>
-                        <strong>
-                          {previewValidation.totals.gross_sales.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}
-                        </strong>
-                      </td>
-                      <td>
-                        <strong>
-                          {previewValidation.totals.net_sales.toLocaleString(undefined, {
-                            maximumFractionDigits: 2,
-                          })}
-                        </strong>
-                      </td>
-                      <td><strong>{previewValidation.totals.quantity}</strong></td>
-                      <td><strong>{previewValidation.totals.row_count}</strong></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </motion.div>
-            )}
-
             <button type="button" className="fi-primary" onClick={handleImport} disabled={importing}>
               {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
               Save import ({importableForSave.length} {isWaiterLane ? "waiter rows" : "matched"})
