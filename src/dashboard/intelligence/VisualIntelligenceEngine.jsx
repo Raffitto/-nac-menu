@@ -36,7 +36,7 @@ import { loadWaiterSalesMetric, saveWaiterSalesMetric } from "../config/waiterSa
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
-import { buildWaiterTargets } from "../engines/waiterTargetEngine";
+import { buildWaiterCoaching } from "../engines/waiterCoachingEngine";
 import VisualExportConfig from "../components/VisualExportConfig";
 import VisualExportCharts from "../components/VisualExportCharts";
 import { captureVisualCharts } from "../utils/captureExportCharts";
@@ -215,7 +215,7 @@ export default function VisualIntelligenceEngine() {
   }, [staffIntel, includeManagers, salesMetric]);
 
   const waiterTargets = useMemo(
-    () => buildWaiterTargets(competitionStaff, { focusItems: weeklyFocusItems }),
+    () => buildWaiterCoaching(competitionStaff.waiters || [], { focusItems: weeklyFocusItems }),
     [competitionStaff, weeklyFocusItems],
   );
 
@@ -268,9 +268,10 @@ export default function VisualIntelligenceEngine() {
       kpis: intelligence?.kpis,
       funnels,
       hasWaiterBatch,
+      waiterSalesItems: waiterItems,
       exportMeta: { title: `Visual Intelligence — ${rangeLabel}`, period: rangeLabel },
     }),
-    [attachment, timeShift, heat, menuEngineering, staffIntel, competitionStaff, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch],
+    [attachment, timeShift, heat, menuEngineering, staffIntel, competitionStaff, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch, waiterItems],
   );
 
   const runExport = async (fmt) => {
@@ -686,7 +687,14 @@ export default function VisualIntelligenceEngine() {
               {waiterTargets.map((t) => (
                 <div key={t.waiter} className={`vi-insight-card ${t.priority === "low" ? "win" : "opportunity"}`}>
                   <strong>{t.headline}</strong>
-                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>{t.action || t.detail}</p>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>
+                    {t.narrative || t.action || t.detail}
+                  </p>
+                  {t.opportunity && (
+                    <p style={{ margin: "0.25rem 0 0", fontSize: "0.72rem", color: "rgba(215,188,138,0.85)" }}>
+                      {t.opportunity}
+                    </p>
+                  )}
                   {t.secondaryNote && (
                     <p style={{ margin: "0.25rem 0 0", fontSize: "0.7rem", color: "rgba(249,249,247,0.4)" }}>{t.secondaryNote}</p>
                   )}

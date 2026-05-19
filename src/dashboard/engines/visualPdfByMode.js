@@ -12,7 +12,6 @@ import {
   drawHBar,
   embedChart,
   drawInsightCard,
-  drawStaffCard,
   drawCover,
   salesMetricFromPayload,
   NAC_TEAL,
@@ -20,6 +19,12 @@ import {
   NAC_WHITE,
   CARD_BG,
 } from "./pdfVisualTheme";
+import {
+  drawExecutiveSummaryPage,
+  drawAwardsGrid,
+  drawCoachingCard,
+  drawOpsSection,
+} from "./pdfExecutivePages";
 
 function baseCtx(payload) {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
@@ -37,145 +42,74 @@ function savePdf(doc, mode, branch) {
   doc.save(`nac-${mode}-${branch}.pdf`);
 }
 
-/** Weekly staff — waiter targets, focus items, coaching only */
+/** Weekly staff — executive summary, awards, unique coaching */
 function exportWeeklyStaffPDF(payload) {
   const {
     waiters,
     waiterTargets,
-    attachment,
-    insights,
+    staffAwards,
+    executiveSummary,
+    opsInsights,
     sections = {},
     chartImages = {},
-    weeklyFocusItems = [],
   } = payload;
   const { doc, margin, contentW, branch, period, salesMetric, metricLabel } = baseCtx(payload);
 
   drawCover(doc, margin, contentW, {
-    title: "Weekly Staff Target Report",
-    subtitle: "Waiter performance · weekly focus · coaching actions",
+    title: "Weekly Staff Intelligence",
+    subtitle: "Operational coaching · shift-aware · revenue-focused",
     meta: `${branch.toUpperCase()} · ${period} · ${metricLabel}`,
-    blurb:
-      "Designed for floor briefings: per-waiter gross sales vs peers, modifier attachment, focus-item counts, and actionable coaching cards.",
+    blurb: "Executive operational intelligence — not generic AI summaries. Coaching respects breakfast vs PM shifts and premium beverage economics.",
   });
+
+  if (executiveSummary) {
+    doc.addPage();
+    drawExecutiveSummaryPage(doc, margin, contentW, executiveSummary, period);
+  }
 
   doc.addPage();
   fillPage(doc);
-  let y = drawPageTitle(
-    doc,
-    margin,
-    "Weekly focus items",
-    weeklyFocusItems.length
-      ? weeklyFocusItems.join(" · ")
-      : "No focus items selected — add items in export config",
-  );
-
-  if (weeklyFocusItems.length && waiters?.waiters?.length) {
-    autoTable(doc, {
-      startY: y,
-      head: [["Waiter", ...weeklyFocusItems.map((f) => (f.length > 14 ? `${f.slice(0, 12)}…` : f))]],
-      body: waiters.waiters.map((w) => [
-        w.waiter,
-        ...weeklyFocusItems.map((label) => {
-          const fp = (w.focusPerformance || []).find((f) => f.label === label);
-          return String(fp?.qty ?? 0);
-        }),
-      ]),
-      styles: { fontSize: 9, textColor: NAC_WHITE, fillColor: CARD_BG },
-      headStyles: { fillColor: NAC_GOLD, textColor: NAC_WHITE },
-      margin: { left: margin, right: margin },
-    });
-    y = doc.lastAutoTable.finalY + 16;
+  let y = margin + 20;
+  if (staffAwards?.awards?.length) {
+    y = drawAwardsGrid(doc, margin, y, contentW, staffAwards.awards);
   }
 
   if (sectionOn(sections, "waiter") && waiters?.waiters?.length) {
-    if (y > 640) {
-      doc.addPage();
-      fillPage(doc);
-      y = margin + 20;
-    }
-    doc.setTextColor(...NAC_GOLD);
-    doc.setFontSize(10);
-    doc.text(`Staff ranking (${metricLabel})`, margin, y);
-    y += 14;
-    y = embedChart(doc, chartImages.waiterRevenue, margin, y, contentW, 140) || y;
+    doc.addPage();
+    fillPage(doc);
+    y = drawPageTitle(doc, margin, "Staff performance", metricLabel);
+    y = embedChart(doc, chartImages.waiterRevenue, margin, y, contentW, 120) || y;
     const maxSales = waiters.maxSales || waiterSalesValue(waiters.waiters[0], salesMetric) || 1;
-    waiters.waiters.forEach((w) => {
+    waiters.waiters.slice(0, 8).forEach((w) => {
       if (y > 700) y = newPage(doc, margin);
       const sales = waiterSalesValue(w, salesMetric);
-      const pct = maxSales > 0 ? (sales / maxSales) * 100 : 0;
-      drawHBar(doc, margin, y + 4, contentW - 80, 10, pct, NAC_TEAL);
+      drawHBar(doc, margin, y, contentW - 100, 8, maxSales > 0 ? (sales / maxSales) * 100 : 0, NAC_TEAL);
       doc.setFontSize(9);
       doc.setTextColor(...NAC_WHITE);
-      doc.text(`${w.waiter} — ${sales.toLocaleString()} SAR · ${w.quantity} u · Mod ${w.modifierAttachPct}%`, margin, y + 16);
-      y += 26;
+      doc.text(
+        `${w.waiter} — ${sales.toLocaleString()} SAR · Mod ${w.modifierAttachPct}% · Prem bev ${w.ops?.premiumBevPct ?? "—"}%`,
+        margin,
+        y + 12,
+      );
+      y += 22;
     });
   }
 
-  const targetByWaiter = {};
-  (waiterTargets || []).forEach((t) => {
-    targetByWaiter[t.waiter] = t;
-  });
-
-  if (waiters?.waiters?.length) {
+  if (waiterTargets?.length) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "Per-waiter coaching cards", `${waiters.waiters.length} waiters`);
-    waiters.waiters.forEach((w, i) => {
-      if (y > 620) {
-        doc.addPage();
-        fillPage(doc);
-        y = margin + 20;
-      }
-      y = drawStaffCard(doc, margin, y, contentW, w, i + 1, targetByWaiter[w.waiter], salesMetric);
+    y = drawPageTitle(doc, margin, "Operational coaching", "Unique per waiter · shift-aware");
+    waiterTargets.forEach((c, i) => {
+      y = drawCoachingCard(doc, margin, y, contentW, c, i + 1);
     });
   }
 
-  if (sectionOn(sections, "waiterTargets") && waiterTargets?.length) {
+  if (opsInsights) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "Weekly coaching targets", "Food mix · add-ons · upsell gaps");
-    waiterTargets.forEach((t) => {
-      if (y > 700) y = newPage(doc, margin);
-      const body = [t.action, t.impact || "", t.secondaryNote || ""].filter(Boolean).join("\n");
-      y = drawInsightCard(doc, margin, y, {
-        severity: t.priority || t.severity,
-        category: t.category,
-        title: `${t.waiter}: ${t.headline}`,
-        body,
-      });
-    });
-  }
-
-  if (sectionOn(sections, "modifier") && attachment?.pairs?.length) {
-    doc.addPage();
-    fillPage(doc);
-    y = drawPageTitle(doc, margin, "Modifier attachment (staff briefing)", "Top pairs to coach this week");
-    attachment.pairs
-      .filter((p) => p.attachedOrders > 0)
-      .slice(0, 8)
-      .forEach((p) => {
-        if (y > 720) return;
-        doc.setFontSize(9);
-        doc.setTextColor(...NAC_WHITE);
-        doc.text(`${p.label}: ${p.attachmentRate}% (target ${p.expectedPct}%)`, margin, y);
-        drawHBar(doc, margin, y + 6, contentW, 8, (p.attachmentRate / Math.max(p.expectedPct, 1)) * 100, NAC_GOLD);
-        y += 24;
-      });
-  }
-
-  if (sectionOn(sections, "ai") && insights?.length) {
-    doc.addPage();
-    fillPage(doc);
-    y = drawPageTitle(doc, margin, "Floor manager notes", "AI highlights for this week");
-    insights.slice(0, 5).forEach((ins) => {
-      if (y > 700) y = newPage(doc, margin);
-      y = drawInsightCard(doc, margin, y, {
-        severity: ins.confidence === "high" ? "high" : "medium",
-        category: ins.type,
-        title: ins.title,
-        body: ins.body,
-      });
-    });
+    y = margin + 20;
+    y = drawOpsSection(doc, margin, y, contentW, "Operational risks", opsInsights.risks, "risk");
+    y = drawOpsSection(doc, margin, y, contentW, "Operational wins", opsInsights.wins, "win");
   }
 
   savePdf(doc, "weekly-staff-targets", branch);
@@ -342,12 +276,14 @@ function exportManagerReviewPDF(payload) {
 function exportExecutiveBoardroomPDF(payload) {
   const {
     attachment,
-    timeShift,
     heat,
     menuEngineering,
     waiters,
     insights,
     kpis,
+    executiveSummary,
+    staffAwards,
+    opsInsights,
     sections = {},
     chartImages = {},
   } = payload;
@@ -357,8 +293,13 @@ function exportExecutiveBoardroomPDF(payload) {
     title: "Executive Boardroom Report",
     subtitle: "KPI summary · revenue · risks · opportunities",
     meta: `${branch.toUpperCase()} · ${period}`,
-    blurb: "Board-ready snapshot: financial modifiers, session scale, heat momentum, and strategic AI signals — minimal floor detail.",
+    blurb: "Board-ready operational intelligence with revenue impact, beverage mix economics, and shift-aware staff signals.",
   });
+
+  if (executiveSummary) {
+    doc.addPage();
+    drawExecutiveSummaryPage(doc, margin, contentW, executiveSummary, period);
+  }
 
   doc.addPage();
   fillPage(doc);
@@ -385,40 +326,30 @@ function exportExecutiveBoardroomPDF(payload) {
     y += 54;
   }
 
-  y = embedChart(doc, chartImages.hourlySales, margin, y, contentW, 130) || y;
-
-  if (timeShift?.peakDaypart) {
-    doc.setFontSize(10);
-    doc.setTextColor(...NAC_WHITE);
-    doc.text(`Peak daypart: ${timeShift.peakDaypart.label}`, margin, y);
-    y += 18;
+  if (staffAwards?.awards?.length) {
+    y = drawAwardsGrid(doc, margin, y + 8, contentW, staffAwards.awards.slice(0, 6));
   }
+
+  y = embedChart(doc, chartImages.hourlySales, margin, y + 8, contentW, 110) || y;
 
   doc.addPage();
   fillPage(doc);
-  y = drawPageTitle(doc, margin, "Risks & opportunities", "AI + menu engineering");
-
-  const risks = (insights || []).filter((i) => i.type === "risk" || i.confidence === "high").slice(0, 4);
-  const opps = (insights || []).filter((i) => i.type !== "risk").slice(0, 4);
-
-  doc.setTextColor(...[232, 93, 76]);
-  doc.setFontSize(10);
-  doc.text("Risks", margin, y);
-  y += 14;
-  (risks.length ? risks : insights?.slice(0, 3) || []).forEach((ins) => {
-    if (y > 700) y = newPage(doc, margin);
-    y = drawInsightCard(doc, margin, y, { severity: "high", category: ins.type, title: ins.title, body: ins.body });
-  });
-
-  y += 8;
-  doc.setTextColor(...NAC_TEAL);
-  doc.setFontSize(10);
-  doc.text("Opportunities", margin, y);
-  y += 14;
-  (opps.length ? opps : []).forEach((ins) => {
-    if (y > 700) y = newPage(doc, margin);
-    y = drawInsightCard(doc, margin, y, { severity: "low", category: ins.type, title: ins.title, body: ins.body });
-  });
+  y = margin + 20;
+  if (opsInsights) {
+    y = drawOpsSection(doc, margin, y, contentW, "Strategic risks", opsInsights.risks, "risk");
+    y = drawOpsSection(doc, margin, y, contentW, "Strategic opportunities", opsInsights.wins, "win");
+  } else {
+    y = drawPageTitle(doc, margin, "Strategic signals", "");
+    (insights || []).slice(0, 5).forEach((ins) => {
+      if (y > 700) y = newPage(doc, margin);
+      y = drawInsightCard(doc, margin, y, {
+        severity: ins.confidence === "high" ? "high" : "medium",
+        category: ins.type,
+        title: ins.title,
+        body: ins.body,
+      });
+    });
+  }
 
   if (sectionOn(sections, "missed") && attachment?.missedUpsells?.length) {
     doc.addPage();

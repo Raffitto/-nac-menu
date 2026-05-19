@@ -1,4 +1,9 @@
-import { buildWaiterTargets } from "./waiterTargetEngine";
+import { buildWaiterCoaching } from "./waiterCoachingEngine";
+import { buildStaffOperationalIntelligence } from "./staffOperationalEngine";
+import { buildStaffAwards } from "./staffAwardsEngine";
+import { buildExecutiveOpsInsights } from "./executiveOpsInsightsEngine";
+import { buildExecutiveSummary } from "./executiveSummaryEngine";
+import { buildVisualInsights } from "./visualInsightEngine";
 import { partitionStaffByRole, staffNamesMatch } from "../config/staffRoles";
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
 
@@ -110,9 +115,46 @@ export function applyVisualExportConfig(payload, config) {
   competitionList = sortWaiters(competitionList, cfg.waiterSort, salesMetric);
   waiters = rebuildWaiterIntel(waiters, competitionList, salesMetric);
 
+  const salesItems = payload.waiterSalesItems || [];
+  const opsIntel = buildStaffOperationalIntelligence(salesItems, waiters, payload.timeShift);
+  waiters = { ...waiters, waiters: opsIntel.waiters };
+
+  const staffAwards = buildStaffAwards(opsIntel.waiters, opsIntel.team);
+  const scoredWaiters = opsIntel.waiters.map((w) => {
+    const ranked = staffAwards.ranked.find((r) => r.waiter === w.waiter);
+    return { ...w, operationalScore: ranked?.operationalScore ?? w.operationalScore };
+  });
+  waiters = { ...waiters, waiters: scoredWaiters };
+
+  const opsInsights = buildExecutiveOpsInsights({
+    team: opsIntel.team,
+    waiters: scoredWaiters,
+    attachment: payload.attachment,
+    timeShift: payload.timeShift,
+    awards: staffAwards,
+  });
+
+  const summary = buildExecutiveSummary({
+    waiters,
+    team: opsIntel.team,
+    awards: staffAwards,
+    attachment: payload.attachment,
+    opsInsights,
+  });
+
+  const legacyInsights = buildVisualInsights({
+    attachment: payload.attachment,
+    timeShift: payload.timeShift,
+    heat: payload.heat,
+    menuEngineering: payload.menuEngineering,
+    waiters,
+  });
+
+  const insights = [...opsInsights.insights, ...legacyInsights.filter((i) => !opsInsights.insights.some((o) => o.title === i.title))].slice(0, 12);
+
   const waiterTargets =
     sections.waiterTargets !== false
-      ? buildWaiterTargets(waiters, { focusItems })
+      ? buildWaiterCoaching(scoredWaiters, { focusItems, team: opsIntel.team })
       : [];
   const sortedProducts = sortProducts(payload.heat, payload.funnels, cfg.productSort);
 
@@ -122,6 +164,11 @@ export function applyVisualExportConfig(payload, config) {
     managers: partitioned.managers,
     staffOverview,
     waiterTargets,
+    staffAwards,
+    opsIntel,
+    executiveSummary: summary,
+    opsInsights,
+    insights,
     sortedProducts,
     weeklyFocusItems: focusItems,
     exportConfig: cfg,
