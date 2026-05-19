@@ -38,6 +38,11 @@ import { rangeToSince, rangeToHours, getRangeBounds } from "./utils/rangeState";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "./utils/sessionAnalyticsMap";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
 import { hasExtendedPlatformFilters } from "./utils/platformFilterHelpers";
+import {
+  MENU_EVENTS_EXTENDED_SELECT,
+  MENU_EVENTS_FEED_SELECT,
+  queryMenuEvents,
+} from "../lib/menuEventsQuery";
 import "./styles/analytics-dashboard.css";
 
 const EXTENDED_FILTER_ROW_LIMIT = 2500;
@@ -277,9 +282,6 @@ export default function AnalyticsDashboard() {
     const pHours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
     const hasExtendedFilters = hasExtendedPlatformFilters(filters);
 
-    const menuSelect =
-      "session_id, language, event_type, category_id, section_id, item_name_en, add_on_name, created_at, metadata, branch_id, employee_role";
-
     try {
       const { data: bi, error: biErr } = await supabase.rpc("get_bi_dashboard", {
         p_branch: branch,
@@ -293,14 +295,16 @@ export default function AnalyticsDashboard() {
       setTopAddons(mapBiTopAddons(biPayload));
 
       if (hasExtendedFilters) {
-        let rowsQ = supabase
-          .from("menu_events")
-          .select(menuSelect)
-          .order("created_at", { ascending: false })
-          .limit(EXTENDED_FILTER_ROW_LIMIT);
-        if (since) rowsQ = rowsQ.gte("created_at", since);
-        if (branch) rowsQ = rowsQ.eq("branch_id", branch);
-        const { data: rows, error: rowsErr } = await rowsQ;
+        const { data: rows, error: rowsErr } = await queryMenuEvents(
+          supabase,
+          MENU_EVENTS_EXTENDED_SELECT,
+          (q) => {
+            let qq = q.order("created_at", { ascending: false }).limit(EXTENDED_FILTER_ROW_LIMIT);
+            if (since) qq = qq.gte("created_at", since);
+            if (branch) qq = qq.eq("branch_id", branch);
+            return qq;
+          },
+        );
         if (rowsErr) throw rowsErr;
 
         const filtered = applyPlatformFilters(rows || [], filters);
@@ -314,16 +318,16 @@ export default function AnalyticsDashboard() {
 
       setAggregates(agg);
 
-      let feedQ = supabase
-        .from("menu_events")
-        .select(
-          "id, created_at, event_type, language, category_id, item_name_en, item_name_ar, search_query, add_on_name, branch_id, metadata, employee_role"
-        )
-        .order("created_at", { ascending: false })
-        .limit(FEED_LIMIT);
-      if (since) feedQ = feedQ.gte("created_at", since);
-      if (branch) feedQ = feedQ.eq("branch_id", branch);
-      const { data: recent, error: feedErr } = await feedQ;
+      const { data: recent, error: feedErr } = await queryMenuEvents(
+        supabase,
+        MENU_EVENTS_FEED_SELECT,
+        (q) => {
+          let qq = q.order("created_at", { ascending: false }).limit(FEED_LIMIT);
+          if (since) qq = qq.gte("created_at", since);
+          if (branch) qq = qq.eq("branch_id", branch);
+          return qq;
+        },
+      );
 
       if (feedErr) throw feedErr;
       const feedRows = hasExtendedFilters ? applyPlatformFilters(recent || [], filters) : recent || [];

@@ -84,7 +84,12 @@ export function matchesPlatformFilters(row, filters) {
   }
 
   if (filters.role && filters.role !== "all") {
-    const role = normalizeRole(row.employee_role);
+    const rawRole =
+      row.employee_role ||
+      row.metadata?.employee_role ||
+      row.metadata?.role ||
+      null;
+    const role = normalizeRole(rawRole);
     if (role && role !== filters.role) return false;
   }
 
