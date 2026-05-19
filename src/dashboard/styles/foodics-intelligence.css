@@ -603,6 +603,51 @@
   font-weight: 600;
 }
 
+.fi-waiter-validation-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 1.25rem 0;
+}
+
+.fi-validation-panel--raw {
+  border-color: rgba(78, 205, 196, 0.35);
+}
+
+.fi-validation-panel--preview {
+  border-color: rgba(215, 188, 138, 0.45);
+}
+
+.fi-validation-panel--saved {
+  border-color: rgba(120, 120, 130, 0.35);
+  opacity: 0.92;
+}
+
+.fi-pivot-warning {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(232, 93, 76, 0.45);
+  background: rgba(232, 93, 76, 0.1);
+  color: #f9f9f7;
+  font-size: 0.82rem;
+}
+
+.fi-pivot-warning svg {
+  flex-shrink: 0;
+  color: #e85d4c;
+  margin-top: 2px;
+}
+
+.fi-pivot-warning p {
+  margin: 0.35rem 0 0;
+  color: rgba(249, 249, 247, 0.65);
+  font-size: 0.78rem;
+}
+
 @media (max-width: 768px) {
   .fi-page {
     padding: 20px 16px 40px;

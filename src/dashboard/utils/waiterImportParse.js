@@ -66,23 +66,51 @@ export function forwardFillCreators(rows) {
   });
 }
 
-export function buildWaiterImportDebug({ parsedRaw = [], previewRows = [], importable = [] }) {
-  const hasCreator = (r) => Boolean(String(r.waiter_name || r.creator_name || "").trim());
-  const hasSales = (r) =>
-    (Number(r.quantity_sold) || 0) > 0 ||
-    (Number(r.gross_sales) || 0) > 0 ||
-    (Number(r.net_sales) || 0) > 0;
+export function rowHasCreator(row) {
+  return Boolean(String(row?.waiter_name || row?.creator_name || "").trim());
+}
 
-  const ignoredStatuses = new Set(["ignored", "ignored_selection", "ignored_free_modifier"]);
+export function rowHasSales(row) {
+  return (
+    (Number(row?.quantity_sold) || 0) > 0 ||
+    (Number(row?.gross_sales) || 0) > 0 ||
+    (Number(row?.net_sales) || 0) > 0
+  );
+}
+
+/** Waiter lane: save every creator line with sales (menu match optional). */
+export function isWaiterSavableRow(row) {
+  return rowHasCreator(row) && rowHasSales(row);
+}
+
+function sumRows(rows) {
+  return (rows || []).reduce(
+    (acc, r) => ({
+      gross: acc.gross + (Number(r.gross_sales) || 0),
+      qty: acc.qty + (Number(r.quantity_sold) || 0),
+    }),
+    { gross: 0, qty: 0 },
+  );
+}
+
+export function buildWaiterImportDebug({ parsedRaw = [], previewRows = [], importable = [] }) {
+  const savableRaw = parsedRaw.filter(isWaiterSavableRow);
+  const rawSums = sumRows(savableRaw);
+  const saveSums = sumRows(importable);
+  const zeroExcluded = previewRows.filter((r) => rowHasCreator(r) && !rowHasSales(r)).length;
 
   return {
     rawRowsParsed: parsedRaw.length,
-    rowsWithCreator: parsedRaw.filter(hasCreator).length,
-    rowsWithCreatorAndSales: parsedRaw.filter((r) => hasCreator(r) && hasSales(r)).length,
-    rowsAfterMatch: previewRows.length,
+    rowsWithCreator: parsedRaw.filter(rowHasCreator).length,
+    rowsWithCreatorAndSales: savableRaw.length,
+    rawGross: rawSums.gross,
+    rawQty: rawSums.qty,
+    rowsAfterMatch: previewRows.filter(isWaiterSavableRow).length,
+    rowsZeroExcluded: zeroExcluded,
     rowsSaved: importable.length,
-    rowsIgnored: previewRows.filter((r) => ignoredStatuses.has(r.import_status)).length,
+    saveGross: saveSums.gross,
+    saveQty: saveSums.qty,
     rowsUnmatchedButSaved: importable.filter((r) => !r.matched_menu_item_name).length,
-    rowsWithoutCreator: parsedRaw.filter((r) => !hasCreator(r)).length,
+    rowsWithoutCreator: parsedRaw.filter((r) => !rowHasCreator(r)).length,
   };
 }

@@ -28,8 +28,9 @@ import { parseFoodicsFile, detectColumnMapping, rowsFromMappedData } from "./uti
 import { IMPORT_TYPE, IMPORT_LANES } from "./config/foodicsImportTypes";
 import { BRANCH_OPTIONS } from "./config/foodicsImportTypes";
 import { matchImportRows } from "./utils/foodicsMatcher";
-import { buildWaiterImportValidation } from "./utils/waiterImportValidation";
-import { buildWaiterImportDebug } from "./utils/waiterImportParse";
+import { buildWaiterImportValidation, validationTotalsMatch } from "./utils/waiterImportValidation";
+import { buildWaiterImportDebug, isWaiterSavableRow } from "./utils/waiterImportParse";
+import WaiterImportValidationPanels from "./components/WaiterImportValidationPanels";
 import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImportDedupe";
 import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
 import { buildFoodicsSelectCatalog, findCatalogOption } from "./utils/foodicsSelectCatalog";
@@ -96,6 +97,7 @@ export default function FoodicsIntelligence({
     () => (laneBranchProp || platform?.branch || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
   );
   const [lastValidation, setLastValidation] = useState(null);
+  const [lastSavedMeta, setLastSavedMeta] = useState(null);
 
   const configured = isSupabaseConfigured();
 
@@ -141,10 +143,22 @@ export default function FoodicsIntelligence({
         setSalesItems(sales);
         if (importType === IMPORT_TYPE.WAITER_PRODUCT_SALES && sales.length) {
           setLastValidation(buildWaiterImportValidation(sales));
+          setLastSavedMeta({
+            uploaded_at: latest.uploaded_at,
+            source_file_name: latest.source_file_name,
+            row_count: sales.length,
+          });
+        } else if (importType === IMPORT_TYPE.WAITER_PRODUCT_SALES) {
+          setLastValidation(null);
+          setLastSavedMeta(null);
         }
       } else {
         setSelectedBatchId(null);
         setSalesItems([]);
+        if (importType === IMPORT_TYPE.WAITER_PRODUCT_SALES) {
+          setLastValidation(null);
+          setLastSavedMeta(null);
+        }
       }
     } catch (e) {
       setError(e?.message || "Failed to load Foodics data");
@@ -176,16 +190,9 @@ export default function FoodicsIntelligence({
     s === IMPORT_STATUS.IGNORED_SELECTION ||
     s === IMPORT_STATUS.IGNORED_FREE_MODIFIER;
 
-  const rowHasSales = (r) =>
-    (Number(r.quantity_sold) || 0) > 0 ||
-    (Number(r.gross_sales) || 0) > 0 ||
-    (Number(r.net_sales) || 0) > 0;
-
   const importableRows = useMemo(() => {
     if (isWaiterLane) {
-      return previewRows.filter(
-        (r) => (r.waiter_name || "").trim() && rowHasSales(r),
-      );
+      return previewRows.filter(isWaiterSavableRow);
     }
     return previewRows.filter(
       (r) => !isIgnoredStatus(r.import_status) && r.import_status !== IMPORT_STATUS.FUTURE_MENU,
@@ -283,13 +290,7 @@ export default function FoodicsIntelligence({
 
   const importableForSave = useMemo(() => {
     if (isWaiterLane) {
-      return previewRows.filter(
-        (r) =>
-          (r.waiter_name || "").trim() &&
-          rowHasSales(r) &&
-          !isIgnoredStatus(r.import_status) &&
-          r.import_status !== IMPORT_STATUS.FUTURE_MENU,
-      );
+      return previewRows.filter(isWaiterSavableRow);
     }
     return previewRows.filter(
       (r) =>
@@ -300,8 +301,18 @@ export default function FoodicsIntelligence({
 
   const rawValidation = useMemo(() => {
     if (!isWaiterLane || !parsedRawRows.length) return null;
-    return buildWaiterImportValidation(parsedRawRows);
+    return buildWaiterImportValidation(parsedRawRows.filter(isWaiterSavableRow));
   }, [isWaiterLane, parsedRawRows]);
+
+  const previewValidation = useMemo(() => {
+    if (!isWaiterLane || !importableForSave.length) return null;
+    return buildWaiterImportValidation(importableForSave);
+  }, [isWaiterLane, importableForSave]);
+
+  const pivotMismatch = useMemo(() => {
+    if (!rawValidation || !previewValidation) return false;
+    return !validationTotalsMatch(rawValidation, previewValidation);
+  }, [rawValidation, previewValidation]);
 
   const importDebug = useMemo(() => {
     if (!isWaiterLane) return null;
@@ -311,6 +322,10 @@ export default function FoodicsIntelligence({
       importable: importableForSave,
     });
   }, [isWaiterLane, parsedRawRows, previewRows, importableForSave]);
+
+  const lastSavedLabel = lastSavedMeta
+    ? `Saved ${lastSavedMeta.uploaded_at ? new Date(lastSavedMeta.uploaded_at).toLocaleString() : ""}${lastSavedMeta.source_file_name ? ` · ${lastSavedMeta.source_file_name}` : ""}${lastSavedMeta.row_count ? ` · ${lastSavedMeta.row_count} rows in DB` : ""}`
+    : null;
 
   const handleImport = async () => {
     const toSave = importableForSave;
@@ -347,7 +362,13 @@ export default function FoodicsIntelligence({
       setPreviewRows([]);
       setParsedRawRows([]);
       if (isWaiterLane) {
-        setLastValidation(buildWaiterImportValidation(toSave));
+        const savedValidation = buildWaiterImportValidation(toSave);
+        setLastValidation(savedValidation);
+        setLastSavedMeta({
+          uploaded_at: new Date().toISOString(),
+          source_file_name: file?.name,
+          row_count: toSave.length,
+        });
       }
       await loadAll();
       onImported?.();
@@ -564,69 +585,26 @@ export default function FoodicsIntelligence({
           </motion.div>
         )}
 
-        {isWaiterLane && rawValidation && (
-          <motion.div className="fi-validation-panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <h4>Raw parsed totals — compare to Foodics pivot (before menu matching)</h4>
-            <p className="fi-muted">
-              Parsed {parsedRawRows.length} rows from file · forward-filled Creator on blank cells
-            </p>
-            {importDebug && (
-              <motion.div className="fi-debug-counts">
-                <span>Raw parsed: <strong>{importDebug.rawRowsParsed}</strong></span>
-                <span>With creator: <strong>{importDebug.rowsWithCreator}</strong></span>
-                <span>Creator + sales: <strong>{importDebug.rowsWithCreatorAndSales}</strong></span>
-                <span>After match: <strong>{importDebug.rowsAfterMatch}</strong></span>
-                <span>To save: <strong>{importDebug.rowsSaved}</strong></span>
-                <span>Ignored (promo/meta): <strong>{importDebug.rowsIgnored}</strong></span>
-                <span>Unmatched but saved: <strong>{importDebug.rowsUnmatchedButSaved}</strong></span>
-                <span>No creator: <strong>{importDebug.rowsWithoutCreator}</strong></span>
-              </motion.div>
-            )}
-            <table className="fi-table fi-table--compact">
-              <thead>
-                <tr>
-                  <th>Creator</th>
-                  <th>Role</th>
-                  <th>Gross SAR</th>
-                  <th>Net SAR</th>
-                  <th>Qty</th>
-                  <th>Rows</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rawValidation.creators.map((c) => (
-                  <tr key={c.waiter}>
-                    <td>{c.waiter}</td>
-                    <td>{c.roleLabel}</td>
-                    <td>{c.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td>{c.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td>{c.quantity}</td>
-                    <td>{c.row_count}</td>
-                  </tr>
-                ))}
-                <tr className="fi-validation-total">
-                  <td colSpan={2}><strong>Grand total</strong></td>
-                  <td>
-                    <strong>
-                      {rawValidation.totals.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </strong>
-                  </td>
-                  <td>
-                    <strong>
-                      {rawValidation.totals.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    </strong>
-                  </td>
-                  <td><strong>{rawValidation.totals.quantity}</strong></td>
-                  <td><strong>{rawValidation.totals.row_count}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-            {importDebug && importDebug.rowsIgnored > 0 && (
-              <p className="fi-muted" style={{ marginTop: "0.75rem" }}>
-                {importDebug.rowsIgnored} zero-value promo/meta rows excluded from save but included in raw totals above.
-              </p>
-            )}
-          </motion.div>
+        {isWaiterLane && (rawValidation || previewValidation) && (
+          <WaiterImportValidationPanels
+            rawValidation={rawValidation}
+            previewValidation={previewValidation}
+            lastSavedValidation={lastValidation}
+            lastSavedLabel={lastSavedLabel}
+            importDebug={importDebug}
+            pivotMismatch={pivotMismatch}
+          />
+        )}
+
+        {isWaiterLane && importableForSave.length > 0 && (
+          <button type="button" className="fi-primary fi-primary--save-waiter" onClick={handleImport} disabled={importing}>
+            {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
+            Save import ({importableForSave.length} rows ·{" "}
+            {importDebug?.saveGross != null
+              ? `${importDebug.saveGross.toLocaleString(undefined, { maximumFractionDigits: 2 })} SAR gross`
+              : "—"}{" "}
+            · {importDebug?.saveQty ?? "—"} qty)
+          </button>
         )}
 
         {importableRows.length > 0 && (
@@ -675,40 +653,13 @@ export default function FoodicsIntelligence({
                 </tbody>
               </table>
             </motion.div>
-            <button type="button" className="fi-primary" onClick={handleImport} disabled={importing}>
-              {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
-              Save import ({importableForSave.length} {isWaiterLane ? "waiter rows" : "matched"})
-            </button>
+            {!isWaiterLane && (
+              <button type="button" className="fi-primary" onClick={handleImport} disabled={importing}>
+                {importing ? <Loader2 size={16} className="fi-spin" /> : <CheckCircle2 size={16} />}
+                Save import ({importableForSave.length} matched)
+              </button>
+            )}
           </div>
-        )}
-
-        {isWaiterLane && lastValidation && (
-          <motion.section className="fi-card fi-validation-panel">
-            <h3>Last import — Foodics reconciliation</h3>
-            <p className="fi-muted">Verify these totals match your Sales by Creator pivot</p>
-            <table className="fi-table fi-table--compact">
-              <thead>
-                <tr>
-                  <th>Creator</th>
-                  <th>Role</th>
-                  <th>Gross SAR</th>
-                  <th>Net SAR</th>
-                  <th>Qty</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lastValidation.creators.map((c) => (
-                  <tr key={`saved-${c.waiter}`}>
-                    <td>{c.waiter}</td>
-                    <td>{c.roleLabel}</td>
-                    <td>{c.gross_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td>{c.net_sales.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td>{c.quantity}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </motion.section>
         )}
 
         {ignoredRows.length > 0 && (

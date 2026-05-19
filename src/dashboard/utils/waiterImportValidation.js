@@ -45,6 +45,7 @@ export function buildWaiterImportValidation(rows = []) {
     waiters,
     managers,
     totals,
+    rowCount: totals.row_count,
     waiterTotals: waiters.reduce(
       (acc, c) => ({
         gross_sales: acc.gross_sales + c.gross_sales,
@@ -55,4 +56,12 @@ export function buildWaiterImportValidation(rows = []) {
       { gross_sales: 0, net_sales: 0, quantity: 0, row_count: 0 },
     ),
   };
+}
+
+/** Compare two validation summaries (raw vs preview vs pivot). */
+export function validationTotalsMatch(a, b, tolerance = { gross: 2, qty: 0 }) {
+  if (!a?.totals || !b?.totals) return false;
+  const grossDiff = Math.abs((a.totals.gross_sales || 0) - (b.totals.gross_sales || 0));
+  const qtyDiff = Math.abs((a.totals.quantity || 0) - (b.totals.quantity || 0));
+  return grossDiff <= tolerance.gross && qtyDiff <= tolerance.qty;
 }

@@ -442,9 +442,81 @@ export function fuzzyMatchFoodicsItem(
   return matchAgainstCatalog(rawName, menuItems, addOns, manualMaps, classification);
 }
 
+/** Waiter Sales by Creator — menu match only; never drop sales rows for promo/future/tea rules. */
+function matchWaiterImportRows(rows, menuItems, manualMaps, addOns) {
+  const deduped = dedupeWaiterImportRows(rows);
+  const aliasLookup = buildAliasLookup(manualMaps);
+
+  return deduped.map((row) => {
+    const rawName = row.raw_item_name || row.name;
+    const classification = classifyFoodicsRow(rawName, row.category);
+    const result = fuzzyMatchFoodicsItem(
+      rawName,
+      menuItems,
+      manualMaps,
+      addOns,
+      { category: row.category },
+      aliasLookup,
+    );
+    const cls = result.classification || classification;
+    const semanticResult = enrichSemanticFields(row, cls);
+    const suggestedName = result.suggestion?.name_en || null;
+    const suggestedConf = result.suggestion ? result.confidence : 0;
+
+    const base = {
+      ...row,
+      ...semanticResult,
+      normalized_item_name: normalizeName(rawName),
+      suggested_menu_item_name: suggestedName,
+      suggested_confidence: suggestedConf,
+      foodics_class_label: isFutureMenuItem(rawName)
+        ? "Future menu item"
+        : semanticResult.foodics_class_label,
+    };
+
+    if (result.matched && !result.needsReview) {
+      return {
+        ...base,
+        matched_menu_item_id: result.matched.id || null,
+        matched_menu_item_name: result.matched.name_en,
+        match_confidence: result.confidence,
+        match_type: normalizeMatchType(result.matchType),
+        needs_review: false,
+        import_status: IMPORT_STATUS.MATCHED,
+      };
+    }
+
+    if (result.needsReview && suggestedName) {
+      return {
+        ...base,
+        matched_menu_item_id: null,
+        matched_menu_item_name: null,
+        match_confidence: suggestedConf,
+        match_type: normalizeMatchType(result.matchType),
+        needs_review: true,
+        import_status: IMPORT_STATUS.NEEDS_REVIEW,
+      };
+    }
+
+    return {
+      ...base,
+      matched_menu_item_id: null,
+      matched_menu_item_name: null,
+      match_confidence: 0,
+      match_type: "unmatched",
+      needs_review: true,
+      import_status: IMPORT_STATUS.NEEDS_REVIEW,
+    };
+  });
+}
+
 export function matchImportRows(rows, menuItems, manualMaps, addOns = [], options = {}) {
   const isWaiter = options.importType === IMPORT_TYPE.WAITER_PRODUCT_SALES;
-  const deduped = isWaiter ? dedupeWaiterImportRows(rows) : dedupeImportRows(rows);
+  if (isWaiter) {
+    return matchWaiterImportRows(rows, menuItems, manualMaps, addOns);
+  }
+
+  const deduped = dedupeImportRows(rows);
   const aliasLookup = buildAliasLookup(manualMaps);
 
   return deduped.map((row) => {
