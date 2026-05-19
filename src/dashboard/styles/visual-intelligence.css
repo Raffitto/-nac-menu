@@ -272,6 +272,122 @@
   font-weight: 600;
 }
 
+.vi-export-config {
+  margin-bottom: 2rem;
+  padding: 1.25rem 1.35rem;
+}
+
+.vi-export-config-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.vi-export-config-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.vi-export-config-head p {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  color: rgba(249, 249, 247, 0.48);
+}
+
+.vi-export-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.vi-export-block--wide {
+  grid-column: 1 / -1;
+}
+
+.vi-export-block h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.vi-export-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.vi-export-block label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.vi-export-block input[type="date"],
+.vi-export-block select,
+.vi-waiter-search {
+  padding: 0.4rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #f9f9f7;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.vi-mode-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.vi-mode-pill {
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.65);
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.vi-mode-pill.active {
+  border-color: rgba(215, 188, 138, 0.45);
+  background: rgba(215, 188, 138, 0.15);
+  color: #f5e6c8;
+}
+
+.vi-section-checks,
+.vi-waiter-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.vi-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.75);
+  cursor: pointer;
+}
+
+.vi-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 @media (max-width: 640px) {
   .vi-grid-2 { grid-template-columns: 1fr; }
   .vi-heatmap-grid { grid-template-columns: repeat(4, 1fr); }

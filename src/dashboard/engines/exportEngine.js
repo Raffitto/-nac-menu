@@ -690,16 +690,30 @@ export function exportUnifiedIntelligenceXLSX(ctx) {
   exportReviewIntelligenceReport({ ...ctx, format: "xlsx" });
 }
 
-/** Visual Intelligence OS — executive PDF (dark luxury styling via teal/gold accents) */
+function viPdfNewPage(doc, margin) {
+  doc.addPage();
+  doc.setFillColor(12, 12, 14);
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), "F");
+  return margin;
+}
+
+function viSectionOn(sections, key) {
+  return sections?.[key] !== false;
+}
+
+/** Visual Intelligence OS — executive PDF (config-aware sections + visuals) */
 export function exportVisualIntelligencePDF({
   attachment,
   timeShift,
   heat,
   menuEngineering,
   waiters,
+  waiterTargets,
+  sortedProducts,
   insights,
   kpis,
   exportMeta,
+  sections = {},
 }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const margin = 48;
@@ -718,45 +732,55 @@ export function exportVisualIntelligencePDF({
   y += 14;
   doc.setFontSize(9);
   doc.setTextColor(160, 160, 160);
-  doc.text(`Generated ${new Date().toLocaleString()} · ${businessDayExportNote()}`, margin, y);
+  doc.text(
+    `Generated ${new Date().toLocaleString()} · ${exportMeta?.period || businessDayExportNote()} · Branch: ${exportMeta?.branch || "all"}`,
+    margin,
+    y,
+  );
   y += 22;
 
-  doc.setTextColor(78, 205, 196);
-  doc.setFontSize(11);
-  doc.text("Executive Summary", margin, y);
-  y += 14;
-  doc.setTextColor(220, 220, 220);
-  doc.setFontSize(9);
-  (insights || []).slice(0, 5).forEach((ins) => {
-    doc.splitTextToSize(`• ${ins.title}: ${ins.body}`, 500).forEach((ln) => {
-      if (y > 720) {
-        doc.addPage();
-        doc.setFillColor(12, 12, 14);
-        doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), "F");
-        y = margin;
-      }
-      doc.text(ln, margin, y);
-      y += 11;
+  if (viSectionOn(sections, "executive")) {
+    doc.setTextColor(78, 205, 196);
+    doc.setFontSize(11);
+    doc.text("Executive Summary — KPI Snapshot", margin, y);
+    y += 14;
+    autoTable(doc, {
+      startY: y,
+      head: [["KPI", "Value"]],
+      body: [
+        ["Modifier revenue", `${Math.round(attachment?.totals?.modifierRevenue || 0).toLocaleString()} SAR`],
+        ["Parent orders", String(attachment?.totals?.parentOrders || 0)],
+        ["Missed upsell signals", String(attachment?.missedUpsells?.length || 0)],
+        ["Sessions", String(kpis?.sessions || "—")],
+        ["Waiters in export", String(waiters?.waiters?.length || 0)],
+      ],
+      styles: { fontSize: 9, textColor: [240, 240, 240], fillColor: [20, 20, 22] },
+      headStyles: { fillColor: [45, 95, 90], textColor: [255, 255, 255] },
+      margin: { left: margin, right: margin },
     });
-  });
-  y += 8;
+    y = doc.lastAutoTable.finalY + 14;
+  }
 
-  autoTable(doc, {
-    startY: y,
-    head: [["KPI", "Value"]],
-    body: [
-      ["Modifier revenue", `${Math.round(attachment?.totals?.modifierRevenue || 0).toLocaleString()} SAR`],
-      ["Parent orders", String(attachment?.totals?.parentOrders || 0)],
-      ["Missed upsell signals", String(attachment?.missedUpsells?.length || 0)],
-      ["Sessions", String(kpis?.sessions || "—")],
-    ],
-    styles: { fontSize: 9, textColor: [240, 240, 240], fillColor: [20, 20, 22] },
-    headStyles: { fillColor: [45, 95, 90], textColor: [255, 255, 255] },
-    margin: { left: margin, right: margin },
-  });
+  if (viSectionOn(sections, "ai") && (insights || []).length) {
+    if (y > 640) y = viPdfNewPage(doc, margin);
+    doc.setTextColor(78, 205, 196);
+    doc.setFontSize(11);
+    doc.text("AI Operational Insights", margin, y);
+    y += 14;
+    doc.setTextColor(220, 220, 220);
+    doc.setFontSize(9);
+    insights.slice(0, 8).forEach((ins) => {
+      doc.splitTextToSize(`• [${ins.confidence}] ${ins.title}: ${ins.body}`, 500).forEach((ln) => {
+        if (y > 720) y = viPdfNewPage(doc, margin);
+        doc.text(ln, margin, y);
+        y += 11;
+      });
+    });
+    y += 8;
+  }
 
-  let ty = doc.lastAutoTable.finalY + 18;
-  if ((attachment?.missedUpsells || []).length) {
+  let ty = y;
+  if (viSectionOn(sections, "missed") && (attachment?.missedUpsells || []).length) {
     doc.setTextColor(245, 166, 35);
     doc.setFontSize(10);
     doc.text("Missed Upsells", margin, ty);
@@ -776,7 +800,24 @@ export function exportVisualIntelligencePDF({
     });
   }
 
-  if ((attachment?.topAttachments || []).length) {
+  if (viSectionOn(sections, "attachment") && (attachment?.topAttachments || []).length) {
+    let ay = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : ty + 10;
+    if (ay > 640) ay = viPdfNewPage(doc, margin);
+    doc.setTextColor(78, 205, 196);
+    doc.text("Attachment rates (progress)", margin, ay);
+    ay = drawBarChart(
+      doc,
+      margin,
+      ay + 10,
+      attachment.topAttachments.map((p) => ({
+        item_name: p.label,
+        heatIndex: p.attachmentRate,
+      })),
+      { labelKey: "item_name", valueKey: "heatIndex", barColor: EXPORT_TEAL, maxBarW: 140 },
+    );
+  }
+
+  if (viSectionOn(sections, "attachment") && (attachment?.topAttachments || []).length) {
     let ay = doc.lastAutoTable.finalY + 18;
     if (ay > 680) {
       doc.addPage();
@@ -799,7 +840,7 @@ export function exportVisualIntelligencePDF({
     });
   }
 
-  if ((menuEngineering || []).length) {
+  if (viSectionOn(sections, "menuEng") && (menuEngineering || []).length) {
     let my = doc.lastAutoTable.finalY + 18;
     if (my > 680) {
       doc.addPage();
@@ -829,7 +870,7 @@ export function exportVisualIntelligencePDF({
     doc.text(`Peak daypart: ${timeShift.peakDaypart.label}`, margin, py);
   }
 
-  if ((heat?.hotNow || []).length) {
+  if (viSectionOn(sections, "heat") && (heat?.hotNow || []).length) {
     let hy = doc.lastAutoTable.finalY + 20;
     if (hy > 700) {
       doc.addPage();
@@ -846,29 +887,109 @@ export function exportVisualIntelligencePDF({
     );
   }
 
-  if (waiters?.topUpseller) {
-    let wy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 16 : margin + 400;
-    if (wy > 700) {
-      doc.addPage();
-      wy = margin;
-    }
+  if (viSectionOn(sections, "waiter") && waiters?.waiters?.length) {
+    let wy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : margin + 200;
+    if (wy > 640) wy = viPdfNewPage(doc, margin);
     doc.setTextColor(215, 188, 138);
-    doc.text(`Top upseller: ${waiters.topUpseller.waiter} — ${waiters.topUpseller.net_sales.toLocaleString()} SAR`, margin, wy);
+    doc.text("Waiter leaderboard", margin, wy);
+    wy += 10;
+    wy = drawBarChart(
+      doc,
+      margin,
+      wy,
+      waiters.waiters.slice(0, 10).map((w) => ({ item_name: w.waiter, heatIndex: w.net_sales })),
+      { labelKey: "item_name", valueKey: "heatIndex", barColor: EXPORT_GOLD, maxBarW: 130 },
+    );
+    autoTable(doc, {
+      startY: wy + 6,
+      head: [["Waiter", "Revenue", "Qty", "Mod %", "Dessert %"]],
+      body: waiters.waiters.slice(0, 12).map((w) => [
+        w.waiter,
+        w.net_sales.toLocaleString(),
+        String(w.quantity),
+        `${w.modifierAttachPct}%`,
+        `${w.dessertAttachPct}%`,
+      ]),
+      styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [24, 24, 26] },
+      headStyles: { fillColor: EXPORT_GOLD, textColor: [30, 30, 30] },
+      margin: { left: margin, right: margin },
+    });
   }
 
-  doc.save("nac-visual-intelligence.pdf");
+  if (viSectionOn(sections, "waiterTargets") && (waiterTargets || []).length) {
+    let wy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : margin + 300;
+    if (wy > 620) wy = viPdfNewPage(doc, margin);
+    doc.setTextColor(245, 166, 35);
+    doc.setFontSize(11);
+    doc.text("Weekly staff targets", margin, wy);
+    wy += 12;
+    (waiterTargets || []).slice(0, 10).forEach((t) => {
+      if (wy > 720) wy = viPdfNewPage(doc, margin);
+      doc.setFontSize(9);
+      doc.setTextColor(249, 249, 247);
+      doc.text(t.headline, margin, wy);
+      wy += 11;
+      doc.setTextColor(180, 180, 180);
+      doc.splitTextToSize(`${t.detail} · Push: ${t.pushNextWeek}`, 500).forEach((ln) => {
+        doc.text(ln, margin + 8, wy);
+        wy += 10;
+      });
+      wy += 4;
+    });
+  }
+
+  if (viSectionOn(sections, "product") && (sortedProducts || []).length) {
+    let py = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : margin + 400;
+    if (py > 640) py = viPdfNewPage(doc, margin);
+    doc.setTextColor(78, 205, 196);
+    doc.text("Product performance ranking", margin, py);
+    py += 10;
+    autoTable(doc, {
+      startY: py,
+      head: [["Item", "Heat", "Orders", "Views"]],
+      body: sortedProducts.slice(0, 15).map((p) => [
+        exportCell(p.item_name),
+        String(p.heatIndex ?? "—"),
+        String(p.orders ?? "—"),
+        String(p.views ?? "—"),
+      ]),
+      styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [24, 24, 26] },
+      headStyles: { fillColor: EXPORT_TEAL },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if (viSectionOn(sections, "modifier") && (attachment?.modifierLeaderboard || []).length) {
+    let my = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : margin + 450;
+    if (my > 640) my = viPdfNewPage(doc, margin);
+    doc.setTextColor(215, 188, 138);
+    doc.text("Modifier / add-on revenue", margin, my);
+    my = drawBarChart(
+      doc,
+      margin,
+      my + 10,
+      attachment.modifierLeaderboard.slice(0, 8).map((m) => ({ item_name: m.name, heatIndex: m.revenue })),
+      { labelKey: "item_name", valueKey: "heatIndex", barColor: EXPORT_TEAL },
+    );
+  }
+
+  const safeBranch = (exportMeta?.branch || "all").replace(/\s+/g, "-");
+  doc.save(`nac-visual-intelligence-${safeBranch}.pdf`);
 }
 
-/** Visual Intelligence OS — boardroom XLSX */
+/** Visual Intelligence OS — boardroom XLSX (formatted tables + section sheets) */
 export function exportVisualIntelligenceXLSX({
   attachment,
   timeShift,
   heat,
   menuEngineering,
   waiters,
+  waiterTargets,
+  sortedProducts,
   insights,
   kpis,
   exportMeta,
+  sections = {},
 }) {
   const wb = XLSX.utils.book_new();
   const generated = new Date().toLocaleString();
@@ -880,6 +1001,8 @@ export function exportVisualIntelligenceXLSX({
       [title],
       ["Generated", generated],
       ["Period", exportMeta?.period || businessDayExportNote()],
+      ["Branch", exportMeta?.branch || "all"],
+      ["Target mode", exportMeta?.targetMode || "—"],
       [],
       ["KPI", "Value"],
       ["Modifier revenue", attachment?.totals?.modifierRevenue || 0],
@@ -890,16 +1013,74 @@ export function exportVisualIntelligenceXLSX({
     "Executive Summary",
   );
 
-  XLSX.utils.book_append_sheet(
-    wb,
-    XLSX.utils.aoa_to_sheet([
-      ["AI Operational Insights"],
-      ...(insights || []).map((i) => [i.title, i.body, i.confidence, i.type]),
-    ]),
-    "AI Insights",
-  );
+  if (viSectionOn(sections, "ai")) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet([
+        ["AI Operational Insights"],
+        ...(insights || []).map((i) => [i.title, i.body, i.confidence, i.type]),
+      ]),
+      "AI Insights",
+    );
+  }
 
-  if (attachment?.pairs?.length) {
+  if (viSectionOn(sections, "product") && (sortedProducts || []).length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        sortedProducts.slice(0, 80).map((p, i) => ({
+          Rank: i + 1,
+          Item: p.item_name,
+          "Heat index": p.heatIndex,
+          Orders: p.orders,
+          Views: p.views,
+          Revenue: p.revenue,
+          "Visual rank": i < 3 ? "TOP" : i < 10 ? "HIGH" : "—",
+        })),
+      ),
+      "Product Performance",
+    );
+  }
+
+  if (viSectionOn(sections, "waiter") && waiters?.waiters?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        waiters.waiters.map((w, i) => ({
+          Rank: i + 1,
+          Waiter: w.waiter,
+          Revenue: w.net_sales,
+          Quantity: w.quantity,
+          "Avg check": w.avgCheck,
+          "Modifier attach %": w.modifierAttachPct,
+          "Dessert attach %": w.dessertAttachPct,
+          "Beverage attach %": w.beverageAttachPct,
+          Tier: i === 0 ? "GOLD" : i < 3 ? "SILVER" : "—",
+        })),
+      ),
+      "Waiter Performance",
+    );
+  }
+
+  if (viSectionOn(sections, "waiterTargets") && (waiterTargets || []).length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        waiterTargets.map((t) => ({
+          Waiter: t.waiter,
+          Headline: t.headline,
+          Detail: t.detail,
+          "Push next week": t.pushNextWeek,
+          Priority: t.priority,
+          Revenue: t.net_sales,
+          "Modifier %": t.modifierAttachPct,
+        })),
+      ),
+      "Staff Targets",
+    );
+  }
+
+  if (viSectionOn(sections, "attachment") && attachment?.pairs?.length) {
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(
@@ -917,7 +1098,7 @@ export function exportVisualIntelligenceXLSX({
     );
   }
 
-  if (attachment?.missedUpsells?.length) {
+  if (viSectionOn(sections, "missed") && attachment?.missedUpsells?.length) {
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(
@@ -951,7 +1132,7 @@ export function exportVisualIntelligenceXLSX({
     );
   }
 
-  if (heat?.items?.length) {
+  if (viSectionOn(sections, "heat") && heat?.items?.length) {
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(
@@ -969,20 +1150,20 @@ export function exportVisualIntelligenceXLSX({
     );
   }
 
-  if (waiters?.waiters?.length) {
+  if (viSectionOn(sections, "modifier") && (attachment?.modifierLeaderboard || []).length) {
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(
-        waiters.waiters.map((w) => ({
-          Waiter: w.waiter,
-          Revenue: w.net_sales,
-          "Avg check": w.avgCheck,
-          "Modifier attach %": w.modifierAttachPct,
-          "Dessert attach %": w.dessertAttachPct,
-          "Beverage attach %": w.beverageAttachPct,
+        attachment.modifierLeaderboard.map((m, i) => ({
+          Rank: i + 1,
+          Modifier: m.name,
+          Revenue: m.revenue,
+          Quantity: m.quantity,
+          "Attach %": m.attachmentRate,
+          "Top parent": m.topParent,
         })),
       ),
-      "Staff",
+      "Modifiers",
     );
   }
 

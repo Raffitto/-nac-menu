@@ -25,6 +25,8 @@ import {
   getAddOnsForMatching,
 } from "../lib/foodicsApi";
 import { parseFoodicsFile, detectColumnMapping, rowsFromMappedData } from "./utils/foodicsParser";
+import { IMPORT_TYPE, IMPORT_LANES } from "./config/foodicsImportTypes";
+import { BRANCH_OPTIONS } from "./config/foodicsImportTypes";
 import { matchImportRows } from "./utils/foodicsMatcher";
 import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImportDedupe";
 import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
@@ -56,8 +58,14 @@ function weekAgoISO() {
   return d.toISOString().slice(0, 10);
 }
 
-export default function FoodicsIntelligence() {
+export default function FoodicsIntelligence({
+  importType = IMPORT_TYPE.PRODUCT_SALES,
+  embedded = false,
+  laneBranch: laneBranchProp,
+  onImported,
+}) {
   const platform = usePlatformFiltersOptional();
+  const laneMeta = IMPORT_LANES[importType] || IMPORT_LANES[IMPORT_TYPE.PRODUCT_SALES];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [batches, setBatches] = useState([]);
@@ -81,6 +89,9 @@ export default function FoodicsIntelligence() {
   const [periodStart, setPeriodStart] = useState(weekAgoISO());
   const [periodEnd, setPeriodEnd] = useState(todayISO());
   const [notes, setNotes] = useState("");
+  const [laneBranch, setLaneBranch] = useState(
+    () => (laneBranchProp || platform?.branch || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
+  );
 
   const configured = isSupabaseConfigured();
 
@@ -100,35 +111,40 @@ export default function FoodicsIntelligence() {
       }
 
       const [batchList, items, addons, maps, latest, rpc] = await Promise.all([
-        getImportBatches(),
+        getImportBatches(20, importType),
         getMenuItemsForMatching(),
         getAddOnsForMatching(),
         getNameMappings(),
-        getLatestBatch(),
-        supabase.rpc("get_bi_dashboard", {
-          p_branch: platform?.branch || null,
-          p_hours: platform?.timeRangeHours ?? 24,
-        }),
+        getLatestBatch(importType, laneBranch),
+        importType === IMPORT_TYPE.PRODUCT_SALES
+          ? supabase.rpc("get_bi_dashboard", {
+              p_branch: platform?.branch || null,
+              p_hours: platform?.timeRangeHours ?? 24,
+            })
+          : Promise.resolve({ data: null }),
       ]);
 
       setBatches(batchList);
       setMenuItems(items);
       setAddOns(addons);
       setManualMaps(maps);
-      if (rpc.data?.top_items) setAnalyticsItems(normalizeTopItems(rpc.data.top_items));
+      if (rpc?.data?.top_items) setAnalyticsItems(normalizeTopItems(rpc.data.top_items));
 
       const activeId = latest?.id;
       if (activeId) {
         setSelectedBatchId(activeId);
         const sales = await getBatchSalesItems(activeId);
         setSalesItems(sales);
+      } else {
+        setSelectedBatchId(null);
+        setSalesItems([]);
       }
     } catch (e) {
       setError(e?.message || "Failed to load Foodics data");
     } finally {
       setLoading(false);
     }
-  }, [configured, platform?.branch, platform?.timeRangeHours]);
+  }, [configured, platform?.branch, platform?.timeRangeHours, importType, laneBranch]);
 
   useEffect(() => {
     loadAll();
@@ -204,15 +220,20 @@ export default function FoodicsIntelligence() {
       const parsed = await parseFoodicsFile(f);
       setRawRows(parsed.rawRows);
       setHeaders(parsed.headers);
-      const detected = parsed.mapping || detectColumnMapping(parsed.headers);
-      setMapping(detected);
+      const detected =
+        parsed.mapping ||
+        detectColumnMapping(parsed.headers, importType);
+      if (importType === IMPORT_TYPE.WAITER_PRODUCT_SALES && !detected.waiter) {
+        detected.waiter = detectColumnMapping(parsed.headers, IMPORT_TYPE.WAITER_PRODUCT_SALES).waiter;
+      }
+      setMapping({ ...detected, importType: detected.importType || importType });
       const { rows, error: mapErr } = rowsFromMappedData(parsed.rawRows, detected);
       if (mapErr) setError(mapErr);
       else applyMatching(rows, detected);
     } catch (e) {
       setError(e?.message || "Could not parse file");
     }
-  }, [applyMatching]);
+  }, [applyMatching, importType]);
 
   const onDrop = useCallback(
     (e) => {
@@ -254,13 +275,14 @@ export default function FoodicsIntelligence() {
       const email = session?.session?.user?.email || "admin";
       await createImportBatch(
         {
-          branch_id: (platform?.branch || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
+          branch_id: laneBranch,
+          import_type: importType,
           period_type: periodType,
           period_start: periodStart,
           period_end: periodEnd,
           source_file_name: file?.name,
           uploaded_by: email,
-          notes,
+          notes: notes || `${laneMeta.title}`,
         },
         toSave,
       );
@@ -270,6 +292,7 @@ export default function FoodicsIntelligence() {
       setRawRows([]);
       setPreviewRows([]);
       await loadAll();
+      onImported?.();
     } catch (e) {
       setError(e?.message || "Import failed");
     } finally {
@@ -361,14 +384,23 @@ export default function FoodicsIntelligence() {
     );
   }
 
+  const mapperFields =
+    importType === IMPORT_TYPE.WAITER_PRODUCT_SALES
+      ? ["name", "waiter", "sku", "quantity", "netSales", "grossSales", "discount"]
+      : ["name", "quantity", "netSales", "grossSales", "discount", "category"];
+
+  const pageClass = embedded ? "fi-page fi-page--embedded" : "fi-page";
+
   return (
-    <motion.div className="fi-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div className={pageClass} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {!embedded && (
       <header className="fi-header">
         <motion.div initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
           <h1>Sales Intelligence</h1>
           <p>Upload Foodics Sales by Product exports and compare real sales to menu behavior.</p>
         </motion.div>
       </header>
+      )}
 
       {error && (
         <motion.div className="fi-alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -379,8 +411,17 @@ export default function FoodicsIntelligence() {
 
       {/* Upload */}
       <section className="fi-card fi-upload-card">
-        <h2><Upload size={18} /> Import Foodics Report</h2>
-        <div className="fi-period-row">
+        <h2><Upload size={18} /> {embedded ? laneMeta.title : "Import Foodics Report"}</h2>
+        {embedded && <p className="fi-muted" style={{ marginTop: 0 }}>{laneMeta.foodicsReport}</p>}
+        <motion.div className="fi-period-row">
+          <label>
+            Branch
+            <select value={laneBranch} onChange={(e) => setLaneBranch(e.target.value)}>
+              {BRANCH_OPTIONS.map((b) => (
+                <option key={b.value} value={b.value}>{b.label}</option>
+              ))}
+            </select>
+          </label>
           {PERIOD_TYPES.map((p) => (
             <button
               key={p.value}
@@ -408,7 +449,7 @@ export default function FoodicsIntelligence() {
               placeholder="Optional — e.g. Saturday weekly close"
             />
           </label>
-        </div>
+        </motion.div>
 
         <motion.div
           className={`fi-dropzone ${dragOver ? "over" : ""}`}
@@ -430,7 +471,7 @@ export default function FoodicsIntelligence() {
           <div className="fi-mapper">
             <h3>Column mapping</h3>
             <motion.div className="fi-map-grid" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {["name", "quantity", "netSales", "grossSales", "discount", "category"].map((field) => (
+              {mapperFields.map((field) => (
                 <label key={field}>
                   {field}
                   <select
@@ -664,7 +705,8 @@ export default function FoodicsIntelligence() {
         )}
       </AnimatePresence>
 
-      {/* History */}
+      {/* History — full page only */}
+      {!embedded && (
       <section className="fi-card">
         <h2><History size={18} /> Import history</h2>
         {batches.length === 0 ? (
@@ -689,9 +731,10 @@ export default function FoodicsIntelligence() {
           </div>
         )}
       </section>
+      )}
 
-      {/* Opportunities */}
-      {conversionRows.length > 0 && (
+      {/* Opportunities — product lane full page */}
+      {!embedded && importType === IMPORT_TYPE.PRODUCT_SALES && conversionRows.length > 0 && (
         <>
           {!visibilityReady && (
             <p className="fi-visibility-note">

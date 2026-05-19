@@ -3,13 +3,18 @@ import { buildConversionRows, getConversionOpportunities } from "../dashboard/ut
 import { normalizeTopItems } from "../dashboard/utils/topItemsNormalize";
 import { hasVisibilityTracking } from "../dashboard/utils/intelligenceSanity";
 import { normalizeFoodicsName } from "../dashboard/utils/foodicsNameNormalize";
+import { IMPORT_TYPE } from "../dashboard/config/foodicsImportTypes";
 
-export async function getImportBatches(limit = 20) {
-  const { data, error } = await supabase
-    .from("foodics_import_batches")
-    .select("*")
-    .order("uploaded_at", { ascending: false })
-    .limit(limit);
+export { IMPORT_TYPE };
+
+export async function getImportBatches(limit = 20, importType = null) {
+  let query = supabase.from("foodics_import_batches").select("*");
+  if (importType === IMPORT_TYPE.PRODUCT_SALES) {
+    query = query.or("import_type.eq.product_sales,import_type.is.null");
+  } else if (importType) {
+    query = query.eq("import_type", importType);
+  }
+  const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return data || [];
 }
@@ -24,13 +29,20 @@ export async function getBatchSalesItems(batchId) {
   return data || [];
 }
 
-export async function getLatestBatch() {
-  const { data, error } = await supabase
-    .from("foodics_import_batches")
-    .select("*")
-    .order("uploaded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+/** Latest batch — defaults to product_sales lane for backward compatibility */
+export async function getLatestBatch(importType = IMPORT_TYPE.PRODUCT_SALES, branchId = null) {
+  return getLatestBatchByType(importType, branchId);
+}
+
+export async function getLatestBatchByType(importType = IMPORT_TYPE.PRODUCT_SALES, branchId = null) {
+  let query = supabase.from("foodics_import_batches").select("*");
+  if (importType === IMPORT_TYPE.PRODUCT_SALES) {
+    query = query.or("import_type.eq.product_sales,import_type.is.null");
+  } else {
+    query = query.eq("import_type", importType);
+  }
+  if (branchId) query = query.eq("branch_id", branchId.toLowerCase());
+  const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
   return data;
 }
@@ -149,6 +161,7 @@ function toSalesItemPayload(row, batch, meta) {
     analytics_category: row.analytics_category || row.inherited_category || null,
     is_modifier: Boolean(row.track_as_modifier),
     waiter_name: row.waiter_name || null,
+    product_sku: row.product_sku || null,
     sold_at: row.sold_at ? new Date(row.sold_at).toISOString() : null,
     quantity_sold: row.quantity_sold || 0,
     net_sales: row.net_sales,
@@ -162,6 +175,7 @@ export async function createImportBatch(meta, salesRows) {
     .from("foodics_import_batches")
     .insert({
       branch_id: meta.branch_id || "khobar",
+      import_type: meta.import_type || IMPORT_TYPE.PRODUCT_SALES,
       period_type: meta.period_type,
       period_start: meta.period_start,
       period_end: meta.period_end,
@@ -258,7 +272,7 @@ export async function getAddOnsForMatching() {
 /** Load latest Foodics + conversion context for AI Insights */
 export async function getFoodicsIntelligenceContext(analyticsData) {
   try {
-    const latest = await getLatestBatch();
+    const latest = await getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES);
     if (!latest) {
       return { hasImports: false, batches: [], conversionRows: [], opportunities: null };
     }

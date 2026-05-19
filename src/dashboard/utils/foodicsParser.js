@@ -8,7 +8,8 @@ const NET_HEADERS = ["net sales", "net", "net total", "net amount"];
 const GROSS_HEADERS = ["gross sales", "gross", "gross total", "gross amount", "total sales"];
 const DISCOUNT_HEADERS = ["discount amount", "discount", "discounts", "disc"];
 const CATEGORY_HEADERS = ["category", "product category", "menu category", "group"];
-const WAITER_HEADERS = ["waiter", "server", "employee", "staff", "cashier", "user", "sold by"];
+const WAITER_HEADERS = ["waiter", "server", "employee", "staff", "cashier", "user", "sold by", "creator"];
+const SKU_HEADERS = ["product sku", "sku", "item sku"];
 const TIMESTAMP_HEADERS = ["date", "time", "datetime", "timestamp", "order date", "business date"];
 
 function normHeader(h) {
@@ -95,24 +96,41 @@ function findColumn(headers, candidates, { exclude = [] } = {}) {
   return null;
 }
 
-export function detectColumnMapping(headers) {
+export function detectImportTypeFromHeaders(headers) {
+  const h = headers.map(normHeader);
+  const hasCreator = h.some((c) => c === "creator");
+  const hasProduct = h.some((c) => c === "product");
+  if (hasCreator && hasProduct) return "waiter_product_sales";
+  return "product_sales";
+}
+
+export function detectColumnMapping(headers, importType = null) {
   const h = headers.filter(Boolean);
+  const inferred = importType || detectImportTypeFromHeaders(h);
 
   const netSales =
     findColumnExact(h, ["net sales"]) ||
     findColumn(h, NET_HEADERS, { exclude: ["net sales with tax", "net sales without tax"] });
 
-  return {
+  const mapping = {
     name: findColumnExact(h, ["product"]) || findColumn(h, NAME_HEADERS),
     quantity: findColumnExact(h, ["net quantity"]) || findColumn(h, QTY_HEADERS),
     netSales,
     grossSales: findColumnExact(h, ["gross sales"]) || findColumn(h, GROSS_HEADERS, { exclude: ["gross sales without tax"] }),
     discount: findColumnExact(h, ["discount amount"]) || findColumn(h, DISCOUNT_HEADERS),
     category: findColumn(h, CATEGORY_HEADERS),
-    waiter: findColumn(h, WAITER_HEADERS),
+    waiter: findColumnExact(h, ["creator"]) || findColumn(h, WAITER_HEADERS),
+    sku: findColumnExact(h, ["product sku"]) || findColumn(h, SKU_HEADERS),
     timestamp: findColumn(h, TIMESTAMP_HEADERS),
     allHeaders: h,
+    importType: inferred,
   };
+
+  if (inferred === "waiter_product_sales" && !mapping.waiter) {
+    mapping.waiter = findColumnExact(h, ["creator"]);
+  }
+
+  return mapping;
 }
 
 function parseNumber(val) {
@@ -132,6 +150,7 @@ export function rowsFromMappedData(rawRows, mapping) {
     rows.push({
       raw_item_name: name,
       normalized_item_name: normalizeFoodicsName(name),
+      product_sku: mapping.sku ? normCell(raw[mapping.sku]) || null : null,
       quantity_sold: mapping.quantity ? parseNumber(raw[mapping.quantity]) || 0 : 0,
       net_sales: mapping.netSales ? parseNumber(raw[mapping.netSales]) : null,
       gross_sales: mapping.grossSales ? parseNumber(raw[mapping.grossSales]) : null,

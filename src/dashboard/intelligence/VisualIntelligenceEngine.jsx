@@ -6,8 +6,6 @@ import {
   Clock,
   Grid3X3,
   Users,
-  Download,
-  FileText,
   Loader2,
   AlertTriangle,
   Sparkles,
@@ -30,7 +28,12 @@ import {
   Cell,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { getLatestBatch, getBatchSalesItems } from "../../lib/foodicsApi";
+import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
+import { IMPORT_TYPE } from "../config/foodicsImportTypes";
+import { defaultExportConfig } from "../config/visualExportPresets";
+import { applyVisualExportConfig } from "../engines/visualExportApply";
+import { buildWaiterTargets } from "../engines/waiterTargetEngine";
+import VisualExportConfig from "../components/VisualExportConfig";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { rangeToHours, rangeExportLabel } from "../utils/rangeState";
 import { businessDayExportNote } from "../utils/businessDay";
@@ -74,7 +77,11 @@ export default function VisualIntelligenceEngine() {
   const filters = usePlatformFiltersOptional();
   const [loading, setLoading] = useState(true);
   const [biData, setBiData] = useState(null);
-  const [salesItems, setSalesItems] = useState([]);
+  const [productItems, setProductItems] = useState([]);
+  const [waiterItems, setWaiterItems] = useState([]);
+  const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
+  const [exportConfig, setExportConfig] = useState(() => defaultExportConfig());
+  const [exporting, setExporting] = useState(false);
 
   const pHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
   const rangeLabel = rangeExportLabel(filters?.selectedRange || "today");
@@ -86,19 +93,28 @@ export default function VisualIntelligenceEngine() {
     }
     setLoading(true);
     try {
-      const [rpc, latest] = await Promise.all([
+      const branch = filters?.branch || null;
+      const [rpc, latestProduct, latestWaiter] = await Promise.all([
         supabase.rpc("get_bi_dashboard", {
-          p_branch: filters?.branch || null,
+          p_branch: branch,
           p_hours: pHours,
         }),
-        getLatestBatch(),
+        getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
+        getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
       ]);
       if (!rpc.error) setBiData(rpc.data);
-      if (latest?.id) setSalesItems(await getBatchSalesItems(latest.id));
-      else setSalesItems([]);
+      setHasWaiterBatch(Boolean(latestWaiter?.id));
+      const [prod, waiter] = await Promise.all([
+        latestProduct?.id ? getBatchSalesItems(latestProduct.id) : Promise.resolve([]),
+        latestWaiter?.id ? getBatchSalesItems(latestWaiter.id) : Promise.resolve([]),
+      ]);
+      setProductItems(prod);
+      setWaiterItems(waiter);
     } catch {
       setBiData(null);
-      setSalesItems([]);
+      setProductItems([]);
+      setWaiterItems([]);
+      setHasWaiterBatch(false);
     } finally {
       setLoading(false);
     }
@@ -113,48 +129,72 @@ export default function VisualIntelligenceEngine() {
   const addonPairs = useMemo(() => biData?.top_addon_pairs || [], [biData]);
 
   const attachment = useMemo(
-    () => buildAttachmentIntelligence({ salesItems, addonPairs }),
-    [salesItems, addonPairs],
+    () => buildAttachmentIntelligence({ salesItems: productItems, addonPairs }),
+    [productItems, addonPairs],
   );
 
   const timeShift = useMemo(
-    () => buildTimeShiftIntelligence({ biData, salesItems }),
-    [biData, salesItems],
+    () => buildTimeShiftIntelligence({ biData, salesItems: productItems }),
+    [biData, productItems],
   );
 
   const menuEngineering = useMemo(() => classifyMenuItems(funnels), [funnels]);
 
   const heat = useMemo(
-    () => buildHeatScores({ funnels, salesItems, modifierLeaderboard: attachment.modifierLeaderboard }),
-    [funnels, salesItems, attachment.modifierLeaderboard],
+    () => buildHeatScores({ funnels, salesItems: productItems, modifierLeaderboard: attachment.modifierLeaderboard }),
+    [funnels, productItems, attachment.modifierLeaderboard],
   );
 
-  const waiters = useMemo(() => buildWaiterSalesIntelligence(salesItems), [salesItems]);
+  const waiters = useMemo(
+    () => (hasWaiterBatch ? buildWaiterSalesIntelligence(waiterItems) : { waiters: [], topUpseller: null }),
+    [waiterItems, hasWaiterBatch],
+  );
+
+  const waiterTargets = useMemo(() => buildWaiterTargets(waiters), [waiters]);
+
+  const waiterNames = useMemo(
+    () => (waiters?.waiters || []).map((w) => w.waiter),
+    [waiters],
+  );
+
+  useEffect(() => {
+    if (waiterNames.length && !exportConfig.selectedWaiters?.length) {
+      setExportConfig((c) => ({ ...c, selectedWaiters: waiterNames }));
+    }
+  }, [waiterNames, exportConfig.selectedWaiters?.length]);
 
   const insights = useMemo(
     () => buildVisualInsights({ attachment, timeShift, heat, menuEngineering, waiters }),
     [attachment, timeShift, heat, menuEngineering, waiters],
   );
 
-  const exportPayload = useMemo(
+  const baseExportPayload = useMemo(
     () => ({
       attachment,
       timeShift,
       heat,
       menuEngineering,
       waiters,
+      waiterTargets,
       insights,
       kpis: intelligence?.kpis,
       funnels,
+      hasWaiterBatch,
       exportMeta: { title: `Visual Intelligence — ${rangeLabel}`, period: rangeLabel },
     }),
-    [attachment, timeShift, heat, menuEngineering, waiters, insights, intelligence, funnels, rangeLabel],
+    [attachment, timeShift, heat, menuEngineering, waiters, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch],
   );
 
   const runExport = async (fmt) => {
-    const mod = await import("../engines/exportEngine");
-    if (fmt === "pdf") mod.exportVisualIntelligencePDF(exportPayload);
-    else mod.exportVisualIntelligenceXLSX(exportPayload);
+    setExporting(true);
+    try {
+      const payload = applyVisualExportConfig(baseExportPayload, exportConfig);
+      const mod = await import("../engines/exportEngine");
+      if (fmt === "pdf") mod.exportVisualIntelligencePDF(payload);
+      else mod.exportVisualIntelligenceXLSX(payload);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) {
@@ -174,17 +214,17 @@ export default function VisualIntelligenceEngine() {
   return (
     <motion.div className="vi-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "rgba(249,249,247,0.45)" }}>
-        {businessDayExportNote()} · Attachment pairs use latest Foodics import + menu click signals
+        {businessDayExportNote()} · Product lane + waiter lane imports · Configure exports below
       </p>
 
-      <motion.div className="vi-export-bar">
-        <button type="button" className="vi-export-btn" onClick={() => runExport("pdf")}>
-          <FileText size={14} /> Executive PDF
-        </button>
-        <button type="button" className="vi-export-btn" onClick={() => runExport("xlsx")}>
-          <Download size={14} /> Boardroom XLSX
-        </button>
-      </motion.div>
+      <VisualExportConfig
+        config={exportConfig}
+        onChange={setExportConfig}
+        waiterNames={waiterNames}
+        exporting={exporting}
+        onExportPdf={() => runExport("pdf")}
+        onExportXlsx={() => runExport("xlsx")}
+      />
 
       <div className="vi-kpi-grid">
         <div className="vi-kpi">
@@ -472,11 +512,13 @@ export default function VisualIntelligenceEngine() {
       </Section>
 
       {/* Phase 4 — Staff */}
-      <Section title="Waiter & staff intelligence" subtitle="From Foodics waiter column on latest import">
+      <Section title="Waiter & staff intelligence" subtitle="Requires Waiter Product Sales import (Sales by Creator, group by product)">
         <div className="vi-grid-2">
           <div className="vi-panel vi-podium">
             <h3><Users size={16} /> Top upseller podium</h3>
-            {waiters.topUpseller ? (
+            {!hasWaiterBatch ? (
+              <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
+            ) : waiters.topUpseller ? (
               <>
                 <p style={{ fontSize: "2rem", margin: "0.5rem 0 0" }}>🥇</p>
                 <p className="vi-podium-name">{waiters.topUpseller.waiter}</p>
@@ -485,29 +527,51 @@ export default function VisualIntelligenceEngine() {
                 </p>
               </>
             ) : (
-              <p className="nac-empty-state">No waiter data in import</p>
+              <p className="nac-empty-state">No waiter rows in latest batch</p>
             )}
           </div>
 
           <div className="vi-panel">
             <h3>Staff comparison</h3>
-            <div className="vi-chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={waiters.radarTop}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="waiter" tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 9 }} />
-                  <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
-                  <Tooltip contentStyle={TOOLTIP} />
-                  <Bar dataKey="modifier" fill="#4ecdc4" name="Modifier %" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="dessert" fill="#d7bc8a" name="Dessert %" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p style={{ fontSize: "0.72rem", marginTop: "0.5rem", color: "rgba(249,249,247,0.45)" }}>
-              Dessert champion: {waiters.dessertChampion?.waiter || "—"} · Beverage: {waiters.beverageChampion?.waiter || "—"}
-            </p>
+            {!hasWaiterBatch ? (
+              <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
+            ) : (
+              <>
+                <motion.div className="vi-chart-wrap">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={waiters.radarTop}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                      <XAxis dataKey="waiter" tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
+                      <Tooltip contentStyle={TOOLTIP} />
+                      <Bar dataKey="modifier" fill="#4ecdc4" name="Modifier %" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="dessert" fill="#d7bc8a" name="Dessert %" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </motion.div>
+                <p style={{ fontSize: "0.72rem", marginTop: "0.5rem", color: "rgba(249,249,247,0.45)" }}>
+                  Dessert champion: {waiters.dessertChampion?.waiter || "—"} · Beverage: {waiters.beverageChampion?.waiter || "—"}
+                </p>
+              </>
+            )}
           </div>
         </div>
+
+        {hasWaiterBatch && waiterTargets.length > 0 && (
+          <div className="vi-panel" style={{ marginTop: "1rem" }}>
+            <h3>Weekly target cards</h3>
+            <p className="vi-subtitle">Per-waiter push recommendations for next week</p>
+            <motion.div className="vi-grid-2">
+              {waiterTargets.slice(0, 6).map((t) => (
+                <div key={t.waiter} className={`vi-insight-card ${t.priority === "mentor" ? "win" : "opportunity"}`}>
+                  <strong>{t.headline}</strong>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>{t.detail}</p>
+                  <span className="vi-badge medium">Push: {t.pushNextWeek}</span>
+                </div>
+              ))}
+            </motion.div>
+          </div>
+        )}
       </Section>
 
       {/* Phase 5 — Heat */}

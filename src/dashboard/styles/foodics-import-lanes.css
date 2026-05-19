@@ -1,0 +1,124 @@
+.fi-lane {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(12, 12, 14, 0.55);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.fi-lane-header {
+  display: flex;
+  gap: 0.85rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.fi-lane-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(215, 188, 138, 0.12);
+  color: #d7bc8a;
+  flex-shrink: 0;
+}
+
+.fi-lane-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #f9f9f7;
+}
+
+.fi-lane-header p {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.fi-lane-instructions {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fi-lane-report {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.65);
+}
+
+.fi-lane-instructions ul {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.75rem;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.fi-lane-used {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.68rem;
+  color: rgba(249, 249, 247, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fi-lane-tag {
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(78, 205, 196, 0.12);
+  color: #9ee8e2;
+  font-size: 0.68rem;
+}
+
+.fi-lane-last-batch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.6);
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(78, 205, 196, 0.08);
+  border: 1px solid rgba(78, 205, 196, 0.2);
+}
+
+.fi-lane-batch-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0.7;
+}
+
+.fi-lane-empty {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.4);
+}
+
+.fi-page--embedded {
+  padding: 0;
+}
+
+.fi-page--embedded .fi-upload-card {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.fi-import-lanes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1.25rem;
+}
