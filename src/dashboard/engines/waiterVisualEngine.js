@@ -1,12 +1,26 @@
 /**
- * Phase 11 — Chart-ready datasets for waiter comparison & beverage mix visuals.
+ * Chart-ready datasets + executive storytelling for waiter & beverage visuals.
  */
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
+import {
+  SHIFT_LABELS,
+  SCATTER_QUADRANTS,
+  ARCHETYPES,
+  EXECUTIVE_LABELS,
+  revenueQualityBand,
+  SEMANTIC,
+} from "../config/executiveVisualLanguage";
+import {
+  isBreakfastHeavy,
+  isPmHeavy,
+  isVolumeWithoutMargin,
+  isLowValueBeverageDominant,
+} from "./intelligenceCalibration";
 
 const SHIFT_COLORS = {
-  breakfast: "#d7bc8a",
-  pm: "#4ecdc4",
-  balanced: "#8F7A5F",
+  breakfast: SEMANTIC.gold,
+  pm: SEMANTIC.teal,
+  balanced: SEMANTIC.gray,
 };
 
 export function shiftColor(shiftLean) {
@@ -14,9 +28,7 @@ export function shiftColor(shiftLean) {
 }
 
 export function shiftLabel(shiftLean) {
-  if (shiftLean === "breakfast") return "AM";
-  if (shiftLean === "pm") return "PM";
-  return "Mixed";
+  return SHIFT_LABELS[shiftLean] || SHIFT_LABELS.balanced;
 }
 
 function pct(part, whole) {
@@ -28,11 +40,43 @@ function norm(value, max) {
   return Math.round(Math.min(100, (value / max) * 100));
 }
 
-/** Bubble scatter: gross vs revenue quality */
+export function inferWaiterArchetype(w) {
+  if (isLowValueBeverageDominant(w) && (w.revenueQualityScore || 0) < 48) {
+    return { ...ARCHETYPES.margin_risk, hint: "Soft drink-heavy mix dilutes margin quality" };
+  }
+  if (isVolumeWithoutMargin(w)) {
+    return { ...ARCHETYPES.volume_heavy, hint: "Highest volume, weakest monetization quality" };
+  }
+  if ((w.revenueQualityScore || 0) >= 72 && (w.ops?.premiumBevPct || 0) >= 18) {
+    return { ...ARCHETYPES.premium_seller, hint: "Best premium conversion on the floor" };
+  }
+  if (isBreakfastHeavy(w)) {
+    return { ...ARCHETYPES.breakfast_specialist, hint: "Morning shift concentration — coach premium within traffic" };
+  }
+  if (isPmHeavy(w)) {
+    return { ...ARCHETYPES.dinner_specialist, hint: "Dinner shift monetization profile" };
+  }
+  if ((w.modifierAttachPct || 0) < 10 && (w.quantity || 0) >= 420) {
+    return { ...ARCHETYPES.hidden_upside, hint: "Hidden operational upside on modifiers and premium beverages" };
+  }
+  return { ...ARCHETYPES.balanced_operator, hint: "Balanced floor operator" };
+}
+
+function classifyScatterPoint(p, midGross, midRq) {
+  const highVol = p.gross >= midGross;
+  const highRq = p.rq >= midRq;
+  if (highVol && highRq) return SCATTER_QUADRANTS.premium_balanced;
+  if (highVol && !highRq) return SCATTER_QUADRANTS.volume_risk;
+  if (!highVol && highRq) return SCATTER_QUADRANTS.quality_specialist;
+  return SCATTER_QUADRANTS.hidden_opportunity;
+}
+
 export function buildRevenueQualityScatter(waiters = [], salesMetric = "gross") {
-  return waiters.map((w) => {
+  const points = waiters.map((w) => {
     const gross = waiterSalesValue(w, salesMetric);
     const lean = w.ops?.shiftLean || "balanced";
+    const archetype = inferWaiterArchetype(w);
+    const band = revenueQualityBand(w.revenueQualityScore);
     return {
       waiter: w.waiter,
       gross,
@@ -41,101 +85,119 @@ export function buildRevenueQualityScatter(waiters = [], salesMetric = "gross") 
       shift: lean,
       shiftLabel: shiftLabel(lean),
       fill: shiftColor(lean),
-      z: Math.max(80, Math.min(420, (w.avgCheck || 30) * 8)),
+      z: Math.max(90, Math.min(440, (w.avgCheck || 30) * 8)),
+      archetype,
+      qualityBand: band.label,
     };
+  });
+
+  const maxGross = Math.max(...points.map((p) => p.gross), 1);
+  const midGross = maxGross * 0.52;
+  const midRq = 52;
+
+  return points.map((p) => {
+    const quadrant = classifyScatterPoint(p, midGross, midRq);
+    let callout = quadrant.hint;
+    if (p === points.find((x) => x.gross === maxGross && x.rq === Math.min(...points.map((z) => z.rq)))) {
+      callout = "Highest volume, weakest monetization";
+    }
+    const topRq = [...points].sort((a, b) => b.rq - a.rq)[0];
+    if (p.waiter === topRq?.waiter) callout = "Best revenue quality on the floor";
+    return { ...p, quadrant, scatterCallout: callout, midGross, midRq };
   });
 }
 
-/** Normalized grouped bars for horizontal comparison */
 export function buildWaiterGroupedBars(waiters = [], salesMetric = "gross") {
   const list = [...waiters];
   const maxGross = Math.max(...list.map((w) => waiterSalesValue(w, salesMetric)), 1);
   const maxAvg = Math.max(...list.map((w) => w.avgCheck || 0), 1);
   const maxRq = Math.max(...list.map((w) => w.revenueQualityScore || 0), 1);
 
-  return list.map((w) => {
-    const gross = waiterSalesValue(w, salesMetric);
-    return {
-      waiter: w.waiter,
-      shortName: w.waiter.length > 11 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
-      bars: [
-        {
-          key: "gross",
-          label: "Gross",
-          pct: norm(gross, maxGross),
-          raw: gross,
-          display: `${Math.round(gross).toLocaleString()} SAR`,
-          tone: "teal",
-        },
-        {
-          key: "avg",
-          label: "Avg ticket",
-          pct: norm(w.avgCheck, maxAvg),
-          raw: w.avgCheck,
-          display: `${Math.round(w.avgCheck || 0)} SAR`,
-          tone: "gold",
-        },
-        {
-          key: "mod",
-          label: "Modifier",
-          pct: Math.min(100, w.modifierAttachPct || 0),
-          raw: w.modifierAttachPct,
-          display: `${w.modifierAttachPct ?? 0}%`,
-          tone: "teal",
-        },
-        {
-          key: "premBev",
-          label: "Premium bev",
-          pct: Math.min(100, w.ops?.premiumBevPct || 0),
-          raw: w.ops?.premiumBevPct,
-          display: `${w.ops?.premiumBevPct ?? 0}%`,
-          tone: "gold",
-        },
-        {
-          key: "rq",
-          label: "Rev. quality",
-          pct: norm(w.revenueQualityScore, maxRq),
-          raw: w.revenueQualityScore,
-          display: `${w.revenueQualityScore ?? 0}/100`,
-          tone: w.revenueQualityScore >= 55 ? "teal" : w.revenueQualityScore < 42 ? "critical" : "warn",
-        },
-      ],
-    };
-  });
+  return list
+    .map((w, rank) => {
+      const gross = waiterSalesValue(w, salesMetric);
+      const archetype = inferWaiterArchetype(w);
+      return {
+        waiter: w.waiter,
+        shortName: w.waiter.length > 11 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
+        rank: rank + 1,
+        archetype,
+        bars: [
+          {
+            key: "gross",
+            label: EXECUTIVE_LABELS.grossSales,
+            pct: norm(gross, maxGross),
+            display: `${Math.round(gross).toLocaleString()} SAR`,
+            tone: "teal",
+          },
+          {
+            key: "avg",
+            label: EXECUTIVE_LABELS.avgTicket,
+            pct: norm(w.avgCheck, maxAvg),
+            display: `${Math.round(w.avgCheck || 0)} SAR`,
+            tone: "gold",
+          },
+          {
+            key: "mod",
+            label: EXECUTIVE_LABELS.modifierAttach,
+            pct: Math.min(100, w.modifierAttachPct || 0),
+            display: `${w.modifierAttachPct ?? 0}%`,
+            tone: "teal",
+          },
+          {
+            key: "premBev",
+            label: EXECUTIVE_LABELS.premiumBeverageMix,
+            pct: Math.min(100, w.ops?.premiumBevPct || 0),
+            display: `${w.ops?.premiumBevPct ?? 0}%`,
+            tone: "gold",
+          },
+          {
+            key: "rq",
+            label: EXECUTIVE_LABELS.revenueQuality,
+            pct: norm(w.revenueQualityScore, maxRq),
+            display: `${w.revenueQualityScore ?? 0}/100`,
+            tone: w.revenueQualityScore >= 72 ? "teal" : w.revenueQualityScore < 48 ? "critical" : "warn",
+          },
+        ],
+      };
+    })
+    .sort((a, b) => b.bars.find((x) => x.key === "rq")?.pct - a.bars.find((x) => x.key === "rq")?.pct);
 }
 
-/** Radar axes 0–100 for one waiter vs team benchmarks */
 export function buildWaiterRadar(waiter, teamWaiters = []) {
-  if (!waiter) return { axes: [], waiter: null };
+  if (!waiter) return { axes: [], waiter: null, teamBenchmark: [] };
 
   const team = teamWaiters.length ? teamWaiters : [waiter];
   const maxAvg = Math.max(...team.map((w) => w.avgCheck || 0), 1);
+  const teamAvgMod = team.reduce((s, w) => s + (w.modifierAttachPct || 0), 0) / team.length;
+  const teamAvgPrem = team.reduce((s, w) => s + (w.ops?.premiumBevPct || 0), 0) / team.length;
   const mod = waiter.modifierAttachPct || 0;
   const lowBev = waiter.ops?.lowValueBevPct || 0;
-  const consistency = Math.max(
-    0,
-    Math.min(100, 100 - Math.abs(lowBev - 35) * 0.9 - (mod < 8 ? 12 : 0)),
-  );
+  const consistency = Math.max(0, Math.min(100, 100 - Math.abs(lowBev - 35) * 0.9 - (mod < 8 ? 12 : 0)));
   const upsell = Math.round(
-    ((waiter.revenueQualityScore || 0) * 0.55 +
-      Math.min(100, (mod || 0) * 2.2) * 0.25 +
-      Math.min(100, (waiter.ops?.premiumBevPct || 0) * 2.5) * 0.2),
+    (waiter.revenueQualityScore || 0) * 0.55 +
+      Math.min(100, mod * 2.2) * 0.25 +
+      Math.min(100, (waiter.ops?.premiumBevPct || 0) * 2.5) * 0.2,
   );
 
   const axes = [
-    { axis: "Premium mix", value: Math.min(100, waiter.ops?.premiumMixPct || 0), fullMark: 100 },
-    { axis: "Avg ticket", value: norm(waiter.avgCheck, maxAvg), fullMark: 100 },
-    { axis: "Modifiers", value: Math.min(100, mod), fullMark: 100 },
-    { axis: "Premium bev", value: Math.min(100, waiter.ops?.premiumBevPct || 0), fullMark: 100 },
-    { axis: "Dessert", value: Math.min(100, waiter.dessertAttachPct || 0), fullMark: 100 },
-    { axis: "Consistency", value: Math.round(consistency), fullMark: 100 },
-    { axis: "Upsell eff.", value: upsell, fullMark: 100 },
+    { axis: "Premium mix", value: Math.min(100, waiter.ops?.premiumMixPct || 0), benchmark: 55, fullMark: 100 },
+    { axis: "Average ticket", value: norm(waiter.avgCheck, maxAvg), benchmark: 55, fullMark: 100 },
+    { axis: "Modifier attach", value: Math.min(100, mod), benchmark: Math.round(teamAvgMod), fullMark: 100 },
+    { axis: "Premium beverage", value: Math.min(100, waiter.ops?.premiumBevPct || 0), benchmark: Math.round(teamAvgPrem), fullMark: 100 },
+    { axis: "Dessert monetization", value: Math.min(100, waiter.dessertAttachPct || 0), benchmark: 12, fullMark: 100 },
+    { axis: "Consistency", value: Math.round(consistency), benchmark: 60, fullMark: 100 },
+    { axis: "Upsell efficiency", value: upsell, benchmark: 58, fullMark: 100 },
   ];
 
-  return { waiter: waiter.waiter, axes, shiftLabel: shiftLabel(waiter.ops?.shiftLean) };
+  return {
+    waiter: waiter.waiter,
+    axes,
+    shiftLabel: shiftLabel(waiter.ops?.shiftLean),
+    archetype: inferWaiterArchetype(waiter),
+  };
 }
 
-/** Stacked beverage mix % per waiter */
 export function buildBeverageMixStacked(waiters = []) {
   return waiters
     .filter((w) => (w.ops?.bevGross || 0) > 0)
@@ -158,7 +220,6 @@ export function buildBeverageMixStacked(waiters = []) {
     .sort((a, b) => b.low - a.low);
 }
 
-/** Premium beverage % leaderboard */
 export function buildPremiumBevLeaderboard(waiters = []) {
   return [...waiters]
     .filter((w) => (w.ops?.bevGross || 0) > 200)
@@ -169,14 +230,11 @@ export function buildPremiumBevLeaderboard(waiters = []) {
       lowPct: w.ops?.lowValueBevPct || 0,
       premiumGross: w.ops?.premiumBevGross || 0,
       bevGross: w.ops?.bevGross || 0,
+      callout: (w.ops?.premiumBevPct || 0) >= 22 ? "Best premium conversion" : null,
     }))
     .sort((a, b) => b.premiumPct - a.premiumPct);
 }
 
-/**
- * Conservative premium beverage opportunity — not aggressive AI math.
- * Only Pepsi-heavy profiles; capped uplift on low-value beverage gross.
- */
 export function estimatePremiumBeverageOpportunity(waiters = []) {
   const CONVERTIBLE_SHARE = 0.12;
   const UPLIFT_FACTOR = 0.4;
@@ -194,12 +252,7 @@ export function estimatePremiumBeverageOpportunity(waiters = []) {
     const estimate = Math.round(lowGross * CONVERTIBLE_SHARE * UPLIFT_FACTOR);
     if (estimate < 80) return;
 
-    byWaiter.push({
-      waiter: w.waiter,
-      estimate,
-      lowPct,
-      lowGross,
-    });
+    byWaiter.push({ waiter: w.waiter, estimate, lowPct, lowGross });
     teamTotal += estimate;
   });
 
@@ -207,22 +260,32 @@ export function estimatePremiumBeverageOpportunity(waiters = []) {
     teamTotal,
     byWaiter: byWaiter.sort((a, b) => b.estimate - a.estimate),
     methodology:
-      "Conservative: 12% of low-value beverage gross × 40% uplift factor. Validate on next Foodics period.",
+      "Conservative premium beverage conversion potential. Validate on next Foodics period before treating as fixed recoverable revenue.",
   };
 }
 
-/** Full bundle for Visual OS + export */
+export function enrichWaitersForVisuals(waiters = []) {
+  return waiters.map((w) => {
+    const archetype = inferWaiterArchetype(w);
+    return { ...w, archetype, scatterCallout: archetype.hint };
+  });
+}
+
 export function buildOperationalVisualBundle(waiters = [], salesMetric = "gross") {
-  const scatter = buildRevenueQualityScatter(waiters, salesMetric);
-  const grouped = buildWaiterGroupedBars(waiters, salesMetric);
-  const beverageStack = buildBeverageMixStacked(waiters);
-  const premiumLeaderboard = buildPremiumBevLeaderboard(waiters);
-  const opportunity = estimatePremiumBeverageOpportunity(waiters);
+  const enriched = enrichWaitersForVisuals(waiters);
+  const scatter = buildRevenueQualityScatter(enriched, salesMetric);
+  const grouped = buildWaiterGroupedBars(enriched, salesMetric);
+  const beverageStack = buildBeverageMixStacked(enriched);
+  const premiumLeaderboard = buildPremiumBevLeaderboard(enriched);
+  const opportunity = estimatePremiumBeverageOpportunity(enriched);
 
   const defaultRadarWaiter =
-    [...waiters].sort((a, b) => (b.revenueQualityScore || 0) - (a.revenueQualityScore || 0))[0] ||
-    waiters[0] ||
+    [...enriched].sort((a, b) => (b.revenueQualityScore || 0) - (a.revenueQualityScore || 0))[0] ||
+    enriched[0] ||
     null;
+
+  const volumeRisk = scatter.find((p) => p.quadrant?.id === "volume_risk" && p.gross === Math.max(...scatter.map((s) => s.gross)));
+  const qualityLeader = [...scatter].sort((a, b) => b.rq - a.rq)[0];
 
   return {
     scatter,
@@ -231,6 +294,10 @@ export function buildOperationalVisualBundle(waiters = [], salesMetric = "gross"
     premiumLeaderboard,
     opportunity,
     defaultRadarWaiter,
-    radarFor: (w) => buildWaiterRadar(w, waiters),
+    volumeRisk,
+    qualityLeader,
+    radarFor: (w) => buildWaiterRadar(w, enriched),
+    midGross: scatter[0]?.midGross,
+    midRq: scatter[0]?.midRq ?? 52,
   };
 }

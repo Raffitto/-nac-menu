@@ -1,27 +1,69 @@
-import { fillPage, drawPageTitle, embedChart, drawKpiCard, NAC_GOLD } from "./pdfVisualTheme";
+import {
+  fillPage,
+  drawPageTitle,
+  embedChart,
+  drawKpiCard,
+  drawLegendRow,
+  drawCallout,
+  NAC_GOLD,
+  NAC_TEAL,
+  COLOR_RISK,
+  COLOR_OPPORTUNITY,
+} from "./pdfVisualTheme";
+import { EXECUTIVE_LABELS } from "../config/executiveVisualLanguage";
 
-/** Boardroom-ready operational visual pages (Phase 11). */
-export function drawWaiterComparisonPdfPage(doc, margin, contentW, chartImages = {}) {
+export function drawWaiterComparisonPdfPage(doc, margin, contentW, chartImages = {}, bundleMeta = {}) {
   fillPage(doc);
-  let y = drawPageTitle(doc, margin, "Operational waiter comparison", "Revenue quality vs volume · shift-aware");
+  let y = drawPageTitle(
+    doc,
+    margin,
+    "Operational waiter comparison",
+    "Revenue quality vs gross sales · shift profile · monetization archetypes",
+  );
 
-  y = embedChart(doc, chartImages.rqScatter, margin, y, contentW, 128) || y;
+  drawLegendRow(doc, margin, y, contentW, [
+    { color: NAC_GOLD, label: "Morning shift" },
+    { color: NAC_TEAL, label: "Dinner shift" },
+    { color: [143, 122, 95], label: "Mixed daypart" },
+    { color: NAC_GOLD, label: "Benchmark zone" },
+  ]);
+  y += 22;
 
-  const halfW = contentW / 2 - 6;
-  const rowY = y + 6;
-  embedChart(doc, chartImages.waiterRadar, margin, rowY, halfW, 112);
-  embedChart(doc, chartImages.waiterGrouped, margin + halfW + 12, rowY, halfW, 112);
-  y = rowY + 124;
+  if (bundleMeta.volumeRisk) {
+    y = drawCallout(doc, margin, y, contentW, {
+      accent: COLOR_RISK,
+      title: "Volume without margin",
+      body: `${bundleMeta.volumeRisk.waiter}: ${bundleMeta.volumeRisk.scatterCallout || "Highest gross, weakest revenue quality"}`,
+      hint: "Coach premium beverage and modifier attach — not more covers",
+    });
+  }
+  if (bundleMeta.qualityLeader) {
+    y = drawCallout(doc, margin, y, contentW, {
+      accent: NAC_TEAL,
+      title: "Revenue quality leader",
+      body: `${bundleMeta.qualityLeader.waiter}: ${EXECUTIVE_LABELS.revenueQuality} ${bundleMeta.qualityLeader.rq}/100`,
+      hint: "Use as floor benchmark for premium conversion",
+    });
+  }
 
-  doc.setFontSize(8);
-  doc.setTextColor(140, 140, 140);
-  doc.text("High gross + low RQ = volume without margin · bubble color = AM / PM / mixed shift", margin, y);
-  return y + 16;
+  y = embedChart(doc, chartImages.rqScatter, margin, y, contentW, 155) || y;
+
+  const halfW = (contentW - 12) / 2;
+  const rowY = y + 4;
+  embedChart(doc, chartImages.waiterRadar, margin, rowY, halfW, 130);
+  embedChart(doc, chartImages.waiterGrouped, margin + halfW + 12, rowY, halfW, 130);
+
+  return rowY + 142;
 }
 
 export function drawBeverageIntelligencePdfPage(doc, margin, contentW, chartImages = {}, opportunity = null) {
   fillPage(doc);
-  let y = drawPageTitle(doc, margin, "Beverage quality intelligence", "Mix quality — not drink quantity");
+  let y = drawPageTitle(
+    doc,
+    margin,
+    "Beverage quality intelligence",
+    "Premium mix vs soft drinks — quality of drink revenue, not quantity",
+  );
 
   if (opportunity?.teamTotal > 0) {
     drawKpiCard(
@@ -29,33 +71,30 @@ export function drawBeverageIntelligencePdfPage(doc, margin, contentW, chartImag
       margin,
       y,
       contentW,
-      46,
-      "Est. premium beverage opportunity",
+      50,
+      EXECUTIVE_LABELS.beverageOpportunity,
       `${Math.round(opportunity.teamTotal).toLocaleString()} SAR`,
-      NAC_GOLD,
+      COLOR_OPPORTUNITY,
     );
-    y += 56;
+    y += 60;
     doc.setFontSize(7);
-    doc.setTextColor(120, 120, 120);
-    const note = opportunity.methodology || "";
-    doc.splitTextToSize(note, contentW).slice(0, 2).forEach((ln, i) => {
-      doc.text(ln, margin, y + i * 10);
-    });
-    y += 22;
+    doc.setTextColor(130, 130, 130);
+    doc.text(opportunity.methodology || "", margin, y);
+    y += 14;
   }
 
-  y = embedChart(doc, chartImages.bevMixStacked, margin, y, contentW, 120) || y;
+  y = embedChart(doc, chartImages.bevMixStacked, margin, y, contentW, 128) || y;
 
-  const halfW = contentW / 2 - 6;
-  const rowY = y + 6;
-  embedChart(doc, chartImages.premBevLeaderboard, margin, rowY, halfW, 108);
-  embedChart(doc, chartImages.bevOpportunity, margin + halfW + 12, rowY, halfW, 108);
+  const halfW = (contentW - 12) / 2;
+  const rowY = y + 4;
+  embedChart(doc, chartImages.premBevLeaderboard, margin, rowY, halfW, 118);
+  embedChart(doc, chartImages.bevOpportunity, margin + halfW + 12, rowY, halfW, 118);
 
-  return rowY + 120;
+  return rowY + 128;
 }
 
-export function appendOperationalVisualPages(doc, margin, contentW, chartImages, opportunity) {
-  drawWaiterComparisonPdfPage(doc, margin, contentW, chartImages);
+export function appendOperationalVisualPages(doc, margin, contentW, chartImages, opportunity, bundleMeta = {}) {
+  drawWaiterComparisonPdfPage(doc, margin, contentW, chartImages, bundleMeta);
   doc.addPage();
   drawBeverageIntelligencePdfPage(doc, margin, contentW, chartImages, opportunity);
 }

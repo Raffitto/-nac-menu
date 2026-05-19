@@ -26,7 +26,9 @@ import {
   drawOpsSection,
 } from "./pdfExecutivePages";
 import { appendOperationalVisualPages } from "./pdfVisualIntelligencePages";
-import { estimatePremiumBeverageOpportunity } from "./waiterVisualEngine";
+import { buildOperationalVisualBundle } from "./waiterVisualEngine";
+import { drawFinancialOpportunityPage, drawStaffPerformancePage } from "./executivePdfLayout";
+import { EXECUTIVE_LABELS, MENU_QUADRANT_COPY } from "../config/executiveVisualLanguage";
 
 function baseCtx(payload) {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
@@ -44,6 +46,11 @@ function savePdf(doc, mode, branch) {
   doc.save(`nac-${mode}-${branch}.pdf`);
 }
 
+function visualBundleMeta(waiters, salesMetric) {
+  const b = buildOperationalVisualBundle(waiters || [], salesMetric);
+  return { volumeRisk: b.volumeRisk, qualityLeader: b.qualityLeader, opportunity: b.opportunity };
+}
+
 /** Weekly staff — executive summary, awards, unique coaching */
 function exportWeeklyStaffPDF(payload) {
   const {
@@ -54,12 +61,13 @@ function exportWeeklyStaffPDF(payload) {
     opsInsights,
     sections = {},
     chartImages = {},
+    financial = {},
   } = payload;
   const { doc, margin, contentW, branch, period, salesMetric, metricLabel } = baseCtx(payload);
 
   drawCover(doc, margin, contentW, {
     title: "Weekly Staff Intelligence",
-    subtitle: "Operational coaching · shift-aware · revenue-focused",
+    subtitle: "Hospitality operational intelligence · commercial priorities",
     meta: `${branch.toUpperCase()} · ${period} · ${metricLabel}`,
     blurb: "Executive operational intelligence — not generic AI summaries. Coaching respects breakfast vs PM shifts and premium beverage economics.",
   });
@@ -69,15 +77,15 @@ function exportWeeklyStaffPDF(payload) {
     drawExecutiveSummaryPage(doc, margin, contentW, executiveSummary, period);
   }
 
+  if (financial?.totalRecoverable > 0) {
+    doc.addPage();
+    drawFinancialOpportunityPage(doc, margin, contentW, financial);
+  }
+
   const visualWaiters = waiters?.waiters || [];
+  const vMeta = visualBundleMeta(visualWaiters, salesMetric);
   if (visualWaiters.length && (chartImages.rqScatter || chartImages.bevMixStacked)) {
-    appendOperationalVisualPages(
-      doc,
-      margin,
-      contentW,
-      chartImages,
-      estimatePremiumBeverageOpportunity(visualWaiters),
-    );
+    appendOperationalVisualPages(doc, margin, contentW, chartImages, vMeta.opportunity, vMeta);
   }
 
   doc.addPage();
@@ -89,23 +97,7 @@ function exportWeeklyStaffPDF(payload) {
 
   if (sectionOn(sections, "waiter") && waiters?.waiters?.length) {
     doc.addPage();
-    fillPage(doc);
-    y = drawPageTitle(doc, margin, "Staff performance", metricLabel);
-    y = embedChart(doc, chartImages.waiterRevenue, margin, y, contentW, 120) || y;
-    const maxSales = waiters.maxSales || waiterSalesValue(waiters.waiters[0], salesMetric) || 1;
-    waiters.waiters.slice(0, 8).forEach((w) => {
-      if (y > 700) y = newPage(doc, margin);
-      const sales = waiterSalesValue(w, salesMetric);
-      drawHBar(doc, margin, y, contentW - 100, 8, maxSales > 0 ? (sales / maxSales) * 100 : 0, NAC_TEAL);
-      doc.setFontSize(9);
-      doc.setTextColor(...NAC_WHITE);
-      doc.text(
-        `${w.waiter} — ${sales.toLocaleString()} SAR · Mod ${w.modifierAttachPct}% · Prem bev ${w.ops?.premiumBevPct ?? "—"}%`,
-        margin,
-        y + 12,
-      );
-      y += 22;
-    });
+    drawStaffPerformancePage(doc, margin, contentW, visualWaiters, chartImages, salesMetric);
   }
 
   if (waiterTargets?.length) {
@@ -121,8 +113,8 @@ function exportWeeklyStaffPDF(payload) {
     doc.addPage();
     fillPage(doc);
     y = margin + 20;
-    y = drawOpsSection(doc, margin, y, contentW, "Operational risks", opsInsights.risks, "risk");
-    y = drawOpsSection(doc, margin, y, contentW, "Operational wins", opsInsights.wins, "win");
+    y = drawOpsSection(doc, margin, y, contentW, "Strategic operational risks", opsInsights.risks, "risk");
+    y = drawOpsSection(doc, margin, y, contentW, "Commercial opportunities", opsInsights.wins, "win");
   }
 
   savePdf(doc, "weekly-staff-targets", branch);
@@ -141,30 +133,36 @@ function exportManagerReviewPDF(payload) {
     kpis,
     sections = {},
     chartImages = {},
-    staffOverview,
+    financial = {},
   } = payload;
   const { doc, margin, contentW, branch, period, salesMetric, metricLabel } = baseCtx(payload);
 
   drawCover(doc, margin, contentW, {
     title: "Manager Review Report",
-    subtitle: "Operational issues · staff · menu · missed upsells",
+    subtitle: "Commercial intelligence · monetization leakage · staff behavior",
     meta: `${branch.toUpperCase()} · ${period}`,
     blurb: "Balanced ops view for GMs: attachment gaps, daypart peaks, staff outliers, and menu risks.",
   });
 
   const mgrWaiters = waiters?.waiters || [];
+  const mgrMeta = visualBundleMeta(mgrWaiters, salesMetric);
   if (mgrWaiters.length && chartImages.rqScatter) {
-    appendOperationalVisualPages(doc, margin, contentW, chartImages, estimatePremiumBeverageOpportunity(mgrWaiters));
+    appendOperationalVisualPages(doc, margin, contentW, chartImages, mgrMeta.opportunity, mgrMeta);
+  }
+
+  if (financial?.totalRecoverable > 0) {
+    doc.addPage();
+    drawFinancialOpportunityPage(doc, margin, contentW, financial);
   }
 
   doc.addPage();
   fillPage(doc);
-  let y = drawPageTitle(doc, margin, "Operations snapshot", metricLabel);
+  let y = drawPageTitle(doc, margin, "Management priorities", metricLabel);
 
   const kpiW = (contentW - 16) / 3;
   [
-    ["Missed upsells", String(attachment?.missedUpsells?.length || 0)],
-    ["Modifier revenue", `${Math.round(attachment?.totals?.modifierRevenue || 0).toLocaleString()} SAR`],
+    [EXECUTIVE_LABELS.revenueAtRisk, `${Math.round(financial?.attachmentLeakage || 0).toLocaleString()} SAR`],
+    [EXECUTIVE_LABELS.beverageOpportunity, `${Math.round(financial?.beverageOpportunity || 0).toLocaleString()} SAR`],
     ["Peak daypart", timeShift?.peakDaypart?.label || "—"],
   ].forEach(([label, val], i) => {
     drawKpiCard(doc, margin + i * (kpiW + 8), y, kpiW, 48, label, val, i % 2 ? NAC_GOLD : NAC_TEAL);
@@ -174,7 +172,7 @@ function exportManagerReviewPDF(payload) {
   if (sectionOn(sections, "missed") && attachment?.missedUpsells?.length) {
     doc.setTextColor(...NAC_GOLD);
     doc.setFontSize(10);
-    doc.text("Missed upsell opportunities", margin, y);
+    doc.text("Monetization leakage — attachment gaps", margin, y);
     y += 12;
     autoTable(doc, {
       startY: y,
@@ -192,29 +190,10 @@ function exportManagerReviewPDF(payload) {
     y = doc.lastAutoTable.finalY + 16;
   }
 
-  y = embedChart(doc, chartImages.attachment, margin, y, contentW, 120) || y;
-  y = embedChart(doc, chartImages.missedUpsell, margin, y, contentW, 110) || y;
-
-  if (sectionOn(sections, "waiter") && waiters?.waiters?.length) {
+  if (sectionOn(sections, "waiter") && mgrWaiters.length) {
     doc.addPage();
-    fillPage(doc);
-    y = drawPageTitle(
-      doc,
-      margin,
-      "Staff performance summary",
-      `Managers ${staffOverview?.includeManagers ? "included" : "excluded"} · ${metricLabel}`,
-    );
-    const top = waiters.waiters.slice(0, 8);
-    const maxSales = waiters.maxSales || waiterSalesValue(top[0], salesMetric) || 1;
-    top.forEach((w) => {
-      if (y > 700) y = newPage(doc, margin);
-      const sales = waiterSalesValue(w, salesMetric);
-      drawHBar(doc, margin, y, contentW, 8, maxSales > 0 ? (sales / maxSales) * 100 : 0, NAC_TEAL);
-      doc.setFontSize(9);
-      doc.setTextColor(...NAC_WHITE);
-      doc.text(`${w.waiter} — ${sales.toLocaleString()} SAR · Mod ${w.modifierAttachPct}%`, margin, y + 14);
-      y += 28;
-    });
+    drawStaffPerformancePage(doc, margin, contentW, mgrWaiters, chartImages, salesMetric);
+    y = margin + 20;
   }
 
   if (sectionOn(sections, "product") && sortedProducts?.length) {
@@ -270,7 +249,7 @@ function exportManagerReviewPDF(payload) {
   if (sectionOn(sections, "ai") && insights?.length) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "AI operational insights", "Prioritized for GM review");
+    y = drawPageTitle(doc, margin, EXECUTIVE_LABELS.strategicSignals, "Prioritized for general manager review");
     insights.forEach((ins) => {
       if (y > 700) y = newPage(doc, margin);
       y = drawInsightCard(doc, margin, y, {
@@ -304,12 +283,13 @@ function exportExecutiveBoardroomPDF(payload) {
     opsInsights,
     sections = {},
     chartImages = {},
+    financial = {},
   } = payload;
   const { doc, margin, contentW, branch, period, salesMetric, metricLabel } = baseCtx(payload);
 
   drawCover(doc, margin, contentW, {
     title: "Executive Boardroom Report",
-    subtitle: "KPI summary · revenue · risks · opportunities",
+    subtitle: "Commercial intelligence · recoverable value · strategic signals",
     meta: `${branch.toUpperCase()} · ${period}`,
     blurb: "Board-ready operational intelligence with revenue impact, beverage mix economics, and shift-aware staff signals.",
   });
@@ -320,8 +300,14 @@ function exportExecutiveBoardroomPDF(payload) {
   }
 
   const execWaiters = waiters?.waiters || [];
+  const execMeta = visualBundleMeta(execWaiters, salesMetric);
   if (execWaiters.length && (chartImages.rqScatter || chartImages.bevMixStacked)) {
-    appendOperationalVisualPages(doc, margin, contentW, chartImages, estimatePremiumBeverageOpportunity(execWaiters));
+    appendOperationalVisualPages(doc, margin, contentW, chartImages, execMeta.opportunity, execMeta);
+  }
+
+  if (financial?.totalRecoverable > 0) {
+    doc.addPage();
+    drawFinancialOpportunityPage(doc, margin, contentW, financial);
   }
 
   doc.addPage();
@@ -329,14 +315,13 @@ function exportExecutiveBoardroomPDF(payload) {
   let y = drawPageTitle(doc, margin, "Executive KPIs", period);
 
   const kpiW = (contentW - 24) / 4;
-  const grandGross = waiters?.grandTotals?.gross_sales;
   const topWaiter = waiters?.topUpseller;
   const topSales = topWaiter ? waiterSalesValue(topWaiter, salesMetric) : 0;
 
   [
-    ["Net modifier revenue", `${Math.round(attachment?.totals?.modifierRevenue || 0).toLocaleString()} SAR`],
-    ["Staff gross (import)", grandGross != null ? `${Math.round(grandGross).toLocaleString()} SAR` : "—"],
-    ["Missed upsells", String(attachment?.missedUpsells?.length || 0)],
+    [EXECUTIVE_LABELS.recoverableOpportunity, `${Math.round(financial?.totalRecoverable || 0).toLocaleString()} SAR`],
+    [EXECUTIVE_LABELS.attachmentLeakage, `${Math.round(financial?.attachmentLeakage || 0).toLocaleString()} SAR`],
+    [EXECUTIVE_LABELS.beverageOpportunity, `${Math.round(financial?.beverageOpportunity || 0).toLocaleString()} SAR`],
     ["Menu sessions", String(kpis?.sessions ?? "—")],
   ].forEach(([label, val], i) => {
     drawKpiCard(doc, margin + i * (kpiW + 8), y, kpiW, 52, label, val, i % 2 ? NAC_GOLD : NAC_TEAL);
@@ -439,16 +424,16 @@ function exportMenuEngineeringPDF(payload) {
 
   drawCover(doc, margin, contentW, {
     title: "Menu Engineering Report",
-    subtitle: "Product visibility · conversion · quadrant · heat score",
+    subtitle: "Strategic menu intelligence · quadrant · momentum · monetization",
     meta: `${branch.toUpperCase()} · ${period}`,
-    blurb: "Product-centric analysis: BCG quadrants, heat-index leaders, attachment pairs, and conversion-ranked items.",
+    blurb: "BCG positioning with operational interpretation — stars to protect, puzzles to unlock, workhorses to pair with premium attach, dogs to simplify.",
   });
 
   doc.addPage();
   fillPage(doc);
-  let y = drawPageTitle(doc, margin, "BCG quadrant analysis", "Stars · puzzles · workhorses · dogs");
+  let y = drawPageTitle(doc, margin, "Menu positioning map", "Popularity × profitability — strategic quadrants");
 
-  y = embedChart(doc, chartImages.menuScatter, margin, y, contentW, 160) || y;
+  y = embedChart(doc, chartImages.menuScatter, margin, y, contentW, 150) || y;
 
   const quadrants = { Star: [], Puzzle: [], Workhorse: [], Dog: [] };
   (menuEngineering || []).forEach((m) => {
@@ -457,18 +442,29 @@ function exportMenuEngineeringPDF(payload) {
 
   ["Star", "Puzzle", "Workhorse", "Dog"].forEach((q) => {
     if (!quadrants[q].length) return;
-    if (y > 680) y = newPage(doc, margin);
+    if (y > 640) {
+      doc.addPage();
+      fillPage(doc);
+      y = margin + 24;
+    }
+    const copy = MENU_QUADRANT_COPY[q];
     doc.setTextColor(...(q === "Star" ? NAC_TEAL : q === "Puzzle" ? [245, 166, 35] : NAC_GOLD));
-    doc.setFontSize(11);
-    doc.text(`${q}s (${quadrants[q].length})`, margin, y);
-    y += 14;
-    quadrants[q].slice(0, 6).forEach((m) => {
+    doc.setFontSize(10);
+    doc.text(`${copy?.title || q} (${quadrants[q].length})`, margin, y);
+    y += 12;
+    doc.setFontSize(8);
+    doc.setTextColor(160, 160, 160);
+    doc.splitTextToSize(copy?.body || "", contentW).slice(0, 2).forEach((ln, i) => {
+      doc.text(ln, margin, y + i * 10);
+    });
+    y += 24;
+    quadrants[q].slice(0, 5).forEach((m) => {
       doc.setFontSize(9);
       doc.setTextColor(200, 200, 200);
-      doc.text(`· ${m.item_name} — ${m.orders} orders, ${m.views} views`, margin + 8, y);
-      y += 13;
+      doc.text(`· ${m.item_name} — ${m.orders} orders · ${m.views} views`, margin + 8, y);
+      y += 12;
     });
-    y += 6;
+    y += 8;
   });
 
   if (sectionOn(sections, "heat")) {
@@ -510,8 +506,11 @@ function exportMenuEngineeringPDF(payload) {
   if (sectionOn(sections, "attachment") && attachment?.pairs?.length) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "Attachment & add-on intelligence", "Modifier pair performance");
-    y = embedChart(doc, chartImages.attachment, margin, y, contentW, 120) || y;
+    y = drawPageTitle(doc, margin, "Attachment monetization intelligence", "Largest commercial leaks on the menu");
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Prioritized by premium positioning and margin — not raw spreadsheet gaps.", margin, y + 2);
+    y += 16;
     attachment.pairs
       .filter((p) => p.attachedOrders > 0)
       .slice(0, 10)
@@ -528,7 +527,7 @@ function exportMenuEngineeringPDF(payload) {
   if (sectionOn(sections, "ai") && insights?.length) {
     doc.addPage();
     fillPage(doc);
-    y = drawPageTitle(doc, margin, "Product & menu insights", "AI recommendations");
+    y = drawPageTitle(doc, margin, "Strategic menu signals", "Commercial intelligence");
     insights
       .filter((i) => ["product", "menu", "heat", "attachment"].includes(i.type) || !i.type)
       .slice(0, 6)

@@ -4,6 +4,8 @@ import { buildStaffAwards } from "./staffAwardsEngine";
 import { buildExecutiveOpsInsights } from "./executiveOpsInsightsEngine";
 import { buildExecutiveSummary } from "./executiveSummaryEngine";
 import { calibrateWaiterProfiles, calibrateTeamContext } from "./intelligenceCalibration";
+import { enrichWaitersForVisuals } from "./waiterVisualEngine";
+import { buildFinancialAggregation } from "./financialAggregationEngine";
 import { buildVisualInsights } from "./visualInsightEngine";
 import { partitionStaffByRole, staffNamesMatch } from "../config/staffRoles";
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
@@ -123,9 +125,15 @@ export function applyVisualExportConfig(payload, config) {
   const calibratedWaiters = calibrateWaiterProfiles(opsIntel.waiters, calibratedTeam);
 
   const staffAwards = buildStaffAwards(calibratedWaiters, calibratedTeam);
-  const scoredWaiters = calibratedWaiters.map((w) => {
-    const ranked = staffAwards.ranked.find((r) => r.waiter === w.waiter);
-    return { ...w, operationalScore: ranked?.operationalScore ?? w.operationalScore };
+  const scoredWaiters = enrichWaitersForVisuals(
+    calibratedWaiters.map((w) => {
+      const ranked = staffAwards.ranked.find((r) => r.waiter === w.waiter);
+      return { ...w, operationalScore: ranked?.operationalScore ?? w.operationalScore };
+    }),
+  );
+  const financial = buildFinancialAggregation({
+    attachment: payload.attachment,
+    waiters: scoredWaiters,
   });
   waiters = {
     ...waiters,
@@ -148,6 +156,7 @@ export function applyVisualExportConfig(payload, config) {
     awards: staffAwards,
     attachment: payload.attachment,
     opsInsights,
+    financial,
   });
 
   const legacyInsights = buildVisualInsights({
@@ -176,6 +185,7 @@ export function applyVisualExportConfig(payload, config) {
     opsIntel: { ...opsIntel, team: calibratedTeam, waiters: scoredWaiters },
     executiveSummary: summary,
     opsInsights,
+    financial,
     insights,
     sortedProducts,
     weeklyFocusItems: focusItems,

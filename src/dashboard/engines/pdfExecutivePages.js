@@ -8,36 +8,48 @@ import {
   NAC_WHITE,
   CARD_BG,
 } from "./pdfVisualTheme";
+import { EXECUTIVE_LABELS } from "../config/executiveVisualLanguage";
 
 export function drawExecutiveSummaryPage(doc, margin, contentW, summary, period) {
   fillPage(doc);
   doc.setTextColor(...NAC_GOLD);
   doc.setFontSize(22);
-  doc.text("Executive Summary", margin, 48);
+  doc.text("Executive Summary", margin, 44);
   doc.setFontSize(9);
   doc.setTextColor(130, 130, 130);
-  doc.text(period || "", margin, 64);
+  doc.text(period || "", margin, 60);
   doc.setFontSize(10);
   doc.setTextColor(180, 180, 180);
-  doc.text("Management read — understand the period in 30 seconds", margin, 78);
+  doc.text("Cold-read for leadership — commercial priorities in one page", margin, 74);
 
-  let y = 92;
+  if (summary.totalRecoverable > 0) {
+    drawKpiCard(
+      doc,
+      margin,
+      88,
+      contentW,
+      54,
+      EXECUTIVE_LABELS.recoverableOpportunity,
+      `${Math.round(summary.totalRecoverable).toLocaleString()} SAR`,
+      NAC_GOLD,
+    );
+  }
+
+  let y = summary.totalRecoverable > 0 ? 152 : 92;
   const kpiW = (contentW - 20) / 3;
   const kpis = [
     ["Total revenue", `${Math.round(summary.totalRevenue || 0).toLocaleString()} SAR`],
     ["Guest units", String(summary.totalQty || "—")],
     ["Top performer", summary.topWaiter || "—"],
-    ["Breakfast leader", summary.strongestBreakfast || "—"],
-    ["PM / dessert lead", summary.strongestPM || "—"],
-    ["Highest avg ticket", `${summary.highestAvgTicket || "—"} (${summary.highestAvgTicketValue || "—"} SAR)`],
-    ["Best modifier %", `${summary.bestModifier || "—"} (${summary.bestModifierPct || "—"}%)`],
-    ["Premium bev mix", `${summary.premiumBevPenetration || 0}%`],
-    ["Low-value drinks", `${summary.lowValueBevShare || 0}% of bev`],
-    ["Est. missed upsell", `${Math.round(summary.estimatedMissedRevenue || 0).toLocaleString()} SAR`],
-    ["Revenue quality lead", `${summary.revenueQualityLeader || "—"} (${summary.revenueQualityScore || "—"}/100)`],
-    ["Team avg RQ", `${summary.avgRevenueQuality || 0}/100`],
-    ["Biggest win", (summary.bestWin || "—").slice(0, 42)],
-    ["Biggest concern", (summary.biggestConcern || "—").slice(0, 42)],
+    [EXECUTIVE_LABELS.revenueQuality + " leader", `${summary.revenueQualityLeader || "—"} (${summary.revenueQualityScore || "—"}/100)`],
+    ["Team avg revenue quality", `${summary.avgRevenueQuality || 0}/100`],
+    [EXECUTIVE_LABELS.premiumBeverageMix, `${summary.premiumBevPenetration || 0}%`],
+    ["Low-value drink share", `${summary.lowValueBevShare || 0}% of beverages`],
+    [EXECUTIVE_LABELS.attachmentLeakage, `${Math.round(summary.attachmentLeakage || 0).toLocaleString()} SAR`],
+    [EXECUTIVE_LABELS.beverageOpportunity, `${Math.round(summary.beverageOpportunity || 0).toLocaleString()} SAR`],
+    ["Highest average ticket", `${summary.highestAvgTicket || "—"} (${summary.highestAvgTicketValue || "—"} SAR)`],
+    ["Best modifier attach", `${summary.bestModifier || "—"} (${summary.bestModifierPct || "—"}%)`],
+    ["Primary concern", (summary.biggestConcern || "—").slice(0, 36)],
   ];
 
   kpis.forEach(([label, val], i) => {
@@ -48,6 +60,13 @@ export function drawExecutiveSummaryPage(doc, margin, contentW, summary, period)
     if (col === 2) y += 58;
   });
 
+  if (summary.validateNote) {
+    y += 12;
+    doc.setFontSize(7);
+    doc.setTextColor(120, 120, 120);
+    doc.text(summary.validateNote, margin, y);
+  }
+
   return y + 20;
 }
 
@@ -55,7 +74,7 @@ export function drawAwardsGrid(doc, margin, y, contentW, awards = []) {
   if (y > 620) y = newPage(doc, margin);
   doc.setTextColor(...NAC_GOLD);
   doc.setFontSize(11);
-  doc.text("Staff KPI awards", margin, y);
+  doc.text("Staff performance awards", margin, y);
   y += 16;
 
   const cardW = (contentW - 16) / 2;
@@ -97,9 +116,12 @@ export function drawCoachingCard(doc, margin, y, w, coaching, rank) {
   doc.setFontSize(7);
   doc.setTextColor(...accent);
   const conf = coaching.confidenceLabel || "";
-  const rq = coaching.revenueQualityScore != null ? ` · RQ ${coaching.revenueQualityScore}/100` : "";
+  const rq =
+    coaching.revenueQualityScore != null
+      ? ` · ${EXECUTIVE_LABELS.revenueQuality} ${coaching.revenueQualityScore}/100`
+      : "";
   doc.text(
-    `#${rank} · ${coaching.category || "Coaching"} · Ops ${coaching.operationalScore ?? "—"}${rq}${conf ? ` · ${conf}` : ""}`,
+    `#${rank} · ${coaching.category || "Coaching"} · ${EXECUTIVE_LABELS.operationalScore} ${coaching.operationalScore ?? "—"}${rq}${conf ? ` · ${conf}` : ""}`,
     margin + 10,
     y + 12,
   );

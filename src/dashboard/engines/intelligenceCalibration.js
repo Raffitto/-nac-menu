@@ -78,10 +78,8 @@ function minConfidence(levels) {
   return CONFIDENCE.HIGH;
 }
 
-/**
- * Revenue Quality Score /100 — rewards margin-rich sales, penalizes low-value inflation.
- */
-export function computeRevenueQualityScore(w, team = {}) {
+/** Internal raw score before percentile calibration */
+export function computeRawRevenueQualityScore(w) {
   const gross = w.gross_sales || w.primarySales || 0;
   if (gross <= 0) return 0;
 
@@ -97,7 +95,35 @@ export function computeRevenueQualityScore(w, team = {}) {
     (w.quantity || 0) >= 500 && (w.avgCheck || 0) < 38 ? 12 : (w.avgCheck || 0) < 30 && (w.quantity || 0) >= 350 ? 8 : 0;
 
   const raw = premiumShare + modBonus + avgCheckBonus + premBevBonus - lowValuePenalty - qtyInflationPenalty;
-  return Math.round(Math.max(0, Math.min(100, raw)));
+  return Math.max(0, raw);
+}
+
+function percentileRank(value, sortedAsc) {
+  if (!sortedAsc.length) return 50;
+  if (sortedAsc.length === 1) return 55;
+  const below = sortedAsc.filter((v) => v < value).length;
+  return (below / (sortedAsc.length - 1)) * 100;
+}
+
+/** Map team percentile → executive-friendly 35–92 scale */
+export function percentileToDisplayRevenueQuality(percentile) {
+  const p = Math.max(0, Math.min(100, percentile));
+  if (p >= 92) return Math.round(88 + (p - 92) * 0.5);
+  if (p >= 75) return Math.round(72 + (p - 75) * 0.94);
+  if (p >= 50) return Math.round(55 + (p - 50) * 0.68);
+  if (p >= 25) return Math.round(42 + (p - 25) * 0.52);
+  return Math.round(35 + p * 0.28);
+}
+
+/**
+ * Revenue quality /100 — percentile-calibrated so teams see achievable bands, not brutal zeros.
+ */
+export function computeRevenueQualityScore(w, teamWaiters = []) {
+  const list = teamWaiters?.length ? teamWaiters : [w];
+  const rawValues = list.map((x) => computeRawRevenueQualityScore(x)).sort((a, b) => a - b);
+  const raw = computeRawRevenueQualityScore(w);
+  const pct = percentileRank(raw, rawValues);
+  return percentileToDisplayRevenueQuality(pct);
 }
 
 export function isBreakfastHeavy(w) {
@@ -122,14 +148,19 @@ export function isVolumeWithoutMargin(w) {
 
 /** Attach calibration + revenue quality to each waiter */
 export function calibrateWaiterProfiles(waiters = [], team = {}) {
+  const list = waiters.filter((w) => w.role === "waiter" || !w.role);
+  const pool = list.length ? list : waiters;
+
   return waiters.map((w) => {
     const confidence = buildSignalConfidence(w, team);
-    const revenueQualityScore = computeRevenueQualityScore(w, team);
+    const revenueQualityRaw = computeRawRevenueQualityScore(w);
+    const revenueQualityScore = computeRevenueQualityScore(w, pool);
     return {
       ...w,
       confidence,
       confidenceLabel: CONFIDENCE_LABEL[confidence.overall],
       revenueQualityScore,
+      revenueQualityRaw: Math.round(revenueQualityRaw),
       calibration: {
         breakfastExpected: isBreakfastHeavy(w),
         pmExpected: isPmHeavy(w),

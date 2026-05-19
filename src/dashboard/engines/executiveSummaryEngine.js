@@ -1,6 +1,7 @@
 /**
- * 30-second management summary for executive PDF cover.
+ * Executive summary — cold-read for CEO / COO.
  */
+import { EXECUTIVE_LABELS } from "../config/executiveVisualLanguage";
 
 export function buildExecutiveSummary({
   waiters = {},
@@ -8,6 +9,7 @@ export function buildExecutiveSummary({
   awards = {},
   attachment = {},
   opsInsights = {},
+  financial = {},
 }) {
   const list = waiters?.waiters || [];
   const grand = waiters?.grandTotals || {};
@@ -16,14 +18,14 @@ export function buildExecutiveSummary({
   const pmAward = awards?.awards?.find((a) => a.id === "pm");
   const avgAward = awards?.awards?.find((a) => a.id === "avg_ticket");
   const modAward = awards?.awards?.find((a) => a.id === "modifier");
+  const rqAward = awards?.awards?.find((a) => a.id === "revenue_quality");
   const missed = attachment?.missedUpsells?.[0];
   const topRisk = opsInsights?.risks?.[0];
   const topWin = opsInsights?.wins?.[0];
 
-  const missedRev = (attachment?.missedUpsells || []).reduce(
-    (s, m) => s + (Number(m.estimatedLostRevenue) || 0),
-    0,
-  );
+  const missedRev =
+    financial?.attachmentLeakage ||
+    (attachment?.missedUpsells || []).reduce((s, m) => s + (Number(m.weightedLostRevenue || m.estimatedLostRevenue) || 0), 0);
 
   return {
     totalRevenue: grand.gross_sales || 0,
@@ -31,6 +33,7 @@ export function buildExecutiveSummary({
     topWaiter: top?.waiter || "—",
     topWaiterSales: top?.gross_sales || top?.primarySales || 0,
     strongestBreakfast: bfAward?.winner || "—",
+    strongestDinner: pmAward?.winner || "—",
     strongestPM: pmAward?.winner || "—",
     highestAvgTicket: avgAward?.winner || "—",
     highestAvgTicketValue: avgAward?.value || 0,
@@ -46,8 +49,13 @@ export function buildExecutiveSummary({
     biggestConcern: topRisk?.title || "—",
     operationalScoreLeader: awards?.topOperational?.waiter || "—",
     operationalScore: awards?.topOperational?.operationalScore || 0,
-    revenueQualityLeader: awards?.topOperational?.waiter || "—",
-    revenueQualityScore: awards?.topOperational?.revenueQualityScore || 0,
+    revenueQualityLeader: rqAward?.winner || awards?.topOperational?.waiter || "—",
+    revenueQualityScore: rqAward?.value || awards?.topOperational?.revenueQualityScore || 0,
     avgRevenueQuality: team.avgRevenueQuality || 0,
+    totalRecoverable: financial?.totalRecoverable || 0,
+    attachmentLeakage: financial?.attachmentLeakage || Math.round(missedRev),
+    beverageOpportunity: financial?.beverageOpportunity || 0,
+    validateNote: financial?.validateNote || "Validate on next Foodics period.",
+    labels: EXECUTIVE_LABELS,
   };
 }

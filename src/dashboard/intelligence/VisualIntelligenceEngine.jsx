@@ -39,6 +39,7 @@ import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterCoaching } from "../engines/waiterCoachingEngine";
 import { buildStaffOperationalIntelligence } from "../engines/staffOperationalEngine";
 import { calibrateWaiterProfiles, calibrateTeamContext } from "../engines/intelligenceCalibration";
+import { enrichWaitersForVisuals } from "../engines/waiterVisualEngine";
 import VisualExportConfig from "../components/VisualExportConfig";
 import VisualExportCharts from "../components/VisualExportCharts";
 import { WaiterComparisonDashboard, BeverageMixIntelligence } from "../components/OperationalVisualCharts";
@@ -224,7 +225,7 @@ export default function VisualIntelligenceEngine() {
     }
     const ops = buildStaffOperationalIntelligence(waiterItems, competitionStaff, timeShift);
     const team = calibrateTeamContext(ops.team, ops.waiters);
-    const waiters = calibrateWaiterProfiles(ops.waiters, team);
+    const waiters = enrichWaitersForVisuals(calibrateWaiterProfiles(ops.waiters, team));
     return { waiters, team };
   }, [competitionStaff, waiterItems, timeShift, hasWaiterBatch]);
 

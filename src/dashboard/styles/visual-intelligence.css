@@ -662,6 +662,44 @@
   min-height: 340px;
 }
 
+.vi-scatter-callouts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.vi-scatter-callout-chip {
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.65);
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(215, 188, 138, 0.08);
+  border: 1px solid rgba(215, 188, 138, 0.15);
+}
+
+.vi-scatter-callout-chip strong {
+  color: var(--vi-gold);
+}
+
+.vi-grouped-rank {
+  color: rgba(249, 249, 247, 0.35);
+  margin-right: 0.25rem;
+}
+
+.vi-archetype {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.vi-archetype--teal { color: var(--vi-teal); }
+.vi-archetype--gold { color: var(--vi-gold); }
+.vi-archetype--amber { color: var(--vi-warn); }
+.vi-archetype--critical { color: var(--vi-critical); }
+
 @media (max-width: 640px) {
   .vi-grid-2 { grid-template-columns: 1fr; }
   .vi-heatmap-grid { grid-template-columns: repeat(4, 1fr); }

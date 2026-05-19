@@ -17,12 +17,15 @@ import {
   PolarRadiusAxis,
   Radar,
   Legend,
+  ReferenceLine,
+  LabelList,
 } from "recharts";
 import {
   buildOperationalVisualBundle,
   shiftColor,
   shiftLabel,
 } from "../engines/waiterVisualEngine";
+import { EXECUTIVE_LABELS, SEMANTIC } from "../config/executiveVisualLanguage";
 
 const TOOLTIP = {
   background: "rgba(8,8,10,0.94)",
@@ -58,9 +61,16 @@ function ScatterTooltip({ active, payload }) {
     <div style={TOOLTIP}>
       <strong>{d.waiter}</strong>
       <div style={{ marginTop: 4, fontSize: 10, opacity: 0.85 }}>
-        Gross {Math.round(d.gross).toLocaleString()} SAR · RQ {d.rq}/100
+        {EXECUTIVE_LABELS.grossSales} {Math.round(d.gross).toLocaleString()} SAR · {EXECUTIVE_LABELS.revenueQuality}{" "}
+        {d.rq}/100
         <br />
-        Avg {Math.round(d.avgCheck)} SAR · {d.shiftLabel}
+        {EXECUTIVE_LABELS.avgTicket} {Math.round(d.avgCheck)} SAR · {d.shiftLabel}
+        {d.scatterCallout && (
+          <>
+            <br />
+            <span style={{ color: SEMANTIC.gold }}>{d.scatterCallout}</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -71,8 +81,12 @@ export function RevenueQualityScatter({ data, height = 280, compact = false }) {
   return (
     <div className={`vi-chart-wrap vi-chart-wrap--scatter ${compact ? "vi-chart-wrap--compact" : ""}`} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <ScatterChart margin={{ top: 12, right: 16, bottom: compact ? 8 : 20, left: 8 }}>
+        <ScatterChart margin={{ top: 28, right: 24, bottom: compact ? 12 : 28, left: 12 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+          {(data[0]?.midGross ?? 0) > 0 && (
+            <ReferenceLine x={data[0].midGross} stroke="rgba(215,188,138,0.35)" strokeDasharray="5 5" />
+          )}
+          <ReferenceLine y={data[0]?.midRq ?? 52} stroke="rgba(78,205,196,0.35)" strokeDasharray="5 5" />
           <XAxis
             type="number"
             dataKey="gross"
@@ -99,10 +113,11 @@ export function RevenueQualityScatter({ data, height = 280, compact = false }) {
           />
           <ZAxis type="number" dataKey="z" range={[70, 380]} />
           <Tooltip content={<ScatterTooltip />} cursor={{ strokeDasharray: "4 4", stroke: "rgba(215,188,138,0.35)" }} />
-          <Scatter data={data}>
+          <Scatter data={data} name="Waiters">
             {data.map((entry) => (
-              <Cell key={entry.waiter} fill={entry.fill} fillOpacity={0.88} stroke="rgba(0,0,0,0.35)" strokeWidth={1} />
+              <Cell key={entry.waiter} fill={entry.fill} fillOpacity={0.9} stroke="rgba(0,0,0,0.4)" strokeWidth={1} />
             ))}
+            <LabelList dataKey="waiter" position="right" offset={6} fill="rgba(249,249,247,0.85)" fontSize={9} />
           </Scatter>
         </ScatterChart>
       </ResponsiveContainer>
@@ -113,8 +128,20 @@ export function RevenueQualityScatter({ data, height = 280, compact = false }) {
             {shiftLabel(s)}
           </span>
         ))}
-        <span className="vi-scatter-legend-hint">Bubble size = avg ticket</span>
+        <span className="vi-scatter-legend-hint">Bubble size = average ticket</span>
       </div>
+      {!compact && (
+        <div className="vi-scatter-callouts">
+          {data
+            .filter((p) => p.scatterCallout)
+            .slice(0, 3)
+            .map((p) => (
+              <span key={p.waiter} className="vi-scatter-callout-chip">
+                <strong>{p.waiter}</strong> — {p.scatterCallout}
+              </span>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -125,7 +152,10 @@ export function WaiterGroupedPerformance({ rows }) {
     <div className="vi-grouped-bars">
       {rows.map((row) => (
         <div key={row.waiter} className="vi-grouped-row">
-          <div className="vi-grouped-name">{row.shortName}</div>
+          <div className="vi-grouped-name">
+            <span className="vi-grouped-rank">#{row.rank}</span> {row.shortName}
+            {row.archetype && <span className={`vi-archetype vi-archetype--${row.archetype.tone}`}>{row.archetype.label}</span>}
+          </div>
           <div className="vi-grouped-metrics">
             {row.bars.map((b) => (
               <div key={b.key} className="vi-grouped-metric">
@@ -277,11 +307,11 @@ export function WaiterComparisonDashboard({ waiters, salesMetric = "gross" }) {
           <p className="vi-kpi-value">{bundle.defaultRadarWaiter?.waiter || "—"}</p>
         </div>
         <div className="vi-kpi vi-kpi--compact">
-          <p className="vi-kpi-label">Top RQ score</p>
+          <p className="vi-kpi-label">{EXECUTIVE_LABELS.revenueQuality} leader</p>
           <p className="vi-kpi-value">{bundle.defaultRadarWaiter?.revenueQualityScore ?? "—"}/100</p>
         </div>
         <div className="vi-kpi vi-kpi--compact">
-          <p className="vi-kpi-label">Pepsi-heavy staff</p>
+          <p className="vi-kpi-label">Soft drink-heavy profiles</p>
           <p className="vi-kpi-value">{waiters.filter((w) => (w.ops?.lowValueBevPct || 0) >= 52).length}</p>
         </div>
       </div>

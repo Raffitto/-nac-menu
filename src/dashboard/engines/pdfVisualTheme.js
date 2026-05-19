@@ -1,10 +1,18 @@
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
+import {
+  COLOR_BENCHMARK,
+  COLOR_PERFORMANCE,
+  COLOR_RISK,
+  COLOR_OPPORTUNITY,
+  COLOR_NEUTRAL,
+} from "../config/executiveVisualLanguage";
 
-export const NAC_TEAL = [48, 72, 78];
-export const NAC_GOLD = [143, 122, 95];
+export const NAC_TEAL = COLOR_PERFORMANCE;
+export const NAC_GOLD = COLOR_BENCHMARK;
 export const NAC_WHITE = [249, 249, 247];
 export const PAGE_BG = [12, 12, 14];
 export const CARD_BG = [22, 24, 28];
+export { COLOR_RISK, COLOR_OPPORTUNITY, COLOR_NEUTRAL };
 
 export function fillPage(doc) {
   doc.setFillColor(...PAGE_BG);
@@ -24,13 +32,48 @@ export function sectionOn(sections, key) {
 export function drawPageTitle(doc, margin, title, subtitle) {
   doc.setTextColor(...NAC_GOLD);
   doc.setFontSize(16);
-  doc.text(title, margin, 40);
+  doc.text(title, margin, 36);
   if (subtitle) {
     doc.setFontSize(9);
     doc.setTextColor(160, 160, 160);
-    doc.text(subtitle, margin, 56);
+    const lines = doc.splitTextToSize(subtitle, 500);
+    lines.slice(0, 2).forEach((ln, i) => doc.text(ln, margin, 52 + i * 11));
   }
-  return 68;
+  return subtitle ? 72 : 52;
+}
+
+export function drawLegendRow(doc, margin, y, contentW, items = []) {
+  const colW = contentW / Math.max(items.length, 1);
+  items.forEach((item, i) => {
+    const x = margin + i * colW;
+    doc.setFillColor(...(item.color || COLOR_NEUTRAL));
+    doc.circle(x + 4, y + 3, 2.5, "F");
+    doc.setFontSize(7);
+    doc.setTextColor(150, 150, 150);
+    doc.text(item.label, x + 12, y + 6);
+  });
+  return y + 14;
+}
+
+export function drawCallout(doc, margin, y, maxW, { accent = NAC_TEAL, title, body, hint }) {
+  const h = hint ? 52 : 42;
+  doc.setFillColor(...CARD_BG);
+  doc.setDrawColor(...accent);
+  doc.setLineWidth(0.5);
+  doc.roundedRect(margin, y, maxW, h, 4, 4, "FD");
+  doc.setFontSize(8);
+  doc.setTextColor(...accent);
+  doc.text(title, margin + 10, y + 14);
+  doc.setFontSize(7);
+  doc.setTextColor(200, 200, 200);
+  doc.splitTextToSize(body || "", maxW - 20)
+    .slice(0, 2)
+    .forEach((ln, i) => doc.text(ln, margin + 10, y + 26 + i * 9));
+  if (hint) {
+    doc.setTextColor(...NAC_GOLD);
+    doc.text(hint, margin + 10, y + h - 6);
+  }
+  return y + h + 8;
 }
 
 export function drawKpiCard(doc, x, y, w, h, label, value, accent = NAC_TEAL) {
@@ -92,8 +135,8 @@ export function drawInsightCard(doc, margin, y, ins, maxW = 500) {
 
 export function staffSalesLine(staff, salesMetric = "gross") {
   const sales = waiterSalesValue(staff, salesMetric);
-  const label = salesMetric === "net" ? "Net" : "Gross";
-  return `${label} ${sales.toLocaleString()} SAR · ${staff.quantity} units · Mod ${staff.modifierAttachPct}% · Food ${staff.foodMixPct ?? "—"}% · Bev ${staff.beverageMixPct ?? staff.beverageAttachPct}%`;
+  const label = salesMetric === "net" ? "Net sales" : "Gross sales";
+  return `${label} ${sales.toLocaleString()} SAR · ${staff.quantity} units · Modifier attach ${staff.modifierAttachPct}% · Premium beverage ${staff.ops?.premiumBevPct ?? staff.beverageAttachPct ?? "—"}%`;
 }
 
 export function drawStaffCard(doc, margin, y, w, staff, rank, target, salesMetric = "gross") {

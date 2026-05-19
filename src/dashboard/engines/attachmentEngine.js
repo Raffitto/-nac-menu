@@ -1,5 +1,6 @@
 import { normalizeFoodicsName } from "../utils/foodicsNameNormalize";
 import { ATTACHMENT_EXPECTATIONS } from "../config/attachmentThresholds";
+import { rankAttachmentOpportunities } from "./operationalImportance";
 
 function norm(s) {
   return normalizeFoodicsName(s);
@@ -111,9 +112,7 @@ export function buildAttachmentIntelligence({
     })
     .sort((a, b) => b.revenue - a.revenue);
 
-  const missedUpsells = pairs
-    .filter((p) => p.underperforming)
-    .sort((a, b) => b.opportunityScore - a.opportunityScore);
+  const missedUpsells = rankAttachmentOpportunities(pairs.filter((p) => p.underperforming));
 
   const topAttachments = [...pairs]
     .filter((p) => p.attachedOrders > 0)
