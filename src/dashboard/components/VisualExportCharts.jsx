@@ -24,7 +24,7 @@ const VisualExportCharts = forwardRef(function VisualExportCharts(
 ) {
   const waiterBars = (waiters || []).map((w) => ({
     name: w.waiter?.length > 10 ? `${w.waiter.slice(0, 9)}…` : w.waiter,
-    revenue: w.net_sales,
+    revenue: Number(w.gross_sales) > 0 ? w.gross_sales : w.net_sales,
     modifier: w.modifierAttachPct,
   }));
 

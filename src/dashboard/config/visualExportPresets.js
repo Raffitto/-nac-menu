@@ -14,6 +14,8 @@ export const EXPORT_SECTIONS = {
 };
 
 export const WAITER_SORT_OPTIONS = [
+  { id: "gross_sales", label: "Gross sales (Foodics)" },
+  { id: "primarySales", label: "Primary sales metric" },
   { id: "net_sales", label: "Net sales" },
   { id: "quantity", label: "Quantity sold" },
   { id: "modifierAttachPct", label: "Modifier attachment %" },
@@ -48,7 +50,7 @@ export const EXPORT_TARGET_MODES = {
       ai: true,
       waiterTargets: true,
     },
-    waiterSort: "modifierAttachPct",
+    waiterSort: "gross_sales",
     productSort: "revenue",
     allWaiters: true,
   },
@@ -68,7 +70,7 @@ export const EXPORT_TARGET_MODES = {
       ai: true,
       waiterTargets: true,
     },
-    waiterSort: "net_sales",
+    waiterSort: "gross_sales",
     productSort: "revenue",
     allWaiters: true,
   },
@@ -88,7 +90,7 @@ export const EXPORT_TARGET_MODES = {
       ai: true,
       waiterTargets: false,
     },
-    waiterSort: "net_sales",
+    waiterSort: "gross_sales",
     productSort: "heatIndex",
     allWaiters: true,
   },

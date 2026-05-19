@@ -32,6 +32,8 @@ import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { defaultExportConfig } from "../config/visualExportPresets";
 import { loadWeeklyFocusItems, saveWeeklyFocusItems } from "../config/weeklyFocusStorage";
+import { loadWaiterSalesMetric, saveWaiterSalesMetric } from "../config/waiterSalesMetricStorage";
+import { waiterSalesValue } from "../utils/waiterSalesMetric";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterTargets } from "../engines/waiterTargetEngine";
@@ -78,24 +80,25 @@ function Section({ title, subtitle, children }) {
   );
 }
 
-function rebuildCompetitionIntel(base, list) {
+function rebuildCompetitionIntel(base, list, salesMetric = "gross") {
   const sorted = [...list];
   return {
     ...base,
     waiters: sorted,
+    salesMetric,
     topUpseller: sorted[0] || null,
     dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
     beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
     radarTop: sorted.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
-      revenue: w.net_sales,
+      revenue: waiterSalesValue(w, salesMetric),
       modifier: w.modifierAttachPct,
       dessert: w.dessertAttachPct,
       beverage: w.beverageAttachPct,
       foodMix: w.foodMixPct,
       avgCheck: w.avgCheck,
     })),
-    maxSales: sorted[0]?.net_sales || 1,
+    maxSales: sorted[0] ? waiterSalesValue(sorted[0], salesMetric) : 1,
   };
 }
 
@@ -112,7 +115,10 @@ export default function VisualIntelligenceEngine() {
   const [productItems, setProductItems] = useState([]);
   const [waiterItems, setWaiterItems] = useState([]);
   const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
-  const [exportConfig, setExportConfig] = useState(() => defaultExportConfig([], loadWeeklyFocusItems()));
+  const [exportConfig, setExportConfig] = useState(() => ({
+    ...defaultExportConfig([], loadWeeklyFocusItems()),
+    waiterSalesMetric: loadWaiterSalesMetric(),
+  }));
   const [exporting, setExporting] = useState(false);
   const chartCaptureRef = useRef(null);
 
@@ -188,20 +194,25 @@ export default function VisualIntelligenceEngine() {
     [exportConfig.weeklyFocusItems],
   );
 
+  const salesMetric = exportConfig.waiterSalesMetric || loadWaiterSalesMetric();
+
   const staffIntel = useMemo(
     () =>
       hasWaiterBatch
-        ? buildWaiterSalesIntelligence(waiterItems, { focusItems: weeklyFocusItems })
+        ? buildWaiterSalesIntelligence(waiterItems, {
+            focusItems: weeklyFocusItems,
+            salesMetric,
+          })
         : { waiters: [], all: [], managers: [], topUpseller: null },
-    [waiterItems, hasWaiterBatch, weeklyFocusItems],
+    [waiterItems, hasWaiterBatch, weeklyFocusItems, salesMetric],
   );
 
   const includeManagers = Boolean(exportConfig.includeManagers);
 
   const competitionStaff = useMemo(() => {
     const part = partitionStaffByRole(staffIntel.all || staffIntel.waiters || [], { includeManagers });
-    return rebuildCompetitionIntel(staffIntel, includeManagers ? part.all : part.waiters);
-  }, [staffIntel, includeManagers]);
+    return rebuildCompetitionIntel(staffIntel, includeManagers ? part.all : part.waiters, salesMetric);
+  }, [staffIntel, includeManagers, salesMetric]);
 
   const waiterTargets = useMemo(
     () => buildWaiterTargets(competitionStaff, { focusItems: weeklyFocusItems }),
@@ -232,6 +243,9 @@ export default function VisualIntelligenceEngine() {
   const handleExportConfigChange = (next) => {
     if (next.weeklyFocusItems) {
       saveWeeklyFocusItems(next.weeklyFocusItems);
+    }
+    if (next.waiterSalesMetric && next.waiterSalesMetric !== exportConfig.waiterSalesMetric) {
+      saveWaiterSalesMetric(next.waiterSalesMetric);
     }
     setExportConfig(next);
   };
@@ -614,7 +628,7 @@ export default function VisualIntelligenceEngine() {
                   <RoleBadge roleLabel={competitionStaff.topUpseller.roleLabel} />
                 </p>
                 <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                  {competitionStaff.topUpseller.net_sales.toLocaleString()} SAR · {competitionStaff.topUpseller.modifierAttachPct}% mods
+                  {waiterSalesValue(competitionStaff.topUpseller, salesMetric).toLocaleString()} SAR ({salesMetric === "net" ? "net" : "gross"}) · {competitionStaff.topUpseller.modifierAttachPct}% mods
                 </p>
               </>
             ) : (
@@ -658,7 +672,7 @@ export default function VisualIntelligenceEngine() {
                   {m.waiter}
                   <RoleBadge roleLabel={m.roleLabel} />
                 </span>
-                <span>{m.net_sales.toLocaleString()} SAR · {m.quantity} qty</span>
+                <span>{waiterSalesValue(m, salesMetric).toLocaleString()} SAR · {m.quantity} qty</span>
               </motion.div>
             ))}
           </motion.div>

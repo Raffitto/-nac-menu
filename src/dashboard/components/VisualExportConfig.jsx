@@ -9,6 +9,7 @@ import {
   PRODUCT_SORT_OPTIONS,
   applyTargetMode,
 } from "../config/visualExportPresets";
+import { WAITER_SALES_METRICS } from "../utils/waiterSalesMetric";
 import { BRANCH_OPTIONS } from "../config/foodicsImportTypes";
 
 export default function VisualExportConfig({
@@ -104,6 +105,23 @@ export default function VisualExportConfig({
               <option key={b.value} value={b.value}>{b.label}</option>
             ))}
           </select>
+        </div>
+
+        <div className="vi-export-block">
+          <h4>Staff sales metric</h4>
+          <p className="vi-export-hint">Default gross sales matches Foodics Sales by Creator pivot</p>
+          <motion.div className="vi-metric-toggle">
+            {Object.values(WAITER_SALES_METRICS).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`vi-metric-pill ${(config.waiterSalesMetric || "gross") === m.id ? "active" : ""}`}
+                onClick={() => set({ waiterSalesMetric: m.id })}
+              >
+                {m.label}
+              </button>
+            ))}
+          </motion.div>
         </div>
 
         <div className="vi-export-block vi-export-block--wide">

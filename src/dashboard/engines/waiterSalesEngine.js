@@ -5,6 +5,11 @@ import {
   EXPECTED_WAITERS,
 } from "../config/staffRoles";
 import { matchFocusItem } from "../utils/focusItemCatalog";
+import {
+  DEFAULT_WAITER_SALES_METRIC,
+  waiterSalesValue,
+  sortWaitersByMetric,
+} from "../utils/waiterSalesMetric";
 
 function categoryFromRow(row) {
   const cat = (row.analytics_category || row.inherited_category || row.category || "").toLowerCase();
@@ -36,11 +41,24 @@ function isFoodCategory(cat, name) {
   return ["mains", "breakfast", "other"].includes(cat) || cat === "food";
 }
 
+function rowGross(row) {
+  const g = Number(row.gross_sales);
+  if (Number.isFinite(g)) return g;
+  return Number(row.net_sales) || 0;
+}
+
+function rowNet(row) {
+  const n = Number(row.net_sales);
+  if (Number.isFinite(n)) return n;
+  return Number(row.gross_sales) || 0;
+}
+
 /**
- * Staff KPIs from waiter product sales import — canonical names + role tagging.
+ * Staff KPIs from waiter product sales import — canonical names, gross + net totals.
  */
 export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
   const focusItems = options.focusItems || [];
+  const salesMetric = options.salesMetric || DEFAULT_WAITER_SALES_METRIC;
   const byWaiter = {};
 
   (salesItems || []).forEach((row) => {
@@ -52,6 +70,7 @@ export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
         roleLabel: staffRoleLabel(waiter),
         quantity: 0,
         net_sales: 0,
+        gross_sales: 0,
         lines: 0,
         modifier_qty: 0,
         dessert_qty: 0,
@@ -64,14 +83,15 @@ export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
     }
     const w = byWaiter[waiter];
     const qty = Number(row.quantity_sold) || 0;
-    const rev = Number(row.net_sales) || 0;
     w.quantity += qty;
-    w.net_sales += rev;
+    w.net_sales += rowNet(row);
+    w.gross_sales += rowGross(row);
     w.lines += 1;
 
     const cat = categoryFromRow(row);
     const name = itemLabel(row).toLowerCase();
-    w.categoryRevenue[cat] = (w.categoryRevenue[cat] || 0) + rev;
+    const revForCat = rowGross(row);
+    w.categoryRevenue[cat] = (w.categoryRevenue[cat] || 0) + revForCat;
 
     const isMod = isModifierRow(row);
 
@@ -94,12 +114,13 @@ export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
         w.focusStats[focusMatch] = { label: focusMatch, qty: 0, revenue: 0 };
       }
       w.focusStats[focusMatch].qty += qty;
-      w.focusStats[focusMatch].revenue += rev;
+      w.focusStats[focusMatch].revenue += revForCat;
     }
   });
 
   const list = Object.values(byWaiter).map((w) => {
-    const avgCheck = w.quantity > 0 ? Math.round((w.net_sales / w.quantity) * 100) / 100 : 0;
+    const primarySales = waiterSalesValue(w, salesMetric);
+    const avgCheck = w.quantity > 0 ? Math.round((primarySales / w.quantity) * 100) / 100 : 0;
     const modifierAttachPct =
       w.parent_qty > 0 ? Math.round((w.modifier_qty / w.parent_qty) * 1000) / 10 : 0;
     const dessertAttachPct =
@@ -121,6 +142,7 @@ export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
 
     return {
       ...w,
+      primarySales,
       avgCheck,
       modifierAttachPct,
       dessertAttachPct,
@@ -135,30 +157,41 @@ export function buildWaiterSalesIntelligence(salesItems = [], options = {}) {
     };
   });
 
-  const sorted = list.sort((a, b) => b.net_sales - a.net_sales);
+  const sorted = sortWaitersByMetric(list, salesMetric);
   const waitersOnly = sorted.filter((w) => w.role === "waiter");
   const managers = sorted.filter((w) => w.role === "manager" || w.role === "admin");
-
   const competition = waitersOnly;
+  const maxSales = competition[0] ? waiterSalesValue(competition[0], salesMetric) : 1;
 
   return {
     all: sorted,
     waiters: competition,
     managers,
+    salesMetric,
     topUpseller: competition[0] || null,
     dessertChampion: [...competition].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
     beverageChampion: [...competition].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
     radarTop: competition.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
-      revenue: w.net_sales,
+      revenue: waiterSalesValue(w, salesMetric),
       modifier: w.modifierAttachPct,
       dessert: w.dessertAttachPct,
       beverage: w.beverageAttachPct,
       foodMix: w.foodMixPct,
       avgCheck: w.avgCheck,
     })),
+    maxSales,
     waiterCount: waitersOnly.length,
     managerCount: managers.length,
     expectedWaiterCount: EXPECTED_WAITERS.length,
+    grandTotals: sorted.reduce(
+      (acc, w) => ({
+        gross_sales: acc.gross_sales + w.gross_sales,
+        net_sales: acc.net_sales + w.net_sales,
+        quantity: acc.quantity + w.quantity,
+        row_count: acc.row_count + w.lines,
+      }),
+      { gross_sales: 0, net_sales: 0, quantity: 0, row_count: 0 },
+    ),
   };
 }

@@ -1,9 +1,14 @@
 import { buildWaiterTargets } from "./waiterTargetEngine";
 import { partitionStaffByRole, staffNamesMatch } from "../config/staffRoles";
+import { waiterSalesValue } from "../utils/waiterSalesMetric";
 
-function sortWaiters(list, sortBy) {
+function sortWaiters(list, sortBy, salesMetric = "gross") {
   const copy = [...(list || [])];
-  const key = sortBy || "net_sales";
+  const key = sortBy || "gross_sales";
+  if (key === "gross_sales" || key === "primarySales") {
+    copy.sort((a, b) => waiterSalesValue(b, salesMetric) - waiterSalesValue(a, salesMetric));
+    return copy;
+  }
   copy.sort((a, b) => (Number(b[key]) || 0) - (Number(a[key]) || 0));
   return copy;
 }
@@ -33,18 +38,19 @@ function sortProducts(heatItems, funnels, sortBy) {
   return items.sort((a, b) => (b.revenue || 0) - (a.revenue || 0));
 }
 
-function rebuildWaiterIntel(base, list) {
+function rebuildWaiterIntel(base, list, salesMetric = "gross") {
   const sorted = [...list];
-  const maxSales = sorted[0]?.net_sales || 1;
+  const maxSales = sorted[0] ? waiterSalesValue(sorted[0], salesMetric) : 1;
   return {
     ...base,
     waiters: sorted,
+    salesMetric,
     topUpseller: sorted[0] || null,
     dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
     beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
     radarTop: sorted.map((w) => ({
       waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
-      revenue: w.net_sales,
+      revenue: waiterSalesValue(w, salesMetric),
       modifier: w.modifierAttachPct,
       dessert: w.dessertAttachPct,
       beverage: w.beverageAttachPct,
@@ -73,6 +79,7 @@ export function applyVisualExportConfig(payload, config) {
   const sections = cfg.sections || {};
   const includeManagers = cfg.includeManagers === true;
   const focusItems = cfg.weeklyFocusItems || [];
+  const salesMetric = cfg.waiterSalesMetric || "gross";
 
   let waiters = payload.waiters;
   let staffOverview = {
@@ -100,8 +107,8 @@ export function applyVisualExportConfig(payload, config) {
     );
   }
 
-  competitionList = sortWaiters(competitionList, cfg.waiterSort);
-  waiters = rebuildWaiterIntel(waiters, competitionList);
+  competitionList = sortWaiters(competitionList, cfg.waiterSort, salesMetric);
+  waiters = rebuildWaiterIntel(waiters, competitionList, salesMetric);
 
   const waiterTargets =
     sections.waiterTargets !== false
@@ -124,6 +131,7 @@ export function applyVisualExportConfig(payload, config) {
       period: `${cfg.dateFrom || "—"} → ${cfg.dateTo || "—"}`,
       branch: cfg.branch || "all",
       targetMode: cfg.targetMode,
+      salesMetric: cfg.waiterSalesMetric || "gross",
       weeklyFocus: focusItems.join(", ") || "General food & add-on upsell",
     },
     sections,

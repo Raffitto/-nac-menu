@@ -550,6 +550,45 @@
   to { transform: rotate(360deg); }
 }
 
+.fi-validation-panel {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(78, 205, 196, 0.35);
+  background: rgba(12, 18, 20, 0.85);
+}
+
+.fi-validation-panel h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: #d7bc8a;
+}
+
+.fi-validation-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.fi-validation-panel th,
+.fi-validation-panel td {
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.fi-validation-panel th {
+  color: rgba(249, 249, 247, 0.55);
+  font-weight: 500;
+}
+
+.fi-validation-total td {
+  font-weight: 600;
+  color: #4ecdc4;
+  border-bottom: none;
+  padding-top: 0.65rem;
+}
+
 @media (max-width: 768px) {
   .fi-page {
     padding: 20px 16px 40px;

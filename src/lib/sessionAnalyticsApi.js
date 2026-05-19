@@ -1,4 +1,4 @@
-import { rangeToHours } from "../dashboard/utils/rangeState";
+import { rangeToHours, MONTH_HOURS } from "../dashboard/utils/rangeState";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/sessionAnalyticsMap";
 
 function isTimeoutError(error) {
@@ -13,16 +13,17 @@ function isTimeoutError(error) {
 
 function rpcParamsFromFilters(filters) {
   const selectedRange = filters?.selectedRange || "today";
+  const hours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
   return {
     p_branch: filters?.branch || null,
-    p_hours: filters?.timeRangeHours ?? rangeToHours(selectedRange),
+    p_hours: hours,
     p_language: filters?.language || "all",
     p_event_type: filters?.eventType || "all",
     p_shift: filters?.shift || "all",
     p_day_type: filters?.dayType || "all",
     p_role: filters?.role || "all",
     p_feed_limit: 45,
-    p_light: null,
+    p_light: hours >= 168,
   };
 }
 
@@ -35,67 +36,122 @@ function normalizeFeedRow(row) {
   };
 }
 
+function mergePayload(summary, feedRows) {
+  const data = summary || {};
+  return {
+    aggregates: mapBiToSessionAggregates(data),
+    topAddons: mapBiTopAddons(data),
+    feed: (feedRows || data.recent_feed || []).map(normalizeFeedRow),
+    byRole: data.by_role || {},
+    byBranch: data.by_branch || {},
+    partial: Boolean(data.partial_mode),
+    note: data.aggregation_note || null,
+  };
+}
+
+async function fetchFeed(supabase, params) {
+  const { data, error } = await supabase.rpc("get_session_analytics_feed", {
+    p_branch: params.p_branch,
+    p_hours: params.p_hours,
+    p_limit: params.p_feed_limit,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
 /**
- * RPC-first Session Analytics — never bulk-scans menu_events in the browser.
+ * RPC-first Session Analytics — rollup for month, bounded feed query, no browser scans.
  */
 export async function fetchSessionAnalytics(supabase, filters) {
-  const baseParams = rpcParamsFromFilters(filters);
+  const params = rpcParamsFromFilters(filters);
+  const useRollup = params.p_hours >= 168 || params.p_hours === MONTH_HOURS;
 
-  const runRpc = (params) => supabase.rpc("get_session_analytics", params);
+  if (useRollup) {
+    const [rollupRes, feed] = await Promise.all([
+      supabase.rpc("get_session_analytics_from_rollup", {
+        p_branch: params.p_branch,
+        p_hours: params.p_hours,
+        p_language: params.p_language,
+        p_event_type: params.p_event_type,
+        p_shift: params.p_shift,
+        p_day_type: params.p_day_type,
+        p_role: params.p_role,
+      }),
+      fetchFeed(supabase, params).catch(() => []),
+    ]);
 
-  let { data, error } = await runRpc(baseParams);
-
-  if (error && isTimeoutError(error)) {
-    const fallback = {
-      ...baseParams,
-      p_light: true,
-      p_hours: baseParams.p_hours >= 168 ? 168 : baseParams.p_hours,
-    };
-    const retry = await runRpc(fallback);
-    data = retry.data;
-    error = retry.error;
-
-    if (!error && data) {
-      return {
-        aggregates: mapBiToSessionAggregates(data),
-        topAddons: mapBiTopAddons(data),
-        feed: (data.recent_feed || []).map(normalizeFeedRow),
-        byRole: data.by_role || {},
-        byBranch: data.by_branch || {},
-        partial: true,
-        note:
-          data.aggregation_note ||
-          "Query timed out — showing 7-day aggregated snapshot. Narrow branch or range for full detail.",
-      };
+    if (rollupRes.error && isTimeoutError(rollupRes.error)) {
+      return fetchSessionAnalyticsFallback(supabase, params);
     }
+    if (rollupRes.error) throw rollupRes.error;
 
-    const bi = await supabase.rpc("get_bi_dashboard", {
-      p_branch: baseParams.p_branch,
-      p_hours: 168,
-    });
-    if (bi.error) throw bi.error;
-    const biPayload = Array.isArray(bi.data) ? bi.data[0] : bi.data;
+    const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
+    const result = mergePayload(summary, feed);
+    if (!result.aggregates?.total_events && params.p_hours >= MONTH_HOURS) {
+      result.note =
+        (result.note ? `${result.note} ` : "") +
+        "Daily rollup may be empty — run refresh_menu_events_daily_rollup(45) in Supabase.";
+      result.partial = true;
+    }
+    return result;
+  }
+
+  const [summaryRes, feed] = await Promise.all([
+    supabase.rpc("get_session_analytics", {
+      ...params,
+      p_light: true,
+    }),
+    fetchFeed(supabase, params).catch(() => []),
+  ]);
+
+  if (summaryRes.error && isTimeoutError(summaryRes.error)) {
+    return fetchSessionAnalyticsFallback(supabase, params);
+  }
+  if (summaryRes.error) throw summaryRes.error;
+
+  const summary = Array.isArray(summaryRes.data) ? summaryRes.data[0] : summaryRes.data;
+  const result = mergePayload(summary, feed);
+  delete summary?.recent_feed;
+  return result;
+}
+
+async function fetchSessionAnalyticsFallback(supabase, params) {
+  const fallbackHours = 168;
+  const [rollupRes, feed] = await Promise.all([
+    supabase.rpc("get_session_analytics_from_rollup", {
+      p_branch: params.p_branch,
+      p_hours: fallbackHours,
+      p_language: params.p_language,
+      p_event_type: params.p_event_type,
+      p_shift: params.p_shift,
+      p_day_type: params.p_day_type,
+      p_role: params.p_role,
+    }),
+    fetchFeed(supabase, { ...params, p_hours: fallbackHours }).catch(() => []),
+  ]);
+
+  if (!rollupRes.error && rollupRes.data) {
+    const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
     return {
-      aggregates: mapBiToSessionAggregates(biPayload),
-      topAddons: mapBiTopAddons(biPayload),
-      feed: [],
-      byRole: {},
-      byBranch: {},
+      ...mergePayload(summary, feed),
       partial: true,
-      note: "Showing last 7 days (fallback). Run session_analytics_optimization.sql for full month support.",
+      note: "Showing last 7 days (aggregated). Narrow branch or run session_analytics_rollup.sql.",
     };
   }
 
-  if (error) throw error;
-
-  const payload = Array.isArray(data) ? data[0] : data;
+  const bi = await supabase.rpc("get_bi_dashboard", {
+    p_branch: params.p_branch,
+    p_hours: fallbackHours,
+  });
+  if (bi.error) throw bi.error;
+  const biPayload = Array.isArray(bi.data) ? bi.data[0] : bi.data;
   return {
-    aggregates: mapBiToSessionAggregates(payload),
-    topAddons: mapBiTopAddons(payload),
-    feed: (payload?.recent_feed || []).map(normalizeFeedRow),
-    byRole: payload?.by_role || {},
-    byBranch: payload?.by_branch || {},
-    partial: Boolean(payload?.partial_mode),
-    note: payload?.aggregation_note || null,
+    aggregates: mapBiToSessionAggregates(biPayload),
+    topAddons: mapBiTopAddons(biPayload),
+    feed: [],
+    byRole: {},
+    byBranch: {},
+    partial: true,
+    note: "Showing last 7 days (fallback). Run session_analytics_rollup.sql in Supabase.",
   };
 }

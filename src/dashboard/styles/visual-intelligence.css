@@ -363,6 +363,35 @@
   color: #f5e6c8;
 }
 
+.vi-export-hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.vi-metric-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.vi-metric-pill {
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.7);
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.vi-metric-pill.active {
+  border-color: rgba(78, 205, 196, 0.5);
+  background: rgba(78, 205, 196, 0.12);
+  color: #b8f0eb;
+}
+
 .vi-section-checks,
 .vi-waiter-checks {
   display: flex;

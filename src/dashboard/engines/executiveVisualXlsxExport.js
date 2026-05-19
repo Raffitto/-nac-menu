@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { businessDayExportNote } from "../utils/businessDay";
+import { waiterSalesValue } from "../utils/waiterSalesMetric";
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -47,6 +48,7 @@ export function exportExecutiveVisualXLSX(payload) {
   const wb = XLSX.utils.book_new();
   const generated = new Date().toLocaleString();
   const branch = exportMeta?.branch || "all";
+  const salesMetric = exportMeta?.salesMetric || waiters?.salesMetric || "gross";
 
   XLSX.utils.book_append_sheet(
     wb,
@@ -96,7 +98,9 @@ export function exportExecutiveVisualXLSX(payload) {
           Tier: tier(i, waiters.waiters.length),
           Role: w.roleLabel,
           Waiter: w.waiter,
-          Revenue: w.net_sales,
+          "Gross sales": w.gross_sales,
+          "Net sales": w.net_sales,
+          Revenue: waiterSalesValue(w, salesMetric),
           Quantity: w.quantity,
           "Avg check": w.avgCheck,
           "Modifier %": w.modifierAttachPct,

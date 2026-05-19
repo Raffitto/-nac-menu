@@ -187,9 +187,20 @@ export async function createImportBatch(meta, salesRows) {
     .single();
   if (batchErr) throw batchErr;
 
+  const isWaiterImport = (meta.import_type || IMPORT_TYPE.PRODUCT_SALES) === IMPORT_TYPE.WAITER_PRODUCT_SALES;
+
   const payload = salesRows
     .map((row) => toSalesItemPayload(row, batch, meta))
-    .filter((row) => row.matched_menu_item_name);
+    .filter((row) => {
+      if (isWaiterImport) {
+        const hasSales =
+          (Number(row.quantity_sold) || 0) > 0 ||
+          (Number(row.gross_sales) || 0) > 0 ||
+          (Number(row.net_sales) || 0) > 0;
+        return hasSales && (row.waiter_name || row.raw_item_name);
+      }
+      return Boolean(row.matched_menu_item_name);
+    });
 
   if (payload.length) {
     const { error: itemsErr } = await supabase.from("foodics_sales_items").insert(payload);
