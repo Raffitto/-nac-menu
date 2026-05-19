@@ -13,6 +13,7 @@ const AIInsights = lazy(() => import("../AIInsights"));
 const RestaurantIntelligence = lazy(() => import("../RestaurantIntelligence"));
 const FoodicsIntelligence = lazy(() => import("../FoodicsIntelligence"));
 const SalesImportsIntelligence = lazy(() => import("../intelligence/SalesImportsIntelligence"));
+const VisualIntelligenceEngine = lazy(() => import("../intelligence/VisualIntelligenceEngine"));
 
 function ViewFallback({ label }) {
   return (
@@ -41,6 +42,11 @@ export default function IntelligenceHub() {
       {tab === "ai" && (
         <Suspense fallback={<ViewFallback label="Loading AI insights…" />}>
           <AIInsights />
+        </Suspense>
+      )}
+      {tab === "visual" && (
+        <Suspense fallback={<ViewFallback label="Loading visual intelligence…" />}>
+          <VisualIntelligenceEngine />
         </Suspense>
       )}
       {tab === "restaurant" && (

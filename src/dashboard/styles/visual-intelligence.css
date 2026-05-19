@@ -1,0 +1,278 @@
+/* Visual Intelligence OS — premium hospitality BI */
+
+.vi-page {
+  --vi-gold: #d7bc8a;
+  --vi-teal: #4ecdc4;
+  --vi-warn: #f5a623;
+  --vi-critical: #e85d4c;
+  padding-bottom: 3rem;
+}
+
+.vi-section {
+  margin-bottom: 2.5rem;
+}
+
+.vi-section-head {
+  margin-bottom: 1rem;
+}
+
+.vi-section-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: #f9f9f7;
+  letter-spacing: -0.02em;
+}
+
+.vi-section-head p {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.48);
+}
+
+.vi-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.vi-kpi {
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vi-kpi-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(249, 249, 247, 0.45);
+  margin: 0;
+}
+
+.vi-kpi-value {
+  margin: 0.35rem 0 0;
+  font-size: 1.45rem;
+  font-weight: 500;
+  color: #f9f9f7;
+}
+
+.vi-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.vi-panel {
+  padding: 1.15rem 1.25rem;
+  border-radius: 16px;
+  background: rgba(12, 12, 14, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.vi-panel h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #f9f9f7;
+}
+
+.vi-subtitle {
+  margin: -0.5rem 0 0.75rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.42);
+}
+
+.vi-bar-row {
+  margin-bottom: 0.65rem;
+}
+
+.vi-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin-bottom: 0.25rem;
+  color: rgba(249, 249, 247, 0.85);
+}
+
+.vi-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.vi-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.vi-bar-fill.good { background: linear-gradient(90deg, #2d6b66, var(--vi-teal)); }
+.vi-bar-fill.warn { background: linear-gradient(90deg, #8a5a20, var(--vi-warn)); }
+.vi-bar-fill.critical { background: linear-gradient(90deg, #8a3028, var(--vi-critical)); }
+
+.vi-missed-card {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  margin-bottom: 0.65rem;
+  border: 1px solid rgba(232, 93, 76, 0.25);
+  background: rgba(232, 93, 76, 0.08);
+}
+
+.vi-missed-card .vi-opp-score {
+  font-size: 0.68rem;
+  color: var(--vi-warn);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.vi-rel-card {
+  padding: 0.75rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(215, 188, 138, 0.15);
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.vi-rel-card strong {
+  color: var(--vi-gold);
+}
+
+.vi-insight-card {
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(78, 205, 196, 0.2);
+  background: linear-gradient(135deg, rgba(78, 205, 196, 0.06), rgba(215, 188, 138, 0.04));
+  margin-bottom: 0.75rem;
+}
+
+.vi-insight-card.opportunity { border-color: rgba(245, 166, 35, 0.35); }
+.vi-insight-card.warning { border-color: rgba(232, 93, 76, 0.3); }
+.vi-insight-card.win { border-color: rgba(78, 205, 196, 0.35); }
+
+.vi-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.35rem;
+}
+
+.vi-badge.high { background: rgba(78, 205, 196, 0.2); color: var(--vi-teal); }
+.vi-badge.medium { background: rgba(215, 188, 138, 0.2); color: var(--vi-gold); }
+.vi-badge.low { background: rgba(255, 255, 255, 0.1); color: rgba(249, 249, 247, 0.6); }
+
+.vi-heat-card {
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vi-heat-card.hot {
+  box-shadow: 0 0 20px rgba(78, 205, 196, 0.15);
+  border-color: rgba(78, 205, 196, 0.35);
+}
+
+.vi-heat-glow {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+.vi-heat-glow.hot { background: var(--vi-teal); box-shadow: 0 0 8px var(--vi-teal); }
+.vi-heat-glow.warm { background: var(--vi-gold); }
+.vi-heat-glow.cold { background: rgba(255, 255, 255, 0.25); }
+
+.vi-quadrant-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  margin-left: 0.35rem;
+}
+
+.vi-quadrant-tag.Star { background: rgba(78, 205, 196, 0.2); color: var(--vi-teal); }
+.vi-quadrant-tag.Puzzle { background: rgba(245, 166, 35, 0.2); color: var(--vi-warn); }
+.vi-quadrant-tag.Workhorse { background: rgba(215, 188, 138, 0.2); color: var(--vi-gold); }
+.vi-quadrant-tag.Dog { background: rgba(255, 255, 255, 0.1); color: rgba(249, 249, 247, 0.5); }
+
+.vi-export-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.vi-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(215, 188, 138, 0.35);
+  background: rgba(215, 188, 138, 0.1);
+  color: #f5e6c8;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.vi-export-btn:hover {
+  background: rgba(215, 188, 138, 0.2);
+}
+
+.vi-podium {
+  text-align: center;
+  padding: 1rem;
+}
+
+.vi-podium-name {
+  font-size: 0.85rem;
+  color: var(--vi-gold);
+  margin-top: 0.35rem;
+}
+
+.vi-chart-wrap {
+  width: 100%;
+  height: 220px;
+  min-height: 180px;
+}
+
+.vi-heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  font-size: 0.65rem;
+}
+
+.vi-heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.7);
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .vi-grid-2 { grid-template-columns: 1fr; }
+  .vi-heatmap-grid { grid-template-columns: repeat(4, 1fr); }
+}

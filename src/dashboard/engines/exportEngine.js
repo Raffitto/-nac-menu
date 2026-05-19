@@ -689,3 +689,321 @@ export function exportReviewIntelligenceReport({
 export function exportUnifiedIntelligenceXLSX(ctx) {
   exportReviewIntelligenceReport({ ...ctx, format: "xlsx" });
 }
+
+/** Visual Intelligence OS — executive PDF (dark luxury styling via teal/gold accents) */
+export function exportVisualIntelligencePDF({
+  attachment,
+  timeShift,
+  heat,
+  menuEngineering,
+  waiters,
+  insights,
+  kpis,
+  exportMeta,
+}) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const margin = 48;
+  let y = margin;
+  const title = exportMeta?.title || "NAC Visual Intelligence";
+
+  doc.setFillColor(12, 12, 14);
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), "F");
+  doc.setTextColor(215, 188, 138);
+  doc.setFontSize(20);
+  doc.text("NAC Hospitality OS", margin, y);
+  y += 24;
+  doc.setTextColor(249, 249, 247);
+  doc.setFontSize(12);
+  doc.text(title, margin, y);
+  y += 14;
+  doc.setFontSize(9);
+  doc.setTextColor(160, 160, 160);
+  doc.text(`Generated ${new Date().toLocaleString()} · ${businessDayExportNote()}`, margin, y);
+  y += 22;
+
+  doc.setTextColor(78, 205, 196);
+  doc.setFontSize(11);
+  doc.text("Executive Summary", margin, y);
+  y += 14;
+  doc.setTextColor(220, 220, 220);
+  doc.setFontSize(9);
+  (insights || []).slice(0, 5).forEach((ins) => {
+    doc.splitTextToSize(`• ${ins.title}: ${ins.body}`, 500).forEach((ln) => {
+      if (y > 720) {
+        doc.addPage();
+        doc.setFillColor(12, 12, 14);
+        doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), "F");
+        y = margin;
+      }
+      doc.text(ln, margin, y);
+      y += 11;
+    });
+  });
+  y += 8;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["KPI", "Value"]],
+    body: [
+      ["Modifier revenue", `${Math.round(attachment?.totals?.modifierRevenue || 0).toLocaleString()} SAR`],
+      ["Parent orders", String(attachment?.totals?.parentOrders || 0)],
+      ["Missed upsell signals", String(attachment?.missedUpsells?.length || 0)],
+      ["Sessions", String(kpis?.sessions || "—")],
+    ],
+    styles: { fontSize: 9, textColor: [240, 240, 240], fillColor: [20, 20, 22] },
+    headStyles: { fillColor: [45, 95, 90], textColor: [255, 255, 255] },
+    margin: { left: margin, right: margin },
+  });
+
+  let ty = doc.lastAutoTable.finalY + 18;
+  if ((attachment?.missedUpsells || []).length) {
+    doc.setTextColor(245, 166, 35);
+    doc.setFontSize(10);
+    doc.text("Missed Upsells", margin, ty);
+    ty += 10;
+    autoTable(doc, {
+      startY: ty,
+      head: [["Pair", "Attach %", "Expected", "Est. gap SAR"]],
+      body: attachment.missedUpsells.slice(0, 8).map((m) => [
+        m.label,
+        `${m.attachmentRate}%`,
+        `${m.expectedPct}%`,
+        String(m.estimatedLostRevenue),
+      ]),
+      styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [24, 24, 26] },
+      headStyles: { fillColor: [120, 60, 40], textColor: [255, 255, 255] },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if ((attachment?.topAttachments || []).length) {
+    let ay = doc.lastAutoTable.finalY + 18;
+    if (ay > 680) {
+      doc.addPage();
+      ay = margin;
+    }
+    doc.setTextColor(78, 205, 196);
+    doc.text("Top Attachments", margin, ay);
+    ay += 10;
+    autoTable(doc, {
+      startY: ay,
+      head: [["Pair", "Rate", "Revenue"]],
+      body: attachment.topAttachments.map((p) => [
+        p.label,
+        `${p.attachmentRate}%`,
+        `${Math.round(p.attachmentRevenue).toLocaleString()} SAR`,
+      ]),
+      styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [24, 24, 26] },
+      headStyles: { fillColor: EXPORT_TEAL },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if ((menuEngineering || []).length) {
+    let my = doc.lastAutoTable.finalY + 18;
+    if (my > 680) {
+      doc.addPage();
+      my = margin;
+    }
+    doc.setTextColor(215, 188, 138);
+    doc.text("Menu Engineering", margin, my);
+    autoTable(doc, {
+      startY: my + 10,
+      head: [["Item", "Quadrant", "Views", "Orders"]],
+      body: menuEngineering.slice(0, 12).map((m) => [
+        exportCell(m.item_name),
+        m.quadrant,
+        String(m.views),
+        String(m.orders),
+      ]),
+      styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [24, 24, 26] },
+      headStyles: { fillColor: EXPORT_GOLD, textColor: [30, 30, 30] },
+      margin: { left: margin, right: margin },
+    });
+  }
+
+  if (timeShift?.peakDaypart) {
+    let py = doc.lastAutoTable.finalY + 14;
+    doc.setFontSize(9);
+    doc.setTextColor(180, 180, 180);
+    doc.text(`Peak daypart: ${timeShift.peakDaypart.label}`, margin, py);
+  }
+
+  if ((heat?.hotNow || []).length) {
+    let hy = doc.lastAutoTable.finalY + 20;
+    if (hy > 700) {
+      doc.addPage();
+      hy = margin;
+    }
+    doc.setTextColor(78, 205, 196);
+    doc.text("Heat Index — Hot Now", margin, hy);
+    hy = drawBarChart(
+      doc,
+      margin,
+      hy + 10,
+      heat.hotNow.map((h) => ({ item_name: h.item_name, heatIndex: h.heatIndex })),
+      { labelKey: "item_name", valueKey: "heatIndex", barColor: EXPORT_TEAL },
+    );
+  }
+
+  if (waiters?.topUpseller) {
+    let wy = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 16 : margin + 400;
+    if (wy > 700) {
+      doc.addPage();
+      wy = margin;
+    }
+    doc.setTextColor(215, 188, 138);
+    doc.text(`Top upseller: ${waiters.topUpseller.waiter} — ${waiters.topUpseller.net_sales.toLocaleString()} SAR`, margin, wy);
+  }
+
+  doc.save("nac-visual-intelligence.pdf");
+}
+
+/** Visual Intelligence OS — boardroom XLSX */
+export function exportVisualIntelligenceXLSX({
+  attachment,
+  timeShift,
+  heat,
+  menuEngineering,
+  waiters,
+  insights,
+  kpis,
+  exportMeta,
+}) {
+  const wb = XLSX.utils.book_new();
+  const generated = new Date().toLocaleString();
+  const title = exportMeta?.title || "NAC Visual Intelligence";
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      [title],
+      ["Generated", generated],
+      ["Period", exportMeta?.period || businessDayExportNote()],
+      [],
+      ["KPI", "Value"],
+      ["Modifier revenue", attachment?.totals?.modifierRevenue || 0],
+      ["Parent orders", attachment?.totals?.parentOrders || 0],
+      ["Missed upsells", attachment?.missedUpsells?.length || 0],
+      ["Sessions", kpis?.sessions || "—"],
+    ]),
+    "Executive Summary",
+  );
+
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ["AI Operational Insights"],
+      ...(insights || []).map((i) => [i.title, i.body, i.confidence, i.type]),
+    ]),
+    "AI Insights",
+  );
+
+  if (attachment?.pairs?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        attachment.pairs.map((p) => ({
+          Pair: p.label,
+          "Parent orders": p.parentOrders,
+          "Attached orders": p.attachedOrders,
+          "Attachment %": p.attachmentRate,
+          Expected: p.expectedPct,
+          "Est. gap SAR": p.estimatedLostRevenue,
+          Status: p.underperforming ? "Underperforming" : "OK",
+        })),
+      ),
+      "Attachment",
+    );
+  }
+
+  if (attachment?.missedUpsells?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        attachment.missedUpsells.map((m) => ({
+          Pair: m.label,
+          "Opportunity score": m.opportunityScore,
+          "Attachment %": m.attachmentRate,
+          Expected: m.expectedPct,
+          "Est. gap SAR": m.estimatedLostRevenue,
+        })),
+      ),
+      "Missed Upsells",
+    );
+  }
+
+  if (menuEngineering?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        menuEngineering.map((m) => ({
+          Item: m.item_name,
+          Quadrant: m.quadrant,
+          Popularity: m.popularity,
+          Profitability: m.profitability,
+          Views: m.views,
+          Orders: m.orders,
+          Suggestion: m.suggestion,
+        })),
+      ),
+      "Menu Engineering",
+    );
+  }
+
+  if (heat?.items?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        heat.items.slice(0, 50).map((h) => ({
+          Item: h.item_name,
+          "Heat index": h.heatIndex,
+          Band: h.band,
+          Tag: h.tag || "",
+          Views: h.views,
+          Orders: h.orders,
+          "Conversion %": h.conversion_pct,
+        })),
+      ),
+      "Heat Score",
+    );
+  }
+
+  if (waiters?.waiters?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        waiters.waiters.map((w) => ({
+          Waiter: w.waiter,
+          Revenue: w.net_sales,
+          "Avg check": w.avgCheck,
+          "Modifier attach %": w.modifierAttachPct,
+          "Dessert attach %": w.dessertAttachPct,
+          "Beverage attach %": w.beverageAttachPct,
+        })),
+      ),
+      "Staff",
+    );
+  }
+
+  if (timeShift?.dayparts?.length) {
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        timeShift.dayparts.map((d) => ({
+          Daypart: d.label,
+          "Menu events": d.menuEvents,
+          "Sales qty": d.salesQty,
+          Revenue: d.revenue,
+        })),
+      ),
+      "Time & Shift",
+    );
+  }
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  downloadBlob(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    "nac-visual-intelligence.xlsx",
+  );
+}
