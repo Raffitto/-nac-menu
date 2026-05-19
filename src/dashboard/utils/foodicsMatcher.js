@@ -1,11 +1,18 @@
 import { dedupeImportRows } from "./foodicsImportDedupe";
 import { normalizeFoodicsName } from "./foodicsNameNormalize";
 import { classifyFoodicsRow } from "./foodicsClassifier";
+import {
+  buildAliasLookup,
+  resolveAliasFromLookup,
+  resolveAmbiguousAlias,
+} from "./foodicsAliasDictionary";
 
 const STOP_WORDS = new Set(["the", "a", "an", "with", "and", "or", "of", "sar", "pcs", "pc"]);
 
 /** Auto-import without review */
 const AUTO_MATCH_MIN = 0.85;
+/** Persistent memory auto-applies from this confidence upward */
+const MEMORY_AUTO_MIN = 0.72;
 /** Show as suggested match in Needs Review */
 const SUGGEST_MIN = 0.55;
 
@@ -26,39 +33,6 @@ function normalizeMatchType(type) {
   };
   return map[type] || type;
 }
-
-/** Foodics name → menu item name_en */
-const FOODICS_ALIASES = {
-  rigatoni: "Rigatoni Pink Sauce",
-  burrata: "Crushed Burrata",
-  "french toast": "Speculoos French Toast",
-  cookies: "Crushed Milk Chocolate Cookies",
-  "granola yoghurt": "Greek Yogurt",
-  "granola yogurt": "Greek Yogurt",
-  "egg bun": "Scrambled Eggs",
-  "passionfruit lemonade": "Passion Fruit Lemonade",
-  "passion fruit lemonade": "Passion Fruit Lemonade",
-  "passionfruit mojito": "Passion Fruit Mojito",
-  "passion fruit mojito": "Passion Fruit Mojito",
-  "sparkling water-sm": "Small Sparkling Water",
-  "sparkling water sm": "Small Sparkling Water",
-  "orange juice": "Orange",
-  "carrot, apple, ginger": "Carrot, Apple & Ginger",
-  "carrot apple ginger": "Carrot, Apple & Ginger",
-  "beetroot, apple, celery": "Apple, Beetroot & Celery",
-  "beetroot apple celery": "Apple, Beetroot & Celery",
-  "black angus steak au poivre": "Black Angus Steak Au Poivre",
-  "pavlova pistachio & raspberry": "Strawberry Pistachio Pavlova",
-  "pavlova pistachio and raspberry": "Strawberry Pistachio Pavlova",
-  "panier de viennoiserie": "Daily Pastries Basket",
-  "sparkling water": "Large Sparkling Water",
-};
-
-const AMBIGUOUS_ALIASES = {
-  "quinoa s": ["Quinoa"],
-  "kale s": ["Kale & Cabbage"],
-  "kale b": ["Kale & Cabbage"],
-};
 
 export function normalizeName(name) {
   return normalizeFoodicsName(name);
@@ -134,22 +108,39 @@ function findAddOnByName(addOns, nameEn) {
   return addOns.find((a) => normalizeName(a.name_en) === normalizeName(nameEn)) || null;
 }
 
-function resolveAliasTarget(rawName, menuItems) {
+function resolveAliasTarget(rawName, menuItems, addOns, aliasLookup) {
   const n = normalizeName(rawName);
-
-  for (const [key, target] of Object.entries(FOODICS_ALIASES)) {
-    if (n === normalizeName(key) && findMenuItemByName(menuItems, target)) {
-      return { target, ambiguous: false };
+  const hit = resolveAliasFromLookup(n, aliasLookup);
+  if (hit) {
+    const item = findMenuItemByName(menuItems, hit.menu_item_name_en);
+    const addon = findAddOnByName(addOns, hit.menu_item_name_en);
+    if (item || addon) {
+      return {
+        target: hit.menu_item_name_en,
+        ambiguous: false,
+        confidence: hit.confidence,
+        source: hit.source,
+      };
     }
   }
 
-  for (const [key, candidates] of Object.entries(AMBIGUOUS_ALIASES)) {
-    if (n === normalizeName(key)) {
-      return { target: candidates[0], ambiguous: true, candidates };
-    }
+  const amb = resolveAmbiguousAlias(n);
+  if (amb) {
+    return { target: amb.target, ambiguous: true, candidates: amb.candidates };
   }
 
   return null;
+}
+
+function enrichSemanticFields(row, classification) {
+  return {
+    foodics_class: classification.class,
+    foodics_class_label: classification.label,
+    semantic_class: classification.semantic_class || classification.class,
+    analytics_category: classification.analytics_category,
+    inherited_category: classification.inherited_category,
+    track_as_modifier: classification.track_as_modifier,
+  };
 }
 
 function scoreCandidate(foodicsName, item, { strictMatch }) {
@@ -256,7 +247,7 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps, classif
         suggestion: hit,
         confidence: conf,
         matchType: "memory",
-        needsReview: false,
+        needsReview: conf < MEMORY_AUTO_MIN,
       };
     }
   }
@@ -295,8 +286,16 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps, classif
   };
 }
 
-export function fuzzyMatchFoodicsItem(rawName, menuItems = [], manualMaps = [], addOns = [], rowMeta = {}) {
+export function fuzzyMatchFoodicsItem(
+  rawName,
+  menuItems = [],
+  manualMaps = [],
+  addOns = [],
+  rowMeta = {},
+  aliasLookup = null,
+) {
   const classification = classifyFoodicsRow(rawName, rowMeta.category);
+  const lookup = aliasLookup || buildAliasLookup(manualMaps);
 
   if (classification.autoIgnore) {
     return {
@@ -310,17 +309,20 @@ export function fuzzyMatchFoodicsItem(rawName, menuItems = [], manualMaps = [], 
     };
   }
 
-  const alias = resolveAliasTarget(rawName, menuItems);
+  const alias = resolveAliasTarget(rawName, menuItems, addOns, lookup);
   if (alias && !alias.ambiguous) {
     const item = findMenuItemByName(menuItems, alias.target);
-    if (item) {
-      const hit = { id: item.id, name_en: item.name_en, kind: "item" };
+    const addon = findAddOnByName(addOns, alias.target);
+    const target = item || addon;
+    if (target) {
+      const conf = alias.confidence ?? 0.96;
+      const hit = { id: target.id, name_en: target.name_en, kind: item ? "item" : "addon" };
       return {
         matched: hit,
         suggestion: hit,
-        confidence: 0.95,
-        matchType: "alias",
-        needsReview: false,
+        confidence: conf,
+        matchType: alias.source === "memory" ? "memory" : "alias",
+        needsReview: conf < AUTO_MATCH_MIN,
         classification,
       };
     }
@@ -336,15 +338,17 @@ export function fuzzyMatchFoodicsItem(rawName, menuItems = [], manualMaps = [], 
 
 export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
   const deduped = dedupeImportRows(rows);
+  const aliasLookup = buildAliasLookup(manualMaps);
+
   return deduped.map((row) => {
     const rawName = row.raw_item_name || row.name;
     const classification = classifyFoodicsRow(rawName, row.category);
+    const semantic = enrichSemanticFields(row, classification);
 
     if (classification.autoIgnore) {
       return {
         ...row,
-        foodics_class: classification.class,
-        foodics_class_label: classification.label,
+        ...semantic,
         normalized_item_name: normalizeName(rawName),
         matched_menu_item_id: null,
         matched_menu_item_name: null,
@@ -357,17 +361,22 @@ export function matchImportRows(rows, menuItems, manualMaps, addOns = []) {
       };
     }
 
-    const result = fuzzyMatchFoodicsItem(rawName, menuItems, manualMaps, addOns, {
-      category: row.category,
-    });
+    const result = fuzzyMatchFoodicsItem(
+      rawName,
+      menuItems,
+      manualMaps,
+      addOns,
+      { category: row.category },
+      aliasLookup,
+    );
     const cls = result.classification || classification;
+    const semanticResult = enrichSemanticFields(row, cls);
     const suggestedName = result.suggestion?.name_en || null;
     const suggestedConf = result.suggestion ? result.confidence : 0;
 
     const base = {
       ...row,
-      foodics_class: cls.class,
-      foodics_class_label: cls.label,
+      ...semanticResult,
       normalized_item_name: normalizeName(rawName),
       suggested_menu_item_name: suggestedName,
       suggested_confidence: suggestedConf,

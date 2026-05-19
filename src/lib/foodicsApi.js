@@ -144,7 +144,10 @@ function toSalesItemPayload(row, batch, meta) {
     normalized_item_name: row.normalized_item_name,
     matched_menu_item_name: matchedName,
     matched_menu_item_id: matchedId,
-    category: row.category || null,
+    category: row.inherited_category || row.analytics_category || row.category || null,
+    semantic_class: row.semantic_class || row.foodics_class || null,
+    analytics_category: row.analytics_category || row.inherited_category || null,
+    is_modifier: Boolean(row.track_as_modifier),
     waiter_name: row.waiter_name || null,
     sold_at: row.sold_at ? new Date(row.sold_at).toISOString() : null,
     quantity_sold: row.quantity_sold || 0,
@@ -184,26 +187,51 @@ export async function createImportBatch(meta, salesRows) {
   return batch;
 }
 
-/** Remember high-confidence matches for future imports */
-export async function persistImportMappings(rows, minConfidence = 0.82) {
+/** Remember matches for future imports — converges toward automatic resolution */
+export async function persistImportMappings(rows, minConfidence = 0.72) {
   const seen = new Set();
   const tasks = [];
+
   for (const row of rows || []) {
-    if (!row.matched_menu_item_name || (row.match_confidence || 0) < minConfidence) continue;
-    const key = normalizeFoodicsName(row.raw_item_name);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    tasks.push(
-      saveNameMapping({
-        raw_name: row.raw_item_name,
-        menu_item_name_en: row.matched_menu_item_name,
-        menu_item_id: row.matched_menu_item_id,
-        confidence: row.match_confidence || 1,
-        match_source: row.match_type || "import",
-      }),
-    );
+    const menuName = row.matched_menu_item_name;
+    const conf = Number(row.match_confidence) || 0;
+    if (!menuName || conf < minConfidence) continue;
+
+    const variants = row.raw_variants?.length ? row.raw_variants : [row.raw_item_name];
+    for (const rawName of variants) {
+      const key = normalizeFoodicsName(rawName);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      tasks.push(
+        saveNameMapping({
+          raw_name: rawName,
+          menu_item_name_en: menuName,
+          menu_item_id: row.matched_menu_item_id,
+          confidence: Math.max(conf, 0.9),
+          match_source: row.match_type || "import",
+        }),
+      );
+    }
   }
+
   if (tasks.length) await Promise.all(tasks);
+}
+
+/** Persist every manual / confirmed mapping immediately (all variants) */
+export async function persistMappingForRow(row, menuItemName, menuItemId, source = "manual") {
+  const variants = row.raw_variants?.length ? row.raw_variants : [row.raw_item_name];
+  const conf = source === "suggestion" ? row.suggested_confidence || 0.88 : 1;
+  await Promise.all(
+    variants.map((rawName) =>
+      saveNameMapping({
+        raw_name: rawName,
+        menu_item_name_en: menuItemName,
+        menu_item_id: menuItemId,
+        confidence: Math.max(conf, 0.92),
+        match_source: source,
+      }),
+    ),
+  );
 }
 
 export async function getMenuItemsForMatching() {

@@ -19,7 +19,7 @@ import {
   getBatchSalesItems,
   getLatestBatch,
   getNameMappings,
-  saveNameMapping,
+  persistMappingForRow,
   createImportBatch,
   getMenuItemsForMatching,
   getAddOnsForMatching,
@@ -29,6 +29,7 @@ import { matchImportRows } from "./utils/foodicsMatcher";
 import { groupNeedsReviewRows, displayFoodicsLabel } from "./utils/foodicsImportDedupe";
 import { foodicsDedupeKey } from "./utils/foodicsNameNormalize";
 import { buildFoodicsSelectCatalog, findCatalogOption } from "./utils/foodicsSelectCatalog";
+import { summarizeModifierIntel } from "./utils/foodicsModifierIntel";
 import { buildConversionRows, getConversionOpportunities } from "./utils/foodicsConversion";
 import { normalizeTopItems } from "./utils/topItemsNormalize";
 import { hasVisibilityTracking } from "./utils/intelligenceSanity";
@@ -162,6 +163,11 @@ export default function FoodicsIntelligence() {
     [menuItems, addOns],
   );
 
+  const modifierPreview = useMemo(
+    () => summarizeModifierIntel(previewRows.filter((r) => r.import_status === "matched")),
+    [previewRows],
+  );
+
   const applyMatching = useCallback(
     (rows, columnMapping) => {
       const matched = matchImportRows(rows, menuItems, manualMaps, addOns);
@@ -254,21 +260,10 @@ export default function FoodicsIntelligence() {
     const catalogHit = findCatalogOption(mappingCatalog, menuItemName);
     const item = menuItems.find((m) => m.name_en === menuItemName);
     const addon = addOns.find((a) => a.name_en === menuItemName);
-    const variants = row.raw_variants?.length ? row.raw_variants : [row.raw_item_name];
     const dedupeKey = foodicsDedupeKey(row.raw_item_name);
     const menuItemId = catalogHit?.id || item?.id || addon?.id || null;
 
-    await Promise.all(
-      variants.map((rawName) =>
-        saveNameMapping({
-          raw_name: rawName,
-          menu_item_name_en: menuItemName,
-          menu_item_id: menuItemId,
-          confidence: source === "suggestion" ? row.suggested_confidence || 0.85 : 1,
-          match_source: source,
-        }),
-      ),
-    );
+    await persistMappingForRow(row, menuItemName, menuItemId, source);
 
     const maps = await getNameMappings();
     setManualMaps(maps);
@@ -432,6 +427,23 @@ export default function FoodicsIntelligence() {
           </div>
         )}
 
+        {modifierPreview.length > 0 && (
+          <motion.div className="fi-modifier-preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h3>Modifier / add-on sales ({modifierPreview.length})</h3>
+            <p className="fi-muted" style={{ marginBottom: 8 }}>
+              Tracked for future attachment-rate and upsell intelligence
+            </p>
+            <ul className="fi-modifier-list">
+              {modifierPreview.slice(0, 8).map((m) => (
+                <li key={m.name}>
+                  <strong>{m.name}</strong>
+                  <span>{m.quantity} units · {Math.round(m.net_sales).toLocaleString()} SAR</span>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+
         {importableRows.length > 0 && (
           <div className="fi-preview">
             <h3>
@@ -444,6 +456,7 @@ export default function FoodicsIntelligence() {
                   <tr>
                     <th>Foodics item</th>
                     <th>Class</th>
+                    <th>Analytics</th>
                     <th>Qty</th>
                     <th>Net sales</th>
                     <th>Match</th>
@@ -456,6 +469,7 @@ export default function FoodicsIntelligence() {
                     <tr key={`${row.normalized_item_name || row.raw_item_name}-${i}`} className={row.import_status === "needs_review" ? "needs-review" : ""}>
                       <td>{displayFoodicsLabel(row)}</td>
                       <td><span className="fi-class-pill">{row.foodics_class_label || "—"}</span></td>
+                      <td><span className="fi-class-pill fi-class-pill--muted">{row.inherited_category || row.analytics_category || "—"}</span></td>
                       <td>{row.quantity_sold}</td>
                       <td>{row.net_sales ?? "—"}</td>
                       <td>{row.matched_menu_item_name || "—"}</td>
