@@ -126,6 +126,7 @@ export function defaultExportConfig(waiterNames = []) {
     allWaiters: mode.allWaiters,
     selectedWaiters: waiterNames,
     waiterSearch: "",
+    includeManagers: false,
   };
 }
 

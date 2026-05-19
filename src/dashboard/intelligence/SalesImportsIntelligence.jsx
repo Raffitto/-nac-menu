@@ -8,6 +8,7 @@ import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { rangeToHours } from "../utils/rangeState";
 import { businessDayExportNote } from "../utils/businessDay";
 import { buildSalesCorrelation } from "../engines/salesCorrelationEngine";
+import { buildWaiterSalesIntelligence } from "../engines/waiterSalesEngine";
 import FoodicsImportLane from "../components/FoodicsImportLane";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import "../styles/platform-os.css";
@@ -84,15 +85,8 @@ export default function SalesImportsIntelligence() {
 
   const waiterCorrelation = useMemo(() => {
     if (!waiterItems.length) return { waiterKpis: [], topUpsellers: [] };
-    const byWaiter = {};
-    waiterItems.forEach((row) => {
-      const w = (row.waiter_name || "Unassigned").trim() || "Unassigned";
-      if (!byWaiter[w]) byWaiter[w] = { waiter: w, quantity: 0, net_sales: 0 };
-      byWaiter[w].quantity += Number(row.quantity_sold) || 0;
-      byWaiter[w].net_sales += Number(row.net_sales) || 0;
-    });
-    const waiterKpis = Object.values(byWaiter).sort((a, b) => b.net_sales - a.net_sales);
-    return { waiterKpis, topUpsellers: waiterKpis.slice(0, 6) };
+    const intel = buildWaiterSalesIntelligence(waiterItems);
+    return { waiterKpis: intel.waiters, topUpsellers: intel.waiters.slice(0, 6) };
   }, [waiterItems]);
 
   if (loading && !batches.length) {

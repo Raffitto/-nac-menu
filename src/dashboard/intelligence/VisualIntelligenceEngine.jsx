@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Flame,
@@ -34,6 +34,9 @@ import { defaultExportConfig } from "../config/visualExportPresets";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterTargets } from "../engines/waiterTargetEngine";
 import VisualExportConfig from "../components/VisualExportConfig";
+import VisualExportCharts from "../components/VisualExportCharts";
+import { captureVisualCharts } from "../utils/captureExportCharts";
+import { partitionStaffByRole } from "../config/staffRoles";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { rangeToHours, rangeExportLabel } from "../utils/rangeState";
 import { businessDayExportNote } from "../utils/businessDay";
@@ -73,6 +76,31 @@ function Section({ title, subtitle, children }) {
   );
 }
 
+function rebuildCompetitionIntel(base, list) {
+  const sorted = [...list];
+  return {
+    ...base,
+    waiters: sorted,
+    topUpseller: sorted[0] || null,
+    dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
+    beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
+    radarTop: sorted.slice(0, 5).map((w) => ({
+      waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
+      revenue: w.net_sales,
+      modifier: w.modifierAttachPct,
+      dessert: w.dessertAttachPct,
+      beverage: w.beverageAttachPct,
+      avgCheck: w.avgCheck,
+    })),
+  };
+}
+
+function RoleBadge({ roleLabel }) {
+  const cls =
+    roleLabel === "Manager" ? "vi-role-badge vi-role-badge--manager" : "vi-role-badge vi-role-badge--waiter";
+  return <span className={cls}>{roleLabel}</span>;
+}
+
 export default function VisualIntelligenceEngine() {
   const filters = usePlatformFiltersOptional();
   const [loading, setLoading] = useState(true);
@@ -82,6 +110,7 @@ export default function VisualIntelligenceEngine() {
   const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
   const [exportConfig, setExportConfig] = useState(() => defaultExportConfig());
   const [exporting, setExporting] = useState(false);
+  const chartCaptureRef = useRef(null);
 
   const pHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
   const rangeLabel = rangeExportLabel(filters?.selectedRange || "today");
@@ -145,16 +174,26 @@ export default function VisualIntelligenceEngine() {
     [funnels, productItems, attachment.modifierLeaderboard],
   );
 
-  const waiters = useMemo(
-    () => (hasWaiterBatch ? buildWaiterSalesIntelligence(waiterItems) : { waiters: [], topUpseller: null }),
+  const staffIntel = useMemo(
+    () =>
+      hasWaiterBatch
+        ? buildWaiterSalesIntelligence(waiterItems)
+        : { waiters: [], all: [], managers: [], topUpseller: null },
     [waiterItems, hasWaiterBatch],
   );
 
-  const waiterTargets = useMemo(() => buildWaiterTargets(waiters), [waiters]);
+  const includeManagers = Boolean(exportConfig.includeManagers);
+
+  const competitionStaff = useMemo(() => {
+    const part = partitionStaffByRole(staffIntel.all || staffIntel.waiters || [], { includeManagers });
+    return rebuildCompetitionIntel(staffIntel, includeManagers ? part.all : part.waiters);
+  }, [staffIntel, includeManagers]);
+
+  const waiterTargets = useMemo(() => buildWaiterTargets(competitionStaff), [competitionStaff]);
 
   const waiterNames = useMemo(
-    () => (waiters?.waiters || []).map((w) => w.waiter),
-    [waiters],
+    () => (staffIntel.waiters || []).map((w) => w.waiter),
+    [staffIntel],
   );
 
   useEffect(() => {
@@ -164,8 +203,8 @@ export default function VisualIntelligenceEngine() {
   }, [waiterNames, exportConfig.selectedWaiters?.length]);
 
   const insights = useMemo(
-    () => buildVisualInsights({ attachment, timeShift, heat, menuEngineering, waiters }),
-    [attachment, timeShift, heat, menuEngineering, waiters],
+    () => buildVisualInsights({ attachment, timeShift, heat, menuEngineering, waiters: competitionStaff }),
+    [attachment, timeShift, heat, menuEngineering, competitionStaff],
   );
 
   const baseExportPayload = useMemo(
@@ -174,7 +213,8 @@ export default function VisualIntelligenceEngine() {
       timeShift,
       heat,
       menuEngineering,
-      waiters,
+      waiters: staffIntel,
+      competitionStaff,
       waiterTargets,
       insights,
       kpis: intelligence?.kpis,
@@ -182,13 +222,18 @@ export default function VisualIntelligenceEngine() {
       hasWaiterBatch,
       exportMeta: { title: `Visual Intelligence — ${rangeLabel}`, period: rangeLabel },
     }),
-    [attachment, timeShift, heat, menuEngineering, waiters, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch],
+    [attachment, timeShift, heat, menuEngineering, staffIntel, competitionStaff, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch],
   );
 
   const runExport = async (fmt) => {
     setExporting(true);
     try {
-      const payload = applyVisualExportConfig(baseExportPayload, exportConfig);
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 120)));
+      const chartImages = await captureVisualCharts(chartCaptureRef.current);
+      const payload = applyVisualExportConfig(
+        { ...baseExportPayload, waiters: competitionStaff, chartImages },
+        exportConfig,
+      );
       const mod = await import("../engines/exportEngine");
       if (fmt === "pdf") mod.exportVisualIntelligencePDF(payload);
       else mod.exportVisualIntelligenceXLSX(payload);
@@ -512,18 +557,29 @@ export default function VisualIntelligenceEngine() {
       </Section>
 
       {/* Phase 4 — Staff */}
-      <Section title="Waiter & staff intelligence" subtitle="Requires Waiter Product Sales import (Sales by Creator, group by product)">
+      <Section title="Waiter & staff intelligence" subtitle="Waiters only in competitions — managers excluded unless toggled">
+        <label className="vi-check" style={{ marginBottom: "1rem" }}>
+          <input
+            type="checkbox"
+            checked={includeManagers}
+            onChange={(e) => setExportConfig((c) => ({ ...c, includeManagers: e.target.checked }))}
+          />
+          Include managers in analytics (Raffi, Fady, Bashar)
+        </label>
         <div className="vi-grid-2">
           <div className="vi-panel vi-podium">
             <h3><Users size={16} /> Top upseller podium</h3>
             {!hasWaiterBatch ? (
               <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
-            ) : waiters.topUpseller ? (
+            ) : competitionStaff.topUpseller ? (
               <>
                 <p style={{ fontSize: "2rem", margin: "0.5rem 0 0" }}>🥇</p>
-                <p className="vi-podium-name">{waiters.topUpseller.waiter}</p>
+                <p className="vi-podium-name">
+                  {competitionStaff.topUpseller.waiter}
+                  <RoleBadge roleLabel={competitionStaff.topUpseller.roleLabel} />
+                </p>
                 <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                  {waiters.topUpseller.net_sales.toLocaleString()} SAR · {waiters.topUpseller.modifierAttachPct}% mods
+                  {competitionStaff.topUpseller.net_sales.toLocaleString()} SAR · {competitionStaff.topUpseller.modifierAttachPct}% mods
                 </p>
               </>
             ) : (
@@ -539,7 +595,7 @@ export default function VisualIntelligenceEngine() {
               <>
                 <motion.div className="vi-chart-wrap">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={waiters.radarTop}>
+                    <BarChart data={competitionStaff.radarTop}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                       <XAxis dataKey="waiter" tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 9 }} />
                       <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
@@ -550,12 +606,28 @@ export default function VisualIntelligenceEngine() {
                   </ResponsiveContainer>
                 </motion.div>
                 <p style={{ fontSize: "0.72rem", marginTop: "0.5rem", color: "rgba(249,249,247,0.45)" }}>
-                  Dessert champion: {waiters.dessertChampion?.waiter || "—"} · Beverage: {waiters.beverageChampion?.waiter || "—"}
+                  Dessert champion: {competitionStaff.dessertChampion?.waiter || "—"} · Beverage: {competitionStaff.beverageChampion?.waiter || "—"}
                 </p>
               </>
             )}
           </div>
         </div>
+
+        {hasWaiterBatch && !includeManagers && staffIntel.managers?.length > 0 && (
+          <motion.div className="vi-panel" style={{ marginTop: "1rem" }}>
+            <h3>Manager contribution (excluded from competitions)</h3>
+            <p className="vi-subtitle">Operational overview — not ranked against waiters</p>
+            {staffIntel.managers.map((m) => (
+              <motion.div key={m.waiter} className="vi-heat-card" style={{ marginBottom: "0.35rem" }}>
+                <span>
+                  {m.waiter}
+                  <RoleBadge roleLabel={m.roleLabel} />
+                </span>
+                <span>{m.net_sales.toLocaleString()} SAR · {m.quantity} qty</span>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
 
         {hasWaiterBatch && waiterTargets.length > 0 && (
           <div className="vi-panel" style={{ marginTop: "1rem" }}>
@@ -565,7 +637,7 @@ export default function VisualIntelligenceEngine() {
               {waiterTargets.slice(0, 6).map((t) => (
                 <div key={t.waiter} className={`vi-insight-card ${t.priority === "mentor" ? "win" : "opportunity"}`}>
                   <strong>{t.headline}</strong>
-                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>{t.detail}</p>
+                  <p style={{ margin: "0.35rem 0 0", fontSize: "0.78rem", color: "rgba(249,249,247,0.6)" }}>{t.action || t.detail}</p>
                   <span className="vi-badge medium">Push: {t.pushNextWeek}</span>
                 </div>
               ))}
@@ -608,6 +680,15 @@ export default function VisualIntelligenceEngine() {
           </div>
         </div>
       </Section>
+
+      <VisualExportCharts
+        ref={chartCaptureRef}
+        waiters={competitionStaff.waiters}
+        attachment={attachment}
+        menuEngineering={menuEngineering}
+        timeShift={timeShift}
+        heat={heat}
+      />
     </motion.div>
   );
 }

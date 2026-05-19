@@ -1,5 +1,5 @@
 /**
- * Per-waiter weekly target recommendations for staff exports.
+ * Actionable weekly coaching targets — waiters only (call on filtered list).
  */
 export function buildWaiterTargets(waiterIntel) {
   const list = waiterIntel?.waiters || [];
@@ -7,59 +7,83 @@ export function buildWaiterTargets(waiterIntel) {
 
   return list.map((w) => {
     const name = w.waiter;
-    const parts = [];
-    let priority = "maintain";
-    let headline = `${name}: maintain momentum`;
+    let severity = "medium";
+    let category = "General";
+    let headline = `${name}: maintain service standards`;
+    let action = "Continue pairing suggestions on every table.";
+    let pushNextWeek = "Maintain standards";
 
-    if (w.net_sales >= 3000 && w.modifierAttachPct < 10) {
-      parts.push("strong volume, weak modifier attachment");
+    if (w.modifierAttachPct < 8 && w.net_sales >= 1500) {
+      severity = "high";
+      category = "Modifier upsell";
       headline = `${name}: strong volume, weak modifier attachment`;
-      priority = "modifier";
-    } else if (w.dessertAttachPct < 8 && w.parent_qty >= 20) {
-      parts.push("push desserts next week");
+      if ((w.strongestCategory || "").includes("mains") || w.strongestCategory === "other") {
+        action =
+          "Push truffle sauce and fries with every burger table. Script: suggest fries before closing the order.";
+      } else {
+        action = "Offer one paid add-on on every main — sauce, protein upgrade, or side.";
+      }
+      pushNextWeek = "Modifiers & sides";
+    } else if (w.dessertAttachPct < 6 && w.parent_qty >= 15) {
+      severity = "high";
+      category = "Dessert";
       headline = `${name}: push desserts next week`;
-      priority = "dessert";
-    } else if (w.beverageAttachPct >= 15 && w.modifierAttachPct < 8) {
-      parts.push("high beverage movement — target extra shot upsell");
-      headline = `${name}: high beverage movement, target extra shot upsell`;
-      priority = "beverage_upsell";
-    } else if (w.net_sales >= 2000 && w.dessert_qty < 5) {
-      parts.push("strong mains — improve dessert attachment");
+      action = "Promote desserts after 9 PM and with every coffee close. Lead with churros or pavlova.";
+      pushNextWeek = "Desserts";
+    } else if (w.beverageAttachPct >= 12 && w.modifierAttachPct < 10) {
+      severity = "medium";
+      category = "Beverage upsell";
+      headline = `${name}: high beverage movement — target extra shot upsell`;
+      action = "Offer extra shot during morning coffee rush and after lunch lattes.";
+      pushNextWeek = "Extra shot & milk";
+    } else if (w.net_sales >= 2500 && w.dessert_qty < 8) {
+      severity = "medium";
+      category = "Dessert";
       headline = `${name}: strong mains, improve dessert attachment`;
-      priority = "dessert";
-    } else if (w.modifierAttachPct >= 18) {
-      parts.push("top upseller — mentor team on add-ons");
-      headline = `${name}: top upseller — share modifier playbook`;
-      priority = "mentor";
-    } else if (w.net_sales < 800) {
-      parts.push("build check size — focus on pairings");
-      headline = `${name}: build average check with pairings`;
-      priority = "volume";
+      action = "Present dessert menu with mains — never skip the dessert ask.";
+      pushNextWeek = "Desserts";
+    } else if ((w.strongestCategory || "") === "breakfast" && w.modifierAttachPct < 12) {
+      severity = "medium";
+      category = "Breakfast conversion";
+      headline = `${name}: weak breakfast add-ons`;
+      action = "Push maple syrup with pancakes and fresh milk with coffee at breakfast tables.";
+      pushNextWeek = "Breakfast add-ons";
+    } else if (w.net_sales < 600 && w.quantity > 0) {
+      severity = "medium";
+      category = "Check building";
+      headline = `${name}: build average check`;
+      action = "Focus on pairings — beverage + side with every single-item order.";
+      pushNextWeek = "Pairings";
+    } else if (w.modifierAttachPct >= 20) {
+      severity = "low";
+      category = "Mentor";
+      headline = `${name}: top upseller — share playbook`;
+      action = "Mentor team on modifier timing during peak shifts.";
+      pushNextWeek = "Mentor peers";
     }
 
-    const detail = parts.length
-      ? parts.join(" · ")
-      : `${w.net_sales.toLocaleString()} SAR · ${w.modifierAttachPct}% mods · ${w.dessertAttachPct}% desserts`;
+    const impact =
+      severity === "high"
+        ? "High revenue lift if coaching is applied consistently."
+        : "Incremental improvement on guest spend.";
 
     return {
       waiter: name,
       headline,
-      detail,
-      priority,
+      action,
+      pushNextWeek,
+      severity,
+      category,
+      impact,
+      priority: severity === "high" ? "high" : severity === "low" ? "low" : "medium",
       net_sales: w.net_sales,
       quantity: w.quantity,
       modifierAttachPct: w.modifierAttachPct,
       dessertAttachPct: w.dessertAttachPct,
       beverageAttachPct: w.beverageAttachPct,
-      avgCheck: w.avgCheck,
-      pushNextWeek:
-        priority === "dessert"
-          ? "Desserts"
-          : priority === "modifier" || priority === "beverage_upsell"
-            ? "Modifiers & shots"
-            : priority === "volume"
-              ? "Pairings & sides"
-              : "Maintain standards",
+      strongestCategory: w.strongestCategory,
+      weakestCategory: w.weakestCategory,
+      detail: `${w.net_sales.toLocaleString()} SAR · ${w.quantity} units · ${w.modifierAttachPct}% mods · ${w.dessertAttachPct}% desserts`,
     };
   });
 }

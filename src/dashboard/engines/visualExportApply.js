@@ -1,4 +1,5 @@
 import { buildWaiterTargets } from "./waiterTargetEngine";
+import { partitionStaffByRole } from "../config/staffRoles";
 
 function sortWaiters(list, sortBy) {
   const copy = [...(list || [])];
@@ -32,39 +33,59 @@ function sortProducts(heatItems, funnels, sortBy) {
   return items.sort((a, b) => (b.revenue || 0) - (a.revenue || 0));
 }
 
-/** Apply export panel filters to intelligence payload */
+function rebuildWaiterIntel(base, list) {
+  const sorted = [...list];
+  return {
+    ...base,
+    waiters: sorted,
+    topUpseller: sorted[0] || null,
+    dessertChampion: [...sorted].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
+    beverageChampion: [...sorted].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
+    radarTop: sorted.slice(0, 5).map((w) => ({
+      waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
+      revenue: w.net_sales,
+      modifier: w.modifierAttachPct,
+      dessert: w.dessertAttachPct,
+      beverage: w.beverageAttachPct,
+      avgCheck: w.avgCheck,
+    })),
+  };
+}
+
+/** Apply export panel filters — waiter-only competitions unless includeManagers */
 export function applyVisualExportConfig(payload, config) {
   const cfg = config || {};
   const sections = cfg.sections || {};
-  let waiters = payload.waiters;
+  const includeManagers = cfg.includeManagers === true;
 
-  if (waiters?.waiters?.length) {
-    let list = [...waiters.waiters];
-    if (!cfg.allWaiters && cfg.selectedWaiters?.length) {
-      const set = new Set(cfg.selectedWaiters.map((w) => w.toLowerCase()));
-      list = list.filter((w) => set.has(w.waiter.toLowerCase()));
-    }
-    if (cfg.waiterSearch?.trim()) {
-      const q = cfg.waiterSearch.trim().toLowerCase();
-      list = list.filter((w) => w.waiter.toLowerCase().includes(q));
-    }
-    list = sortWaiters(list, cfg.waiterSort);
-    waiters = {
-      ...waiters,
-      waiters: list,
-      topUpseller: list[0] || null,
-      dessertChampion: [...list].sort((a, b) => b.dessertAttachPct - a.dessertAttachPct)[0] || null,
-      beverageChampion: [...list].sort((a, b) => b.beverageAttachPct - a.beverageAttachPct)[0] || null,
-      radarTop: list.slice(0, 5).map((w) => ({
-        waiter: w.waiter.length > 12 ? `${w.waiter.slice(0, 10)}…` : w.waiter,
-        revenue: w.net_sales,
-        modifier: w.modifierAttachPct,
-        dessert: w.dessertAttachPct,
-        beverage: w.beverageAttachPct,
-        avgCheck: w.avgCheck,
-      })),
-    };
+  let waiters = payload.waiters;
+  let staffOverview = {
+    waiterCount: waiters?.waiterCount ?? 0,
+    managerCount: waiters?.managerCount ?? 0,
+  };
+
+  const sourceList = waiters?.all?.length ? waiters.all : waiters?.waiters || [];
+  const partitioned = partitionStaffByRole(sourceList, { includeManagers });
+
+  staffOverview = {
+    waiterCount: partitioned.waiterCount,
+    managerCount: partitioned.managerCount,
+    includeManagers,
+  };
+
+  let competitionList = includeManagers ? partitioned.all : partitioned.waiters;
+
+  if (!cfg.allWaiters && cfg.selectedWaiters?.length) {
+    const set = new Set(cfg.selectedWaiters.map((w) => w.toLowerCase()));
+    competitionList = competitionList.filter((w) => set.has(w.waiter.toLowerCase()));
   }
+  if (cfg.waiterSearch?.trim()) {
+    const q = cfg.waiterSearch.trim().toLowerCase();
+    competitionList = competitionList.filter((w) => w.waiter.toLowerCase().includes(q));
+  }
+
+  competitionList = sortWaiters(competitionList, cfg.waiterSort);
+  waiters = rebuildWaiterIntel(waiters, competitionList);
 
   const waiterTargets = sections.waiterTargets !== false ? buildWaiterTargets(waiters) : [];
   const sortedProducts = sortProducts(payload.heat, payload.funnels, cfg.productSort);
@@ -72,6 +93,8 @@ export function applyVisualExportConfig(payload, config) {
   return {
     ...payload,
     waiters,
+    managers: partitioned.managers,
+    staffOverview,
     waiterTargets,
     sortedProducts,
     exportConfig: cfg,

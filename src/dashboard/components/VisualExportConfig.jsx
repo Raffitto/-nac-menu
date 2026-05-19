@@ -130,7 +130,18 @@ export default function VisualExportConfig({
         </div>
 
         <div className="vi-export-block vi-export-block--wide">
-          <h4>Included waiters</h4>
+          <h4>Staff scope</h4>
+          <label className="vi-check" style={{ marginBottom: "0.5rem" }}>
+            <input
+              type="checkbox"
+              checked={Boolean(config.includeManagers)}
+              onChange={(e) => set({ includeManagers: e.target.checked })}
+            />
+            Include managers in analytics
+          </label>
+          <p style={{ margin: "0 0 0.75rem", fontSize: "0.7rem", color: "rgba(249,249,247,0.4)" }}>
+            Default off — Raffi, Fady, Bashar excluded from waiter rankings & targets
+          </p>
           <label className="vi-check" style={{ marginBottom: "0.5rem" }}>
             <input
               type="checkbox"

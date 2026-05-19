@@ -388,6 +388,27 @@
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.vi-role-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+
+.vi-role-badge--waiter {
+  background: rgba(78, 205, 196, 0.15);
+  color: #4ecdc4;
+}
+
+.vi-role-badge--manager {
+  background: rgba(143, 122, 95, 0.2);
+  color: #d7bc8a;
+}
+
 @media (max-width: 640px) {
   .vi-grid-2 { grid-template-columns: 1fr; }
   .vi-heatmap-grid { grid-template-columns: repeat(4, 1fr); }
