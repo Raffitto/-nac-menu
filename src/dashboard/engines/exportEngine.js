@@ -292,7 +292,7 @@ export function exportReviewIntelligenceReport({
   diagnostics,
   format = "xlsx",
 }) {
-  const title = `Review Intelligence — ${branch} — ${rangeLabel}`;
+  const title = `NAC HOSPITALITY OS · Review Intelligence — ${branch} — ${rangeLabel}`;
   const generated = new Date().toLocaleString();
   const commentary = buildReviewCommentary(review, staffStats);
   const showComparison = comparison.length > 0;
@@ -309,7 +309,7 @@ export function exportReviewIntelligenceReport({
     y += 22;
     doc.setFontSize(9);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Generated ${generated} · NAC business day logic (Asia/Riyadh)`, margin, y);
+    doc.text(`Generated ${generated} · NAC HOSPITALITY OS · Asia/Riyadh business day`, margin, y);
     y += 24;
 
     doc.setFontSize(11);
@@ -537,3 +537,9 @@ export {
   exportVisualIntelligenceXLSX,
   exportExecutiveVisualXLSX,
 } from "./executiveVisualXlsxExport";
+
+export { exportDetailedBranchOperationalReview } from "./detailedBranchReviewExport";
+export {
+  buildAllBranchOperationalReports,
+  buildBranchOperationalReport,
+} from "./branchOperationalReviewEngine";

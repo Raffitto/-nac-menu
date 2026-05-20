@@ -27,6 +27,8 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { generateDailySnapshot } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import { exportReviewIntelligenceReport } from "./engines/exportEngine";
+import { buildAllBranchOperationalReports } from "./engines/branchOperationalReviewEngine";
+import { exportDetailedBranchOperationalReview } from "./engines/detailedBranchReviewExport";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
@@ -78,6 +80,7 @@ export default function ReviewIntelligence({ embedded = false }) {
   const [branchComparison, setBranchComparison] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
+  const [branchAuditBusy, setBranchAuditBusy] = useState(false);
   const [error, setError] = useState("");
   const [diag, setDiag] = useState(null);
 
@@ -259,6 +262,36 @@ export default function ReviewIntelligence({ embedded = false }) {
     exportReviewIntelligenceReport({ ...exportContext, format: "pdf" });
   };
 
+  const handleDetailedBranchAudit = useCallback(async () => {
+    if (!configured) return;
+    setBranchAuditBusy(true);
+    setError("");
+    try {
+      const since = rangeToSince(selectedRange);
+      let q = supabase
+        .from("review_events")
+        .select(REVIEW_EVENT_SELECT)
+        .order("created_at", { ascending: false })
+        .limit(8000);
+      if (since) q = q.gte("created_at", since);
+
+      const { data, error: qErr } = await q;
+      if (qErr) throw qErr;
+
+      const events = applyPlatformFilters(data || [], embedded ? platform : null);
+      const reports = buildAllBranchOperationalReports(events);
+      exportDetailedBranchOperationalReview({
+        reports,
+        rangeLabel,
+        selectedRange,
+      });
+    } catch (e) {
+      setError(e.message || "Failed to export branch operational review");
+    } finally {
+      setBranchAuditBusy(false);
+    }
+  }, [configured, selectedRange, rangeLabel, embedded, platform]);
+
   if (!configured) {
     return (
       <motion.div className="rev-intel-wrap" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -325,6 +358,16 @@ export default function ReviewIntelligence({ embedded = false }) {
           </button>
           <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleExportPdf}>
             <FileText size={14} /> PDF
+          </button>
+          <button
+            type="button"
+            className="rev-ctrl-btn rev-ctrl-action rev-ctrl-btn--audit"
+            onClick={handleDetailedBranchAudit}
+            disabled={branchAuditBusy || loading}
+            title="Detailed Branch Operational Review — Khobar, Riyadh, Jeddah (one page each)"
+          >
+            <Users size={14} className={branchAuditBusy ? "nac-bi-spin" : ""} />
+            {branchAuditBusy ? "Building…" : "Branch audit"}
           </button>
         </motion.div>
       </header>

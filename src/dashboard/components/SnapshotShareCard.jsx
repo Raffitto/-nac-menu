@@ -13,7 +13,7 @@ export default function SnapshotShareCard({
   range = "7d",
   metrics = [],
   highlight,
-  footer = "NAC Italian Café",
+  footer = "NAC HOSPITALITY OS",
 }) {
   const ref = useRef(null);
   const [busy, setBusy] = useState(false);
