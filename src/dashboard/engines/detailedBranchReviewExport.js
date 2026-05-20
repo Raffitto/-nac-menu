@@ -1,98 +1,184 @@
 /**
- * Detailed Branch Operational Review — boardroom PDF export (one page per branch).
+ * Detailed Branch Operational Review — executive boardroom PDF.
  */
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
   fillPage,
+  drawKpiCard,
+  drawCallout,
   NAC_GOLD,
   NAC_TEAL,
   CARD_BG,
+  NAC_WHITE,
 } from "./pdfVisualTheme";
+import { branchDisplayName } from "../utils/rangeState";
 
 const BRAND = "NAC HOSPITALITY OS";
 const AMBER = [230, 168, 65];
-const ROW_GOLD = [42, 58, 52];
-const ROW_TEAL = [32, 48, 52];
-const ROW_AMBER = [58, 46, 28];
-const ROW_RISK = [58, 32, 32];
+const DIM = [130, 130, 130];
+const ROW_GOLD = [38, 52, 48];
+const ROW_TEAL = [30, 44, 48];
+const ROW_AMBER = [52, 42, 28];
+const ROW_RISK = [52, 30, 30];
 
 function toneFill(tone) {
   if (tone === "gold") return ROW_GOLD;
   if (tone === "teal") return ROW_TEAL;
   if (tone === "amber") return ROW_AMBER;
   if (tone === "critical") return ROW_RISK;
-  return CARD_BG;
+  return [18, 20, 24];
 }
 
-function drawBrandHeader(doc, margin, contentW, title, meta) {
+function clip(str, max) {
+  const s = String(str || "").trim();
+  if (s.length <= max) return s || "—";
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function networkTotals(reports) {
+  return reports.reduce(
+    (acc, r) => ({
+      scans: acc.scans + (r.kpis?.qr_scans || 0),
+      reviews: acc.reviews + (r.kpis?.reviews_generated || 0),
+      google: acc.google + (r.kpis?.google_redirects || 0),
+      staff: acc.staff + (r.staffRows?.length || 0),
+    }),
+    { scans: 0, reviews: 0, google: 0, staff: 0 },
+  );
+}
+
+function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports }) {
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
-  doc.rect(0, 0, contentW + margin * 2, 4, "F");
-
-  doc.setFontSize(20);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text(BRAND, margin, 40);
-
-  doc.setFontSize(14);
-  doc.setTextColor(249, 249, 247);
-  doc.text(title, margin, 62);
-
-  doc.setFontSize(8);
-  doc.setTextColor(160, 160, 160);
-  meta.forEach((line, i) => {
-    doc.text(line, margin, 78 + i * 11);
-  });
-
-  return 96;
-}
-
-function drawExecutiveSummary(doc, margin, contentW, y, summary, kpis) {
-  const boxH = 88;
-  doc.setFillColor(...CARD_BG);
-  doc.setDrawColor(...NAC_TEAL);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(margin, y, contentW, boxH, 5, 5, "FD");
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 5, "F");
 
   doc.setFontSize(9);
   doc.setTextColor(...NAC_GOLD);
-  doc.text("Branch executive summary", margin + 12, y + 16);
+  doc.text(BRAND, margin, 36);
 
-  const cols = [
-    ["Strongest performer", summary.strongestPerformer],
-    ["Weakest conversion", summary.weakestConversion],
-    ["Best visibility", summary.bestVisibility],
-    ["Hidden opportunity", summary.hiddenOpportunity],
-    ["Est. recoverable Google reviews", String(summary.estimatedRecoverableReviews)],
-    ["Branch QR→Google conv.", `${summary.branchConversion}%`],
-    ["Staff in roster", String(summary.staffCount)],
-    ["Reviews generated", String(kpis?.reviews_generated ?? 0)],
+  doc.setFontSize(28);
+  doc.setTextColor(...NAC_WHITE);
+  doc.text("Branch Operational Review", margin, 72);
+
+  doc.setFontSize(12);
+  doc.setTextColor(200, 200, 200);
+  doc.text("Staff audit · QR funnel · coaching priorities", margin, 94);
+
+  doc.setFontSize(10);
+  doc.setTextColor(...DIM);
+  doc.text(`Period: ${rangeLabel}`, margin, 118);
+  doc.text(`Generated ${generated} · Asia/Riyadh`, margin, 132);
+
+  const net = networkTotals(reports);
+  const cardW = (contentW - 36) / 4;
+  const cardH = 56;
+  const cardY = 152;
+  const cards = [
+    { label: "Branches", value: String(reports.length), accent: NAC_GOLD },
+    { label: "Network QR scans", value: String(net.scans), accent: NAC_TEAL },
+    { label: "Reviews generated", value: String(net.reviews), accent: NAC_TEAL },
+    { label: "Google redirects", value: String(net.google), accent: NAC_GOLD },
   ];
-
-  const colW = contentW / 2 - 8;
-  cols.forEach((row, i) => {
-    const col = i % 2;
-    const rowIdx = Math.floor(i / 2);
-    const x = margin + 12 + col * colW;
-    const ly = y + 28 + rowIdx * 14;
-    doc.setFontSize(7);
-    doc.setTextColor(130, 130, 130);
-    doc.text(row[0], x, ly);
-    doc.setFontSize(7.5);
-    doc.setTextColor(220, 220, 220);
-    doc.splitTextToSize(String(row[1]), colW - 4).slice(0, 1).forEach((ln) => {
-      doc.text(ln, x, ly + 9);
-    });
+  cards.forEach((c, i) => {
+    drawKpiCard(doc, margin + i * (cardW + 12), cardY, cardW, cardH, c.label, c.value, c.accent);
   });
 
-  return y + boxH + 14;
+  const topBranch = [...reports].sort(
+    (a, b) => (b.kpis?.google_redirects || 0) - (a.kpis?.google_redirects || 0),
+  )[0];
+  const leakBranch = [...reports].sort(
+    (a, b) => (a.kpis?.conversion_pct || 0) - (b.kpis?.conversion_pct || 0),
+  )[0];
+
+  const brief = topBranch
+    ? `${topBranch.branchLabel} leads Google volume (${topBranch.kpis?.google_redirects ?? 0}). ${
+        leakBranch ? `${leakBranch.branchLabel} shows the weakest QR→Google rate (${leakBranch.kpis?.conversion_pct ?? 0}%).` : ""
+      } ${net.staff} staff tracked · ${net.scans} scans in period.`
+    : "Insufficient tagged events for network narrative.";
+
+  drawCallout(doc, margin, cardY + cardH + 20, contentW, {
+    accent: NAC_GOLD,
+    title: "Intelligence brief",
+    body: clip(brief, 220),
+    hint: "One page per branch follows · full roster included",
+  });
+
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Confidential · Operational use only", margin, pageH - 32);
+}
+
+function drawBranchHeader(doc, margin, contentW, report, rangeLabel) {
+  fillPage(doc);
+  doc.setFillColor(...NAC_GOLD);
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 3, "F");
+
+  doc.setFontSize(8);
+  doc.setTextColor(...NAC_GOLD);
+  doc.text(BRAND, margin, 32);
+
+  doc.setFontSize(18);
+  doc.setTextColor(...NAC_WHITE);
+  doc.text(report.branchLabel, margin, 52);
+
+  doc.setFontSize(9);
+  doc.setTextColor(...DIM);
+  doc.text(`${rangeLabel} · ${report.staffRows.length} staff · ${report.summary.branchConversion}% branch conversion`, margin, 68);
+
+  return 82;
+}
+
+function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
+  const cardW = (contentW - 24) / 4;
+  const cardH = 48;
+  const row1 = [
+    { label: "QR scans", value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
+    { label: "Reviews", value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
+    { label: "Google", value: String(kpis?.google_redirects ?? 0), accent: NAC_GOLD },
+    { label: "Recoverable est.", value: String(summary.estimatedRecoverableReviews), accent: NAC_GOLD },
+  ];
+  row1.forEach((c, i) => {
+    drawKpiCard(doc, margin + i * (cardW + 8), y, cardW, cardH, c.label, c.value, c.accent);
+  });
+
+  const y2 = y + cardH + 10;
+  const insightW = (contentW - 16) / 2;
+  const insights = [
+    { title: "Top performer", name: summary.strongestName, val: summary.strongestValue, accent: NAC_GOLD },
+    { title: "Weakest conversion", name: summary.weakestName, val: summary.weakestValue, accent: AMBER },
+    { title: "Best visibility", name: summary.bestVisName, val: summary.bestVisValue, accent: NAC_TEAL },
+    { title: "Hidden upside", name: summary.hiddenName, val: summary.hiddenValue, accent: AMBER },
+  ];
+
+  insights.forEach((item, i) => {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = margin + col * (insightW + 16);
+    const iy = y2 + row * 52;
+    doc.setFillColor(...CARD_BG);
+    doc.setDrawColor(...item.accent);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(x, iy, insightW, 46, 4, 4, "FD");
+    doc.setFontSize(7);
+    doc.setTextColor(...DIM);
+    doc.text(item.title, x + 8, iy + 12);
+    doc.setFontSize(9);
+    doc.setTextColor(...NAC_WHITE);
+    doc.text(clip(item.name, 22), x + 8, iy + 24);
+    doc.setFontSize(8);
+    doc.setTextColor(180, 180, 180);
+    doc.text(clip(item.val, 28), x + 8, iy + 36);
+  });
+
+  return y2 + 112;
 }
 
 function staffTableBody(staffRows) {
   return staffRows.map((s) => [
-    s.name,
-    s.role,
+    clip(s.name, 20),
+    clip(s.role, 10),
     String(s.scans),
     String(s.generated),
     String(s.google),
@@ -100,7 +186,7 @@ function staffTableBody(staffRows) {
     `${s.visibilityEfficiency}%`,
     s.archetype,
     s.classification.label,
-    s.coaching,
+    clip(s.coaching, 48),
     s.shiftBehavior,
   ]);
 }
@@ -112,32 +198,36 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
       [
         "Staff",
         "Role",
-        "QR scans",
-        "Reviews",
-        "Google",
-        "Conv %",
-        "Vis eff %",
-        "Archetype",
-        "Classification",
-        "Coaching",
+        "QR",
+        "Rev",
+        "Goog",
+        "Cnv",
+        "Eff",
+        "Profile",
+        "Status",
+        "Action",
         "Shift",
       ],
     ],
     body: staffTableBody(staffRows),
     styles: {
-      fontSize: 6.5,
-      cellPadding: 3,
-      textColor: [230, 230, 230],
-      lineColor: [45, 48, 55],
-      lineWidth: 0.2,
+      fontSize: 7,
+      cellPadding: { top: 5, right: 4, bottom: 5, left: 4 },
+      minCellHeight: 14,
+      lineHeight: 1.35,
+      textColor: [225, 225, 225],
+      lineColor: [42, 46, 52],
+      lineWidth: 0.15,
+      overflow: "linebreak",
     },
     headStyles: {
-      fillColor: [28, 32, 38],
+      fillColor: [24, 28, 34],
       textColor: NAC_GOLD,
       fontStyle: "bold",
-      fontSize: 6.5,
+      fontSize: 7,
+      cellPadding: 5,
     },
-    alternateRowStyles: { fillColor: [18, 20, 24] },
+    alternateRowStyles: { fillColor: [14, 16, 20] },
     margin: { left: margin, right: margin },
     tableWidth: contentW,
     didParseCell: (data) => {
@@ -145,86 +235,84 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
       const row = staffRows[data.row.index];
       if (!row) return;
       data.cell.styles.fillColor = toneFill(row.tone);
+      if (data.column.index === 9) {
+        data.cell.styles.overflow = "hidden";
+        data.cell.styles.cellWidth = 118;
+      }
+      if (data.column.index === 10) {
+        data.cell.styles.overflow = "hidden";
+        data.cell.styles.minCellWidth = 36;
+      }
       if (row.tone === "gold") {
         data.cell.styles.textColor = NAC_GOLD;
         data.cell.styles.fontStyle = "bold";
       } else if (row.tone === "critical") {
-        data.cell.styles.textColor = [245, 180, 180];
+        data.cell.styles.textColor = [245, 190, 190];
       } else if (row.tone === "amber") {
         data.cell.styles.textColor = AMBER;
       }
     },
     columnStyles: {
-      0: { cellWidth: 62 },
-      8: { cellWidth: 72 },
-      9: { cellWidth: contentW * 0.28 },
-      10: { cellWidth: 52 },
+      0: { cellWidth: 58 },
+      1: { cellWidth: 32 },
+      2: { cellWidth: 26, halign: "right" },
+      3: { cellWidth: 26, halign: "right" },
+      4: { cellWidth: 28, halign: "right" },
+      5: { cellWidth: 28, halign: "right" },
+      6: { cellWidth: 28, halign: "right" },
+      7: { cellWidth: 42 },
+      8: { cellWidth: 52 },
+      9: { cellWidth: 118 },
+      10: { cellWidth: 38, overflow: "hidden" },
     },
   });
 }
 
-/**
- * @param {{ reports: object[], rangeLabel: string, selectedRange: string }} opts
- */
 export function exportDetailedBranchOperationalReview({
   reports = [],
   rangeLabel,
   selectedRange,
 }) {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-  const margin = 40;
+  const margin = 36;
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const contentW = pageW - margin * 2;
-  const generated = new Date().toLocaleString("en-GB", { timeZone: "Asia/Riyadh" });
+  const generated = new Date().toLocaleString("en-GB", {
+    timeZone: "Asia/Riyadh",
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
-  drawBrandHeader(doc, margin, contentW, "Detailed Branch Operational Review", [
-    `Period: ${rangeLabel}`,
-    `Generated ${generated} · Asia/Riyadh business day logic`,
-    "Operational audit · coaching report · executive review system",
-  ]);
+  drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports });
 
   reports.forEach((report, branchIdx) => {
     doc.addPage();
-    let y = drawBrandHeader(
-      doc,
-      margin,
-      contentW,
-      `${report.branchLabel} — Staff operational audit`,
-      [
-        `Period: ${rangeLabel}`,
-        `QR scans ${report.kpis?.qr_scans ?? 0} · Reviews ${report.kpis?.reviews_generated ?? 0} · Google ${report.kpis?.google_redirects ?? 0}`,
-        `Branch conversion ${report.kpis?.conversion_pct ?? 0}% · Full roster (${report.staffRows.length} staff)`,
-      ],
-    );
-
-    y = drawExecutiveSummary(doc, margin, contentW, y, report.summary, report.kpis);
+    let y = drawBranchHeader(doc, margin, contentW, report, rangeLabel);
+    y = drawSummaryKpiGrid(doc, margin, contentW, y, report.summary, report.kpis);
 
     doc.setFontSize(8);
     doc.setTextColor(...NAC_TEAL);
-    doc.text("Complete staff roster — classifications drive coaching priority", margin, y);
-    y += 10;
+    doc.text("Full staff roster", margin, y);
+    y += 12;
 
     if (report.staffRows.length === 0) {
       doc.setFontSize(9);
-      doc.setTextColor(180, 180, 180);
-      doc.text(
-        "No staff-tagged review events in this period. Ensure QR flows capture employee_name.",
-        margin,
-        y + 12,
-      );
+      doc.setTextColor(160, 160, 160);
+      doc.text("No staff-tagged events in this period.", margin, y);
     } else {
       drawStaffAuditTable(doc, margin, contentW, y, report.staffRows);
     }
 
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      `${BRAND} · ${report.branchLabel} · ${branchDisplayName(report.branchId)}`,
+      margin,
+      pageH - 24,
+    );
     if (branchIdx === reports.length - 1) {
-      const footY = doc.internal.pageSize.getHeight() - 28;
-      doc.setFontSize(7);
-      doc.setTextColor(120, 120, 120);
-      doc.text(
-        `${BRAND} · Confidential operational intelligence · Not for guest distribution`,
-        margin,
-        footY,
-      );
+      doc.text("Confidential operational intelligence", margin + contentW - 140, pageH - 24);
     }
   });
 

@@ -41,7 +41,7 @@ export function inferStaffShiftBehavior(events = [], staffName) {
       e.event_type === "qr_scan" &&
       (staffNameForTracking(e.employee_name) || e.employee_name) === target,
   );
-  if (scans.length < 3) return "Insufficient scan sample";
+  if (scans.length < 3) return "—";
 
   let morning = 0;
   let midday = 0;
@@ -55,10 +55,10 @@ export function inferStaffShiftBehavior(events = [], staffName) {
   });
 
   const max = Math.max(morning, midday, evening);
-  if (max === morning && morning >= scans.length * 0.45) return "Morning shift lean";
-  if (max === evening && evening >= scans.length * 0.45) return "Evening shift lean";
-  if (max === midday && midday >= scans.length * 0.4) return "Midday shift lean";
-  return "Balanced across dayparts";
+  if (max === morning && morning >= scans.length * 0.45) return "Morning";
+  if (max === evening && evening >= scans.length * 0.45) return "Evening";
+  if (max === midday && midday >= scans.length * 0.4) return "Midday";
+  return "Balanced";
 }
 
 export function classifyBranchOperationalStaff(staff, branchStats) {
@@ -70,64 +70,54 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
   if (scans < MIN_SAMPLE && generated < MIN_SAMPLE) {
     return {
       key: "low_sample",
-      label: "Low sample size",
+      label: "Low sample",
       tone: "neutral",
-      coaching:
-        "Insufficient tagged volume — extend QR coaching before performance decisions.",
+      coaching: "Build tagged QR volume before rating.",
     };
   }
 
-  if (
-    generated >= 5 &&
-    reviewConv >= 32 &&
-    scans >= branchStats.medianScans
-  ) {
+  if (generated >= 5 && reviewConv >= 32 && scans >= branchStats.medianScans) {
     return {
       key: "premium",
-      label: "Premium performer",
+      label: "Top performer",
       tone: "gold",
-      coaching:
-        "Protect this profile — replicate QR placement and post-review Google CTA on floor.",
+      coaching: "Replicate QR placement and Google handoff.",
     };
   }
 
   if (scans >= branchStats.medianScans && reviewConv < 18 && generated >= 2) {
     return {
       key: "hi_vis_low_conv",
-      label: "High visibility / low conversion",
+      label: "High traffic, low close",
       tone: "amber",
-      coaching:
-        "Guests engage but stall before Google — tighten copy coaching and device handoff at table.",
+      coaching: "Tighten post-review Google CTA at table.",
     };
   }
 
   if (scans < branchStats.medianScans * 0.4 && generated < 2) {
     return {
       key: "underutilized",
-      label: "Underutilized staff",
+      label: "Underused",
       tone: "critical",
-      coaching:
-        "Low QR activation — assign visible table touches and review script refresh.",
+      coaching: "Increase visible QR touches per shift.",
     };
   }
 
   if (generated >= 3 && reviewConv >= 28) {
     return {
       key: "consistent",
-      label: "Consistent converter",
+      label: "Steady converter",
       tone: "teal",
-      coaching:
-        "Stable review-to-Google funnel — maintain script; test premium upsell pairing.",
+      coaching: "Hold script; protect conversion habit.",
     };
   }
 
   if (scans >= branchStats.medianScans && generated < branchStats.medianGenerated * 0.55) {
     return {
       key: "front_desk",
-      label: "Front-desk opportunity",
+      label: "Host gap",
       tone: "amber",
-      coaching:
-        "Strong scan traffic with weak generation — coach opening line before guest sits.",
+      coaching: "Coach review open before guest is seated.",
     };
   }
 
@@ -136,30 +126,29 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
       key: "coaching",
       label: "Needs coaching",
       tone: "critical",
-      coaching:
-        "Reviews generate but Google handoff fails — role-play copy + one-tap redirect.",
+      coaching: "Drill one-tap Google redirect after copy.",
     };
   }
 
   return {
     key: "consistent",
-    label: "Consistent converter",
+    label: "Steady converter",
     tone: "teal",
-    coaching: "Monitor weekly — reinforce behaviors that sustain review completion.",
+    coaching: "Monitor weekly; keep current script.",
   };
 }
 
 function operationalArchetype(classification) {
   const map = {
-    premium: "Revenue amplifier",
-    hi_vis_low_conv: "Visibility trap",
-    underutilized: "Dormant touchpoint",
-    consistent: "Steady closer",
-    front_desk: "Host conversion gap",
+    premium: "Amplifier",
+    hi_vis_low_conv: "Leakage",
+    underutilized: "Dormant",
+    consistent: "Steady",
+    front_desk: "Host gap",
     coaching: "Script gap",
-    low_sample: "Early signal",
+    low_sample: "Early",
   };
-  return map[classification.key] || "Floor contributor";
+  return map[classification.key] || "Floor";
 }
 
 function enrichStaffRow(staff, events, branchStats) {
@@ -212,18 +201,14 @@ function buildBranchSummary(staffRows, kpis) {
   }, 0);
 
   return {
-    strongestPerformer: strongest?.name
-      ? `${strongest.name} (${strongest.google} Google · ${strongest.reviewConv}% conv)`
-      : "—",
-    weakestConversion: weakestConv?.name
-      ? `${weakestConv.name} (${weakestConv.reviewConv}% review→Google)`
-      : "—",
-    bestVisibility: bestVisibility?.name
-      ? `${bestVisibility.name} (${bestVisibility.scans} QR scans)`
-      : "—",
-    hiddenOpportunity: hiddenOpp?.name
-      ? `${hiddenOpp.name} — ${hiddenOpp.scans} scans, ${hiddenOpp.reviewConv}% conv`
-      : "No major gap flagged",
+    strongestName: strongest?.name || "—",
+    strongestValue: strongest ? `${strongest.google} Google` : "—",
+    weakestName: weakestConv?.name || "—",
+    weakestValue: weakestConv ? `${weakestConv.reviewConv}%` : "—",
+    bestVisName: bestVisibility?.name || "—",
+    bestVisValue: bestVisibility ? `${bestVisibility.scans} QR` : "—",
+    hiddenName: hiddenOpp?.name || "None flagged",
+    hiddenValue: hiddenOpp ? `${hiddenOpp.scans} QR · ${hiddenOpp.reviewConv}%` : "—",
     estimatedRecoverableReviews: recoverable,
     staffCount: staffRows.length,
     branchConversion: branchConv,
