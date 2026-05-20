@@ -8,6 +8,7 @@ import { exportCell, clampMetric } from "../utils/intelligenceSanity";
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
 import { businessDayExportNote } from "../utils/businessDay";
 import { branchDisplayName } from "../utils/rangeState";
+import { REVIEW_METRIC } from "../config/reviewMetricLabels";
 import { exportVisibilityPDF } from "./visibilityPdfExport";
 
 function downloadBlob(blob, filename) {
@@ -291,10 +292,10 @@ export function exportReviewIntelligenceReport({
     ["Period", rangeLabel],
     [],
     ["Metric", "Value"],
-    ["QR scans", review?.qr_scans ?? 0],
-    ["Reviews generated", review?.reviews_generated ?? 0],
-    ["Google clicks", review?.google_clicks ?? 0],
-    ["Review conversion %", review?.conversion_pct ?? 0],
+    [REVIEW_METRIC.cardTaps, review?.qr_scans ?? 0],
+    [REVIEW_METRIC.reviewInteractions, review?.reviews_generated ?? 0],
+    [REVIEW_METRIC.googleRedirects, review?.google_clicks ?? 0],
+    [REVIEW_METRIC.tapToGooglePct, review?.conversion_pct ?? 0],
     ["Menu sessions", unified?.sessions ?? 0],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
@@ -307,11 +308,11 @@ export function exportReviewIntelligenceReport({
           Staff: s.name,
           Role: s.role,
           Branch: branch,
-          "Card taps (QR/NFC)": s.scans ?? s.opens,
-          "Reviews generated": s.generated,
+          [REVIEW_METRIC.cardTaps]: s.scans ?? s.opens,
+          [REVIEW_METRIC.reviewInteractions]: s.generated,
           "Copy events": s.copy,
-          "Google redirects": s.google,
-          "Tap/scan-to-Google %": s.conversion_pct,
+          [REVIEW_METRIC.googleRedirects]: s.google,
+          [REVIEW_METRIC.toGooglePct]: s.conversion_pct,
         }))
       ),
       "Staff"
@@ -328,8 +329,8 @@ export function exportReviewIntelligenceReport({
           Employee: e.name,
           Classification: e.classification?.label,
           "Coaching note": e.classification?.reason,
-          "Reviews generated": e.metrics?.reviews_generated,
-          "Google follow-through %": e.metrics?.review_conversion_pct,
+          [REVIEW_METRIC.reviewInteractions]: e.metrics?.reviews_generated,
+          [REVIEW_METRIC.toGooglePct]: e.metrics?.review_conversion_pct,
           Confidence: e.metrics?.confidence,
         }))
       ),
@@ -340,10 +341,10 @@ export function exportReviewIntelligenceReport({
   if (showComparison) {
     const rows = comparison.map((b) => ({
       Branch: branchDisplayName(b.branch_id),
-      "QR scans": b.qr_scans,
-      "Reviews generated": b.reviews_generated,
-      "Google redirects": b.google_redirects,
-      "Conversion %": b.conversion_pct,
+      [REVIEW_METRIC.cardTaps]: b.qr_scans,
+      [REVIEW_METRIC.reviewInteractions]: b.reviews_generated,
+      [REVIEW_METRIC.googleRedirects]: b.google_redirects,
+      [REVIEW_METRIC.tapToGooglePct]: b.conversion_pct,
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Branch benchmark");
   }
@@ -353,10 +354,10 @@ export function exportReviewIntelligenceReport({
       wb,
       XLSX.utils.aoa_to_sheet([
         [`${branch} focus`],
-        ["QR scans", branchRow.qr_scans],
-        ["Reviews generated", branchRow.reviews_generated],
-        ["Google redirects", branchRow.google_redirects],
-        ["Conversion %", branchRow.conversion_pct],
+        [REVIEW_METRIC.cardTaps, branchRow.qr_scans],
+        [REVIEW_METRIC.reviewInteractions, branchRow.reviews_generated],
+        [REVIEW_METRIC.googleRedirects, branchRow.google_redirects],
+        [REVIEW_METRIC.tapToGooglePct, branchRow.conversion_pct],
       ]),
       "Branch focus",
     );
@@ -370,7 +371,7 @@ export function exportReviewIntelligenceReport({
       ["Top opportunity", brief.topOpportunity],
       ["Strongest branch", brief.strongestBranch],
       ["Weakest funnel", brief.weakestFunnel],
-      ["Est. missed Google reviews", brief.missedGoogle],
+      ["Est. missed Google redirects", brief.missedGoogle],
       ["Recommendation", brief.recommendation],
     ]),
     "Executive brief",

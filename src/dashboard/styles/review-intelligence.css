@@ -32,6 +32,14 @@
   margin: 0 0 0.25rem;
 }
 
+.rev-funnel-subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: rgba(249, 249, 247, 0.55);
+  letter-spacing: 0.02em;
+}
+
 .rev-intel-header h1 {
   margin: 0;
   font-size: 1.75rem;

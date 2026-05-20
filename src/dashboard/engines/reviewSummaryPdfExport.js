@@ -17,6 +17,12 @@ import {
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
 import { filterProductionStaffList } from "../utils/isProductionStaff";
+import {
+  REVIEW_FUNNEL_SUBTITLE,
+  REVIEW_METRIC,
+  STAFF_SUMMARY_TABLE_HEAD,
+  BRANCH_BENCHMARK_TABLE_HEAD,
+} from "../config/reviewMetricLabels";
 
 const BRAND = "NAC HOSPITALITY OS";
 const DIM = [130, 130, 130];
@@ -61,7 +67,7 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
   return {
     topOpportunity: clip(topOpportunity, 90),
     strongestBranch: strongest
-      ? `${branchDisplayName(strongest.branch_id)} · ${strongest.google_redirects} Google`
+      ? `${branchDisplayName(strongest.branch_id)} · ${strongest.google_redirects} redirects`
       : "—",
     weakestFunnel: weakest
       ? `${branchDisplayName(weakest.branch_id)} · ${weakest.conversion_pct}% conversion`
@@ -142,15 +148,16 @@ export function exportReviewSummaryPdf(ctx) {
 
   doc.setFontSize(8);
   doc.setTextColor(...DIM);
-  doc.text(`Generated ${generated}`, margin, 102);
+  doc.text(REVIEW_FUNNEL_SUBTITLE, margin, 102);
+  doc.text(`Report generated ${generated}`, margin, 114);
 
   const cardW = (contentW - 24) / 4;
-  const cardY = 118;
+  const cardY = 126;
   const metrics = [
-    { label: "QR scans", value: review?.qr_scans ?? 0, accent: NAC_TEAL },
-    { label: "Reviews", value: review?.reviews_generated ?? 0, accent: NAC_TEAL },
-    { label: "Google", value: review?.google_clicks ?? 0, accent: NAC_GOLD },
-    { label: "Conversion", value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
+    { label: REVIEW_METRIC.cardTaps, value: review?.qr_scans ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC.reviewInteractions, value: review?.reviews_generated ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC.googleRedirects, value: review?.google_clicks ?? 0, accent: NAC_GOLD },
+    { label: REVIEW_METRIC.tapToGooglePct, value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
   ];
   metrics.forEach((m, i) => {
     drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 50, m.label, m.value, m.accent);
@@ -161,7 +168,7 @@ export function exportReviewSummaryPdf(ctx) {
     accent: NAC_GOLD,
     title: "Executive read",
     body: brief.recommendation,
-    hint: `Est. ${brief.missedGoogle} missed Google reviews in period`,
+    hint: `Est. ${brief.missedGoogle} missed Google redirects in period`,
   });
 
   const halfW = (contentW - 12) / 2;
@@ -206,7 +213,7 @@ export function exportReviewSummaryPdf(ctx) {
         margin + chartW + 12,
         y,
         chartW,
-        "Google by branch",
+        "Google redirects by branch",
         comparison.map((b) => ({
           branch_id: branchDisplayName(b.branch_id),
           google: b.google_redirects,
@@ -226,7 +233,7 @@ export function exportReviewSummaryPdf(ctx) {
 
     autoTable(doc, {
       startY: y,
-      head: [["Staff", "Role", "QR", "Rev", "Goog", "Cnv %"]],
+      head: [STAFF_SUMMARY_TABLE_HEAD],
       body: productionStaff.slice(0, 14).map((s) => [
         clip(s.name, 18),
         clip(s.role, 8),
@@ -261,7 +268,7 @@ export function exportReviewSummaryPdf(ctx) {
 
       autoTable(doc, {
         startY: y2 + 8,
-        head: [["Branch", "QR", "Reviews", "Google", "Cnv %"]],
+        head: [BRANCH_BENCHMARK_TABLE_HEAD],
         body: comparison.map((b) => [
           branchDisplayName(b.branch_id),
           b.qr_scans,

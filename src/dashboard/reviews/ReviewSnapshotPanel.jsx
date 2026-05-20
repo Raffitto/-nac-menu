@@ -6,6 +6,7 @@ import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import SnapshotShareCard from "../components/SnapshotShareCard";
 import ReviewExportBar from "./ReviewExportBar";
+import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "../config/reviewMetricLabels";
 
 const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snapshotRef) {
   const filters = usePlatformFiltersOptional();
@@ -31,10 +32,10 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
   }, [filters]);
 
   const metrics = [
-    { label: "Card taps (QR/NFC)", value: String(kpis?.qr_scans ?? "—") },
-    { label: "Google redirects", value: String(kpis?.google_redirects ?? "—") },
-    { label: "Conversion", value: `${kpis?.conversion_pct ?? "—"}%` },
-    { label: "Generated", value: String(kpis?.reviews_generated ?? "—") },
+    { label: REVIEW_METRIC.cardTaps, value: String(kpis?.qr_scans ?? "—") },
+    { label: REVIEW_METRIC.reviewInteractions, value: String(kpis?.reviews_generated ?? "—") },
+    { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? "—") },
+    { label: REVIEW_METRIC.tapToGooglePct, value: `${kpis?.conversion_pct ?? "—"}%` },
   ];
 
   return (
@@ -48,8 +49,8 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
         range={filters?.selectedRange || "7d"}
         metrics={metrics}
         highlight={
-          kpis?.conversion_pct != null
-            ? `${kpis.conversion_pct}% tap/scan-to-Google follow-through this period`
+          kpis
+            ? `${REVIEW_FUNNEL_SUBTITLE} · ${kpis.qr_scans ?? 0} taps · ${kpis.reviews_generated ?? 0} interactions · ${kpis.google_redirects ?? 0} redirects`
             : undefined
         }
       />

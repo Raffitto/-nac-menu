@@ -204,7 +204,7 @@ function buildBranchSummary(staffRows, kpis) {
 
   return {
     strongestName: strongest?.name || "—",
-    strongestValue: strongest ? `${strongest.google} Google` : "—",
+    strongestValue: strongest ? `${strongest.google} redirects` : "—",
     weakestName: weakestConv?.name || "—",
     weakestValue: weakestConv ? `${weakestConv.reviewConv}%` : "—",
     bestVisName: bestVisibility?.name || "—",

@@ -14,6 +14,11 @@ import {
   NAC_WHITE,
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
+import {
+  REVIEW_METRIC,
+  STAFF_AUDIT_TABLE_HEAD,
+  drawStaffAuditTableLegend,
+} from "../config/reviewMetricLabels";
 
 const BRAND = "NAC HOSPITALITY OS";
 const AMBER = [230, 168, 65];
@@ -77,9 +82,9 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
   const cardY = 152;
   const cards = [
     { label: "Branches", value: String(reports.length), accent: NAC_GOLD },
-    { label: "Network QR scans", value: String(net.scans), accent: NAC_TEAL },
-    { label: "Reviews generated", value: String(net.reviews), accent: NAC_TEAL },
-    { label: "Google redirects", value: String(net.google), accent: NAC_GOLD },
+    { label: "Network card taps", value: String(net.scans), accent: NAC_TEAL },
+    { label: REVIEW_METRIC.reviewInteractions, value: String(net.reviews), accent: NAC_TEAL },
+    { label: REVIEW_METRIC.googleRedirects, value: String(net.google), accent: NAC_GOLD },
   ];
   cards.forEach((c, i) => {
     drawKpiCard(doc, margin + i * (cardW + 12), cardY, cardW, cardH, c.label, c.value, c.accent);
@@ -127,7 +132,11 @@ function drawBranchHeader(doc, margin, contentW, report, rangeLabel) {
 
   doc.setFontSize(9);
   doc.setTextColor(...DIM);
-  doc.text(`${rangeLabel} · ${report.staffRows.length} staff · ${report.summary.branchConversion}% branch conversion`, margin, 68);
+  doc.text(
+    `${rangeLabel} · ${report.staffRows.length} staff · ${report.summary.branchConversion}% tap→Google`,
+    margin,
+    68,
+  );
 
   return 82;
 }
@@ -136,9 +145,9 @@ function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
   const cardW = (contentW - 24) / 4;
   const cardH = 48;
   const row1 = [
-    { label: "QR scans", value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
-    { label: "Reviews", value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
-    { label: "Google", value: String(kpis?.google_redirects ?? 0), accent: NAC_GOLD },
+    { label: REVIEW_METRIC.cardTaps, value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
+    { label: REVIEW_METRIC.reviewInteractions, value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
+    { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? 0), accent: NAC_GOLD },
     { label: "Recoverable est.", value: String(summary.estimatedRecoverableReviews), accent: NAC_GOLD },
   ];
   row1.forEach((c, i) => {
@@ -196,21 +205,7 @@ function staffTableBody(staffRows) {
 function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
   autoTable(doc, {
     startY,
-    head: [
-      [
-        "Staff",
-        "Role",
-        "QR",
-        "Rev",
-        "Goog",
-        "R→G",
-        "C→Rev",
-        "Profile",
-        "Status",
-        "Action",
-        "Shift",
-      ],
-    ],
+    head: [STAFF_AUDIT_TABLE_HEAD],
     body: staffTableBody(staffRows),
     styles: {
       fontSize: 7,
@@ -226,8 +221,9 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
       fillColor: [24, 28, 34],
       textColor: NAC_GOLD,
       fontStyle: "bold",
-      fontSize: 7,
-      cellPadding: 5,
+      fontSize: 6,
+      cellPadding: 4,
+      overflow: "linebreak",
     },
     alternateRowStyles: { fillColor: [14, 16, 20] },
     margin: { left: margin, right: margin },
@@ -260,8 +256,8 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
       2: { cellWidth: 26, halign: "right" },
       3: { cellWidth: 26, halign: "right" },
       4: { cellWidth: 28, halign: "right" },
-      5: { cellWidth: 28, halign: "right" },
-      6: { cellWidth: 28, halign: "right" },
+      5: { cellWidth: 34, halign: "right" },
+      6: { cellWidth: 36, halign: "right" },
       7: { cellWidth: 42 },
       8: { cellWidth: 52 },
       9: { cellWidth: 118 },
@@ -296,7 +292,8 @@ export function exportDetailedBranchOperationalReview({
     doc.setFontSize(8);
     doc.setTextColor(...NAC_TEAL);
     doc.text("Full staff roster", margin, y);
-    y += 12;
+    y += 10;
+    y = drawStaffAuditTableLegend(doc, margin, y);
 
     if (report.staffRows.length === 0) {
       doc.setFontSize(9);
