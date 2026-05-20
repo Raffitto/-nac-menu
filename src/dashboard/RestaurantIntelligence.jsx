@@ -22,6 +22,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
 import { buildRestaurantIntelligence } from "./engines/analyticsEngine";
 import { classifyMenuItems } from "./engines/menuEngineeringEngine";
@@ -76,11 +77,10 @@ export default function RestaurantIntelligence() {
         setLoading(false);
         return;
       }
-      const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: platform?.branch || null,
-        p_hours: pHours,
+      const { data: rpc } = await fetchBiDashboard(supabase, {
+        branch: platform?.branch || null,
+        hours: pHours,
       });
-      if (rpcErr) throw rpcErr;
       setBiData(rpc);
       const fc = await getFoodicsIntelligenceContext(rpc);
       setFoodics(fc);

@@ -2,8 +2,12 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Store, Crown } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { buildBranchReviewComparison } from "../utils/reviewEventMetrics";
-import { branchDisplayName, rangeToSince } from "../utils/rangeState";
+import {
+  fetchBranchComparisonSafe,
+  fetchReviewEventsSummary,
+} from "../../lib/intelligenceQueryApi";
+import { branchComparisonFromReviewSummary } from "../utils/reviewSummaryMap";
+import { branchDisplayName, rangeToHours } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import "../styles/platform-os.css";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
@@ -27,24 +31,24 @@ export default function BranchesView() {
     (async () => {
       setLoading(true);
       try {
-        const since = rangeToSince(filters?.selectedRange || "today");
-        let reviewQ = supabase.from("review_events").select("event_type,branch_id,created_at").limit(3000);
-        if (since) reviewQ = reviewQ.gte("created_at", since);
-        const { data: reviewData } = await reviewQ;
+        const hours = rangeToHours(filters?.selectedRange || "today");
+        const [reviewSummary, branchCmp] = await Promise.all([
+          fetchReviewEventsSummary(supabase, { branch: null, hours }),
+          fetchBranchComparisonSafe(supabase, hours),
+        ]);
 
         const menuStats = {};
-        await Promise.all(
-          BRANCHES.map(async (b) => {
-            const { data: bi } = await supabase.rpc("get_bi_dashboard", { p_branch: b, p_hours: 168 });
-            menuStats[b] = {
-              sessions: Number(bi?.total_sessions) || 0,
-              events: Number(bi?.total_events) || 0,
-            };
-          }),
-        );
+        (branchCmp.data || []).forEach((row) => {
+          const b = (row.branch_id || "").toLowerCase();
+          if (!b) return;
+          menuStats[b] = {
+            sessions: Number(row.sessions) || 0,
+            events: Number(row.impressions) + Number(row.opens) || 0,
+          };
+        });
 
         if (!cancelled) {
-          setRows(buildBranchReviewComparison(reviewData || []));
+          setRows(branchComparisonFromReviewSummary(reviewSummary));
           setMenuByBranch(menuStats);
         }
       } catch {

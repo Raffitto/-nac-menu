@@ -28,6 +28,7 @@ import {
   Cell,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { defaultExportConfig } from "../config/visualExportPresets";
@@ -139,14 +140,11 @@ export default function VisualIntelligenceEngine() {
     try {
       const branch = filters?.branch || null;
       const [rpc, latestProduct, latestWaiter] = await Promise.all([
-        supabase.rpc("get_bi_dashboard", {
-          p_branch: branch,
-          p_hours: pHours,
-        }),
+        fetchBiDashboard(supabase, { branch, hours: pHours }),
         getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
         getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
       ]);
-      if (!rpc.error) setBiData(rpc.data);
+      if (rpc?.data) setBiData(rpc.data);
       setHasWaiterBatch(Boolean(latestWaiter?.id));
       const [prod, waiter] = await Promise.all([
         latestProduct?.id ? getBatchSalesItems(latestProduct.id) : Promise.resolve([]),

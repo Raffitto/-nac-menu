@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
+import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
+import { rangeToHours } from "../utils/rangeState";
 import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -45,12 +48,25 @@ export default function EmployeePerformanceGrid() {
     (async () => {
       setLoading(true);
       try {
+        const hours = rangeToHours(filters?.selectedRange || "today");
+        const summary = await fetchReviewEventsSummary(supabase, {
+          branch: branch || null,
+          hours,
+        });
+
+        if (summary) {
+          if (cancelled) return;
+          setStaff(staffFromReviewSummary(summary));
+          setPrevStaff([]);
+          return;
+        }
+
         const since = rangeToSince(filters?.selectedRange || "today");
         let q = supabase
           .from("review_events")
           .select(SELECT)
           .order("created_at", { ascending: false })
-          .limit(5000);
+          .limit(2500);
         if (branch) q = q.eq("branch_id", branch);
         if (since) q = q.gte("created_at", since);
 
@@ -67,7 +83,7 @@ export default function EmployeePerformanceGrid() {
           .select(SELECT)
           .gte("created_at", prevStart)
           .lt("created_at", since)
-          .limit(3000);
+          .limit(1500);
         if (branch) pq = pq.eq("branch_id", branch);
         const { data: prevRaw } = await pq;
         const prevData = applyPlatformFilters(prevRaw || [], filters);

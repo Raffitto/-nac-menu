@@ -20,6 +20,7 @@ import {
   Activity,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
 import { fetchReviewIntelligence, fetchBranchComparison } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
@@ -34,7 +35,6 @@ import {
 import "./styles/ai-insights.css";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import GoogleReputationStrip from "./components/GoogleReputationStrip";
-import CompetitiveReputationTeaser from "./components/CompetitiveReputationTeaser";
 
 const GROUP_ICONS = {
   "Revenue Opportunities": <TrendingUp size={16} />,
@@ -89,6 +89,7 @@ export default function AIInsights() {
   const [foodics, setFoodics] = useState(null);
   const [reviewIntel, setReviewIntel] = useState(null);
   const [branchComparison, setBranchComparison] = useState([]);
+  const [partialNote, setPartialNote] = useState("");
   const streamRef = useRef(null);
 
   const configured = isSupabaseConfigured();
@@ -108,13 +109,13 @@ export default function AIInsights() {
         setLoading(false);
         return;
       }
-      const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: platform?.branch || null,
-        p_hours: timeRange,
+      const { data: rpc, partial, note } = await fetchBiDashboard(supabase, {
+        branch: platform?.branch || null,
+        hours: timeRange,
       });
-      if (rpcErr) throw rpcErr;
       if (!rpc || typeof rpc !== "object") throw new Error("Empty response");
       setData(rpc);
+      setPartialNote(partial && note ? note : "");
       const foodicsCtx = await getFoodicsIntelligenceContext(rpc);
       setFoodics(foodicsCtx);
       try {
@@ -130,6 +131,7 @@ export default function AIInsights() {
       }
     } catch (e) {
       setError(e?.message || "Failed to load data");
+      setPartialNote("");
     } finally {
       setLoading(false);
     }
@@ -268,7 +270,15 @@ export default function AIInsights() {
 
       <GoogleReputationStrip />
 
-      <CompetitiveReputationTeaser />
+      {partialNote && (
+        <p className="ai-partial-note" role="status">
+          <Info size={14} /> {partialNote}
+        </p>
+      )}
+
+      <p className="cr-teaser-link" style={{ marginTop: 0 }}>
+        Open Intelligence → Competitive Watch for competitor reputation.
+      </p>
 
       {/* Filters */}
       <AnimatePresence>

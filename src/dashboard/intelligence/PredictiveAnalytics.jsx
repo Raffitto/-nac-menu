@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
+import { kpisFromReviewSummary } from "../utils/reviewSummaryMap";
+import { rangeToHours } from "../utils/rangeState";
 import { computeReviewKpis } from "../utils/reviewEventMetrics";
 import { rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -42,15 +45,26 @@ export default function PredictiveAnalytics() {
     if (!supabase || !isSupabaseConfigured()) return;
     let cancelled = false;
     (async () => {
-      const since = rangeToSince(filters?.selectedRange || "7d");
-      let q = supabase
-        .from("review_events")
-        .select("event_type,created_at,branch_id,employee_role,language")
-        .limit(5000);
-      if (since) q = q.gte("created_at", since);
-      if (filters?.branch) q = q.eq("branch_id", filters.branch);
-      const { data } = await q;
-      if (!cancelled) setKpis(computeReviewKpis(applyPlatformFilters(data || [], filters)));
+      const hours = rangeToHours(filters?.selectedRange || "7d");
+      const summary = await fetchReviewEventsSummary(supabase, {
+        branch: filters?.branch || null,
+        hours,
+      });
+      if (!cancelled) {
+        if (summary) {
+          setKpis(kpisFromReviewSummary(summary));
+        } else {
+          const since = rangeToSince(filters?.selectedRange || "7d");
+          let q = supabase
+            .from("review_events")
+            .select("event_type,created_at,branch_id,employee_role,language")
+            .limit(2000);
+          if (since) q = q.gte("created_at", since);
+          if (filters?.branch) q = q.eq("branch_id", filters.branch);
+          const { data } = await q;
+          setKpis(computeReviewKpis(applyPlatformFilters(data || [], filters)));
+        }
+      }
     })();
     return () => {
       cancelled = true;

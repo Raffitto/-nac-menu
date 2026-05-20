@@ -14,6 +14,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
 import {
   getImportBatches,
   getBatchSalesItems,
@@ -123,9 +124,9 @@ export default function FoodicsIntelligence({
         getNameMappings(),
         getLatestBatch(importType, laneBranch),
         importType === IMPORT_TYPE.PRODUCT_SALES
-          ? supabase.rpc("get_bi_dashboard", {
-              p_branch: platform?.branch || null,
-              p_hours: platform?.timeRangeHours ?? 24,
+          ? fetchBiDashboard(supabase, {
+              branch: platform?.branch || null,
+              hours: platform?.timeRangeHours ?? 24,
             })
           : Promise.resolve({ data: null }),
       ]);

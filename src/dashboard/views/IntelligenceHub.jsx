@@ -1,4 +1,5 @@
 import React, { useState, Suspense, lazy } from "react";
+import { GooglePlacesProvider } from "../context/GooglePlacesContext";
 import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import HubTabs from "../components/HubTabs";
@@ -29,6 +30,7 @@ export default function IntelligenceHub() {
   const [tab, setTab] = useState("ai");
 
   return (
+    <GooglePlacesProvider>
     <motion.div className="nac-intelligence-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
         <p className="nac-platform-kicker">NAC Intelligence</p>
@@ -70,5 +72,6 @@ export default function IntelligenceHub() {
       {tab === "operations" && <OperationsInsights />}
       {tab === "competitive" && <CompetitiveReputationWatch />}
     </motion.div>
+    </GooglePlacesProvider>
   );
 }

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, Users, AlertTriangle, ShoppingBag } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { getImportBatches, getBatchSalesItems, getLatestBatchByType } from "../../lib/foodicsApi";
 import { normalizeTopItems } from "../utils/topItemsNormalize";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -51,7 +52,7 @@ export default function SalesImportsIntelligence() {
         getImportBatches(24),
         getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
         getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
-        supabase.rpc("get_bi_dashboard", { p_branch: branch, p_hours: pHours }),
+        fetchBiDashboard(supabase, { branch, hours: pHours }),
       ]);
 
       setBatches(batchList);
@@ -64,7 +65,7 @@ export default function SalesImportsIntelligence() {
       ]);
       setProductItems(prodSales);
       setWaiterItems(waiterSales);
-      setTopItems(normalizeTopItems(rpc.data?.top_items || []));
+      setTopItems(normalizeTopItems(rpc?.data?.top_items || []));
     } catch {
       setProductItems([]);
       setWaiterItems([]);

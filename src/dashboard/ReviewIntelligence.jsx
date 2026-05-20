@@ -22,12 +22,14 @@ import {
   YAxis,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchReviewEventsSummary } from "../lib/intelligenceQueryApi";
 import { generateDailySnapshot } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
   rangeToSince,
+  rangeToHours,
   branchDisplayName,
   defaultBranchId,
   rangeExportLabel,
@@ -44,6 +46,13 @@ import {
   computeReviewKpis,
   buildBranchReviewComparison,
 } from "./utils/reviewEventMetrics";
+import {
+  kpisFromReviewSummary,
+  staffFromReviewSummary,
+  dailyTrendFromReviewSummary,
+  branchComparisonFromReviewSummary,
+  branchScansFromComparison,
+} from "./utils/reviewSummaryMap";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "./components/GoogleReputationBadge";
@@ -93,14 +102,34 @@ export default function ReviewIntelligence({ embedded = false }) {
     setError("");
     try {
       const since = rangeToSince(selectedRange);
-
+      const hours = rangeToHours(selectedRange);
       const activeBranch = embedded && platform ? platform.branch : branch;
+
+      const summary = await fetchReviewEventsSummary(supabase, {
+        branch: activeBranch || null,
+        hours,
+      });
+
+      if (summary) {
+        const allSummary = activeBranch
+          ? await fetchReviewEventsSummary(supabase, { branch: null, hours })
+          : summary;
+
+        setKpis(kpisFromReviewSummary(summary));
+        setStaffMerged(mergeStaffStats([], staffFromReviewSummary(summary)));
+        setDailyTrend(dailyTrendFromReviewSummary(summary));
+        const comparison = branchComparisonFromReviewSummary(allSummary || summary);
+        setBranchComparison(comparison);
+        setBranchScans(branchScansFromComparison(comparison));
+        if (summary._note) setError(summary._note);
+        return;
+      }
 
       let reviewQ = supabase
         .from("review_events")
         .select(REVIEW_EVENT_SELECT)
         .order("created_at", { ascending: false })
-        .limit(5000);
+        .limit(2500);
 
       if (activeBranch) {
         reviewQ = reviewQ.eq("branch_id", activeBranch);
@@ -108,9 +137,9 @@ export default function ReviewIntelligence({ embedded = false }) {
 
       let reviewAllQ = supabase
         .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
+        .select("event_type,branch_id,created_at,review_session_id,session_id")
         .order("created_at", { ascending: false })
-        .limit(3000);
+        .limit(2000);
 
       if (since) {
         reviewQ = reviewQ.gte("created_at", since);
@@ -125,15 +154,11 @@ export default function ReviewIntelligence({ embedded = false }) {
       const events = applyPlatformFilters(branchEvents || [], embedded ? platform : null);
       const all = applyPlatformFilters(allEvents || [], embedded ? platform : null);
 
-      const branchKpis = computeReviewKpis(events);
-      setKpis(branchKpis);
-
-      const granular = aggregateStaffReviewStats(events, branch);
-      setStaffMerged(mergeStaffStats([], granular));
+      setKpis(computeReviewKpis(events));
+      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events, branch)));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(buildBranchReviewComparison(all));
-
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");
     } finally {

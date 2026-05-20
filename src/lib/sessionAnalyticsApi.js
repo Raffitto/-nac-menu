@@ -1,4 +1,5 @@
 import { rangeToHours, MONTH_HOURS } from "../dashboard/utils/rangeState";
+import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/sessionAnalyticsMap";
 
 function isTimeoutError(error) {
@@ -139,12 +140,11 @@ async function fetchSessionAnalyticsFallback(supabase, params) {
     };
   }
 
-  const bi = await supabase.rpc("get_bi_dashboard", {
-    p_branch: params.p_branch,
-    p_hours: fallbackHours,
+  const { data: biPayload } = await fetchBiDashboard(supabase, {
+    branch: params.p_branch,
+    hours: fallbackHours,
   });
-  if (bi.error) throw bi.error;
-  const biPayload = Array.isArray(bi.data) ? bi.data[0] : bi.data;
+  if (!biPayload) throw new Error("BI fallback empty");
   return {
     aggregates: mapBiToSessionAggregates(biPayload),
     topAddons: mapBiTopAddons(biPayload),

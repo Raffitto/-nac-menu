@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import { fetchBranchComparisonSafe } from "../../lib/intelligenceQueryApi";
 import { getBusinessDayKey } from "./businessDay";
 
 const DEFAULT_BRANCH =
@@ -26,10 +27,7 @@ export async function fetchUnifiedSummary(branchId = DEFAULT_BRANCH, businessDay
 
 export async function fetchBranchComparison(hours = 24) {
   if (!supabase) return [];
-  const { data, error } = await supabase.rpc("get_branch_comparison", {
-    p_hours: hours,
-  });
-  if (error) throw error;
+  const { data } = await fetchBranchComparisonSafe(supabase, hours);
   return data || [];
 }
 

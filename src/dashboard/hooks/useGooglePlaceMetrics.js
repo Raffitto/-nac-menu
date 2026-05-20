@@ -1,18 +1,26 @@
-import { useEffect, useState, useMemo } from "react";
+import { useMemo } from "react";
+import { useGooglePlacesContext } from "../context/GooglePlacesContext";
 import { fetchBranchGooglePlaceMetrics } from "../services/googlePlacesService";
+import { useEffect, useState } from "react";
+
+function apiKeyPresent() {
+  return Boolean((process.env.REACT_APP_GOOGLE_API_KEY || "").trim());
+}
 
 /**
- * Load Google Places reputation metrics for all configured branches.
- * @param {string|null} branchId — optional; exposes `forBranch` for the active branch
+ * Google Places metrics — shared via GooglePlacesProvider when inside Intelligence hub.
  */
 export function useGooglePlaceMetrics(branchId = null) {
-  const [loading, setLoading] = useState(true);
+  const shared = useGooglePlacesContext();
+  const branchKey = branchId ? String(branchId).toLowerCase() : null;
+
+  const [loading, setLoading] = useState(!shared);
   const [byBranch, setByBranch] = useState({});
   const [error, setError] = useState(null);
 
-  const branchKey = branchId ? String(branchId).toLowerCase() : null;
-
   useEffect(() => {
+    if (shared) return undefined;
+
     let cancelled = false;
 
     (async () => {
@@ -29,7 +37,7 @@ export function useGooglePlaceMetrics(branchId = null) {
             setError("unavailable");
           }
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           setByBranch({});
           setError("fetch_error");
@@ -42,16 +50,21 @@ export function useGooglePlaceMetrics(branchId = null) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shared]);
+
+  const resolvedLoading = shared ? shared.loading : loading;
+  const resolvedByBranch = shared ? shared.byBranch : byBranch;
+  const resolvedError = shared ? shared.error : error;
 
   const forBranch = useMemo(() => {
     if (!branchKey) return null;
-    return byBranch[branchKey] || null;
-  }, [byBranch, branchKey]);
+    return resolvedByBranch[branchKey] || null;
+  }, [resolvedByBranch, branchKey]);
 
-  return { loading, byBranch, forBranch, error };
-}
-
-function apiKeyPresent() {
-  return Boolean((process.env.REACT_APP_GOOGLE_API_KEY || "").trim());
+  return {
+    loading: resolvedLoading,
+    byBranch: resolvedByBranch,
+    forBranch,
+    error: resolvedError,
+  };
 }

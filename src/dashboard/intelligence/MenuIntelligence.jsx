@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { CATEGORY_NAMES } from "../utils/formatters";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { rangeToHours } from "../utils/rangeState";
@@ -26,9 +27,9 @@ export default function MenuIntelligence() {
     }
     setLoading(true);
     try {
-      const { data: rpc } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: filters?.branch || null,
-        p_hours: filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"),
+      const { data: rpc } = await fetchBiDashboard(supabase, {
+        branch: filters?.branch || null,
+        hours: filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"),
       });
       setData(rpc);
     } catch {

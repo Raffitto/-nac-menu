@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { generateInsights } from "../utils/insights";
 import { buildRestaurantIntelligence } from "../engines/analyticsEngine";
 import { getFoodicsIntelligenceContext } from "../../lib/foodicsApi";
@@ -21,9 +22,9 @@ export default function OperationsInsights() {
     }
     setLoading(true);
     try {
-      const { data: bi } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: filters?.branch || null,
-        p_hours: filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"),
+      const { data: bi } = await fetchBiDashboard(supabase, {
+        branch: filters?.branch || null,
+        hours: filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"),
       });
       const foodics = await getFoodicsIntelligenceContext(bi).catch(() => null);
       const intel = buildRestaurantIntelligence(bi, foodics);

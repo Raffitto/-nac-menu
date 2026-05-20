@@ -1,5 +1,12 @@
 import { useState, useCallback, useMemo } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
+import { rangeToHours } from "../utils/rangeState";
+import {
+  kpisFromReviewSummary,
+  staffFromReviewSummary,
+  branchComparisonFromReviewSummary,
+} from "../utils/reviewSummaryMap";
 import { exportReviewIntelligenceReport } from "../engines/exportEngine";
 import { buildAllBranchOperationalReports } from "../engines/branchOperationalReviewEngine";
 import { exportDetailedBranchOperationalReview } from "../engines/detailedBranchReviewExport";
@@ -36,17 +43,48 @@ export function useReviewExports(filters) {
   const branchLabel = branch ? branchDisplayName(branch) : "All branches";
 
   const loadEvents = useCallback(async () => {
+    const hours = rangeToHours(selectedRange);
+    const summary = await fetchReviewEventsSummary(supabase, {
+      branch: branch || null,
+      hours,
+    }).catch(() => null);
+
+    if (summary) {
+      const allSummary =
+        branch != null
+          ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(() => summary)
+          : summary;
+      const events = staffFromReviewSummary(summary).map((s) => ({
+        event_type: "qr_scan",
+        employee_name: s.name,
+        employee_role: s.role,
+        branch_id: branch || "",
+      }));
+      return {
+        events,
+        all: branchComparisonFromReviewSummary(allSummary).flatMap((b) =>
+          Array.from({ length: b.qr_scans }, () => ({
+            event_type: "qr_scan",
+            branch_id: b.branch_id,
+          })),
+        ),
+        summary,
+        kpis: kpisFromReviewSummary(summary),
+        branchComparison: branchComparisonFromReviewSummary(allSummary),
+      };
+    }
+
     const since = rangeToSince(selectedRange);
     let branchQ = supabase
       .from("review_events")
       .select(REVIEW_EVENT_SELECT)
       .order("created_at", { ascending: false })
-      .limit(5000);
+      .limit(2500);
     let allQ = supabase
       .from("review_events")
       .select(REVIEW_EVENT_SELECT)
       .order("created_at", { ascending: false })
-      .limit(8000);
+      .limit(3000);
 
     if (since) {
       branchQ = branchQ.gte("created_at", since);
@@ -67,12 +105,13 @@ export function useReviewExports(filters) {
   }, [selectedRange, branch, filters]);
 
   const buildSummaryContext = useCallback(
-    (events, all) => {
-      const kpis = computeReviewKpis(events);
-      const staffMerged = mergeStaffStats(
-        [],
-        aggregateStaffReviewStats(events, branch),
-      );
+    (loaded) => {
+      const events = loaded?.events || [];
+      const all = loaded?.all || [];
+      const kpis = loaded?.kpis || computeReviewKpis(events);
+      const staffMerged = loaded?.summary
+        ? staffFromReviewSummary(loaded.summary)
+        : mergeStaffStats([], aggregateStaffReviewStats(events, branch));
       const employees = buildEmployeePerformance(
         staffMerged.map((s) => ({
           name: s.name,
@@ -96,7 +135,8 @@ export function useReviewExports(filters) {
         staffStats: staffMerged,
         employees,
         diagnostics: runReviewDataQualityDiagnostics(events, branch),
-        branchComparison: buildBranchReviewComparison(all),
+        branchComparison:
+          loaded?.branchComparison || buildBranchReviewComparison(all),
       };
     },
     [branch, branchLabel, selectedRange, rangeLabel],
@@ -139,9 +179,9 @@ export function useReviewExports(filters) {
     if (!configured || summaryBusy) return;
     setSummaryBusy(true);
     try {
-      const { events, all } = await loadEvents();
+      const loaded = await loadEvents();
       exportReviewIntelligenceReport({
-        ...buildSummaryContext(events, all),
+        ...buildSummaryContext(loaded),
         format: "pdf",
       });
     } finally {
@@ -153,9 +193,9 @@ export function useReviewExports(filters) {
     if (!configured || summaryBusy) return;
     setSummaryBusy(true);
     try {
-      const { events, all } = await loadEvents();
+      const loaded = await loadEvents();
       exportReviewIntelligenceReport({
-        ...buildSummaryContext(events, all),
+        ...buildSummaryContext(loaded),
         format: "xlsx",
       });
     } finally {

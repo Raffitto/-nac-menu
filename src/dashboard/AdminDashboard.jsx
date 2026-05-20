@@ -34,6 +34,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import GlobalFilterBar from "./components/GlobalFilterBar";
@@ -135,19 +136,20 @@ function AdminDashboardContent({ onBack }) {
     setLoading(true);
     setError("");
     try {
-      const { data: rpc, error: rpcErr } = await supabase.rpc("get_bi_dashboard", {
-        p_branch: branch,
-        p_hours: timeRange,
+      const { data: rpc, partial, note } = await fetchBiDashboard(supabase, {
+        branch,
+        hours: timeRange,
       });
 
-      if (rpcErr) {
+      if (!rpc || typeof rpc !== "object") {
         const { data: fallback, error: fallErr } = await supabase.rpc("get_dashboard_aggregates");
         if (fallErr) throw fallErr;
         setData(fallback);
-      } else if (!rpc || typeof rpc !== "object") {
-        throw new Error("Empty response from RPC");
       } else {
         setData(rpc);
+        if (partial && note) {
+          setError(note);
+        }
       }
     } catch (e) {
       setError(e?.message || "Failed to load dashboard data");
