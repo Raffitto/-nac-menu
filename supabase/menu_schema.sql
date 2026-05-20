@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS menu_items (
   vegan           BOOLEAN DEFAULT false,
   available_from  TIME,
   available_until TIME,
+  hidden_until    TIMESTAMPTZ,
   sort_order      INTEGER DEFAULT 0,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
@@ -146,9 +147,12 @@ CREATE POLICY "Authenticated full access to sections"
   USING (true) WITH CHECK (true);
 
 -- menu_items
-CREATE POLICY "Public can read active menu items"
+CREATE POLICY "Public can read visible menu items"
   ON menu_items FOR SELECT TO anon
-  USING (active = true);
+  USING (
+    active = true
+    AND (hidden_until IS NULL OR hidden_until <= now())
+  );
 
 CREATE POLICY "Authenticated full access to menu items"
   ON menu_items FOR ALL TO authenticated

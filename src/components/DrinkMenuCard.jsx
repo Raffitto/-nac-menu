@@ -22,6 +22,7 @@ export default function DrinkMenuCard({
   onOpenItem,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const soldOut = Boolean(menuItem?.soldOut);
   const showCal = menuItem.calories && menuItem.calories !== "-";
 
   const handleCardClick = () => {
@@ -42,7 +43,7 @@ export default function DrinkMenuCard({
     <>
       <ImpressionTracked
         asMotion={false}
-        className="drink-card"
+        className={`drink-card${soldOut ? " menu-card-sold-out" : ""}`}
         categoryId={categoryId}
         sectionTitleEn={sectionTitleEn}
         sectionIndex={sectionIndex}
@@ -67,6 +68,11 @@ export default function DrinkMenuCard({
             </button>
           )}
         </div>
+        {soldOut && (
+          <span className="menu-card-sold-out-pill">
+            {isArabic ? "غير متوفر" : "Sold out"}
+          </span>
+        )}
         <div className="drink-card-body">
           <span className="drink-card-name">{isArabic ? menuItem.ar : menuItem.en}</span>
           <div className="menu-card-meta drink-card-meta">

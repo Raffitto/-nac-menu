@@ -1,8 +1,9 @@
 import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
+import { filterPublicMenuData } from "./menuVisibility";
 
-const MENU_CACHE_KEY = "nac-menu-cache";
-const CACHE_TTL_MS = 5 * 60 * 1000;
+export const MENU_CACHE_KEY = "nac-menu-cache";
+const CACHE_TTL_MS = 60 * 1000;
 
 // ═══════════════ HELPERS ═══════════════
 
@@ -31,7 +32,70 @@ function setCache(key, data) {
 }
 
 export function invalidateMenuCache() {
-  localStorage.removeItem(MENU_CACHE_KEY);
+  try {
+    localStorage.removeItem(MENU_CACHE_KEY);
+    localStorage.removeItem("nac_menu_cache");
+  } catch {
+    /* ignore */
+  }
+}
+
+const MENU_ITEM_DB_FIELDS = new Set([
+  "name_en",
+  "name_ar",
+  "desc_en",
+  "desc_ar",
+  "price",
+  "calories",
+  "image",
+  "section_id",
+  "slug",
+  "sold_out",
+  "featured",
+  "new_item",
+  "vegetarian",
+  "vegan",
+  "active",
+  "hidden_until",
+  "sort_order",
+  "available_from",
+  "available_until",
+]);
+
+/** Strip UI-only keys (e.g. category_id) before Supabase writes. */
+export function sanitizeMenuItemPayload(raw = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (MENU_ITEM_DB_FIELDS.has(key) && value !== undefined) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+export function logMenuMutation(label, payload, response) {
+  if (process.env.NODE_ENV !== "production" || process.env.REACT_APP_MENU_DEBUG === "1") {
+    // eslint-disable-next-line no-console
+    console.info(`[menu] ${label}`, { payload, response });
+  }
+}
+
+export function assertMenuMutation(result, label) {
+  if (result?.error) {
+    logMenuMutation(`${label} FAILED`, null, result.error);
+    throw new Error(result.error.message || `Menu operation failed: ${label}`);
+  }
+  logMenuMutation(`${label} OK`, null, result?.data ?? result);
+  return result?.data ?? result;
+}
+
+export async function fetchMenuItemById(id) {
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("*")
+    .eq("id", id)
+    .single();
+  return { data, error };
 }
 
 async function compressImage(file, maxWidth = 1200, quality = 0.8) {
@@ -83,9 +147,12 @@ export async function getCategories() {
   return { data, error };
 }
 
-export async function getFullMenu() {
-  const hit = cached(MENU_CACHE_KEY);
-  if (hit) return { data: hit, error: null };
+export async function getFullMenu(options = {}) {
+  const bypassCache = options.bypassCache === true;
+  if (!bypassCache) {
+    const hit = cached(MENU_CACHE_KEY);
+    if (hit) return { data: hit, error: null };
+  }
 
   const [catRes, secRes, itemRes, addonRes, juncAddonRes, allergenRes, juncAllergenRes] =
     await Promise.all([
@@ -102,7 +169,6 @@ export async function getFullMenu() {
       supabase
         .from("menu_items")
         .select("*")
-        .eq("active", true)
         .order("sort_order"),
       supabase.from("add_ons").select("*").eq("active", true),
       supabase.from("item_addons").select("*").order("sort_order"),
@@ -172,6 +238,8 @@ export async function getFullMenu() {
         price: it.price,
         image: it.image || "",
         soldOut: it.sold_out,
+        active: it.active !== false,
+        hiddenUntil: it.hidden_until || null,
         recommended: (addonsByItem[it.id] || []).map((addon) => ({
           en: addon.name_en,
           ar: addon.name_ar,
@@ -215,7 +283,7 @@ export async function getFullMenu() {
 
   const result = {
     categories: formattedCategories,
-    menuData,
+    menuData: filterPublicMenuData(menuData),
     addOns,
     allergenLabels,
   };
@@ -251,7 +319,6 @@ export async function getMenuByCategory(categorySlug) {
       .from("menu_items")
       .select("*")
       .in("section_id", sectionIds)
-      .eq("active", true)
       .order("sort_order"),
   ]);
 
@@ -300,6 +367,8 @@ export async function getMenuByCategory(categorySlug) {
       price: it.price,
       image: it.image || "",
       soldOut: it.sold_out,
+      active: it.active !== false,
+      hiddenUntil: it.hidden_until || null,
       recommended: (addonsByItem[it.id] || []).map((addon) => ({
         en: addon.name_en,
         ar: addon.name_ar,
@@ -313,29 +382,56 @@ export async function getMenuByCategory(categorySlug) {
     })),
   }));
 
-  return { data: result, error: null };
+  const visible = filterPublicMenuData({ [categorySlug]: result })[categorySlug] || [];
+  return { data: visible, error: null };
+}
+
+// ═══════════════ VISIBILITY (Menu Manager) ═══════════════
+
+/** Permanently hide from guest menu. */
+export async function hideMenuItemPermanently(id) {
+  return updateMenuItem(id, { active: false, hidden_until: null });
+}
+
+/** Show on guest menu and clear any scheduled hide. */
+export async function restoreMenuItemVisibility(id) {
+  return updateMenuItem(id, { active: true, hidden_until: null });
+}
+
+/** Timed hide — keeps active=true so the item auto-reappears after hidden_until. */
+export async function scheduleMenuItemHide(id, hiddenUntilIso) {
+  if (!hiddenUntilIso) {
+    return { data: null, error: new Error("hidden_until is required") };
+  }
+  return updateMenuItem(id, { active: true, hidden_until: hiddenUntilIso });
 }
 
 // ═══════════════ ADMIN CRUD (authenticated) ═══════════════
 
 export async function updateMenuItem(id, updates) {
+  const payload = sanitizeMenuItemPayload(updates);
+  logMenuMutation("updateMenuItem request", { id, payload }, null);
   const { data, error } = await supabase
     .from("menu_items")
-    .update(updates)
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
 
+  logMenuMutation("updateMenuItem response", { id, payload }, { data, error });
   if (!error) invalidateMenuCache();
   return { data, error };
 }
 
 export async function createMenuItem(item, allergenCodes = [], addonSlugs = []) {
+  const payload = sanitizeMenuItemPayload(item);
+  logMenuMutation("createMenuItem request", payload, null);
   const { data: newItem, error } = await supabase
     .from("menu_items")
-    .insert(item)
+    .insert(payload)
     .select()
     .single();
+  logMenuMutation("createMenuItem response", payload, { data: newItem, error });
 
   if (error) return { data: null, error };
 
@@ -389,11 +485,25 @@ export async function deleteMenuItem(id) {
 }
 
 export async function toggleSoldOut(id, soldOut) {
-  return updateMenuItem(id, { sold_out: soldOut });
+  const result = await updateMenuItem(id, { sold_out: Boolean(soldOut) });
+  return result;
+}
+
+/** Apply visibility + sold-out in one persisted write. */
+export async function applyMenuItemVisibility(id, { active, hidden_until, sold_out }) {
+  const patch = sanitizeMenuItemPayload({
+    active,
+    hidden_until: hidden_until ?? null,
+    ...(sold_out !== undefined ? { sold_out: Boolean(sold_out) } : {}),
+  });
+  return updateMenuItem(id, patch);
 }
 
 export async function toggleItemActive(id, active) {
-  return updateMenuItem(id, { active });
+  if (active) {
+    return restoreMenuItemVisibility(id);
+  }
+  return hideMenuItemPermanently(id);
 }
 
 export async function reorderSections(updates) {

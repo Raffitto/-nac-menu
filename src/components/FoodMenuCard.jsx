@@ -23,6 +23,7 @@ export default function FoodMenuCard({
   variants,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const soldOut = Boolean(menuItem?.soldOut);
 
   const handleCardClick = () => {
     if (!menuItem?.en || !categoryId) return;
@@ -46,7 +47,7 @@ export default function FoodMenuCard({
   return (
     <>
       <ImpressionTracked
-        className="menu-card menu-card-compact"
+        className={`menu-card menu-card-compact${soldOut ? " menu-card-sold-out" : ""}`}
         categoryId={categoryId}
         sectionTitleEn={sectionTitleEn}
         sectionIndex={sectionIndex}
@@ -72,6 +73,11 @@ export default function FoodMenuCard({
             </button>
           )}
         </div>
+        {soldOut && (
+          <span className="menu-card-sold-out-pill">
+            {isArabic ? "غير متوفر" : "Sold out"}
+          </span>
+        )}
         <div className="menu-card-info menu-card-info-compact">
           <h3 className="menu-card-name">{isArabic ? menuItem.ar : menuItem.en}</h3>
           <div className="menu-card-meta">

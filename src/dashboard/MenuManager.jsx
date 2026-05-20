@@ -15,7 +15,6 @@ import {
   Check,
   AlertCircle,
   Eye,
-  EyeOff,
   Ban,
   Loader2,
   UtensilsCrossed,
@@ -29,7 +28,10 @@ import {
   createMenuItem,
   deleteMenuItem,
   toggleSoldOut,
-  toggleItemActive,
+  applyMenuItemVisibility,
+  assertMenuMutation,
+  sanitizeMenuItemPayload,
+  fetchMenuItemById,
   reorderSections,
   reorderItems,
   createCategory,
@@ -50,7 +52,42 @@ import {
   duplicateMenuItem,
 } from "../lib/menuApi";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import {
+  computeHiddenUntilIso,
+  getItemVisibilityBadge,
+  isHiddenFromPublicMenu,
+  parseHiddenUntil,
+} from "../lib/menuVisibility";
 import "./styles/menu-manager.css";
+
+function toDatetimeLocalValue(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function resolveVisibilityPatch(form) {
+  const patch = { sold_out: Boolean(form.soldOut) };
+  if (form.mode === "active") {
+    patch.active = true;
+    patch.hidden_until = null;
+  } else if (form.mode === "indefinite") {
+    patch.active = false;
+    patch.hidden_until = null;
+  } else {
+    const hiddenUntil = computeHiddenUntilIso({
+      mode: form.mode,
+      hours: form.hours,
+      dateTimeLocal: form.dateTime,
+    });
+    if (!hiddenUntil) {
+      throw new Error("Enter a valid future reopen time");
+    }
+    patch.active = true;
+    patch.hidden_until = hiddenUntil;
+  }
+  return patch;
+}
 
 const EMPTY_ITEM = {
   name_en: "",
@@ -68,6 +105,7 @@ const EMPTY_ITEM = {
   vegetarian: false,
   vegan: false,
   active: true,
+  hidden_until: null,
 };
 
 const FILTER_OPTIONS = [
@@ -141,6 +179,109 @@ function ToggleSwitch({ value, onChange }) {
   );
 }
 
+function ItemVisibilityModal({
+  item,
+  form,
+  setForm,
+  onConfirm,
+  onCancel,
+  loading,
+}) {
+  return (
+    <motion.div
+      className="mm-confirm-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        className="mm-confirm-dialog mm-hide-dialog"
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h4>Guest menu visibility</h4>
+        <p className="mm-hide-dialog-sub">
+          {item?.name_en} — applies everywhere on the customer menu (Desserts, Evening desserts, etc.).
+        </p>
+        <div className="mm-hide-options">
+          <label className={`mm-hide-option ${form.mode === "active" ? "selected" : ""}`}>
+            <input
+              type="radio"
+              name="visMode"
+              checked={form.mode === "active"}
+              onChange={() => setForm((f) => ({ ...f, mode: "active" }))}
+            />
+            <span>Active — visible on guest menu</span>
+          </label>
+          <label className={`mm-hide-option ${form.mode === "indefinite" ? "selected" : ""}`}>
+            <input
+              type="radio"
+              name="visMode"
+              checked={form.mode === "indefinite"}
+              onChange={() => setForm((f) => ({ ...f, mode: "indefinite" }))}
+            />
+            <span>Hidden until manually restored</span>
+          </label>
+          <label className={`mm-hide-option ${form.mode === "hours" ? "selected" : ""}`}>
+            <input
+              type="radio"
+              name="visMode"
+              checked={form.mode === "hours"}
+              onChange={() => setForm((f) => ({ ...f, mode: "hours" }))}
+            />
+            <span>Hide — reopen automatically after</span>
+            <input
+              type="number"
+              className="mm-hide-hours-input"
+              min={1}
+              max={168}
+              value={form.hours}
+              onChange={(e) => setForm((f) => ({ ...f, hours: e.target.value }))}
+              disabled={form.mode !== "hours"}
+            />
+            <span>hours</span>
+          </label>
+          <label className={`mm-hide-option ${form.mode === "datetime" ? "selected" : ""}`}>
+            <input
+              type="radio"
+              name="visMode"
+              checked={form.mode === "datetime"}
+              onChange={() => setForm((f) => ({ ...f, mode: "datetime" }))}
+            />
+            <span>Hide until date & time</span>
+            <input
+              type="datetime-local"
+              className="mm-hide-datetime-input"
+              value={form.dateTime}
+              onChange={(e) => setForm((f) => ({ ...f, dateTime: e.target.value }))}
+              disabled={form.mode !== "datetime"}
+            />
+          </label>
+        </div>
+        <div className="mm-visibility-sold-out-row">
+          <span className="mm-toggle-label">Sold out (visible but unavailable)</span>
+          <ToggleSwitch
+            value={form.soldOut}
+            onChange={(v) => setForm((f) => ({ ...f, soldOut: v }))}
+          />
+        </div>
+        <div className="mm-confirm-actions">
+          <button className="mm-btn mm-btn-secondary" onClick={onCancel} disabled={loading}>
+            Cancel
+          </button>
+          <button className="mm-btn mm-btn-primary" onClick={onConfirm} disabled={loading}>
+            {loading ? <Loader2 size={14} className="mm-spin-icon" /> : null}
+            Save visibility
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function MenuManager() {
   const [activeTab, setActiveTab] = useState("menu");
   const [categories, setCategories] = useState([]);
@@ -157,6 +298,15 @@ export default function MenuManager() {
   const [toast, setToast] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [visibilityTarget, setVisibilityTarget] = useState(null);
+  const [visibilityForm, setVisibilityForm] = useState({
+    mode: "active",
+    hours: "2",
+    dateTime: "",
+    soldOut: false,
+  });
+  const [visibilityLoading, setVisibilityLoading] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -281,6 +431,11 @@ export default function MenuManager() {
     }
   }, [selectedCatId, loadMenuForCategory]);
 
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   // ── Filtering ──
 
   const filteredSections = useMemo(() => {
@@ -300,7 +455,7 @@ export default function MenuManager() {
         items = items.filter((item) => {
           switch (activeFilter) {
             case "sold_out": return item.sold_out;
-            case "inactive": return !item.active;
+            case "inactive": return isHiddenFromPublicMenu(item, nowMs);
             case "vegetarian": return item.vegetarian;
             case "new_item": return item.new_item;
             default: return true;
@@ -310,7 +465,7 @@ export default function MenuManager() {
 
       return { ...section, items };
     });
-  }, [menuData, searchQuery, activeFilter]);
+  }, [menuData, searchQuery, activeFilter, nowMs]);
 
   const totalFilteredItems = useMemo(
     () => filteredSections.reduce((sum, s) => sum + s.items.length, 0),
@@ -499,6 +654,7 @@ export default function MenuManager() {
       vegetarian: item.vegetarian || false,
       vegan: item.vegan || false,
       active: item.active !== false,
+      hidden_until: item.hidden_until || null,
     });
     setEditingItemId(item.id);
     setItemAllergenIds((item.allergens || []).map((a) => a.id || a));
@@ -518,36 +674,61 @@ export default function MenuManager() {
       let imgUrl = editingItem.image;
 
       if (imageFile) {
-        const uploaded = await uploadMenuImage(imageFile);
-        if (uploaded?.url) imgUrl = uploaded.url;
+        const path = `items/${editingItemId || `new-${Date.now()}`}.jpg`;
+        const { data: uploaded, error: uploadErr } = await uploadMenuImage(imageFile, path);
+        if (uploadErr) throw uploadErr;
+        if (uploaded?.publicUrl) imgUrl = uploaded.publicUrl;
       }
 
-      const payload = {
-        ...editingItem,
-        image: imgUrl,
+      const payload = sanitizeMenuItemPayload({
+        name_en: editingItem.name_en.trim(),
+        name_ar: editingItem.name_ar?.trim() || "",
+        desc_en: editingItem.desc_en || "",
+        desc_ar: editingItem.desc_ar || "",
         price: editingItem.price || "",
         calories: editingItem.calories || "-",
-      };
+        image: imgUrl || "",
+        section_id: editingItem.section_id,
+        sold_out: Boolean(editingItem.sold_out),
+        featured: Boolean(editingItem.featured),
+        new_item: Boolean(editingItem.new_item),
+        vegetarian: Boolean(editingItem.vegetarian),
+        vegan: Boolean(editingItem.vegan),
+        active: editingItem.active !== false,
+        hidden_until: editingItem.hidden_until || null,
+      });
 
       let itemId = editingItemId;
       if (editorMode === "create") {
-        const created = await createMenuItem(payload);
-        itemId = created?.id || created;
+        const created = assertMenuMutation(
+          await createMenuItem(payload),
+          "createMenuItem",
+        );
+        itemId = created?.id;
+        if (!itemId) throw new Error("Create succeeded but no item id returned");
         showToast("Item created");
       } else {
-        await updateMenuItem(editingItemId, payload);
+        assertMenuMutation(
+          await updateMenuItem(editingItemId, payload),
+          "updateMenuItem",
+        );
         showToast("Item updated");
       }
 
-      if (itemId) {
-        try { await setItemAllergens(itemId, itemAllergenIds); } catch (_) {}
-        try { await setItemAddons(itemId, itemAddOnIds); } catch (_) {}
+      const { data: verified, error: verifyErr } = await fetchMenuItemById(itemId);
+      if (verifyErr) throw verifyErr;
+      if (verified.sold_out !== payload.sold_out) {
+        throw new Error("Sold out did not persist — check Supabase column and permissions");
       }
 
+      try { await setItemAllergens(itemId, itemAllergenIds); } catch (_) {}
+      try { await setItemAddons(itemId, itemAddOnIds); } catch (_) {}
+
       setEditorOpen(false);
-      loadMenuForCategory(selectedCatId);
+      await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to save item", "error");
+      await loadMenuForCategory(selectedCatId);
     } finally {
       setSaving(false);
     }
@@ -555,35 +736,58 @@ export default function MenuManager() {
 
   const handleToggleSoldOut = useCallback(async (item) => {
     const newVal = !item.sold_out;
-    setMenuData((prev) =>
-      prev.map((s) => ({
-        ...s,
-        items: s.items.map((it) => it.id === item.id ? { ...it, sold_out: newVal } : it),
-      }))
-    );
     try {
-      await toggleSoldOut(item.id, newVal);
+      assertMenuMutation(await toggleSoldOut(item.id, newVal), "toggleSoldOut");
+      const { data: verified } = await fetchMenuItemById(item.id);
+      if (verified && Boolean(verified.sold_out) !== newVal) {
+        throw new Error("Sold out did not persist");
+      }
+      showToast(newVal ? "Marked sold out" : "Marked available");
+      await loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast("Failed to update", "error");
-      loadMenuForCategory(selectedCatId);
+      showToast(e?.message || "Failed to update sold out", "error");
+      await loadMenuForCategory(selectedCatId);
     }
   }, [showToast, loadMenuForCategory, selectedCatId]);
 
-  const handleToggleActive = useCallback(async (item) => {
-    const newVal = !item.active;
-    setMenuData((prev) =>
-      prev.map((s) => ({
-        ...s,
-        items: s.items.map((it) => it.id === item.id ? { ...it, active: newVal } : it),
-      }))
-    );
+  const openVisibilityModal = useCallback((item) => {
+    const untilMs = parseHiddenUntil(item);
+    let mode = "active";
+    if (item.active === false) mode = "indefinite";
+    else if (untilMs != null && untilMs > Date.now()) mode = "datetime";
+    setVisibilityForm({
+      mode,
+      hours: "2",
+      dateTime: untilMs != null && untilMs > Date.now() ? toDatetimeLocalValue(untilMs) : "",
+      soldOut: Boolean(item.sold_out),
+    });
+    setVisibilityTarget(item);
+  }, []);
+
+  const handleSaveVisibility = useCallback(async () => {
+    if (!visibilityTarget) return;
+    setVisibilityLoading(true);
     try {
-      await toggleItemActive(item.id, newVal);
+      const patch = resolveVisibilityPatch(visibilityForm);
+      assertMenuMutation(
+        await applyMenuItemVisibility(visibilityTarget.id, patch),
+        "applyMenuItemVisibility",
+      );
+      const { data: verified, error: verifyErr } = await fetchMenuItemById(visibilityTarget.id);
+      if (verifyErr) throw verifyErr;
+      if (Boolean(verified.sold_out) !== patch.sold_out) {
+        throw new Error("Sold out did not persist");
+      }
+      setVisibilityTarget(null);
+      showToast("Visibility saved");
+      await loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast("Failed to update", "error");
-      loadMenuForCategory(selectedCatId);
+      showToast(e?.message || "Failed to save visibility", "error");
+      await loadMenuForCategory(selectedCatId);
+    } finally {
+      setVisibilityLoading(false);
     }
-  }, [showToast, loadMenuForCategory, selectedCatId]);
+  }, [visibilityTarget, visibilityForm, showToast, loadMenuForCategory, selectedCatId]);
 
   const handleDuplicateItem = useCallback(async (item, e) => {
     e.stopPropagation();
@@ -819,10 +1023,18 @@ export default function MenuManager() {
 
         <div className="mm-cat-list">
           {categories.map((cat, idx) => (
-            <motion.button
+            <motion.div
               key={cat.id}
+              role="button"
+              tabIndex={0}
               className={`mm-cat-item ${cat.id === selectedCatId ? "active" : ""} ${cat.active === false ? "mm-cat-item-inactive" : ""}`}
               onClick={() => handleSelectCategory(cat.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleSelectCategory(cat.id);
+                }
+              }}
               whileHover={{ x: 3 }}
               whileTap={{ scale: 0.98 }}
             >
@@ -861,7 +1073,7 @@ export default function MenuManager() {
                   <Trash2 size={13} />
                 </button>
               </div>
-            </motion.button>
+            </motion.div>
           ))}
 
           {categories.length === 0 && (
@@ -1068,10 +1280,13 @@ export default function MenuManager() {
                             transition={{ duration: 0.25 }}
                           >
                             <div className="mm-item-grid">
-                              {section.items.map((item, itemIdx) => (
+                              {section.items.map((item, itemIdx) => {
+                                const visBadge = getItemVisibilityBadge(item, nowMs);
+                                const guestHidden = visBadge.key !== "active";
+                                return (
                                 <motion.div
                                   key={item.id}
-                                  className={`mm-item-card ${!item.active ? "inactive" : ""}`}
+                                  className={`mm-item-card ${guestHidden ? "inactive" : ""}`}
                                   onClick={() => openEditItem(item)}
                                   whileHover={{ y: -3 }}
                                   initial={{ opacity: 0, y: 12 }}
@@ -1097,6 +1312,9 @@ export default function MenuManager() {
                                   </div>
 
                                   <div className="mm-item-card-badges">
+                                    <span className={`mm-badge mm-badge-visibility mm-badge-visibility-${visBadge.key}`}>
+                                      {visBadge.label}
+                                    </span>
                                     {item.sold_out && <span className="mm-badge mm-badge-sold-out">Sold Out</span>}
                                     {item.featured && <span className="mm-badge mm-badge-featured">Featured</span>}
                                     {item.new_item && <span className="mm-badge mm-badge-new">New</span>}
@@ -1113,11 +1331,11 @@ export default function MenuManager() {
                                       <Ban size={14} />
                                     </button>
                                     <button
-                                      className={`mm-item-action-btn ${item.active ? "active-toggle" : ""}`}
-                                      onClick={() => handleToggleActive(item)}
-                                      title={item.active ? "Deactivate" : "Activate"}
+                                      className={`mm-item-action-btn ${!guestHidden ? "active-toggle" : ""}`}
+                                      onClick={() => openVisibilityModal(item)}
+                                      title="Guest menu visibility"
                                     >
-                                      {item.active ? <Eye size={14} /> : <EyeOff size={14} />}
+                                      <Eye size={14} />
                                     </button>
                                     <button
                                       className="mm-item-action-btn"
@@ -1158,7 +1376,8 @@ export default function MenuManager() {
                                     </button>
                                   </div>
                                 </motion.div>
-                              ))}
+                                );
+                              })}
 
                               <div
                                 className="mm-add-item-card"
@@ -1637,6 +1856,20 @@ export default function MenuManager() {
             onConfirm={confirm.onConfirm}
             onCancel={() => setConfirm(null)}
             loading={confirmLoading}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {visibilityTarget && (
+          <ItemVisibilityModal
+            key={visibilityTarget.id}
+            item={visibilityTarget}
+            form={visibilityForm}
+            setForm={setVisibilityForm}
+            onConfirm={handleSaveVisibility}
+            onCancel={() => setVisibilityTarget(null)}
+            loading={visibilityLoading}
           />
         )}
       </AnimatePresence>

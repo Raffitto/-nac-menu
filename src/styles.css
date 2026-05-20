@@ -2280,6 +2280,43 @@ text-transform: uppercase;
   -webkit-tap-highlight-color: transparent;
 }
 
+.menu-card-sold-out {
+  opacity: 0.72;
+}
+
+.menu-card-sold-out .menu-card-media img,
+.menu-card-sold-out .drink-card-media img {
+  filter: grayscale(0.35);
+}
+
+.menu-card-sold-out-pill {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(30, 28, 26, 0.82);
+  color: #f5c4c4;
+  border: 1px solid rgba(220, 80, 80, 0.45);
+  pointer-events: none;
+}
+
+.lux-sold-out-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(220, 80, 80, 0.2);
+  color: #f5c4c4;
+  border: 1px solid rgba(220, 80, 80, 0.35);
+}
+
 .menu-card-media,
 .drink-card-media {
   position: relative;

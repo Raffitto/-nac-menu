@@ -18,6 +18,7 @@ import {
   trackTimeSpent,
 } from "./lib/analytics";
 import { useMenuData } from "./lib/useMenuData";
+import { filterPublicMenuData } from "./lib/menuVisibility";
 import {
   applyMenuOrdering,
   BREAKFAST_ICON_EN,
@@ -492,8 +493,16 @@ const _fallback = { categories: _fallbackCategories, menuData: _fallbackMenuData
 export default function App() {
   const [adminMode, setAdminMode] = useState(false);
 
-  const { categories, menuData: rawMenuData, allergenLabels } = useMenuData(_fallback);
-  const menuData = useMemo(() => applyMenuOrdering(rawMenuData), [rawMenuData]);
+  const {
+    categories,
+    menuData: rawMenuData,
+    allergenLabels,
+    fromSupabase,
+  } = useMenuData(_fallback);
+  const menuData = useMemo(() => {
+    const ordered = applyMenuOrdering(rawMenuData);
+    return fromSupabase ? filterPublicMenuData(ordered) : ordered;
+  }, [rawMenuData, fromSupabase]);
 const [contextualFlow] = useState(() => getContextualFlow());
 const [showCategorySelector, setShowCategorySelector] = useState(false);
 const [menuMode, setMenuMode] = useState("contextual");
@@ -1386,6 +1395,11 @@ onDragEnd={(e, info) => {
                 <p>{isArabic ? activeItem.descAr : activeItem.descEn}</p>
 
                 <div className="meta">
+                  {activeItem.soldOut && (
+                    <span className="lux-sold-out-pill">
+                      {isArabic ? "غير متوفر" : "Sold out"}
+                    </span>
+                  )}
                   {activeItem.calories !== "-" && <span>{activeItem.calories} cal</span>}
                   <span>{activeItem.price}</span>
                 </div>
