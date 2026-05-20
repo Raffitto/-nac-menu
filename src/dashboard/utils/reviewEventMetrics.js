@@ -1,12 +1,14 @@
 /** KPIs and aggregates from review_events only — never menu_events. */
 
+import { filterAnalyticsReviewEvents } from "./isProductionStaff";
+
 const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
 const GOOGLE_TYPES = new Set(["google_redirect", "review_google_click"]);
 const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
 
 export function countByEventType(events = []) {
   const counts = {};
-  (events || []).forEach((e) => {
+  filterAnalyticsReviewEvents(events).forEach((e) => {
     const t = e.event_type;
     if (!t) return;
     counts[t] = (counts[t] || 0) + 1;
@@ -17,7 +19,7 @@ export function countByEventType(events = []) {
 }
 
 export function computeReviewKpis(events = []) {
-  const rows = events || [];
+  const rows = filterAnalyticsReviewEvents(events);
   const qr_scans = rows.filter((e) => e.event_type === "qr_scan").length;
   const reviews_generated = rows.filter((e) =>
     GENERATED_TYPES.has(e.event_type),
@@ -65,7 +67,7 @@ export function buildBranchReviewComparison(allEvents = []) {
     };
   });
 
-  (allEvents || []).forEach((e) => {
+  filterAnalyticsReviewEvents(allEvents).forEach((e) => {
     const b = (e.branch_id || "").toLowerCase();
     if (!byBranch[b]) return;
     const row = byBranch[b];

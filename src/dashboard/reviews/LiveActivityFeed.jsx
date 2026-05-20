@@ -13,6 +13,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
+import { shouldCountReviewEvent } from "../utils/isProductionStaff";
 
 const ICONS = {
   qr_scan: QrCode,
@@ -113,6 +114,15 @@ function LiveActivityFeed({ maxItems = 25 }) {
         ],
         filters,
       )
+        .filter((row) => {
+          if (row.source !== "review") return true;
+          return shouldCountReviewEvent({
+            employee_name: row.employee_name,
+            metadata: row.metadata,
+            review_session_id: row.metadata?.review_session_id,
+            event_source: row.metadata?.event_source,
+          });
+        })
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         .slice(0, maxItems);
 

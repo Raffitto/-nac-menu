@@ -9,6 +9,7 @@ import {
 import { computeReviewKpis } from "../utils/reviewEventMetrics";
 import { branchDisplayName } from "../utils/rangeState";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
+import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
 
 export const OPERATIONAL_BRANCHES = ["khobar", "riyadh", "jeddah"];
 
@@ -217,7 +218,7 @@ function buildBranchSummary(staffRows, kpis) {
 
 export function buildBranchOperationalReport(allEvents, branchId) {
   const id = (branchId || "").toLowerCase();
-  const branchEvents = (allEvents || []).filter(
+  const branchEvents = filterAnalyticsReviewEvents(allEvents).filter(
     (e) => (e.branch_id || "").toLowerCase() === id,
   );
   const kpis = computeReviewKpis(branchEvents);

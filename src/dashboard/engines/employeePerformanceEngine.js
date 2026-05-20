@@ -1,5 +1,7 @@
 /** Employee performance classifications from review + menu attribution signals */
 
+import { filterProductionStaffList } from "../utils/isProductionStaff";
+
 const MIN_STRONG = 25;
 const MIN_MODERATE = 10;
 const MIN_EARLY = 4;
@@ -21,7 +23,7 @@ function pct(num, den) {
  * @param {object} menuContext — optional { influencedSessions, dessertAttachments, beverageAttachments }
  */
 export function buildEmployeePerformance(employees = [], menuContext = {}) {
-  const list = Array.isArray(employees) ? employees : [];
+  const list = filterProductionStaffList(Array.isArray(employees) ? employees : []);
   const influenced = menuContext.influencedSessions || {};
 
   return list.map((emp) => {

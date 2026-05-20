@@ -16,6 +16,7 @@ import {
   COLOR_RISK,
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
+import { filterProductionStaffList } from "../utils/isProductionStaff";
 
 const BRAND = "NAC HOSPITALITY OS";
 const DIM = [130, 130, 130];
@@ -27,6 +28,7 @@ function clip(str, max) {
 }
 
 export function buildExecutiveBrief(review, staffStats, comparison, branch) {
+  const staff = filterProductionStaffList(staffStats);
   const scans = review?.qr_scans ?? 0;
   const google = review?.google_clicks ?? 0;
   const conv = review?.conversion_pct ?? 0;
@@ -36,7 +38,7 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
   const strongest = [...branches].sort((a, b) => b.google_redirects - a.google_redirects)[0];
   const weakest = [...branches].sort((a, b) => a.conversion_pct - b.conversion_pct)[0];
 
-  const hiVisLow = [...staffStats]
+  const hiVisLow = [...staff]
     .filter((s) => s.opens >= 6 && s.conversion_pct < 18)
     .sort((a, b) => b.opens - a.opens)[0];
 
@@ -109,6 +111,7 @@ export function exportReviewSummaryPdf(ctx) {
     branchComparison,
   } = ctx;
   const comparison = comparisonIn ?? branchComparison ?? [];
+  const productionStaff = filterProductionStaffList(staffStats);
 
   const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
   const margin = 44;
@@ -119,7 +122,7 @@ export function exportReviewSummaryPdf(ctx) {
     timeStyle: "short",
     dateStyle: "medium",
   });
-  const brief = buildExecutiveBrief(review, staffStats, comparison, branch);
+  const brief = buildExecutiveBrief(review, productionStaff, comparison, branch);
 
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
@@ -183,16 +186,16 @@ export function exportReviewSummaryPdf(ctx) {
   });
   y += 96;
 
-  if (staffStats.length > 0 || comparison.length > 0) {
+  if (productionStaff.length > 0 || comparison.length > 0) {
     const chartW = (contentW - 12) / 2;
-    if (staffStats.length) {
+    if (productionStaff.length) {
       drawMiniBarPanel(
         doc,
         margin,
         y,
         chartW,
         "QR scans by staff",
-        staffStats.map((s) => ({ name: s.name, scans: s.opens })),
+        productionStaff.map((s) => ({ name: s.name, scans: s.opens })),
         "scans",
         NAC_TEAL,
       );
@@ -215,7 +218,7 @@ export function exportReviewSummaryPdf(ctx) {
     y += 128;
   }
 
-  if (staffStats.length > 0) {
+  if (productionStaff.length > 0) {
     doc.setFontSize(10);
     doc.setTextColor(...NAC_GOLD);
     doc.text("Staff summary", margin, y);
@@ -224,7 +227,7 @@ export function exportReviewSummaryPdf(ctx) {
     autoTable(doc, {
       startY: y,
       head: [["Staff", "Role", "QR", "Rev", "Goog", "Cnv %"]],
-      body: staffStats.slice(0, 14).map((s) => [
+      body: productionStaff.slice(0, 14).map((s) => [
         clip(s.name, 18),
         clip(s.role, 8),
         s.opens,

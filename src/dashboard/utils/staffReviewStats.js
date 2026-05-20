@@ -1,6 +1,11 @@
 /** Aggregate per-staff review funnel from raw review_events rows */
 
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
+import {
+  filterAnalyticsReviewEvents,
+  filterProductionStaffList,
+  isProductionStaff,
+} from "./isProductionStaff";
 
 const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
 const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
@@ -22,9 +27,9 @@ function eventStaffName(e) {
 
 export function aggregateStaffReviewStats(events = []) {
   const map = {};
-  (events || []).forEach((e) => {
+  filterAnalyticsReviewEvents(events).forEach((e) => {
     const name = eventStaffName(e);
-    if (!name) return;
+    if (!name || !isProductionStaff(name)) return;
     const branch = (e.branch_id || "").toLowerCase();
 
     if (!map[name]) {
@@ -63,8 +68,9 @@ export function aggregateStaffReviewStats(events = []) {
 
 /** Staff stats from review_events only (no menu/RPC merge). */
 export function mergeStaffStats(_rpcEmployees = [], granular = []) {
-  return (granular || [])
-    .filter((g) => g.name && String(g.name).trim())
+  return filterProductionStaffList(
+    (granular || []).filter((g) => g.name && String(g.name).trim()),
+  )
     .map((g) => ({
       ...g,
       opens: g.scans,
@@ -77,7 +83,7 @@ export function mergeStaffStats(_rpcEmployees = [], granular = []) {
 /** Daily review scan trend. */
 export function buildDailyScanTrend(events = []) {
   const byDay = {};
-  (events || []).forEach((e) => {
+  filterAnalyticsReviewEvents(events).forEach((e) => {
     if (e.event_type !== "qr_scan") return;
     const key = dayKey(e.created_at);
     if (!key) return;
@@ -91,7 +97,7 @@ export function buildDailyScanTrend(events = []) {
 /** Branch-level scan totals from review events. */
 export function buildBranchScanTotals(events = []) {
   const byBranch = {};
-  (events || []).forEach((e) => {
+  filterAnalyticsReviewEvents(events).forEach((e) => {
     if (e.event_type !== "qr_scan") return;
     const b = (e.branch_id || "unknown").toLowerCase();
     byBranch[b] = (byBranch[b] || 0) + 1;
@@ -102,5 +108,6 @@ export function buildBranchScanTotals(events = []) {
 }
 
 export function sumScans(events = []) {
-  return (events || []).filter((e) => e.event_type === "qr_scan").length;
+  return filterAnalyticsReviewEvents(events).filter((e) => e.event_type === "qr_scan")
+    .length;
 }
