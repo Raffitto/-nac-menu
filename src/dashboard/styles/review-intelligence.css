@@ -364,7 +364,7 @@
 
 .rev-branch-row {
   display: grid;
-  grid-template-columns: 1.2fr repeat(4, 1fr);
+  grid-template-columns: 1.1fr 1.1fr repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
@@ -383,6 +383,10 @@
 
 .rev-branch-row.rev-branch-highlight {
   background: rgba(78, 205, 196, 0.08);
+}
+
+.rev-branch-google-cell {
+  min-width: 0;
 }
 
 .rev-intel-muted {

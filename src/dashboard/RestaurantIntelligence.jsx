@@ -36,6 +36,7 @@ import { businessDayExportNote } from "./utils/businessDay";
 import { DEFAULT_RANGE, RANGE_OPTIONS, rangeToHours, rangeExportLabel } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import "./styles/restaurant-intelligence.css";
+import GoogleReputationStrip from "./components/GoogleReputationStrip";
 
 const TOOLTIP = {
   background: "rgba(10,10,10,0.9)",
@@ -176,6 +177,7 @@ export default function RestaurantIntelligence() {
 
   return (
     <motion.div className="ri-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <GoogleReputationStrip title="Google reputation · network" />
       <header className="ri-header">
         <div>
           <Brain size={22} className="ri-icon" />

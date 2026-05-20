@@ -33,6 +33,7 @@ import {
 } from "./utils/aiInsightEngine";
 import "./styles/ai-insights.css";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import GoogleReputationStrip from "./components/GoogleReputationStrip";
 
 const GROUP_ICONS = {
   "Revenue Opportunities": <TrendingUp size={16} />,
@@ -263,6 +264,8 @@ export default function AIInsights() {
           </button>
         </div>
       </div>
+
+      <GoogleReputationStrip />
 
       {/* Filters */}
       <AnimatePresence>

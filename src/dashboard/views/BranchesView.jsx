@@ -6,6 +6,8 @@ import { buildBranchReviewComparison } from "../utils/reviewEventMetrics";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import "../styles/platform-os.css";
+import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
+import GoogleReputationBadge from "../components/GoogleReputationBadge";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
 
@@ -14,6 +16,7 @@ export default function BranchesView() {
   const [rows, setRows] = useState([]);
   const [menuByBranch, setMenuByBranch] = useState({});
   const [loading, setLoading] = useState(true);
+  const { loading: googleLoading, byBranch: googleByBranch } = useGooglePlaceMetrics(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -92,6 +95,13 @@ export default function BranchesView() {
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: "0.5rem" }}>
                   <Store size={18} color="#d7bc8a" />
                   <h3 style={{ margin: 0, fontWeight: 500 }}>{branchDisplayName(id)}</h3>
+                </div>
+                <div className="nac-branch-google-rep">
+                  <GoogleReputationBadge
+                    metrics={googleByBranch[id]}
+                    loading={googleLoading}
+                    compact
+                  />
                 </div>
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "rgba(249,249,247,0.5)" }}>
                   {menu.sessions} menu sessions · {menu.events} events (7D)

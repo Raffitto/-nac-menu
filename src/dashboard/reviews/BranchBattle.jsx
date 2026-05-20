@@ -5,6 +5,8 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { buildBranchReviewComparison } from "../utils/reviewEventMetrics";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
+import GoogleReputationBadge from "../components/GoogleReputationBadge";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
 
@@ -12,6 +14,7 @@ export default function BranchBattle() {
   const filters = usePlatformFiltersOptional();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { loading: googleLoading, byBranch: googleByBranch } = useGooglePlaceMetrics(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
@@ -76,6 +79,13 @@ export default function BranchBattle() {
             <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 500 }}>
               {branchDisplayName(row.branch_id)}
             </h3>
+            <div className="nac-branch-google-rep">
+              <GoogleReputationBadge
+                metrics={googleByBranch[row.branch_id]}
+                loading={googleLoading}
+                compact
+              />
+            </div>
             <p style={{ margin: "0.35rem 0 0", fontSize: "0.8rem", color: "rgba(249,249,247,0.5)" }}>
               Rank #{rows.findIndex((r) => r.branch_id === row.branch_id) + 1}
             </p>

@@ -45,6 +45,8 @@ import {
   buildBranchReviewComparison,
 } from "./utils/reviewEventMetrics";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
+import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
+import GoogleReputationBadge from "./components/GoogleReputationBadge";
 import "./styles/review-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
@@ -79,6 +81,8 @@ export default function ReviewIntelligence({ embedded = false }) {
   const configured = isSupabaseConfigured();
   const branchLabel = branchDisplayName(branch);
   const rangeLabel = rangeExportLabel(selectedRange);
+  const { loading: googleLoading, forBranch: googleMetrics, byBranch: googleByBranch } =
+    useGooglePlaceMetrics(branch);
 
   const load = useCallback(async () => {
     if (!configured) {
@@ -209,6 +213,9 @@ export default function ReviewIntelligence({ embedded = false }) {
             {branchLabel} · {rangeLabel}
             {selectedRange === "today" ? " · 3:00 AM – 2:59 AM (Asia/Riyadh)" : ""}
           </p>
+          <div className="rev-google-rep-row">
+            <GoogleReputationBadge metrics={googleMetrics} loading={googleLoading} showName />
+          </div>
         </motion.div>
 
         <motion.div
@@ -259,6 +266,12 @@ export default function ReviewIntelligence({ embedded = false }) {
         <motion.div className="rev-intel-alert">
           <AlertCircle size={16} /> {error}
         </motion.div>
+      )}
+
+      {embedded && (
+        <div className="rev-google-rep-row" style={{ marginBottom: "0.75rem" }}>
+          <GoogleReputationBadge metrics={googleMetrics} loading={googleLoading} compact />
+        </div>
       )}
 
       {loading ? (
@@ -469,6 +482,7 @@ export default function ReviewIntelligence({ embedded = false }) {
             <div className="rev-branch-table">
               <motion.div className="rev-branch-row head">
                 <span>Branch</span>
+                <span>Google rating</span>
                 <span>Card taps</span>
                 <span>Interactions</span>
                 <span>Google redirects</span>
@@ -480,6 +494,13 @@ export default function ReviewIntelligence({ embedded = false }) {
                   className={`rev-branch-row ${row.branch_id === branch ? "rev-branch-highlight" : ""}`}
                 >
                   <span>{branchDisplayName(row.branch_id)}</span>
+                  <span className="rev-branch-google-cell">
+                    <GoogleReputationBadge
+                      metrics={googleByBranch[row.branch_id]}
+                      loading={googleLoading}
+                      compact
+                    />
+                  </span>
                   <span>{row.qr_scans}</span>
                   <span>{row.reviews_generated}</span>
                   <span>{row.google_redirects}</span>
