@@ -114,3 +114,12 @@ export function formatGoogleRating(rating) {
   if (rating == null || !Number.isFinite(rating)) return null;
   return rating.toFixed(1);
 }
+
+/** Batch fetch for competitor place IDs (deduped). */
+export async function fetchPlaceMetricsBatch(placeIds = []) {
+  const unique = [...new Set(placeIds.filter(Boolean))];
+  const entries = await Promise.all(
+    unique.map(async (id) => [id, await getGooglePlaceMetrics(id)]),
+  );
+  return Object.fromEntries(entries);
+}

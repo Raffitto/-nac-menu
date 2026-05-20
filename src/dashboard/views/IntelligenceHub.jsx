@@ -7,6 +7,7 @@ import { INTELLIGENCE_TABS } from "../navigation";
 import MenuIntelligence from "../intelligence/MenuIntelligence";
 import PredictiveAnalytics from "../intelligence/PredictiveAnalytics";
 import OperationsInsights from "../intelligence/OperationsInsights";
+import CompetitiveReputationWatch from "../intelligence/CompetitiveReputationWatch";
 import "../styles/platform-os.css";
 
 const AIInsights = lazy(() => import("../AIInsights"));
@@ -67,6 +68,7 @@ export default function IntelligenceHub() {
       {tab === "menu" && <MenuIntelligence />}
       {tab === "predictive" && <PredictiveAnalytics />}
       {tab === "operations" && <OperationsInsights />}
+      {tab === "competitive" && <CompetitiveReputationWatch />}
     </motion.div>
   );
 }

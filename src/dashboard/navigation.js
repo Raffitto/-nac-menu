@@ -18,6 +18,7 @@ export const INTELLIGENCE_TABS = [
   { id: "menu", label: "Menu Intelligence" },
   { id: "predictive", label: "Predictive" },
   { id: "operations", label: "Operations" },
+  { id: "competitive", label: "Competitive Watch" },
 ];
 
 export const REVIEWS_TABS = [
