@@ -98,7 +98,7 @@ export default function BranchBattle() {
               />
             </div>
             <p style={{ margin: "0.5rem 0 0", fontSize: "0.72rem", color: "rgba(249,249,247,0.45)" }}>
-              {row.google_redirects} Google clicks · {row.reviews_generated} generated
+              {row.google_redirects} Google redirects · {row.reviews_generated} reviews
             </p>
           </motion.div>
         );

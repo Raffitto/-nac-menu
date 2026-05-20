@@ -265,7 +265,7 @@ export default function ReviewIntelligence({ embedded = false }) {
         <>
           <motion.div className="rev-kpi-grid" layout>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Branch scans</span>
+              <span>Card taps (QR/NFC)</span>
               <strong>{kpis?.qr_scans ?? 0}</strong>
               <small className="rev-kpi-insight">{rangeLabel}</small>
             </motion.div>
@@ -296,7 +296,7 @@ export default function ReviewIntelligence({ embedded = false }) {
                 </span>
                 <strong>{topStaff.name}</strong>
                 <small className="rev-kpi-insight">
-                  {topStaff.scans} scans · {topStaff.conversion_pct}% conversion
+                  {topStaff.scans} card taps · {topStaff.conversion_pct}% to Google
                 </small>
               </motion.div>
             )}
@@ -305,7 +305,7 @@ export default function ReviewIntelligence({ embedded = false }) {
           {branchScans.length > 0 && (
             <section className="rev-section">
               <h2>
-                <GitBranch size={18} /> QR scans by branch
+                <GitBranch size={18} /> Card taps by branch (QR/NFC)
               </h2>
               <motion.div className="rev-branch-table">
                 <motion.div className="rev-branch-row head">
@@ -337,7 +337,7 @@ export default function ReviewIntelligence({ embedded = false }) {
                       <th>Staff</th>
                       <th>Role</th>
                       <th>Branch</th>
-                      <th>QR scans</th>
+                      <th>Card taps</th>
                       <th>Page opens</th>
                       <th>Generated</th>
                       <th>Copies</th>
@@ -380,7 +380,7 @@ export default function ReviewIntelligence({ embedded = false }) {
                       <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
                       <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
                       <Tooltip contentStyle={CHART_TOOLTIP} />
-                      <Bar dataKey="scans" name="QR scans" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="scans" name="Card taps" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="google" name="Google" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -391,7 +391,7 @@ export default function ReviewIntelligence({ embedded = false }) {
             {dailyTrend.length > 0 && (
               <section className="rev-section rev-chart-panel">
                 <h2>
-                  <TrendingUp size={18} /> Daily QR scan trend
+                  <TrendingUp size={18} /> Daily card tap trend
                 </h2>
                 <motion.div className="rev-chart-box">
                   <ResponsiveContainer width="100%" height={200}>
@@ -446,11 +446,11 @@ export default function ReviewIntelligence({ embedded = false }) {
                       <p className="rev-emp-role">{emp.role || perf?.role || "Staff"}</p>
                       {perf && <p className="rev-emp-reason">{perf.classification.reason}</p>}
                       <div className="rev-emp-metrics">
-                        <span>{emp.scans} scans</span>
-                        <span>{emp.generated} generated</span>
+                        <span>{emp.scans} card taps</span>
+                        <span>{emp.generated} reviews</span>
                         <span>{emp.copy} copies</span>
                         <span>{emp.google} Google</span>
-                        <span>{emp.conversion_pct}% conversion</span>
+                        <span>{emp.conversion_pct}% to Google</span>
                       </div>
                     </motion.div>
                   );
@@ -466,10 +466,10 @@ export default function ReviewIntelligence({ embedded = false }) {
             <div className="rev-branch-table">
               <motion.div className="rev-branch-row head">
                 <span>Branch</span>
-                <span>QR scans</span>
+                <span>Card taps</span>
                 <span>Generated</span>
                 <span>Google</span>
-                <span>Conv. %</span>
+                <span>To Google %</span>
               </motion.div>
               {branchComparison.map((row) => (
                 <div

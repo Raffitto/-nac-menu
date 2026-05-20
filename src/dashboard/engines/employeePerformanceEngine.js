@@ -65,25 +65,40 @@ function classifyEmployee(m, sample) {
   const { reviews_generated: gen, review_conversion_pct: conv, menu_sessions_influenced: infl } = m;
 
   if (gen >= MIN_MODERATE && conv >= 40) {
-    return { label: "Review Hunter", reason: "Strong review generation with solid Google follow-through." };
+    return {
+      label: "Review Hunter",
+      reason: "Strong card handoff with excellent guest-to-Google follow-through.",
+    };
   }
   if (infl >= MIN_MODERATE && (m.dessert_attachment_rate > 15 || m.beverage_attachment_rate > 15)) {
     return { label: "Upsell Specialist", reason: "Menu sessions show attachment to high-margin categories." };
   }
   if (gen < MIN_EARLY && infl >= MIN_MODERATE) {
-    return { label: "Silent Performer", reason: "Drives menu engagement with few tracked review events." };
+    return { label: "Silent Performer", reason: "Menu engagement without enough review card presentations." };
   }
   if (infl >= MIN_STRONG && conv < 15) {
-    return { label: "High Attention / Low Conversion", reason: "Guests browse but rarely complete Google reviews." };
+    return {
+      label: "High card, low Google",
+      reason: "Card exposure is there — verbal close and redirect need work.",
+    };
   }
   if (gen >= MIN_EARLY && conv >= 25 && infl >= MIN_EARLY) {
-    return { label: "Table Closer", reason: "Balanced engagement and review completion." };
+    return {
+      label: "Service closer",
+      reason: "Consistent end-of-service card handoff and review completion.",
+    };
   }
   if (gen >= MIN_MODERATE && conv < 20) {
-    return { label: "Guest Favorite", reason: "Guests generate reviews; improve Google click prompts." };
+    return {
+      label: "Guest favorite",
+      reason: "Reviews generate well — coach post-review Google redirect.",
+    };
   }
 
-  return { label: "Underutilized Staff", reason: "Mixed signals — increase QR visibility at tables." };
+  return {
+    label: "Underutilized Staff",
+    reason: "Present review card more often before guest disengages.",
+  };
 }
 
 export function topPerformersByMetric(performance, metricKey, limit = 5) {

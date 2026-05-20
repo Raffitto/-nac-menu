@@ -64,7 +64,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
 
   doc.setFontSize(12);
   doc.setTextColor(200, 200, 200);
-  doc.text("Staff audit · QR funnel · coaching priorities", margin, 94);
+  doc.text("Staff audit · card handoff funnel · coaching priorities", margin, 94);
 
   doc.setFontSize(10);
   doc.setTextColor(...DIM);
@@ -93,10 +93,12 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
   )[0];
 
   const brief = topBranch
-    ? `${topBranch.branchLabel} leads Google volume (${topBranch.kpis?.google_redirects ?? 0}). ${
-        leakBranch ? `${leakBranch.branchLabel} shows the weakest QR→Google rate (${leakBranch.kpis?.conversion_pct ?? 0}%).` : ""
-      } ${net.staff} staff tracked · ${net.scans} scans in period.`
-    : "Insufficient tagged events for network narrative.";
+    ? `${topBranch.branchLabel} leads Google follow-through (${topBranch.kpis?.google_redirects ?? 0}). ${
+        leakBranch
+          ? `${leakBranch.branchLabel} weakest tap/scan-to-Google (${leakBranch.kpis?.conversion_pct ?? 0}%).`
+          : ""
+      } ${net.staff} staff · ${net.scans} card taps in period.`
+    : "Insufficient card-handoff events for network narrative.";
 
   drawCallout(doc, margin, cardY + cardH + 20, contentW, {
     accent: NAC_GOLD,
@@ -147,9 +149,9 @@ function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
   const insightW = (contentW - 16) / 2;
   const insights = [
     { title: "Top performer", name: summary.strongestName, val: summary.strongestValue, accent: NAC_GOLD },
-    { title: "Weakest conversion", name: summary.weakestName, val: summary.weakestValue, accent: AMBER },
-    { title: "Best visibility", name: summary.bestVisName, val: summary.bestVisValue, accent: NAC_TEAL },
-    { title: "Hidden upside", name: summary.hiddenName, val: summary.hiddenValue, accent: AMBER },
+    { title: "Weakest follow-through", name: summary.weakestName, val: summary.weakestValue, accent: AMBER },
+    { title: "Most card presentations", name: summary.bestVisName, val: summary.bestVisValue, accent: NAC_TEAL },
+    { title: "Follow-through upside", name: summary.hiddenName, val: summary.hiddenValue, accent: AMBER },
   ];
 
   insights.forEach((item, i) => {
@@ -183,7 +185,7 @@ function staffTableBody(staffRows) {
     String(s.generated),
     String(s.google),
     `${s.reviewConv}%`,
-    `${s.visibilityEfficiency}%`,
+    `${s.cardToReviewEfficiency ?? s.visibilityEfficiency}%`,
     s.archetype,
     s.classification.label,
     clip(s.coaching, 48),
@@ -201,8 +203,8 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
         "QR",
         "Rev",
         "Goog",
-        "Cnv",
-        "Eff",
+        "R→G",
+        "C→Rev",
         "Profile",
         "Status",
         "Action",

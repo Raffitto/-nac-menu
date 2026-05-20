@@ -307,11 +307,11 @@ export function exportReviewIntelligenceReport({
           Staff: s.name,
           Role: s.role,
           Branch: branch,
-          "Page opens": s.opens,
+          "Card taps (QR/NFC)": s.scans ?? s.opens,
           "Reviews generated": s.generated,
           "Copy events": s.copy,
-          "Google clicks": s.google,
-          "Conversion %": s.conversion_pct,
+          "Google redirects": s.google,
+          "Tap/scan-to-Google %": s.conversion_pct,
         }))
       ),
       "Staff"
@@ -327,8 +327,9 @@ export function exportReviewIntelligenceReport({
         employees.map((e) => ({
           Employee: e.name,
           Classification: e.classification?.label,
+          "Coaching note": e.classification?.reason,
           "Reviews generated": e.metrics?.reviews_generated,
-          "Google %": e.metrics?.review_conversion_pct,
+          "Google follow-through %": e.metrics?.review_conversion_pct,
           Confidence: e.metrics?.confidence,
         }))
       ),

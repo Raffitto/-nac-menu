@@ -31,8 +31,8 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
   }, [filters]);
 
   const metrics = [
-    { label: "QR scans", value: String(kpis?.qr_scans ?? "—") },
-    { label: "Google clicks", value: String(kpis?.google_redirects ?? "—") },
+    { label: "Card taps (QR/NFC)", value: String(kpis?.qr_scans ?? "—") },
+    { label: "Google redirects", value: String(kpis?.google_redirects ?? "—") },
     { label: "Conversion", value: `${kpis?.conversion_pct ?? "—"}%` },
     { label: "Generated", value: String(kpis?.reviews_generated ?? "—") },
   ];
@@ -49,7 +49,7 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
         metrics={metrics}
         highlight={
           kpis?.conversion_pct != null
-            ? `${kpis.conversion_pct}% scan-to-Google conversion this period`
+            ? `${kpis.conversion_pct}% tap/scan-to-Google follow-through this period`
             : undefined
         }
       />

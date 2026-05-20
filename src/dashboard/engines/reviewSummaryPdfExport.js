@@ -44,19 +44,19 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
 
   let topOpportunity = "—";
   if (hiVisLow?.name) {
-    topOpportunity = `${hiVisLow.name}: ${hiVisLow.opens} scans, ${hiVisLow.conversion_pct}% Google`;
+    topOpportunity = `${hiVisLow.name}: high card exposure, ${hiVisLow.conversion_pct}% Google follow-through`;
   } else if (conv < 22 && scans > 10) {
-    topOpportunity = `Lift QR→Google above ${conv}% with stronger handoff copy`;
+    topOpportunity = `Lift tap/scan-to-Google above ${conv}% with stronger verbal close`;
   } else if (strongest) {
-    topOpportunity = `Scale ${branchDisplayName(strongest.branch_id)} playbook network-wide`;
+    topOpportunity = `Scale ${branchDisplayName(strongest.branch_id)} card handoff playbook network-wide`;
   }
 
   const recommendation =
     missed > 0
-      ? `Close ~${missed} missed Google reviews via table-side redirect coaching.`
+      ? `Close ~${missed} missed Google redirects — coach post-review verbal CTA.`
       : conv >= 28
-        ? "Protect top performers; coach weakest conversion profiles only."
-        : "Focus floor script on Google tap immediately after review copy.";
+        ? "Protect top handoff performers; coach weakest follow-through only."
+        : "Drill NFC/QR card presentation and Google redirect at bill close.";
 
   return {
     topOpportunity: clip(topOpportunity, 90),
@@ -194,7 +194,7 @@ export function exportReviewSummaryPdf(ctx) {
         margin,
         y,
         chartW,
-        "QR scans by staff",
+        "Card taps by staff (QR/NFC)",
         productionStaff.map((s) => ({ name: s.name, scans: s.opens })),
         "scans",
         NAC_TEAL,

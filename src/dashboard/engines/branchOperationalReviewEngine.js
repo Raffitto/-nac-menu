@@ -73,7 +73,7 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
       key: "low_sample",
       label: "Low sample",
       tone: "neutral",
-      coaching: "Build tagged QR volume before rating.",
+      coaching: "Present review card more often before rating.",
     };
   }
 
@@ -82,25 +82,25 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
       key: "premium",
       label: "Top performer",
       tone: "gold",
-      coaching: "Replicate QR placement and Google handoff.",
+      coaching: "Strong end-of-service handoff — replicate verbal close.",
     };
   }
 
   if (scans >= branchStats.medianScans && reviewConv < 18 && generated >= 2) {
     return {
       key: "hi_vis_low_conv",
-      label: "High traffic, low close",
+      label: "High card, low Google",
       tone: "amber",
-      coaching: "Tighten post-review Google CTA at table.",
+      coaching: "High card exposure — coach verbal CTA after review.",
     };
   }
 
   if (scans < branchStats.medianScans * 0.4 && generated < 2) {
     return {
       key: "underutilized",
-      label: "Underused",
+      label: "Low card use",
       tone: "critical",
-      coaching: "Increase visible QR touches per shift.",
+      coaching: "Present NFC/QR card more at bill close.",
     };
   }
 
@@ -109,16 +109,16 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
       key: "consistent",
       label: "Steady converter",
       tone: "teal",
-      coaching: "Hold script; protect conversion habit.",
+      coaching: "Solid follow-through — protect this handoff habit.",
     };
   }
 
   if (scans >= branchStats.medianScans && generated < branchStats.medianGenerated * 0.55) {
     return {
       key: "front_desk",
-      label: "Host gap",
+      label: "Handoff gap",
       tone: "amber",
-      coaching: "Coach review open before guest is seated.",
+      coaching: "Use card handoff at reception before guest exits.",
     };
   }
 
@@ -127,7 +127,7 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
       key: "coaching",
       label: "Needs coaching",
       tone: "critical",
-      coaching: "Drill one-tap Google redirect after copy.",
+      coaching: "Improve tap/scan-to-Google completion after review.",
     };
   }
 
@@ -135,18 +135,18 @@ export function classifyBranchOperationalStaff(staff, branchStats) {
     key: "consistent",
     label: "Steady converter",
     tone: "teal",
-    coaching: "Monitor weekly; keep current script.",
+    coaching: "Monitor weekly; keep card presentation consistent.",
   };
 }
 
 function operationalArchetype(classification) {
   const map = {
-    premium: "Amplifier",
-    hi_vis_low_conv: "Leakage",
+    premium: "Handoff lead",
+    hi_vis_low_conv: "Follow-through gap",
     underutilized: "Dormant",
     consistent: "Steady",
-    front_desk: "Host gap",
-    coaching: "Script gap",
+    front_desk: "Reception",
+    coaching: "Redirect gap",
     low_sample: "Early",
   };
   return map[classification.key] || "Floor";
@@ -157,7 +157,7 @@ function enrichStaffRow(staff, events, branchStats) {
   const generated = staff.generated || 0;
   const google = staff.google || 0;
   const reviewConv = generated > 0 ? pct(google, generated) : staff.conversion_pct || 0;
-  const visibilityEfficiency = scans > 0 ? pct(generated, scans) : 0;
+  const cardToReviewEfficiency = scans > 0 ? pct(generated, scans) : 0;
   const classification = classifyBranchOperationalStaff(staff, branchStats);
 
   return {
@@ -168,7 +168,8 @@ function enrichStaffRow(staff, events, branchStats) {
     google,
     copy: staff.copy || 0,
     reviewConv,
-    visibilityEfficiency,
+    cardToReviewEfficiency,
+    visibilityEfficiency: cardToReviewEfficiency,
     classification,
     archetype: operationalArchetype(classification),
     coaching: classification.coaching,
@@ -207,9 +208,11 @@ function buildBranchSummary(staffRows, kpis) {
     weakestName: weakestConv?.name || "—",
     weakestValue: weakestConv ? `${weakestConv.reviewConv}%` : "—",
     bestVisName: bestVisibility?.name || "—",
-    bestVisValue: bestVisibility ? `${bestVisibility.scans} QR` : "—",
+    bestVisValue: bestVisibility ? `${bestVisibility.scans} presentations` : "—",
     hiddenName: hiddenOpp?.name || "None flagged",
-    hiddenValue: hiddenOpp ? `${hiddenOpp.scans} QR · ${hiddenOpp.reviewConv}%` : "—",
+    hiddenValue: hiddenOpp
+      ? `${hiddenOpp.scans} cards · ${hiddenOpp.reviewConv}% Google`
+      : "—",
     estimatedRecoverableReviews: recoverable,
     staffCount: staffRows.length,
     branchConversion: branchConv,
