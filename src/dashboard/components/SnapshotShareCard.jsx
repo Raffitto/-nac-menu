@@ -1,49 +1,51 @@
-import React, { useRef, useState } from "react";
+import React, { forwardRef } from "react";
 import { Download, Share2 } from "lucide-react";
 import { exportElementToPng } from "../utils/snapshotExport";
 import { branchDisplayName, rangeExportLabel } from "../utils/rangeState";
 
 /**
  * Luxury share card — export as PNG (WhatsApp-friendly 4:5).
+ * When showActions=false, use ReviewExportBar for Snapshot PNG.
  */
-export default function SnapshotShareCard({
-  title = "Weekly performance",
-  subtitle,
-  branch,
-  range = "7d",
-  metrics = [],
-  highlight,
-  footer = "NAC HOSPITALITY OS",
-}) {
-  const ref = useRef(null);
-  const [busy, setBusy] = useState(false);
-
+const SnapshotShareCard = forwardRef(function SnapshotShareCard(
+  {
+    title = "Weekly performance",
+    subtitle,
+    branch,
+    range = "7d",
+    metrics = [],
+    highlight,
+    footer = "NAC HOSPITALITY OS",
+    showActions = true,
+  },
+  ref,
+) {
   const handleExport = async () => {
-    if (!ref.current || busy) return;
-    setBusy(true);
-    try {
-      const safeBranch = (branch || "network").toString().toLowerCase();
-      await exportElementToPng(
-        ref.current,
-        `nac-${safeBranch}-${range}-${Date.now()}.png`,
-      );
-    } finally {
-      setBusy(false);
-    }
+    const el = ref?.current;
+    if (!el) return;
+    const safeBranch = (branch || "network").toString().toLowerCase();
+    await exportElementToPng(el, `nac-${safeBranch}-${range}-snapshot-${Date.now()}.png`);
   };
 
   return (
     <div className="nac-snapshot-wrap">
-      <div className="nac-snapshot-actions">
-        <button type="button" className="nac-filter-action" onClick={handleExport} disabled={busy}>
-          <Download size={14} />
-          {busy ? "Exporting…" : "PNG"}
-        </button>
-        <button type="button" className="nac-filter-action" onClick={handleExport} disabled={busy} title="Download to share">
-          <Share2 size={14} />
-          Share
-        </button>
-      </div>
+      {showActions && (
+        <div className="nac-snapshot-actions">
+          <button type="button" className="nac-filter-action" onClick={handleExport}>
+            <Download size={14} />
+            Snapshot PNG
+          </button>
+          <button
+            type="button"
+            className="nac-filter-action"
+            onClick={handleExport}
+            title="Download to share"
+          >
+            <Share2 size={14} />
+            Share
+          </button>
+        </div>
+      )}
 
       <div ref={ref} className="nac-snapshot-card">
         <div className="nac-snapshot-glow" aria-hidden />
@@ -66,4 +68,6 @@ export default function SnapshotShareCard({
       </div>
     </div>
   );
-}
+});
+
+export default SnapshotShareCard;

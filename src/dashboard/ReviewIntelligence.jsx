@@ -6,8 +6,6 @@ import {
   Camera,
   Users,
   GitBranch,
-  FileDown,
-  FileText,
   AlertCircle,
   Trophy,
   TrendingUp,
@@ -26,9 +24,6 @@ import {
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { generateDailySnapshot } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
-import { exportReviewIntelligenceReport } from "./engines/exportEngine";
-import { buildAllBranchOperationalReports } from "./engines/branchOperationalReviewEngine";
-import { exportDetailedBranchOperationalReview } from "./engines/detailedBranchReviewExport";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
@@ -48,7 +43,6 @@ import {
 import {
   computeReviewKpis,
   buildBranchReviewComparison,
-  runReviewDataQualityDiagnostics,
 } from "./utils/reviewEventMetrics";
 import "./styles/review-intelligence.css";
 
@@ -80,10 +74,7 @@ export default function ReviewIntelligence({ embedded = false }) {
   const [branchComparison, setBranchComparison] = useState([]);
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
-  const [branchAuditBusy, setBranchAuditBusy] = useState(false);
   const [error, setError] = useState("");
-  const [diag, setDiag] = useState(null);
-
   const configured = isSupabaseConfigured();
   const branchLabel = branchDisplayName(branch);
   const rangeLabel = rangeExportLabel(selectedRange);
@@ -138,7 +129,6 @@ export default function ReviewIntelligence({ embedded = false }) {
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(buildBranchReviewComparison(all));
 
-      setDiag(runReviewDataQualityDiagnostics(events, branch));
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");
     } finally {
@@ -165,62 +155,6 @@ export default function ReviewIntelligence({ embedded = false }) {
   );
 
   const topStaff = staffMerged[0];
-
-  const reviewExportPayload = useMemo(
-    () => ({
-      total_events: kpis
-        ? Object.values(
-            (kpis.by_event_type || []).reduce((acc, row) => {
-              acc[row.event_type] = row.count;
-              return acc;
-            }, {}),
-          ).reduce((a, b) => a + b, 0)
-        : 0,
-      qr_scans: kpis?.qr_scans ?? 0,
-      reviews_generated: kpis?.reviews_generated ?? 0,
-      google_clicks: kpis?.google_redirects ?? 0,
-      conversion_pct: kpis?.conversion_pct ?? 0,
-      review_sessions: kpis?.unique_review_visitors ?? 0,
-      top_employees: staffMerged.map((s) => ({
-        name: s.name,
-        role: s.role,
-        opens: s.scans,
-        generated: s.generated,
-        google_clicks: s.google,
-        conversion_pct: s.conversion_pct,
-      })),
-    }),
-    [kpis, staffMerged],
-  );
-
-  const exportContext = useMemo(
-    () => ({
-      branch: branchLabel,
-      selectedRange,
-      rangeLabel,
-      review: reviewExportPayload,
-      staffStats: staffMerged,
-      employees,
-      diagnostics: diag,
-      branchTotalScans: kpis?.qr_scans ?? 0,
-      dailyTrend,
-      branchScans,
-      branchComparison,
-    }),
-    [
-      branchLabel,
-      selectedRange,
-      rangeLabel,
-      reviewExportPayload,
-      staffMerged,
-      employees,
-      diag,
-      kpis,
-      dailyTrend,
-      branchScans,
-      branchComparison,
-    ],
-  );
 
   const leaderboardData = useMemo(
     () =>
@@ -253,44 +187,6 @@ export default function ReviewIntelligence({ embedded = false }) {
       setSnapshotBusy(false);
     }
   };
-
-  const handleExportXlsx = () => {
-    exportReviewIntelligenceReport({ ...exportContext, format: "xlsx" });
-  };
-
-  const handleExportPdf = () => {
-    exportReviewIntelligenceReport({ ...exportContext, format: "pdf" });
-  };
-
-  const handleDetailedBranchAudit = useCallback(async () => {
-    if (!configured) return;
-    setBranchAuditBusy(true);
-    setError("");
-    try {
-      const since = rangeToSince(selectedRange);
-      let q = supabase
-        .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(8000);
-      if (since) q = q.gte("created_at", since);
-
-      const { data, error: qErr } = await q;
-      if (qErr) throw qErr;
-
-      const events = applyPlatformFilters(data || [], embedded ? platform : null);
-      const reports = buildAllBranchOperationalReports(events);
-      exportDetailedBranchOperationalReview({
-        reports,
-        rangeLabel,
-        selectedRange,
-      });
-    } catch (e) {
-      setError(e.message || "Failed to export branch operational review");
-    } finally {
-      setBranchAuditBusy(false);
-    }
-  }, [configured, selectedRange, rangeLabel, embedded, platform]);
 
   if (!configured) {
     return (
@@ -352,22 +248,6 @@ export default function ReviewIntelligence({ embedded = false }) {
           </button>
           <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleSnapshot} disabled={snapshotBusy}>
             <Camera size={14} /> Snapshot
-          </button>
-          <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleExportXlsx}>
-            <FileDown size={14} /> XLSX
-          </button>
-          <button type="button" className="rev-ctrl-btn rev-ctrl-action" onClick={handleExportPdf}>
-            <FileText size={14} /> PDF
-          </button>
-          <button
-            type="button"
-            className="rev-ctrl-btn rev-ctrl-action rev-ctrl-btn--audit"
-            onClick={handleDetailedBranchAudit}
-            disabled={branchAuditBusy || loading}
-            title="Detailed Branch Operational Review — Khobar, Riyadh, Jeddah (one page each)"
-          >
-            <Users size={14} className={branchAuditBusy ? "nac-bi-spin" : ""} />
-            {branchAuditBusy ? "Building…" : "Branch audit"}
           </button>
         </motion.div>
       </header>

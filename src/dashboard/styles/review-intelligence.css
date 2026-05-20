@@ -137,14 +137,79 @@
   color: #f5e6c8;
 }
 
-.rev-ctrl-btn.rev-ctrl-btn--audit {
+.rev-export-panel {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(215, 188, 138, 0.2);
+}
+
+.rev-export-zone {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.15rem;
+  border-radius: 16px;
+  background: rgba(12, 14, 16, 0.88);
+  border: 1px solid rgba(215, 188, 138, 0.28);
+}
+
+.rev-export-zone-head {
+  margin-bottom: 0.85rem;
+}
+
+.rev-export-zone-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f9f9f7;
+  letter-spacing: 0.04em;
+}
+
+.rev-export-zone-sub {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(249, 249, 247, 0.58);
+  max-width: 52rem;
+}
+
+.rev-export-zone-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.rev-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(215, 188, 138, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5e6c8;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.rev-export-btn:hover:not(:disabled) {
+  background: rgba(215, 188, 138, 0.12);
+  border-color: rgba(215, 188, 138, 0.55);
+}
+
+.rev-export-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rev-export-btn--audit {
   border-color: rgba(78, 205, 196, 0.45);
   background: rgba(78, 205, 196, 0.1);
   color: #b8ebe6;
-  font-weight: 600;
 }
 
-.rev-ctrl-btn.rev-ctrl-btn--audit:hover:not(:disabled) {
+.rev-export-btn--audit:hover:not(:disabled) {
   background: rgba(78, 205, 196, 0.18);
   border-color: rgba(78, 205, 196, 0.65);
 }

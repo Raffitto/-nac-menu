@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, forwardRef } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { computeReviewKpis } from "../utils/reviewEventMetrics";
 import { rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import SnapshotShareCard from "../components/SnapshotShareCard";
+import ReviewExportBar from "./ReviewExportBar";
 
-export default function ReviewSnapshotPanel() {
+const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snapshotRef) {
   const filters = usePlatformFiltersOptional();
   const [kpis, setKpis] = useState(null);
 
@@ -37,16 +38,23 @@ export default function ReviewSnapshotPanel() {
   ];
 
   return (
-    <SnapshotShareCard
-      title="Review performance"
-      branch={filters?.branch}
-      range={filters?.selectedRange || "7d"}
-      metrics={metrics}
-      highlight={
-        kpis?.conversion_pct != null
-          ? `${kpis.conversion_pct}% scan-to-Google conversion this period`
-          : undefined
-      }
-    />
+    <section className="rev-export-panel">
+      <ReviewExportBar snapshotRef={snapshotRef} />
+      <SnapshotShareCard
+        ref={snapshotRef}
+        showActions={false}
+        title="Review performance"
+        branch={filters?.branch}
+        range={filters?.selectedRange || "7d"}
+        metrics={metrics}
+        highlight={
+          kpis?.conversion_pct != null
+            ? `${kpis.conversion_pct}% scan-to-Google conversion this period`
+            : undefined
+        }
+      />
+    </section>
   );
-}
+});
+
+export default ReviewSnapshotPanel;

@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from "react";
+import React, { useState, useRef, Suspense, lazy } from "react";
 import { motion } from "framer-motion";
 import { RefreshCw, Monitor } from "lucide-react";
 import HubTabs from "../components/HubTabs";
@@ -23,6 +23,7 @@ function ViewFallback({ label }) {
 
 export default function ReviewsHub() {
   const [tab, setTab] = useState("performance");
+  const snapshotRef = useRef(null);
 
   const openLeaderboard = () => {
     window.open(`${window.location.origin}/leaderboard`, "_blank", "noopener,noreferrer");
@@ -53,7 +54,7 @@ export default function ReviewsHub() {
           <Suspense fallback={<ViewFallback label="Loading review performance…" />}>
             <ReviewIntelligence embedded />
           </Suspense>
-          <ReviewSnapshotPanel />
+          <ReviewSnapshotPanel ref={snapshotRef} />
         </>
       )}
       {tab === "live" && <LiveActivityFeed />}
