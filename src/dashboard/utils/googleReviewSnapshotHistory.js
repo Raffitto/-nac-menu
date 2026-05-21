@@ -127,10 +127,12 @@ export async function upsertTodayGoogleReviewSnapshots(byBranch = {}) {
   return { data: data || [], error, skipped: false };
 }
 
-export async function fetchGoogleReviewSnapshots(branchIds = null) {
+export async function fetchGoogleReviewSnapshots(branchIds = null, options = {}) {
   if (!isSupabaseConfigured() || !supabase) {
     return { data: [], error: null };
   }
+
+  const { startDate, endDate } = options;
 
   let q = supabase
     .from("google_review_snapshots")
@@ -141,6 +143,8 @@ export async function fetchGoogleReviewSnapshots(branchIds = null) {
 
   const ids = branchIds?.length ? branchIds : GOOGLE_PLACE_BRANCHES;
   q = q.in("branch_id", ids);
+  if (startDate) q = q.gte("snapshot_date", startDate);
+  if (endDate) q = q.lte("snapshot_date", endDate);
 
   const { data, error } = await q;
   return { data: data || [], error };
@@ -157,9 +161,14 @@ export function computeBranchGoogleMovement(
   const id = (branchId || "").toLowerCase();
   const referenceDate = options.referenceDate || new Date();
   const periodRange = options.periodRange || "month";
+  const periodStartDate = options.periodStartDate || null;
+  const periodEndDate = options.periodEndDate || null;
+  const periodLabel = options.periodLabel || null;
   const todayKey = getRiyadhDateKey(referenceDate);
   const monthKey = monthStartKey(todayKey);
   const weekKey = addDaysToDateKey(todayKey, -6);
+  const exportPeriodStartKey = periodStartDate || monthKey;
+  const exportPeriodEndKey = periodEndDate || todayKey;
 
   const branchSnaps = sortSnapshots(
     snapshots.filter((s) => (s.branch_id || "").toLowerCase() === id),
@@ -208,6 +217,25 @@ export function computeBranchGoogleMovement(
     selected_period_delta = week_delta;
   }
 
+  const inPeriodSnaps = branchSnaps.filter(
+    (s) =>
+      String(s.snapshot_date) >= exportPeriodStartKey &&
+      String(s.snapshot_date) <= exportPeriodEndKey,
+  );
+  const period_partial =
+    !!tracking_start_date && String(tracking_start_date) > exportPeriodStartKey;
+  let period_delta = null;
+  if (inPeriodSnaps.length >= 2) {
+    period_delta =
+      inPeriodSnaps[inPeriodSnaps.length - 1].review_count - inPeriodSnaps[0].review_count;
+  } else if (inPeriodSnaps.length === 1) {
+    period_delta = 0;
+  }
+
+  if (periodStartDate || periodEndDate) {
+    selected_period_delta = period_delta;
+  }
+
   const history_note = tracking_start_date
     ? `Google review history available from ${formatTrackingStartDate(tracking_start_date)}.`
     : "No Google review snapshots stored yet.";
@@ -222,6 +250,11 @@ export function computeBranchGoogleMovement(
     week_delta,
     month_delta,
     selected_period_delta,
+    period_delta,
+    period_partial,
+    period_label: periodLabel,
+    period_start_date: exportPeriodStartKey,
+    period_end_date: exportPeriodEndKey,
     previous_snapshot_count,
     baseline_count,
     latest_snapshot_date,
@@ -265,6 +298,21 @@ export function formatGoogleMovementLine(report) {
     report.current_review_count != null
       ? `${Number(report.current_review_count).toLocaleString()} reviews`
       : "— reviews";
+
+  if (report.period_label != null) {
+    let periodPart = "— in period";
+    if (!report.tracking_start_date) {
+      periodPart = "No snapshot history";
+    } else if (report.period_delta != null) {
+      periodPart = `${formatDelta(report.period_delta)} in period`;
+      if (report.period_partial) {
+        periodPart += ` (from ${formatTrackingStartDate(report.tracking_start_date)})`;
+      }
+    } else if (report.period_partial) {
+      periodPart = `Partial period from ${formatTrackingStartDate(report.tracking_start_date)}`;
+    }
+    return `${report.branch_name}: ${star} · ${count} · ${periodPart}`;
+  }
 
   let todayPart = "— today";
   if (report.is_baseline_today) {

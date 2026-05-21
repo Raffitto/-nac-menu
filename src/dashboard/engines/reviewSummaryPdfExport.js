@@ -144,15 +144,16 @@ export function exportReviewSummaryPdf(ctx) {
 
   doc.setFontSize(11);
   doc.setTextColor(190, 190, 190);
-  doc.text(`${branch} · ${rangeLabel}`, margin, 88);
+  doc.text(branch, margin, 88);
 
   doc.setFontSize(8);
   doc.setTextColor(...DIM);
-  doc.text(REVIEW_FUNNEL_SUBTITLE, margin, 102);
-  doc.text(`Report generated ${generated}`, margin, 114);
+  doc.text(`Period: ${rangeLabel}`, margin, 102);
+  doc.text(REVIEW_FUNNEL_SUBTITLE, margin, 114);
+  doc.text(`Report generated ${generated}`, margin, 126);
 
   const cardW = (contentW - 24) / 4;
-  const cardY = 126;
+  const cardY = 138;
   const metrics = [
     { label: REVIEW_METRIC.cardTaps, value: review?.qr_scans ?? 0, accent: NAC_TEAL },
     { label: REVIEW_METRIC.reviewInteractions, value: review?.reviews_generated ?? 0, accent: NAC_TEAL },

@@ -78,23 +78,34 @@ function drawGoogleMovementBlock(doc, margin, contentW, startY, googleMovement =
     y += 11;
   });
 
-  const trackingStart = googleMovement.find((g) => g.tracking_start_date)?.tracking_start_date;
-  if (hasHistory && trackingStart) {
+  const partialBranches = (googleMovement || []).filter((g) => g.period_partial && g.tracking_start_date);
+  if (partialBranches.length) {
     doc.setFontSize(7);
     doc.setTextColor(...DIM);
-    doc.text(
-      `Google review history available from ${formatTrackingStartDate(trackingStart)}. Not QR redirects.`,
-      margin,
-      y + 4,
-    );
-    y += 14;
+    partialBranches.forEach((g) => {
+      doc.text(
+        `${g.branch_name}: Google review history available from ${formatTrackingStartDate(g.tracking_start_date)}. Not QR redirects.`,
+        margin,
+        y + 4,
+      );
+      y += 10;
+    });
+    y += 4;
   } else {
-    y += 6;
+    const trackingStart = googleMovement.find((g) => g.tracking_start_date)?.tracking_start_date;
+    if (hasHistory && trackingStart) {
+      doc.setFontSize(7);
+      doc.setTextColor(...DIM);
+      doc.text("Snapshot-based movement · not QR redirects.", margin, y + 4);
+      y += 14;
+    } else {
+      y += 6;
+    }
   }
   return y;
 }
 
-function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports, googleMovement }) {
+function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, generated, reports, googleMovement }) {
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 5, "F");
@@ -113,7 +124,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
 
   doc.setFontSize(10);
   doc.setTextColor(...DIM);
-  doc.text(`Period: ${rangeLabel}`, margin, 118);
+  doc.text(`Period: ${periodLabel || rangeLabel}`, margin, 118);
   doc.text(`Generated ${generated} · Asia/Riyadh`, margin, 132);
 
   const net = networkTotals(reports);
@@ -324,9 +335,11 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
 export function exportDetailedBranchOperationalReview({
   reports = [],
   rangeLabel,
+  periodLabel,
   selectedRange,
   googleMovement = [],
 }) {
+  const period = periodLabel || rangeLabel;
   const movementByBranch = Object.fromEntries(
     (googleMovement || []).map((g) => [g.branch_id, g]),
   );
@@ -341,7 +354,13 @@ export function exportDetailedBranchOperationalReview({
     timeStyle: "short",
   });
 
-  drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports, googleMovement });
+  drawCoverPage(doc, margin, contentW, pageH, {
+    periodLabel: period,
+    rangeLabel: period,
+    generated,
+    reports,
+    googleMovement,
+  });
 
   reports.forEach((report, branchIdx) => {
     doc.addPage();
@@ -350,7 +369,7 @@ export function exportDetailedBranchOperationalReview({
       margin,
       contentW,
       report,
-      rangeLabel,
+      period,
       movementByBranch[report.branchId],
     );
     y = drawSummaryKpiGrid(doc, margin, contentW, y, report.summary, report.kpis);

@@ -52,6 +52,18 @@ function zonedTimeToUtc(y, m, d, h, min = 0, sec = 0, timeZone = NAC_BUSINESS_TZ
   return new Date(Date.UTC(y, m - 1, d, h, min, sec) - offset);
 }
 
+/** Inclusive calendar-day bounds for YYYY-MM-DD in Asia/Riyadh (00:00:00 – 23:59:59). */
+export function calendarDayBoundsRiyadh(dateKey, timeZone = NAC_BUSINESS_TZ) {
+  const [y, m, d] = String(dateKey || "")
+    .split("-")
+    .map(Number);
+  if (!y || !m || !d) return null;
+  return {
+    start: zonedTimeToUtc(y, m, d, 0, 0, 0, timeZone),
+    end: zonedTimeToUtc(y, m, d, 23, 59, 59, timeZone),
+  };
+}
+
 /** Start of current calendar month in Asia/Riyadh (month-to-date lower bound) */
 export function getCurrentMonthStart(date = new Date(), timeZone = NAC_BUSINESS_TZ) {
   const p = partsInTz(date, timeZone);
