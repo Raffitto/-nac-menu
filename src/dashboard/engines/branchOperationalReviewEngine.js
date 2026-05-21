@@ -7,6 +7,10 @@ import {
   mergeStaffStats,
 } from "../utils/staffReviewStats";
 import { computeReviewKpis } from "../utils/reviewEventMetrics";
+import {
+  kpisFromReviewSummary,
+  staffFromReviewSummary,
+} from "../utils/reviewSummaryMap";
 import { branchDisplayName } from "../utils/rangeState";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
 import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
@@ -156,7 +160,12 @@ function enrichStaffRow(staff, events, branchStats) {
   const scans = staff.scans || 0;
   const generated = staff.generated || 0;
   const google = staff.google || 0;
-  const reviewConv = generated > 0 ? pct(google, generated) : staff.conversion_pct || 0;
+  const reviewConv =
+    staff.scans > 0
+      ? staff.conversion_pct ?? pct(google, scans)
+      : generated > 0
+        ? pct(google, generated)
+        : 0;
   const cardToReviewEfficiency = scans > 0 ? pct(generated, scans) : 0;
   const classification = classifyBranchOperationalStaff(staff, branchStats);
 
@@ -216,6 +225,32 @@ function buildBranchSummary(staffRows, kpis) {
     estimatedRecoverableReviews: recoverable,
     staffCount: staffRows.length,
     branchConversion: branchConv,
+  };
+}
+
+/** Same staff/KPI shapes as dashboard when using get_review_events_summary RPC. */
+export function buildBranchOperationalReportFromSummary(summary, branchId) {
+  const id = (branchId || "").toLowerCase();
+  const kpis = kpisFromReviewSummary(summary) || computeReviewKpis([]);
+  const staff = mergeStaffStats([], staffFromReviewSummary(summary));
+
+  const branchStats = {
+    medianScans: median(staff.map((s) => s.scans)),
+    medianGenerated: median(staff.map((s) => s.generated)),
+  };
+
+  const staffRows = staff.map((s) =>
+    enrichStaffRow({ ...s, branch: id }, [], branchStats),
+  );
+  const summaryBlock = buildBranchSummary(staffRows, kpis);
+
+  return {
+    branchId: id,
+    branchLabel: branchDisplayName(id),
+    kpis,
+    summary: summaryBlock,
+    staffRows: staffRows.sort((a, b) => b.score - a.score),
+    branchStats,
   };
 }
 

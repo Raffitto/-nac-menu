@@ -8,7 +8,11 @@ import {
   branchComparisonFromReviewSummary,
 } from "../utils/reviewSummaryMap";
 import { exportReviewIntelligenceReport } from "../engines/exportEngine";
-import { buildAllBranchOperationalReports } from "../engines/branchOperationalReviewEngine";
+import {
+  OPERATIONAL_BRANCHES,
+  buildBranchOperationalReport,
+  buildBranchOperationalReportFromSummary,
+} from "../engines/branchOperationalReviewEngine";
 import { exportDetailedBranchOperationalReview } from "../engines/detailedBranchReviewExport";
 import { buildEmployeePerformance } from "../engines/employeePerformanceEngine";
 import {
@@ -159,12 +163,45 @@ export function useReviewExports(filters) {
     [pngBusy, branch, selectedRange],
   );
 
+  const loadBranchAuditReports = useCallback(async () => {
+    const hours = rangeToHours(selectedRange);
+    const since = rangeToSince(selectedRange);
+
+    const reports = await Promise.all(
+      OPERATIONAL_BRANCHES.map(async (branchId) => {
+        try {
+          const summary = await fetchReviewEventsSummary(supabase, {
+            branch: branchId,
+            hours,
+          });
+          if (summary) {
+            return buildBranchOperationalReportFromSummary(summary, branchId);
+          }
+        } catch (_) {
+          /* fall through to raw events */
+        }
+
+        let q = supabase
+          .from("review_events")
+          .select(REVIEW_EVENT_SELECT)
+          .eq("branch_id", branchId)
+          .order("created_at", { ascending: false })
+          .limit(2500);
+        if (since) q = q.gte("created_at", since);
+        const { data: raw } = await q;
+        const events = applyPlatformFilters(raw || [], filters);
+        return buildBranchOperationalReport(events, branchId);
+      }),
+    );
+
+    return reports;
+  }, [selectedRange, filters]);
+
   const exportBranchAuditPdf = useCallback(async () => {
     if (!configured || auditBusy) return;
     setAuditBusy(true);
     try {
-      const { all } = await loadEvents();
-      const reports = buildAllBranchOperationalReports(all);
+      const reports = await loadBranchAuditReports();
       exportDetailedBranchOperationalReview({
         reports,
         rangeLabel,
@@ -173,7 +210,7 @@ export function useReviewExports(filters) {
     } finally {
       setAuditBusy(false);
     }
-  }, [configured, auditBusy, loadEvents, rangeLabel, selectedRange]);
+  }, [configured, auditBusy, loadBranchAuditReports, rangeLabel, selectedRange]);
 
   const exportSummaryPdf = useCallback(async () => {
     if (!configured || summaryBusy) return;
