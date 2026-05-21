@@ -44,6 +44,7 @@ import IntelligenceHub from "./views/IntelligenceHub";
 import ReviewsHub from "./views/ReviewsHub";
 import BranchesView from "./views/BranchesView";
 import SettingsView from "./views/SettingsView";
+import MenuEditorAuth from "./components/MenuEditorAuth";
 
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -287,7 +288,9 @@ function AdminDashboardContent({ onBack }) {
         ) : adminView === "reviews" ? (
           <ReviewsHub />
         ) : adminView === "menu" ? (
-          <MenuManager />
+          <MenuEditorAuth>
+            <MenuManager />
+          </MenuEditorAuth>
         ) : adminView === "branches" ? (
           <BranchesView />
         ) : adminView === "settings" ? (

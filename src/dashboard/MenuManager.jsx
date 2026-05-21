@@ -24,8 +24,10 @@ import {
 import {
   getCategories,
   
-  updateMenuItem,
-  createMenuItem,
+  createMenuItemPlacements,
+  updateMenuItemPlacements,
+  fetchPlacementGroupMembers,
+  fetchPlacementGroupIndex,
   deleteMenuItem,
   toggleSoldOut,
   applyMenuItemVisibility,
@@ -58,6 +60,11 @@ import {
   isHiddenFromPublicMenu,
   parseHiddenUntil,
 } from "../lib/menuVisibility";
+import {
+  validatePlacements,
+  formatLinkedPlacementBadge,
+  buildPlacementGroupSummary,
+} from "../lib/menuPlacements";
 import "./styles/menu-manager.css";
 
 function toDatetimeLocalValue(ms) {
@@ -318,6 +325,12 @@ export default function MenuManager() {
   const [saving, setSaving] = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
+  const [sectionsCatalog, setSectionsCatalog] = useState([]);
+  const [placementGroupSummary, setPlacementGroupSummary] = useState({});
+  const [extraPlacements, setExtraPlacements] = useState([]);
+  const [applyToAllLinked, setApplyToAllLinked] = useState(false);
+  const [placementGroupId, setPlacementGroupId] = useState(null);
+  const [removedPlacementIds, setRemovedPlacementIds] = useState([]);
 
   // Category editor
   const [catEditMode, setCatEditMode] = useState(null);
@@ -338,6 +351,28 @@ export default function MenuManager() {
   }, []);
 
   // ── Data Loading ──
+
+  const loadSectionsCatalog = useCallback(async () => {
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from("sections")
+        .select("id, name_en, name_ar, category_id, sort_order, categories(name_en, slug)")
+        .order("sort_order");
+      if (error) throw error;
+      setSectionsCatalog(
+        (data || []).map((s) => ({
+          id: s.id,
+          name_en: s.name_en,
+          name_ar: s.name_ar,
+          category_id: s.category_id,
+          category_name_en: s.categories?.name_en || s.categories?.slug || "",
+        })),
+      );
+    } catch (_) {
+      setSectionsCatalog([]);
+    }
+  }, []);
 
   const loadCategories = useCallback(async () => {
     try {
@@ -381,12 +416,28 @@ export default function MenuManager() {
       const sectionState = {};
       result.forEach((s) => { sectionState[s.id] = true; });
       setExpandedSections((prev) => ({ ...prev, ...sectionState }));
+
+      const flatItems = result.flatMap((s) => s.items || []);
+      const groupIds = [
+        ...new Set(flatItems.map((it) => it.placement_group_id).filter(Boolean)),
+      ];
+      if (groupIds.length > 0) {
+        const { data: groupRows } = await fetchPlacementGroupIndex(groupIds);
+        const sectionsById = Object.fromEntries(sectionsCatalog.map((s) => [s.id, s]));
+        const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
+        const merged = [...flatItems, ...(groupRows || [])];
+        setPlacementGroupSummary(
+          buildPlacementGroupSummary(merged, sectionsById, categoriesById),
+        );
+      } else {
+        setPlacementGroupSummary({});
+      }
     } catch (e) {
       setError("Failed to load menu items");
     } finally {
       setItemsLoading(false);
     }
-  }, []);
+  }, [sectionsCatalog, categories]);
 
   const loadAddOns = useCallback(async () => {
     try {
@@ -415,7 +466,7 @@ export default function MenuManager() {
     async function init() {
       setLoading(true);
       const cats = await loadCategories();
-      await Promise.all([loadAddOns(), loadAllergens()]);
+      await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
       if (cats.length > 0) {
         setSelectedCatId(cats[0].id);
         await loadMenuForCategory(cats[0].id);
@@ -423,7 +474,7 @@ export default function MenuManager() {
       setLoading(false);
     }
     init();
-  }, [loadCategories, loadAddOns, loadAllergens, loadMenuForCategory]);
+  }, [loadCategories, loadSectionsCatalog, loadAddOns, loadAllergens, loadMenuForCategory]);
 
   useEffect(() => {
     if (selectedCatId) {
@@ -621,6 +672,21 @@ export default function MenuManager() {
 
   // ── Item CRUD ──
 
+  const sectionsForCategory = useCallback(
+    (categoryId) => {
+      if (!categoryId) return [];
+      return sectionsCatalog.filter((s) => s.category_id === categoryId);
+    },
+    [sectionsCatalog],
+  );
+
+  const resetPlacementEditor = useCallback(() => {
+    setExtraPlacements([]);
+    setApplyToAllLinked(false);
+    setPlacementGroupId(null);
+    setRemovedPlacementIds([]);
+  }, []);
+
   const openCreateItem = useCallback((sectionId) => {
     setEditorMode("create");
     setEditingItem({
@@ -633,10 +699,14 @@ export default function MenuManager() {
     setItemAddOnIds([]);
     setImageFile(null);
     setImagePreview("");
+    resetPlacementEditor();
     setEditorOpen(true);
-  }, [selectedCatId]);
+  }, [selectedCatId, resetPlacementEditor]);
 
-  const openEditItem = useCallback((item) => {
+  const openEditItem = useCallback(async (item) => {
+    const secRow = sectionsCatalog.find((s) => s.id === item.section_id);
+    const categoryId = secRow?.category_id || item.category_id || selectedCatId || "";
+
     setEditorMode("edit");
     setEditingItem({
       name_en: item.name_en || "",
@@ -646,7 +716,7 @@ export default function MenuManager() {
       price: item.price ?? "",
       calories: item.calories ?? "",
       image: item.image || "",
-      category_id: item.category_id || selectedCatId || "",
+      category_id: categoryId,
       section_id: item.section_id || "",
       sold_out: item.sold_out || false,
       featured: item.featured || false,
@@ -661,8 +731,31 @@ export default function MenuManager() {
     setItemAddOnIds((item.add_ons || []).map((a) => a.id || a));
     setImageFile(null);
     setImagePreview(item.image || "");
+    setApplyToAllLinked(false);
+    setRemovedPlacementIds([]);
+
+    const groupId = item.placement_group_id || null;
+    setPlacementGroupId(groupId);
+
+    if (groupId) {
+      const { data: members } = await fetchPlacementGroupMembers(groupId);
+      const extras = (members || [])
+        .filter((m) => m.id !== item.id)
+        .map((m) => {
+          const sec = sectionsCatalog.find((s) => s.id === m.section_id);
+          return {
+            itemId: m.id,
+            category_id: sec?.category_id || "",
+            section_id: m.section_id,
+          };
+        });
+      setExtraPlacements(extras);
+    } else {
+      setExtraPlacements([]);
+    }
+
     setEditorOpen(true);
-  }, [selectedCatId]);
+  }, [selectedCatId, sectionsCatalog]);
 
   const handleSaveItem = useCallback(async () => {
     if (!editingItem.name_en.trim()) {
@@ -680,7 +773,17 @@ export default function MenuManager() {
         if (uploaded?.publicUrl) imgUrl = uploaded.publicUrl;
       }
 
-      const payload = sanitizeMenuItemPayload({
+      const primaryPlacement = {
+        category_id: editingItem.category_id,
+        section_id: editingItem.section_id,
+      };
+      const placementCheck = validatePlacements(primaryPlacement, extraPlacements);
+      if (!placementCheck.ok) {
+        showToast(placementCheck.message, "error");
+        return;
+      }
+
+      const contentPayload = sanitizeMenuItemPayload({
         name_en: editingItem.name_en.trim(),
         name_ar: editingItem.name_ar?.trim() || "",
         desc_en: editingItem.desc_en || "",
@@ -688,7 +791,6 @@ export default function MenuManager() {
         price: editingItem.price || "",
         calories: editingItem.calories || "-",
         image: imgUrl || "",
-        section_id: editingItem.section_id,
         sold_out: Boolean(editingItem.sold_out),
         featured: Boolean(editingItem.featured),
         new_item: Boolean(editingItem.new_item),
@@ -699,32 +801,55 @@ export default function MenuManager() {
       });
 
       let itemId = editingItemId;
+      const extraSectionIds = extraPlacements
+        .map((p) => p.section_id)
+        .filter(Boolean);
+
       if (editorMode === "create") {
-        const created = assertMenuMutation(
-          await createMenuItem(payload),
-          "createMenuItem",
-        );
-        itemId = created?.id;
+        const result = await createMenuItemPlacements({
+          contentPayload,
+          primarySectionId: primaryPlacement.section_id,
+          extraSectionIds,
+          allergenIds: itemAllergenIds,
+          addonIds: itemAddOnIds,
+        });
+        if (result.error) throw result.error;
+        itemId = result.data?.id;
         if (!itemId) throw new Error("Create succeeded but no item id returned");
-        showToast("Item created");
-      } else {
-        assertMenuMutation(
-          await updateMenuItem(editingItemId, payload),
-          "updateMenuItem",
+        const count = (result.created || []).length;
+        showToast(
+          count > 1 ? `Item created in ${count} placements` : "Item created",
         );
-        showToast("Item updated");
+      } else {
+        await updateMenuItemPlacements({
+          itemId: editingItemId,
+          contentPayload,
+          primarySectionId: primaryPlacement.section_id,
+          extraPlacements: extraPlacements.map((p) => ({
+            itemId: p.itemId || null,
+            sectionId: p.section_id,
+          })),
+          removePlacementItemIds: removedPlacementIds,
+          syncLinked: applyToAllLinked,
+          placementGroupId,
+          allergenIds: itemAllergenIds,
+          addonIds: itemAddOnIds,
+        });
+        showToast(
+          applyToAllLinked && placementGroupId
+            ? "Item updated across all linked placements"
+            : "Item updated",
+        );
       }
 
       const { data: verified, error: verifyErr } = await fetchMenuItemById(itemId);
       if (verifyErr) throw verifyErr;
-      if (verified.sold_out !== payload.sold_out) {
+      if (verified.sold_out !== contentPayload.sold_out) {
         throw new Error("Sold out did not persist — check Supabase column and permissions");
       }
 
-      try { await setItemAllergens(itemId, itemAllergenIds); } catch (_) {}
-      try { await setItemAddons(itemId, itemAddOnIds); } catch (_) {}
-
       setEditorOpen(false);
+      resetPlacementEditor();
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to save item", "error");
@@ -732,7 +857,22 @@ export default function MenuManager() {
     } finally {
       setSaving(false);
     }
-  }, [editingItem, editorMode, editingItemId, imageFile, itemAllergenIds, itemAddOnIds, showToast, loadMenuForCategory, selectedCatId]);
+  }, [
+    editingItem,
+    editorMode,
+    editingItemId,
+    imageFile,
+    itemAllergenIds,
+    itemAddOnIds,
+    extraPlacements,
+    applyToAllLinked,
+    placementGroupId,
+    removedPlacementIds,
+    showToast,
+    loadMenuForCategory,
+    selectedCatId,
+    resetPlacementEditor,
+  ]);
 
   const handleToggleSoldOut = useCallback(async (item) => {
     const newVal = !item.sold_out;
@@ -929,11 +1069,38 @@ export default function MenuManager() {
     [categories, selectedCatId]
   );
 
-  const allSections = useMemo(() => {
-    const result = [{ id: "", name_en: "No section" }];
-    menuData.forEach((s) => result.push({ id: s.id, name_en: s.name_en }));
-    return result;
-  }, [menuData]);
+  const usedPlacementKeys = useMemo(() => {
+    const keys = new Set();
+    if (editingItem.category_id && editingItem.section_id) {
+      keys.add(`${editingItem.category_id}:${editingItem.section_id}`);
+    }
+    extraPlacements.forEach((p) => {
+      if (p.category_id && p.section_id) keys.add(`${p.category_id}:${p.section_id}`);
+    });
+    return keys;
+  }, [editingItem.category_id, editingItem.section_id, extraPlacements]);
+
+  const addExtraPlacement = useCallback(() => {
+    setExtraPlacements((prev) => [...prev, { category_id: "", section_id: "" }]);
+  }, []);
+
+  const updateExtraPlacement = useCallback((index, patch) => {
+    setExtraPlacements((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    );
+  }, []);
+
+  const removeExtraPlacement = useCallback((index) => {
+    setExtraPlacements((prev) => {
+      const row = prev[index];
+      if (row?.itemId) {
+        setRemovedPlacementIds((ids) =>
+          ids.includes(row.itemId) ? ids : [...ids, row.itemId],
+        );
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
 
   if (loading) {
     return (
@@ -1283,6 +1450,11 @@ export default function MenuManager() {
                               {section.items.map((item, itemIdx) => {
                                 const visBadge = getItemVisibilityBadge(item, nowMs);
                                 const guestHidden = visBadge.key !== "active";
+                                const linkedBadge = formatLinkedPlacementBadge(
+                                  item,
+                                  selectedCatId,
+                                  placementGroupSummary,
+                                );
                                 return (
                                 <motion.div
                                   key={item.id}
@@ -1320,6 +1492,11 @@ export default function MenuManager() {
                                     {item.new_item && <span className="mm-badge mm-badge-new">New</span>}
                                     {item.vegetarian && <span className="mm-badge mm-badge-veg">Veg</span>}
                                     {item.vegan && <span className="mm-badge mm-badge-vegan">Vegan</span>}
+                                    {linkedBadge && (
+                                      <span className="mm-badge mm-badge-linked" title={linkedBadge}>
+                                        {linkedBadge}
+                                      </span>
+                                    )}
                                   </div>
 
                                   <div className="mm-item-card-actions" onClick={(e) => e.stopPropagation()}>
@@ -1672,33 +1849,142 @@ export default function MenuManager() {
                   </div>
                 </div>
 
-                {/* Category & Section */}
-                <div className="mm-field-row">
-                  <div className="mm-field">
-                    <label className="mm-field-label">Category</label>
-                    <select
-                      className="mm-field-select"
-                      value={editingItem.category_id}
-                      onChange={(e) => setEditingItem((p) => ({ ...p, category_id: e.target.value }))}
-                    >
-                      <option value="">Select category</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name_en || c.id}</option>
-                      ))}
-                    </select>
+                {/* Placements */}
+                <div className="mm-placement-block">
+                  <label className="mm-field-label">Primary placement</label>
+                  <div className="mm-field-row">
+                    <div className="mm-field">
+                      <label className="mm-field-label mm-field-label-sub">Category</label>
+                      <select
+                        className="mm-field-select"
+                        value={editingItem.category_id}
+                        onChange={(e) => {
+                          const categoryId = e.target.value;
+                          const secs = sectionsForCategory(categoryId);
+                          setEditingItem((p) => ({
+                            ...p,
+                            category_id: categoryId,
+                            section_id: secs[0]?.id || "",
+                          }));
+                        }}
+                      >
+                        <option value="">Select category</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name_en || c.id}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mm-field">
+                      <label className="mm-field-label mm-field-label-sub">Section</label>
+                      <select
+                        className="mm-field-select"
+                        value={editingItem.section_id}
+                        onChange={(e) =>
+                          setEditingItem((p) => ({ ...p, section_id: e.target.value }))
+                        }
+                      >
+                        <option value="">Select section</option>
+                        {sectionsForCategory(editingItem.category_id).map((s) => (
+                          <option key={s.id} value={s.id}>{s.name_en}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="mm-field">
-                    <label className="mm-field-label">Section</label>
-                    <select
-                      className="mm-field-select"
-                      value={editingItem.section_id}
-                      onChange={(e) => setEditingItem((p) => ({ ...p, section_id: e.target.value }))}
-                    >
-                      {allSections.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name_en}</option>
-                      ))}
-                    </select>
-                  </div>
+
+                  {extraPlacements.length > 0 && (
+                    <div className="mm-placement-extras">
+                      <label className="mm-field-label">Additional placements</label>
+                      {extraPlacements.map((placement, index) => {
+                        const rowSections = sectionsForCategory(placement.category_id);
+                        return (
+                          <div className="mm-placement-extra-row" key={placement.itemId || `new-${index}`}>
+                            <div className="mm-field-row">
+                              <div className="mm-field">
+                                <select
+                                  className="mm-field-select"
+                                  value={placement.category_id}
+                                  onChange={(e) => {
+                                    const categoryId = e.target.value;
+                                    const secs = sectionsForCategory(categoryId);
+                                    let sectionId = placement.section_id;
+                                    const key = `${categoryId}:${sectionId}`;
+                                    if (!sectionId || usedPlacementKeys.has(key)) {
+                                      sectionId =
+                                        secs.find(
+                                          (s) =>
+                                            !usedPlacementKeys.has(`${categoryId}:${s.id}`) ||
+                                            s.id === placement.section_id,
+                                        )?.id || secs[0]?.id || "";
+                                    }
+                                    updateExtraPlacement(index, {
+                                      category_id: categoryId,
+                                      section_id: sectionId,
+                                    });
+                                  }}
+                                >
+                                  <option value="">Category</option>
+                                  {categories.map((c) => (
+                                    <option key={c.id} value={c.id}>{c.name_en}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="mm-field">
+                                <select
+                                  className="mm-field-select"
+                                  value={placement.section_id}
+                                  onChange={(e) =>
+                                    updateExtraPlacement(index, { section_id: e.target.value })
+                                  }
+                                >
+                                  <option value="">Section</option>
+                                  {rowSections.map((s) => {
+                                    const key = `${placement.category_id}:${s.id}`;
+                                    const taken =
+                                      usedPlacementKeys.has(key) &&
+                                      key !== `${placement.category_id}:${placement.section_id}`;
+                                    return (
+                                      <option key={s.id} value={s.id} disabled={taken}>
+                                        {s.name_en}
+                                        {taken ? " (in use)" : ""}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="mm-placement-remove"
+                              onClick={() => removeExtraPlacement(index)}
+                              aria-label="Remove placement"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="mm-btn mm-btn-secondary mm-placement-add"
+                    onClick={addExtraPlacement}
+                  >
+                    <Plus size={14} />
+                    Add another placement
+                  </button>
+
+                  {editorMode === "edit" && (placementGroupId || extraPlacements.length > 0) && (
+                    <label className="mm-linked-sync">
+                      <input
+                        type="checkbox"
+                        checked={applyToAllLinked}
+                        onChange={(e) => setApplyToAllLinked(e.target.checked)}
+                      />
+                      <span>Apply changes to all linked placements</span>
+                    </label>
+                  )}
                 </div>
 
                 {/* Toggles */}

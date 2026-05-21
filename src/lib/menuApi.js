@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 import { filterPublicMenuData } from "./menuVisibility";
+import { newPlacementGroupId } from "./menuPlacements";
 
 export const MENU_CACHE_KEY = "nac-menu-cache";
 const CACHE_TTL_MS = 60 * 1000;
@@ -60,6 +61,7 @@ const MENU_ITEM_DB_FIELDS = new Set([
   "sort_order",
   "available_from",
   "available_until",
+  "placement_group_id",
 ]);
 
 /** Strip UI-only keys (e.g. category_id) before Supabase writes. */
@@ -83,10 +85,28 @@ export function logMenuMutation(label, payload, response) {
 export function assertMenuMutation(result, label) {
   if (result?.error) {
     logMenuMutation(`${label} FAILED`, null, result.error);
-    throw new Error(result.error.message || `Menu operation failed: ${label}`);
+    const msg = result.error.message || `Menu operation failed: ${label}`;
+    if (/row-level security/i.test(msg)) {
+      throw new Error(
+        `${msg} — sign in with a Supabase staff account (Settings → Supabase access) before editing the menu.`,
+      );
+    }
+    throw new Error(msg);
   }
   logMenuMutation(`${label} OK`, null, result?.data ?? result);
   return result?.data ?? result;
+}
+
+/** Admin CRUD requires authenticated JWT (not anon). */
+export async function requireMenuEditorAuth() {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (!session) {
+    throw new Error(
+      "Sign in with your Supabase staff account to edit the menu (Settings → Supabase access).",
+    );
+  }
+  return session;
 }
 
 export async function fetchMenuItemById(id) {
@@ -409,6 +429,7 @@ export async function scheduleMenuItemHide(id, hiddenUntilIso) {
 // ═══════════════ ADMIN CRUD (authenticated) ═══════════════
 
 export async function updateMenuItem(id, updates) {
+  await requireMenuEditorAuth();
   const payload = sanitizeMenuItemPayload(updates);
   logMenuMutation("updateMenuItem request", { id, payload }, null);
   const { data, error } = await supabase
@@ -424,6 +445,7 @@ export async function updateMenuItem(id, updates) {
 }
 
 export async function createMenuItem(item, allergenCodes = [], addonSlugs = []) {
+  await requireMenuEditorAuth();
   const payload = sanitizeMenuItemPayload(item);
   logMenuMutation("createMenuItem request", payload, null);
   const { data: newItem, error } = await supabase
@@ -472,7 +494,204 @@ export async function createMenuItem(item, allergenCodes = [], addonSlugs = []) 
   return { data: newItem, error: null };
 }
 
+async function insertMenuItemRow(payload) {
+  const row = sanitizeMenuItemPayload(payload);
+  const { data, error } = await supabase.from("menu_items").insert(row).select().single();
+  return { data, error };
+}
+
+/** Copy allergen + add-on junction rows from one item to another. */
+export async function copyItemRelations(sourceItemId, targetItemId) {
+  const [addonJunc, allergenJunc] = await Promise.all([
+    supabase.from("item_addons").select("addon_id, sort_order").eq("item_id", sourceItemId),
+    supabase.from("item_allergens").select("allergen_id").eq("item_id", sourceItemId),
+  ]);
+
+  if (addonJunc.data?.length) {
+    await supabase.from("item_addons").insert(
+      addonJunc.data.map((r) => ({
+        item_id: targetItemId,
+        addon_id: r.addon_id,
+        sort_order: r.sort_order,
+      })),
+    );
+  }
+
+  if (allergenJunc.data?.length) {
+    await supabase.from("item_allergens").insert(
+      allergenJunc.data.map((r) => ({
+        item_id: targetItemId,
+        allergen_id: r.allergen_id,
+      })),
+    );
+  }
+}
+
+export async function fetchPlacementGroupMembers(placementGroupId) {
+  if (!placementGroupId) return { data: [], error: null };
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("id, section_id, placement_group_id, name_en")
+    .eq("placement_group_id", placementGroupId)
+    .order("created_at");
+  return { data: data || [], error };
+}
+
+/** All rows in given placement groups (for admin badges). */
+export async function fetchPlacementGroupIndex(groupIds) {
+  const ids = [...new Set((groupIds || []).filter(Boolean))];
+  if (!ids.length) return { data: [], error: null };
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("id, section_id, placement_group_id")
+    .in("placement_group_id", ids);
+  return { data: data || [], error };
+}
+
+/**
+ * Create primary item + clone rows for extra section placements (same content & group).
+ */
+export async function createMenuItemPlacements({
+  contentPayload,
+  primarySectionId,
+  extraSectionIds = [],
+  allergenIds = [],
+  addonIds = [],
+}) {
+  await requireMenuEditorAuth();
+  const placementGroupId = newPlacementGroupId();
+  const sectionIds = [
+    primarySectionId,
+    ...extraSectionIds.filter((id) => id && id !== primarySectionId),
+  ];
+  const uniqueSectionIds = [...new Set(sectionIds.filter(Boolean))];
+  if (!uniqueSectionIds.length) {
+    return { data: null, error: new Error("Primary section is required"), created: [] };
+  }
+
+  const created = [];
+  for (const sectionId of uniqueSectionIds) {
+    const { data, error } = await insertMenuItemRow({
+      ...contentPayload,
+      section_id: sectionId,
+      placement_group_id: placementGroupId,
+    });
+    if (error) return { data: null, error, created };
+    created.push(data);
+  }
+
+  const primary = created[0];
+  if (allergenIds.length) await setItemAllergens(primary.id, allergenIds);
+  if (addonIds.length) await setItemAddons(primary.id, addonIds);
+
+  for (let i = 1; i < created.length; i += 1) {
+    await copyItemRelations(primary.id, created[i].id);
+  }
+
+  invalidateMenuCache();
+  return { data: primary, created, placementGroupId, error: null };
+}
+
+/**
+ * Update item; optionally sync content to all rows in placement_group_id.
+ * Manages extra placement clones and removals.
+ */
+export async function updateMenuItemPlacements({
+  itemId,
+  contentPayload,
+  primarySectionId,
+  extraPlacements = [],
+  removePlacementItemIds = [],
+  syncLinked = false,
+  placementGroupId = null,
+  allergenIds = [],
+  addonIds = [],
+}) {
+  await requireMenuEditorAuth();
+
+  const contentOnly = sanitizeMenuItemPayload(contentPayload);
+  const removed = new Set(removePlacementItemIds.filter((id) => id && id !== itemId));
+
+  for (const id of removed) {
+    await deleteMenuItem(id);
+  }
+
+  let groupId = placementGroupId || null;
+  const needsGroup =
+    extraPlacements.length > 0 || removed.size > 0 || Boolean(groupId);
+  if (needsGroup && !groupId) {
+    groupId = newPlacementGroupId();
+    await updateMenuItem(itemId, { placement_group_id: groupId });
+  }
+
+  let members = [];
+  if (groupId) {
+    const { data } = await fetchPlacementGroupMembers(groupId);
+    members = (data || []).filter((m) => !removed.has(m.id));
+    if (!members.some((m) => m.id === itemId)) {
+      members.push({ id: itemId, section_id: primarySectionId });
+    }
+  } else {
+    members = [{ id: itemId, section_id: primarySectionId }];
+  }
+
+  const applyRelations = async (ids) => {
+    await Promise.all(ids.map((id) => setItemAllergens(id, allergenIds).catch(() => {})));
+    await Promise.all(ids.map((id) => setItemAddons(id, addonIds).catch(() => {})));
+  };
+
+  if (syncLinked && groupId) {
+    await Promise.all(
+      members.map((m) =>
+        updateMenuItem(m.id, {
+          ...contentOnly,
+          placement_group_id: groupId,
+          ...(m.id === itemId ? { section_id: primarySectionId } : {}),
+        }),
+      ),
+    );
+    await applyRelations(members.map((m) => m.id));
+  } else {
+    await updateMenuItem(itemId, {
+      ...contentOnly,
+      section_id: primarySectionId,
+      placement_group_id: groupId,
+    });
+    await applyRelations([itemId]);
+  }
+
+  for (const placement of extraPlacements) {
+    if (!placement.sectionId) continue;
+    if (placement.itemId) {
+      if (!syncLinked || placement.itemId !== itemId) {
+        await updateMenuItem(placement.itemId, {
+          section_id: placement.sectionId,
+          placement_group_id: groupId,
+        });
+      }
+      continue;
+    }
+    const { data: created, error } = await insertMenuItemRow({
+      ...contentOnly,
+      section_id: placement.sectionId,
+      placement_group_id: groupId,
+    });
+    if (error) throw error;
+    if (syncLinked) {
+      await setItemAllergens(created.id, allergenIds).catch(() => {});
+      await setItemAddons(created.id, addonIds).catch(() => {});
+    } else {
+      await copyItemRelations(itemId, created.id);
+    }
+  }
+
+  invalidateMenuCache();
+  const { data: primary } = await fetchMenuItemById(itemId);
+  return { data: primary, error: null };
+}
+
 export async function deleteMenuItem(id) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("menu_items")
     .delete()
@@ -507,6 +726,7 @@ export async function toggleItemActive(id, active) {
 }
 
 export async function reorderSections(updates) {
+  await requireMenuEditorAuth();
   const results = await Promise.all(
     updates.map(({ id, sort_order }) =>
       supabase.from("sections").update({ sort_order }).eq("id", id),
@@ -519,6 +739,7 @@ export async function reorderSections(updates) {
 }
 
 export async function reorderItems(updates) {
+  await requireMenuEditorAuth();
   const results = await Promise.all(
     updates.map(({ id, sort_order }) =>
       supabase.from("menu_items").update({ sort_order }).eq("id", id),
@@ -533,6 +754,7 @@ export async function reorderItems(updates) {
 // ═══════════════ CATEGORY CRUD ═══════════════
 
 export async function createCategory(data) {
+  await requireMenuEditorAuth();
   const { data: cat, error } = await supabase
     .from("categories")
     .insert(data)
@@ -544,6 +766,7 @@ export async function createCategory(data) {
 }
 
 export async function updateCategory(id, updates) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("categories")
     .update(updates)
@@ -556,6 +779,7 @@ export async function updateCategory(id, updates) {
 }
 
 export async function deleteCategory(id) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("categories")
     .delete()
@@ -568,6 +792,7 @@ export async function deleteCategory(id) {
 }
 
 export async function reorderCategories(updates) {
+  await requireMenuEditorAuth();
   const results = await Promise.all(
     updates.map(({ id, sort_order }) =>
       supabase.from("categories").update({ sort_order }).eq("id", id),
@@ -582,6 +807,7 @@ export async function reorderCategories(updates) {
 // ═══════════════ SECTION CRUD ═══════════════
 
 export async function createSection(data) {
+  await requireMenuEditorAuth();
   const { data: sec, error } = await supabase
     .from("sections")
     .insert(data)
@@ -593,6 +819,7 @@ export async function createSection(data) {
 }
 
 export async function updateSection(id, updates) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("sections")
     .update(updates)
@@ -605,6 +832,7 @@ export async function updateSection(id, updates) {
 }
 
 export async function deleteSection(id) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("sections")
     .delete()
@@ -629,6 +857,7 @@ export async function getAddOns() {
 }
 
 export async function createAddOn(data) {
+  await requireMenuEditorAuth();
   const { data: addon, error } = await supabase
     .from("add_ons")
     .insert(data)
@@ -640,6 +869,7 @@ export async function createAddOn(data) {
 }
 
 export async function updateAddOn(id, updates) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("add_ons")
     .update(updates)
@@ -652,6 +882,7 @@ export async function updateAddOn(id, updates) {
 }
 
 export async function deleteAddOn(id) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase
     .from("add_ons")
     .delete()
@@ -677,6 +908,7 @@ export async function getAllergens() {
 // ═══════════════ ITEM ADDON/ALLERGEN MANAGEMENT ═══════════════
 
 export async function setItemAddons(itemId, addonIds) {
+  await requireMenuEditorAuth();
   const { error: delErr } = await supabase
     .from("item_addons")
     .delete()
@@ -702,6 +934,7 @@ export async function setItemAddons(itemId, addonIds) {
 }
 
 export async function setItemAllergens(itemId, allergenIds) {
+  await requireMenuEditorAuth();
   const { error: delErr } = await supabase
     .from("item_allergens")
     .delete()
@@ -731,6 +964,7 @@ const IMAGE_BUCKET = "menu-images";
 const COMPRESS_THRESHOLD = 500 * 1024;
 
 export async function uploadMenuImage(file, path) {
+  await requireMenuEditorAuth();
   let upload = file;
   if (file.size > COMPRESS_THRESHOLD && file.type.startsWith("image/")) {
     upload = await compressImage(file);
@@ -751,6 +985,7 @@ export async function uploadMenuImage(file, path) {
 }
 
 export async function deleteMenuImage(path) {
+  await requireMenuEditorAuth();
   const { data, error } = await supabase.storage
     .from(IMAGE_BUCKET)
     .remove([path]);
@@ -768,6 +1003,7 @@ export function getImageUrl(path) {
 // ═══════════════ BULK OPERATIONS ═══════════════
 
 export async function duplicateMenuItem(id) {
+  await requireMenuEditorAuth();
   const { data: original, error: fetchErr } = await supabase
     .from("menu_items")
     .select("*")
@@ -776,12 +1012,13 @@ export async function duplicateMenuItem(id) {
 
   if (fetchErr || !original) return { data: null, error: fetchErr || new Error("Item not found") };
 
-  const { id: _id, created_at: _ca, slug: _slug, ...rest } = original;
+  const { id: _id, created_at: _ca, slug: _slug, placement_group_id: _pg, ...rest } = original;
   const clone = {
     ...rest,
     name_en: `${rest.name_en} (Copy)`,
     name_ar: `${rest.name_ar} (نسخة)`,
     sort_order: (rest.sort_order || 0) + 1,
+    placement_group_id: null,
   };
 
   const { data: newItem, error: insertErr } = await supabase
@@ -821,6 +1058,7 @@ export async function duplicateMenuItem(id) {
 }
 
 export async function bulkPriceUpdate(itemIds, percentageIncrease) {
+  await requireMenuEditorAuth();
   const { data: items, error: fetchErr } = await supabase
     .from("menu_items")
     .select("id, price")
