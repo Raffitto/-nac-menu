@@ -55,7 +55,8 @@ import {
 } from "./utils/reviewSummaryMap";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
-import GoogleReputationBadge from "./components/GoogleReputationBadge";
+import { useGoogleReviewMovement } from "./hooks/useGoogleReviewMovement";
+import GoogleReputationWithMovement from "./components/GoogleReputationWithMovement";
 import "./styles/review-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
@@ -92,6 +93,13 @@ export default function ReviewIntelligence({ embedded = false }) {
   const rangeLabel = rangeExportLabel(selectedRange);
   const { loading: googleLoading, forBranch: googleMetrics, byBranch: googleByBranch } =
     useGooglePlaceMetrics(branch);
+  const { movementByBranch } = useGoogleReviewMovement({
+    byBranch: googleByBranch,
+    enabled: configured,
+    captureOnLoad: true,
+    periodRange: selectedRange,
+  });
+  const branchGoogleMovement = movementByBranch[branch] || null;
 
   const load = useCallback(async () => {
     if (!configured) {
@@ -239,7 +247,12 @@ export default function ReviewIntelligence({ embedded = false }) {
             {selectedRange === "today" ? " · 3:00 AM – 2:59 AM (Asia/Riyadh)" : ""}
           </p>
           <div className="rev-google-rep-row">
-            <GoogleReputationBadge metrics={googleMetrics} loading={googleLoading} showName />
+            <GoogleReputationWithMovement
+              metrics={googleMetrics}
+              movement={branchGoogleMovement}
+              loading={googleLoading}
+              showName
+            />
           </div>
         </motion.div>
 
@@ -295,7 +308,12 @@ export default function ReviewIntelligence({ embedded = false }) {
 
       {embedded && (
         <div className="rev-google-rep-row" style={{ marginBottom: "0.75rem" }}>
-          <GoogleReputationBadge metrics={googleMetrics} loading={googleLoading} compact />
+          <GoogleReputationWithMovement
+            metrics={googleMetrics}
+            movement={branchGoogleMovement}
+            loading={googleLoading}
+            compact
+          />
         </div>
       )}
 
@@ -520,8 +538,9 @@ export default function ReviewIntelligence({ embedded = false }) {
                 >
                   <span>{branchDisplayName(row.branch_id)}</span>
                   <span className="rev-branch-google-cell">
-                    <GoogleReputationBadge
+                    <GoogleReputationWithMovement
                       metrics={googleByBranch[row.branch_id]}
+                      movement={movementByBranch[row.branch_id]}
                       loading={googleLoading}
                       compact
                     />

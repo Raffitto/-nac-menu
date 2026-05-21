@@ -30,6 +30,10 @@ import {
   rangeExportLabel,
 } from "../utils/rangeState";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
+import {
+  buildAllBranchGoogleMovement,
+  fetchGoogleReviewSnapshots,
+} from "../utils/googleReviewSnapshotHistory";
 import { exportElementToPng } from "../utils/snapshotExport";
 
 const REVIEW_EVENT_SELECT =
@@ -202,10 +206,15 @@ export function useReviewExports(filters) {
     setAuditBusy(true);
     try {
       const reports = await loadBranchAuditReports();
+      const { data: snapshots } = await fetchGoogleReviewSnapshots();
+      const googleMovement = buildAllBranchGoogleMovement(snapshots || [], {
+        periodRange: selectedRange,
+      });
       exportDetailedBranchOperationalReview({
         reports,
         rangeLabel,
         selectedRange,
+        googleMovement,
       });
     } finally {
       setAuditBusy(false);

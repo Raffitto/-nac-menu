@@ -93,3 +93,44 @@
 .nac-branch-google-rep {
   margin-top: 0.5rem;
 }
+
+.nac-google-rep-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.nac-google-movement-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.nac-google-movement-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: rgba(78, 205, 196, 0.12);
+  color: #4ecdc4;
+  border: 1px solid rgba(78, 205, 196, 0.28);
+}
+
+.nac-google-movement-chip--down {
+  background: rgba(245, 166, 35, 0.12);
+  color: #f5a623;
+  border-color: rgba(245, 166, 35, 0.35);
+}
+
+.nac-google-movement-chip--month {
+  background: rgba(215, 188, 138, 0.1);
+  color: #d7bc8a;
+  border-color: rgba(215, 188, 138, 0.25);
+}
+
+.nac-google-movement-muted {
+  font-size: 0.65rem;
+  color: rgba(249, 249, 247, 0.38);
+}

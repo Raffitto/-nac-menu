@@ -15,6 +15,10 @@ import {
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
 import {
+  formatGoogleMovementLine,
+  formatTrackingStartDate,
+} from "../utils/googleReviewSnapshotHistory";
+import {
   REVIEW_METRIC,
   STAFF_AUDIT_TABLE_HEAD,
   drawStaffAuditTableLegend,
@@ -54,7 +58,43 @@ function networkTotals(reports) {
   );
 }
 
-function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports }) {
+function drawGoogleMovementBlock(doc, margin, contentW, startY, googleMovement = []) {
+  const lines = (googleMovement || []).map(formatGoogleMovementLine);
+  const hasHistory = lines.some((l) => !l.includes("No snapshot history"));
+
+  doc.setFontSize(9);
+  doc.setTextColor(...NAC_GOLD);
+  doc.text("Google review movement (snapshot-based)", margin, startY);
+
+  doc.setFontSize(8);
+  doc.setTextColor(200, 200, 200);
+  let y = startY + 14;
+  if (!lines.length) {
+    doc.text("No Google review snapshots stored yet.", margin, y);
+    return y + 16;
+  }
+  lines.forEach((line) => {
+    doc.text(clip(line, 110), margin, y);
+    y += 11;
+  });
+
+  const trackingStart = googleMovement.find((g) => g.tracking_start_date)?.tracking_start_date;
+  if (hasHistory && trackingStart) {
+    doc.setFontSize(7);
+    doc.setTextColor(...DIM);
+    doc.text(
+      `Google review history available from ${formatTrackingStartDate(trackingStart)}. Not QR redirects.`,
+      margin,
+      y + 4,
+    );
+    y += 14;
+  } else {
+    y += 6;
+  }
+  return y;
+}
+
+function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports, googleMovement }) {
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 5, "F");
@@ -90,6 +130,14 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
     drawKpiCard(doc, margin + i * (cardW + 12), cardY, cardW, cardH, c.label, c.value, c.accent);
   });
 
+  const movementY = drawGoogleMovementBlock(
+    doc,
+    margin,
+    contentW,
+    cardY + cardH + 14,
+    googleMovement,
+  );
+
   const topBranch = [...reports].sort(
     (a, b) => (b.kpis?.google_redirects || 0) - (a.kpis?.google_redirects || 0),
   )[0];
@@ -105,7 +153,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
       } ${net.staff} staff · ${net.scans} card taps in period.`
     : "Insufficient card-handoff events for network narrative.";
 
-  drawCallout(doc, margin, cardY + cardH + 20, contentW, {
+  drawCallout(doc, margin, movementY + 8, contentW, {
     accent: NAC_GOLD,
     title: "Intelligence brief",
     body: clip(brief, 220),
@@ -117,7 +165,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, re
   doc.text("Confidential · Operational use only", margin, pageH - 32);
 }
 
-function drawBranchHeader(doc, margin, contentW, report, rangeLabel) {
+function drawBranchHeader(doc, margin, contentW, report, rangeLabel, googleMovementRow) {
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 3, "F");
@@ -137,6 +185,13 @@ function drawBranchHeader(doc, margin, contentW, report, rangeLabel) {
     margin,
     68,
   );
+
+  if (googleMovementRow) {
+    doc.setFontSize(8);
+    doc.setTextColor(180, 200, 195);
+    doc.text(clip(formatGoogleMovementLine(googleMovementRow), 100), margin, 82);
+    return 96;
+  }
 
   return 82;
 }
@@ -270,7 +325,11 @@ export function exportDetailedBranchOperationalReview({
   reports = [],
   rangeLabel,
   selectedRange,
+  googleMovement = [],
 }) {
+  const movementByBranch = Object.fromEntries(
+    (googleMovement || []).map((g) => [g.branch_id, g]),
+  );
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const margin = 36;
   const pageW = doc.internal.pageSize.getWidth();
@@ -282,11 +341,18 @@ export function exportDetailedBranchOperationalReview({
     timeStyle: "short",
   });
 
-  drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports });
+  drawCoverPage(doc, margin, contentW, pageH, { rangeLabel, generated, reports, googleMovement });
 
   reports.forEach((report, branchIdx) => {
     doc.addPage();
-    let y = drawBranchHeader(doc, margin, contentW, report, rangeLabel);
+    let y = drawBranchHeader(
+      doc,
+      margin,
+      contentW,
+      report,
+      rangeLabel,
+      movementByBranch[report.branchId],
+    );
     y = drawSummaryKpiGrid(doc, margin, contentW, y, report.summary, report.kpis);
 
     doc.setFontSize(8);

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { fetchBranchGooglePlaceMetrics } from "../services/googlePlacesService";
+import { upsertTodayGoogleReviewSnapshots } from "../utils/googleReviewSnapshotHistory";
 
 const GooglePlacesContext = createContext(null);
 
@@ -27,6 +28,7 @@ export function GooglePlacesProvider({ children, enabled = true }) {
         const data = await fetchBranchGooglePlaceMetrics(null);
         if (cancelled) return;
         setByBranch(data);
+        await upsertTodayGoogleReviewSnapshots(data).catch(() => {});
         const failed = Object.values(data).every((m) => m?.rating == null);
         if (failed && !apiKeyPresent()) {
           setError("missing_api_key");
