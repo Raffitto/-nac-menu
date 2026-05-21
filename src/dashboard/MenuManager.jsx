@@ -47,8 +47,6 @@ import {
   updateAddOn,
   deleteAddOn,
   getAllergens,
-  setItemAddons,
-  setItemAllergens,
   uploadMenuImage,
   deleteMenuImage,
   duplicateMenuItem,
