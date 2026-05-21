@@ -18,6 +18,7 @@ import {
   trackTimeSpent,
 } from "./lib/analytics";
 import { useMenuData } from "./lib/useMenuData";
+import { isSupabaseConfigured } from "./lib/supabase";
 import { filterPublicMenuData } from "./lib/menuVisibility";
 import {
   applyMenuOrdering,
@@ -498,11 +499,40 @@ export default function App() {
     menuData: rawMenuData,
     allergenLabels,
     fromSupabase,
+    loading: menuDataLoading,
   } = useMenuData(_fallback);
   const menuData = useMemo(() => {
     const ordered = applyMenuOrdering(rawMenuData);
     return fromSupabase ? filterPublicMenuData(ordered) : ordered;
   }, [rawMenuData, fromSupabase]);
+  const [loading, setLoading] = useState(true);
+
+  const menuHasContent = useMemo(
+    () =>
+      Object.values(menuData).some(
+        (sections) =>
+          Array.isArray(sections) &&
+          sections.some((sec) => (sec.items?.length ?? 0) > 0),
+      ),
+    [menuData],
+  );
+
+  useEffect(() => {
+    if (menuDataLoading) {
+      setLoading(true);
+      return undefined;
+    }
+    if (!isSupabaseConfigured()) {
+      setLoading(false);
+      return undefined;
+    }
+    if (!categories.length || !menuHasContent) {
+      setLoading(false);
+      return undefined;
+    }
+    const frame = requestAnimationFrame(() => setLoading(false));
+    return () => cancelAnimationFrame(frame);
+  }, [menuDataLoading, categories.length, menuHasContent]);
 const [contextualFlow] = useState(() => getContextualFlow());
 const [showCategorySelector, setShowCategorySelector] = useState(false);
 const [menuMode, setMenuMode] = useState("contextual");
@@ -1279,6 +1309,7 @@ if (adminMode) {
               onOpenItem={openMenuItem}
               activeSection={activeSection}
               onSectionNavigate={handleSectionNavigate}
+              loading={loading}
               onBackToContextual={() => {
                 setMenuMode("contextual");
                 setManualCategory(null);

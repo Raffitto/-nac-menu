@@ -2,6 +2,7 @@ import React, { useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import FoodMenuCard from "./FoodMenuCard";
 import DrinkMenuCard from "./DrinkMenuCard";
+import MenuSkeleton from "./MenuSkeleton";
 import { makeSectionDomId, sectionSlug } from "../lib/sectionNav";
 import {
   getMenuLevelTabs,
@@ -54,6 +55,7 @@ export default function ContextualMenuView({
   setActiveMenuTab,
   setActiveSection,
   onMenuTabOpen,
+  loading = false,
 }) {
   const categoryMeta = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
@@ -141,6 +143,10 @@ export default function ContextualMenuView({
   const hostMeta = categoryMeta[hostCategoryId];
   const showMenuTabs = menuTabs.length > 0;
   const isDrinks = isDrinksCatalog(sourceCategoryId);
+
+  if (loading) {
+    return <MenuSkeleton isArabic={isArabic} />;
+  }
 
   return (
     <motion.div className="contextual-menu">
@@ -280,7 +286,7 @@ export default function ContextualMenuView({
         </AnimatePresence>
       </div>
 
-      {visibleSections.length === 0 && (
+      {!loading && visibleSections.length === 0 && (
         <p className="empty-state">{isArabic ? "لا توجد نتائج مطابقة" : "No matching results"}</p>
       )}
     </motion.div>
