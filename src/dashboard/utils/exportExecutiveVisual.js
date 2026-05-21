@@ -31,16 +31,51 @@ export function parsePctValue(val) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Executive delta with arrow and semantic color */
+/**
+ * Normalize strings for jsPDF / Helvetica (ASCII-safe, no broken glyph spacing).
+ */
+export function sanitizeExportText(text = "") {
+  return String(text)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/tap\s*→\s*Google/gi, "tap-to-Google")
+    .replace(/tap→Google/gi, "tap-to-Google")
+    .replace(/Card\s*→\s*Review/gi, "Card to Review")
+    .replace(/Card→Review/gi, "Card to Review")
+    .replace(/Tap\s*→\s*Google/gi, "tap-to-Google")
+    .replace(/Tap→Google/gi, "tap-to-Google")
+    .replace(/[→➜➝➔←↔⇒⇢]/g, " to ")
+    .replace(/[↑]/g, " up")
+    .replace(/[↓]/g, " down")
+    .replace(/[‘’‛′']/g, "'")
+    .replace(/[“”″]/g, '"')
+    .replace(/[·•∙]/g, " | ")
+    .replace(/[—–]/g, "-")
+    .replace(/…/g, "...")
+    .replace(/⭐/g, "Rating")
+    .replace(/[^\u0020-\u007E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Sanitize autoTable head/body before PDF render */
+export function sanitizeTableForPdf(head, body) {
+  const safeHead = head.map((row) => row.map((cell) => sanitizeExportText(String(cell))));
+  const safeBody = body.map((row) => row.map((cell) => sanitizeExportText(String(cell))));
+  return { head: safeHead, body: safeBody };
+}
+
+/** Executive delta with ASCII direction labels (PDF-safe) */
 export function formatMomentumDelta(n, suffix = "") {
   if (n == null || !Number.isFinite(Number(n))) {
-    return { text: "—", accent: EXPORT_MUTED };
+    return { text: "-", accent: EXPORT_MUTED };
   }
   const num = Number(n);
-  const arrow = num > 0 ? "↑" : num < 0 ? "↓" : "→";
   const sign = num > 0 ? "+" : "";
   const label = suffix ? ` ${suffix}` : "";
-  const text = `${sign}${num}${label} ${arrow}`.trim();
+  const dir = num > 0 ? " up" : num < 0 ? " down" : "";
+  const text = sanitizeExportText(`${sign}${num}${label}${dir}`);
   const accent = num > 0 ? EXPORT_TEAL : num < 0 ? EXPORT_RISK : EXPORT_MUTED;
   return { text, accent };
 }

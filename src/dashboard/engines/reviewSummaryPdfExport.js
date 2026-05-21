@@ -16,6 +16,8 @@ import {
   applyExportTableRowStriping,
   applyConvPctHighlight,
   parsePctValue,
+  sanitizeExportText,
+  sanitizeTableForPdf,
   NAC_GOLD,
   NAC_TEAL,
   COLOR_RISK,
@@ -23,8 +25,8 @@ import {
 import { branchDisplayName } from "../utils/rangeState";
 import { filterProductionStaffList } from "../utils/isProductionStaff";
 import {
-  REVIEW_FUNNEL_SUBTITLE,
-  REVIEW_METRIC,
+  REVIEW_FUNNEL_SUBTITLE_PDF,
+  REVIEW_METRIC_PDF,
   STAFF_SUMMARY_TABLE_HEAD,
   BRANCH_BENCHMARK_TABLE_HEAD,
 } from "../config/reviewMetricLabels";
@@ -34,9 +36,10 @@ const CONV_COL = 5;
 const GOOGLE_COL = 4;
 
 function clip(str, max) {
-  const s = String(str || "").trim();
-  if (s.length <= max) return s || "—";
-  return `${s.slice(0, max - 1)}…`;
+  const s = sanitizeExportText(str);
+  if (!s) return "-";
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}...`;
 }
 
 export function buildExecutiveBrief(review, staffStats, comparison, branch) {
@@ -54,7 +57,7 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
     .filter((s) => s.opens >= 6 && s.conversion_pct < 18)
     .sort((a, b) => b.opens - a.opens)[0];
 
-  let topOpportunity = "—";
+  let topOpportunity = "-";
   if (hiVisLow?.name) {
     topOpportunity = `${hiVisLow.name}: high card exposure, ${hiVisLow.conversion_pct}% Google follow-through`;
   } else if (conv < 22 && scans > 10) {
@@ -65,7 +68,7 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
 
   const recommendation =
     missed > 0
-      ? `Close ~${missed} missed Google redirects — coach post-review verbal CTA.`
+      ? `Close ~${missed} missed Google redirects - coach post-review verbal CTA.`
       : conv >= 28
         ? "Protect top handoff performers; coach weakest follow-through only."
         : "Drill NFC/QR card presentation and Google redirect at bill close.";
@@ -73,11 +76,11 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
   return {
     topOpportunity: clip(topOpportunity, 90),
     strongestBranch: strongest
-      ? `${branchDisplayName(strongest.branch_id)} · ${strongest.google_redirects} redirects`
-      : "—",
+      ? `${branchDisplayName(strongest.branch_id)} | ${strongest.google_redirects} redirects`
+      : "-",
     weakestFunnel: weakest
-      ? `${branchDisplayName(weakest.branch_id)} · ${weakest.conversion_pct}% conversion`
-      : "—",
+      ? `${branchDisplayName(weakest.branch_id)} | ${weakest.conversion_pct}% conversion`
+      : "-",
     missedGoogle: missed,
     recommendation: clip(recommendation, 100),
     branchLabel: branch,
@@ -144,16 +147,16 @@ export function exportReviewSummaryPdf(ctx) {
 
   setExportFont(doc, 500, 8);
   paintExportText(doc, `Period: ${rangeLabel}`, margin, 102, { tier: "muted", shadow: true });
-  paintExportText(doc, REVIEW_FUNNEL_SUBTITLE, margin, 114, { tier: "muted", shadow: true });
+  paintExportText(doc, REVIEW_FUNNEL_SUBTITLE_PDF, margin, 114, { tier: "muted", shadow: true });
   paintExportText(doc, `Report generated ${generated}`, margin, 126, { tier: "muted", shadow: true });
 
   const cardW = (contentW - 24) / 4;
   const cardY = 138;
   const metrics = [
-    { label: REVIEW_METRIC.cardTaps, value: review?.qr_scans ?? 0, accent: NAC_TEAL },
-    { label: REVIEW_METRIC.reviewInteractions, value: review?.reviews_generated ?? 0, accent: NAC_TEAL },
-    { label: REVIEW_METRIC.googleRedirects, value: review?.google_clicks ?? 0, accent: NAC_GOLD },
-    { label: REVIEW_METRIC.tapToGooglePct, value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.cardTaps, value: review?.qr_scans ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.reviewInteractions, value: review?.reviews_generated ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.googleRedirects, value: review?.google_clicks ?? 0, accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.tapToGooglePct, value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
   ];
   metrics.forEach((m, i) => {
     drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 52, m.label, m.value, m.accent);
@@ -226,11 +229,9 @@ export function exportReviewSummaryPdf(ctx) {
     y += 6;
     drawContentPanel(doc, margin - 4, y, contentW + 8, Math.min(320, 36 + productionStaff.length * 18));
 
-    autoTable(doc, {
-      ...buildExportTableStyles({ styles: { fontSize: 8 } }),
-      startY: y + 4,
-      head: [STAFF_SUMMARY_TABLE_HEAD],
-      body: productionStaff.slice(0, 14).map((s) => [
+    const staffTable = sanitizeTableForPdf(
+      [STAFF_SUMMARY_TABLE_HEAD],
+      productionStaff.slice(0, 14).map((s) => [
         clip(s.name, 18),
         clip(s.role, 8),
         s.opens,
@@ -238,6 +239,13 @@ export function exportReviewSummaryPdf(ctx) {
         s.google,
         `${s.conversion_pct}%`,
       ]),
+    );
+
+    autoTable(doc, {
+      ...buildExportTableStyles({ styles: { fontSize: 8 } }),
+      startY: y + 4,
+      head: staffTable.head,
+      body: staffTable.body,
       margin: { left: margin, right: margin },
       tableWidth: contentW,
       didParseCell: (data) => {
@@ -263,17 +271,22 @@ export function exportReviewSummaryPdf(ctx) {
       paintExportText(doc, "Branch benchmark", margin, y2, { tier: "gold", shadow: true });
       drawContentPanel(doc, margin - 4, y2 + 6, contentW + 8, 28 + comparison.length * 18);
 
-      autoTable(doc, {
-        ...buildExportTableStyles({ styles: { fontSize: 8 } }),
-        startY: y2 + 10,
-        head: [BRANCH_BENCHMARK_TABLE_HEAD],
-        body: comparison.map((b) => [
+      const branchTable = sanitizeTableForPdf(
+        [BRANCH_BENCHMARK_TABLE_HEAD],
+        comparison.map((b) => [
           branchDisplayName(b.branch_id),
           b.qr_scans,
           b.reviews_generated,
           b.google_redirects,
           `${b.conversion_pct}%`,
         ]),
+      );
+
+      autoTable(doc, {
+        ...buildExportTableStyles({ styles: { fontSize: 8 } }),
+        startY: y2 + 10,
+        head: branchTable.head,
+        body: branchTable.body,
         margin: { left: margin, right: margin },
         tableWidth: contentW,
         didParseCell: (data) => {

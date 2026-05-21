@@ -10,11 +10,18 @@ import {
   EXPORT_PRIMARY,
   EXPORT_SECONDARY,
   EXPORT_MUTED,
+  EXPORT_TEAL,
+  EXPORT_GOLD,
+  EXPORT_RISK,
   TABLE_HEAD_BG,
   TABLE_ROW_A,
   TABLE_ROW_B,
   CONTENT_PANEL_BG,
   convPctAccent,
+  parsePctValue,
+  formatMomentumDelta,
+  sanitizeExportText,
+  sanitizeTableForPdf,
 } from "../utils/exportExecutiveVisual";
 
 export const NAC_TEAL = COLOR_PERFORMANCE;
@@ -33,7 +40,9 @@ export {
   convPctAccent,
   parsePctValue,
   formatMomentumDelta,
-} from "../utils/exportExecutiveVisual";
+  sanitizeExportText,
+  sanitizeTableForPdf,
+};
 
 export function setExportFont(doc, weight = "normal", size) {
   if (size) doc.setFontSize(size);
@@ -50,16 +59,17 @@ const TIER_COLORS = {
   risk: COLOR_RISK,
 };
 
-/** Simulated text-shadow for PDF readability on dark backgrounds */
+/** Simulated text-shadow for PDF readability — single offset, ASCII-safe text only */
 export function paintExportText(doc, text, x, y, options = {}) {
   const { tier = "primary", shadow = true, align, maxWidth } = options;
-  const lines = maxWidth ? doc.splitTextToSize(String(text), maxWidth) : [String(text)];
+  const safe = sanitizeExportText(text);
+  if (!safe) return y;
+  const lines = maxWidth ? doc.splitTextToSize(safe, maxWidth) : [safe];
   lines.forEach((line, i) => {
     const ly = y + i * (options.lineHeight || 11);
     if (shadow) {
-      doc.setTextColor(0, 0, 0);
-      doc.text(line, x + 1, ly + 2, { align });
-      doc.text(line, x + 0.5, ly + 1.5, { align });
+      doc.setTextColor(18, 18, 20);
+      doc.text(line, x + 0.5, ly + 1, { align });
     }
     doc.setTextColor(...(TIER_COLORS[tier] || EXPORT_PRIMARY));
     doc.text(line, x, ly, { align });
@@ -184,7 +194,7 @@ export function drawCallout(doc, margin, y, maxW, { accent = NAC_TEAL, title, bo
   setExportFont(doc, 600, 8);
   paintExportText(doc, title, margin + 10, y + 14, { tier: "gold", shadow: true });
   setExportFont(doc, 500, 7.5);
-  doc.splitTextToSize(body || "", maxW - 20)
+  doc.splitTextToSize(sanitizeExportText(body || ""), maxW - 20)
     .slice(0, 2)
     .forEach((ln, i) => {
       paintExportText(doc, ln, margin + 10, y + 28 + i * 10, { tier: "secondary", shadow: true });
@@ -237,10 +247,10 @@ export function drawInsightCard(doc, margin, y, ins, maxW = 500) {
   doc.setLineWidth(0.45);
   doc.roundedRect(margin, y, maxW, 54, 4, 4, "S");
   setExportFont(doc, 600, 7);
-  const conf = ins.confidenceLabel ? ` · ${ins.confidenceLabel}` : "";
+  const conf = ins.confidenceLabel ? ` | ${ins.confidenceLabel}` : "";
   paintExportText(
     doc,
-    `${(ins.severity || "medium").toUpperCase()} · ${ins.category || ins.type || "Insight"}${conf}`,
+    `${(ins.severity || "medium").toUpperCase()} | ${ins.category || ins.type || "Insight"}${conf}`,
     margin + 8,
     y + 12,
     { tier: "gold", shadow: true },
@@ -260,7 +270,10 @@ export function drawInsightCard(doc, margin, y, ins, maxW = 500) {
 export function staffSalesLine(staff, salesMetric = "gross") {
   const sales = waiterSalesValue(staff, salesMetric);
   const label = salesMetric === "net" ? "Net sales" : "Gross sales";
-  return `${label} ${sales.toLocaleString()} SAR · ${staff.quantity} units · Modifier attach ${staff.modifierAttachPct}% · Premium beverage ${staff.ops?.premiumBevPct ?? staff.beverageAttachPct ?? "—"}%`;
+  const bev = staff.ops?.premiumBevPct ?? staff.beverageAttachPct ?? "-";
+  return sanitizeExportText(
+    `${label} ${sales.toLocaleString()} SAR | ${staff.quantity} units | Modifier attach ${staff.modifierAttachPct}% | Premium beverage ${bev}%`,
+  );
 }
 
 export function drawStaffCard(doc, margin, y, w, staff, rank, target, salesMetric = "gross") {
@@ -271,7 +284,7 @@ export function drawStaffCard(doc, margin, y, w, staff, rank, target, salesMetri
   doc.setDrawColor(...accent);
   doc.roundedRect(margin, y, w, h, 5, 5, "S");
   setExportFont(doc, 600, 8);
-  paintExportText(doc, `${staff.roleLabel || "Waiter"} · #${rank}`, margin + 10, y + 14, {
+  paintExportText(doc, `${staff.roleLabel || "Waiter"} | #${rank}`, margin + 10, y + 14, {
     tier: "gold",
     shadow: true,
   });
@@ -285,7 +298,7 @@ export function drawStaffCard(doc, margin, y, w, staff, rank, target, salesMetri
   });
   paintExportText(
     doc,
-    `Strong: ${staff.strongestCategory || "—"} · Weak: ${staff.weakestCategory || "—"}`,
+    `Strong: ${staff.strongestCategory || "-"} | Weak: ${staff.weakestCategory || "-"}`,
     margin + 10,
     y + 54,
     { tier: "muted", shadow: true, maxWidth: w - 20 },

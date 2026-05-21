@@ -16,6 +16,8 @@ import {
   applyExportTableRowStriping,
   applyConvPctHighlight,
   parsePctValue,
+  sanitizeExportText,
+  sanitizeTableForPdf,
   NAC_GOLD,
   NAC_TEAL,
   EXPORT_GOLD,
@@ -27,8 +29,8 @@ import {
   formatGoogleTrackingFootnote,
 } from "../utils/googleReviewSnapshotHistory";
 import {
-  REVIEW_METRIC,
-  STAFF_AUDIT_TABLE_HEAD,
+  REVIEW_METRIC_PDF,
+  STAFF_AUDIT_TABLE_HEAD_PDF,
   drawStaffAuditTableLegend,
 } from "../config/reviewMetricLabels";
 
@@ -50,9 +52,10 @@ function toneFill(tone) {
 }
 
 function clip(str, max) {
-  const s = String(str || "").trim();
-  if (s.length <= max) return s || "—";
-  return `${s.slice(0, max - 1)}…`;
+  const s = sanitizeExportText(str);
+  if (!s) return "-";
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}...`;
 }
 
 function networkTotals(reports) {
@@ -131,7 +134,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
   paintExportText(doc, "Branch Operational Review", margin, 72, { tier: "primary", shadow: true });
 
   setExportFont(doc, 600, 12);
-  paintExportText(doc, "Staff audit · card handoff funnel · coaching priorities", margin, 94, {
+  paintExportText(doc, "Staff audit | card handoff funnel | coaching priorities", margin, 94, {
     tier: "secondary",
     shadow: true,
   });
@@ -141,7 +144,7 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
     tier: "muted",
     shadow: true,
   });
-  paintExportText(doc, `Generated ${generated} · Asia/Riyadh`, margin, 132, {
+  paintExportText(doc, `Generated ${generated} | Asia/Riyadh`, margin, 132, {
     tier: "muted",
     shadow: true,
   });
@@ -153,8 +156,8 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
   const cards = [
     { label: "Branches", value: String(reports.length), accent: NAC_GOLD },
     { label: "Network card taps", value: String(net.scans), accent: NAC_TEAL },
-    { label: REVIEW_METRIC.reviewInteractions, value: String(net.reviews), accent: NAC_TEAL },
-    { label: REVIEW_METRIC.googleRedirects, value: String(net.google), accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.reviewInteractions, value: String(net.reviews), accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.googleRedirects, value: String(net.google), accent: NAC_GOLD },
   ];
   cards.forEach((c, i) => {
     drawKpiCard(doc, margin + i * (cardW + 12), cardY, cardW, cardH, c.label, c.value, c.accent);
@@ -180,18 +183,18 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
         leakBranch
           ? `${leakBranch.branchLabel} weakest tap/scan-to-Google (${leakBranch.kpis?.conversion_pct ?? 0}%).`
           : ""
-      } ${net.staff} staff · ${net.scans} card taps in period.`
+      } ${net.staff} staff | ${net.scans} card taps in period.`
     : "Insufficient card-handoff events for network narrative.";
 
   drawCallout(doc, margin, movementY + 8, contentW, {
     accent: NAC_GOLD,
     title: "Intelligence brief",
     body: clip(brief, 220),
-    hint: "One page per branch follows · full roster included",
+    hint: "One page per branch follows | full roster included",
   });
 
   setExportFont(doc, 500, 7);
-  paintExportText(doc, "Confidential · Operational use only", margin, pageH - 32, {
+  paintExportText(doc, "Confidential | Operational use only", margin, pageH - 32, {
     tier: "muted",
     shadow: true,
   });
@@ -211,7 +214,7 @@ function drawBranchHeader(doc, margin, contentW, report, rangeLabel, googleMovem
   setExportFont(doc, 500, 9);
   paintExportText(
     doc,
-    `${rangeLabel} · ${report.staffRows.length} staff · ${report.summary.branchConversion}% tap→Google`,
+    `${rangeLabel} | ${report.staffRows.length} staff | ${report.summary.branchConversion}% tap-to-Google`,
     margin,
     68,
     { tier: "secondary", shadow: true },
@@ -238,9 +241,9 @@ function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
   const cardW = (contentW - 24) / 4;
   const cardH = 50;
   const row1 = [
-    { label: REVIEW_METRIC.cardTaps, value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
-    { label: REVIEW_METRIC.reviewInteractions, value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
-    { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? 0), accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.cardTaps, value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.reviewInteractions, value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.googleRedirects, value: String(kpis?.google_redirects ?? 0), accent: NAC_GOLD },
     { label: "Recoverable est.", value: String(summary.estimatedRecoverableReviews), accent: NAC_GOLD },
   ];
   row1.forEach((c, i) => {
@@ -296,11 +299,13 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
   const tableH = Math.min(420, 28 + staffRows.length * 18);
   drawContentPanel(doc, margin - 4, startY - 6, contentW + 8, tableH);
 
+  const tableData = sanitizeTableForPdf([STAFF_AUDIT_TABLE_HEAD_PDF], staffTableBody(staffRows));
+
   autoTable(doc, {
     ...buildExportTableStyles(),
     startY: startY + 2,
-    head: [STAFF_AUDIT_TABLE_HEAD],
-    body: staffTableBody(staffRows),
+    head: tableData.head,
+    body: tableData.body,
     margin: { left: margin, right: margin },
     tableWidth: contentW,
     didParseCell: (data) => {
@@ -415,7 +420,7 @@ export function exportDetailedBranchOperationalReview({
     setExportFont(doc, 500, 7);
     paintExportText(
       doc,
-      `${BRAND} · ${report.branchLabel} · ${branchDisplayName(report.branchId)}`,
+      `${BRAND} | ${report.branchLabel} | ${branchDisplayName(report.branchId)}`,
       margin,
       pageH - 24,
       { tier: "muted", shadow: true },

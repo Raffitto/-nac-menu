@@ -7,7 +7,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { GOOGLE_PLACE_BRANCHES } from "../config/googleBranchPlaces";
 import { branchDisplayName } from "./rangeState";
 import { NAC_BUSINESS_TZ } from "./businessDay";
-import { formatMomentumDelta } from "./exportExecutiveVisual";
+import { formatMomentumDelta, sanitizeExportText } from "./exportExecutiveVisual";
 
 export function getRiyadhDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: NAC_BUSINESS_TZ }).format(date);
@@ -292,55 +292,61 @@ export function formatGoogleMovementMonthChip(report) {
 /** Executive footnote when tracking began after the selected export window */
 export function formatGoogleTrackingFootnote(report) {
   if (report?.period_partial && report?.tracking_start_date) {
-    return `Tracking started ${formatTrackingStartDate(report.tracking_start_date)}. Review delta history begins from this date.`;
+    return sanitizeExportText(
+      `Tracking started ${formatTrackingStartDate(report.tracking_start_date)}. Review delta history begins from this date.`,
+    );
   }
   return null;
 }
 
 function deltaPhrase(n, suffix) {
-  if (n == null || !Number.isFinite(n)) return `— ${suffix}`.trim();
+  if (n == null || !Number.isFinite(n)) return suffix ? `- ${suffix}` : "-";
   return formatMomentumDelta(n, suffix).text;
 }
 
-/** One-line summary for Branch Audit PDF */
+/** One-line summary for Branch Audit PDF (ASCII-safe) */
 export function formatGoogleMovementLine(report) {
-  const star =
+  const rating =
     report.current_rating != null
-      ? `⭐ ${Number(report.current_rating).toFixed(1)}`
-      : "⭐ —";
+      ? `Rating ${Number(report.current_rating).toFixed(1)}`
+      : "Rating -";
   const count =
     report.current_review_count != null
       ? `${Number(report.current_review_count).toLocaleString()} reviews`
-      : "— reviews";
+      : "- reviews";
 
+  let line;
   if (report.period_label != null) {
     if (!report.tracking_start_date) {
-      return `${report.branch_name}: ${star} · ${count} · No snapshot history`;
+      line = `${report.branch_name}: ${rating} | ${count} | No snapshot history`;
+    } else {
+      const periodPart =
+        report.period_delta != null
+          ? deltaPhrase(report.period_delta, "reviews this period")
+          : "- this period";
+      line = `${report.branch_name}: ${rating} | ${count} | ${periodPart}`;
     }
-    const periodPart =
-      report.period_delta != null
-        ? `${deltaPhrase(report.period_delta, "reviews this period")}`
-        : "— this period";
-    return `${report.branch_name}: ${star} · ${count} · ${periodPart}`;
+  } else {
+    let todayPart = "- today";
+    if (report.is_baseline_today) {
+      todayPart = "Baseline captured";
+    } else if (report.today_delta != null) {
+      todayPart = deltaPhrase(report.today_delta, "today");
+    }
+
+    let monthPart = "";
+    if (!report.tracking_start_date) {
+      monthPart = "No snapshot history";
+    } else if (report.month_partial && report.month_delta != null) {
+      monthPart = deltaPhrase(report.month_delta, `${report.month_label} so far`);
+    } else if (report.month_delta != null) {
+      monthPart = deltaPhrase(report.month_delta, `${report.month_label} so far`);
+    } else if (report.month_partial) {
+      monthPart = `Tracking started ${formatTrackingStartDate(report.tracking_start_date)}`;
+    }
+
+    line = `${report.branch_name}: ${rating} | ${count} | ${todayPart} | ${monthPart}`;
   }
 
-  let todayPart = "— today";
-  if (report.is_baseline_today) {
-    todayPart = "Baseline captured";
-  } else if (report.today_delta != null) {
-    todayPart = deltaPhrase(report.today_delta, "today");
-  }
-
-  let monthPart = "";
-  if (!report.tracking_start_date) {
-    monthPart = "No snapshot history";
-  } else if (report.month_partial && report.month_delta != null) {
-    monthPart = `${deltaPhrase(report.month_delta, `${report.month_label} so far`)}`;
-  } else if (report.month_delta != null) {
-    monthPart = `${deltaPhrase(report.month_delta, `${report.month_label} so far`)}`;
-  } else if (report.month_partial) {
-    monthPart = `Tracking started ${formatTrackingStartDate(report.tracking_start_date)}`;
-  }
-
-  return `${report.branch_name}: ${star} · ${count} · ${todayPart} · ${monthPart}`;
+  return sanitizeExportText(line);
 }
