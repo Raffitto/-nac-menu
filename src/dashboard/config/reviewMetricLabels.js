@@ -3,6 +3,8 @@
  * Funnel: Card tap → Review interaction → Google redirect
  */
 
+import { paintExportText, setExportFont } from "../engines/pdfVisualTheme";
+
 export const REVIEW_FUNNEL_SUBTITLE =
   "Card tap → Review interaction → Google redirect";
 
@@ -58,10 +60,9 @@ export const STAFF_AUDIT_LEGEND_LINES = [
 
 /** @param {import('jspdf').jsPDF} doc */
 export function drawStaffAuditTableLegend(doc, margin, y) {
-  doc.setFontSize(6);
-  doc.setTextColor(130, 130, 130);
+  setExportFont(doc, 500, 6.5);
   STAFF_AUDIT_LEGEND_LINES.forEach((line, i) => {
-    doc.text(line, margin, y + i * 8);
+    paintExportText(doc, line, margin, y + i * 9, { tier: "muted", shadow: true });
   });
-  return y + STAFF_AUDIT_LEGEND_LINES.length * 8 + 6;
+  return y + STAFF_AUDIT_LEGEND_LINES.length * 9 + 6;
 }

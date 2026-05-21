@@ -58,9 +58,13 @@ const SnapshotShareCard = forwardRef(function SnapshotShareCard(
         {highlight && <p className="nac-snapshot-highlight">{highlight}</p>}
         <div className="nac-snapshot-metrics">
           {metrics.map((m) => (
-            <div key={m.label} className="nac-snapshot-metric">
+            <div
+              key={m.label}
+              className={`nac-snapshot-metric${m.accent ? ` nac-snapshot-metric--${m.accent}` : ""}`}
+            >
               <span>{m.label}</span>
               <strong>{m.value}</strong>
+              {m.delta ? <em className="nac-snapshot-metric-delta">{m.delta}</em> : null}
             </div>
           ))}
         </div>

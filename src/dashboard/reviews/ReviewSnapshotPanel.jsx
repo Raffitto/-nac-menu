@@ -31,11 +31,18 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
     };
   }, [filters]);
 
+  const conv = kpis?.conversion_pct;
+  const convAccent = conv == null ? null : conv >= 70 ? "teal" : conv >= 40 ? "gold" : "risk";
+
   const metrics = [
     { label: REVIEW_METRIC.cardTaps, value: String(kpis?.qr_scans ?? "—") },
     { label: REVIEW_METRIC.reviewInteractions, value: String(kpis?.reviews_generated ?? "—") },
-    { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? "—") },
-    { label: REVIEW_METRIC.tapToGooglePct, value: `${kpis?.conversion_pct ?? "—"}%` },
+    { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? "—"), accent: "gold" },
+    {
+      label: REVIEW_METRIC.tapToGooglePct,
+      value: `${conv ?? "—"}%`,
+      accent: convAccent,
+    },
   ];
 
   return (
@@ -50,7 +57,7 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(_props, snap
         metrics={metrics}
         highlight={
           kpis
-            ? `${REVIEW_FUNNEL_SUBTITLE} · ${kpis.qr_scans ?? 0} taps · ${kpis.reviews_generated ?? 0} interactions · ${kpis.google_redirects ?? 0} redirects`
+            ? `${REVIEW_FUNNEL_SUBTITLE}. ${kpis.qr_scans ?? 0} card taps · ${kpis.reviews_generated ?? 0} review interactions · ${kpis.google_redirects ?? 0} Google redirects.`
             : undefined
         }
       />

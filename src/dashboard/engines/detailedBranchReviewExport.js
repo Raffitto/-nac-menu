@@ -8,15 +8,23 @@ import {
   fillPage,
   drawKpiCard,
   drawCallout,
+  drawContentPanel,
+  drawMicroSparkline,
+  paintExportText,
+  setExportFont,
+  buildExportTableStyles,
+  applyExportTableRowStriping,
+  applyConvPctHighlight,
+  parsePctValue,
   NAC_GOLD,
   NAC_TEAL,
-  CARD_BG,
-  NAC_WHITE,
+  EXPORT_GOLD,
+  EXPORT_RISK,
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
 import {
   formatGoogleMovementLine,
-  formatTrackingStartDate,
+  formatGoogleTrackingFootnote,
 } from "../utils/googleReviewSnapshotHistory";
 import {
   REVIEW_METRIC,
@@ -26,18 +34,19 @@ import {
 
 const BRAND = "NAC HOSPITALITY OS";
 const AMBER = [230, 168, 65];
-const DIM = [130, 130, 130];
-const ROW_GOLD = [38, 52, 48];
-const ROW_TEAL = [30, 44, 48];
-const ROW_AMBER = [52, 42, 28];
-const ROW_RISK = [52, 30, 30];
+const ROW_GOLD = [42, 56, 50];
+const ROW_TEAL = [32, 48, 52];
+const ROW_AMBER = [56, 46, 32];
+const ROW_RISK = [56, 34, 34];
+const CONV_COLS = [5, 6];
+const METRIC_COLS = [4, 5, 6];
 
 function toneFill(tone) {
   if (tone === "gold") return ROW_GOLD;
   if (tone === "teal") return ROW_TEAL;
   if (tone === "amber") return ROW_AMBER;
   if (tone === "critical") return ROW_RISK;
-  return [18, 20, 24];
+  return null;
 }
 
 function clip(str, max) {
@@ -58,49 +67,54 @@ function networkTotals(reports) {
   );
 }
 
+function sparklineValues(movementRow) {
+  if (!movementRow) return [];
+  const vals = [
+    movementRow.period_delta,
+    movementRow.week_delta,
+    movementRow.month_delta,
+    movementRow.today_delta,
+  ].filter((v) => v != null && Number.isFinite(v));
+  return vals.length >= 2 ? vals : [];
+}
+
 function drawGoogleMovementBlock(doc, margin, contentW, startY, googleMovement = []) {
   const lines = (googleMovement || []).map(formatGoogleMovementLine);
-  const hasHistory = lines.some((l) => !l.includes("No snapshot history"));
+  const panelH = 28 + lines.length * 12 + 20;
+  drawContentPanel(doc, margin, startY - 6, contentW, panelH);
 
-  doc.setFontSize(9);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text("Google review movement (snapshot-based)", margin, startY);
+  setExportFont(doc, 600, 9);
+  paintExportText(doc, "Google review movement (snapshot-based)", margin + 8, startY + 8, {
+    tier: "gold",
+    shadow: true,
+  });
 
-  doc.setFontSize(8);
-  doc.setTextColor(200, 200, 200);
-  let y = startY + 14;
+  setExportFont(doc, 500, 8);
+  let y = startY + 22;
   if (!lines.length) {
-    doc.text("No Google review snapshots stored yet.", margin, y);
+    paintExportText(doc, "No Google review snapshots stored yet.", margin + 8, y, {
+      tier: "secondary",
+      shadow: true,
+    });
     return y + 16;
   }
   lines.forEach((line) => {
-    doc.text(clip(line, 110), margin, y);
-    y += 11;
+    paintExportText(doc, clip(line, 110), margin + 8, y, { tier: "secondary", shadow: true });
+    y += 12;
   });
 
-  const partialBranches = (googleMovement || []).filter((g) => g.period_partial && g.tracking_start_date);
-  if (partialBranches.length) {
-    doc.setFontSize(7);
-    doc.setTextColor(...DIM);
-    partialBranches.forEach((g) => {
-      doc.text(
-        `${g.branch_name}: Google review history available from ${formatTrackingStartDate(g.tracking_start_date)}. Not QR redirects.`,
-        margin,
-        y + 4,
-      );
+  const footnotes = (googleMovement || [])
+    .map(formatGoogleTrackingFootnote)
+    .filter(Boolean);
+  if (footnotes.length) {
+    setExportFont(doc, 500, 7);
+    footnotes.forEach((note) => {
+      paintExportText(doc, clip(note, 120), margin + 8, y + 2, { tier: "muted", shadow: true });
       y += 10;
     });
     y += 4;
   } else {
-    const trackingStart = googleMovement.find((g) => g.tracking_start_date)?.tracking_start_date;
-    if (hasHistory && trackingStart) {
-      doc.setFontSize(7);
-      doc.setTextColor(...DIM);
-      doc.text("Snapshot-based movement · not QR redirects.", margin, y + 4);
-      y += 14;
-    } else {
-      y += 6;
-    }
+    y += 6;
   }
   return y;
 }
@@ -110,26 +124,31 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 5, "F");
 
-  doc.setFontSize(9);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text(BRAND, margin, 36);
+  setExportFont(doc, 600, 9);
+  paintExportText(doc, BRAND, margin, 36, { tier: "gold", shadow: true });
 
-  doc.setFontSize(28);
-  doc.setTextColor(...NAC_WHITE);
-  doc.text("Branch Operational Review", margin, 72);
+  setExportFont(doc, "bold", 28);
+  paintExportText(doc, "Branch Operational Review", margin, 72, { tier: "primary", shadow: true });
 
-  doc.setFontSize(12);
-  doc.setTextColor(200, 200, 200);
-  doc.text("Staff audit · card handoff funnel · coaching priorities", margin, 94);
+  setExportFont(doc, 600, 12);
+  paintExportText(doc, "Staff audit · card handoff funnel · coaching priorities", margin, 94, {
+    tier: "secondary",
+    shadow: true,
+  });
 
-  doc.setFontSize(10);
-  doc.setTextColor(...DIM);
-  doc.text(`Period: ${periodLabel || rangeLabel}`, margin, 118);
-  doc.text(`Generated ${generated} · Asia/Riyadh`, margin, 132);
+  setExportFont(doc, 500, 10);
+  paintExportText(doc, `Period: ${periodLabel || rangeLabel}`, margin, 118, {
+    tier: "muted",
+    shadow: true,
+  });
+  paintExportText(doc, `Generated ${generated} · Asia/Riyadh`, margin, 132, {
+    tier: "muted",
+    shadow: true,
+  });
 
   const net = networkTotals(reports);
   const cardW = (contentW - 36) / 4;
-  const cardH = 56;
+  const cardH = 58;
   const cardY = 152;
   const cards = [
     { label: "Branches", value: String(reports.length), accent: NAC_GOLD },
@@ -171,9 +190,11 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
     hint: "One page per branch follows · full roster included",
   });
 
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 100);
-  doc.text("Confidential · Operational use only", margin, pageH - 32);
+  setExportFont(doc, 500, 7);
+  paintExportText(doc, "Confidential · Operational use only", margin, pageH - 32, {
+    tier: "muted",
+    shadow: true,
+  });
 }
 
 function drawBranchHeader(doc, margin, contentW, report, rangeLabel, googleMovementRow) {
@@ -181,35 +202,41 @@ function drawBranchHeader(doc, margin, contentW, report, rangeLabel, googleMovem
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 3, "F");
 
-  doc.setFontSize(8);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text(BRAND, margin, 32);
+  setExportFont(doc, 600, 8);
+  paintExportText(doc, BRAND, margin, 32, { tier: "gold", shadow: true });
 
-  doc.setFontSize(18);
-  doc.setTextColor(...NAC_WHITE);
-  doc.text(report.branchLabel, margin, 52);
+  setExportFont(doc, "bold", 18);
+  paintExportText(doc, report.branchLabel, margin, 52, { tier: "primary", shadow: true });
 
-  doc.setFontSize(9);
-  doc.setTextColor(...DIM);
-  doc.text(
+  setExportFont(doc, 500, 9);
+  paintExportText(
+    doc,
     `${rangeLabel} · ${report.staffRows.length} staff · ${report.summary.branchConversion}% tap→Google`,
     margin,
     68,
+    { tier: "secondary", shadow: true },
   );
 
+  let y = 82;
   if (googleMovementRow) {
-    doc.setFontSize(8);
-    doc.setTextColor(180, 200, 195);
-    doc.text(clip(formatGoogleMovementLine(googleMovementRow), 100), margin, 82);
-    return 96;
+    setExportFont(doc, 500, 8);
+    paintExportText(doc, clip(formatGoogleMovementLine(googleMovementRow), 100), margin, y, {
+      tier: "secondary",
+      shadow: true,
+    });
+    const spark = sparklineValues(googleMovementRow);
+    if (spark.length >= 2) {
+      drawMicroSparkline(doc, margin + contentW - 88, y - 8, 72, 14, spark, NAC_TEAL);
+    }
+    y = 96;
   }
 
-  return 82;
+  return y;
 }
 
 function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
   const cardW = (contentW - 24) / 4;
-  const cardH = 48;
+  const cardH = 50;
   const row1 = [
     { label: REVIEW_METRIC.cardTaps, value: String(kpis?.qr_scans ?? 0), accent: NAC_TEAL },
     { label: REVIEW_METRIC.reviewInteractions, value: String(kpis?.reviews_generated ?? 0), accent: NAC_TEAL },
@@ -220,7 +247,7 @@ function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
     drawKpiCard(doc, margin + i * (cardW + 8), y, cardW, cardH, c.label, c.value, c.accent);
   });
 
-  const y2 = y + cardH + 10;
+  const y2 = y + cardH + 12;
   const insightW = (contentW - 16) / 2;
   const insights = [
     { title: "Top performer", name: summary.strongestName, val: summary.strongestValue, accent: NAC_GOLD },
@@ -233,23 +260,20 @@ function drawSummaryKpiGrid(doc, margin, contentW, y, summary, kpis) {
     const col = i % 2;
     const row = Math.floor(i / 2);
     const x = margin + col * (insightW + 16);
-    const iy = y2 + row * 52;
-    doc.setFillColor(...CARD_BG);
+    const iy = y2 + row * 54;
+    drawContentPanel(doc, x, iy, insightW, 48);
     doc.setDrawColor(...item.accent);
-    doc.setLineWidth(0.35);
-    doc.roundedRect(x, iy, insightW, 46, 4, 4, "FD");
-    doc.setFontSize(7);
-    doc.setTextColor(...DIM);
-    doc.text(item.title, x + 8, iy + 12);
-    doc.setFontSize(9);
-    doc.setTextColor(...NAC_WHITE);
-    doc.text(clip(item.name, 22), x + 8, iy + 24);
-    doc.setFontSize(8);
-    doc.setTextColor(180, 180, 180);
-    doc.text(clip(item.val, 28), x + 8, iy + 36);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(x, iy, insightW, 48, 4, 4, "S");
+    setExportFont(doc, 600, 7);
+    paintExportText(doc, item.title, x + 8, iy + 13, { tier: "muted", shadow: true });
+    setExportFont(doc, 600, 9);
+    paintExportText(doc, clip(item.name, 22), x + 8, iy + 26, { tier: "primary", shadow: true });
+    setExportFont(doc, 500, 8);
+    paintExportText(doc, clip(item.val, 28), x + 8, iy + 38, { tier: "secondary", shadow: true });
   });
 
-  return y2 + 112;
+  return y2 + 118;
 }
 
 function staffTableBody(staffRows) {
@@ -269,36 +293,43 @@ function staffTableBody(staffRows) {
 }
 
 function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
+  const tableH = Math.min(420, 28 + staffRows.length * 18);
+  drawContentPanel(doc, margin - 4, startY - 6, contentW + 8, tableH);
+
   autoTable(doc, {
-    startY,
+    ...buildExportTableStyles(),
+    startY: startY + 2,
     head: [STAFF_AUDIT_TABLE_HEAD],
     body: staffTableBody(staffRows),
-    styles: {
-      fontSize: 7,
-      cellPadding: { top: 5, right: 4, bottom: 5, left: 4 },
-      minCellHeight: 14,
-      lineHeight: 1.35,
-      textColor: [225, 225, 225],
-      lineColor: [42, 46, 52],
-      lineWidth: 0.15,
-      overflow: "linebreak",
-    },
-    headStyles: {
-      fillColor: [24, 28, 34],
-      textColor: NAC_GOLD,
-      fontStyle: "bold",
-      fontSize: 6,
-      cellPadding: 4,
-      overflow: "linebreak",
-    },
-    alternateRowStyles: { fillColor: [14, 16, 20] },
     margin: { left: margin, right: margin },
     tableWidth: contentW,
     didParseCell: (data) => {
       if (data.section !== "body") return;
       const row = staffRows[data.row.index];
       if (!row) return;
-      data.cell.styles.fillColor = toneFill(row.tone);
+      applyExportTableRowStriping(data, data.row.index);
+      const tone = toneFill(row.tone);
+      if (tone) data.cell.styles.fillColor = tone;
+
+      if (METRIC_COLS.includes(data.column.index)) {
+        data.cell.styles.fontStyle = "bold";
+        if (data.column.index === 4) {
+          data.cell.styles.textColor = EXPORT_GOLD;
+        }
+      }
+      applyConvPctHighlight(data, parsePctValue(row.reviewConv), CONV_COLS);
+      if (data.column.index === 6) {
+        applyConvPctHighlight(data, parsePctValue(row.cardToReviewEfficiency ?? row.visibilityEfficiency), [6]);
+      }
+
+      if (row.tone === "gold") {
+        data.cell.styles.textColor = NAC_GOLD;
+        data.cell.styles.fontStyle = "bold";
+      } else if (row.tone === "critical") {
+        data.cell.styles.textColor = EXPORT_RISK;
+      } else if (row.tone === "amber") {
+        data.cell.styles.textColor = AMBER;
+      }
       if (data.column.index === 9) {
         data.cell.styles.overflow = "hidden";
         data.cell.styles.cellWidth = 118;
@@ -307,23 +338,15 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
         data.cell.styles.overflow = "hidden";
         data.cell.styles.minCellWidth = 36;
       }
-      if (row.tone === "gold") {
-        data.cell.styles.textColor = NAC_GOLD;
-        data.cell.styles.fontStyle = "bold";
-      } else if (row.tone === "critical") {
-        data.cell.styles.textColor = [245, 190, 190];
-      } else if (row.tone === "amber") {
-        data.cell.styles.textColor = AMBER;
-      }
     },
     columnStyles: {
       0: { cellWidth: 58 },
       1: { cellWidth: 32 },
       2: { cellWidth: 26, halign: "right" },
       3: { cellWidth: 26, halign: "right" },
-      4: { cellWidth: 28, halign: "right" },
-      5: { cellWidth: 34, halign: "right" },
-      6: { cellWidth: 36, halign: "right" },
+      4: { cellWidth: 28, halign: "right", fontStyle: "bold" },
+      5: { cellWidth: 34, halign: "right", fontStyle: "bold" },
+      6: { cellWidth: 36, halign: "right", fontStyle: "bold" },
       7: { cellWidth: 42 },
       8: { cellWidth: 52 },
       9: { cellWidth: 118 },
@@ -374,29 +397,37 @@ export function exportDetailedBranchOperationalReview({
     );
     y = drawSummaryKpiGrid(doc, margin, contentW, y, report.summary, report.kpis);
 
-    doc.setFontSize(8);
-    doc.setTextColor(...NAC_TEAL);
-    doc.text("Full staff roster", margin, y);
+    setExportFont(doc, 600, 8);
+    paintExportText(doc, "Full staff roster", margin, y, { tier: "teal", shadow: true });
     y += 10;
     y = drawStaffAuditTableLegend(doc, margin, y);
 
     if (report.staffRows.length === 0) {
-      doc.setFontSize(9);
-      doc.setTextColor(160, 160, 160);
-      doc.text("No staff-tagged events in this period.", margin, y);
+      setExportFont(doc, 500, 9);
+      paintExportText(doc, "No staff-tagged events in this period.", margin, y, {
+        tier: "secondary",
+        shadow: true,
+      });
     } else {
       drawStaffAuditTable(doc, margin, contentW, y, report.staffRows);
     }
 
-    doc.setFontSize(7);
-    doc.setTextColor(100, 100, 100);
-    doc.text(
+    setExportFont(doc, 500, 7);
+    paintExportText(
+      doc,
       `${BRAND} · ${report.branchLabel} · ${branchDisplayName(report.branchId)}`,
       margin,
       pageH - 24,
+      { tier: "muted", shadow: true },
     );
     if (branchIdx === reports.length - 1) {
-      doc.text("Confidential operational intelligence", margin + contentW - 140, pageH - 24);
+      paintExportText(
+        doc,
+        "Confidential operational intelligence",
+        margin + contentW - 140,
+        pageH - 24,
+        { tier: "muted", shadow: true },
+      );
     }
   });
 

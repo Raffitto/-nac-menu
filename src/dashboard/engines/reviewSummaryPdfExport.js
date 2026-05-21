@@ -9,10 +9,15 @@ import {
   drawKpiCard,
   drawCallout,
   drawHBar,
+  drawContentPanel,
+  paintExportText,
+  setExportFont,
+  buildExportTableStyles,
+  applyExportTableRowStriping,
+  applyConvPctHighlight,
+  parsePctValue,
   NAC_GOLD,
   NAC_TEAL,
-  CARD_BG,
-  NAC_WHITE,
   COLOR_RISK,
 } from "./pdfVisualTheme";
 import { branchDisplayName } from "../utils/rangeState";
@@ -25,7 +30,8 @@ import {
 } from "../config/reviewMetricLabels";
 
 const BRAND = "NAC HOSPITALITY OS";
-const DIM = [130, 130, 130];
+const CONV_COL = 5;
+const GOOGLE_COL = 4;
 
 function clip(str, max) {
   const s = String(str || "").trim();
@@ -79,28 +85,21 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
 }
 
 function drawMiniBarPanel(doc, x, y, w, title, items, valueKey, color) {
-  doc.setFillColor(...CARD_BG);
-  doc.setDrawColor(50, 54, 60);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(x, y, w, 118, 4, 4, "FD");
+  drawContentPanel(doc, x, y, w, 120);
+  setExportFont(doc, 600, 8);
+  paintExportText(doc, title, x + 10, y + 14, { tier: "gold", shadow: true });
 
-  doc.setFontSize(8);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text(title, x + 10, y + 14);
-
-  let cy = y + 26;
+  let cy = y + 28;
   const max = Math.max(...items.map((i) => Number(i[valueKey]) || 0), 1);
   items.slice(0, 6).forEach((item) => {
     const label = clip(item.name || item.branch_id, 14);
     const val = Number(item[valueKey]) || 0;
-    doc.setFontSize(7);
-    doc.setTextColor(...DIM);
-    doc.text(label, x + 10, cy);
-    drawHBar(doc, x + 72, cy - 5, w - 100, 6, (val / max) * 100, color);
-    doc.setFontSize(7);
-    doc.setTextColor(200, 200, 200);
-    doc.text(String(val), x + w - 28, cy);
-    cy += 14;
+    setExportFont(doc, 500, 7);
+    paintExportText(doc, label, x + 10, cy, { tier: "muted", shadow: true });
+    drawHBar(doc, x + 72, cy - 5, w - 100, 7, (val / max) * 100, color);
+    setExportFont(doc, 600, 7);
+    paintExportText(doc, String(val), x + w - 28, cy, { tier: "primary", shadow: true });
+    cy += 15;
   });
 }
 
@@ -134,23 +133,19 @@ export function exportReviewSummaryPdf(ctx) {
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, pageW, 4, "F");
 
-  doc.setFontSize(9);
-  doc.setTextColor(...NAC_GOLD);
-  doc.text(BRAND, margin, 40);
+  setExportFont(doc, 600, 9);
+  paintExportText(doc, BRAND, margin, 40, { tier: "gold", shadow: true });
 
-  doc.setFontSize(22);
-  doc.setTextColor(...NAC_WHITE);
-  doc.text("Review Intelligence", margin, 68);
+  setExportFont(doc, "bold", 22);
+  paintExportText(doc, "Review Intelligence", margin, 68, { tier: "primary", shadow: true });
 
-  doc.setFontSize(11);
-  doc.setTextColor(190, 190, 190);
-  doc.text(branch, margin, 88);
+  setExportFont(doc, 600, 11);
+  paintExportText(doc, branch, margin, 88, { tier: "secondary", shadow: true });
 
-  doc.setFontSize(8);
-  doc.setTextColor(...DIM);
-  doc.text(`Period: ${rangeLabel}`, margin, 102);
-  doc.text(REVIEW_FUNNEL_SUBTITLE, margin, 114);
-  doc.text(`Report generated ${generated}`, margin, 126);
+  setExportFont(doc, 500, 8);
+  paintExportText(doc, `Period: ${rangeLabel}`, margin, 102, { tier: "muted", shadow: true });
+  paintExportText(doc, REVIEW_FUNNEL_SUBTITLE, margin, 114, { tier: "muted", shadow: true });
+  paintExportText(doc, `Report generated ${generated}`, margin, 126, { tier: "muted", shadow: true });
 
   const cardW = (contentW - 24) / 4;
   const cardY = 138;
@@ -161,10 +156,10 @@ export function exportReviewSummaryPdf(ctx) {
     { label: REVIEW_METRIC.tapToGooglePct, value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
   ];
   metrics.forEach((m, i) => {
-    drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 50, m.label, m.value, m.accent);
+    drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 52, m.label, m.value, m.accent);
   });
 
-  let y = cardY + 68;
+  let y = cardY + 72;
   y = drawCallout(doc, margin, y, contentW, {
     accent: NAC_GOLD,
     title: "Executive read",
@@ -181,18 +176,17 @@ export function exportReviewSummaryPdf(ctx) {
   narrative.forEach((n, i) => {
     const x = margin + (i % 2) * (halfW + 12);
     const row = Math.floor(i / 2);
-    const ny = y + row * 44;
-    doc.setFillColor(...CARD_BG);
+    const ny = y + row * 46;
+    const nw = i === 2 ? contentW : halfW;
+    drawContentPanel(doc, x, ny, nw, 40);
     doc.setDrawColor(...n.accent);
-    doc.roundedRect(x, ny, i === 2 ? contentW : halfW, 38, 3, 3, "FD");
-    doc.setFontSize(7);
-    doc.setTextColor(...DIM);
-    doc.text(n.t, x + 8, ny + 12);
-    doc.setFontSize(8);
-    doc.setTextColor(...NAC_WHITE);
-    doc.text(n.v, x + 8, ny + 26);
+    doc.roundedRect(x, ny, nw, 40, 3, 3, "S");
+    setExportFont(doc, 600, 7);
+    paintExportText(doc, n.t, x + 8, ny + 12, { tier: "muted", shadow: true });
+    setExportFont(doc, 500, 8);
+    paintExportText(doc, n.v, x + 8, ny + 26, { tier: "primary", shadow: true, maxWidth: nw - 16 });
   });
-  y += 96;
+  y += 100;
 
   if (productionStaff.length > 0 || comparison.length > 0) {
     const chartW = (contentW - 12) / 2;
@@ -223,17 +217,18 @@ export function exportReviewSummaryPdf(ctx) {
         NAC_GOLD,
       );
     }
-    y += 128;
+    y += 132;
   }
 
   if (productionStaff.length > 0) {
-    doc.setFontSize(10);
-    doc.setTextColor(...NAC_GOLD);
-    doc.text("Staff summary", margin, y);
-    y += 8;
+    setExportFont(doc, 600, 10);
+    paintExportText(doc, "Staff summary", margin, y, { tier: "gold", shadow: true });
+    y += 6;
+    drawContentPanel(doc, margin - 4, y, contentW + 8, Math.min(320, 36 + productionStaff.length * 18));
 
     autoTable(doc, {
-      startY: y,
+      ...buildExportTableStyles({ styles: { fontSize: 8 } }),
+      startY: y + 4,
       head: [STAFF_SUMMARY_TABLE_HEAD],
       body: productionStaff.slice(0, 14).map((s) => [
         clip(s.name, 18),
@@ -243,32 +238,34 @@ export function exportReviewSummaryPdf(ctx) {
         s.google,
         `${s.conversion_pct}%`,
       ]),
-      styles: {
-        fontSize: 8,
-        cellPadding: 5,
-        minCellHeight: 13,
-        lineHeight: 1.3,
-        textColor: [220, 220, 220],
-        lineColor: [45, 48, 55],
-      },
-      headStyles: {
-        fillColor: [24, 28, 34],
-        textColor: NAC_GOLD,
-        fontStyle: "bold",
-      },
-      alternateRowStyles: { fillColor: [16, 18, 22] },
       margin: { left: margin, right: margin },
       tableWidth: contentW,
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        const row = productionStaff[data.row.index];
+        if (!row) return;
+        applyExportTableRowStriping(data, data.row.index);
+        if (data.column.index === GOOGLE_COL) {
+          data.cell.styles.fontStyle = "bold";
+          data.cell.styles.textColor = NAC_GOLD;
+        }
+        applyConvPctHighlight(data, parsePctValue(row.conversion_pct), [CONV_COL]);
+      },
+      columnStyles: {
+        4: { halign: "right", fontStyle: "bold" },
+        5: { halign: "right", fontStyle: "bold" },
+      },
     });
 
     if (comparison.length > 0) {
-      const y2 = doc.lastAutoTable.finalY + 16;
-      doc.setFontSize(10);
-      doc.setTextColor(...NAC_GOLD);
-      doc.text("Branch benchmark", margin, y2);
+      const y2 = doc.lastAutoTable.finalY + 18;
+      setExportFont(doc, 600, 10);
+      paintExportText(doc, "Branch benchmark", margin, y2, { tier: "gold", shadow: true });
+      drawContentPanel(doc, margin - 4, y2 + 6, contentW + 8, 28 + comparison.length * 18);
 
       autoTable(doc, {
-        startY: y2 + 8,
+        ...buildExportTableStyles({ styles: { fontSize: 8 } }),
+        startY: y2 + 10,
         head: [BRANCH_BENCHMARK_TABLE_HEAD],
         body: comparison.map((b) => [
           branchDisplayName(b.branch_id),
@@ -277,18 +274,23 @@ export function exportReviewSummaryPdf(ctx) {
           b.google_redirects,
           `${b.conversion_pct}%`,
         ]),
-        styles: {
-          fontSize: 8,
-          cellPadding: 5,
-          minCellHeight: 13,
-          textColor: [220, 220, 220],
-        },
-        headStyles: {
-          fillColor: [24, 28, 34],
-          textColor: NAC_GOLD,
-        },
         margin: { left: margin, right: margin },
         tableWidth: contentW,
+        didParseCell: (data) => {
+          if (data.section !== "body") return;
+          const row = comparison[data.row.index];
+          if (!row) return;
+          applyExportTableRowStriping(data, data.row.index);
+          if (data.column.index === 3) {
+            data.cell.styles.fontStyle = "bold";
+            data.cell.styles.textColor = NAC_GOLD;
+          }
+          applyConvPctHighlight(data, parsePctValue(row.conversion_pct), [4]);
+        },
+        columnStyles: {
+          3: { halign: "right", fontStyle: "bold" },
+          4: { halign: "right", fontStyle: "bold" },
+        },
       });
     }
   }
