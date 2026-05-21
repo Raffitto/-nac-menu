@@ -258,6 +258,7 @@ export function exportReviewIntelligenceReport({
   employees = [],
   diagnostics,
   predictivePackage = null,
+  commandPackage = null,
   format = "xlsx",
 }) {
   const comparison = comparisonIn ?? branchComparison ?? [];
@@ -274,6 +275,7 @@ export function exportReviewIntelligenceReport({
       comparison,
       branchComparison: comparison,
       predictivePackage,
+      commandPackage,
     });
     return;
   }

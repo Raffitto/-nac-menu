@@ -31,6 +31,7 @@ import {
   BRANCH_BENCHMARK_TABLE_HEAD,
 } from "../config/reviewMetricLabels";
 import { formatPredictiveExportLines } from "./predictiveIntelligenceEngine";
+import { formatExecutiveCommandExportLines } from "./executiveCommandCenterEngine";
 import { drawPredictiveExportBlock } from "./detailedBranchReviewExport";
 
 const BRAND = "NAC HOSPITALITY OS";
@@ -208,6 +209,14 @@ export function exportReviewSummaryPdf(ctx) {
   const predictiveLines = formatPredictiveExportLines(ctx?.predictivePackage, branchKey);
   if (predictiveLines.length) {
     y = drawPredictiveExportBlock(doc, margin, contentW, y + 4, predictiveLines);
+  }
+
+  const commandLines = formatExecutiveCommandExportLines(ctx?.commandPackage);
+  if (commandLines.length) {
+    y = drawPredictiveExportBlock(doc, margin, contentW, y + 4, [
+      "Executive command center",
+      ...commandLines,
+    ]);
   }
 
   if (productionStaff.length > 0 || comparison.length > 0) {

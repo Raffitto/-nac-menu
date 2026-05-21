@@ -1,0 +1,553 @@
+/* Executive Command Center — cinematic dark glass */
+
+.ecc-wrap {
+  padding: 0 0 3rem;
+  color: #f9f9f7;
+}
+
+.ecc-wrap--loading,
+.ecc-wrap--error {
+  min-height: 240px;
+  padding: 2rem;
+}
+
+.ecc-hero {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 1.5rem 2rem;
+  align-items: center;
+  padding: 1.75rem 1.85rem;
+  margin-bottom: 1.5rem;
+  border-radius: 20px;
+  border: 1px solid rgba(215, 188, 138, 0.2);
+  background: linear-gradient(135deg, rgba(10, 12, 14, 0.95), rgba(22, 28, 32, 0.88));
+  box-shadow:
+    0 0 60px rgba(78, 205, 196, 0.06),
+    0 20px 50px rgba(0, 0, 0, 0.45);
+  position: relative;
+  overflow: hidden;
+}
+
+.ecc-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 50% at 100% 0%, rgba(215, 188, 138, 0.08), transparent 55%);
+  pointer-events: none;
+}
+
+.ecc-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.85);
+}
+
+.ecc-title {
+  margin: 0.35rem 0 0;
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.ecc-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.ecc-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(215, 188, 138, 0.35);
+  background: rgba(215, 188, 138, 0.1);
+  color: #e8d4a8;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.ecc-export-btn:hover:not(:disabled) {
+  background: rgba(215, 188, 138, 0.18);
+  box-shadow: 0 0 20px rgba(215, 188, 138, 0.15);
+}
+
+.ecc-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ecc-score-ring {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ecc-score-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.ecc-score-ring-value {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #f9f9f7;
+  text-shadow: 0 0 24px rgba(78, 205, 196, 0.35);
+}
+
+.ecc-score-ring-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.45);
+  margin-top: 0.2rem;
+}
+
+.ecc-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.ecc-kpi {
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 10, 12, 0.65);
+  backdrop-filter: blur(8px);
+}
+
+.ecc-kpi--glow {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ecc-kpi--pulse {
+  position: relative;
+  border-color: rgba(78, 205, 196, 0.2);
+}
+
+.ecc-pulse-icon {
+  color: #4ecdc4;
+  margin-bottom: 0.25rem;
+}
+
+.ecc-pulse-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ecdc4;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  animation: ecc-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 12px #4ecdc4;
+}
+
+@keyframes ecc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(0.85);
+  }
+}
+
+.ecc-kpi-label {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.45);
+  margin-bottom: 0.35rem;
+}
+
+.ecc-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.ecc-kpi-delta {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: rgba(249, 249, 247, 0.55);
+  margin-top: 0.25rem;
+}
+
+.ecc-kpi-muted,
+.ecc-muted {
+  font-size: 0.8rem;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.ecc-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 900px) {
+  .ecc-hero {
+    grid-template-columns: 1fr;
+  }
+  .ecc-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ecc-panel {
+  padding: 1.25rem 1.35rem;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 10, 12, 0.55);
+  margin-bottom: 1.25rem;
+}
+
+.ecc-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.8);
+}
+
+.ecc-brief-list {
+  margin: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.ecc-brief-list dt {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.4);
+  margin: 0;
+}
+
+.ecc-brief-list dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: rgba(249, 249, 247, 0.88);
+}
+
+.ecc-brief-concern {
+  color: rgba(240, 160, 152, 0.95);
+}
+
+.ecc-brief-focus dd {
+  color: #8ee8e0;
+}
+
+.ecc-top-performer {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+  color: rgba(215, 188, 138, 0.9);
+}
+
+.ecc-alert-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ecc-alert {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ecc-alert-sev {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.ecc-alert--critical {
+  background: rgba(220, 90, 80, 0.12);
+  border-color: rgba(220, 90, 80, 0.3);
+}
+.ecc-alert--critical .ecc-alert-sev {
+  color: #f0a098;
+}
+
+.ecc-alert--risk {
+  background: rgba(230, 120, 80, 0.1);
+  border-color: rgba(230, 120, 80, 0.25);
+}
+.ecc-alert--risk .ecc-alert-sev {
+  color: #e6a841;
+}
+
+.ecc-alert--watch {
+  background: rgba(230, 168, 65, 0.08);
+}
+.ecc-alert--watch .ecc-alert-sev {
+  color: #e6a841;
+}
+
+.ecc-alert--info {
+  background: rgba(78, 205, 196, 0.08);
+}
+.ecc-alert--info .ecc-alert-sev {
+  color: #6ee0d6;
+}
+
+.ecc-branch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.ecc-branch-card {
+  position: relative;
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(6, 8, 10, 0.7);
+  overflow: hidden;
+}
+
+.ecc-branch-pulse {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  animation: ecc-pulse 2.2s ease-in-out infinite;
+}
+
+.ecc-branch-pulse--strong {
+  background: #4ecdc4;
+  box-shadow: 0 0 14px #4ecdc4;
+}
+
+.ecc-branch-pulse--steady {
+  background: #d7bc8a;
+  box-shadow: 0 0 10px #d7bc8a88;
+}
+
+.ecc-branch-pulse--weak {
+  background: #dc5a50;
+  box-shadow: 0 0 10px #dc5a5088;
+}
+
+.ecc-branch-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.ecc-branch-card-head h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.ecc-health-badge {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.ecc-health--healthy .ecc-health-badge {
+  background: rgba(78, 205, 196, 0.15);
+  color: #6ee0d6;
+}
+
+.ecc-health--watch .ecc-health-badge {
+  background: rgba(230, 168, 65, 0.12);
+  color: #e6a841;
+}
+
+.ecc-health--risk .ecc-health-badge {
+  background: rgba(220, 90, 80, 0.12);
+  color: #f0a098;
+}
+
+.ecc-health--critical .ecc-health-badge {
+  background: rgba(220, 90, 80, 0.22);
+  color: #ff9a90;
+}
+
+.ecc-branch-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.ecc-branch-metrics span {
+  display: block;
+  color: rgba(249, 249, 247, 0.42);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ecc-branch-metrics strong {
+  font-weight: 600;
+  color: #f9f9f7;
+}
+
+.ecc-heatmap-wrap {
+  overflow-x: auto;
+}
+
+.ecc-heatmap {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 4px;
+  font-size: 0.78rem;
+}
+
+.ecc-heatmap th,
+.ecc-heatmap td {
+  padding: 0.35rem 0.5rem;
+  text-align: center;
+}
+
+.ecc-heatmap th:first-child,
+.ecc-heatmap td.ecc-heat-branch {
+  text-align: left;
+  font-weight: 500;
+}
+
+.ecc-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  background: none;
+  border: none;
+  color: rgba(215, 188, 138, 0.85);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ecc-heat-cell {
+  display: inline-block;
+  min-width: 2.2rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ecc-heat-cell--high {
+  background: linear-gradient(135deg, rgba(78, 205, 196, 0.35), rgba(78, 205, 196, 0.15));
+  color: #b8f5f0;
+}
+
+.ecc-heat-cell--mid {
+  background: linear-gradient(135deg, rgba(215, 188, 138, 0.3), rgba(215, 188, 138, 0.12));
+  color: #e8d4a8;
+}
+
+.ecc-heat-cell--low {
+  background: rgba(230, 168, 65, 0.2);
+  color: #e6c878;
+}
+
+.ecc-heat-cell--risk {
+  background: rgba(220, 90, 80, 0.25);
+  color: #f0b0a8;
+}
+
+.ecc-heat-cell--na {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.35);
+}
+
+.ecc-timeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ecc-timeline-item {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.ecc-timeline-item time {
+  font-variant-numeric: tabular-nums;
+  color: rgba(215, 188, 138, 0.75);
+  font-size: 0.72rem;
+}
+
+.ecc-rank-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+}
+
+.ecc-rank-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.ecc-rank-num {
+  font-size: 0.72rem;
+  color: rgba(215, 188, 138, 0.8);
+}
+
+.ecc-rank-name {
+  font-weight: 500;
+}
+
+.ecc-rank-score {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #4ecdc4;
+}

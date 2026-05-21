@@ -12,6 +12,7 @@ import CompetitiveReputationWatch from "../intelligence/CompetitiveReputationWat
 import "../styles/platform-os.css";
 
 const AIInsights = lazy(() => import("../AIInsights"));
+const ExecutiveCommandCenter = lazy(() => import("../intelligence/ExecutiveCommandCenter"));
 const RestaurantIntelligence = lazy(() => import("../RestaurantIntelligence"));
 const FoodicsIntelligence = lazy(() => import("../FoodicsIntelligence"));
 const SalesImportsIntelligence = lazy(() => import("../intelligence/SalesImportsIntelligence"));
@@ -68,6 +69,11 @@ export default function IntelligenceHub() {
         </Suspense>
       )}
       {tab === "menu" && <MenuIntelligence />}
+      {tab === "executive" && (
+        <Suspense fallback={<ViewFallback label="Loading command center…" />}>
+          <ExecutiveCommandCenter />
+        </Suspense>
+      )}
       {tab === "predictive" && <PredictiveAnalytics />}
       {tab === "operations" && <OperationsInsights />}
       {tab === "competitive" && <CompetitiveReputationWatch />}

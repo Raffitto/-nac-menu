@@ -36,7 +36,9 @@ const REVIEW_EVENT_SELECT =
 export function useReviewIntelligenceData(options = {}) {
   const skip = Boolean(options.skip);
   const platform = usePlatformFiltersOptional();
-  const branch = options.branch ?? platform?.branch ?? defaultBranchId();
+  const branch = options.networkWide
+    ? null
+    : (options.branch ?? platform?.branch ?? defaultBranchId());
   const selectedRange = options.selectedRange ?? platform?.selectedRange ?? "today";
   const filterKey =
     options.filterKey ??

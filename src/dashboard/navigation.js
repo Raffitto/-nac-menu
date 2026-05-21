@@ -16,6 +16,7 @@ export const INTELLIGENCE_TABS = [
   { id: "imports", label: "Sales Imports" },
   { id: "sales", label: "Foodics" },
   { id: "menu", label: "Menu Intelligence" },
+  { id: "executive", label: "Command Center" },
   { id: "predictive", label: "Predictive" },
   { id: "operations", label: "Operations" },
   { id: "competitive", label: "Competitive Watch" },

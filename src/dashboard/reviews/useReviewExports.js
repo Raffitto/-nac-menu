@@ -31,6 +31,7 @@ import {
 import { exportElementToPng } from "../utils/snapshotExport";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
 import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelligenceEngine";
+import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandCenterEngine";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
@@ -42,7 +43,7 @@ function applyEventTimeBounds(query, exportRange) {
     .lte("created_at", exportRange.untilIso);
 }
 
-async function loadPredictivePackage(exportRange, loaded, branch) {
+async function loadStaffAndSnapshots(exportRange) {
   const hours = exportRange?.rpcHours ?? 24;
   const staffByBranch = Object.fromEntries(
     await Promise.all(
@@ -56,13 +57,30 @@ async function loadPredictivePackage(exportRange, loaded, branch) {
     ),
   );
   const { data: snapshots } = await fetchGoogleReviewSnapshots().catch(() => ({ data: [] }));
+  return { staffByBranch, snapshots: snapshots || [] };
+}
+
+async function loadPredictivePackage(exportRange, loaded, branch) {
+  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange);
   return buildPredictiveIntelligencePackage({
     kpis: loaded?.kpis,
     branchComparison: loaded?.branchComparison || [],
     staffByBranch,
-    snapshots: snapshots || [],
+    snapshots,
     selectedRange: exportRange?.preset || "7d",
     activeBranch: branch || null,
+  });
+}
+
+async function loadExecutiveCommandPackage(exportRange, loaded) {
+  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange);
+  return buildExecutiveCommandCenterPackage({
+    kpis: loaded?.kpis,
+    branchComparison: loaded?.branchComparison || [],
+    staffByBranch,
+    snapshots,
+    selectedRange: exportRange?.preset || "7d",
+    dailyTrend: [],
   });
 }
 
@@ -77,6 +95,7 @@ export function useReviewExports(filters) {
   const [pngBusy, setPngBusy] = useState(false);
   const [auditBusy, setAuditBusy] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
+  const [executiveBusy, setExecutiveBusy] = useState(false);
   const configured = isSupabaseConfigured();
 
   const selectedRange = filters?.selectedRange || "7d";
@@ -293,10 +312,14 @@ export function useReviewExports(filters) {
       try {
         const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
-        const predictive = await loadPredictivePackage(range, loaded, branch);
+        const [predictive, commandPackage] = await Promise.all([
+          loadPredictivePackage(range, loaded, branch),
+          loadExecutiveCommandPackage(range, loaded),
+        ]);
         exportReviewIntelligenceReport({
           ...buildSummaryContext(loaded, range),
           predictivePackage: predictive,
+          commandPackage,
           format: "pdf",
         });
       } catch (err) {
@@ -306,6 +329,30 @@ export function useReviewExports(filters) {
       }
     },
     [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, branch],
+  );
+
+  const exportExecutiveSummaryPdf = useCallback(
+    async (exportRange = null) => {
+      if (!configured || executiveBusy) return;
+      const range = exportRange || dashboardExportRange;
+      setExecutiveBusy(true);
+      try {
+        const loaded = await loadEvents(range);
+        const commandPackage = await loadExecutiveCommandPackage(range, loaded);
+        const { exportExecutiveCommandCenterPdf } = await import(
+          "../engines/executiveCommandCenterPdfExport"
+        );
+        exportExecutiveCommandCenterPdf({
+          commandPackage,
+          rangeLabel: range.periodLabel,
+        });
+      } catch (err) {
+        reportExportFailure(err, "Executive Summary PDF");
+      } finally {
+        setExecutiveBusy(false);
+      }
+    },
+    [configured, executiveBusy, loadEvents, dashboardExportRange],
   );
 
   const exportSummaryXlsx = useCallback(
@@ -337,7 +384,8 @@ export function useReviewExports(filters) {
       exportBranchAuditPdf,
       exportSummaryPdf,
       exportSummaryXlsx,
-      busy: { png: pngBusy, audit: auditBusy, summary: summaryBusy },
+      exportExecutiveSummaryPdf,
+      busy: { png: pngBusy, audit: auditBusy, summary: summaryBusy, executive: executiveBusy },
     }),
     [
       configured,
@@ -346,9 +394,11 @@ export function useReviewExports(filters) {
       exportBranchAuditPdf,
       exportSummaryPdf,
       exportSummaryXlsx,
+      exportExecutiveSummaryPdf,
       pngBusy,
       auditBusy,
       summaryBusy,
+      executiveBusy,
     ],
   );
 }
