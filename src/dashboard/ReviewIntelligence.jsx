@@ -57,7 +57,9 @@ import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabe
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
 import { useGoogleReviewMovement } from "./hooks/useGoogleReviewMovement";
 import GoogleReputationWithMovement from "./components/GoogleReputationWithMovement";
+import PredictiveIntelligencePanel from "./components/PredictiveIntelligencePanel";
 import "./styles/review-intelligence.css";
+import "./styles/predictive-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
 const REVIEW_EVENT_SELECT =
@@ -100,6 +102,33 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     periodRange: selectedRange,
   });
   const branchGoogleMovement = movementByBranch[branch] || null;
+
+  const reviewDataForPredictive = useMemo(
+    () => ({
+      kpis,
+      staffMerged,
+      dailyTrend,
+      branchScans,
+      branchComparison,
+      branch,
+      selectedRange,
+      loading,
+      error,
+      filterKey: platform?.filterKey,
+    }),
+    [
+      kpis,
+      staffMerged,
+      dailyTrend,
+      branchScans,
+      branchComparison,
+      branch,
+      selectedRange,
+      loading,
+      error,
+      platform?.filterKey,
+    ],
+  );
 
   const applyPrefetched = useCallback((data) => {
     if (!data) return false;
@@ -382,6 +411,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
               </motion.div>
             )}
           </motion.div>
+
+          <PredictiveIntelligencePanel
+            reviewData={reviewDataForPredictive}
+            showBranchScores={!branch || embedded}
+            compact={embedded}
+          />
 
           {branchScans.length > 0 && (
             <section className="rev-section">

@@ -30,6 +30,7 @@ import {
 } from "../utils/googleReviewSnapshotHistory";
 import { exportElementToPng } from "../utils/snapshotExport";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
+import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelligenceEngine";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
@@ -39,6 +40,30 @@ function applyEventTimeBounds(query, exportRange) {
   return query
     .gte("created_at", exportRange.sinceIso)
     .lte("created_at", exportRange.untilIso);
+}
+
+async function loadPredictivePackage(exportRange, loaded, branch) {
+  const hours = exportRange?.rpcHours ?? 24;
+  const staffByBranch = Object.fromEntries(
+    await Promise.all(
+      OPERATIONAL_BRANCHES.map(async (branchId) => {
+        const summary = await withSupabaseFallback(
+          fetchReviewEventsSummary(supabase, { branch: branchId, hours }),
+          null,
+        );
+        return [branchId, staffFromReviewSummary(summary || { staff: [] })];
+      }),
+    ),
+  );
+  const { data: snapshots } = await fetchGoogleReviewSnapshots().catch(() => ({ data: [] }));
+  return buildPredictiveIntelligencePackage({
+    kpis: loaded?.kpis,
+    branchComparison: loaded?.branchComparison || [],
+    staffByBranch,
+    snapshots: snapshots || [],
+    selectedRange: exportRange?.preset || "7d",
+    activeBranch: branch || null,
+  });
 }
 
 function reportExportFailure(err, label = "Export") {
@@ -241,12 +266,15 @@ export function useReviewExports(filters) {
           periodEndDate: range.endDate,
           periodLabel: range.periodLabel,
         });
+        const loaded = await loadEvents(range);
+        const predictive = await loadPredictivePackage(range, loaded, branch);
         exportDetailedBranchOperationalReview({
           reports,
           rangeLabel: range.periodLabel,
           periodLabel: range.periodLabel,
           selectedRange: range.preset,
           googleMovement,
+          predictivePackage: predictive,
         });
       } catch (err) {
         reportExportFailure(err, "Branch audit PDF");
@@ -254,7 +282,7 @@ export function useReviewExports(filters) {
         setAuditBusy(false);
       }
     },
-    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange],
+    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange, loadEvents, branch],
   );
 
   const exportSummaryPdf = useCallback(
@@ -265,8 +293,10 @@ export function useReviewExports(filters) {
       try {
         const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
+        const predictive = await loadPredictivePackage(range, loaded, branch);
         exportReviewIntelligenceReport({
           ...buildSummaryContext(loaded, range),
+          predictivePackage: predictive,
           format: "pdf",
         });
       } catch (err) {
@@ -275,7 +305,7 @@ export function useReviewExports(filters) {
         setSummaryBusy(false);
       }
     },
-    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange],
+    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, branch],
   );
 
   const exportSummaryXlsx = useCallback(

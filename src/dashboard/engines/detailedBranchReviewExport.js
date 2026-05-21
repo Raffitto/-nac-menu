@@ -33,6 +33,7 @@ import {
   STAFF_AUDIT_TABLE_HEAD_PDF,
   drawStaffAuditTableLegend,
 } from "../config/reviewMetricLabels";
+import { formatPredictiveExportLines } from "./predictiveIntelligenceEngine";
 
 const BRAND = "NAC HOSPITALITY OS";
 const AMBER = [230, 168, 65];
@@ -81,6 +82,21 @@ function sparklineValues(movementRow) {
   return vals.length >= 2 ? vals : [];
 }
 
+export function drawPredictiveExportBlock(doc, margin, contentW, startY, lines = []) {
+  if (!lines?.length) return startY;
+  const panelH = 22 + lines.length * 11 + 12;
+  drawContentPanel(doc, margin, startY - 4, contentW, panelH);
+  setExportFont(doc, 600, 8);
+  paintExportText(doc, "Predictive intelligence", margin + 8, startY + 10, { tier: "gold", shadow: true });
+  setExportFont(doc, 500, 7.5);
+  let y = startY + 24;
+  lines.forEach((line) => {
+    paintExportText(doc, clip(line, 118), margin + 8, y, { tier: "secondary", shadow: true });
+    y += 11;
+  });
+  return y + 10;
+}
+
 function drawGoogleMovementBlock(doc, margin, contentW, startY, googleMovement = []) {
   const lines = (googleMovement || []).map(formatGoogleMovementLine);
   const panelH = 28 + lines.length * 12 + 20;
@@ -122,7 +138,13 @@ function drawGoogleMovementBlock(doc, margin, contentW, startY, googleMovement =
   return y;
 }
 
-function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, generated, reports, googleMovement }) {
+function drawCoverPage(
+  doc,
+  margin,
+  contentW,
+  pageH,
+  { periodLabel, rangeLabel, generated, reports, googleMovement, predictivePackage },
+) {
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 5, "F");
@@ -163,13 +185,18 @@ function drawCoverPage(doc, margin, contentW, pageH, { periodLabel, rangeLabel, 
     drawKpiCard(doc, margin + i * (cardW + 12), cardY, cardW, cardH, c.label, c.value, c.accent);
   });
 
-  const movementY = drawGoogleMovementBlock(
+  let movementY = drawGoogleMovementBlock(
     doc,
     margin,
     contentW,
     cardY + cardH + 14,
     googleMovement,
   );
+
+  const networkPredictive = formatPredictiveExportLines(predictivePackage);
+  if (networkPredictive.length) {
+    movementY = drawPredictiveExportBlock(doc, margin, contentW, movementY + 6, networkPredictive);
+  }
 
   const topBranch = [...reports].sort(
     (a, b) => (b.kpis?.google_redirects || 0) - (a.kpis?.google_redirects || 0),
@@ -366,6 +393,7 @@ export function exportDetailedBranchOperationalReview({
   periodLabel,
   selectedRange,
   googleMovement = [],
+  predictivePackage = null,
 }) {
   const safeReports = (reports || []).filter((r) => r && r.branchId);
   if (!safeReports.length) {
@@ -396,6 +424,7 @@ export function exportDetailedBranchOperationalReview({
     generated,
     reports: safeReports,
     googleMovement,
+    predictivePackage,
   });
 
   safeReports.forEach((report, branchIdx) => {
@@ -408,6 +437,11 @@ export function exportDetailedBranchOperationalReview({
       period,
       movementByBranch[report.branchId],
     );
+    const branchPredictive = formatPredictiveExportLines(predictivePackage, report.branchId);
+    if (branchPredictive.length) {
+      y = drawPredictiveExportBlock(doc, margin, contentW, y + 4, branchPredictive);
+    }
+
     y = drawSummaryKpiGrid(doc, margin, contentW, y, report.summary, report.kpis);
 
     setExportFont(doc, 600, 8);

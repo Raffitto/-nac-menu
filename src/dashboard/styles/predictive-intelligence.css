@@ -1,0 +1,302 @@
+/* Predictive Intelligence — NAC luxury operational layer */
+
+.pred-panel {
+  margin: 1.75rem 0 2rem;
+  padding: 1.35rem 1.5rem 1.5rem;
+  border-radius: 18px;
+  border: 1px solid rgba(215, 188, 138, 0.22);
+  background: linear-gradient(145deg, rgba(12, 14, 16, 0.92), rgba(18, 22, 24, 0.88));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.pred-panel--compact {
+  margin: 1.25rem 0 1.5rem;
+  padding: 1rem 1.15rem;
+}
+
+.pred-panel--loading,
+.pred-panel--error {
+  min-height: 80px;
+}
+
+.pred-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.pred-panel-icon {
+  color: rgba(215, 188, 138, 0.9);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.pred-panel-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f9f9f7;
+  letter-spacing: 0.02em;
+}
+
+.pred-panel-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.78rem;
+  color: rgba(249, 249, 247, 0.52);
+}
+
+.pred-panel-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .pred-panel-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pred-card {
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(8, 10, 12, 0.55);
+}
+
+.pred-card-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.75);
+  margin-bottom: 0.65rem;
+}
+
+.pred-muted {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.45);
+  font-style: italic;
+}
+
+.pred-stat {
+  margin: 0.45rem 0 0;
+  font-size: 0.8rem;
+  color: rgba(249, 249, 247, 0.62);
+}
+
+.pred-stat strong {
+  color: #f9f9f7;
+  font-weight: 600;
+}
+
+.pred-section-label {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.7);
+}
+
+.pred-branch-scores {
+  margin-top: 0.25rem;
+}
+
+.pred-branch-score-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+}
+
+.pred-branch-score-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pred-branch-name {
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.7);
+}
+
+.pred-insights-block {
+  margin-top: 0.5rem;
+}
+
+.pred-insight-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.78);
+  line-height: 1.55;
+}
+
+.pred-insight-list--coaching .pred-insight--risk {
+  color: rgba(255, 140, 120, 0.95);
+}
+
+/* Score badge */
+.pred-score-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pred-score-badge--compact {
+  padding: 0.2rem 0.45rem;
+  border-radius: 8px;
+}
+
+.pred-score-value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pred-score-badge--compact .pred-score-value {
+  font-size: 1.15rem;
+}
+
+.pred-score-tier {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.pred-tier--elite {
+  border-color: rgba(215, 188, 138, 0.45);
+  background: rgba(215, 188, 138, 0.12);
+  color: #e8d4a8;
+}
+
+.pred-tier--strong {
+  border-color: rgba(78, 205, 196, 0.35);
+  background: rgba(78, 205, 196, 0.1);
+  color: #8ee8e0;
+}
+
+.pred-tier--unstable {
+  border-color: rgba(230, 168, 65, 0.35);
+  background: rgba(230, 168, 65, 0.1);
+  color: #e6a841;
+}
+
+.pred-tier--critical {
+  border-color: rgba(220, 90, 80, 0.4);
+  background: rgba(220, 90, 80, 0.12);
+  color: #f0a098;
+}
+
+.pred-score--na {
+  color: rgba(249, 249, 247, 0.35);
+}
+
+/* Momentum */
+.pred-momentum-chip {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pred-momentum--rising {
+  background: rgba(78, 205, 196, 0.18);
+  color: #6ee0d6;
+  border: 1px solid rgba(78, 205, 196, 0.35);
+}
+
+.pred-momentum--stable {
+  background: rgba(249, 249, 247, 0.08);
+  color: rgba(249, 249, 247, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pred-momentum--declining {
+  background: rgba(220, 90, 80, 0.15);
+  color: #f0a098;
+  border: 1px solid rgba(220, 90, 80, 0.3);
+}
+
+/* Trend arrows */
+.pred-arrow--up {
+  color: #4ecdc4;
+  vertical-align: middle;
+}
+
+.pred-arrow--down {
+  color: #e07060;
+  vertical-align: middle;
+}
+
+.pred-arrow--flat {
+  color: rgba(249, 249, 247, 0.4);
+  vertical-align: middle;
+}
+
+/* Sparkline */
+.pred-sparkline {
+  display: block;
+  margin-top: 0.5rem;
+  opacity: 0.9;
+}
+
+.pred-sparkline--empty {
+  opacity: 0.2;
+}
+
+/* Risk + health */
+.pred-risk-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: rgba(240, 160, 152, 0.95);
+}
+
+.pred-health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-left: auto;
+  flex-shrink: 0;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.pred-health-dot.pred-tier--elite {
+  background: #d7bc8a;
+}
+
+.pred-health-dot.pred-tier--strong {
+  background: #4ecdc4;
+}
+
+.pred-health-dot.pred-tier--unstable {
+  background: #e6a841;
+}
+
+.pred-health-dot.pred-tier--critical {
+  background: #dc5a50;
+}
+
+/* Branch battle score placement */
+.nac-branch-battle-card .pred-score-badge--compact {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+}
+
+.nac-branch-battle-card {
+  position: relative;
+}

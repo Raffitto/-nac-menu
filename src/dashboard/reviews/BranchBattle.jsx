@@ -7,6 +7,9 @@ import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "../components/GoogleReputationBadge";
+import { usePredictiveIntelligence } from "../hooks/usePredictiveIntelligence";
+import { OperationalScoreBadge } from "../components/PredictiveIntelligenceVisuals";
+import "../styles/predictive-intelligence.css";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
 
@@ -52,6 +55,17 @@ export default function BranchBattle() {
 
   const maxScans = useMemo(() => Math.max(...rows.map((r) => r.qr_scans), 1), [rows]);
 
+  const reviewDataForPredictive = useMemo(
+    () => ({
+      branchComparison: rows,
+      selectedRange: filters?.selectedRange,
+      loading,
+      filterKey: filters?.filterKey,
+    }),
+    [rows, loading, filters?.selectedRange, filters?.filterKey],
+  );
+  const { pkg } = usePredictiveIntelligence(reviewDataForPredictive);
+
   if (loading) {
     return (
       <div className="nac-branch-battle-grid">
@@ -67,6 +81,7 @@ export default function BranchBattle() {
       {rows.map((row, i) => {
         const isLeader = row.branch_id === leaderId && row.qr_scans > 0;
         const pct = Math.round((row.qr_scans / maxScans) * 100);
+        const branchScore = pkg?.scoreByBranch?.[row.branch_id];
         return (
           <motion.div
             key={row.branch_id}
@@ -76,6 +91,14 @@ export default function BranchBattle() {
             transition={{ delay: i * 0.06 }}
           >
             {isLeader && <Crown size={20} className="nac-branch-crown" />}
+            {branchScore?.score != null && !branchScore.insufficient_data ? (
+              <OperationalScoreBadge
+                score={branchScore.score}
+                tier={branchScore.tier}
+                tierLabel={branchScore.tier_label}
+                compact
+              />
+            ) : null}
             <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 500 }}>
               {branchDisplayName(row.branch_id)}
             </h3>

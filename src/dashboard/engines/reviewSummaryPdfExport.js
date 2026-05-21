@@ -30,6 +30,8 @@ import {
   STAFF_SUMMARY_TABLE_HEAD,
   BRANCH_BENCHMARK_TABLE_HEAD,
 } from "../config/reviewMetricLabels";
+import { formatPredictiveExportLines } from "./predictiveIntelligenceEngine";
+import { drawPredictiveExportBlock } from "./detailedBranchReviewExport";
 
 const BRAND = "NAC HOSPITALITY OS";
 const CONV_COL = 5;
@@ -201,6 +203,12 @@ export function exportReviewSummaryPdf(ctx) {
     paintExportText(doc, n.v, x + 8, ny + 26, { tier: "primary", shadow: true, maxWidth: nw - 16 });
   });
   y += 100;
+
+  const branchKey = (branch || "").toLowerCase().replace(/\s+/g, "");
+  const predictiveLines = formatPredictiveExportLines(ctx?.predictivePackage, branchKey);
+  if (predictiveLines.length) {
+    y = drawPredictiveExportBlock(doc, margin, contentW, y + 4, predictiveLines);
+  }
 
   if (productionStaff.length > 0 || comparison.length > 0) {
     const chartW = (contentW - 12) / 2;
