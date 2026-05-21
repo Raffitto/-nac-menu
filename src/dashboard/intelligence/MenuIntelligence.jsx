@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
@@ -43,13 +43,20 @@ export default function MenuIntelligence() {
     load();
   }, [load]);
 
-  const topItems = (data?.top_items || []).slice(0, 10);
-  const bottomItems = [...(data?.top_items || [])].sort((a, b) => a.opens - b.opens).slice(0, 5);
-  const topAddons = (data?.top_addon_pairs || []).slice(0, 8);
-  const topCategories = (data?.top_categories || []).map((c) => ({
-    name: CATEGORY_NAMES[c.id] || c.id,
-    opens: c.opens,
-  }));
+  const topItems = useMemo(() => (data?.top_items || []).slice(0, 10), [data?.top_items]);
+  const bottomItems = useMemo(
+    () => [...(data?.top_items || [])].sort((a, b) => a.opens - b.opens).slice(0, 5),
+    [data?.top_items],
+  );
+  const topAddons = useMemo(() => (data?.top_addon_pairs || []).slice(0, 8), [data?.top_addon_pairs]);
+  const topCategories = useMemo(
+    () =>
+      (data?.top_categories || []).map((c) => ({
+        name: CATEGORY_NAMES[c.id] || c.id,
+        opens: c.opens,
+      })),
+    [data?.top_categories],
+  );
 
   if (loading) {
     return (

@@ -81,7 +81,7 @@ export const STAFF_AUDIT_LEGEND_LINES = [
   "Card taps = QR/NFC card taps",
   "Interactions = generated review pages (not published Google reviews)",
   "Google = redirected to Google review page",
-  "To Google % = review-to-Google redirect conversion",
+  "To Google % = tap-to-Google redirect conversion",
   "Card→Review % = taps converted into review interactions",
 ];
 
@@ -89,7 +89,7 @@ export const STAFF_AUDIT_LEGEND_LINES_PDF = [
   "Card taps = QR/NFC card taps",
   "Interactions = generated review pages (not published Google reviews)",
   "Google = redirected to Google review page",
-  "To Google % = review-to-Google redirect conversion",
+  "To Google % = tap-to-Google redirect conversion",
   "Card to Review % = taps converted into review interactions",
 ];
 

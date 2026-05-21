@@ -76,8 +76,33 @@ export function PlatformFiltersProvider({ children }) {
     [branch, selectedRange, timeRangeHours, language, shift, eventType, dayType, role, liveMode],
   );
 
+  const filterKey = useMemo(
+    () =>
+      [
+        branch,
+        selectedRange,
+        timeRangeHours,
+        language,
+        shift,
+        eventType,
+        dayType,
+        role,
+      ].join("|"),
+    [
+      branch,
+      selectedRange,
+      timeRangeHours,
+      language,
+      shift,
+      eventType,
+      dayType,
+      role,
+    ],
+  );
+
   const value = useMemo(
     () => ({
+      filterKey,
       branch,
       setBranch: (b) => {
         setBranch(b);
@@ -125,6 +150,7 @@ export function PlatformFiltersProvider({ children }) {
       },
     }),
     [
+      filterKey,
       branch,
       selectedRange,
       timeRangeHours,

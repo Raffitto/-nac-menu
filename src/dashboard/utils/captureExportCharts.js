@@ -1,11 +1,10 @@
-import html2canvas from "html2canvas";
-
 /**
  * Capture chart nodes from off-screen export render root.
  * @returns {Promise<Record<string, string>>} map of chartId → PNG data URL
  */
 export async function captureVisualCharts(rootEl) {
   if (!rootEl) return {};
+  const { default: html2canvas } = await import("html2canvas");
   const nodes = rootEl.querySelectorAll("[data-export-chart]");
   const out = {};
 

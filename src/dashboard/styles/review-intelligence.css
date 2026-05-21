@@ -623,3 +623,51 @@
   color: rgba(249, 249, 247, 0.45);
 }
 
+/* Responsive admin — tables, exports, filters */
+@media (max-width: 1100px) {
+  .rev-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .rev-export-zone-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rev-export-btn {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .rev-intel-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rev-staff-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -0.5rem;
+    padding: 0 0.5rem 0.25rem;
+  }
+
+  .rev-staff-table {
+    min-width: 640px;
+  }
+
+  .rev-emp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rev-chart-box {
+    min-height: 180px;
+  }
+
+  .rev-export-modal {
+    max-width: 100%;
+    margin: 0 0.5rem;
+  }
+}
+

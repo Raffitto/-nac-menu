@@ -71,7 +71,7 @@ const CHART_TOOLTIP = {
   fontSize: 12,
 };
 
-export default function ReviewIntelligence({ embedded = false }) {
+export default function ReviewIntelligence({ embedded = false, prefetched = null }) {
   const platform = usePlatformFiltersOptional();
   const [branchLocal, setBranchLocal] = useState(defaultBranchId());
   const [rangeLocal, setRangeLocal] = useState(DEFAULT_RANGE);
@@ -96,12 +96,28 @@ export default function ReviewIntelligence({ embedded = false }) {
   const { movementByBranch } = useGoogleReviewMovement({
     byBranch: googleByBranch,
     enabled: configured,
-    captureOnLoad: true,
+    captureOnLoad: !embedded,
     periodRange: selectedRange,
   });
   const branchGoogleMovement = movementByBranch[branch] || null;
 
+  const applyPrefetched = useCallback((data) => {
+    if (!data) return false;
+    setKpis(data.kpis);
+    setStaffMerged(data.staffMerged || []);
+    setDailyTrend(data.dailyTrend || []);
+    setBranchScans(data.branchScans || []);
+    setBranchComparison(data.branchComparison || []);
+    setLoading(Boolean(data.loading));
+    setError(data.error || "");
+    return true;
+  }, []);
+
   const load = useCallback(async () => {
+    if (prefetched) {
+      applyPrefetched(prefetched);
+      return;
+    }
     if (!configured) {
       setLoading(false);
       return;
@@ -116,11 +132,13 @@ export default function ReviewIntelligence({ embedded = false }) {
       const summary = await fetchReviewEventsSummary(supabase, {
         branch: activeBranch || null,
         hours,
-      });
+      }).catch(() => null);
 
       if (summary) {
         const allSummary = activeBranch
-          ? await fetchReviewEventsSummary(supabase, { branch: null, hours })
+          ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(
+              () => summary,
+            )
           : summary;
 
         setKpis(kpisFromReviewSummary(summary));
@@ -172,11 +190,15 @@ export default function ReviewIntelligence({ embedded = false }) {
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, configured, embedded, platform]);
+  }, [branch, selectedRange, configured, embedded, platform, prefetched, applyPrefetched]);
 
   useEffect(() => {
+    if (prefetched) {
+      applyPrefetched(prefetched);
+      return;
+    }
     load();
-  }, [load]);
+  }, [prefetched, load, applyPrefetched]);
 
   const employees = useMemo(
     () =>

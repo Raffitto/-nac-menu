@@ -110,14 +110,21 @@ function drawMiniBarPanel(doc, x, y, w, title, items, valueKey, color) {
  * @param {object} ctx — exportReviewIntelligenceReport context
  */
 export function exportReviewSummaryPdf(ctx) {
+  const review = ctx?.review || {};
+  const hasData =
+    (review.qr_scans ?? 0) > 0 ||
+    (review.reviews_generated ?? 0) > 0 ||
+    (review.google_clicks ?? 0) > 0;
+
   const {
     branch,
     rangeLabel,
-    review,
+    review: reviewIn,
     staffStats = [],
     comparison: comparisonIn,
     branchComparison,
   } = ctx;
+  const reviewMetrics = reviewIn || review;
   const comparison = comparisonIn ?? branchComparison ?? [];
   const productionStaff = filterProductionStaffList(staffStats);
 
@@ -130,7 +137,7 @@ export function exportReviewSummaryPdf(ctx) {
     timeStyle: "short",
     dateStyle: "medium",
   });
-  const brief = buildExecutiveBrief(review, productionStaff, comparison, branch);
+  const brief = buildExecutiveBrief(reviewMetrics, productionStaff, comparison, branch);
 
   fillPage(doc);
   doc.setFillColor(...NAC_GOLD);
@@ -153,10 +160,10 @@ export function exportReviewSummaryPdf(ctx) {
   const cardW = (contentW - 24) / 4;
   const cardY = 138;
   const metrics = [
-    { label: REVIEW_METRIC_PDF.cardTaps, value: review?.qr_scans ?? 0, accent: NAC_TEAL },
-    { label: REVIEW_METRIC_PDF.reviewInteractions, value: review?.reviews_generated ?? 0, accent: NAC_TEAL },
-    { label: REVIEW_METRIC_PDF.googleRedirects, value: review?.google_clicks ?? 0, accent: NAC_GOLD },
-    { label: REVIEW_METRIC_PDF.tapToGooglePct, value: `${review?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.cardTaps, value: reviewMetrics?.qr_scans ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.reviewInteractions, value: reviewMetrics?.reviews_generated ?? 0, accent: NAC_TEAL },
+    { label: REVIEW_METRIC_PDF.googleRedirects, value: reviewMetrics?.google_clicks ?? 0, accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.tapToGooglePct, value: `${reviewMetrics?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
   ];
   metrics.forEach((m, i) => {
     drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 52, m.label, m.value, m.accent);
@@ -166,8 +173,12 @@ export function exportReviewSummaryPdf(ctx) {
   y = drawCallout(doc, margin, y, contentW, {
     accent: NAC_GOLD,
     title: "Executive read",
-    body: brief.recommendation,
-    hint: `Est. ${brief.missedGoogle} missed Google redirects in period`,
+    body: hasData
+      ? brief.recommendation
+      : "No card-handoff activity in this period. Expand the date range or verify branch filters.",
+    hint: hasData
+      ? `Est. ${brief.missedGoogle} missed Google redirects in period`
+      : "Metrics will populate when review events are recorded",
   });
 
   const halfW = (contentW - 12) / 2;

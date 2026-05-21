@@ -1,10 +1,12 @@
 /** KPIs and aggregates from review_events only — never menu_events. */
 
 import { filterAnalyticsReviewEvents } from "./isProductionStaff";
-
-const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
-const GOOGLE_TYPES = new Set(["google_redirect", "review_google_click"]);
-const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
+import {
+  REVIEW_GENERATED_TYPES as GENERATED_TYPES,
+  REVIEW_GOOGLE_TYPES as GOOGLE_TYPES,
+  REVIEW_PAGE_OPEN_TYPES as PAGE_OPEN_TYPES,
+  tapToGooglePct,
+} from "./reviewFunnelMetrics";
 
 export function countByEventType(events = []) {
   const counts = {};
@@ -37,8 +39,7 @@ export function computeReviewKpis(events = []) {
     if (id) visitorIds.add(id);
   });
 
-  const conversion_pct =
-    qr_scans > 0 ? Math.round((google_redirects / qr_scans) * 100) : 0;
+  const conversion_pct = tapToGooglePct(google_redirects, qr_scans);
 
   return {
     qr_scans,

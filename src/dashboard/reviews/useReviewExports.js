@@ -6,13 +6,11 @@ import {
   staffFromReviewSummary,
   branchComparisonFromReviewSummary,
 } from "../utils/reviewSummaryMap";
-import { exportReviewIntelligenceReport } from "../engines/exportEngine";
 import {
   OPERATIONAL_BRANCHES,
   buildBranchOperationalReport,
   buildBranchOperationalReportFromSummary,
 } from "../engines/branchOperationalReviewEngine";
-import { exportDetailedBranchOperationalReview } from "../engines/detailedBranchReviewExport";
 import { buildEmployeePerformance } from "../engines/employeePerformanceEngine";
 import {
   aggregateStaffReviewStats,
@@ -31,6 +29,7 @@ import {
   fetchGoogleReviewSnapshots,
 } from "../utils/googleReviewSnapshotHistory";
 import { exportElementToPng } from "../utils/snapshotExport";
+import { withSupabaseFallback } from "../utils/supabaseResilience";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
@@ -40,6 +39,13 @@ function applyEventTimeBounds(query, exportRange) {
   return query
     .gte("created_at", exportRange.sinceIso)
     .lte("created_at", exportRange.untilIso);
+}
+
+function reportExportFailure(err, label = "Export") {
+  const msg = err?.message || "Export failed. Try a shorter date range or refresh data.";
+  if (typeof window !== "undefined") {
+    window.alert(`${label}: ${msg}`);
+  }
 }
 
 export function useReviewExports(filters) {
@@ -65,33 +71,26 @@ export function useReviewExports(filters) {
       const hours = exportRange ? exportRange.rpcHours : dashboardExportRange.rpcHours;
 
       if (useRpc) {
-        const summary = await fetchReviewEventsSummary(supabase, {
-          branch: branch || null,
-          hours,
-        }).catch(() => null);
+        const summary = await withSupabaseFallback(
+          fetchReviewEventsSummary(supabase, {
+            branch: branch || null,
+            hours,
+          }),
+          null,
+        );
 
         if (summary) {
-          const allSummary =
+          const allSummary = await withSupabaseFallback(
             branch != null
-              ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(
-                  () => summary,
-                )
-              : summary;
-          const events = staffFromReviewSummary(summary).map((s) => ({
-            event_type: "qr_scan",
-            employee_name: s.name,
-            employee_role: s.role,
-            branch_id: branch || "",
-          }));
-          return {
-            events,
-            all: branchComparisonFromReviewSummary(allSummary).flatMap((b) =>
-              Array.from({ length: b.qr_scans }, () => ({
-                event_type: "qr_scan",
-                branch_id: b.branch_id,
-              })),
-            ),
+              ? fetchReviewEventsSummary(supabase, { branch: null, hours })
+              : Promise.resolve(summary),
             summary,
+          );
+          return {
+            events: [],
+            all: [],
+            summary,
+            fromRpc: true,
             kpis: kpisFromReviewSummary(summary),
             branchComparison: branchComparisonFromReviewSummary(allSummary),
             exportRange: range,
@@ -121,7 +120,7 @@ export function useReviewExports(filters) {
 
       const events = applyPlatformFilters(branchEvents || [], filters);
       const all = applyPlatformFilters(allEvents || [], filters);
-      return { events, all, exportRange: range };
+      return { events, all, exportRange: range, fromRpc: false };
     },
     [branch, filters, dashboardExportRange],
   );
@@ -159,7 +158,9 @@ export function useReviewExports(filters) {
         },
         staffStats: staffMerged,
         employees,
-        diagnostics: runReviewDataQualityDiagnostics(events, branch),
+        diagnostics: loaded?.fromRpc
+          ? []
+          : runReviewDataQualityDiagnostics(events, branch),
         branchComparison: loaded?.branchComparison || buildBranchReviewComparison(all),
       };
     },
@@ -176,6 +177,8 @@ export function useReviewExports(filters) {
           snapshotEl,
           `nac-${safeBranch}-${selectedRange}-snapshot-${Date.now()}.png`,
         );
+      } catch (err) {
+        reportExportFailure(err, "Snapshot PNG");
       } finally {
         setPngBusy(false);
       }
@@ -190,16 +193,15 @@ export function useReviewExports(filters) {
       const reports = await Promise.all(
         OPERATIONAL_BRANCHES.map(async (branchId) => {
           if (range.useRpc) {
-            try {
-              const summary = await fetchReviewEventsSummary(supabase, {
+            const summary = await withSupabaseFallback(
+              fetchReviewEventsSummary(supabase, {
                 branch: branchId,
                 hours: range.rpcHours,
-              });
-              if (summary) {
-                return buildBranchOperationalReportFromSummary(summary, branchId);
-              }
-            } catch (_) {
-              /* fall through to raw events */
+              }),
+              null,
+            );
+            if (summary) {
+              return buildBranchOperationalReportFromSummary(summary, branchId);
             }
           }
 
@@ -216,7 +218,7 @@ export function useReviewExports(filters) {
         }),
       );
 
-      return reports;
+      return reports.filter(Boolean);
     },
     [filters, dashboardExportRange],
   );
@@ -227,8 +229,13 @@ export function useReviewExports(filters) {
       const range = exportRange || dashboardExportRange;
       setAuditBusy(true);
       try {
+        const { exportDetailedBranchOperationalReview } = await import(
+          "../engines/detailedBranchReviewExport"
+        );
         const reports = await loadBranchAuditReports(range);
-        const { data: snapshots } = await fetchGoogleReviewSnapshots();
+        const { data: snapshots } = await fetchGoogleReviewSnapshots().catch(() => ({
+          data: [],
+        }));
         const googleMovement = buildAllBranchGoogleMovement(snapshots || [], {
           periodStartDate: range.startDate,
           periodEndDate: range.endDate,
@@ -241,6 +248,8 @@ export function useReviewExports(filters) {
           selectedRange: range.preset,
           googleMovement,
         });
+      } catch (err) {
+        reportExportFailure(err, "Branch audit PDF");
       } finally {
         setAuditBusy(false);
       }
@@ -254,11 +263,14 @@ export function useReviewExports(filters) {
       const range = exportRange || dashboardExportRange;
       setSummaryBusy(true);
       try {
+        const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
         exportReviewIntelligenceReport({
           ...buildSummaryContext(loaded, range),
           format: "pdf",
         });
+      } catch (err) {
+        reportExportFailure(err, "Summary PDF");
       } finally {
         setSummaryBusy(false);
       }
@@ -272,11 +284,14 @@ export function useReviewExports(filters) {
       const range = exportRange || dashboardExportRange;
       setSummaryBusy(true);
       try {
+        const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
         exportReviewIntelligenceReport({
           ...buildSummaryContext(loaded, range),
           format: "xlsx",
         });
+      } catch (err) {
+        reportExportFailure(err, "Summary XLSX");
       } finally {
         setSummaryBusy(false);
       }

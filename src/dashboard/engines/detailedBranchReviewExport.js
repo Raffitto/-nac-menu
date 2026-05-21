@@ -367,6 +367,14 @@ export function exportDetailedBranchOperationalReview({
   selectedRange,
   googleMovement = [],
 }) {
+  const safeReports = (reports || []).filter((r) => r && r.branchId);
+  if (!safeReports.length) {
+    if (typeof window !== "undefined") {
+      window.alert("No branch operational data for this period. Adjust the date range and try again.");
+    }
+    return;
+  }
+
   const period = periodLabel || rangeLabel;
   const movementByBranch = Object.fromEntries(
     (googleMovement || []).map((g) => [g.branch_id, g]),
@@ -386,11 +394,11 @@ export function exportDetailedBranchOperationalReview({
     periodLabel: period,
     rangeLabel: period,
     generated,
-    reports,
+    reports: safeReports,
     googleMovement,
   });
 
-  reports.forEach((report, branchIdx) => {
+  safeReports.forEach((report, branchIdx) => {
     doc.addPage();
     let y = drawBranchHeader(
       doc,
@@ -425,7 +433,7 @@ export function exportDetailedBranchOperationalReview({
       pageH - 24,
       { tier: "muted", shadow: true },
     );
-    if (branchIdx === reports.length - 1) {
+    if (branchIdx === safeReports.length - 1) {
       paintExportText(
         doc,
         "Confidential operational intelligence",
