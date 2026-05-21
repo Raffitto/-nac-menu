@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -330,6 +330,19 @@ export default function MenuManager() {
   const [placementGroupId, setPlacementGroupId] = useState(null);
   const [removedPlacementIds, setRemovedPlacementIds] = useState([]);
 
+  const sectionsCatalogRef = useRef([]);
+  const categoriesRef = useRef([]);
+  const initStartedRef = useRef(false);
+  const lastLoadedCatRef = useRef(null);
+
+  useEffect(() => {
+    sectionsCatalogRef.current = sectionsCatalog;
+  }, [sectionsCatalog]);
+
+  useEffect(() => {
+    categoriesRef.current = categories;
+  }, [categories]);
+
   // Category editor
   const [catEditMode, setCatEditMode] = useState(null);
   const [catEditData, setCatEditData] = useState({ name_en: "", name_ar: "", sort_order: 0 });
@@ -421,8 +434,10 @@ export default function MenuManager() {
       ];
       if (groupIds.length > 0) {
         const { data: groupRows } = await fetchPlacementGroupIndex(groupIds);
-        const sectionsById = Object.fromEntries(sectionsCatalog.map((s) => [s.id, s]));
-        const categoriesById = Object.fromEntries(categories.map((c) => [c.id, c]));
+        const catalog = sectionsCatalogRef.current;
+        const cats = categoriesRef.current;
+        const sectionsById = Object.fromEntries(catalog.map((s) => [s.id, s]));
+        const categoriesById = Object.fromEntries(cats.map((c) => [c.id, c]));
         const merged = [...flatItems, ...(groupRows || [])];
         setPlacementGroupSummary(
           buildPlacementGroupSummary(merged, sectionsById, categoriesById),
@@ -435,7 +450,7 @@ export default function MenuManager() {
     } finally {
       setItemsLoading(false);
     }
-  }, [sectionsCatalog, categories]);
+  }, []);
 
   const loadAddOns = useCallback(async () => {
     try {
@@ -459,25 +474,38 @@ export default function MenuManager() {
     if (!isSupabaseConfigured()) {
       setLoading(false);
       setError("Supabase is not configured. Add your keys to .env.local to use the Menu Manager.");
-      return;
+      return undefined;
     }
+    if (initStartedRef.current) return undefined;
+    initStartedRef.current = true;
+
+    let cancelled = false;
     async function init() {
       setLoading(true);
-      const cats = await loadCategories();
-      await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
-      if (cats.length > 0) {
-        setSelectedCatId(cats[0].id);
-        await loadMenuForCategory(cats[0].id);
+      try {
+        const cats = await loadCategories();
+        await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
+        if (!cancelled && cats.length > 0) {
+          setSelectedCatId((current) => current || cats[0].id);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
     init();
-  }, [loadCategories, loadSectionsCatalog, loadAddOns, loadAllergens, loadMenuForCategory]);
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally mount-only: loaders are stable useCallbacks
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (selectedCatId) {
-      loadMenuForCategory(selectedCatId);
-    }
+    if (!selectedCatId) return undefined;
+    if (lastLoadedCatRef.current === selectedCatId) return undefined;
+    lastLoadedCatRef.current = selectedCatId;
+    loadMenuForCategory(selectedCatId);
+    return undefined;
   }, [selectedCatId, loadMenuForCategory]);
 
   useEffect(() => {
@@ -524,6 +552,7 @@ export default function MenuManager() {
   // ── Category CRUD ──
 
   const handleSelectCategory = useCallback((catId) => {
+    lastLoadedCatRef.current = null;
     setSelectedCatId(catId);
     setSearchQuery("");
     setActiveFilter("all");
