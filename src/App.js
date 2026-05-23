@@ -5,6 +5,7 @@ import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
+import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
   trackEvent,
@@ -36,8 +37,8 @@ const _fallbackCategories = [
     id: "brunch",
     en: "Brunch",
     ar: "برانش",
-    timeEn: "Fri & Sat · 12–5 PM",
-    timeAr: "الجمعة والسبت · ١٢–٥ م",
+    timeEn: BRUNCH_SCHEDULE.timeEn,
+    timeAr: BRUNCH_SCHEDULE.timeAr,
     icon: "/menu-icons/brunch.png",
     iconAr: "/menu-icons-ar/brunch.png",
   },
@@ -45,8 +46,8 @@ const _fallbackCategories = [
     id: "daytime",
     en: "Daytime",
     ar: "النهار",
-    timeEn: "Sun–Thu · 12–5 PM",
-    timeAr: "الأحد–الخميس · ١٢–٥ م",
+    timeEn: DAYTIME_LUNCH_SCHEDULE.timeEn,
+    timeAr: DAYTIME_LUNCH_SCHEDULE.timeAr,
     icon: "/menu-icons/daytime.png",
     iconAr: "/menu-icons-ar/daytime.png",
   },

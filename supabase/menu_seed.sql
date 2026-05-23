@@ -21,8 +21,8 @@ INSERT INTO allergens (code, name_en, name_ar) VALUES
 
 -- 2. CATEGORIES
 INSERT INTO categories (slug, name_en, name_ar, icon, icon_ar, time_en, time_ar, sort_order) VALUES
-  ('brunch', 'Brunch', 'برانش', '/menu-icons/brunch.png', '/menu-icons-ar/brunch.png', 'Fri & Sat · 12–5 PM', 'الجمعة والسبت · ١٢–٥ م', 1),
-  ('daytime', 'Daytime', 'النهار', '/menu-icons/daytime.png', '/menu-icons-ar/daytime.png', 'Sun–Thu · 12–5 PM', 'الأحد–الخميس · ١٢–٥ م', 2),
+  ('brunch', 'Brunch', 'برانش', '/menu-icons/brunch.png', '/menu-icons-ar/brunch.png', 'Wed–Sat · 12–5 PM', 'الأربعاء–السبت · ١٢–٥ م', 1),
+  ('daytime', 'Daytime', 'النهار', '/menu-icons/daytime.png', '/menu-icons-ar/daytime.png', 'Sun–Tue · 12–5 PM', 'الأحد–الثلاثاء · ١٢–٥ م', 2),
   ('breakfast', 'Breakfast', 'الفطور', '/menu-icons/breakfast-en.png', '/menu-icons-ar/Breakfast.png', '9–12 AM', '٩–١٢ ص', 3),
   ('evening', 'Evening Menu', 'المساء', '/menu-icons/evening.png', '/menu-icons-ar/dinner.png', '5–11:30 PM', '٥–١١:٣٠ م', 4),
   ('desserts', 'Desserts', 'حلى', '/menu-icons/desserts.png', '/menu-icons-ar/dessert.png', 'All Day', 'طوال اليوم', 5),

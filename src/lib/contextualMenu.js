@@ -1,6 +1,7 @@
 /** NAC contextual menu — business hours in Asia/Riyadh (aligned with 3 AM business day clock) */
 
 import { NAC_BUSINESS_TZ } from "../dashboard/utils/businessDay";
+import { isBrunchDay } from "./brunchSchedule";
 
 function riyadhParts(date = new Date()) {
   const fmt = new Intl.DateTimeFormat("en-US", {
@@ -39,7 +40,7 @@ export function getContextualFlow(date = new Date()) {
     labelEn = "Breakfast";
     labelAr = "الفطور";
   } else if (mins >= 12 * 60 && mins < 17 * 60) {
-    if (dow === 5 || dow === 6) {
+    if (isBrunchDay(dow)) {
       primary = "brunch";
       labelEn = "Brunch";
       labelAr = "برانش";
