@@ -193,6 +193,11 @@ export async function insertReviewEvent(ctx = {}) {
   }
 
   if (!error) {
+    void import("../platform/engines/dataFreshnessEngine")
+      .then(({ recordLastReviewEventAt }) =>
+        recordLastReviewEventAt(new Date().toISOString()),
+      )
+      .catch(() => {});
     void import("./sessionAttribution")
       .then(({ tryLinkMenuReviewSession }) =>
         tryLinkMenuReviewSession({

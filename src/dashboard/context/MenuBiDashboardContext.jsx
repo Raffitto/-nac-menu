@@ -1,6 +1,8 @@
-import React, { createContext, useContext } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
 import PipelineDebugOverlay from "../components/PipelineDebugOverlay";
+import AnalyticsIntegrityPanel from "../components/AnalyticsIntegrityPanel";
+import { installTruthValidationGlobals } from "../../lib/truthValidationRegistry";
 
 const MenuBiDashboardContext = createContext(null);
 
@@ -8,6 +10,10 @@ const MenuBiDashboardContext = createContext(null);
  * Single BI fetch for Intelligence Hub / shared admin surfaces.
  */
 export function MenuBiDashboardProvider({ children, options = {}, source }) {
+  useEffect(() => {
+    installTruthValidationGlobals();
+  }, []);
+
   const value = useMenuBiDashboard({
     ...options,
     source: source || options.source || "MenuBiDashboardProvider",
@@ -16,6 +22,7 @@ export function MenuBiDashboardProvider({ children, options = {}, source }) {
     <MenuBiDashboardContext.Provider value={value}>
       {children}
       <PipelineDebugOverlay />
+      <AnalyticsIntegrityPanel />
     </MenuBiDashboardContext.Provider>
   );
 }

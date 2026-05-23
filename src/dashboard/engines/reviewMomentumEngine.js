@@ -3,6 +3,7 @@
  */
 
 import { clampDisplayPct } from "../utils/reviewFunnelMetrics";
+import { CONFIDENCE } from "../../platform/contracts/dataConfidence";
 
 const INSUFFICIENT_MSG = "Insufficient historical data";
 
@@ -42,6 +43,8 @@ export function computeReviewMomentum(input = {}) {
       insufficient_data: true,
       message: INSUFFICIENT_MSG,
       momentum: "Stable",
+      confidence: CONFIDENCE.LOW,
+      provisional: true,
       tonight_redirects: null,
       monthly_review_gain: null,
       redirect_pace_vs_last_week: null,
@@ -78,10 +81,19 @@ export function computeReviewMomentum(input = {}) {
   const rangeDays = input.rangeDays || days || 7;
   const projectedMonthlyScans = Math.round(avgScans * Math.min(30, rangeDays * 4.3));
 
+  const confidence =
+    days >= 7 && scans >= 25
+      ? CONFIDENCE.HIGH
+      : days >= 3 && scans >= 10
+        ? CONFIDENCE.MEDIUM
+        : CONFIDENCE.LOW;
+
   return {
     insufficient_data: false,
     message: null,
     momentum,
+    confidence,
+    provisional: confidence !== CONFIDENCE.HIGH,
     tonight_redirects: { low: tonightLow, high: tonightHigh },
     monthly_review_gain: monthlyGain,
     redirect_pace_vs_last_week: pacePct,

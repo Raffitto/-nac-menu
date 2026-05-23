@@ -6,6 +6,7 @@
 import { tapToGooglePct } from "./funnelAnalyticsEngine";
 import { computeReviewMomentum } from "../../dashboard/engines/reviewMomentumEngine";
 import { DATA_SUFFICIENCY } from "../contracts/dataSufficiency";
+import { CONFIDENCE } from "../contracts/dataConfidence";
 
 /** Demand / traffic proxy from menu sessions (placeholder for time-series model). */
 export function estimateDemandSignal({ dailyTrend = [], sessions = 0 } = {}) {
@@ -34,11 +35,17 @@ export function estimateDemandSignal({ dailyTrend = [], sessions = 0 } = {}) {
   const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : avg;
   const delta = prevAvg > 0 ? ((avg - prevAvg) / prevAvg) * 100 : 0;
 
+  const confLevel =
+    points.length >= 7 && sessions >= DATA_SUFFICIENCY.predictive.minSessionsForDemand
+      ? CONFIDENCE.MEDIUM
+      : CONFIDENCE.LOW;
+
   return {
     level: avg >= 50 ? "high" : avg >= 15 ? "moderate" : "low",
     trend: delta > 8 ? "rising" : delta < -8 ? "falling" : "stable",
     deltaPct: Math.round(delta),
-    confidence: points.length >= 7 ? "medium" : "low",
+    confidence: confLevel,
+    provisional: confLevel !== CONFIDENCE.HIGH,
   };
 }
 

@@ -1,6 +1,7 @@
 import { getBusinessDayRange } from "../dashboard/utils/businessDay";
 import { hourInRiyadh } from "../dashboard/utils/hourlyBucketLabels";
 import { isNacDebugEnabled } from "./nacDebug";
+import { recordClientTrackAt } from "../platform/engines/dataFreshnessEngine";
 
 const STORAGE_KEY = "nac_menu_track_diag_v2";
 const MAX_LAST_ERRORS = 8;
@@ -76,6 +77,7 @@ export function recordMenuTrackSuccess(eventType, branchId) {
   state.lastOk = { event_type: eventType, at: new Date().toISOString() };
   pushRecentEvent(state, eventType, branchId);
   writeState(state);
+  recordClientTrackAt(state.lastOk?.at);
   if (typeof window !== "undefined") {
     window.__NAC_MENU_TRACK_DIAG__ = getMenuTrackingDiagnostics();
   }

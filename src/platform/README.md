@@ -12,3 +12,10 @@ import {
 ```
 
 Architecture: [docs/NAC_OS_ARCHITECTURE.md](../../docs/NAC_OS_ARCHITECTURE.md)
+
+## Truth validation (operational accuracy)
+
+- `buildTruthValidationPackage` — confidence, integrity, anomalies, health score, checklist
+- `window.NAC_DEBUG = true` — analytics integrity panel in Intelligence Hub
+- `window.NAC_RECORD_OBSERVATION({ qr_scans_30min: 12 })` — floor counts vs dashboard
+- `window.__NAC_TRUTH_VALIDATION__` — last computed validation package

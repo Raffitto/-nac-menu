@@ -18,6 +18,7 @@ import { devLog } from "./devLog";
 import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
 import { recordPipelineFetch } from "./pipelineDiagnostics";
+import { recordRpcRefresh } from "../platform/engines/dataFreshnessEngine";
 import { assessMenuBiSufficiency } from "../platform/contracts/dataSufficiency";
 import { hoursToRange } from "../dashboard/utils/rangeState";
 
@@ -229,6 +230,8 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
   if (dataSource && !normalized.data_source) {
     normalized = { ...normalized, data_source: dataSource };
   }
+
+  recordRpcRefresh({ dataSource });
 
   recordPipelineFetch({
     dataSource,

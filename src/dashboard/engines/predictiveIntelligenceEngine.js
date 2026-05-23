@@ -10,6 +10,11 @@ import {
 } from "./staffCoachingIntelligenceEngine";
 import { buildExecutiveOperationalInsights } from "./executiveOperationalInsightEngine";
 import {
+  assessPredictiveConfidence,
+  attachConfidenceToMomentum,
+} from "../../platform/engines/dataConfidenceEngine";
+import { provisionalPhrase } from "../../platform/contracts/dataConfidence";
+import {
   buildAllBranchGoogleMovement,
 } from "../utils/googleReviewSnapshotHistory";
 function rangeDaysFromId(rangeId) {
@@ -66,12 +71,6 @@ export function buildPredictiveIntelligencePackage(input = {}) {
   });
 
   const staffInsights = buildNetworkStaffCoachingInsights(staffByBranch);
-  const executiveInsights = buildExecutiveOperationalInsights({
-    branchScores,
-    branchComparison,
-    staffInsights,
-    momentum,
-  });
 
   const scoreByBranch = Object.fromEntries(branchScores.map((s) => [s.branch_id, s]));
 
@@ -83,16 +82,40 @@ export function buildPredictiveIntelligencePackage(input = {}) {
   const networkScoreProvisional = scored.some((s) => s.provisional);
   const networkScoreBuilding = scored.length > 0 && scored.every((s) => s.provisional);
 
+  const predictiveConfidence = assessPredictiveConfidence({
+    pkg: {
+      branchScores,
+      momentum,
+      networkScoreBuilding,
+    },
+    reviewKpis: input.kpis,
+    selectedRange: input.selectedRange,
+  });
+
+  const momentumWithConfidence = attachConfidenceToMomentum(momentum, predictiveConfidence);
+
+  const executiveInsights = buildExecutiveOperationalInsights({
+    branchScores,
+    branchComparison,
+    staffInsights,
+    momentum: momentumWithConfidence,
+  }).map((ins) =>
+    predictiveConfidence.provisional
+      ? { ...ins, text: provisionalPhrase(predictiveConfidence.level, ins.text) }
+      : ins,
+  );
+
   return {
     branchScores,
     scoreByBranch,
     networkScore,
     networkScoreProvisional,
     networkScoreBuilding,
-    momentum,
+    momentum: momentumWithConfidence,
     staffInsights,
     executiveInsights,
     googleMovementByBranch,
+    predictiveConfidence,
     generated_at: new Date().toISOString(),
   };
 }

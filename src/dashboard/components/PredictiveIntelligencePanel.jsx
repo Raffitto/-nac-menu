@@ -11,6 +11,7 @@ import {
   HealthIndicator,
 } from "./PredictiveIntelligenceVisuals";
 import { branchDisplayName } from "../utils/rangeState";
+import { CONFIDENCE_LABELS, provisionalPhrase } from "../../platform/contracts/dataConfidence";
 import "../styles/predictive-intelligence.css";
 
 /**
@@ -23,6 +24,7 @@ export default function PredictiveIntelligencePanel({
 }) {
   const { pkg, activeScore, loading, error } = usePredictiveIntelligence(reviewData);
   const momentum = pkg?.momentum;
+  const predConf = pkg?.predictiveConfidence;
   const sparkValues = useMemo(
     () => (reviewData?.dailyTrend || []).map((d) => d.scans),
     [reviewData?.dailyTrend],
@@ -56,10 +58,22 @@ export default function PredictiveIntelligencePanel({
         <Sparkles size={16} className="pred-panel-icon" />
         <div>
           <h3 className="pred-panel-title">Predictive Intelligence</h3>
-          <p className="pred-panel-sub">Operational scoring and forward-looking signals from live data</p>
+          <p className="pred-panel-sub">
+            {predConf?.provisional
+              ? provisionalPhrase(
+                  predConf.level,
+                  "Operational scoring from available review and menu signals",
+                )
+              : "Operational scoring and forward-looking signals from live data"}
+          </p>
         </div>
         {activeScore?.tier ? <HealthIndicator tier={activeScore.tier} /> : null}
       </header>
+      {predConf?.level ? (
+        <p className="pred-muted" style={{ margin: "0 0 0.5rem", fontSize: "0.75rem" }}>
+          Signal confidence: {CONFIDENCE_LABELS[predConf.level] || predConf.level}
+        </p>
+      ) : null}
 
       <div className="pred-panel-grid">
         <div className="pred-card pred-card--score">
@@ -93,7 +107,10 @@ export default function PredictiveIntelligencePanel({
               <MomentumChip label={momentum?.momentum} direction={momentum?.momentum} />
               {momentum?.tonight_redirects ? (
                 <p className="pred-stat">
-                  Expected Google redirects tonight:{" "}
+                  {momentum.provisional
+                    ? provisionalPhrase(momentum.confidence, "Estimated redirects tonight")
+                    : "Expected Google redirects tonight"}
+                  :{" "}
                   <strong>
                     {momentum.tonight_redirects.low}-{momentum.tonight_redirects.high}
                   </strong>

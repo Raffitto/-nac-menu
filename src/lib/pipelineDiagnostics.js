@@ -4,6 +4,7 @@
 
 import { getMenuTrackingDiagnostics } from "./menuTrackingDiagnostics";
 import { isNacDebugEnabled } from "./nacDebug";
+import { getTruthValidation } from "./truthValidationRegistry";
 
 const MAX_FETCH_HISTORY = 5;
 
@@ -62,6 +63,7 @@ export function getPipelineDiagnostics() {
     platformStatus: lastFetch?.platformStatus || null,
     sufficiency: lastFetch?.sufficiency || null,
     hourlyPopulatedBuckets: hourlyBuckets,
+    truthValidation: getTruthValidation(),
   };
 }
 

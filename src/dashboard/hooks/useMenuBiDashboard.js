@@ -16,6 +16,10 @@ import { rangeContractFromFilters } from "../../platform/engines/timeRangeEngine
 import { assessMenuBiSufficiency } from "../../platform/contracts/dataSufficiency";
 import { recordPipelineFetch } from "../../lib/pipelineDiagnostics";
 import { isNacDebugEnabled } from "../../lib/nacDebug";
+import { probeLatestEventTimestamps } from "../../platform/engines/dataFreshnessEngine";
+import { buildAndPublishTruthValidation } from "../../lib/truthValidationRegistry";
+import { getMenuTrackingDiagnostics } from "../../lib/menuTrackingDiagnostics";
+import { getPipelineDiagnostics } from "../../lib/pipelineDiagnostics";
 
 const EMPTY_CONTRACT = {
   data: null,
@@ -33,6 +37,8 @@ const EMPTY_CONTRACT = {
   hours: 24,
   selectedRange: "today",
   sparseHistory: false,
+  truthValidation: null,
+  menuConfidence: null,
   reload: () => {},
 };
 
@@ -56,6 +62,7 @@ export function useMenuBiDashboard(options = {}) {
   const [note, setNote] = useState(null);
   const [opsNotes, setOpsNotes] = useState([]);
   const [error, setError] = useState("");
+  const [truthValidation, setTruthValidation] = useState(null);
 
   const rangeContract = useMemo(
     () => rangeContractFromFilters(filters || {}),
@@ -106,6 +113,23 @@ export function useMenuBiDashboard(options = {}) {
       setOpsNotes(result?.opsNotes || []);
       setLiveFallback(Boolean(result?.liveFallback));
       setMenuDataEmpty(Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)));
+      await probeLatestEventTimestamps(supabase).catch(() => {});
+
+      const sufficiency =
+        result?.sufficiency || assessMenuBiSufficiency(normalized, rangeContract);
+
+      const truthPkg = buildAndPublishTruthValidation({
+        biData: normalized,
+        rangeContract,
+        dataSource: result?.dataSource,
+        liveFallback: result?.liveFallback,
+        partial: result?.partial,
+        sufficiency,
+        tracking: getMenuTrackingDiagnostics(),
+        fetchHistory: getPipelineDiagnostics().fetchHistory,
+      });
+      setTruthValidation(truthPkg);
+
       logBiIntelligenceDiagnostics({
         source,
         biData: normalized,
@@ -114,17 +138,20 @@ export function useMenuBiDashboard(options = {}) {
         liveFallback: result?.liveFallback,
         partial: result?.partial,
         dataSource: result?.dataSource,
+        healthScore: truthPkg?.healthScore?.score,
+        menuConfidence: truthPkg?.menuConfidence?.level,
       });
     } catch (e) {
       setData(null);
       setLiveFallback(false);
       setMenuDataEmpty(true);
       setOpsNotes([]);
+      setTruthValidation(null);
       setError(e?.message || "Failed to load menu intelligence");
     } finally {
       setLoading(false);
     }
-  }, [enabled, filters?.branch, filters?.selectedRange, hours, source]);
+  }, [enabled, filters?.branch, filters?.selectedRange, hours, source, rangeContract]);
 
   useEffect(() => {
     load();
@@ -194,5 +221,9 @@ export function useMenuBiDashboard(options = {}) {
     selectedRange: filters?.selectedRange || "today",
     dataSufficiency,
     dataSource: data?.data_source || null,
+    truthValidation,
+    menuConfidence: truthValidation?.menuConfidence || null,
+    healthScore: truthValidation?.healthScore || null,
+    freshness: truthValidation?.freshness || null,
   };
 }
