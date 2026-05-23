@@ -20,5 +20,7 @@ export const OPERATIONAL_SCORE_TIERS = [
 ];
 
 /** Minimum samples before scoring (below → insufficient data). */
-export const SCORE_MIN_CARD_TAPS = 8;
-export const SCORE_MIN_STAFF_ACTIVE = 2;
+export {
+  SCORE_MIN_CARD_TAPS,
+  SCORE_MIN_STAFF_ACTIVE,
+} from "../../platform/contracts/dataSufficiency";

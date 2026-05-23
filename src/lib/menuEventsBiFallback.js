@@ -4,7 +4,14 @@
 
 import { queryMenuEvents, MENU_EVENTS_EXTENDED_SELECT } from "./menuEventsQuery";
 import { getBusinessDayRange, getBusinessDayKey } from "../dashboard/utils/businessDay";
-import { hourInRiyadh } from "../dashboard/utils/hourlyBucketLabels";
+import {
+  hourInRiyadh,
+  fill24HourBuckets,
+} from "../dashboard/utils/hourlyBucketLabels";
+import {
+  canonicalCategoryOpenCount,
+  isCategoryNavEvent,
+} from "./menuEventTypes";
 import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 import { devLog } from "./devLog";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
@@ -80,7 +87,7 @@ function aggregateRows(rows, referenceDate = new Date()) {
     if (et === "item_open" && name) {
       itemOpens.set(name, (itemOpens.get(name) || 0) + 1);
     }
-    if (et === "category_open" && row.category_id) {
+    if (isCategoryNavEvent(et) && row.category_id) {
       const cid = row.category_id;
       categoryOpens.set(cid, (categoryOpens.get(cid) || 0) + 1);
     }
@@ -133,9 +140,13 @@ function aggregateRows(rows, referenceDate = new Date()) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  const by_hour = [...hourly.entries()]
-    .map(([hour, count]) => ({ hour, count, granularity: "hour" }))
-    .sort((a, b) => Number(a.hour) - Number(b.hour));
+  const by_hour = fill24HourBuckets(
+    [...hourly.entries()].map(([hour, count]) => ({
+      hour,
+      count,
+      granularity: "hour",
+    })),
+  );
 
   let today_qr_sessions = 0;
   let today_unique_sessions = new Set();
@@ -172,7 +183,7 @@ function aggregateRows(rows, referenceDate = new Date()) {
     today_qr_sessions,
     funnel: {
       qr_scans: Number(byEventType.qr_session_start) || 0,
-      category_opens: Number(byEventType.category_open) || 0,
+      category_opens: canonicalCategoryOpenCount(byEventType),
       item_impressions: Number(byEventType.item_impression) || 0,
       item_opens: Number(byEventType.item_open) || 0,
       addon_clicks: Number(byEventType.add_on_click) || 0,

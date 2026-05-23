@@ -9,6 +9,7 @@ import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
   trackEvent,
+  trackCategoryOpen,
   trackMenuTabOpen,
   trackSectionOpen,
   trackAddOnOpen,
@@ -820,6 +821,30 @@ const isAllowed = (menuItem) => {
     [lang, menuHostId, menuMode],
   );
 
+  const handleCategorySelect = useCallback(
+    (catId) => {
+      if (!catId) return;
+      setActiveCategory(catId);
+      trackCategoryOpen({
+        language: lang,
+        category_id: catId,
+        metadata: { source: "contextual_pill" },
+      });
+    },
+    [lang],
+  );
+
+  const initialCategoryTracked = useRef(false);
+  useEffect(() => {
+    if (initialCategoryTracked.current || !contextualFlow?.primary) return;
+    initialCategoryTracked.current = true;
+    trackCategoryOpen({
+      language: lang,
+      category_id: contextualFlow.primary,
+      metadata: { source: "contextual_default" },
+    });
+  }, [lang, contextualFlow.primary]);
+
   const closeActiveItem = useCallback(
     (reason) => {
       if (!activeItem) {
@@ -1298,7 +1323,7 @@ if (adminMode) {
               categories={categories}
               menuData={menuData}
               activeCategory={activeCategory}
-              setActiveCategory={setActiveCategory}
+              setActiveCategory={handleCategorySelect}
               activeMenuTab={activeMenuTab}
               setActiveMenuTab={setActiveMenuTab}
               setActiveSection={setActiveSection}

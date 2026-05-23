@@ -2,6 +2,8 @@
  * Hourly / daily bucket labels — Asia/Riyadh business-day aware, safe fallbacks.
  */
 
+import { getBusinessDayKey } from "./businessDay";
+
 const RIYADH = "Asia/Riyadh";
 
 export function hourInRiyadh(iso) {
@@ -79,6 +81,101 @@ export function parseHourBucket(raw, granularityHint) {
   return { kind: "invalid", hour: null, dateKey: null, granularity: granularityHint || "hour", raw: s };
 }
 
+export function detectHourlyGranularity(byHour = []) {
+  const rows = byHour || [];
+  if (!rows.length) return "hour";
+  const dayVotes = rows.filter(
+    (r) => r.granularity === "day" || parseHourBucket(r.hour ?? r.business_day_key, "day").kind === "day",
+  ).length;
+  return dayVotes > rows.length / 2 ? "day" : "hour";
+}
+
+/** Last N NAC business-day keys ending at referenceDate. */
+export function businessDayKeysForRange(dayCount, referenceDate = new Date()) {
+  const n = Math.max(1, Math.min(Number(dayCount) || 7, 45));
+  const keys = [];
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const d = new Date(referenceDate.getTime() - i * 86400000);
+    keys.push(getBusinessDayKey(d));
+  }
+  return keys;
+}
+
+/** Ensure 24 Riyadh hour slots (zeros where no activity). */
+export function fill24HourBuckets(byHour = []) {
+  const counts = new Map();
+  for (const row of byHour || []) {
+    const raw = row.hour ?? row.business_day_key ?? row.day_key;
+    const gran = row.granularity || parseHourBucket(raw).granularity;
+    if (gran === "day") continue;
+    const parsed = parseHourBucket(raw, gran);
+    if (parsed.hour == null) continue;
+    counts.set(parsed.hour, (counts.get(parsed.hour) || 0) + (Number(row.count) || 0));
+  }
+  return Array.from({ length: 24 }, (_, hour) => ({
+    hour,
+    count: counts.get(hour) || 0,
+    granularity: "hour",
+    business_day_key: null,
+  }));
+}
+
+/** Fill missing calendar days in range (rollup / 7D charts). */
+export function fillDayBuckets(byHour = [], dayKeys = []) {
+  const keys =
+    dayKeys?.length > 0
+      ? dayKeys
+      : [...new Set(
+          (byHour || [])
+            .map((r) => {
+              const raw = r.hour ?? r.business_day_key ?? r.day_key;
+              const parsed = parseHourBucket(raw, r.granularity || "day");
+              return parsed.dateKey || String(raw).slice(0, 10);
+            })
+            .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k)),
+        )].sort();
+
+  const counts = new Map();
+  for (const row of byHour || []) {
+    const raw = row.hour ?? row.business_day_key ?? row.day_key;
+    const parsed = parseHourBucket(raw, row.granularity || "day");
+    const key = parsed.dateKey || String(raw).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+    counts.set(key, (counts.get(key) || 0) + (Number(row.count) || 0));
+  }
+
+  const ordered = keys.length ? keys : [...counts.keys()].sort();
+  return ordered.map((key) => ({
+    hour: key,
+    business_day_key: key,
+    count: counts.get(key) || 0,
+    granularity: "day",
+  }));
+}
+
+/**
+ * Normalize sparse RPC/fallback buckets for charts.
+ * @param {object} [options]
+ * @param {number} [options.dayCount] — for day granularity fill (default 7)
+ */
+export function normalizeHourlyDistribution(byHour = [], options = {}) {
+  const rows = byHour || [];
+  if (!rows.length) {
+    return options.granularity === "day"
+      ? fillDayBuckets([], businessDayKeysForRange(options.dayCount || 7))
+      : fill24HourBuckets([]);
+  }
+
+  const gran = options.granularity || detectHourlyGranularity(rows);
+  if (gran === "day") {
+    const dayKeys =
+      options.dayKeys ||
+      businessDayKeysForRange(options.dayCount || Math.max(7, rows.length));
+    return fillDayBuckets(rows, dayKeys);
+  }
+  return fill24HourBuckets(rows);
+}
+
 /** Chart axis label: `03:00`, `14:00` for hours; `May 12` for day buckets. */
 export function formatHourBucketLabel(raw, granularityHint) {
   const parsed = parseHourBucket(raw, granularityHint);
@@ -116,8 +213,16 @@ export function formatDayBucketLabel(raw) {
 /** Recharts-ready hourly rows with stable labels. */
 export function hourlyChartRows(byHour = [], options = {}) {
   const failures = options.parseFailures || { count: 0 };
+  const source =
+    options.fillGaps === false
+      ? byHour || []
+      : normalizeHourlyDistribution(byHour || [], {
+          granularity: options.granularity,
+          dayCount: options.dayCount,
+          dayKeys: options.dayKeys,
+        });
 
-  return (byHour || []).map((row) => {
+  return source.map((row) => {
     const gran = row.granularity || parseHourBucket(row.hour ?? row.business_day_key).granularity;
     const raw = row.hour ?? row.business_day_key ?? row.day_key;
     const label = formatHourBucketLabel(raw, gran);

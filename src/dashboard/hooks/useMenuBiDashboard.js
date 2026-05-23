@@ -13,6 +13,9 @@ import {
   PLATFORM_STATUS,
 } from "../../platform/engines/platformStatusEngine";
 import { rangeContractFromFilters } from "../../platform/engines/timeRangeEngine";
+import { assessMenuBiSufficiency } from "../../platform/contracts/dataSufficiency";
+import { recordPipelineFetch } from "../../lib/pipelineDiagnostics";
+import { isNacDebugEnabled } from "../../lib/nacDebug";
 
 const EMPTY_CONTRACT = {
   data: null,
@@ -110,6 +113,7 @@ export function useMenuBiDashboard(options = {}) {
         selectedRange: filters?.selectedRange || "today",
         liveFallback: result?.liveFallback,
         partial: result?.partial,
+        dataSource: result?.dataSource,
       });
     } catch (e) {
       setData(null);
@@ -146,9 +150,20 @@ export function useMenuBiDashboard(options = {}) {
     [data, partial, liveFallback, note, opsNotes, menuDataEmpty, filters?.selectedRange],
   );
 
+  const dataSufficiency = useMemo(
+    () => assessMenuBiSufficiency(data, rangeContract),
+    [data, rangeContract],
+  );
+
+  useEffect(() => {
+    if (!isNacDebugEnabled() || !platformStatus) return;
+    recordPipelineFetch({ platformStatus: platformStatus.status });
+  }, [platformStatus]);
+
   const sparseHistory =
     platformStatus?.status === PLATFORM_STATUS.SPARSE_HISTORY ||
-    platformStatus?.status === PLATFORM_STATUS.BASELINE_BUILDING;
+    platformStatus?.status === PLATFORM_STATUS.BASELINE_BUILDING ||
+    dataSufficiency.sparse;
 
   if (!enabled) {
     return { ...EMPTY_CONTRACT, rangeContract, reload: load };
@@ -177,5 +192,7 @@ export function useMenuBiDashboard(options = {}) {
     reload: load,
     hours,
     selectedRange: filters?.selectedRange || "today",
+    dataSufficiency,
+    dataSource: data?.data_source || null,
   };
 }

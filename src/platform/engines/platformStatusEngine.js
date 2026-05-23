@@ -4,6 +4,7 @@
 
 import { isTechnicalOpsNote, partitionBiNotes } from "../../lib/biOpsNotes";
 import { isBiTotalsEmpty } from "../../lib/biDashboardNormalize";
+import { assessMenuBiSufficiency } from "../contracts/dataSufficiency";
 import {
   PLATFORM_STATUS,
   PLATFORM_STATUS_LABELS,
@@ -54,22 +55,23 @@ export function resolveMenuPlatformStatus({
   const empty = menuDataEmpty || isBiTotalsEmpty(data);
   const sessions = Number(data?.total_sessions) || 0;
   const events = Number(data?.total_events) || 0;
+  const sufficiency = assessMenuBiSufficiency(data, { id: selectedRange });
 
   let status = PLATFORM_STATUS.HEALTHY;
 
   if (empty && !liveFallback) {
     status = PLATFORM_STATUS.EMPTY;
-  } else if (scoresBuilding) {
+  } else if (scoresBuilding || sufficiency.baselineBuilding) {
     status = PLATFORM_STATUS.BASELINE_BUILDING;
   } else if (liveFallback) {
     status = PLATFORM_STATUS.LIVE_FALLBACK;
   } else if (noteImpliesStaleRollup(note)) {
     status = PLATFORM_STATUS.STALE_ROLLUP;
-  } else if (partial && (sessions < 8 || events < 20)) {
+  } else if (partial && sufficiency.sparse) {
     status = PLATFORM_STATUS.SPARSE_HISTORY;
   } else if (partial) {
     status = PLATFORM_STATUS.PARTIAL;
-  } else if (!liveFallback && sessions < 5 && events < 12) {
+  } else if (!liveFallback && sufficiency.sparse) {
     status = PLATFORM_STATUS.SPARSE_HISTORY;
   }
 

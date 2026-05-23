@@ -17,6 +17,9 @@ import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 import { devLog } from "./devLog";
 import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
+import { recordPipelineFetch } from "./pipelineDiagnostics";
+import { assessMenuBiSufficiency } from "../platform/contracts/dataSufficiency";
+import { hoursToRange } from "../dashboard/utils/rangeState";
 
 export { isTimeoutError };
 
@@ -67,21 +70,31 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
 
   devLog("[fetchBiDashboard]", { phase: "rpc_start", rpc: primaryRpc, params, useRollup });
 
+  const rpcStarted = Date.now();
   let { payload, error } = await rpcBiDashboard(supabase, primaryRpc, params);
+  let rpcTimingsMs = Date.now() - rpcStarted;
   const primaryRpcEmpty = isBiTotalsEmpty(payload);
 
   let partial = Boolean(payload?.partial_mode);
   let note = payload?.aggregation_note || null;
   let opsNotes = [];
   let usedFallback = false;
+  let dataSource = primaryRpcEmpty
+    ? null
+    : useRollup
+      ? "rollup"
+      : "rpc";
 
   if (useRollup && (error || primaryRpcEmpty)) {
     devLog("[fetchBiDashboard]", { phase: "rollup_empty_fallback", error: error?.message });
     const direct = await rpcBiDashboard(supabase, "get_bi_dashboard", params);
     if (!direct.error && direct.payload && !isBiTotalsEmpty(direct.payload)) {
+      const t1 = Date.now();
       payload = direct.payload;
+      rpcTimingsMs += Date.now() - t1;
       partial = true;
       usedFallback = true;
+      dataSource = "rpc";
       note =
         "Loaded from menu_events (rollup empty or stale). Run refresh_menu_events_daily_rollup(45) in Supabase.";
       error = null;
@@ -119,11 +132,14 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
   }
 
   if (isBiTotalsEmpty(payload)) {
+    const clientStarted = Date.now();
     const clientPayload = await fetchBiFromMenuEvents(supabase, { branch: pBranch, hours: pHours });
+    rpcTimingsMs += Date.now() - clientStarted;
     if (clientPayload && !isBiTotalsEmpty(clientPayload)) {
-      payload = clientPayload;
+      payload = { ...clientPayload, data_source: "client_fallback" };
       partial = true;
       usedFallback = true;
+      dataSource = "client_fallback";
       note = clientPayload.aggregation_note || "Loaded from menu_events (client fallback).";
       devLog("[fetchBiDashboard]", {
         phase: "client_fallback_ok",
@@ -185,7 +201,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  const liveFallback = primaryRpcEmpty && !menuDataEmpty && (usedFallback || !isBiTotalsEmpty(payload));
+  const liveFallback = dataSource === "client_fallback";
 
   if (menuDataEmpty) {
     return {
@@ -198,6 +214,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
       liveFallback: false,
       menuDataEmpty: true,
       opsNotes: [],
+      dataSource: dataSource || "empty",
       error: null,
     };
   }
@@ -205,11 +222,37 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
   const { userNote, opsNotes: noteOps } = partitionBiNotes(note, { partial, useRollup });
   const mergedOps = [...noteOps, ...opsNotes];
 
+  const rangeMeta = hoursToRange(pHours);
+  const sufficiency = assessMenuBiSufficiency(normalized, { id: rangeMeta });
+  const hourlyBucketCounts = (normalized.by_hour || []).map((r) => Number(r.count) || 0);
+
+  if (dataSource && !normalized.data_source) {
+    normalized = { ...normalized, data_source: dataSource };
+  }
+
+  recordPipelineFetch({
+    dataSource,
+    primaryRpc,
+    liveFallback,
+    partial,
+    rpcTimingsMs,
+    totalEvents: normalized.total_events,
+    totalSessions: normalized.total_sessions,
+    aggregationNote: normalized.aggregation_note,
+    sufficiency,
+    hourlyBucketCounts,
+    branch: pBranch,
+    hours: pHours,
+    primaryRpcEmpty,
+    usedServerPatch: usedFallback,
+  });
+
   devLog("[fetchBiDashboard]", {
     phase: "done",
     events: normalized.total_events,
     sessions: normalized.total_sessions,
     liveFallback,
+    dataSource,
     sessionQuality: normalized.session_quality,
   });
 
@@ -220,6 +263,9 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     opsNotes: mergedOps,
     liveFallback,
     menuDataEmpty: false,
+    dataSource,
+    rpcTimingsMs,
+    sufficiency,
     error: null,
   };
 }

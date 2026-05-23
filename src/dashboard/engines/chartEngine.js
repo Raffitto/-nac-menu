@@ -1,9 +1,20 @@
 /** Chart-ready series for Recharts */
 import { clampMetric } from "../utils/intelligenceSanity";
-import { hourlyChartRows } from "../utils/hourlyBucketLabels";
+import {
+  hourlyChartRows,
+  detectHourlyGranularity,
+} from "../utils/hourlyBucketLabels";
+import { hoursToRange } from "../utils/rangeState";
 
-export function hourlyChartSeries(biData) {
-  return hourlyChartRows(biData?.by_hour || []);
+export function hourlyChartSeries(biData, hours = 24) {
+  const rangeId = hoursToRange(hours);
+  const dayCount = rangeId === "month" ? 31 : rangeId === "7d" ? 7 : undefined;
+  const gran = detectHourlyGranularity(biData?.by_hour || []);
+  return hourlyChartRows(biData?.by_hour || [], {
+    fillGaps: true,
+    granularity: gran,
+    dayCount,
+  });
 }
 
 export function categoryChartSeries(categoryHealth = []) {

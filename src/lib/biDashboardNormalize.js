@@ -2,7 +2,12 @@
  * Canonical get_bi_dashboard payload shape for Menu Intelligence + Visual OS (all ranges).
  */
 
-import { parseHourBucket } from "../dashboard/utils/hourlyBucketLabels";
+import {
+  parseHourBucket,
+  normalizeHourlyDistribution,
+  detectHourlyGranularity,
+} from "../dashboard/utils/hourlyBucketLabels";
+import { canonicalCategoryOpenCount, enrichByEventTypeCanonical } from "./menuEventTypes";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 import {
   mergeTopItemsByName,
@@ -59,8 +64,11 @@ export function normalizeBiDashboardPayload(raw) {
     return { ...emptyBiShell() };
   }
 
-  const byEvent = raw.by_event_type && typeof raw.by_event_type === "object" ? raw.by_event_type : {};
+  const byEventRaw =
+    raw.by_event_type && typeof raw.by_event_type === "object" ? raw.by_event_type : {};
+  const byEvent = enrichByEventTypeCanonical(byEventRaw);
   const funnelIn = raw.funnel && typeof raw.funnel === "object" ? raw.funnel : {};
+  const categoryOpensCanonical = canonicalCategoryOpenCount(byEventRaw);
 
   const top_items = mergeTopItemsByName(
     Array.isArray(raw.top_items)
@@ -88,7 +96,7 @@ export function normalizeBiDashboardPayload(raw) {
 
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
 
-  const by_hour = Array.isArray(raw.by_hour)
+  const by_hour_raw = Array.isArray(raw.by_hour)
     ? raw.by_hour.map((row) => {
         const bucket = row.hour ?? row.business_day_key ?? row.day_key;
         const gran = row.granularity || parseHourBucket(bucket).granularity || "hour";
@@ -100,6 +108,12 @@ export function normalizeBiDashboardPayload(raw) {
         };
       })
     : [];
+
+  const hourGranularity = detectHourlyGranularity(by_hour_raw);
+  const by_hour = normalizeHourlyDistribution(by_hour_raw, {
+    granularity: hourGranularity,
+    dayCount: raw._pipeline?.dayCount || (hourGranularity === "day" ? 7 : undefined),
+  });
 
   return {
     total_events: Number(raw.total_events) || 0,
@@ -126,7 +140,8 @@ export function normalizeBiDashboardPayload(raw) {
     funnel: {
       ...EMPTY_FUNNEL,
       qr_scans: Number(funnelIn.qr_scans ?? byEvent.qr_session_start) || 0,
-      category_opens: Number(funnelIn.category_opens ?? byEvent.category_open) || 0,
+      category_opens:
+        Number(funnelIn.category_opens ?? categoryOpensCanonical ?? byEvent.category_open) || 0,
       item_impressions: Number(funnelIn.item_impressions ?? byEvent.item_impression) || 0,
       item_opens: Number(funnelIn.item_opens ?? byEvent.item_open) || 0,
       addon_clicks: Number(funnelIn.addon_clicks ?? byEvent.add_on_click) || 0,
@@ -144,6 +159,7 @@ export function normalizeBiDashboardPayload(raw) {
     business_day: raw.business_day || null,
     partial_mode: Boolean(raw.partial_mode),
     aggregation_note: raw.aggregation_note || null,
+    data_source: raw.data_source || raw._pipeline?.dataSource || null,
     drinks_vs_food_pct: Number(raw.drinks_vs_food_pct) || 0,
   };
 }
@@ -180,7 +196,11 @@ export function isBiTopItemsEmpty(data) {
 export function isBiCategoriesEmpty(data) {
   if (!data) return true;
   if ((data.top_categories || []).some((c) => (Number(c.opens) || 0) > 0)) return false;
-  return (Number(data.by_event_type?.category_open) || 0) === 0;
+  const by = data.by_event_type || {};
+  return (
+    canonicalCategoryOpenCount(by) === 0 &&
+    (Number(data.funnel?.category_opens) || 0) === 0
+  );
 }
 
 export function isBiAddonsEmpty(data) {

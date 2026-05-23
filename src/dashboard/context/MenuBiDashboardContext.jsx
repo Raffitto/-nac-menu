@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from "react";
 import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
+import PipelineDebugOverlay from "../components/PipelineDebugOverlay";
 
 const MenuBiDashboardContext = createContext(null);
 
@@ -12,7 +13,10 @@ export function MenuBiDashboardProvider({ children, options = {}, source }) {
     source: source || options.source || "MenuBiDashboardProvider",
   });
   return (
-    <MenuBiDashboardContext.Provider value={value}>{children}</MenuBiDashboardContext.Provider>
+    <MenuBiDashboardContext.Provider value={value}>
+      {children}
+      <PipelineDebugOverlay />
+    </MenuBiDashboardContext.Provider>
   );
 }
 

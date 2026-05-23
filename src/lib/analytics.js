@@ -160,7 +160,7 @@ export function trackEvent(payload) {
         recordMenuTrackFailure(row.event_type, error);
         return;
       }
-      recordMenuTrackSuccess(row.event_type);
+      recordMenuTrackSuccess(row.event_type, row.branch_id);
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console
         console.info("[menu_events] insert OK", {
@@ -178,8 +178,24 @@ export function trackEvent(payload) {
 
 export { getMenuTrackingDiagnostics, clearMenuTrackingDiagnostics } from "./menuTrackingDiagnostics";
 
+/** Category navigation — canonical `category_open` for BI funnel. */
+export function trackCategoryOpen({
+  language,
+  category_id,
+  metadata = {},
+}) {
+  if (!category_id) return;
+  trackEvent({
+    event_type: "category_open",
+    language,
+    category_id,
+    metadata,
+  });
+}
+
 /** Top-level menu tab (Dinner | Desserts | Drinks). */
 export function trackMenuTabOpen({ language, hostCategoryId, tabId, sourceCategoryId, menuMode }) {
+  const categoryId = sourceCategoryId || hostCategoryId;
   trackEvent({
     event_type: "menu_tab_open",
     language,
@@ -189,6 +205,11 @@ export function trackMenuTabOpen({ language, hostCategoryId, tabId, sourceCatego
       source_category_id: sourceCategoryId,
       menu_mode: menuMode,
     },
+  });
+  trackCategoryOpen({
+    language,
+    category_id: categoryId,
+    metadata: { source: "menu_tab", tab_id: tabId, host_category_id: hostCategoryId },
   });
 }
 

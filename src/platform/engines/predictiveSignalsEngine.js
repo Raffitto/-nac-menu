@@ -5,12 +5,28 @@
 
 import { tapToGooglePct } from "./funnelAnalyticsEngine";
 import { computeReviewMomentum } from "../../dashboard/engines/reviewMomentumEngine";
+import { DATA_SUFFICIENCY } from "../contracts/dataSufficiency";
 
 /** Demand / traffic proxy from menu sessions (placeholder for time-series model). */
 export function estimateDemandSignal({ dailyTrend = [], sessions = 0 } = {}) {
   const points = dailyTrend || [];
-  if (points.length < 3) {
-    return { level: "unknown", trend: "stable", confidence: "low", sessions };
+  if (points.length < DATA_SUFFICIENCY.predictive.minTrendPoints) {
+    return {
+      level: "unknown",
+      trend: "stable",
+      confidence: "low",
+      sessions,
+      insufficient_data: true,
+    };
+  }
+  if (sessions < DATA_SUFFICIENCY.predictive.minSessionsForDemand) {
+    return {
+      level: sessions >= 5 ? "low" : "unknown",
+      trend: "stable",
+      confidence: "low",
+      sessions,
+      insufficient_data: true,
+    };
   }
   const last = points.slice(-3).map((p) => Number(p.scans ?? p.sessions ?? p.events) || 0);
   const avg = last.reduce((a, b) => a + b, 0) / last.length;
