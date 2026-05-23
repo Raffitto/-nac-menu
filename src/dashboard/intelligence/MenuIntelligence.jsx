@@ -45,7 +45,10 @@ export default function MenuIntelligence() {
   const topCategories = useMemo(
     () =>
       (data?.top_categories || []).map((c) => ({
-        name: CATEGORY_NAMES[c.id] || c.id,
+        name:
+          c.id === "__nav_aggregate__"
+            ? "Category navigation (all)"
+            : CATEGORY_NAMES[c.id] || c.id,
         opens: c.opens,
       })),
     [data?.top_categories],

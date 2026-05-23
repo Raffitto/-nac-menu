@@ -84,7 +84,7 @@ export function normalizeBiDashboardPayload(raw) {
       : [],
   );
 
-  const top_categories = mergeCategoriesById(
+  let top_categories = mergeCategoriesById(
     Array.isArray(raw.top_categories)
       ? raw.top_categories.map((c) => ({
           id: c.id || c.category_id || "",
@@ -93,6 +93,20 @@ export function normalizeBiDashboardPayload(raw) {
         }))
       : [],
   );
+
+  if (
+    top_categories.length === 0 &&
+    categoryOpensCanonical > 0 &&
+    !isBiTotalsEmpty(raw)
+  ) {
+    top_categories = [
+      {
+        id: "__nav_aggregate__",
+        opens: categoryOpensCanonical,
+        impressions: Number(byEventRaw.item_impression) || 0,
+      },
+    ];
+  }
 
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
 

@@ -3,6 +3,7 @@
  */
 
 import { tapToGooglePct } from "../../dashboard/utils/reviewFunnelMetrics";
+import { canonicalCategoryOpenCount } from "../../lib/menuEventTypes";
 
 export {
   REVIEW_GENERATED_TYPES,
@@ -47,10 +48,10 @@ export function buildMenuFunnelFromPayload(payload = {}) {
   const by = payload.by_event_type || {};
   return {
     ...base,
-    category_opens: Number(by.category_open) || 0,
+    category_opens: canonicalCategoryOpenCount(by),
     item_impressions: Number(by.item_impression) || 0,
     item_opens: Number(by.item_open) || 0,
-    addon_clicks: Number(by.addon_click) || 0,
+    addon_clicks: Number(by.add_on_click ?? by.addon_click) || 0,
     time_spent: Number(by.time_spent) || 0,
     exits: Number(by.exit) || 0,
   };
