@@ -1,4 +1,12 @@
 import { MONTH_HOURS } from "../dashboard/utils/rangeState";
+import { normalizeBiDashboardPayload, isBiTotalsEmpty } from "./biDashboardNormalize";
+import {
+  biNeedsItemDetail,
+  fetchBiFromMenuEvents,
+  fetchBiItemDetailFromMenuEvents,
+  normalizeBranchForRpc,
+} from "./menuEventsBiFallback";
+import { devLog } from "./devLog";
 
 export function isTimeoutError(error) {
   const msg = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
@@ -15,34 +23,10 @@ export function biRollupForHours(hours) {
   return h >= 168 || h === MONTH_HOURS;
 }
 
-export const EMPTY_BI_DASHBOARD = {
+export const EMPTY_BI_DASHBOARD = normalizeBiDashboardPayload({
   partial_mode: true,
-  total_events: 0,
-  total_sessions: 0,
-  by_language: {},
-  by_event_type: {},
-  top_items: [],
-  top_categories: [],
-  by_hour: [],
-  top_searches: [],
-  top_addon_pairs: [],
-  dead_zones: [],
-  lost_searches: [],
-  session_quality: {},
-  lang_behavior: {},
-  bounce_sessions: 0,
-  deep_sessions: 0,
-  avg_time_spent: 0,
-  avg_items_per_session: 0,
-  returning_sessions: 0,
-  today_unique_sessions: 0,
-  today_qr_sessions: 0,
-  funnel: {},
-  strongest_hour: null,
-  top_converting_category: {},
-  placement_stats: [],
-  modal_engagement_events: 0,
-};
+  aggregation_note: "No menu_events in range",
+});
 
 function normalizeRpcPayload(data) {
   if (data == null) return null;
@@ -50,56 +34,92 @@ function normalizeRpcPayload(data) {
   return data;
 }
 
+function mergeBiPayload(base, patch) {
+  if (!patch) return base;
+  const merged = {
+    ...base,
+    ...patch,
+    by_language: { ...(base?.by_language || {}), ...(patch.by_language || {}) },
+    by_event_type: { ...(base?.by_event_type || {}), ...(patch.by_event_type || {}) },
+    funnel: { ...(base?.funnel || {}), ...(patch.funnel || {}) },
+  };
+  return normalizeBiDashboardPayload(merged);
+}
+
+async function rpcBiDashboard(supabase, rpcName, params) {
+  const { data, error } = await supabase.rpc(rpcName, params);
+  if (error) return { payload: null, error };
+  const payload = normalizeRpcPayload(data);
+  if (!payload || typeof payload !== "object") return { payload: null, error: null };
+  return { payload, error: null };
+}
+
 /**
- * BI dashboard with rollup routing, timeout fallbacks, and partial payloads.
+ * BI dashboard with rollup routing, false-zero fallbacks, and client menu_events aggregation.
+ * @returns {{ data, partial, note, liveFallback, menuDataEmpty }}
  */
 export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } = {}) {
   if (!supabase) {
-    return { data: EMPTY_BI_DASHBOARD, partial: true, note: "Supabase not configured" };
+    return {
+      data: EMPTY_BI_DASHBOARD,
+      partial: true,
+      note: "Supabase not configured",
+      liveFallback: false,
+      menuDataEmpty: true,
+    };
   }
 
   const pHours = Number(hours) || 24;
-  const params = { p_branch: branch || null, p_hours: pHours };
-  const rollup = biRollupForHours(pHours);
-  const rpcName = rollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
+  const pBranch = normalizeBranchForRpc(branch);
+  const params = { p_branch: pBranch, p_hours: pHours };
+  const useRollup = biRollupForHours(pHours);
+  const primaryRpc = useRollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
 
-  const { data, error } = await supabase.rpc(rpcName, params);
+  devLog("[fetchBiDashboard]", { phase: "rpc_start", rpc: primaryRpc, params, useRollup });
 
-  if (!error) {
-    const payload = normalizeRpcPayload(data);
-    if (payload && typeof payload === "object") {
-      return {
-        data: payload,
-        partial: Boolean(payload.partial_mode),
-        note: payload.aggregation_note || null,
-      };
+  let { payload, error } = await rpcBiDashboard(supabase, primaryRpc, params);
+  const primaryRpcEmpty = isBiTotalsEmpty(payload);
+
+  let partial = Boolean(payload?.partial_mode);
+  let note = payload?.aggregation_note || null;
+  let usedFallback = false;
+
+  if (useRollup && (error || primaryRpcEmpty)) {
+    devLog("[fetchBiDashboard]", { phase: "rollup_empty_fallback", error: error?.message });
+    const direct = await rpcBiDashboard(supabase, "get_bi_dashboard", params);
+    if (!direct.error && direct.payload && !isBiTotalsEmpty(direct.payload)) {
+      payload = direct.payload;
+      partial = true;
+      usedFallback = true;
+      note =
+        "Loaded from menu_events (rollup empty or stale). Run refresh_menu_events_daily_rollup(45) in Supabase.";
+      error = null;
+    } else if (!error) {
+      error = direct.error;
     }
   }
 
-  if (error && isTimeoutError(error) && !rollup) {
-    const rollupRes = await supabase.rpc("get_bi_dashboard_from_rollup", params);
-    if (!rollupRes.error && rollupRes.data) {
-      const payload = normalizeRpcPayload(rollupRes.data);
-      return {
-        data: payload,
-        partial: true,
-        note: "Loaded from daily rollup after timeout. Item-level charts may be limited.",
-      };
+  if (error && isTimeoutError(error) && !useRollup) {
+    const rollupRes = await rpcBiDashboard(supabase, "get_bi_dashboard_from_rollup", params);
+    if (rollupRes.payload && !isBiTotalsEmpty(rollupRes.payload)) {
+      payload = rollupRes.payload;
+      partial = true;
+      note = "Loaded from daily rollup after timeout. Item-level charts may be limited.";
+      error = null;
     }
   }
 
   if (error && isTimeoutError(error) && pHours > 24) {
-    const todayRes = await supabase.rpc("get_bi_dashboard", {
-      p_branch: branch || null,
+    const todayRes = await rpcBiDashboard(supabase, "get_bi_dashboard", {
+      p_branch: pBranch,
       p_hours: 24,
     });
-    if (!todayRes.error && todayRes.data) {
-      const payload = normalizeRpcPayload(todayRes.data);
-      return {
-        data: payload,
-        partial: true,
-        note: "Showing today only — wider range timed out. Run intelligence_query_optimization.sql.",
-      };
+    if (todayRes.payload && !isBiTotalsEmpty(todayRes.payload)) {
+      payload = todayRes.payload;
+      partial = true;
+      usedFallback = true;
+      note = "Showing today only — wider range timed out. Run intelligence_query_optimization.sql.";
+      error = null;
     }
   }
 
@@ -107,10 +127,63 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     throw error;
   }
 
+  if (isBiTotalsEmpty(payload)) {
+    const clientPayload = await fetchBiFromMenuEvents(supabase, { branch: pBranch, hours: pHours });
+    if (clientPayload && !isBiTotalsEmpty(clientPayload)) {
+      payload = clientPayload;
+      partial = true;
+      usedFallback = true;
+      note = clientPayload.aggregation_note || "Loaded from menu_events (client fallback).";
+      devLog("[fetchBiDashboard]", {
+        phase: "client_fallback_ok",
+        events: clientPayload.total_events,
+      });
+    }
+  }
+
+  if (payload && biNeedsItemDetail(payload)) {
+    const detail = await fetchBiItemDetailFromMenuEvents(supabase, {
+      branch: pBranch,
+      hours: pHours,
+    });
+    if (detail?.top_items?.length) {
+      payload = mergeBiPayload(payload, detail);
+      partial = true;
+      usedFallback = true;
+      note = (note ? `${note} ` : "") + "Item charts filled from menu_events (rollup lacks item detail).";
+    }
+  }
+
+  const normalized = normalizeBiDashboardPayload(payload);
+  const menuDataEmpty = isBiTotalsEmpty(normalized);
+  const liveFallback = primaryRpcEmpty && !menuDataEmpty && (usedFallback || !isBiTotalsEmpty(payload));
+
+  if (menuDataEmpty) {
+    return {
+      data: {
+        ...EMPTY_BI_DASHBOARD,
+        aggregation_note: note || "No menu_events in range",
+      },
+      partial: true,
+      note: note || "No menu activity in this period. Open the public menu to generate events.",
+      liveFallback: false,
+      menuDataEmpty: true,
+    };
+  }
+
+  devLog("[fetchBiDashboard]", {
+    phase: "done",
+    events: normalized.total_events,
+    sessions: normalized.total_sessions,
+    liveFallback,
+  });
+
   return {
-    data: { ...EMPTY_BI_DASHBOARD, aggregation_note: "Query timed out" },
-    partial: true,
-    note: "Analytics temporarily unavailable. Try Today or a single branch.",
+    data: normalized,
+    partial,
+    note,
+    liveFallback,
+    menuDataEmpty: false,
   };
 }
 
@@ -156,14 +229,16 @@ export async function fetchBranchComparisonSafe(supabase, hours = 24) {
 export async function fetchReviewEventsSummary(supabase, { branch = null, hours = 24 } = {}) {
   if (!supabase) return null;
 
+  const pBranch = normalizeBranchForRpc(branch);
+
   const { data, error } = await supabase.rpc("get_review_events_summary", {
-    p_branch: branch || null,
+    p_branch: pBranch,
     p_hours: Number(hours) || 24,
   });
 
   if (error && isTimeoutError(error) && Number(hours) > 24) {
     const fallback = await supabase.rpc("get_review_events_summary", {
-      p_branch: branch || null,
+      p_branch: pBranch,
       p_hours: 24,
     });
     if (!fallback.error) {

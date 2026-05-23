@@ -157,6 +157,19 @@
   font-size: 0.9rem;
 }
 
+.nac-bi-live-fallback {
+  margin: 0;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(215, 188, 138, 0.72);
+  background: rgba(215, 188, 138, 0.08);
+  border: 1px solid rgba(215, 188, 138, 0.2);
+  border-radius: 6px;
+  width: fit-content;
+}
+
 /* Sidebar refresh */
 .sidebar-logo {
   font-size: 0.72rem !important;

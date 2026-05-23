@@ -1,5 +1,7 @@
 import { rangeToHours, MONTH_HOURS } from "../dashboard/utils/rangeState";
 import { fetchBiDashboard } from "./intelligenceQueryApi";
+import { isBiTotalsEmpty } from "./biDashboardNormalize";
+import { normalizeBranchForRpc } from "./menuEventsBiFallback";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/sessionAnalyticsMap";
 
 function isTimeoutError(error) {
@@ -16,7 +18,7 @@ function rpcParamsFromFilters(filters) {
   const selectedRange = filters?.selectedRange || "today";
   const hours = filters?.timeRangeHours ?? rangeToHours(selectedRange);
   return {
-    p_branch: filters?.branch || null,
+    p_branch: normalizeBranchForRpc(filters?.branch),
     p_hours: hours,
     p_language: filters?.language || "all",
     p_event_type: filters?.eventType || "all",
@@ -87,12 +89,26 @@ export async function fetchSessionAnalytics(supabase, filters) {
     if (rollupRes.error) throw rollupRes.error;
 
     const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
-    const result = mergePayload(summary, feed);
-    if (!result.aggregates?.total_events && params.p_hours >= MONTH_HOURS) {
-      result.note =
-        (result.note ? `${result.note} ` : "") +
-        "Daily rollup may be empty — run refresh_menu_events_daily_rollup(45) in Supabase.";
-      result.partial = true;
+    let result = mergePayload(summary, feed);
+    if (!result.aggregates?.total_events) {
+      const bi = await fetchBiDashboard(supabase, {
+        branch: params.p_branch,
+        hours: params.p_hours,
+      });
+      if (bi?.data && !isBiTotalsEmpty(bi.data)) {
+        result = {
+          ...mergePayload(bi.data, feed),
+          partial: true,
+          note:
+            (result.note ? `${result.note} ` : "") +
+            (bi.note || "Session stats from menu_events fallback."),
+        };
+      } else if (params.p_hours >= MONTH_HOURS) {
+        result.note =
+          (result.note ? `${result.note} ` : "") +
+          "Daily rollup may be empty — run refresh_menu_events_daily_rollup(45) in Supabase.";
+        result.partial = true;
+      }
     }
     return result;
   }

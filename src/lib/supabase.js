@@ -3,8 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 const url = process.env.REACT_APP_SUPABASE_URL;
 const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-if (typeof window !== "undefined") {
-  console.log("SUPABASE URL", url || "(missing REACT_APP_SUPABASE_URL)");
+if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
+  // eslint-disable-next-line no-console
+  console.info("[supabase]", url ? "configured" : "missing REACT_APP_SUPABASE_URL");
 }
 
 /**

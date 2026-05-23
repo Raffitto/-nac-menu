@@ -60,8 +60,10 @@ function rowLanguage(row) {
 export function matchesPlatformFilters(row, filters) {
   if (!filters) return true;
 
-  if (filters.branch && row.branch_id && row.branch_id !== filters.branch) {
-    return false;
+  if (filters.branch && row.branch_id) {
+    const rowBranch = String(row.branch_id).trim().toLowerCase();
+    const filterBranch = String(filters.branch).trim().toLowerCase();
+    if (rowBranch && filterBranch && rowBranch !== filterBranch) return false;
   }
 
   if (filters.language && filters.language !== "all") {

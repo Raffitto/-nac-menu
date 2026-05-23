@@ -28,8 +28,10 @@ import {
   Cell,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
+import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
+import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
+import { isBiTopItemsEmpty, hasMenuBiActivity } from "../../lib/biDashboardNormalize";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { defaultExportConfig } from "../config/visualExportPresets";
 import { loadWeeklyFocusItems, saveWeeklyFocusItems } from "../config/weeklyFocusStorage";
@@ -47,7 +49,7 @@ import { WaiterComparisonDashboard, BeverageMixIntelligence } from "../component
 import { captureVisualCharts } from "../utils/captureExportCharts";
 import { partitionStaffByRole } from "../config/staffRoles";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { rangeToHours, rangeExportLabel } from "../utils/rangeState";
+import { rangeExportLabel } from "../utils/rangeState";
 import { businessDayExportNote } from "../utils/businessDay";
 import { buildRestaurantIntelligence } from "../engines/analyticsEngine";
 import { buildAttachmentIntelligence } from "../engines/attachmentEngine";
@@ -116,11 +118,18 @@ function RoleBadge({ roleLabel }) {
 
 export default function VisualIntelligenceEngine() {
   const filters = usePlatformFiltersOptional();
-  const [loading, setLoading] = useState(true);
-  const [biData, setBiData] = useState(null);
+  const {
+    data: biData,
+    loading: biLoading,
+    needsAuth,
+    showFallbackBanner,
+    menuDataEmpty,
+  } = useMenuBiDashboard();
+  const [importsLoading, setImportsLoading] = useState(true);
   const [productItems, setProductItems] = useState([]);
   const [waiterItems, setWaiterItems] = useState([]);
   const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
+  const [hasProductBatch, setHasProductBatch] = useState(false);
   const [exportConfig, setExportConfig] = useState(() => ({
     ...defaultExportConfig([], loadWeeklyFocusItems()),
     waiterSalesMetric: loadWaiterSalesMetric(),
@@ -128,23 +137,25 @@ export default function VisualIntelligenceEngine() {
   const [exporting, setExporting] = useState(false);
   const chartCaptureRef = useRef(null);
 
-  const pHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
   const rangeLabel = rangeExportLabel(filters?.selectedRange || "today");
 
-  const load = useCallback(async () => {
-    if (!supabase || !isSupabaseConfigured()) {
-      setLoading(false);
+  const loadImports = useCallback(async () => {
+    if (!supabase || !isSupabaseConfigured() || needsAuth) {
+      setImportsLoading(false);
+      setProductItems([]);
+      setWaiterItems([]);
+      setHasWaiterBatch(false);
+      setHasProductBatch(false);
       return;
     }
-    setLoading(true);
+    setImportsLoading(true);
     try {
       const branch = filters?.branch || null;
-      const [rpc, latestProduct, latestWaiter] = await Promise.all([
-        fetchBiDashboard(supabase, { branch, hours: pHours }),
+      const [latestProduct, latestWaiter] = await Promise.all([
         getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
         getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
       ]);
-      if (rpc?.data) setBiData(rpc.data);
+      setHasProductBatch(Boolean(latestProduct?.id));
       setHasWaiterBatch(Boolean(latestWaiter?.id));
       const [prod, waiter] = await Promise.all([
         latestProduct?.id ? getBatchSalesItems(latestProduct.id) : Promise.resolve([]),
@@ -153,18 +164,22 @@ export default function VisualIntelligenceEngine() {
       setProductItems(prod);
       setWaiterItems(waiter);
     } catch {
-      setBiData(null);
       setProductItems([]);
       setWaiterItems([]);
       setHasWaiterBatch(false);
+      setHasProductBatch(false);
     } finally {
-      setLoading(false);
+      setImportsLoading(false);
     }
-  }, [filters?.branch, pHours]);
+  }, [filters?.branch, needsAuth]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!biLoading) loadImports();
+  }, [biLoading, loadImports]);
+
+  const loading = biLoading || importsLoading;
+  const menuActivity = hasMenuBiActivity(biData);
+  const menuItemsEmpty = !biLoading && menuActivity && isBiTopItemsEmpty(biData);
 
   const intelligence = useMemo(() => buildRestaurantIntelligence(biData, null), [biData]);
   const funnels = useMemo(() => intelligence?.funnels || [], [intelligence]);
@@ -323,13 +338,22 @@ export default function VisualIntelligenceEngine() {
     );
   }
 
+  if (needsAuth) {
+    return <p className="nac-empty-state">Sign in and refresh to load visual intelligence.</p>;
+  }
+
   const hourlyCombined = (timeShift.hourlyMenu || []).map((m) => {
     const s = (timeShift.hourlySales || []).find((h) => h.hour === m.hour) || {};
     return { ...m, salesQty: s.salesQty || 0, modifierQty: s.modifierQty || 0 };
   });
 
+  const clickPairRows = attachment.clickPairs.length
+    ? attachment.clickPairs
+    : attachment.pairs.slice(0, 6);
+
   return (
     <motion.div className="vi-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <BiLiveFallbackBanner visible={showFallbackBanner} />
       <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "rgba(249,249,247,0.45)" }}>
         {businessDayExportNote()} · Product lane + waiter lane imports · Configure exports below
       </p>
@@ -385,7 +409,9 @@ export default function VisualIntelligenceEngine() {
             <h3><Link2 size={16} color="#d7bc8a" /> Top attachments</h3>
             <p className="vi-subtitle">Highest attachment rates vs parent volume</p>
             {attachment.topAttachments.length === 0 ? (
-              <p className="nac-empty-state">Import sales to unlock attachment leaderboard</p>
+              <p className="nac-empty-state">
+                {hasProductBatch ? "No attachment patterns in latest import" : "Import sales to unlock attachment leaderboard"}
+              </p>
             ) : (
               attachment.topAttachments.map((p) => (
                 <motion.div key={p.id} className="vi-bar-row">
@@ -410,7 +436,9 @@ export default function VisualIntelligenceEngine() {
             <h3><AlertTriangle size={16} color="#e85d4c" /> Missed upsells</h3>
             <p className="vi-subtitle">High parent volume · low modifier attachment vs expected threshold</p>
             {attachment.missedUpsells.length === 0 ? (
-              <p className="nac-empty-state">No critical gaps vs configured thresholds</p>
+              <p className="nac-empty-state">
+                {hasProductBatch ? "No critical gaps vs configured thresholds" : "Import sales to score missed upsells"}
+              </p>
             ) : (
               attachment.missedUpsells.slice(0, 5).map((m) => (
                 <div key={m.id} className="vi-missed-card">
@@ -450,17 +478,27 @@ export default function VisualIntelligenceEngine() {
           <div className="vi-panel">
             <h3>Frequently bought together</h3>
             <p className="vi-subtitle">Menu click pairs + import heuristics</p>
-            {(attachment.clickPairs.length ? attachment.clickPairs : attachment.pairs.slice(0, 6)).map((p, i) => (
-              <div key={i} className="vi-rel-card">
-                <strong>{p.parent || p.label}</strong>
-                {" → "}
-                {p.modifier || (p.modifierPatterns || []).join(", ")}
-                {p.clicks != null && <span style={{ float: "right", opacity: 0.6 }}>{p.clicks} clicks</span>}
-                {p.attachmentRate != null && (
-                  <span style={{ float: "right", opacity: 0.6 }}>{p.attachmentRate}%</span>
-                )}
-              </div>
-            ))}
+            {clickPairRows.length === 0 ? (
+              <p className="nac-empty-state">
+                {menuDataEmpty
+                  ? "No menu activity in this period"
+                  : addonPairs.length
+                    ? "No paired add-on clicks yet"
+                    : "Menu add-on pairs appear when guests click add-ons"}
+              </p>
+            ) : (
+              clickPairRows.map((p, i) => (
+                <div key={i} className="vi-rel-card">
+                  <strong>{p.parent || p.label}</strong>
+                  {" → "}
+                  {p.modifier || (p.modifierPatterns || []).join(", ")}
+                  {p.clicks != null && <span style={{ float: "right", opacity: 0.6 }}>{p.clicks} clicks</span>}
+                  {p.attachmentRate != null && (
+                    <span style={{ float: "right", opacity: 0.6 }}>{p.attachmentRate}%</span>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
       </Section>
@@ -770,7 +808,15 @@ export default function VisualIntelligenceEngine() {
                 <strong>{h.heatIndex}</strong>
               </div>
             ))}
-            {!heat.hotNow.length && <p className="nac-empty-state">Building heat signals…</p>}
+            {!heat.hotNow.length && (
+              <p className="nac-empty-state">
+                {menuDataEmpty
+                  ? "No menu activity in this period"
+                  : menuItemsEmpty
+                    ? "No item views yet for heat ranking"
+                    : "No heat signals for this range"}
+              </p>
+            )}
           </div>
 
           <div className="vi-panel">

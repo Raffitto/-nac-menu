@@ -35,6 +35,7 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
+import { isBiTotalsEmpty } from "../lib/biDashboardNormalize";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import GlobalFilterBar from "./components/GlobalFilterBar";
@@ -142,10 +143,19 @@ function AdminDashboardContent({ onBack }) {
         hours: timeRange,
       });
 
-      if (!rpc || typeof rpc !== "object") {
+      if (!rpc || typeof rpc !== "object" || isBiTotalsEmpty(rpc)) {
         const { data: fallback, error: fallErr } = await supabase.rpc("get_dashboard_aggregates");
-        if (fallErr) throw fallErr;
-        setData(fallback);
+        if (!fallErr && fallback && !isBiTotalsEmpty(fallback)) {
+          setData(fallback);
+          if (partial && note) setError(note);
+        } else if (rpc && typeof rpc === "object") {
+          setData(rpc);
+          if (partial && note) setError(note);
+        } else if (fallErr) {
+          throw fallErr;
+        } else {
+          setData(rpc || null);
+        }
       } else {
         setData(rpc);
         if (partial && note) {

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { markMenuActivity } from "./sessionAttribution";
+import { getBusinessDayRange } from "../dashboard/utils/businessDay";
 
 const SESSION_KEY = "nac_menu_session_id";
 const SESSION_START_KEY = "nac_menu_session_start";
@@ -151,11 +152,28 @@ export function trackEvent(payload) {
     .from("menu_events")
     .insert(row)
     .then(({ error }) => {
-      if (error && process.env.NODE_ENV === "development") {
-        console.warn("[analytics]", error.message);
+      if (process.env.NODE_ENV !== "development") return;
+      if (error) {
+        console.warn("[menu_events] insert FAILED", {
+          event_type: row.event_type,
+          branch_id: row.branch_id,
+          message: error.message,
+          code: error.code,
+        });
+        return;
       }
+      console.info("[menu_events] insert OK", {
+        event_type: row.event_type,
+        branch_id: row.branch_id,
+        session_id: row.session_id?.slice(0, 8),
+        business_day: getBusinessDayRange(),
+      });
     })
-    .catch(() => {});
+    .catch((err) => {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[menu_events] insert ERROR", err?.message || err);
+      }
+    });
 }
 
 /** Top-level menu tab (Dinner | Desserts | Drinks). */
@@ -198,13 +216,13 @@ export function trackSectionOpen({
 /** Add-on opened from item modal. */
 export function trackAddOnOpen({ language, categoryId, sectionTitleEn, menuItem, addOn }) {
   trackEvent({
-    event_type: "add_on_open",
+    event_type: "add_on_click",
     language,
     category_id: categoryId,
     item_name_en: menuItem?.en,
     item_name_ar: menuItem?.ar,
     add_on_name: addOn?.en,
-    metadata: { add_on_name_ar: addOn?.ar },
+    metadata: { add_on_name_ar: addOn?.ar, source: "add_on_open" },
   });
 }
 

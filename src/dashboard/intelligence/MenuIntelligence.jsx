@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { CATEGORY_NAMES } from "../utils/formatters";
-import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { rangeToHours } from "../utils/rangeState";
+import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
+import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
+import {
+  isBiAddonsEmpty,
+  isBiCategoriesEmpty,
+  isBiTopItemsEmpty,
+} from "../../lib/biDashboardNormalize";
 
 const TOOLTIP = {
   background: "rgba(8,10,12,0.94)",
@@ -16,32 +19,13 @@ const TOOLTIP = {
 };
 
 export default function MenuIntelligence() {
-  const filters = usePlatformFiltersOptional();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    if (!supabase || !isSupabaseConfigured()) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const { data: rpc } = await fetchBiDashboard(supabase, {
-        branch: filters?.branch || null,
-        hours: filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"),
-      });
-      setData(rpc);
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters?.branch, filters?.selectedRange, filters?.timeRangeHours]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const {
+    data,
+    loading,
+    needsAuth,
+    showFallbackBanner,
+    menuDataEmpty,
+  } = useMenuBiDashboard();
 
   const topItems = useMemo(() => (data?.top_items || []).slice(0, 10), [data?.top_items]);
   const bottomItems = useMemo(
@@ -58,6 +42,10 @@ export default function MenuIntelligence() {
     [data?.top_categories],
   );
 
+  const itemsEmpty = !loading && !menuDataEmpty && isBiTopItemsEmpty(data);
+  const categoriesEmpty = !loading && !menuDataEmpty && isBiCategoriesEmpty(data);
+  const addonsEmpty = !loading && !menuDataEmpty && isBiAddonsEmpty(data);
+
   if (loading) {
     return (
       <div style={{ display: "grid", gap: "1rem" }}>
@@ -67,15 +55,26 @@ export default function MenuIntelligence() {
     );
   }
 
-  if (!data) {
+  if (needsAuth) {
     return <p className="nac-empty-state">Sign in and refresh to load menu intelligence.</p>;
+  }
+
+  if (menuDataEmpty) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <BiLiveFallbackBanner visible={showFallbackBanner} />
+        <p className="nac-empty-state">No menu activity in this period.</p>
+      </div>
+    );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <BiLiveFallbackBanner visible={showFallbackBanner} />
+
       <div className="nac-glass-panel">
         <h3 style={{ margin: "0 0 1rem", fontWeight: 500 }}>Most viewed dishes</h3>
-        {topItems.length === 0 ? (
+        {itemsEmpty ? (
           <p className="nac-empty-state">No item views yet</p>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
@@ -93,19 +92,23 @@ export default function MenuIntelligence() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
         <div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", fontWeight: 500 }}>Category engagement</h3>
-          {topCategories.map((c, i) => (
-            <div key={c.name} style={{ display: "flex", justifyContent: "space-between", padding: "0.4rem 0", fontSize: "0.85rem" }}>
-              <span>
-                {i + 1}. {c.name}
-              </span>
-              <strong>{c.opens}</strong>
-            </div>
-          ))}
+          {categoriesEmpty ? (
+            <p className="nac-empty-state">No category opens yet</p>
+          ) : (
+            topCategories.map((c, i) => (
+              <div key={c.name} style={{ display: "flex", justifyContent: "space-between", padding: "0.4rem 0", fontSize: "0.85rem" }}>
+                <span>
+                  {i + 1}. {c.name}
+                </span>
+                <strong>{c.opens}</strong>
+              </div>
+            ))
+          )}
         </div>
 
         <div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", fontWeight: 500 }}>Top add-ons</h3>
-          {topAddons.length === 0 ? (
+          {addonsEmpty ? (
             <p className="nac-empty-state">No add-on data</p>
           ) : (
             topAddons.map((row) => (
@@ -119,12 +122,16 @@ export default function MenuIntelligence() {
 
         <div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", fontWeight: 500 }}>Lowest engagement</h3>
-          {bottomItems.map((item) => (
-            <div key={item.name} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "0.35rem 0" }}>
-              <span>{item.name}</span>
-              <span style={{ color: "#f5a623" }}>{item.opens} opens</span>
-            </div>
-          ))}
+          {itemsEmpty ? (
+            <p className="nac-empty-state">No item views yet</p>
+          ) : (
+            bottomItems.map((item) => (
+              <div key={item.name} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "0.35rem 0" }}>
+                <span>{item.name}</span>
+                <span style={{ color: "#f5a623" }}>{item.opens} opens</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
