@@ -8,6 +8,7 @@ import {
 } from "../../lib/biDashboardNormalize";
 import { rangeToHours } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
 
 /**
  * Shared BI loader for Menu Intelligence + Visual OS — same payload for Today / 7D / Month.
@@ -56,6 +57,14 @@ export function useMenuBiDashboard() {
       setNote(result?.note || null);
       setLiveFallback(Boolean(result?.liveFallback));
       setMenuDataEmpty(isMenuBiFullyEmpty(normalized));
+      logBiIntelligenceDiagnostics({
+        source: "useMenuBiDashboard",
+        biData: normalized,
+        hours,
+        selectedRange: filters?.selectedRange || "today",
+        liveFallback: result?.liveFallback,
+        partial: result?.partial,
+      });
     } catch {
       setData(null);
       setLiveFallback(false);
@@ -63,7 +72,7 @@ export function useMenuBiDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [filters?.branch, hours]);
+  }, [filters?.branch, filters?.selectedRange, hours]);
 
   useEffect(() => {
     load();

@@ -23,6 +23,7 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
+import { logBiIntelligenceDiagnostics } from "../lib/intelligenceDiagnostics";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
 import { buildRestaurantIntelligence } from "./engines/analyticsEngine";
 import { classifyMenuItems } from "./engines/menuEngineeringEngine";
@@ -77,19 +78,27 @@ export default function RestaurantIntelligence() {
         setLoading(false);
         return;
       }
-      const { data: rpc } = await fetchBiDashboard(supabase, {
+      const result = await fetchBiDashboard(supabase, {
         branch: platform?.branch || null,
         hours: pHours,
       });
-      setBiData(rpc);
-      const fc = await getFoodicsIntelligenceContext(rpc);
+      setBiData(result.data);
+      logBiIntelligenceDiagnostics({
+        source: "RestaurantIntelligence",
+        biData: result.data,
+        hours: pHours,
+        selectedRange,
+        liveFallback: result.liveFallback,
+        partial: result.partial,
+      });
+      const fc = await getFoodicsIntelligenceContext(result.data);
       setFoodics(fc);
     } catch (e) {
       setError(e?.message || "Failed to load intelligence");
     } finally {
       setLoading(false);
     }
-  }, [configured, pHours, platform?.branch]);
+  }, [configured, pHours, platform?.branch, selectedRange]);
 
   useEffect(() => {
     load();

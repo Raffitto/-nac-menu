@@ -97,6 +97,7 @@ export function computeBranchOperationalScore(input = {}) {
   const staff = input.staff || [];
   const googleMovement = input.googleMovement || null;
   const scans = Number(row.qr_scans) || 0;
+  const google = Number(row.google_redirects) || 0;
   const activeStaff = staff.filter((s) => (s.scans || 0) >= 2).length;
 
   const insufficient =
@@ -104,6 +105,36 @@ export function computeBranchOperationalScore(input = {}) {
     (staff.length > 0 && activeStaff < SCORE_MIN_STAFF_ACTIVE && scans < SCORE_MIN_CARD_TAPS * 2);
 
   if (insufficient) {
+    if (scans >= 2 || google > 0) {
+      const factors = {
+        tapToGoogleConversion: clamp01(row.conversion_pct || tapToGooglePct(row.google_redirects, scans)),
+        redirectEfficiency: redirectEfficiencyScore(row),
+        activityVolume: activityVolumeScore(scans, input.networkMaxScans || scans),
+        staffParticipation: staff.length ? staffParticipationScore(staff) : 40,
+        staffConsistency: staff.length ? staffConsistencyScore(staff) : 40,
+        reviewMomentum: reviewMomentumScore(googleMovement),
+        reviewGrowthTrend: reviewGrowthScore(googleMovement),
+      };
+      const provisional = Math.round(
+        factors.redirectEfficiency * 0.35 +
+          factors.tapToGoogleConversion * 0.3 +
+          factors.activityVolume * 0.2 +
+          factors.reviewMomentum * 0.15,
+      );
+      return {
+        branch_id: branchId,
+        branch_name: branchDisplayName(branchId),
+        score: provisional,
+        tier: tierForScore(provisional).id,
+        tier_label: "Building baseline",
+        insufficient_data: false,
+        provisional: true,
+        message: "Provisional score — limited handoff history in this period",
+        strengths: scans >= 3 ? ["Early card-handoff activity detected"] : [],
+        weaknesses: scans < SCORE_MIN_CARD_TAPS ? ["Need more taps for full scoring"] : [],
+        factors,
+      };
+    }
     return {
       branch_id: branchId,
       branch_name: branchDisplayName(branchId),

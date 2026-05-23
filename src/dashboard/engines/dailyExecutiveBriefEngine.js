@@ -80,10 +80,10 @@ export function buildDailyExecutiveBrief(input = {}) {
   return {
     strongest_branch: strongest
       ? `${strongest.branch_name} (score ${strongest.operational_score}, ${strongest.tier_label || strongest.health?.label})`
-      : "Insufficient data",
+      : "Building baseline — not enough branch scores yet",
     weakest_branch: weakest
-      ? `${weakest.branch_name} (score ${weakest.operational_score ?? "—"})`
-      : "Insufficient data",
+      ? `${weakest.branch_name} (score ${weakest.operational_score})`
+      : "Building baseline — not enough branch scores yet",
     momentum_summary: momentum.insufficient_data
       ? "Insufficient historical data for momentum forecast."
       : `Network momentum ${momentum.momentum}. Redirect pace vs prior: ${

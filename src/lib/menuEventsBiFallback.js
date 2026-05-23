@@ -4,6 +4,7 @@
 
 import { queryMenuEvents, MENU_EVENTS_EXTENDED_SELECT } from "./menuEventsQuery";
 import { getBusinessDayRange, getBusinessDayKey } from "../dashboard/utils/businessDay";
+import { hourInRiyadh } from "../dashboard/utils/hourlyBucketLabels";
 import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 import { devLog } from "./devLog";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
@@ -68,10 +69,8 @@ function aggregateRows(rows, referenceDate = new Date()) {
     const sk = sessionKey(row);
     if (sk) sessions.add(sk);
 
-    const hourKey = row.created_at
-      ? new Date(row.created_at).toISOString().slice(0, 13)
-      : "unknown";
-    hourly.set(hourKey, (hourly.get(hourKey) || 0) + 1);
+    const h = row.created_at ? hourInRiyadh(row.created_at) : null;
+    if (h != null) hourly.set(h, (hourly.get(h) || 0) + 1);
 
     const name = (row.item_name_en || "").trim();
     if (et === "item_impression" && name) {
@@ -137,8 +136,8 @@ function aggregateRows(rows, referenceDate = new Date()) {
     .slice(0, 10);
 
   const by_hour = [...hourly.entries()]
-    .map(([hour, count]) => ({ hour, count }))
-    .sort((a, b) => a.hour.localeCompare(b.hour));
+    .map(([hour, count]) => ({ hour, count, granularity: "hour" }))
+    .sort((a, b) => Number(a.hour) - Number(b.hour));
 
   let today_qr_sessions = 0;
   let today_unique_sessions = new Set();
@@ -181,8 +180,8 @@ function aggregateRows(rows, referenceDate = new Date()) {
     strongest_hour: (() => {
       if (!by_hour.length) return null;
       const peak = by_hour.reduce((best, h) => (h.count > best.count ? h : best), by_hour[0]);
-      const h = parseInt(String(peak.hour).slice(11, 13), 10);
-      return Number.isNaN(h) ? null : h;
+      const h = Number(peak.hour);
+      return Number.isFinite(h) && h >= 0 && h <= 23 ? h : null;
     })(),
     business_day: {
       key: getBusinessDayKey(referenceDate),

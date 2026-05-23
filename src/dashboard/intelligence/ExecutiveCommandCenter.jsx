@@ -84,6 +84,18 @@ export default function ExecutiveCommandCenter() {
 
   const brief = pkg.dailyBrief;
   const momentum = pkg.momentum;
+  const buildingBaseline = pkg.networkScoreBuilding || pkg.pulse?.building_baseline;
+  const ns = pkg.networkScore;
+  const networkTier =
+    buildingBaseline || ns == null
+      ? "unstable"
+      : ns >= 90
+        ? "elite"
+        : ns >= 75
+          ? "strong"
+          : ns >= 60
+            ? "unstable"
+            : "critical";
 
   return (
     <motion.div
@@ -116,16 +128,8 @@ export default function ExecutiveCommandCenter() {
         <div className="ecc-hero-score">
           <ExecutiveScoreRing
             score={pkg.networkScore}
-            tier={
-              pkg.networkScore >= 90
-                ? "elite"
-                : pkg.networkScore >= 75
-                  ? "strong"
-                  : pkg.networkScore >= 60
-                    ? "unstable"
-                    : "critical"
-            }
-            label="Network score"
+            tier={networkTier}
+            label={buildingBaseline ? "Building baseline" : "Network score"}
             size={128}
           />
         </div>
@@ -157,11 +161,14 @@ export default function ExecutiveCommandCenter() {
         </motion.div>
         <motion.div className="ecc-kpi ecc-kpi--glow" layout>
           <span className="ecc-kpi-label">Est. monthly review gain</span>
-          <strong className="ecc-kpi-value">
-            {momentum?.monthly_review_gain != null && !momentum.insufficient_data
-              ? `${momentum.monthly_review_gain >= 0 ? "+" : ""}${momentum.monthly_review_gain}`
-              : "—"}
-          </strong>
+          {momentum?.monthly_review_gain != null && !momentum.insufficient_data ? (
+            <strong className="ecc-kpi-value">
+              {momentum.monthly_review_gain >= 0 ? "+" : ""}
+              {momentum.monthly_review_gain}
+            </strong>
+          ) : (
+            <span className="ecc-kpi-muted">Building baseline</span>
+          )}
         </motion.div>
         <motion.div className="ecc-kpi ecc-kpi--pulse" layout>
           <Activity size={16} className="ecc-pulse-icon" />
@@ -253,7 +260,13 @@ export default function ExecutiveCommandCenter() {
               <div className="ecc-branch-metrics">
                 <div>
                   <span>Score</span>
-                  <strong>{b.operational_score ?? "—"}</strong>
+                  <strong>
+                    {b.insufficient_data
+                      ? "—"
+                      : b.operational_score != null
+                        ? `${b.operational_score}${b.provisional ? "*" : ""}`
+                        : "—"}
+                  </strong>
                 </div>
                 <div>
                   <span>Momentum</span>
@@ -276,7 +289,7 @@ export default function ExecutiveCommandCenter() {
                   <strong>
                     {b.review_growth != null
                       ? `${b.review_growth >= 0 ? "+" : ""}${b.review_growth}`
-                      : "—"}
+                      : "n/a"}
                   </strong>
                 </div>
               </div>

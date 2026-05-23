@@ -68,6 +68,7 @@ export function buildNetworkBranchStatus(input = {}) {
       tier: scoreRow.tier,
       tier_label: scoreRow.tier_label,
       insufficient_data: scoreRow.insufficient_data,
+      provisional: Boolean(scoreRow.provisional),
       momentum: momentum.insufficient_data ? "Stable" : momentum.momentum,
       redirect_pace_pct: momentum.redirect_pace_vs_last_week,
       participation_breadth: Math.round(participation),

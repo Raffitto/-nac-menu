@@ -69,6 +69,8 @@ export function buildExecutiveCommandCenterPackage(input = {}) {
 
   const strongest = rankings[0] || null;
   const weakest = rankings[rankings.length - 1] || null;
+  const hasScoredBranch = branchStatus.some((b) => b.operational_score != null);
+  const buildingBaseline = predictive.networkScoreBuilding;
 
   return {
     ...predictive,
@@ -86,7 +88,11 @@ export function buildExecutiveCommandCenterPackage(input = {}) {
       live_label:
         totalRedirectsToday > 0
           ? `${totalRedirectsToday} Google redirects in period`
-          : "Awaiting card-handoff activity",
+          : activeStaffCount > 0
+            ? `${activeStaffCount} staff active — redirects still building`
+            : "Collecting baseline — card handoffs will appear here",
+      building_baseline: buildingBaseline,
+      has_scored_branch: hasScoredBranch,
     },
     strongest_branch: strongest,
     weakest_branch: weakest,

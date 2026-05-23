@@ -215,7 +215,7 @@ function AdminDashboardContent({ onBack }) {
   const returningPct = qrSessionStarts > 0 ? Math.round((returningSessions / qrSessionStarts) * 100) : 0;
 
   const hourlyData = (data?.by_hour || []).map((row) => ({
-    label: formatHourLabel(row.hour),
+    label: formatHourLabel(row.hour, row.granularity || "hour"),
     count: Number(row.count) || 0,
   }));
 

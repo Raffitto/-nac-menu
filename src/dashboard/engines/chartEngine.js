@@ -1,11 +1,9 @@
 /** Chart-ready series for Recharts */
 import { clampMetric } from "../utils/intelligenceSanity";
+import { hourlyChartRows } from "../utils/hourlyBucketLabels";
 
 export function hourlyChartSeries(biData) {
-  return (biData?.by_hour || []).map((row) => ({
-    label: row.hour ? new Date(row.hour).toLocaleTimeString(undefined, { hour: "numeric" }) : "",
-    count: Number(row.count) || 0,
-  }));
+  return hourlyChartRows(biData?.by_hour || []);
 }
 
 export function categoryChartSeries(categoryHealth = []) {

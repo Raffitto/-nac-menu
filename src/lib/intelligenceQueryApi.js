@@ -1,7 +1,10 @@
 import { MONTH_HOURS } from "../dashboard/utils/rangeState";
-import { normalizeBiDashboardPayload, isBiTotalsEmpty } from "./biDashboardNormalize";
 import {
-  biNeedsItemDetail,
+  normalizeBiDashboardPayload,
+  isBiTotalsEmpty,
+  biTopItemsNeedsRefresh,
+} from "./biDashboardNormalize";
+import {
   fetchBiFromMenuEvents,
   fetchBiItemDetailFromMenuEvents,
   normalizeBranchForRpc,
@@ -141,16 +144,21 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  if (payload && biNeedsItemDetail(payload)) {
+  if (payload && biTopItemsNeedsRefresh(payload)) {
     const detail = await fetchBiItemDetailFromMenuEvents(supabase, {
       branch: pBranch,
       hours: pHours,
     });
-    if (detail?.top_items?.length) {
+    if (
+      detail?.top_items?.length ||
+      detail?.top_categories?.length
+    ) {
       payload = mergeBiPayload(payload, detail);
       partial = true;
       usedFallback = true;
-      note = (note ? `${note} ` : "") + "Item charts filled from menu_events (rollup lacks item detail).";
+      note =
+        (note ? `${note} ` : "") +
+        "Item and category charts filled from menu_events (rollup lacks detail or flat counts).";
     }
   }
 

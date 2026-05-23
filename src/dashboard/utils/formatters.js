@@ -1,3 +1,5 @@
+import { formatHourBucketLabel, formatDayBucketLabel } from "./hourlyBucketLabels";
+
 export const CATEGORY_NAMES = {
   brunch: "Brunch",
   daytime: "Daytime",
@@ -25,15 +27,12 @@ export function formatPercent(value, total) {
   return `${Math.round((value / total) * 100)}%`;
 }
 
-export function formatHourLabel(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso).slice(11, 16);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-  });
+export function formatHourLabel(iso, granularity = "hour") {
+  return formatHourBucketLabel(iso, granularity);
+}
+
+export function formatDayLabel(iso) {
+  return formatDayBucketLabel(iso);
 }
 
 export function pct(num, den) {

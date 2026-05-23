@@ -9,6 +9,10 @@ import {
   isBiCategoriesEmpty,
   isBiTopItemsEmpty,
 } from "../../lib/biDashboardNormalize";
+import {
+  buildMenuIntelligenceChartItems,
+  buildMenuIntelligenceLowEngagement,
+} from "../utils/menuItemsChartData";
 
 const TOOLTIP = {
   background: "rgba(8,10,12,0.94)",
@@ -27,9 +31,12 @@ export default function MenuIntelligence() {
     menuDataEmpty,
   } = useMenuBiDashboard();
 
-  const topItems = useMemo(() => (data?.top_items || []).slice(0, 10), [data?.top_items]);
+  const topItems = useMemo(
+    () => buildMenuIntelligenceChartItems(data?.top_items || []),
+    [data?.top_items],
+  );
   const bottomItems = useMemo(
-    () => [...(data?.top_items || [])].sort((a, b) => a.opens - b.opens).slice(0, 5),
+    () => buildMenuIntelligenceLowEngagement(data?.top_items || []),
     [data?.top_items],
   );
   const topAddons = useMemo(() => (data?.top_addon_pairs || []).slice(0, 8), [data?.top_addon_pairs]);
@@ -42,7 +49,8 @@ export default function MenuIntelligence() {
     [data?.top_categories],
   );
 
-  const itemsEmpty = !loading && !menuDataEmpty && isBiTopItemsEmpty(data);
+  const itemsEmpty =
+    !loading && !menuDataEmpty && (topItems.length === 0 || isBiTopItemsEmpty(data));
   const categoriesEmpty = !loading && !menuDataEmpty && isBiCategoriesEmpty(data);
   const addonsEmpty = !loading && !menuDataEmpty && isBiAddonsEmpty(data);
 
@@ -83,7 +91,7 @@ export default function MenuIntelligence() {
               <XAxis type="number" tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
               <YAxis type="category" dataKey="name" width={100} tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
               <Tooltip contentStyle={TOOLTIP} />
-              <Bar dataKey="opens" fill="#d7bc8a" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="chartValue" fill="#d7bc8a" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}

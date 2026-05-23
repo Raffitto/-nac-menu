@@ -1,21 +1,11 @@
 import { DAYPARTS } from "../config/attachmentThresholds";
+import {
+  hourInRiyadh,
+  formatHourBucketLabel,
+  parseHourBucket,
+} from "../utils/hourlyBucketLabels";
 
 const RIYADH = "Asia/Riyadh";
-
-function hourInRiyadh(iso) {
-  if (!iso) return null;
-  try {
-    return Number(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: RIYADH,
-        hour: "numeric",
-        hour12: false,
-      }).format(new Date(iso)),
-    );
-  } catch {
-    return new Date(iso).getHours();
-  }
-}
 
 function weekdayInRiyadh(iso) {
   if (!iso) return "weekday";
@@ -44,12 +34,13 @@ export function hourToDaypart(hour) {
 
 export function buildTimeShiftIntelligence({ biData, salesItems = [] }) {
   const hourlyMenu = (biData?.by_hour || []).map((row) => {
-    const h = row.hour ? hourInRiyadh(row.hour) : null;
+    const gran = row.granularity || parseHourBucket(row.hour).granularity;
+    const parsed = parseHourBucket(row.hour, gran);
+    const h = parsed.hour ?? (row.hour != null ? hourInRiyadh(row.hour) : null);
+    const label = formatHourBucketLabel(row.hour ?? row.business_day_key, gran);
     return {
       hour: h ?? 0,
-      label: row.hour
-        ? new Date(row.hour).toLocaleTimeString(undefined, { hour: "numeric" })
-        : `${h}:00`,
+      label,
       menuEvents: Number(row.count) || 0,
       daypart: hourToDaypart(h),
     };

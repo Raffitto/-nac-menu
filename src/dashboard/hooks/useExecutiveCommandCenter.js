@@ -7,6 +7,7 @@ import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
 import { fetchGoogleReviewSnapshots } from "../utils/googleReviewSnapshotHistory";
 import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandCenterEngine";
 import { cacheKey, getCachedIntelligence } from "../utils/intelligenceCache";
+import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
 import { OPERATIONAL_BRANCHES } from "../engines/branchOperationalReviewEngine";
 import { useReviewIntelligenceData } from "./useReviewIntelligenceData";
@@ -71,6 +72,21 @@ export function useExecutiveCommandCenter() {
         if (!cancelled) {
           setPkg(data);
           setLoading(false);
+          logBiIntelligenceDiagnostics({
+            source: "ExecutiveCommandCenter",
+            selectedRange,
+            commandCenter: {
+              networkScore: data?.networkScore,
+              networkScoreBuilding: data?.networkScoreBuilding,
+              branchScores: (data?.branchScores || []).map((b) => ({
+                branch: b.branch_id,
+                score: b.score,
+                provisional: b.provisional,
+                insufficient: b.insufficient_data,
+              })),
+              pulse: data?.pulse,
+            },
+          });
         }
       })
       .catch((e) => {

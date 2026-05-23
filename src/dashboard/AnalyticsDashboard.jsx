@@ -35,6 +35,7 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { rangeExportLabel, rangeToHours } from "./utils/rangeState";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
+import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import "./styles/analytics-dashboard.css";
 
@@ -88,23 +89,6 @@ function formatCategoryId(id) {
   return CATEGORY_NAMES[id] || id.replace(/-/g, " ");
 }
 
-function formatHourLabel(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso).slice(11, 16);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-  });
-}
-
-function formatDayLabel(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
-  return d.toLocaleString(undefined, { month: "short", day: "numeric" });
-}
 
 function eventCount(byEventType, key) {
   if (!byEventType || typeof byEventType !== "object") return 0;

@@ -75,18 +75,20 @@ export function buildPredictiveIntelligencePackage(input = {}) {
 
   const scoreByBranch = Object.fromEntries(branchScores.map((s) => [s.branch_id, s]));
 
+  const scored = branchScores.filter((s) => s.score != null);
   const networkScore =
-    branchScores.filter((s) => s.score != null).length > 0
-      ? Math.round(
-          branchScores.reduce((sum, s) => sum + (s.score || 0), 0) /
-            branchScores.filter((s) => s.score != null).length,
-        )
+    scored.length > 0
+      ? Math.round(scored.reduce((sum, s) => sum + (s.score || 0), 0) / scored.length)
       : null;
+  const networkScoreProvisional = scored.some((s) => s.provisional);
+  const networkScoreBuilding = scored.length > 0 && scored.every((s) => s.provisional);
 
   return {
     branchScores,
     scoreByBranch,
     networkScore,
+    networkScoreProvisional,
+    networkScoreBuilding,
     momentum,
     staffInsights,
     executiveInsights,
