@@ -31,6 +31,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
 import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
+import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import { isBiTopItemsEmpty, hasMenuBiActivity } from "../../lib/biDashboardNormalize";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { defaultExportConfig } from "../config/visualExportPresets";
@@ -124,6 +125,7 @@ export default function VisualIntelligenceEngine() {
     needsAuth,
     showFallbackBanner,
     menuDataEmpty,
+    platformStatus,
   } = useMenuBiDashboard();
   const [importsLoading, setImportsLoading] = useState(true);
   const [productItems, setProductItems] = useState([]);
@@ -353,7 +355,8 @@ export default function VisualIntelligenceEngine() {
 
   return (
     <motion.div className="vi-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <BiLiveFallbackBanner visible={showFallbackBanner} />
+      <PlatformStatusBanner platformStatus={platformStatus} />
+      <BiLiveFallbackBanner visible={showFallbackBanner && !platformStatus?.showUserBanner} />
       <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "rgba(249,249,247,0.45)" }}>
         {businessDayExportNote()} · Product lane + waiter lane imports · Configure exports below
       </p>

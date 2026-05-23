@@ -2,6 +2,8 @@
  * Executive operational observations — consulting-style, rules-only.
  */
 
+import { dedupeExecutiveInsights } from "../../platform/engines/executiveNarrativeEngine";
+
 function bestByScore(scores = []) {
   return [...scores]
     .filter((s) => s.score != null)
@@ -87,8 +89,11 @@ export function buildExecutiveOperationalInsights(input = {}) {
     });
   }
 
-  return insights
-    .sort((a, b) => a.priority - b.priority)
+  return dedupeExecutiveInsights(
+    insights
+      .sort((a, b) => a.priority - b.priority)
+      .slice(0, 6),
+  )
     .slice(0, 5)
-    .map((item, i) => ({ ...item, id: `exec-${i}` }));
+    .map((item, i) => ({ ...item, id: item.id || `exec-${i}` }));
 }

@@ -17,6 +17,7 @@ import ExecutiveScoreRing from "../components/executive/ExecutiveScoreRing";
 import { MomentumChip, TrendArrow } from "../components/PredictiveIntelligenceVisuals";
 import { sortHeatmapRows } from "../engines/executiveHeatmapEngine";
 import { branchDisplayName, rangeExportLabel } from "../utils/rangeState";
+import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import "../styles/executive-command-center.css";
 
 const SEVERITY_CLASS = {
@@ -42,7 +43,7 @@ function heatCellClass(value) {
 }
 
 export default function ExecutiveCommandCenter() {
-  const { pkg, loading, error, selectedRange } = useExecutiveCommandCenter();
+  const { pkg, loading, error, selectedRange, reviewData } = useExecutiveCommandCenter();
   const filters = usePlatformFiltersOptional();
   const { exportExecutiveSummaryPdf, busy } = useReviewExports(filters);
   const [sortCol, setSortCol] = useState("operational_score");
@@ -104,6 +105,7 @@ export default function ExecutiveCommandCenter() {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.35 }}
     >
+      <PlatformStatusBanner platformStatus={reviewData?.platformStatus} className="ecc-platform-status" />
       <header className="ecc-hero">
         <div className="ecc-hero-copy">
           <p className="ecc-kicker">

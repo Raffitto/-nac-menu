@@ -18,16 +18,9 @@ import {
 import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 import { sessionQualityTierSum } from "./sessionQualityAggregate";
 import { devLog } from "./devLog";
+import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 
-export function isTimeoutError(error) {
-  const msg = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
-  return (
-    msg.includes("timeout") ||
-    msg.includes("canceling statement") ||
-    msg.includes("statement timeout") ||
-    error?.code === "57014"
-  );
-}
+export { isTimeoutError };
 
 export function biRollupForHours(hours) {
   const h = Number(hours);

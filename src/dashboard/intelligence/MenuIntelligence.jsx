@@ -4,6 +4,7 @@ import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGri
 import { CATEGORY_NAMES } from "../utils/formatters";
 import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
+import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import {
   isBiAddonsEmpty,
   isBiCategoriesEmpty,
@@ -29,6 +30,7 @@ export default function MenuIntelligence() {
     needsAuth,
     showFallbackBanner,
     menuDataEmpty,
+    platformStatus,
   } = useMenuBiDashboard();
 
   const topItems = useMemo(
@@ -70,7 +72,8 @@ export default function MenuIntelligence() {
   if (menuDataEmpty) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <BiLiveFallbackBanner visible={showFallbackBanner} />
+        <PlatformStatusBanner platformStatus={platformStatus} />
+        <BiLiveFallbackBanner visible={showFallbackBanner && !platformStatus?.showUserBanner} />
         <p className="nac-empty-state">No menu activity in this period.</p>
       </div>
     );
@@ -78,7 +81,8 @@ export default function MenuIntelligence() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <BiLiveFallbackBanner visible={showFallbackBanner} />
+      <PlatformStatusBanner platformStatus={platformStatus} />
+      <BiLiveFallbackBanner visible={showFallbackBanner && !platformStatus?.showUserBanner} />
 
       <div className="nac-glass-panel">
         <h3 style={{ margin: "0 0 1rem", fontWeight: 500 }}>Most viewed dishes</h3>

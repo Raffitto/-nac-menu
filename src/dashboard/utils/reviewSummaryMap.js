@@ -1,6 +1,7 @@
 /** Map get_review_events_summary RPC → Review Intelligence UI shapes */
 
 import { normalizeBranchId, buildCanonicalBranchComparison } from "./branchIdentity";
+import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 
 export function kpisFromReviewSummary(summary) {
   if (!summary) return null;
@@ -65,10 +66,7 @@ export function branchComparisonFromReviewSummary(summary) {
     },
   ).map((row) => ({
     ...row,
-    conversion_pct:
-      row.qr_scans > 0
-        ? Math.round((row.google_redirects / row.qr_scans) * 100)
-        : Number(row.conversion_pct) || 0,
+    conversion_pct: reviewConversionPct(row.google_redirects, row.qr_scans),
   }));
 }
 

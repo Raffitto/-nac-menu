@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import {
@@ -6,9 +6,10 @@ import {
   normalizeBiDashboardPayload,
   shouldShowLiveFallbackBanner,
 } from "../../lib/biDashboardNormalize";
-import { rangeToHours } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
+import { resolveMenuPlatformStatus } from "../../platform/engines/platformStatusEngine";
+import { rangeContractFromFilters } from "../../platform/engines/timeRangeEngine";
 
 /**
  * Shared BI loader for Menu Intelligence + Visual OS — same payload for Today / 7D / Month.
@@ -23,7 +24,11 @@ export function useMenuBiDashboard() {
   const [partial, setPartial] = useState(false);
   const [note, setNote] = useState(null);
 
-  const hours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
+  const rangeContract = useMemo(
+    () => rangeContractFromFilters(filters || {}),
+    [filters],
+  );
+  const hours = filters?.timeRangeHours ?? rangeContract.hours;
 
   const load = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured()) {
@@ -78,6 +83,19 @@ export function useMenuBiDashboard() {
     load();
   }, [load]);
 
+  const platformStatus = useMemo(
+    () =>
+      resolveMenuPlatformStatus({
+        data,
+        partial,
+        liveFallback,
+        note,
+        menuDataEmpty,
+        selectedRange: filters?.selectedRange || "today",
+      }),
+    [data, partial, liveFallback, note, menuDataEmpty, filters?.selectedRange],
+  );
+
   return {
     data,
     loading,
@@ -87,6 +105,8 @@ export function useMenuBiDashboard() {
     menuDataEmpty,
     partial,
     note,
+    platformStatus,
+    rangeContract,
     reload: load,
     hours,
     selectedRange: filters?.selectedRange || "today",

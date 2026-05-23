@@ -2,6 +2,7 @@
 
 import { filterAnalyticsReviewEvents } from "./isProductionStaff";
 import { normalizeBranchId, buildCanonicalBranchComparison } from "./branchIdentity";
+import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 import {
   REVIEW_GENERATED_TYPES as GENERATED_TYPES,
   REVIEW_GOOGLE_TYPES as GOOGLE_TYPES,
@@ -97,14 +98,10 @@ export function buildBranchReviewComparison(allEvents = []) {
       review_page_opens: 0,
       unique_visitors: 0,
     },
-  ).map((row) => {
-    const qr = row.qr_scans;
-    const google = row.google_redirects;
-    return {
-      ...row,
-      conversion_pct: qr > 0 ? Math.round((google / qr) * 100) : 0,
-    };
-  });
+  ).map((row) => ({
+    ...row,
+    conversion_pct: reviewConversionPct(row.google_redirects, row.qr_scans),
+  }));
 }
 
 export function runReviewDataQualityDiagnostics(reviewEvents = [], branchId = "khobar") {

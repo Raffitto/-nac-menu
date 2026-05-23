@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { resolveReviewPlatformStatus } from "../../platform/engines/platformStatusEngine";
+import { buildIntelligenceRangeContract } from "../../platform/engines/timeRangeEngine";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -166,11 +168,28 @@ export function useReviewIntelligenceData(options = {}) {
     load();
   }, [load, skip, filterKey]);
 
+  const rangeContract = useMemo(
+    () => buildIntelligenceRangeContract(selectedRange),
+    [selectedRange],
+  );
+
+  const platformStatus = useMemo(
+    () =>
+      resolveReviewPlatformStatus({
+        partial,
+        note: error || summary?._note,
+        kpis,
+        loading,
+      }),
+    [partial, error, summary?._note, kpis, loading],
+  );
+
   return useMemo(
     () => ({
       branch,
       selectedRange,
       filterKey,
+      rangeContract,
       kpis,
       staffMerged,
       dailyTrend,
@@ -180,12 +199,14 @@ export function useReviewIntelligenceData(options = {}) {
       loading,
       error,
       partial,
+      platformStatus,
       reload: load,
     }),
     [
       branch,
       selectedRange,
       filterKey,
+      rangeContract,
       kpis,
       staffMerged,
       dailyTrend,
@@ -195,6 +216,7 @@ export function useReviewIntelligenceData(options = {}) {
       loading,
       error,
       partial,
+      platformStatus,
       load,
     ],
   );

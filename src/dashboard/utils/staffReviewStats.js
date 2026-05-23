@@ -7,11 +7,14 @@ import {
   isProductionStaff,
 } from "./isProductionStaff";
 import { normalizeBranchId } from "./branchIdentity";
+import {
+  REVIEW_PAGE_OPEN_TYPES,
+  REVIEW_GENERATED_TYPES,
+  REVIEW_GOOGLE_TYPES,
+  reviewConversionPct,
+} from "../../platform/engines/funnelAnalyticsEngine";
 
-const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
-const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
 const COPY_TYPES = new Set(["review_copy", "copy_review"]);
-const GOOGLE_TYPES = new Set(["review_google_click", "google_redirect"]);
 
 function dayKey(iso) {
   if (!iso) return "";
@@ -51,19 +54,19 @@ export function aggregateStaffReviewStats(events = []) {
 
     if (e.event_type === "qr_scan") {
       map[key].scans += 1;
-    } else if (PAGE_OPEN_TYPES.has(e.event_type)) {
+    } else if (REVIEW_PAGE_OPEN_TYPES.has(e.event_type)) {
       map[key].review_opens += 1;
     }
-    if (GENERATED_TYPES.has(e.event_type)) map[key].generated += 1;
+    if (REVIEW_GENERATED_TYPES.has(e.event_type)) map[key].generated += 1;
     if (COPY_TYPES.has(e.event_type)) map[key].copy += 1;
-    if (GOOGLE_TYPES.has(e.event_type)) map[key].google += 1;
+    if (REVIEW_GOOGLE_TYPES.has(e.event_type)) map[key].google += 1;
   });
 
   return Object.values(map)
     .map((s) => ({
       ...s,
       opens: s.scans,
-      conversion_pct: s.scans > 0 ? Math.round((s.google / s.scans) * 100) : 0,
+      conversion_pct: reviewConversionPct(s.google, s.scans),
     }))
     .sort((a, b) => b.scans - a.scans || b.google - a.google);
 }
@@ -76,8 +79,7 @@ export function mergeStaffStats(_rpcEmployees = [], granular = []) {
     .map((g) => ({
       ...g,
       opens: g.scans,
-      conversion_pct:
-        g.scans > 0 ? Math.round((g.google / g.scans) * 100) : 0,
+      conversion_pct: reviewConversionPct(g.google, g.scans),
     }))
     .sort((a, b) => b.scans - a.scans);
 }

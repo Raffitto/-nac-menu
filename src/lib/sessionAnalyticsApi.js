@@ -6,16 +6,7 @@ import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/ses
 import { fetchBiSessionQualityFromMenuEvents } from "./menuEventsBiFallback";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
-
-function isTimeoutError(error) {
-  const msg = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
-  return (
-    msg.includes("timeout") ||
-    msg.includes("canceling statement") ||
-    msg.includes("statement timeout") ||
-    error?.code === "57014"
-  );
-}
+import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 
 function rpcParamsFromFilters(filters) {
   const selectedRange = filters?.selectedRange || "today";
