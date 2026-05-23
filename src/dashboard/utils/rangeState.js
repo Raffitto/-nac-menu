@@ -75,11 +75,4 @@ export function rangeToSince(range, referenceDate = new Date()) {
   return new Date(referenceDate.getTime() - hours * 3600000).toISOString();
 }
 
-export function branchDisplayName(branch) {
-  const b = (branch || "khobar").toString().toLowerCase();
-  return b.charAt(0).toUpperCase() + b.slice(1);
-}
-
-export function defaultBranchId() {
-  return (process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase();
-}
+export { branchDisplayName, defaultBranchId, normalizeBranchId } from "./branchIdentity";

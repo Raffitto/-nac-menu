@@ -3,6 +3,7 @@
  */
 
 import { branchDisplayName } from "../utils/rangeState";
+import { normalizeBranchId } from "../utils/branchIdentity";
 import { computeReviewMomentum } from "./reviewMomentumEngine";
 
 const HEALTH = {
@@ -43,7 +44,8 @@ export function buildNetworkBranchStatus(input = {}) {
   const selectedRange = input.selectedRange || "today";
 
   return comparison.map((row) => {
-    const id = (row.branch_id || "").toLowerCase();
+    const id = normalizeBranchId(row.branch_id);
+    if (!id) return null;
     const scoreRow = scoreByBranch[id] || {};
     const staff = staffByBranch[id] || [];
     const movement = googleMovementByBranch[id] || null;
@@ -84,7 +86,7 @@ export function buildNetworkBranchStatus(input = {}) {
       health: healthFromScore(scoreRow),
       pulse: scoreRow.score != null && scoreRow.score >= 75 ? "strong" : scoreRow.score >= 60 ? "steady" : "weak",
     };
-  });
+  }).filter(Boolean);
 }
 
 export function rankBranchesByScore(statusRows = []) {

@@ -3,7 +3,10 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { rangeToHours } from "../utils/rangeState";
-import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
+import {
+  staffFromReviewSummary,
+  branchComparisonFromReviewSummary,
+} from "../utils/reviewSummaryMap";
 import { fetchGoogleReviewSnapshots } from "../utils/googleReviewSnapshotHistory";
 import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelligenceEngine";
 import { cacheKey, getCachedIntelligence, invalidateIntelligenceCache } from "../utils/intelligenceCache";
@@ -68,14 +71,8 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
           fetchReviewEventsSummary(supabase, { branch: null, hours }),
           null,
         );
-        if (net?.by_branch) {
-          branchComparison = (net.by_branch || []).map((b) => ({
-            branch_id: (b.branch_id || "").toLowerCase(),
-            qr_scans: Number(b.qr_scans) || 0,
-            reviews_generated: Number(b.reviews_generated) || 0,
-            google_redirects: Number(b.google_redirects) || 0,
-            conversion_pct: Number(b.conversion_pct) || 0,
-          }));
+        if (net) {
+          branchComparison = branchComparisonFromReviewSummary(net);
         }
       }
 

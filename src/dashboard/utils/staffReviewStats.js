@@ -6,6 +6,7 @@ import {
   filterProductionStaffList,
   isProductionStaff,
 } from "./isProductionStaff";
+import { normalizeBranchId } from "./branchIdentity";
 
 const PAGE_OPEN_TYPES = new Set(["review_page_open", "review_open"]);
 const GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
@@ -30,10 +31,11 @@ export function aggregateStaffReviewStats(events = []) {
   filterAnalyticsReviewEvents(events).forEach((e) => {
     const name = eventStaffName(e);
     if (!name || !isProductionStaff(name)) return;
-    const branch = (e.branch_id || "").toLowerCase();
+    const branch = normalizeBranchId(e.branch_id);
+    const key = `${branch || "unknown"}::${name}`;
 
-    if (!map[name]) {
-      map[name] = {
+    if (!map[key]) {
+      map[key] = {
         name,
         role: e.employee_role || "",
         branch,
@@ -44,17 +46,17 @@ export function aggregateStaffReviewStats(events = []) {
         google: 0,
       };
     }
-    if (e.employee_role && !map[name].role) map[name].role = e.employee_role;
-    if (branch && !map[name].branch) map[name].branch = branch;
+    if (e.employee_role && !map[key].role) map[key].role = e.employee_role;
+    if (branch && !map[key].branch) map[key].branch = branch;
 
     if (e.event_type === "qr_scan") {
-      map[name].scans += 1;
+      map[key].scans += 1;
     } else if (PAGE_OPEN_TYPES.has(e.event_type)) {
-      map[name].review_opens += 1;
+      map[key].review_opens += 1;
     }
-    if (GENERATED_TYPES.has(e.event_type)) map[name].generated += 1;
-    if (COPY_TYPES.has(e.event_type)) map[name].copy += 1;
-    if (GOOGLE_TYPES.has(e.event_type)) map[name].google += 1;
+    if (GENERATED_TYPES.has(e.event_type)) map[key].generated += 1;
+    if (COPY_TYPES.has(e.event_type)) map[key].copy += 1;
+    if (GOOGLE_TYPES.has(e.event_type)) map[key].google += 1;
   });
 
   return Object.values(map)
@@ -99,7 +101,8 @@ export function buildBranchScanTotals(events = []) {
   const byBranch = {};
   filterAnalyticsReviewEvents(events).forEach((e) => {
     if (e.event_type !== "qr_scan") return;
-    const b = (e.branch_id || "unknown").toLowerCase();
+    const b = normalizeBranchId(e.branch_id);
+    if (!b) return;
     byBranch[b] = (byBranch[b] || 0) + 1;
   });
   return Object.entries(byBranch)

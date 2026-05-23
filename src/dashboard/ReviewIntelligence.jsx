@@ -48,11 +48,11 @@ import {
 } from "./utils/reviewEventMetrics";
 import {
   kpisFromReviewSummary,
-  staffFromReviewSummary,
   dailyTrendFromReviewSummary,
   branchComparisonFromReviewSummary,
   branchScansFromComparison,
 } from "./utils/reviewSummaryMap";
+import { fetchStaffMergedByBranch } from "./utils/reviewStaffByBranch";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
 import { useGoogleReviewMovement } from "./hooks/useGoogleReviewMovement";
@@ -170,8 +170,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             )
           : summary;
 
+        const staffRows = await fetchStaffMergedByBranch(supabase, {
+          hours,
+          activeBranch: activeBranch || null,
+        });
         setKpis(kpisFromReviewSummary(summary));
-        setStaffMerged(mergeStaffStats([], staffFromReviewSummary(summary)));
+        setStaffMerged(mergeStaffStats([], staffRows));
         setDailyTrend(dailyTrendFromReviewSummary(summary));
         const comparison = branchComparisonFromReviewSummary(allSummary || summary);
         setBranchComparison(comparison);
@@ -210,7 +214,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       const all = applyPlatformFilters(allEvents || [], embedded ? platform : null);
 
       setKpis(computeReviewKpis(events));
-      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events, branch)));
+      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(buildBranchReviewComparison(all));
@@ -418,7 +422,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             compact={embedded}
           />
 
-          {branchScans.length > 0 && (
+          {branchScans.some((row) => row.scans > 0) && (
             <section className="rev-section">
               <h2>
                 <GitBranch size={18} /> Card taps by branch (QR/NFC)
@@ -463,12 +467,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                   </thead>
                   <tbody>
                     {staffMerged.map((s) => (
-                      <tr key={s.name}>
+                      <tr key={`${s.branch || "unknown"}::${s.name}`}>
                         <td>
                           <strong>{s.name}</strong>
                         </td>
                         <td>{s.role || "—"}</td>
-                        <td>{s.branch ? branchDisplayName(s.branch) : branchLabel}</td>
+                        <td>{branchDisplayName(s.branch)}</td>
                         <td>{s.scans}</td>
                         <td>{s.review_opens}</td>
                         <td>{s.generated}</td>

@@ -3,6 +3,7 @@
  */
 
 import { branchDisplayName } from "../utils/rangeState";
+import { normalizeBranchId } from "../utils/branchIdentity";
 import {
   OPERATIONAL_SCORE_WEIGHTS,
   OPERATIONAL_SCORE_TIERS,
@@ -211,7 +212,8 @@ export function computeNetworkBranchScores({
   const networkMaxScans = Math.max(...rows.map((r) => r.qr_scans || 0), 1);
 
   return rows.map((row) => {
-    const id = (row.branch_id || "").toLowerCase();
+    const id = normalizeBranchId(row.branch_id);
+    if (!id) return null;
     return computeBranchOperationalScore({
       branchId: id,
       branchRow: row,
@@ -219,5 +221,5 @@ export function computeNetworkBranchScores({
       googleMovement: googleMovementByBranch[id] || null,
       networkMaxScans,
     });
-  });
+  }).filter(Boolean);
 }

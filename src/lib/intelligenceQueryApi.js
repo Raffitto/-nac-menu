@@ -11,6 +11,10 @@ import {
   fetchBiSessionQualityFromMenuEvents,
   normalizeBranchForRpc,
 } from "./menuEventsBiFallback";
+import {
+  normalizeBranchId,
+  buildCanonicalBranchComparison,
+} from "../dashboard/utils/branchIdentity";
 import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 import { sessionQualityTierSum } from "./sessionQualityAggregate";
 import { devLog } from "./devLog";
@@ -240,15 +244,34 @@ export async function fetchBranchComparisonSafe(supabase, hours = 24) {
   const { data, error } = await supabase.rpc(rpcName, { p_hours: pHours });
 
   if (!error) {
-    const rows = Array.isArray(data) ? data : [];
+    const rows = buildCanonicalBranchComparison(
+      (Array.isArray(data) ? data : []).map((row) => ({
+        branch_id: normalizeBranchId(row.branch_id),
+        sessions: Number(row.sessions) || 0,
+        impressions: Number(row.impressions) || 0,
+        opens: Number(row.opens) || 0,
+        unique_visitors: Number(row.unique_visitors) || 0,
+      })),
+      { sessions: 0, impressions: 0, opens: 0, unique_visitors: 0 },
+    );
     return { data: rows, partial: biRollupForHours(pHours), note: null };
   }
 
   if (isTimeoutError(error) && !biRollupForHours(pHours)) {
     const rollup = await supabase.rpc("get_branch_comparison_from_rollup", { p_hours: pHours });
     if (!rollup.error) {
+      const rows = buildCanonicalBranchComparison(
+        (Array.isArray(rollup.data) ? rollup.data : []).map((row) => ({
+          branch_id: normalizeBranchId(row.branch_id),
+          sessions: Number(row.sessions) || 0,
+          impressions: Number(row.impressions) || 0,
+          opens: Number(row.opens) || 0,
+          unique_visitors: Number(row.unique_visitors) || 0,
+        })),
+        { sessions: 0, impressions: 0, opens: 0, unique_visitors: 0 },
+      );
       return {
-        data: Array.isArray(rollup.data) ? rollup.data : [],
+        data: rows,
         partial: true,
         note: "Branch comparison from rollup after timeout.",
       };

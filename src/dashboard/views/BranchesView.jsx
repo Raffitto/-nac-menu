@@ -8,6 +8,7 @@ import {
 } from "../../lib/intelligenceQueryApi";
 import { branchComparisonFromReviewSummary } from "../utils/reviewSummaryMap";
 import { branchDisplayName, rangeToHours } from "../utils/rangeState";
+import { normalizeBranchId } from "../utils/branchIdentity";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import "../styles/platform-os.css";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
@@ -39,7 +40,7 @@ export default function BranchesView() {
 
         const menuStats = {};
         (branchCmp.data || []).forEach((row) => {
-          const b = (row.branch_id || "").toLowerCase();
+          const b = normalizeBranchId(row.branch_id);
           if (!b) return;
           menuStats[b] = {
             sessions: Number(row.sessions) || 0,

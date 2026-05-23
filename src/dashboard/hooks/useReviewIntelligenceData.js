@@ -6,11 +6,11 @@ import { applyPlatformFilters } from "../utils/platformFilterApply";
 import { rangeToSince, rangeToHours, defaultBranchId } from "../utils/rangeState";
 import {
   kpisFromReviewSummary,
-  staffFromReviewSummary,
   dailyTrendFromReviewSummary,
   branchComparisonFromReviewSummary,
   branchScansFromComparison,
 } from "../utils/reviewSummaryMap";
+import { fetchStaffMergedByBranch } from "../utils/reviewStaffByBranch";
 import {
   computeReviewKpis,
   buildBranchReviewComparison,
@@ -94,9 +94,13 @@ export function useReviewIntelligenceData(options = {}) {
         );
 
         const comparison = branchComparisonFromReviewSummary(allSummary || summaryResult);
+        const staffRows = await fetchStaffMergedByBranch(supabase, {
+          hours,
+          activeBranch,
+        });
         setSummary(summaryResult);
         setKpis(kpisFromReviewSummary(summaryResult));
-        setStaffMerged(mergeStaffStats([], staffFromReviewSummary(summaryResult)));
+        setStaffMerged(mergeStaffStats([], staffRows));
         setDailyTrend(dailyTrendFromReviewSummary(summaryResult));
         setBranchComparison(comparison);
         setBranchScans(branchScansFromComparison(comparison));
@@ -138,7 +142,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       setSummary(null);
       setKpis(computeReviewKpis(events));
-      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events, activeBranch)));
+      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(comparison);

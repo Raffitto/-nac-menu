@@ -9,14 +9,11 @@ import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 import { devLog } from "./devLog";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
 import { aggregateSessionQualityFromRows } from "./sessionQualityAggregate";
+import { normalizeBranchForRpc } from "../dashboard/utils/branchIdentity";
+
+export { normalizeBranchForRpc };
 
 const ROW_LIMIT = 12000;
-
-export function normalizeBranchForRpc(branch) {
-  if (branch == null || branch === "" || branch === "all" || branch === "All") return null;
-  const b = String(branch).trim().toLowerCase();
-  return b === "all" ? null : b;
-}
 
 export function hoursToFilterRange(hours) {
   const h = Number(hours) || 24;

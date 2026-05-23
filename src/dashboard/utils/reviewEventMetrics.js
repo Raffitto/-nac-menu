@@ -1,6 +1,7 @@
 /** KPIs and aggregates from review_events only — never menu_events. */
 
 import { filterAnalyticsReviewEvents } from "./isProductionStaff";
+import { normalizeBranchId, buildCanonicalBranchComparison } from "./branchIdentity";
 import {
   REVIEW_GENERATED_TYPES as GENERATED_TYPES,
   REVIEW_GOOGLE_TYPES as GOOGLE_TYPES,
@@ -54,23 +55,21 @@ export function computeReviewKpis(events = []) {
 
 /** Branch-level qr_scan totals for comparison table. */
 export function buildBranchReviewComparison(allEvents = []) {
-  const branches = ["khobar", "riyadh", "jeddah"];
   const byBranch = {};
 
-  branches.forEach((b) => {
-    byBranch[b] = {
-      branch_id: b,
-      qr_scans: 0,
-      reviews_generated: 0,
-      google_redirects: 0,
-      review_page_opens: 0,
-      unique_visitors: new Set(),
-    };
-  });
-
   filterAnalyticsReviewEvents(allEvents).forEach((e) => {
-    const b = (e.branch_id || "").toLowerCase();
-    if (!byBranch[b]) return;
+    const b = normalizeBranchId(e.branch_id);
+    if (!b) return;
+    if (!byBranch[b]) {
+      byBranch[b] = {
+        branch_id: b,
+        qr_scans: 0,
+        reviews_generated: 0,
+        google_redirects: 0,
+        review_page_opens: 0,
+        unique_visitors: new Set(),
+      };
+    }
     const row = byBranch[b];
 
     if (e.event_type === "qr_scan") row.qr_scans += 1;
@@ -82,17 +81,27 @@ export function buildBranchReviewComparison(allEvents = []) {
     if (sid) row.unique_visitors.add(sid);
   });
 
-  return branches.map((b) => {
-    const row = byBranch[b];
+  return buildCanonicalBranchComparison(
+    Object.values(byBranch).map((row) => ({
+      branch_id: row.branch_id,
+      qr_scans: row.qr_scans,
+      reviews_generated: row.reviews_generated,
+      google_redirects: row.google_redirects,
+      review_page_opens: row.review_page_opens,
+      unique_visitors: row.unique_visitors.size,
+    })),
+    {
+      qr_scans: 0,
+      reviews_generated: 0,
+      google_redirects: 0,
+      review_page_opens: 0,
+      unique_visitors: 0,
+    },
+  ).map((row) => {
     const qr = row.qr_scans;
     const google = row.google_redirects;
     return {
-      branch_id: b,
-      qr_scans: qr,
-      reviews_generated: row.reviews_generated,
-      google_redirects: google,
-      review_page_opens: row.review_page_opens,
-      unique_visitors: row.unique_visitors.size,
+      ...row,
       conversion_pct: qr > 0 ? Math.round((google / qr) * 100) : 0,
     };
   });

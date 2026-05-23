@@ -12,6 +12,7 @@ import {
   staffFromReviewSummary,
 } from "../utils/reviewSummaryMap";
 import { branchDisplayName } from "../utils/rangeState";
+import { normalizeBranchId } from "../utils/branchIdentity";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
 import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
 
@@ -257,7 +258,7 @@ export function buildBranchOperationalReportFromSummary(summary, branchId) {
 export function buildBranchOperationalReport(allEvents, branchId) {
   const id = (branchId || "").toLowerCase();
   const branchEvents = filterAnalyticsReviewEvents(allEvents).filter(
-    (e) => (e.branch_id || "").toLowerCase() === id,
+    (e) => normalizeBranchId(e.branch_id) === id,
   );
   const kpis = computeReviewKpis(branchEvents);
   const staff = mergeStaffStats([], aggregateStaffReviewStats(branchEvents, id));
