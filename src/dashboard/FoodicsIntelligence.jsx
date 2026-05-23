@@ -14,7 +14,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
+import { useMenuBiDashboardContext } from "./context/MenuBiDashboardContext";
+import { defaultBranchId } from "./utils/rangeState";
 import {
   getImportBatches,
   getBatchSalesItems,
@@ -69,6 +70,7 @@ export default function FoodicsIntelligence({
   onImported,
 }) {
   const platform = usePlatformFiltersOptional();
+  const { data: biData } = useMenuBiDashboardContext();
   const laneMeta = IMPORT_LANES[importType] || IMPORT_LANES[IMPORT_TYPE.PRODUCT_SALES];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -95,7 +97,7 @@ export default function FoodicsIntelligence({
   const [periodEnd, setPeriodEnd] = useState(todayISO());
   const [notes, setNotes] = useState("");
   const [laneBranch, setLaneBranch] = useState(
-    () => (laneBranchProp || platform?.branch || process.env.REACT_APP_NAC_BRANCH_ID || "khobar").toLowerCase(),
+    () => (laneBranchProp || platform?.branch || defaultBranchId()).toLowerCase(),
   );
   const [lastValidation, setLastValidation] = useState(null);
   const [lastSavedMeta, setLastSavedMeta] = useState(null);
@@ -117,25 +119,21 @@ export default function FoodicsIntelligence({
         return;
       }
 
-      const [batchList, items, addons, maps, latest, rpc] = await Promise.all([
+      const [batchList, items, addons, maps, latest] = await Promise.all([
         getImportBatches(20, importType),
         getMenuItemsForMatching(),
         getAddOnsForMatching(),
         getNameMappings(),
         getLatestBatch(importType, laneBranch),
-        importType === IMPORT_TYPE.PRODUCT_SALES
-          ? fetchBiDashboard(supabase, {
-              branch: platform?.branch || null,
-              hours: platform?.timeRangeHours ?? 24,
-            })
-          : Promise.resolve({ data: null }),
       ]);
 
       setBatches(batchList);
       setMenuItems(items);
       setAddOns(addons);
       setManualMaps(maps);
-      if (rpc?.data?.top_items) setAnalyticsItems(normalizeTopItems(rpc.data.top_items));
+      if (importType === IMPORT_TYPE.PRODUCT_SALES && biData?.top_items?.length) {
+        setAnalyticsItems(normalizeTopItems(biData.top_items));
+      }
 
       const activeId = latest?.id;
       if (activeId) {
@@ -166,11 +164,17 @@ export default function FoodicsIntelligence({
     } finally {
       setLoading(false);
     }
-  }, [configured, platform?.branch, platform?.timeRangeHours, importType, laneBranch]);
+  }, [configured, importType, laneBranch, biData?.top_items]);
 
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (importType === IMPORT_TYPE.PRODUCT_SALES && biData?.top_items?.length) {
+      setAnalyticsItems(normalizeTopItems(biData.top_items));
+    }
+  }, [importType, biData]);
 
   const conversionRows = useMemo(() => {
     if (!salesItems.length) return [];

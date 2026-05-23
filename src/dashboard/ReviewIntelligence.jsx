@@ -61,7 +61,7 @@ import PredictiveIntelligencePanel from "./components/PredictiveIntelligencePane
 import "./styles/review-intelligence.css";
 import "./styles/predictive-intelligence.css";
 
-const BRANCHES = ["khobar", "riyadh", "jeddah"];
+import { BRANCH_OPTIONS } from "../platform/engines/branchIdentityEngine";
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
 
@@ -324,9 +324,9 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             className="rev-ctrl-select"
             aria-label="Branch"
           >
-            {BRANCHES.map((b) => (
-              <option key={b} value={b}>
-                {branchDisplayName(b)}
+            {BRANCH_OPTIONS.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
               </option>
             ))}
           </select>

@@ -29,7 +29,7 @@ import {
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { getLatestBatchByType, getBatchSalesItems } from "../../lib/foodicsApi";
-import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
+import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import { isBiTopItemsEmpty, hasMenuBiActivity } from "../../lib/biDashboardNormalize";
@@ -41,7 +41,7 @@ import { waiterSalesValue } from "../utils/waiterSalesMetric";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { applyVisualExportConfig } from "../engines/visualExportApply";
 import { buildWaiterCoaching } from "../engines/waiterCoachingEngine";
-import { buildStaffOperationalIntelligence } from "../engines/staffOperationalEngine";
+import { buildFoodicsWaiterIntelligence } from "../engines/foodicsWaiterScoreEngine";
 import { calibrateWaiterProfiles, calibrateTeamContext } from "../engines/intelligenceCalibration";
 import { enrichWaitersForVisuals } from "../engines/waiterVisualEngine";
 import VisualExportConfig from "../components/VisualExportConfig";
@@ -126,7 +126,7 @@ export default function VisualIntelligenceEngine() {
     showFallbackBanner,
     menuDataEmpty,
     platformStatus,
-  } = useMenuBiDashboard();
+  } = useMenuBiDashboardContext();
   const [importsLoading, setImportsLoading] = useState(true);
   const [productItems, setProductItems] = useState([]);
   const [waiterItems, setWaiterItems] = useState([]);
@@ -238,7 +238,7 @@ export default function VisualIntelligenceEngine() {
     if (!hasWaiterBatch || !waiterItems?.length) {
       return { waiters: competitionStaff.waiters || [], team: {} };
     }
-    const ops = buildStaffOperationalIntelligence(waiterItems, competitionStaff, timeShift);
+    const ops = buildFoodicsWaiterIntelligence(waiterItems, competitionStaff, timeShift);
     const team = calibrateTeamContext(ops.team, ops.waiters);
     const waiters = enrichWaitersForVisuals(calibrateWaiterProfiles(ops.waiters, team));
     return { waiters, team };

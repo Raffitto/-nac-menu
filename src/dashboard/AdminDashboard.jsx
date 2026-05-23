@@ -34,8 +34,8 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
-import { isBiTotalsEmpty } from "../lib/biDashboardNormalize";
+import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
+import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import GlobalFilterBar from "./components/GlobalFilterBar";
@@ -50,7 +50,6 @@ import MenuEditorAuth from "./components/MenuEditorAuth";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
 import SessionQuality from "./components/SessionQuality";
-import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, formatHourLabel, exportCSV } from "./utils/formatters";
 import { generateInsights } from "./utils/insights";
@@ -115,19 +114,24 @@ export default function AdminDashboard(props) {
 function AdminDashboardContent({ onBack }) {
   const [adminView, setAdminView] = useState("overview");
   const [overviewTab, setOverviewTab] = useState("operations");
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-  const [opsNotes, setOpsNotes] = useState([]);
-  const [statusNote, setStatusNote] = useState("");
   const [session, setSession] = useState(null);
 
   const filters = usePlatformFilters();
-  const branch = filters.branch;
-  const timeRange = filters.timeRangeHours;
   const liveMode = filters.liveMode;
 
   const configured = isSupabaseConfigured();
+
+  const {
+    data,
+    loading,
+    error,
+    platformStatus,
+    reload: loadDashboard,
+  } = useMenuBiDashboard({
+    enabled: Boolean(session) && adminView === "overview",
+    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
+    source: "AdminDashboard",
+  });
 
   useEffect(() => {
     if (!supabase) return;
@@ -135,55 +139,6 @@ function AdminDashboardContent({ onBack }) {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
-
-  const loadDashboard = useCallback(async () => {
-    if (!supabase || !session) return;
-    setLoading(true);
-    setError("");
-    setOpsNotes([]);
-    setStatusNote("");
-    try {
-      const { data: rpc, partial, note, opsNotes: ops } = await fetchBiDashboard(supabase, {
-        branch,
-        hours: timeRange,
-      });
-
-      if (!rpc || typeof rpc !== "object" || isBiTotalsEmpty(rpc)) {
-        const { data: fallback, error: fallErr } = await supabase.rpc("get_dashboard_aggregates");
-        if (!fallErr && fallback && !isBiTotalsEmpty(fallback)) {
-          setData(fallback);
-        } else if (rpc && typeof rpc === "object") {
-          setData(rpc);
-        } else if (fallErr) {
-          throw fallErr;
-        } else {
-          setData(rpc || null);
-        }
-      } else {
-        setData(rpc);
-      }
-      setOpsNotes(ops || []);
-      setStatusNote(partial && note ? note : "");
-    } catch (e) {
-      setError(e?.message || "Failed to load dashboard data");
-      setData(null);
-      setOpsNotes([]);
-      setStatusNote("");
-    } finally {
-      setLoading(false);
-    }
-  }, [session, branch, timeRange]);
-
-  useEffect(() => {
-    if (session && adminView === "overview") loadDashboard();
-  }, [session, adminView, loadDashboard]);
-
-  // Live mode auto-refresh
-  useEffect(() => {
-    if (!liveMode || !session || adminView !== "overview") return;
-    const id = setInterval(loadDashboard, 30000);
-    return () => clearInterval(id);
-  }, [liveMode, session, adminView, loadDashboard]);
 
   // Derived metrics
   const totalEvents = Number(data?.total_events) || 0;
@@ -378,10 +333,7 @@ function AdminDashboardContent({ onBack }) {
               </motion.div>
             )}
 
-            <InternalOpsStatusPanel notes={opsNotes} />
-            {statusNote && (
-              <p className="nac-ops-user-note">{statusNote}</p>
-            )}
+            <PlatformStatusBanner platformStatus={platformStatus} />
 
             {/* LOADING SKELETONS */}
             {loading && !data && (

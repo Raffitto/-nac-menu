@@ -12,11 +12,11 @@ import {
   staffFromReviewSummary,
 } from "../utils/reviewSummaryMap";
 import { branchDisplayName } from "../utils/rangeState";
-import { normalizeBranchId } from "../utils/branchIdentity";
+import { normalizeBranchId, CANONICAL_BRANCH_IDS } from "../utils/branchIdentity";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
 import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
 
-export const OPERATIONAL_BRANCHES = ["khobar", "riyadh", "jeddah"];
+export const OPERATIONAL_BRANCHES = CANONICAL_BRANCH_IDS;
 
 const MIN_SAMPLE = 4;
 

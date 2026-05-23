@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import HubTabs from "../components/HubTabs";
 import GlobalFilterBar from "../components/GlobalFilterBar";
 import { INTELLIGENCE_TABS } from "../navigation";
+import { MenuBiDashboardProvider } from "../context/MenuBiDashboardContext";
 import MenuIntelligence from "../intelligence/MenuIntelligence";
 import PredictiveAnalytics from "../intelligence/PredictiveAnalytics";
 import OperationsInsights from "../intelligence/OperationsInsights";
@@ -32,6 +33,7 @@ export default function IntelligenceHub() {
 
   return (
     <GooglePlacesProvider>
+    <MenuBiDashboardProvider options={{ source: "IntelligenceHub" }}>
     <motion.div className="nac-intelligence-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
         <p className="nac-platform-kicker">NAC Intelligence</p>
@@ -78,6 +80,7 @@ export default function IntelligenceHub() {
       {tab === "operations" && <OperationsInsights />}
       {tab === "competitive" && <CompetitiveReputationWatch />}
     </motion.div>
+    </MenuBiDashboardProvider>
     </GooglePlacesProvider>
   );
 }

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { CATEGORY_NAMES } from "../utils/formatters";
-import { useMenuBiDashboard } from "../hooks/useMenuBiDashboard";
+import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import {
@@ -31,7 +31,7 @@ export default function MenuIntelligence() {
     showFallbackBanner,
     menuDataEmpty,
     platformStatus,
-  } = useMenuBiDashboard();
+  } = useMenuBiDashboardContext();
 
   const topItems = useMemo(
     () => buildMenuIntelligenceChartItems(data?.top_items || []),

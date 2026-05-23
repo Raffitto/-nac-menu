@@ -8,10 +8,9 @@ import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "../components/GoogleReputationBadge";
 import { usePredictiveIntelligence } from "../hooks/usePredictiveIntelligence";
+import { BRANCH_OPTIONS } from "../../platform/engines/branchIdentityEngine";
 import { OperationalScoreBadge } from "../components/PredictiveIntelligenceVisuals";
 import "../styles/predictive-intelligence.css";
-
-const BRANCHES = ["khobar", "riyadh", "jeddah"];
 
 export default function BranchBattle() {
   const filters = usePlatformFiltersOptional();
@@ -69,8 +68,8 @@ export default function BranchBattle() {
   if (loading) {
     return (
       <div className="nac-branch-battle-grid">
-        {BRANCHES.map((b) => (
-          <motion.div key={b} className="nac-bi-skeleton" style={{ height: 140, borderRadius: 18 }} />
+        {BRANCH_OPTIONS.map((b) => (
+          <motion.div key={b.id} className="nac-bi-skeleton" style={{ height: 140, borderRadius: 18 }} />
         ))}
       </div>
     );

@@ -19,9 +19,11 @@ import {
   Clock,
   Activity,
 } from "lucide-react";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
+import { useMenuBiDashboardContext } from "./context/MenuBiDashboardContext";
+import PlatformStatusBanner from "./components/PlatformStatusBanner";
+import { defaultBranchId } from "./utils/rangeState";
 import { fetchReviewIntelligence, fetchBranchComparison } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import {
@@ -72,8 +74,13 @@ const SUGGESTED_QUESTIONS = [
 
 export default function AIInsights() {
   const platform = usePlatformFiltersOptional();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    data,
+    loading: biLoading,
+    error: biError,
+    needsAuth,
+    platformStatus,
+  } = useMenuBiDashboardContext();
   const [error, setError] = useState("");
   const [timeRangeLocal, setTimeRangeLocal] = useState(24);
   const timeRange = platform?.timeRangeHours ?? timeRangeLocal;
@@ -89,57 +96,38 @@ export default function AIInsights() {
   const [foodics, setFoodics] = useState(null);
   const [reviewIntel, setReviewIntel] = useState(null);
   const [branchComparison, setBranchComparison] = useState([]);
-  const [partialNote, setPartialNote] = useState("");
   const streamRef = useRef(null);
 
   const configured = isSupabaseConfigured();
+  const loading = biLoading;
 
-  const loadData = useCallback(async () => {
-    if (!supabase || !configured) {
-      setLoading(false);
-      setError("Supabase not configured");
-      return;
-    }
-    setLoading(true);
-    setError("");
+  const loadSupplemental = useCallback(async () => {
+    if (!data || needsAuth) return;
     try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        setError("Please log in from the Dashboard tab first.");
-        setLoading(false);
-        return;
-      }
-      const { data: rpc, partial, note } = await fetchBiDashboard(supabase, {
-        branch: platform?.branch || null,
-        hours: timeRange,
-      });
-      if (!rpc || typeof rpc !== "object") throw new Error("Empty response");
-      setData(rpc);
-      setPartialNote(partial && note ? note : "");
-      const foodicsCtx = await getFoodicsIntelligenceContext(rpc);
+      const foodicsCtx = await getFoodicsIntelligenceContext(data);
       setFoodics(foodicsCtx);
-      try {
-        const [rev, branches] = await Promise.all([
-          fetchReviewIntelligence(process.env.REACT_APP_NAC_BRANCH_ID || "khobar", timeRange),
-          fetchBranchComparison(timeRange),
-        ]);
-        setReviewIntel(rev);
-        setBranchComparison(Array.isArray(branches) ? branches : []);
-      } catch {
-        setReviewIntel(null);
-        setBranchComparison([]);
-      }
-    } catch (e) {
-      setError(e?.message || "Failed to load data");
-      setPartialNote("");
-    } finally {
-      setLoading(false);
+      const [rev, branches] = await Promise.all([
+        fetchReviewIntelligence(defaultBranchId(), timeRange),
+        fetchBranchComparison(timeRange),
+      ]);
+      setReviewIntel(rev);
+      setBranchComparison(Array.isArray(branches) ? branches : []);
+    } catch {
+      setReviewIntel(null);
+      setBranchComparison([]);
     }
-  }, [timeRange, configured, platform?.branch]);
+  }, [data, needsAuth, timeRange]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (needsAuth) {
+      setError("Please log in from the Dashboard tab first.");
+      return;
+    }
+    if (biError) setError(biError);
+    else if (!configured) setError("Supabase not configured");
+    else setError("");
+    loadSupplemental();
+  }, [needsAuth, biError, configured, loadSupplemental]);
 
   const insightCards = useMemo(() => {
     const base = buildInsightCards(data);
@@ -270,11 +258,7 @@ export default function AIInsights() {
 
       <GoogleReputationStrip />
 
-      {partialNote && (
-        <p className="ai-partial-note" role="status">
-          <Info size={14} /> {partialNote}
-        </p>
-      )}
+      <PlatformStatusBanner platformStatus={platformStatus} />
 
       <p className="cr-teaser-link" style={{ marginTop: 0 }}>
         Open Intelligence → Competitive Watch for competitor reputation.

@@ -8,13 +8,11 @@ import {
 } from "../../lib/intelligenceQueryApi";
 import { branchComparisonFromReviewSummary } from "../utils/reviewSummaryMap";
 import { branchDisplayName, rangeToHours } from "../utils/rangeState";
-import { normalizeBranchId } from "../utils/branchIdentity";
+import { normalizeBranchId, BRANCH_OPTIONS } from "../../platform/engines/branchIdentityEngine";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import "../styles/platform-os.css";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "../components/GoogleReputationBadge";
-
-const BRANCHES = ["khobar", "riyadh", "jeddah"];
 
 export default function BranchesView() {
   const filters = usePlatformFiltersOptional();
@@ -78,13 +76,14 @@ export default function BranchesView() {
 
       {loading ? (
         <div className="nac-branch-battle-grid">
-          {BRANCHES.map((b) => (
-            <div key={b} className="nac-bi-skeleton" style={{ height: 160, borderRadius: 18 }} />
+          {BRANCH_OPTIONS.map((b) => (
+            <div key={b.id} className="nac-bi-skeleton" style={{ height: 160, borderRadius: 18 }} />
           ))}
         </div>
       ) : (
         <div className="nac-branch-battle-grid">
-          {BRANCHES.map((id, i) => {
+          {BRANCH_OPTIONS.map((b, i) => {
+            const id = b.id;
             const rev = rows.find((r) => r.branch_id === id) || { qr_scans: 0, conversion_pct: 0, google_redirects: 0 };
             const menu = menuByBranch[id] || { sessions: 0, events: 0 };
             const isLeader = id === leader && rev.qr_scans > 0;

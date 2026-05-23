@@ -2,11 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { TrendingUp, Users, AlertTriangle, ShoppingBag } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
 import { getImportBatches, getBatchSalesItems, getLatestBatchByType } from "../../lib/foodicsApi";
 import { normalizeTopItems } from "../utils/topItemsNormalize";
+import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { rangeToHours } from "../utils/rangeState";
 import { businessDayExportNote } from "../utils/businessDay";
 import { buildSalesCorrelation } from "../engines/salesCorrelationEngine";
 import { buildWaiterSalesIntelligence } from "../engines/waiterSalesEngine";
@@ -30,6 +29,7 @@ function KpiCard({ label, value, sub }) {
 
 export default function SalesImportsIntelligence() {
   const filters = usePlatformFiltersOptional();
+  const { data: biData } = useMenuBiDashboardContext();
   const [productItems, setProductItems] = useState([]);
   const [waiterItems, setWaiterItems] = useState([]);
   const [topItems, setTopItems] = useState([]);
@@ -45,14 +45,12 @@ export default function SalesImportsIntelligence() {
     }
     setLoading(true);
     try {
-      const pHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
       const branch = filters?.branch || null;
 
-      const [batchList, latestProduct, latestWaiter, rpc] = await Promise.all([
+      const [batchList, latestProduct, latestWaiter] = await Promise.all([
         getImportBatches(24),
         getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
         getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
-        fetchBiDashboard(supabase, { branch, hours: pHours }),
       ]);
 
       setBatches(batchList);
@@ -65,7 +63,7 @@ export default function SalesImportsIntelligence() {
       ]);
       setProductItems(prodSales);
       setWaiterItems(waiterSales);
-      setTopItems(normalizeTopItems(rpc?.data?.top_items || []));
+      setTopItems(normalizeTopItems(biData?.top_items || []));
     } catch {
       setProductItems([]);
       setWaiterItems([]);
@@ -73,7 +71,7 @@ export default function SalesImportsIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [filters?.selectedRange, filters?.timeRangeHours, filters?.branch]);
+  }, [filters?.branch, biData?.top_items]);
 
   useEffect(() => {
     load();

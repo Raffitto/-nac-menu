@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
@@ -21,10 +21,10 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { fetchBiDashboard } from "../lib/intelligenceQueryApi";
-import { logBiIntelligenceDiagnostics } from "../lib/intelligenceDiagnostics";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { getFoodicsIntelligenceContext } from "../lib/foodicsApi";
+import { useMenuBiDashboardContext } from "./context/MenuBiDashboardContext";
+import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import { buildRestaurantIntelligence } from "./engines/analyticsEngine";
 import { classifyMenuItems } from "./engines/menuEngineeringEngine";
 import { buildForecasts } from "./engines/forecastingEngine";
@@ -35,7 +35,7 @@ import {
   conversionChartSeries,
 } from "./engines/chartEngine";
 import { businessDayExportNote } from "./utils/businessDay";
-import { DEFAULT_RANGE, RANGE_OPTIONS, rangeToHours, rangeExportLabel } from "./utils/rangeState";
+import { DEFAULT_RANGE, RANGE_OPTIONS, rangeExportLabel } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import "./styles/restaurant-intelligence.css";
 import GoogleReputationStrip from "./components/GoogleReputationStrip";
@@ -49,9 +49,6 @@ const TOOLTIP = {
 };
 
 export default function RestaurantIntelligence() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [biData, setBiData] = useState(null);
   const [foodics, setFoodics] = useState(null);
   const [mgmtOpen, setMgmtOpen] = useState(true);
   const [deepOpen, setDeepOpen] = useState(false);
@@ -62,47 +59,26 @@ export default function RestaurantIntelligence() {
   const setSelectedRange = platform ? platform.setSelectedRange : setSelectedRangeLocal;
 
   const configured = isSupabaseConfigured();
-  const pHours = platform?.timeRangeHours ?? rangeToHours(selectedRange);
-
-  const load = useCallback(async () => {
-    if (!supabase || !configured) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const { data: session } = await supabase.auth.getSession();
-      if (!session?.session) {
-        setError("Please log in from the Dashboard tab first.");
-        setLoading(false);
-        return;
-      }
-      const result = await fetchBiDashboard(supabase, {
-        branch: platform?.branch || null,
-        hours: pHours,
-      });
-      setBiData(result.data);
-      logBiIntelligenceDiagnostics({
-        source: "RestaurantIntelligence",
-        biData: result.data,
-        hours: pHours,
-        selectedRange,
-        liveFallback: result.liveFallback,
-        partial: result.partial,
-      });
-      const fc = await getFoodicsIntelligenceContext(result.data);
-      setFoodics(fc);
-    } catch (e) {
-      setError(e?.message || "Failed to load intelligence");
-    } finally {
-      setLoading(false);
-    }
-  }, [configured, pHours, platform?.branch, selectedRange]);
+  const {
+    data: biData,
+    loading,
+    error: biError,
+    needsAuth,
+    platformStatus,
+  } = useMenuBiDashboardContext();
+  const error = needsAuth
+    ? "Please log in from the Dashboard tab first."
+    : biError;
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!biData) {
+      setFoodics(null);
+      return;
+    }
+    getFoodicsIntelligenceContext(biData)
+      .then(setFoodics)
+      .catch(() => setFoodics(null));
+  }, [biData]);
 
   const intelligence = useMemo(
     () => buildRestaurantIntelligence(biData, foodics),
@@ -187,6 +163,7 @@ export default function RestaurantIntelligence() {
   return (
     <motion.div className="ri-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <GoogleReputationStrip title="Google reputation · network" />
+      <PlatformStatusBanner platformStatus={platformStatus} />
       <header className="ri-header">
         <div>
           <Brain size={22} className="ri-icon" />

@@ -233,21 +233,21 @@ Legacy one-off scripts remain in `supabase/*.sql` for reference; new work uses m
 
 ## Incremental unification roadmap
 
-Completed in platform phase 1:
+Completed:
 
 - [x] `src/platform` engines + contracts
-- [x] Unified review funnel math via `funnelAnalyticsEngine`
-- [x] `platformStatusEngine` + `PlatformStatusBanner`
-- [x] Shared `isTimeoutError` in `supabaseResilience`
-- [x] Range contract on BI/review hooks
+- [x] `useMenuBiDashboard` + `MenuBiDashboardProvider` (Intelligence Hub single fetch)
+- [x] AdminDashboard, AIInsights, RestaurantIntelligence, Menu/Visual OS, Operations, Sales Imports, Foodics product lane → shared BI hook/context
+- [x] `menuAggregationEngine` — item/category/add-on merge in one path
+- [x] `biPayloadPatches` — shared session-quality patch
+- [x] `BRANCH_OPTIONS` / `CANONICAL_BRANCH_IDS` in branch pickers
+- [x] `foodicsWaiterScoreEngine` (renamed from ambiguous staff operational score)
 
 Next (non-breaking):
 
-- [ ] Route `AdminDashboard` / `AIInsights` through `useMenuBiDashboard`
-- [ ] Consolidate item aggregation (`menuAggregationEngine`)
-- [ ] Single session-quality patch in `intelligenceQueryApi`
-- [ ] Replace local `BRANCHES` arrays with `BRANCH_OPTIONS`
-- [ ] Rename Foodics waiter score engine for clarity
+- [ ] AnalyticsDashboard session path (uses `fetchSessionAnalytics`, not duplicate BI)
+- [ ] PredictiveAnalytics tab explicit status contract
+- [ ] Export builders accept `useMenuBiDashboard` payload prop
 
 ---
 
