@@ -50,6 +50,7 @@ import MenuEditorAuth from "./components/MenuEditorAuth";
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
 import SessionQuality from "./components/SessionQuality";
+import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, formatHourLabel, exportCSV } from "./utils/formatters";
 import { generateInsights } from "./utils/insights";
@@ -117,6 +118,8 @@ function AdminDashboardContent({ onBack }) {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [opsNotes, setOpsNotes] = useState([]);
+  const [statusNote, setStatusNote] = useState("");
   const [session, setSession] = useState(null);
 
   const filters = usePlatformFilters();
@@ -137,8 +140,10 @@ function AdminDashboardContent({ onBack }) {
     if (!supabase || !session) return;
     setLoading(true);
     setError("");
+    setOpsNotes([]);
+    setStatusNote("");
     try {
-      const { data: rpc, partial, note } = await fetchBiDashboard(supabase, {
+      const { data: rpc, partial, note, opsNotes: ops } = await fetchBiDashboard(supabase, {
         branch,
         hours: timeRange,
       });
@@ -147,10 +152,8 @@ function AdminDashboardContent({ onBack }) {
         const { data: fallback, error: fallErr } = await supabase.rpc("get_dashboard_aggregates");
         if (!fallErr && fallback && !isBiTotalsEmpty(fallback)) {
           setData(fallback);
-          if (partial && note) setError(note);
         } else if (rpc && typeof rpc === "object") {
           setData(rpc);
-          if (partial && note) setError(note);
         } else if (fallErr) {
           throw fallErr;
         } else {
@@ -158,13 +161,14 @@ function AdminDashboardContent({ onBack }) {
         }
       } else {
         setData(rpc);
-        if (partial && note) {
-          setError(note);
-        }
       }
+      setOpsNotes(ops || []);
+      setStatusNote(partial && note ? note : "");
     } catch (e) {
       setError(e?.message || "Failed to load dashboard data");
       setData(null);
+      setOpsNotes([]);
+      setStatusNote("");
     } finally {
       setLoading(false);
     }
@@ -374,6 +378,11 @@ function AdminDashboardContent({ onBack }) {
               </motion.div>
             )}
 
+            <InternalOpsStatusPanel notes={opsNotes} />
+            {statusNote && (
+              <p className="nac-ops-user-note">{statusNote}</p>
+            )}
+
             {/* LOADING SKELETONS */}
             {loading && !data && (
               <section className="stats-grid" style={{ marginTop: 42 }}>
@@ -461,12 +470,12 @@ function AdminDashboardContent({ onBack }) {
                       </motion.div>
                       <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
                         <p className="bi-card-label"><Activity size={13} /> Bounce</p>
-                        <p className="bi-card-value">{bounceSessions > 0 ? `${bouncePct}%` : "—"}</p>
+                        <p className="bi-card-value">{totalSessions > 0 ? `${bouncePct}%` : "—"}</p>
                         <p className="bi-card-sub">{bounceSessions.toLocaleString()} sessions</p>
                       </motion.div>
                       <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
                         <p className="bi-card-label"><Sparkles size={13} /> Deep</p>
-                        <p className="bi-card-value">{deepSessions > 0 ? `${deepPct}%` : "—"}</p>
+                        <p className="bi-card-value">{totalSessions > 0 ? `${deepPct}%` : "—"}</p>
                         <p className="bi-card-sub">{deepSessions.toLocaleString()} sessions</p>
                       </motion.div>
                     </div>

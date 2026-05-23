@@ -22,8 +22,11 @@ export default function SessionQuality({ quality, totalSessions }) {
         const pct = total > 0 ? (count / total) * 100 : 0;
         return { ...tier, count, pct };
       }),
-    [data, total]
+    [data, total],
   );
+
+  const hasTierData = segments.some((s) => s.count > 0);
+  const baseline = totalSessions > 0 && !hasTierData;
 
   return (
     <motion.div
@@ -57,8 +60,23 @@ export default function SessionQuality({ quality, totalSessions }) {
             />
           ) : null
         )}
-        {total === 0 && (
+        {total === 0 && !baseline && (
           <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,0.06)", borderRadius: 18 }} />
+        )}
+        {baseline && (
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 11,
+              color: "rgba(249,249,247,0.45)",
+            }}
+          >
+            Computing session profiles…
+          </div>
         )}
       </div>
 

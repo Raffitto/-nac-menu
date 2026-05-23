@@ -37,6 +37,7 @@ import { rangeExportLabel, rangeToHours } from "./utils/rangeState";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
 import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
+import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import "./styles/analytics-dashboard.css";
 
 const CATEGORY_NAMES = {
@@ -111,6 +112,7 @@ export default function AnalyticsDashboard() {
   const [loadingMessage, setLoadingMessage] = useState("Aggregating analytics…");
   const [error, setError] = useState("");
   const [partialNote, setPartialNote] = useState("");
+  const [opsNotes, setOpsNotes] = useState([]);
   const [aggregates, setAggregates] = useState(null);
   const [feed, setFeed] = useState([]);
   const [topAddons, setTopAddons] = useState([]);
@@ -140,6 +142,7 @@ export default function AnalyticsDashboard() {
     setLoadingMessage("Aggregating analytics…");
     setError("");
     setPartialNote("");
+    setOpsNotes([]);
 
     try {
       const result = await fetchSessionAnalytics(supabase, filters);
@@ -148,6 +151,7 @@ export default function AnalyticsDashboard() {
       setFeed(result.feed || []);
       setByRole(result.byRole || {});
       setByBranch(result.byBranch || {});
+      setOpsNotes(result.opsNotes || []);
       if (result.partial && result.note) {
         setPartialNote(result.note);
       }
@@ -443,14 +447,9 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
 
+        <InternalOpsStatusPanel notes={opsNotes} />
         {partialNote && (
-          <motion.div
-            className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100/90"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-          >
-            {partialNote}
-          </motion.div>
+          <p className="nac-ops-user-note mb-6">{partialNote}</p>
         )}
 
         {error && (
@@ -655,7 +654,7 @@ export default function AnalyticsDashboard() {
                   Bounce sessions
                 </div>
                 <div className="nac-an__stat-value text-3xl">
-                  {bounceSessions > 0 ? `${bouncePercent}%` : "—"}
+                  {totalSessions > 0 ? `${bouncePercent}%` : "—"}
                 </div>
                 
               </motion.div>
@@ -671,7 +670,7 @@ export default function AnalyticsDashboard() {
                   Deep engagement
                 </div>
                 <div className="nac-an__stat-value text-3xl">
-                  {deepSessions > 0 ? `${deepPercent}%` : "—"}
+                  {totalSessions > 0 ? `${deepPercent}%` : "—"}
                 </div>
                 
               </motion.div>

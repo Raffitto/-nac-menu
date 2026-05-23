@@ -3,6 +3,7 @@
  */
 
 import { parseHourBucket } from "../dashboard/utils/hourlyBucketLabels";
+import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 
 export function isBiTotalsEmpty(payload) {
   if (!payload || typeof payload !== "object") return true;
@@ -68,6 +69,11 @@ function mergeCategoriesById(items) {
     map.set(key, prev);
   }
   return [...map.values()].sort((a, b) => b.opens - a.opens || b.impressions - a.impressions);
+}
+
+/** Rollup / partial RPC missing session-quality tiers despite sessions. */
+export function biSessionQualityNeedsRefresh(payload) {
+  return sessionQualityIsEmpty(payload);
 }
 
 /** Rollup totals present but item rows missing, flat, or all-zero. */

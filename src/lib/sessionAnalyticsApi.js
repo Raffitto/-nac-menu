@@ -3,6 +3,9 @@ import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
 import { normalizeBranchForRpc } from "./menuEventsBiFallback";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/sessionAnalyticsMap";
+import { fetchBiSessionQualityFromMenuEvents } from "./menuEventsBiFallback";
+import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
+import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 
 function isTimeoutError(error) {
   const msg = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
@@ -39,10 +42,32 @@ function normalizeFeedRow(row) {
   };
 }
 
-function mergePayload(summary, feedRows) {
-  const data = summary || {};
+async function patchSessionQualityAggregates(supabase, params, aggregates) {
+  if (!aggregates || !sessionQualityIsEmpty(aggregates)) return aggregates;
+  const patch = await fetchBiSessionQualityFromMenuEvents(supabase, {
+    branch: params.p_branch,
+    hours: params.p_hours,
+  });
+  if (!patch || sessionQualityIsEmpty(patch)) return aggregates;
   return {
-    aggregates: mapBiToSessionAggregates(data),
+    ...aggregates,
+    session_quality: patch.session_quality,
+    bounce_sessions: patch.bounce_sessions,
+    deep_sessions: patch.deep_sessions,
+    avg_time_spent: patch.avg_time_spent,
+    avg_items_per_session: patch.avg_items_per_session,
+    total_sessions: Math.max(aggregates.total_sessions || 0, patch.total_sessions || 0),
+  };
+}
+
+async function mergePayload(supabase, params, summary, feedRows) {
+  const data = summary || {};
+  let aggregates = mapBiToSessionAggregates(data);
+  if (supabase && params) {
+    aggregates = await patchSessionQualityAggregates(supabase, params, aggregates);
+  }
+  return {
+    aggregates,
     topAddons: mapBiTopAddons(data),
     feed: (feedRows || data.recent_feed || []).map(normalizeFeedRow),
     byRole: data.by_role || {},
@@ -89,7 +114,8 @@ export async function fetchSessionAnalytics(supabase, filters) {
     if (rollupRes.error) throw rollupRes.error;
 
     const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
-    let result = mergePayload(summary, feed);
+    let result = await mergePayload(supabase, params, summary, feed);
+    let opsNotes = [];
     if (!result.aggregates?.total_events) {
       const bi = await fetchBiDashboard(supabase, {
         branch: params.p_branch,
@@ -97,20 +123,33 @@ export async function fetchSessionAnalytics(supabase, filters) {
       });
       if (bi?.data && !isBiTotalsEmpty(bi.data)) {
         result = {
-          ...mergePayload(bi.data, feed),
+          ...(await mergePayload(supabase, params, bi.data, feed)),
           partial: true,
-          note:
-            (result.note ? `${result.note} ` : "") +
-            (bi.note || "Session stats from menu_events fallback."),
+          note: bi.note || null,
+          opsNotes: bi.opsNotes || [],
         };
       } else if (params.p_hours >= MONTH_HOURS) {
-        result.note =
-          (result.note ? `${result.note} ` : "") +
-          "Daily rollup may be empty — run refresh_menu_events_daily_rollup(45) in Supabase.";
+        opsNotes = appendOpsNote(
+          opsNotes,
+          "Daily rollup may be empty — run refresh_menu_events_daily_rollup(45) in Supabase.",
+        );
         result.partial = true;
       }
+    } else if (sessionQualityIsEmpty(result.aggregates)) {
+      opsNotes = appendOpsNote(
+        opsNotes,
+        "Session quality computed from live menu_events.",
+      );
     }
-    return result;
+    const { userNote, opsNotes: noteOps } = partitionBiNotes(result.note, {
+      partial: result.partial,
+      useRollup: true,
+    });
+    return {
+      ...result,
+      note: userNote,
+      opsNotes: [...noteOps, ...opsNotes, ...(result.opsNotes || [])],
+    };
   }
 
   const [summaryRes, feed] = await Promise.all([
@@ -127,9 +166,10 @@ export async function fetchSessionAnalytics(supabase, filters) {
   if (summaryRes.error) throw summaryRes.error;
 
   const summary = Array.isArray(summaryRes.data) ? summaryRes.data[0] : summaryRes.data;
-  const result = mergePayload(summary, feed);
+  const result = await mergePayload(supabase, params, summary, feed);
   delete summary?.recent_feed;
-  return result;
+  const { userNote, opsNotes } = partitionBiNotes(result.note, { partial: result.partial });
+  return { ...result, note: userNote, opsNotes };
 }
 
 async function fetchSessionAnalyticsFallback(supabase, params) {
@@ -149,25 +189,37 @@ async function fetchSessionAnalyticsFallback(supabase, params) {
 
   if (!rollupRes.error && rollupRes.data) {
     const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
+    const merged = await mergePayload(supabase, { ...params, p_hours: fallbackHours }, summary, feed);
+    const { userNote, opsNotes } = partitionBiNotes(
+      "Showing last 7 days (aggregated). Narrow branch or run session_analytics_rollup.sql.",
+      { partial: true, useRollup: true },
+    );
     return {
-      ...mergePayload(summary, feed),
+      ...merged,
       partial: true,
-      note: "Showing last 7 days (aggregated). Narrow branch or run session_analytics_rollup.sql.",
+      note: userNote,
+      opsNotes,
     };
   }
 
-  const { data: biPayload } = await fetchBiDashboard(supabase, {
+  const biRes = await fetchBiDashboard(supabase, {
     branch: params.p_branch,
     hours: fallbackHours,
   });
-  if (!biPayload) throw new Error("BI fallback empty");
+  if (!biRes?.data) throw new Error("BI fallback empty");
+  const merged = await mergePayload(supabase, { ...params, p_hours: fallbackHours }, biRes.data, []);
+  const { userNote, opsNotes } = partitionBiNotes(
+    "Showing last 7 days (fallback). Run session_analytics_rollup.sql in Supabase.",
+    { partial: true },
+  );
   return {
-    aggregates: mapBiToSessionAggregates(biPayload),
-    topAddons: mapBiTopAddons(biPayload),
+    aggregates: merged.aggregates,
+    topAddons: merged.topAddons,
     feed: [],
     byRole: {},
     byBranch: {},
     partial: true,
-    note: "Showing last 7 days (fallback). Run session_analytics_rollup.sql in Supabase.",
+    note: userNote,
+    opsNotes,
   };
 }

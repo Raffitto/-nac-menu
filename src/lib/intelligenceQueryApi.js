@@ -3,12 +3,16 @@ import {
   normalizeBiDashboardPayload,
   isBiTotalsEmpty,
   biTopItemsNeedsRefresh,
+  biSessionQualityNeedsRefresh,
 } from "./biDashboardNormalize";
 import {
   fetchBiFromMenuEvents,
   fetchBiItemDetailFromMenuEvents,
+  fetchBiSessionQualityFromMenuEvents,
   normalizeBranchForRpc,
 } from "./menuEventsBiFallback";
+import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
+import { sessionQualityTierSum } from "./sessionQualityAggregate";
 import { devLog } from "./devLog";
 
 export function isTimeoutError(error) {
@@ -45,6 +49,10 @@ function mergeBiPayload(base, patch) {
     by_language: { ...(base?.by_language || {}), ...(patch.by_language || {}) },
     by_event_type: { ...(base?.by_event_type || {}), ...(patch.by_event_type || {}) },
     funnel: { ...(base?.funnel || {}), ...(patch.funnel || {}) },
+    session_quality: {
+      ...(base?.session_quality || {}),
+      ...(patch.session_quality || {}),
+    },
   };
   return normalizeBiDashboardPayload(merged);
 }
@@ -85,6 +93,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
 
   let partial = Boolean(payload?.partial_mode);
   let note = payload?.aggregation_note || null;
+  let opsNotes = [];
   let usedFallback = false;
 
   if (useRollup && (error || primaryRpcEmpty)) {
@@ -156,9 +165,26 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
       payload = mergeBiPayload(payload, detail);
       partial = true;
       usedFallback = true;
-      note =
-        (note ? `${note} ` : "") +
-        "Item and category charts filled from menu_events (rollup lacks detail or flat counts).";
+      opsNotes = appendOpsNote(
+        opsNotes,
+        "Item and category charts filled from live menu_events (rollup lacks item detail).",
+      );
+    }
+  }
+
+  if (payload && biSessionQualityNeedsRefresh(payload)) {
+    const sessionPatch = await fetchBiSessionQualityFromMenuEvents(supabase, {
+      branch: pBranch,
+      hours: pHours,
+    });
+    if (sessionPatch && sessionQualityTierSum(sessionPatch.session_quality) > 0) {
+      payload = mergeBiPayload(payload, sessionPatch);
+      partial = true;
+      usedFallback = true;
+      opsNotes = appendOpsNote(
+        opsNotes,
+        "Session quality tiers computed from live menu_events (rollup lacks session metrics).",
+      );
     }
   }
 
@@ -179,17 +205,22 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     };
   }
 
+  const { userNote, opsNotes: noteOps } = partitionBiNotes(note, { partial, useRollup });
+  const mergedOps = [...noteOps, ...opsNotes];
+
   devLog("[fetchBiDashboard]", {
     phase: "done",
     events: normalized.total_events,
     sessions: normalized.total_sessions,
     liveFallback,
+    sessionQuality: normalized.session_quality,
   });
 
   return {
     data: normalized,
     partial,
-    note,
+    note: userNote,
+    opsNotes: mergedOps,
     liveFallback,
     menuDataEmpty: false,
   };

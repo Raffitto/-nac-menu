@@ -8,6 +8,7 @@ import { hourInRiyadh } from "../dashboard/utils/hourlyBucketLabels";
 import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 import { devLog } from "./devLog";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
+import { aggregateSessionQualityFromRows } from "./sessionQualityAggregate";
 
 const ROW_LIMIT = 12000;
 
@@ -149,9 +150,11 @@ function aggregateRows(rows, referenceDate = new Date()) {
     if (row.event_type === "qr_session_start") today_qr_sessions += 1;
   }
 
+  const sessionMetrics = aggregateSessionQualityFromRows(rows);
+
   return {
     total_events: rows.length,
-    total_sessions: sessions.size,
+    total_sessions: Math.max(sessions.size, sessionMetrics.total_sessions),
     by_language: byLanguage,
     by_event_type: byEventType,
     top_items,
@@ -161,12 +164,12 @@ function aggregateRows(rows, referenceDate = new Date()) {
     by_hour,
     dead_zones: [],
     lost_searches: [],
-    session_quality: {},
+    session_quality: sessionMetrics.session_quality,
     lang_behavior: {},
-    bounce_sessions: 0,
-    deep_sessions: 0,
-    avg_time_spent: 0,
-    avg_items_per_session: 0,
+    bounce_sessions: sessionMetrics.bounce_sessions,
+    deep_sessions: sessionMetrics.deep_sessions,
+    avg_time_spent: sessionMetrics.avg_time_spent,
+    avg_items_per_session: sessionMetrics.avg_items_per_session,
     returning_sessions: 0,
     today_unique_sessions: today_unique_sessions.size,
     today_qr_sessions,
@@ -276,5 +279,19 @@ export async function fetchBiItemDetailFromMenuEvents(supabase, { branch = null,
     top_addon_pairs: full.top_addon_pairs,
     top_searches: full.top_searches,
     dead_zones: full.dead_zones,
+  };
+}
+
+/** Session-quality metrics only (rollup / RPC gaps). */
+export async function fetchBiSessionQualityFromMenuEvents(supabase, { branch = null, hours = 24 } = {}) {
+  const full = await fetchBiFromMenuEvents(supabase, { branch, hours });
+  if (!full) return null;
+  return {
+    session_quality: full.session_quality,
+    bounce_sessions: full.bounce_sessions,
+    deep_sessions: full.deep_sessions,
+    avg_time_spent: full.avg_time_spent,
+    avg_items_per_session: full.avg_items_per_session,
+    total_sessions: full.total_sessions,
   };
 }

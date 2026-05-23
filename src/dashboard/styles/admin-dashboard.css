@@ -1310,6 +1310,58 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.nac-ops-status {
+  margin-top: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(8, 10, 12, 0.55);
+  overflow: hidden;
+}
+
+.nac-ops-status-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  color: rgba(249, 249, 247, 0.55);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.nac-ops-status-toggle:hover {
+  color: rgba(249, 249, 247, 0.78);
+}
+
+.nac-ops-status-chevron--open {
+  transform: rotate(180deg);
+  margin-left: auto;
+}
+
+.nac-ops-status-body {
+  padding: 0 14px 12px;
+  overflow: hidden;
+}
+
+.nac-ops-status-body ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: rgba(249, 249, 247, 0.5);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.nac-ops-user-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: rgba(215, 188, 138, 0.85);
+  line-height: 1.5;
+}
+
 /* ═══════════════ Dead Zones - Refined ═══════════════ */
 .nac-bi-deadzone-item {
   gap: 14px;
