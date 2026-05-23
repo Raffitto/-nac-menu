@@ -307,7 +307,7 @@ Recommend: gate review portal logs behind `NODE_ENV === 'development'` in a foll
 - [ ] Run RPC `REVOKE FROM PUBLIC` batch (§8).
 - [ ] Confirm anon cannot `SELECT` from `menu_events` / `review_events` (SQL editor test as anon).
 - [ ] Restrict Google Maps API key.
-- [ ] Move `refresh_menu_events_daily_rollup` to scheduled service_role job.
+- [ ] Apply [rollup_refresh_cron.sql](supabase/rollup_refresh_cron.sql) — see [docs/ROLLUP_REFRESH.md](docs/ROLLUP_REFRESH.md).
 - [ ] Decide policy for `/leaderboard` (public RPC aggregates vs staff-only).
 
 ---

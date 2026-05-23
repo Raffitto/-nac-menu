@@ -172,7 +172,7 @@ revoke all on function public.refresh_menu_events_daily_rollup(int) from authent
 grant execute on function public.refresh_menu_events_daily_rollup(int) to service_role;
 
 comment on function public.refresh_menu_events_daily_rollup(int) is
-  'Rebuild menu_events_daily_rollup. Execute with service_role only (scheduled job).';
+  'Rebuild menu_events_daily_rollup. Execute with service_role only. Schedule via rollup_refresh_cron.sql (see docs/ROLLUP_REFRESH.md).';
 
 -- =============================================================================
 -- Post-apply verification checklist (run in SQL Editor)
