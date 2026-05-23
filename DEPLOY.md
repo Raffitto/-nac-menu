@@ -64,3 +64,5 @@ Console must show:
 | nac-jeddah.netlify.app | Staff params | Redirect → nacmenu review |
 
 Run `supabase/review_events_rls_fix.sql` once in Supabase.
+
+For ongoing SQL changes, use the Supabase CLI — see [docs/SUPABASE_DEPLOY.md](docs/SUPABASE_DEPLOY.md).
