@@ -91,8 +91,13 @@ The repo does not ship this function; pg_cron is the default path.
 - [ ] Dashboard **7D** / **This Month** show non-zero sessions when `menu_events` has data
 - [ ] Staff **cannot** run `select refresh_menu_events_daily_rollup(1)` while signed in (permission denied)
 
+## Guest menu inserts (not rollup)
+
+If Restaurant Intelligence shows **0** after security hardening, run [menu_events_insert_restore.sql](../supabase/menu_events_insert_restore.sql) and deploy the frontend fix (`returning: 'minimal'` + anon tracking client). See [menu_events_insert_restore.sql](../supabase/menu_events_insert_restore.sql).
+
 ## Related files
 
 - [session_analytics_rollup.sql](../supabase/session_analytics_rollup.sql) — table + function definition
 - [security_hardening_2026_05_23.sql](../supabase/security_hardening_2026_05_23.sql) — service_role-only execute
+- [menu_events_insert_restore.sql](../supabase/menu_events_insert_restore.sql) — restore anon INSERT after hardening
 - [SECURITY_AUDIT.md](../SECURITY_AUDIT.md) — full security context

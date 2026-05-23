@@ -1,6 +1,10 @@
-import { supabase } from "./supabase";
 import { markMenuActivity } from "./sessionAttribution";
 import { getBusinessDayRange } from "../dashboard/utils/businessDay";
+import { supabaseMenuTrack, isMenuTrackConfigured } from "./supabaseMenuTrack";
+import {
+  recordMenuTrackFailure,
+  recordMenuTrackSuccess,
+} from "./menuTrackingDiagnostics";
 
 const SESSION_KEY = "nac_menu_session_id";
 const SESSION_START_KEY = "nac_menu_session_start";
@@ -108,7 +112,7 @@ export function makeMenuItemId(categoryId, sectionTitleEn, itemNameEn) {
  * Fire-and-forget Supabase insert. Never throws; failures stay off the critical path.
  */
 export function trackEvent(payload) {
-  if (!supabase || !payload?.event_type) return;
+  if (!isMenuTrackConfigured() || !payload?.event_type) return;
   if (isReviewQrVisit()) return;
 
   markMenuActivity();
@@ -148,33 +152,31 @@ export function trackEvent(payload) {
     },
   };
 
-  void supabase
+  void supabaseMenuTrack
     .from("menu_events")
-    .insert(row)
+    .insert(row, { returning: "minimal" })
     .then(({ error }) => {
-      if (process.env.NODE_ENV !== "development") return;
       if (error) {
-        console.warn("[menu_events] insert FAILED", {
-          event_type: row.event_type,
-          branch_id: row.branch_id,
-          message: error.message,
-          code: error.code,
-        });
+        recordMenuTrackFailure(row.event_type, error);
         return;
       }
-      console.info("[menu_events] insert OK", {
-        event_type: row.event_type,
-        branch_id: row.branch_id,
-        session_id: row.session_id?.slice(0, 8),
-        business_day: getBusinessDayRange(),
-      });
+      recordMenuTrackSuccess(row.event_type);
+      if (process.env.NODE_ENV === "development") {
+        // eslint-disable-next-line no-console
+        console.info("[menu_events] insert OK", {
+          event_type: row.event_type,
+          branch_id: row.branch_id,
+          session_id: row.session_id?.slice(0, 8),
+          business_day: getBusinessDayRange(),
+        });
+      }
     })
     .catch((err) => {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[menu_events] insert ERROR", err?.message || err);
-      }
+      recordMenuTrackFailure(row.event_type, err);
     });
 }
+
+export { getMenuTrackingDiagnostics, clearMenuTrackingDiagnostics } from "./menuTrackingDiagnostics";
 
 /** Top-level menu tab (Dinner | Desserts | Drinks). */
 export function trackMenuTabOpen({ language, hostCategoryId, tabId, sourceCategoryId, menuMode }) {
