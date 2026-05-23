@@ -90,7 +90,8 @@ export function detectAnomalies(input = {}) {
     });
   }
 
-  if (input.buildId && lastTrack && events === 0) {
+  const lastClientTrack = input.freshness?.last_client_track;
+  if (input.buildId && lastClientTrack && events === 0) {
     anomalies.push({
       type: ANOMALY.POST_DEPLOY_GAP,
       severity: "low",

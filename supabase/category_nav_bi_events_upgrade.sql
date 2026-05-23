@@ -1,6 +1,6 @@
 -- Category navigation BI — count menu_tab_open + section_open alongside category_open.
--- Apply after analytics_visibility_business_day_upgrade.sql (get_bi_dashboard).
--- Run: supabase db push  OR  paste in Supabase SQL Editor.
+-- Applied via: supabase/migrations/20260523143000_category_nav_bi_events_upgrade.sql
+-- Run: supabase db push
 
 create or replace function public.nac_is_category_nav_event(et text)
 returns boolean
