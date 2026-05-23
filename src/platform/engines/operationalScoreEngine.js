@@ -1,6 +1,6 @@
 /**
  * Branch review operational scoring (QR / Google / staff participation).
- * Distinct from Foodics waiter sales scoring in staffOperationalEngine.
+ * Distinct from Foodics waiter sales scoring in foodicsWaiterScoreEngine.
  */
 
 export {

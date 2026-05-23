@@ -3,10 +3,10 @@ import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
 import { normalizeBranchForRpc } from "./menuEventsBiFallback";
 import { mapBiToSessionAggregates, mapBiTopAddons } from "../dashboard/utils/sessionAnalyticsMap";
-import { fetchBiSessionQualityFromMenuEvents } from "./menuEventsBiFallback";
-import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
+import { applySessionQualityToAggregates } from "./biPayloadPatches";
+import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 
 function rpcParamsFromFilters(filters) {
   const selectedRange = filters?.selectedRange || "today";
@@ -33,29 +33,11 @@ function normalizeFeedRow(row) {
   };
 }
 
-async function patchSessionQualityAggregates(supabase, params, aggregates) {
-  if (!aggregates || !sessionQualityIsEmpty(aggregates)) return aggregates;
-  const patch = await fetchBiSessionQualityFromMenuEvents(supabase, {
-    branch: params.p_branch,
-    hours: params.p_hours,
-  });
-  if (!patch || sessionQualityIsEmpty(patch)) return aggregates;
-  return {
-    ...aggregates,
-    session_quality: patch.session_quality,
-    bounce_sessions: patch.bounce_sessions,
-    deep_sessions: patch.deep_sessions,
-    avg_time_spent: patch.avg_time_spent,
-    avg_items_per_session: patch.avg_items_per_session,
-    total_sessions: Math.max(aggregates.total_sessions || 0, patch.total_sessions || 0),
-  };
-}
-
 async function mergePayload(supabase, params, summary, feedRows) {
   const data = summary || {};
   let aggregates = mapBiToSessionAggregates(data);
   if (supabase && params) {
-    aggregates = await patchSessionQualityAggregates(supabase, params, aggregates);
+    aggregates = await applySessionQualityToAggregates(supabase, params, aggregates);
   }
   return {
     aggregates,

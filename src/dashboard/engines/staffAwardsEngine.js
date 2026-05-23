@@ -1,4 +1,4 @@
-import { computeOperationalScore } from "./staffOperationalEngine";
+import { computeFoodicsWaiterScore } from "./foodicsWaiterScoreEngine";
 import { isLowValueBeverageDominant, isPremiumBeverageMeaningful } from "./intelligenceCalibration";
 
 function topBy(list, key, filter = () => true) {
@@ -20,7 +20,7 @@ export function buildStaffAwards(waiters = [], team = {}) {
   const list = waiters.filter((w) => w.role === "waiter" || !w.role);
   const withScores = list.map((w) => ({
     ...w,
-    operationalScore: computeOperationalScore(w, team),
+    operationalScore: computeFoodicsWaiterScore(w, team),
   }));
 
   const awards = [

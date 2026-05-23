@@ -4,6 +4,11 @@
 
 import { parseHourBucket } from "../dashboard/utils/hourlyBucketLabels";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
+import {
+  mergeTopItemsByName,
+  mergeCategoriesById,
+  normalizeAddonPairs,
+} from "../platform/engines/menuAggregationEngine";
 
 export function isBiTotalsEmpty(payload) {
   if (!payload || typeof payload !== "object") return true;
@@ -23,53 +28,6 @@ const EMPTY_FUNNEL = {
   time_spent: 0,
   exits: 0,
 };
-
-function mergeTopItemsByName(items) {
-  const map = new Map();
-  for (const t of items) {
-    const name = (t.name || t.item_name_en || t.item_name || "").trim();
-    if (!name) continue;
-    const key = name.toLowerCase();
-    const prev = map.get(key) || {
-      name,
-      impressions: 0,
-      opens: 0,
-      impression_sessions: 0,
-      visible_duration_ms: 0,
-      avg_visible_duration_ms: 0,
-    };
-    prev.impressions += Number(t.impressions) || 0;
-    prev.opens += Number(t.opens ?? t.modal_opens ?? t.item_opens) || 0;
-    prev.impression_sessions += Number(t.impression_sessions) || 0;
-    prev.visible_duration_ms += Number(t.visible_duration_ms) || 0;
-    map.set(key, prev);
-  }
-  return [...map.values()]
-    .map((t) => ({
-      ...t,
-      deep_interest_rate:
-        t.impressions > 0 ? Math.round((t.opens / t.impressions) * 1000) / 10 : null,
-      avg_visible_duration_ms:
-        t.impression_sessions > 0
-          ? Math.round(t.visible_duration_ms / t.impression_sessions)
-          : 0,
-    }))
-    .sort((a, b) => Math.max(b.impressions, b.opens) - Math.max(a.impressions, a.opens));
-}
-
-function mergeCategoriesById(items) {
-  const map = new Map();
-  for (const c of items) {
-    const id = (c.id || c.category_id || "").trim();
-    if (!id) continue;
-    const key = id.toLowerCase();
-    const prev = map.get(key) || { id, opens: 0, impressions: 0 };
-    prev.opens += Number(c.opens) || 0;
-    prev.impressions += Number(c.impressions) || 0;
-    map.set(key, prev);
-  }
-  return [...map.values()].sort((a, b) => b.opens - a.opens || b.impressions - a.impressions);
-}
 
 /** Rollup / partial RPC missing session-quality tiers despite sessions. */
 export function biSessionQualityNeedsRefresh(payload) {
@@ -128,13 +86,7 @@ export function normalizeBiDashboardPayload(raw) {
       : [],
   );
 
-  const top_addon_pairs = Array.isArray(raw.top_addon_pairs)
-    ? raw.top_addon_pairs.map((p) => ({
-        item: p.item || p.item_name || "",
-        addon: p.addon || p.add_on_name || "",
-        clicks: Number(p.clicks) || 0,
-      }))
-    : [];
+  const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
 
   const by_hour = Array.isArray(raw.by_hour)
     ? raw.by_hour.map((row) => {

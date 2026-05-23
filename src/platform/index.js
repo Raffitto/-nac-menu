@@ -15,3 +15,4 @@ export * from "./engines/platformStatusEngine";
 export * from "./engines/operationalScoreEngine";
 export * from "./engines/executiveNarrativeEngine";
 export * from "./engines/predictiveSignalsEngine";
+export * from "./engines/menuAggregationEngine";

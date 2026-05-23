@@ -3,12 +3,10 @@ import {
   normalizeBiDashboardPayload,
   isBiTotalsEmpty,
   biTopItemsNeedsRefresh,
-  biSessionQualityNeedsRefresh,
 } from "./biDashboardNormalize";
 import {
   fetchBiFromMenuEvents,
   fetchBiItemDetailFromMenuEvents,
-  fetchBiSessionQualityFromMenuEvents,
   normalizeBranchForRpc,
 } from "./menuEventsBiFallback";
 import {
@@ -16,9 +14,9 @@ import {
   buildCanonicalBranchComparison,
 } from "../dashboard/utils/branchIdentity";
 import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
-import { sessionQualityTierSum } from "./sessionQualityAggregate";
 import { devLog } from "./devLog";
 import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
+import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
 
 export { isTimeoutError };
 
@@ -36,22 +34,6 @@ function normalizeRpcPayload(data) {
   if (data == null) return null;
   if (Array.isArray(data)) return data[0] ?? null;
   return data;
-}
-
-function mergeBiPayload(base, patch) {
-  if (!patch) return base;
-  const merged = {
-    ...base,
-    ...patch,
-    by_language: { ...(base?.by_language || {}), ...(patch.by_language || {}) },
-    by_event_type: { ...(base?.by_event_type || {}), ...(patch.by_event_type || {}) },
-    funnel: { ...(base?.funnel || {}), ...(patch.funnel || {}) },
-    session_quality: {
-      ...(base?.session_quality || {}),
-      ...(patch.session_quality || {}),
-    },
-  };
-  return normalizeBiDashboardPayload(merged);
 }
 
 async function rpcBiDashboard(supabase, rpcName, params) {
@@ -169,24 +151,40 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  if (payload && biSessionQualityNeedsRefresh(payload)) {
-    const sessionPatch = await fetchBiSessionQualityFromMenuEvents(supabase, {
+  if (payload) {
+    const sessionRes = await applySessionQualityPatch(supabase, {
       branch: pBranch,
       hours: pHours,
-    });
-    if (sessionPatch && sessionQualityTierSum(sessionPatch.session_quality) > 0) {
-      payload = mergeBiPayload(payload, sessionPatch);
+    }, payload);
+    if (sessionRes.patched) {
+      payload = sessionRes.payload;
       partial = true;
       usedFallback = true;
-      opsNotes = appendOpsNote(
-        opsNotes,
-        "Session quality tiers computed from live menu_events (rollup lacks session metrics).",
-      );
+      opsNotes = appendOpsNote(opsNotes, sessionRes.opsNote);
     }
   }
 
-  const normalized = normalizeBiDashboardPayload(payload);
-  const menuDataEmpty = isBiTotalsEmpty(normalized);
+  let normalized = normalizeBiDashboardPayload(payload);
+  let menuDataEmpty = isBiTotalsEmpty(normalized);
+
+  if (menuDataEmpty) {
+    try {
+      const { data: legacy, error: legacyErr } = await supabase.rpc("get_dashboard_aggregates");
+      if (!legacyErr && legacy && !isBiTotalsEmpty(legacy)) {
+        normalized = normalizeBiDashboardPayload(legacy);
+        menuDataEmpty = false;
+        partial = true;
+        usedFallback = true;
+        opsNotes = appendOpsNote(
+          opsNotes,
+          "Loaded from legacy get_dashboard_aggregates RPC.",
+        );
+      }
+    } catch {
+      /* optional legacy RPC */
+    }
+  }
+
   const liveFallback = primaryRpcEmpty && !menuDataEmpty && (usedFallback || !isBiTotalsEmpty(payload));
 
   if (menuDataEmpty) {
@@ -199,6 +197,8 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
       note: note || "No menu activity in this period. Open the public menu to generate events.",
       liveFallback: false,
       menuDataEmpty: true,
+      opsNotes: [],
+      error: null,
     };
   }
 
@@ -220,6 +220,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     opsNotes: mergedOps,
     liveFallback,
     menuDataEmpty: false,
+    error: null,
   };
 }
 

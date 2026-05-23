@@ -17,6 +17,8 @@ export {
 
 import { sessionQualityIsEmpty } from "../../lib/sessionQualityAggregate";
 
+export { applySessionQualityPatch, applySessionQualityToAggregates } from "../../lib/biPayloadPatches";
+
 /** Whether session-quality block should be treated as sparse / building. */
 export function isSessionDataSparse(payload) {
   const sessions = Number(payload?.total_sessions) || 0;

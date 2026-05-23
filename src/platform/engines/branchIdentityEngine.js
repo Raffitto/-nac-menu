@@ -2,7 +2,7 @@
  * Branch identity — canonical IDs, RPC filters, and UI options.
  */
 
-export {
+import {
   CANONICAL_BRANCH_IDS,
   normalizeBranchId,
   normalizeBranchForRpc,
@@ -12,11 +12,15 @@ export {
   buildCanonicalBranchComparison,
 } from "../../dashboard/utils/branchIdentity";
 
-import {
+export {
   CANONICAL_BRANCH_IDS,
-  branchDisplayName,
   normalizeBranchId,
-} from "../../dashboard/utils/branchIdentity";
+  normalizeBranchForRpc,
+  branchDisplayName,
+  defaultBranchId,
+  aggregateByCanonicalBranch,
+  buildCanonicalBranchComparison,
+};
 
 /** Selectors / filters across intelligence modules */
 export const BRANCH_OPTIONS = CANONICAL_BRANCH_IDS.map((id) => ({

@@ -1,5 +1,5 @@
 import { buildWaiterCoaching } from "./waiterCoachingEngine";
-import { buildStaffOperationalIntelligence } from "./staffOperationalEngine";
+import { buildFoodicsWaiterIntelligence } from "./foodicsWaiterScoreEngine";
 import { buildStaffAwards } from "./staffAwardsEngine";
 import { buildExecutiveOpsInsights } from "./executiveOpsInsightsEngine";
 import { buildExecutiveSummary } from "./executiveSummaryEngine";
@@ -120,7 +120,7 @@ export function applyVisualExportConfig(payload, config) {
   waiters = rebuildWaiterIntel(waiters, competitionList, salesMetric);
 
   const salesItems = payload.waiterSalesItems || [];
-  const opsIntel = buildStaffOperationalIntelligence(salesItems, waiters, payload.timeShift);
+  const opsIntel = buildFoodicsWaiterIntelligence(salesItems, waiters, payload.timeShift);
   const calibratedTeam = calibrateTeamContext(opsIntel.team, opsIntel.waiters);
   const calibratedWaiters = calibrateWaiterProfiles(opsIntel.waiters, calibratedTeam);
 
