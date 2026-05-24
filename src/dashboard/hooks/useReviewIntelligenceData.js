@@ -45,10 +45,11 @@ export function useReviewIntelligenceData(options = {}) {
   const skip = Boolean(options.skip);
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
-  const branch = options.networkWide && canFetchCrossBranchComparison(rbac?.profile)
+  const rbacProfile = rbac?.profile;
+  const branch = options.networkWide && canFetchCrossBranchComparison(rbacProfile)
     ? null
     : resolveRbacQueryBranch(
-        rbac?.profile,
+        rbacProfile,
         options.branch ?? platform?.branch ?? defaultBranchId(),
       );
   const selectedRange = options.selectedRange ?? platform?.selectedRange ?? "today";
@@ -99,7 +100,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       if (summaryResult) {
         const allSummary =
-          canFetchCrossBranchComparison(rbac?.profile) && !activeBranch
+          canFetchCrossBranchComparison(rbacProfile) && !activeBranch
             ? await withSupabaseFallback(
                 fetchReviewEventsSummary(supabase, { branch: null, hours }),
                 summaryResult,
@@ -107,7 +108,7 @@ export function useReviewIntelligenceData(options = {}) {
             : summaryResult;
 
         const comparison = filterRowsByRbacProfile(
-          rbac?.profile,
+          rbacProfile,
           branchComparisonFromReviewSummary(allSummary || summaryResult),
         );
         const staffRows = await fetchStaffMergedByBranch(supabase, {
@@ -135,8 +136,8 @@ export function useReviewIntelligenceData(options = {}) {
         .limit(2500);
 
       if (activeBranch) reviewQ = reviewQ.eq("branch_id", activeBranch);
-      else if (rbac?.profile?.authenticated && !rbac.profile.allBranches && rbac.profile.branchScope) {
-        reviewQ = reviewQ.eq("branch_id", rbac.profile.branchScope);
+      else if (rbacProfile?.authenticated && !rbacProfile.allBranches && rbacProfile.branchScope) {
+        reviewQ = reviewQ.eq("branch_id", rbacProfile.branchScope);
       }
 
       let reviewAllQ = supabase
@@ -145,8 +146,8 @@ export function useReviewIntelligenceData(options = {}) {
         .order("created_at", { ascending: false })
         .limit(2000);
 
-      if (!canFetchCrossBranchComparison(rbac?.profile)) {
-        reviewAllQ = reviewAllQ.eq("branch_id", activeBranch || rbac?.profile?.branchScope || "__rbac_denied__");
+      if (!canFetchCrossBranchComparison(rbacProfile)) {
+        reviewAllQ = reviewAllQ.eq("branch_id", activeBranch || rbacProfile?.branchScope || "__rbac_denied__");
       }
 
       if (since) {
@@ -161,7 +162,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       const events = applyPlatformFilters(branchEvents || [], platformFilters);
       const all = applyPlatformFilters(allEvents || [], platformFilters);
-      const comparison = filterRowsByRbacProfile(rbac?.profile, buildBranchReviewComparison(all));
+      const comparison = filterRowsByRbacProfile(rbacProfile, buildBranchReviewComparison(all));
 
       setSummary(null);
       setKpis(computeReviewKpis(events));
@@ -179,7 +180,7 @@ export function useReviewIntelligenceData(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, platform, options.platformFilters]);
+  }, [branch, selectedRange, platform, options.platformFilters, rbacProfile]);
 
   useEffect(() => {
     if (skip) {

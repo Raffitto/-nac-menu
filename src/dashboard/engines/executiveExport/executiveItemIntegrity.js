@@ -47,7 +47,7 @@ export function isSymbolOrMaskedItemName(name) {
   if (letters.length < 3) return true;
 
   const compact = raw.replace(/\s/g, "");
-  if (/^[\*#_=\-.]+$/.test(compact)) return true;
+  if (/^[*#_=\-.]+$/.test(compact)) return true;
   if (compact.length >= 6 && /^(.)\1+$/.test(compact)) return true;
 
   const symbolChars = raw.length - letters.length;

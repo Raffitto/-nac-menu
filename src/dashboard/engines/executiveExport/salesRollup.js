@@ -5,11 +5,8 @@
 import { isModifierOrAddonRow } from "../../../platform/engines/reportTruthEngine";
 import { FOODICS_CLASS } from "../../utils/foodicsClassifier";
 import {
-  filterExecutiveAggregatedItems,
   filterExecutiveImportLines,
-  isExecutiveEligibleAggregatedItem,
   isExecutiveLeastItemCandidate,
-  isExecutiveEligibleImportLine,
 } from "./executiveItemIntegrity";
 
 export {
