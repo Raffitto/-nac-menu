@@ -432,7 +432,7 @@ export function exportExecutiveUnifiedXLSX(pkg) {
   const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   downloadBlob(
     new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `nac-executive-report-${(pkg.meta?.branchId || "report").toLowerCase()}.xlsx`,
+    `${pkg.meta?.filenameBase || "NAC-Executive-Report"}.xlsx`,
   );
 }
 

@@ -390,6 +390,34 @@
   margin-top: 0.35rem;
 }
 
+.exec-export-group-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.exec-export-group-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: rgba(215, 188, 138, 0.06);
+  border: 1px solid rgba(215, 188, 138, 0.2);
+  cursor: pointer;
+}
+
+.exec-export-group-pill.active {
+  background: rgba(215, 188, 138, 0.18);
+  border-color: rgba(215, 188, 138, 0.55);
+}
+
+.exec-export-group-pill input {
+  margin: 0;
+}
+
 .exec-export-upsell-block {
   margin: 1rem 0;
   padding-top: 0.75rem;

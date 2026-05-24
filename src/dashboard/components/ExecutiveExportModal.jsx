@@ -6,6 +6,7 @@ import {
   todayRiyadhDateKey,
 } from "../utils/exportRangeState";
 import { BRANCH_OPTIONS } from "../config/foodicsImportTypes";
+import { UPSELL_GROUP_MODES } from "../engines/executiveExport/upsellGroups";
 
 const EXPORT_RANGE_PRESETS = [
   { id: "today", label: "Today" },
@@ -34,6 +35,7 @@ export default function ExecutiveExportModal({
   const [endDate, setEndDate] = useState(todayRiyadhDateKey());
   const [branch, setBranch] = useState(defaultBranch);
   const [selectedUpsells, setSelectedUpsells] = useState([]);
+  const [selectedGroups, setSelectedGroups] = useState([]);
   const [upsellQuery, setUpsellQuery] = useState("");
   const [error, setError] = useState("");
 
@@ -44,6 +46,7 @@ export default function ExecutiveExportModal({
     setEndDate(todayRiyadhDateKey());
     setBranch(defaultBranch);
     setSelectedUpsells([]);
+    setSelectedGroups([]);
     setUpsellQuery("");
     setError("");
   }, [open, dashboardRange, defaultBranch]);
@@ -80,6 +83,12 @@ export default function ExecutiveExportModal({
     );
   };
 
+  const toggleGroup = (groupId) => {
+    setSelectedGroups((prev) =>
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId],
+    );
+  };
+
   const handleGenerate = () => {
     if (preset === "custom") {
       if (!startDate || !endDate) {
@@ -101,6 +110,7 @@ export default function ExecutiveExportModal({
       }),
       branchId: branch,
       upsellFocusItems: selectedUpsells,
+      upsellGroupIds: selectedGroups,
     });
   };
 
@@ -179,8 +189,20 @@ export default function ExecutiveExportModal({
         </p>
 
         <div className="exec-export-upsell-block">
-          <h4>Upsell / modifier items to track</h4>
-          <p className="rev-export-modal-sub">Select items for waiter upsell ranking (section 4)</p>
+          <h4>Upsell tracking</h4>
+          <p className="rev-export-modal-sub">Operational groups + individual items for waiter upsell ranking</p>
+          <div className="exec-export-group-presets">
+            {UPSELL_GROUP_MODES.map((g) => (
+              <label key={g.id} className={`exec-export-group-pill ${selectedGroups.includes(g.id) ? "active" : ""}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedGroups.includes(g.id)}
+                  onChange={() => toggleGroup(g.id)}
+                />
+                {g.label}
+              </label>
+            ))}
+          </div>
           <div className="exec-export-upsell-search">
             <Search size={14} />
             <input
@@ -211,8 +233,10 @@ export default function ExecutiveExportModal({
               )}
             </div>
           )}
-          {selectedUpsells.length > 0 ? (
-            <p className="exec-export-selected-count">{selectedUpsells.length} item(s) selected</p>
+          {(selectedUpsells.length > 0 || selectedGroups.length > 0) ? (
+            <p className="exec-export-selected-count">
+              {selectedGroups.length} group(s) · {selectedUpsells.length} manual item(s)
+            </p>
           ) : null}
         </div>
 

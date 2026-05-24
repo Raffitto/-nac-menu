@@ -9,6 +9,10 @@ import { buildExecutiveUnifiedExportPackage } from "../engines/executiveUnifiedE
 import { exportExecutiveUnifiedPdf } from "../engines/executiveUnifiedPdfExport";
 import { exportExecutiveUnifiedXLSX } from "../engines/exportEngine";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
+import {
+  mergeUpsellFocusItems,
+  enrichCatalogWithGroups,
+} from "../engines/executiveExport/upsellGroups";
 import { resolveExportRange } from "../utils/exportRangeState";
 
 const REVIEW_EVENT_SELECT =
@@ -43,7 +47,7 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
         productBatch?.id ? getBatchSalesItems(productBatch.id) : Promise.resolve([]),
         waiterBatch?.id ? getBatchSalesItems(waiterBatch.id) : Promise.resolve([]),
       ]);
-      const catalog = buildFocusItemCatalog(productItems, waiterItems);
+      const catalog = enrichCatalogWithGroups(buildFocusItemCatalog(productItems, waiterItems));
       setCatalogItems(catalog);
       return catalog;
     } catch {
@@ -55,11 +59,16 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
   }, []);
 
   const buildPackage = useCallback(
-    async ({ exportRange, branchId, upsellFocusItems = [] }) => {
+    async ({ exportRange, branchId, upsellFocusItems = [], upsellGroupIds = [] }) => {
       const range =
         exportRange ||
         resolveExportRange({ preset: "7d", dashboardRange });
 
+      const mergedFocus = mergeUpsellFocusItems({
+        manualItems: upsellFocusItems,
+        groupIds: upsellGroupIds,
+        catalogItems: catalogItems.length ? catalogItems : await loadUpsellCatalog(branchId),
+      });
       const [productBatch, waiterBatch, reviewEvents] = await Promise.all([
         getBatchForExportPeriod(
           IMPORT_TYPE.PRODUCT_SALES,
@@ -87,12 +96,13 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
         productItems,
         waiterItems,
         reviewEvents,
-        upsellFocusItems,
+        upsellFocusItems: mergedFocus,
+        upsellGroupIds,
         productBatch,
         waiterBatch,
       });
     },
-    [dashboardRange],
+    [dashboardRange, catalogItems, loadUpsellCatalog],
   );
 
   const generatePdf = useCallback(
