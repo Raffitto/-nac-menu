@@ -2,6 +2,8 @@ import React, { useCallback, useState } from "react";
 import { FileDown } from "lucide-react";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
+import { useRbacOptional } from "../context/RbacContext";
+import { BRANCH_OPTIONS } from "../config/foodicsImportTypes";
 import ExecutiveExportModal from "./ExecutiveExportModal";
 import { useExecutiveUnifiedExport } from "../hooks/useExecutiveUnifiedExport";
 
@@ -10,9 +12,13 @@ import { useExecutiveUnifiedExport } from "../hooks/useExecutiveUnifiedExport";
  */
 export default function ExecutiveExportButton({ className = "" }) {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const { data: biData } = useMenuBiDashboardContext();
   const dashboardRange = filters?.selectedRange || "7d";
-  const defaultBranch = filters?.branch || "khobar";
+  const defaultBranch = rbac?.scope?.defaultBranch || filters?.branch || "khobar";
+  const branchOptions = rbac?.exportBranchOptions?.length
+    ? rbac.exportBranchOptions
+    : BRANCH_OPTIONS;
   const [open, setOpen] = useState(false);
 
   const { busy, catalogItems, catalogLoading, loadUpsellCatalog, generatePdf } =
@@ -56,6 +62,7 @@ export default function ExecutiveExportButton({ className = "" }) {
         catalogLoading={catalogLoading}
         defaultBranch={defaultBranch}
         onBranchChange={loadUpsellCatalog}
+        branchOptions={branchOptions}
       />
     </>
   );

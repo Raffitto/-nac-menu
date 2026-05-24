@@ -1,6 +1,7 @@
 import { formatSarMoney } from "../../utils/sarMoneyFormat";
 import { createEmptySection } from "./contract";
 import { formatCoverageSubtitle, formatCoverageWarning } from "./periodAlignment";
+import { filterExecutiveAggregatedItems } from "./executiveItemIntegrity";
 import {
   pctOf,
   formatPct,
@@ -68,7 +69,13 @@ export function buildTopItemsSection({ rows, coverage, integrityOk }) {
     return section;
   }
 
-  const ranked = rankRows(rows, (a, b) => b.quantity - a.quantity || b.net_sales - a.net_sales);
+  const eligible = filterExecutiveAggregatedItems(rows);
+  if (!eligible.length) {
+    section.note = section.note || "No qualifying operational sales items for this period.";
+    return section;
+  }
+
+  const ranked = rankRows(eligible, (a, b) => b.quantity - a.quantity || b.net_sales - a.net_sales);
   const totalQty = ranked.reduce((a, r) => a + r.quantity, 0);
   const withContrib = applyContribution(ranked, totalQty, "quantity").slice(0, 10);
   section.rows = withContrib;
@@ -101,7 +108,8 @@ export function buildBottomItemsSection({ rows, coverage, integrityOk }) {
     return section;
   }
 
-  const paidRows = rows.filter((r) => (Number(r.net_sales) || 0) > 0 && (Number(r.quantity) || 0) > 0);
+  const eligible = filterExecutiveAggregatedItems(rows);
+  const paidRows = eligible.filter((r) => (Number(r.net_sales) || 0) > 0 && (Number(r.quantity) || 0) > 0);
   if (!paidRows.length) {
     section.note = section.note || "No paid menu items with net sales in this period.";
     return section;

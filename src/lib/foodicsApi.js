@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { applyBranchScopeToSupabaseQuery, filterRowsByRbacProfile } from "./rbacQueryScope";
 import { buildConversionRows, getConversionOpportunities } from "../dashboard/utils/foodicsConversion";
 import { normalizeTopItems } from "../dashboard/utils/topItemsNormalize";
 import { hasVisibilityTracking } from "../dashboard/utils/intelligenceSanity";
@@ -7,16 +8,17 @@ import { IMPORT_TYPE } from "../dashboard/config/foodicsImportTypes";
 
 export { IMPORT_TYPE };
 
-export async function getImportBatches(limit = 20, importType = null) {
+export async function getImportBatches(limit = 20, importType = null, rbacProfile = null) {
   let query = supabase.from("foodics_import_batches").select("*");
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
     query = query.or("import_type.eq.product_sales,import_type.is.null");
   } else if (importType) {
     query = query.eq("import_type", importType);
   }
+  query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
   const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(limit);
   if (error) throw error;
-  return data || [];
+  return filterRowsByRbacProfile(rbacProfile, data || []);
 }
 
 export async function getBatchSalesItems(batchId) {
@@ -30,20 +32,28 @@ export async function getBatchSalesItems(batchId) {
 }
 
 /** Latest batch — defaults to waiter sales (canonical sales truth). */
-export async function getLatestBatch(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null) {
-  return getLatestBatchByType(importType, branchId);
+export async function getLatestBatch(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null, rbacProfile = null) {
+  return getLatestBatchByType(importType, branchId, rbacProfile);
 }
 
-export async function getLatestBatchByType(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null) {
+export async function getLatestBatchByType(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null, rbacProfile = null) {
   let query = supabase.from("foodics_import_batches").select("*");
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
     query = query.or("import_type.eq.product_sales,import_type.is.null");
   } else {
     query = query.eq("import_type", importType);
   }
-  if (branchId) query = query.eq("branch_id", branchId.toLowerCase());
+  const scopedBranch = rbacProfile?.authenticated && !rbacProfile.allBranches
+    ? rbacProfile.branchScope
+    : branchId;
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch.toLowerCase());
+  else query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
   const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
+  if (data && rbacProfile && !rbacProfile.allBranches) {
+    const allowed = filterRowsByRbacProfile(rbacProfile, [data]);
+    return allowed[0] || null;
+  }
   return data;
 }
 
@@ -53,9 +63,14 @@ export async function getBatchForExportPeriod(
   branchId = null,
   startDate = null,
   endDate = null,
+  rbacProfile = null,
 ) {
+  const scopedBranch = rbacProfile?.authenticated && !rbacProfile.allBranches
+    ? rbacProfile.branchScope
+    : branchId;
+
   if (!startDate || !endDate) {
-    return getLatestBatchByType(importType, branchId);
+    return getLatestBatchByType(importType, scopedBranch, rbacProfile);
   }
 
   let query = supabase.from("foodics_import_batches").select("*");
@@ -64,13 +79,20 @@ export async function getBatchForExportPeriod(
   } else {
     query = query.eq("import_type", importType);
   }
-  if (branchId) query = query.eq("branch_id", branchId.toLowerCase());
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch.toLowerCase());
+  else query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
   query = query.lte("period_start", endDate).gte("period_end", startDate);
 
   const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
-  if (data) return data;
-  return getLatestBatchByType(importType, branchId);
+  if (data) {
+    if (rbacProfile && !rbacProfile.allBranches) {
+      const allowed = filterRowsByRbacProfile(rbacProfile, [data]);
+      return allowed[0] || null;
+    }
+    return data;
+  }
+  return getLatestBatchByType(importType, scopedBranch, rbacProfile);
 }
 
 export async function getPreviousBatch(beforeDate) {

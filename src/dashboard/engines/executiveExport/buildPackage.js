@@ -26,7 +26,11 @@ import {
   aggregateSalesItemsByName,
   includeInBottomItemsList,
   validateSalesQuantityCoherence,
+  filterExecutiveImportLines,
+  filterExecutiveAggregatedItems,
 } from "./salesRollup";
+import { mergeWaiterRankingRows, mergeReviewWaiterStats } from "./waiterIdentity";
+import { validateExecutiveExportIntegrity } from "./validateIntegrity";
 
 export function buildExecutiveUnifiedExportPackage(input = {}) {
   const {
@@ -58,52 +62,66 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
 
   const salesUsable = salesOverlap && items.length > 0;
 
+  const executiveImportLines = salesUsable ? filterExecutiveImportLines(items) : [];
+
   const salesValidation = buildWaiterImportValidation(salesUsable ? items : []);
   const salesIntegrity = salesUsable
     ? validateImportBatchIntegrity(items, salesValidation.totals)
     : { valid: false, integrity_failure: true, message: periodAlignment.sales.warning };
 
-  const aggregated = salesUsable ? aggregateSalesItemsByName(items) : [];
+  const aggregatedExecutive = salesUsable ? aggregateSalesItemsByName(items) : [];
+  const aggregatedFull = salesUsable ? aggregateSalesItemsByName(items, { executiveOnly: false }) : [];
   const qtyCoherence = salesUsable
-    ? validateSalesQuantityCoherence(aggregated, salesValidation.totals)
+    ? validateSalesQuantityCoherence(aggregatedFull, salesValidation.totals)
     : { valid: true };
 
   const integrityOk =
     salesUsable && salesIntegrity.valid && qtyCoherence.valid;
 
-  const withQty = aggregated.filter((r) => r.quantity > 0);
+  const withQty = filterExecutiveAggregatedItems(
+    aggregatedExecutive.filter((r) => r.quantity > 0),
+  );
   const bottomCandidates = withQty.filter(includeInBottomItemsList);
 
   const waiterIntel = salesUsable
-    ? buildWaiterSalesIntelligence(items, {
+    ? buildWaiterSalesIntelligence(executiveImportLines.length ? executiveImportLines : items, {
         focusItems: upsellFocusItems,
         salesMetric: "net_sales",
       })
     : { all: [], waiters: [] };
 
-  const waiterSalesSource = (waiterIntel.all || []).map((w) => ({
-    waiter: w.waiter,
-    net_sales: w.net_sales,
-    quantity: w.quantity,
-    role: w.roleLabel || w.role,
-  }));
+  const { rows: mergedWaiterSales } = mergeWaiterRankingRows(
+    (waiterIntel.all || []).map((w) => ({
+      waiter: w.waiter,
+      net_sales: w.net_sales,
+      quantity: w.quantity,
+      role: w.roleLabel || w.role,
+    })),
+    { sumKeys: ["net_sales", "quantity"] },
+  );
+
+  const waiterSalesSource = mergedWaiterSales;
 
   const upsellSource = upsellFocusItems.length
-    ? (waiterIntel.all || []).map((w) => {
-        const focusQty = (w.focusPerformance || []).reduce((sum, f) => sum + (Number(f.qty) || 0), 0);
-        const focusRev = (w.focusPerformance || []).reduce((sum, f) => sum + (Number(f.revenue) || 0), 0);
-        return {
-          waiter: w.waiter,
-          quantity: focusQty,
-          net_sales: focusRev,
-          role: w.roleLabel || w.role,
-        };
-      })
+    ? mergeWaiterRankingRows(
+        (waiterIntel.all || []).map((w) => {
+          const focusQty = (w.focusPerformance || []).reduce((sum, f) => sum + (Number(f.qty) || 0), 0);
+          const focusRev = (w.focusPerformance || []).reduce((sum, f) => sum + (Number(f.revenue) || 0), 0);
+          return {
+            waiter: w.waiter,
+            quantity: focusQty,
+            net_sales: focusRev,
+            role: w.roleLabel || w.role,
+          };
+        }),
+        { sumKeys: ["quantity", "net_sales"] },
+      ).rows
     : [];
 
   const khobarEvents = (reviewEvents || []).filter((e) => normalizeBranchId(e.branch_id) === "khobar");
-  const khobarStaff = filterProductionStaffList(aggregateStaffReviewStats(khobarEvents));
-  const khobarSource = khobarStaff.map((s) => ({
+  const khobarStaffRaw = filterProductionStaffList(aggregateStaffReviewStats(khobarEvents));
+  const { staff: khobarStaffMerged, audit: khobarWaiterAudit } = mergeReviewWaiterStats(khobarStaffRaw);
+  const khobarSource = khobarStaffMerged.map((s) => ({
     waiter: s.name,
     google_redirects: s.google,
     qr_scans: s.scans,
@@ -216,9 +234,21 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
     waiterIntel,
   });
 
+  const executiveValidation = validateExecutiveExportIntegrity({
+    sections,
+    summary,
+  });
+
   return {
     version: EXECUTIVE_EXPORT_VERSION,
-    meta,
+    meta: {
+      ...meta,
+      executiveIntegrity: {
+        excludedImportLines: Math.max(0, items.length - executiveImportLines.length),
+        khobarWaiterAliasesMerged: khobarWaiterAudit?.length || 0,
+        validation: executiveValidation,
+      },
+    },
     trust,
     periodAlignment,
     summary,
@@ -241,5 +271,6 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
     waiterSales: sections.waiterSales,
     waiterUpsell: sections.waiterUpsell,
     khobarGoogle: sections.khobarGoogle,
+    executiveValidation,
   };
 }

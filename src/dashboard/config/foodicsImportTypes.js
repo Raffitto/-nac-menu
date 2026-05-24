@@ -1,16 +1,15 @@
 /** Foodics import lane metadata */
 
-/** @deprecated Product sales lane — use WAITER_PRODUCT_SALES as canonical sales truth. */
+import { operationalBrandDisplay, CANONICAL_BRANCH_IDS } from "../utils/branchIdentity";
 export const IMPORT_TYPE = {
   PRODUCT_SALES: "product_sales",
   WAITER_PRODUCT_SALES: "waiter_product_sales",
 };
 
-export const BRANCH_OPTIONS = [
-  { value: "khobar", label: "Khobar" },
-  { value: "riyadh", label: "Riyadh" },
-  { value: "jeddah", label: "Jeddah" },
-];
+export const BRANCH_OPTIONS = CANONICAL_BRANCH_IDS.map((id) => ({
+  value: id,
+  label: operationalBrandDisplay(id),
+}));
 
 export const IMPORT_LANES = {
   [IMPORT_TYPE.PRODUCT_SALES]: {

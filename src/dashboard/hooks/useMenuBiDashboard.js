@@ -7,6 +7,8 @@ import {
   shouldShowLiveFallbackBanner,
 } from "../../lib/biDashboardNormalize";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
+import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
 import {
   resolveMenuPlatformStatus,
@@ -53,6 +55,7 @@ const EMPTY_CONTRACT = {
 export function useMenuBiDashboard(options = {}) {
   const { enabled = true, refreshIntervalMs = 0, source = "useMenuBiDashboard" } = options;
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [needsAuth, setNeedsAuth] = useState(false);
@@ -101,8 +104,9 @@ export function useMenuBiDashboard(options = {}) {
       }
 
       setNeedsAuth(false);
+      const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
       const result = await fetchBiDashboard(supabase, {
-        branch: filters?.branch || null,
+        branch: effectiveBranch,
         hours,
       });
 
@@ -151,7 +155,7 @@ export function useMenuBiDashboard(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [enabled, filters?.branch, filters?.selectedRange, hours, source, rangeContract]);
+  }, [enabled, filters?.branch, filters?.selectedRange, hours, source, rangeContract, rbac?.profile]);
 
   useEffect(() => {
     load();

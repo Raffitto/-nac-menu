@@ -45,6 +45,7 @@ import { exportCSV } from "./utils/formatters";
 import { buildExportCommentary } from "./utils/itemBehaviorEngine";
 import "./styles/foodics-intelligence.css";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import { useRbacOptional } from "./context/RbacContext";
 
 const PERIOD_TYPES = [
   { value: "weekly", label: "Weekly" },
@@ -70,6 +71,8 @@ export default function FoodicsIntelligence({
   onImported,
 }) {
   const platform = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
+  const rbacProfile = rbac?.profile || null;
   const { data: biData } = useMenuBiDashboardContext();
   const laneMeta = IMPORT_LANES[importType] || IMPORT_LANES[IMPORT_TYPE.WAITER_PRODUCT_SALES];
   const [loading, setLoading] = useState(true);
@@ -96,11 +99,17 @@ export default function FoodicsIntelligence({
   const [periodStart, setPeriodStart] = useState(weekAgoISO());
   const [periodEnd, setPeriodEnd] = useState(todayISO());
   const [notes, setNotes] = useState("");
-  const [laneBranch, setLaneBranch] = useState(
-    () => (laneBranchProp || platform?.branch || defaultBranchId()).toLowerCase(),
-  );
+  const [laneBranch, setLaneBranch] = useState(() => {
+    const scoped = rbacProfile?.branchScope || laneBranchProp || platform?.branch || defaultBranchId();
+    return String(scoped).toLowerCase();
+  });
   const [lastValidation, setLastValidation] = useState(null);
   const [lastSavedMeta, setLastSavedMeta] = useState(null);
+
+  const laneBranchOptions = useMemo(() => {
+    if (!rbacProfile?.authenticated || rbac?.canAccessAllBranches()) return BRANCH_OPTIONS;
+    return BRANCH_OPTIONS.filter((b) => b.value === rbacProfile.branchScope);
+  }, [rbacProfile, rbac]);
 
   const configured = isSupabaseConfigured();
 
@@ -120,11 +129,11 @@ export default function FoodicsIntelligence({
       }
 
       const [batchList, items, addons, maps, latest] = await Promise.all([
-        getImportBatches(20, importType),
+        getImportBatches(20, importType, rbacProfile),
         getMenuItemsForMatching(),
         getAddOnsForMatching(),
         getNameMappings(),
-        getLatestBatch(importType, laneBranch),
+        getLatestBatch(importType, laneBranch, rbacProfile),
       ]);
 
       setBatches(batchList);
@@ -164,7 +173,7 @@ export default function FoodicsIntelligence({
     } finally {
       setLoading(false);
     }
-  }, [configured, importType, laneBranch, biData?.top_items]);
+  }, [configured, importType, laneBranch, biData?.top_items, rbacProfile]);
 
   useEffect(() => {
     loadAll();
@@ -501,7 +510,7 @@ export default function FoodicsIntelligence({
           <label>
             Branch
             <select value={laneBranch} onChange={(e) => setLaneBranch(e.target.value)}>
-              {BRANCH_OPTIONS.map((b) => (
+              {laneBranchOptions.map((b) => (
                 <option key={b.value} value={b.value}>{b.label}</option>
               ))}
             </select>

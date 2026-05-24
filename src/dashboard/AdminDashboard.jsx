@@ -38,6 +38,8 @@ import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
+import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
+import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
 import HubTabs from "./components/HubTabs";
@@ -106,7 +108,10 @@ function ev(byType, key) {
 export default function AdminDashboard(props) {
   return (
     <PlatformFiltersProvider>
-      <AdminDashboardContent {...props} />
+      <RbacProvider>
+        <RbacBranchConstraint />
+        <AdminDashboardContent {...props} />
+      </RbacProvider>
     </PlatformFiltersProvider>
   );
 }
@@ -115,9 +120,22 @@ function AdminDashboardContent({ onBack }) {
   const [adminView, setAdminView] = useState("overview");
   const [overviewTab, setOverviewTab] = useState("operations");
   const [session, setSession] = useState(null);
+  const rbac = useRbac();
 
   const filters = usePlatformFilters();
   const liveMode = filters.liveMode;
+
+  const visibleNav = useMemo(
+    () => NAV_ITEMS.filter((item) => rbac.canAccessNav(item.id)),
+    [rbac],
+  );
+
+  useEffect(() => {
+    if (!visibleNav.length) return;
+    if (!rbac.canAccessNav(adminView)) {
+      setAdminView(visibleNav[0].id);
+    }
+  }, [adminView, rbac, visibleNav]);
 
   const configured = isSupabaseConfigured();
 
@@ -226,7 +244,7 @@ function AdminDashboardContent({ onBack }) {
         <div>
           <p className="sidebar-logo">NAC HOSPITALITY OS</p>
           <div className="sidebar-menu">
-            {NAV_ITEMS.map((item) => {
+            {visibleNav.map((item) => {
               const Icon = NAV_ICONS[item.id];
               const isActive = adminView === item.id;
               return (
@@ -253,15 +271,31 @@ function AdminDashboardContent({ onBack }) {
         style={scrollable ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" } : undefined}
       >
         {adminView === "intelligence" ? (
-          <IntelligenceHub />
+          rbac.canAccessNav("intelligence") ? (
+            <IntelligenceHub />
+          ) : (
+            <AccessDeniedPanel message="Intelligence access is not enabled for your NAC OS role." />
+          )
         ) : adminView === "reviews" ? (
-          <ReviewsHub />
+          rbac.canAccessNav("reviews") ? (
+            <ReviewsHub />
+          ) : (
+            <AccessDeniedPanel message="Reviews access is not enabled for your NAC OS role." />
+          )
         ) : adminView === "menu" ? (
-          <MenuEditorAuth>
-            <MenuManager />
-          </MenuEditorAuth>
+          rbac.canAccessNav("menu") ? (
+            <MenuEditorAuth>
+              <MenuManager />
+            </MenuEditorAuth>
+          ) : (
+            <AccessDeniedPanel message="Menu management is not enabled for your NAC OS role." />
+          )
         ) : adminView === "branches" ? (
-          <BranchesView />
+          rbac.canAccessNav("branches") ? (
+            <BranchesView />
+          ) : (
+            <AccessDeniedPanel message="Cross-branch network views are reserved for executive roles." />
+          )
         ) : adminView === "settings" ? (
           <SettingsView />
         ) : (

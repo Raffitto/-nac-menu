@@ -8,6 +8,8 @@ import { rangeToHours } from "../utils/rangeState";
 import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
+import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 
 const SELECT = "event_type,employee_name,employee_role,branch_id,created_at";
@@ -31,12 +33,13 @@ function TrendBadge({ current, previous }) {
 
 export default function EmployeePerformanceGrid() {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const [staff, setStaff] = useState([]);
   const [prevStaff, setPrevStaff] = useState([]);
   const [sort, setSort] = useState("scans");
   const [loading, setLoading] = useState(true);
 
-  const branch = filters?.branch || null;
+  const branch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {

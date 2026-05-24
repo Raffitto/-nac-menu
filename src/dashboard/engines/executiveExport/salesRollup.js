@@ -4,6 +4,22 @@
 
 import { isModifierOrAddonRow } from "../../../platform/engines/reportTruthEngine";
 import { FOODICS_CLASS } from "../../utils/foodicsClassifier";
+import {
+  filterExecutiveAggregatedItems,
+  filterExecutiveImportLines,
+  isExecutiveEligibleAggregatedItem,
+  isExecutiveLeastItemCandidate,
+  isExecutiveEligibleImportLine,
+} from "./executiveItemIntegrity";
+
+export {
+  filterExecutiveAggregatedItems,
+  filterExecutiveImportLines,
+  isExecutiveEligibleAggregatedItem,
+  isExecutiveEligibleImportLine,
+  isExecutiveLeastItemCandidate,
+  isSymbolOrMaskedItemName,
+} from "./executiveItemIntegrity";
 
 const PROMO_CLASSES = new Set([FOODICS_CLASS.PROMO_CAMPAIGN, "promo_campaign", "promo"]);
 const IGNORED_STATUS = new Set(["ignored", "ignored_selection", "ignored_free_modifier"]);
@@ -16,10 +32,12 @@ function itemKey(name) {
   return String(name || "").trim().toLowerCase();
 }
 
-/** Roll up waiter import lines by item display name. */
-export function aggregateSalesItemsByName(rows = []) {
+/** Roll up waiter import lines by item display name (executive-eligible lines only). */
+export function aggregateSalesItemsByName(rows = [], options = {}) {
+  const executiveOnly = options.executiveOnly !== false;
+  const source = executiveOnly ? filterExecutiveImportLines(rows) : rows || [];
   const map = new Map();
-  (rows || []).forEach((row) => {
+  source.forEach((row) => {
     const name = itemDisplayName(row);
     const key = itemKey(name);
     if (!key) return;
@@ -42,6 +60,8 @@ export function aggregateSalesItemsByName(rows = []) {
 }
 
 export function includeInBottomItemsList(row) {
+  if (!isExecutiveLeastItemCandidate(row)) return false;
+
   const qty = Number(row.quantity) || 0;
   const net = Number(row.net_sales) || 0;
   if (qty <= 0 || net <= 0) return false;

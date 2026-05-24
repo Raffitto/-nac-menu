@@ -29,6 +29,7 @@ export default function ExecutiveExportModal({
   catalogLoading = false,
   defaultBranch = "khobar",
   onBranchChange,
+  branchOptions = BRANCH_OPTIONS,
 }) {
   const [preset, setPreset] = useState("7d");
   const [startDate, setStartDate] = useState(todayRiyadhDateKey());
@@ -176,7 +177,7 @@ export default function ExecutiveExportModal({
               onBranchChange?.(e.target.value);
             }}
           >
-            {BRANCH_OPTIONS.map((b) => (
+            {branchOptions.map((b) => (
               <option key={b.value} value={b.value}>
                 {b.label}
               </option>

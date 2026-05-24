@@ -36,6 +36,7 @@ import {
 } from "./utils/aiInsightEngine";
 import "./styles/ai-insights.css";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import { useRbacOptional } from "./context/RbacContext";
 import GoogleReputationStrip from "./components/GoogleReputationStrip";
 
 const GROUP_ICONS = {
@@ -74,6 +75,7 @@ const SUGGESTED_QUESTIONS = [
 
 export default function AIInsights() {
   const platform = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const {
     data,
     loading: biLoading,
@@ -107,8 +109,8 @@ export default function AIInsights() {
       const foodicsCtx = await getFoodicsIntelligenceContext(data);
       setFoodics(foodicsCtx);
       const [rev, branches] = await Promise.all([
-        fetchReviewIntelligence(defaultBranchId(), timeRange),
-        fetchBranchComparison(timeRange),
+        fetchReviewIntelligence(defaultBranchId(), timeRange, rbac?.profile),
+        fetchBranchComparison(timeRange, rbac?.profile),
       ]);
       setReviewIntel(rev);
       setBranchComparison(Array.isArray(branches) ? branches : []);
@@ -116,7 +118,7 @@ export default function AIInsights() {
       setReviewIntel(null);
       setBranchComparison([]);
     }
-  }, [data, needsAuth, timeRange]);
+  }, [data, needsAuth, timeRange, rbac?.profile]);
 
   useEffect(() => {
     if (needsAuth) {

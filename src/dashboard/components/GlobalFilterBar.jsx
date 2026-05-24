@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { RefreshCw, Download } from "lucide-react";
 import { RANGE_OPTIONS } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
 import FilterBar from "./FilterBar";
 
 const LANG_OPTIONS = [
@@ -71,6 +72,14 @@ export default function GlobalFilterBar({
   showLegacyBar = false,
 }) {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
+  const branchOptions = rbac?.branchFilterOptions || [
+    { value: "all", label: "All branches" },
+    { value: "khobar", label: "NAC" },
+    { value: "riyadh", label: "Riyadh" },
+    { value: "jeddah", label: "Jeddah" },
+  ];
+  const showBranchPicker = branchOptions.length > 1 || branchOptions[0]?.value === "all";
 
   return (
     <motion.div className="nac-global-filters" layout>
@@ -104,12 +113,14 @@ export default function GlobalFilterBar({
             ))}
           </motion.div>
 
-          <SelectPill label="Branch" value={filters.branch || "all"} options={[
-            { value: "all", label: "All branches" },
-            { value: "khobar", label: "Khobar" },
-            { value: "riyadh", label: "Riyadh" },
-            { value: "jeddah", label: "Jeddah" },
-          ]} onChange={(v) => filters.setBranch(v === "all" ? null : v)} />
+          {showBranchPicker && (
+            <SelectPill
+              label="Branch"
+              value={filters.branch || (branchOptions[0]?.value === "all" ? "all" : branchOptions[0]?.value)}
+              options={branchOptions}
+              onChange={(v) => filters.setBranch(v === "all" ? null : v)}
+            />
+          )}
 
           <SelectPill label="Language" value={filters.language} options={LANG_OPTIONS} onChange={filters.setLanguage} />
           <SelectPill label="Shift" value={filters.shift} options={SHIFT_OPTIONS} onChange={filters.setShift} />

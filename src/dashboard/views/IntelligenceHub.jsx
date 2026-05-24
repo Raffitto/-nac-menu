@@ -1,4 +1,4 @@
-import React, { useState, Suspense, lazy } from "react";
+import React, { useMemo, useState, Suspense, lazy } from "react";
 import { GooglePlacesProvider } from "../context/GooglePlacesContext";
 import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
@@ -7,6 +7,8 @@ import GlobalFilterBar from "../components/GlobalFilterBar";
 import ExecutiveExportButton from "../components/ExecutiveExportButton";
 import { INTELLIGENCE_TABS } from "../navigation";
 import { MenuBiDashboardProvider } from "../context/MenuBiDashboardContext";
+import { useRbac } from "../context/RbacContext";
+import { PERMISSIONS } from "../config/rbac";
 import MenuIntelligence from "../intelligence/MenuIntelligence";
 import PredictiveAnalytics from "../intelligence/PredictiveAnalytics";
 import OperationsInsights from "../intelligence/OperationsInsights";
@@ -32,6 +34,20 @@ function ViewFallback({ label }) {
 
 export default function IntelligenceHub() {
   const [tab, setTab] = useState("ai");
+  const rbac = useRbac();
+  const visibleTabs = useMemo(
+    () => INTELLIGENCE_TABS.filter((t) => rbac.canAccessIntelligenceTab(t.id)),
+    [rbac],
+  );
+
+  React.useEffect(() => {
+    if (!visibleTabs.length) return;
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab(visibleTabs[0].id);
+    }
+  }, [tab, visibleTabs]);
+
+  const showExecutiveExport = rbac.hasPermission(PERMISSIONS.VIEW_EXECUTIVE_EXPORT);
 
   return (
     <GooglePlacesProvider>
@@ -44,13 +60,13 @@ export default function IntelligenceHub() {
             <h1>Intelligence</h1>
             <p className="nac-platform-sub">Operational brain — insights, menu, sales, and forecasts</p>
           </div>
-          <ExecutiveExportButton />
+          {showExecutiveExport && <ExecutiveExportButton />}
         </div>
       </header>
 
       <GlobalFilterBar variant="extended" />
 
-      <HubTabs tabs={INTELLIGENCE_TABS} active={tab} onChange={setTab} />
+      <HubTabs tabs={visibleTabs} active={tab} onChange={setTab} />
 
       {tab === "ai" && (
         <Suspense fallback={<ViewFallback label="Loading AI insights…" />}>

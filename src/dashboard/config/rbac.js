@@ -1,0 +1,341 @@
+/**
+ * Centralized NAC OS RBAC — roles, permissions, branch scopes, and user resolution.
+ * Extend RBAC_USER_DIRECTORY or REACT_APP_RBAC_USERS JSON for new staff / branches.
+ */
+
+import { CANONICAL_BRANCH_IDS, normalizeBranchId, operationalBrandDisplay } from "../utils/branchIdentity";
+
+export const RBAC_ROLES = {
+  DEVELOPER: "developer",
+  CEO: "ceo",
+  BRANCH_GM: "branch_gm",
+  RESTRICTED: "restricted",
+};
+
+export const PERMISSIONS = {
+  VIEW_OVERVIEW: "view:overview",
+  VIEW_INTELLIGENCE: "view:intelligence",
+  VIEW_REVIEWS: "view:reviews",
+  VIEW_MENU: "view:menu",
+  VIEW_BRANCHES: "view:branches",
+  VIEW_SETTINGS: "view:settings",
+  VIEW_CROSS_BRANCH: "view:cross_branch",
+  VIEW_COMMAND_CENTER: "view:command_center",
+  VIEW_PREDICTIVE: "view:predictive",
+  VIEW_COMPETITIVE: "view:competitive",
+  VIEW_EXECUTIVE_EXPORT: "view:executive_export",
+  MANAGE_IMPORTS: "manage:imports",
+  MANAGE_MENU: "manage:menu",
+  MANAGE_SYSTEM: "manage:system",
+  EXPORT_DATA: "export:data",
+};
+
+const ALL_PERMISSIONS = Object.values(PERMISSIONS);
+
+const CEO_PERMISSIONS = ALL_PERMISSIONS.filter((p) => p !== PERMISSIONS.MANAGE_SYSTEM);
+
+const BRANCH_GM_PERMISSIONS = [
+  PERMISSIONS.VIEW_OVERVIEW,
+  PERMISSIONS.VIEW_INTELLIGENCE,
+  PERMISSIONS.VIEW_REVIEWS,
+  PERMISSIONS.VIEW_MENU,
+  PERMISSIONS.VIEW_SETTINGS,
+  PERMISSIONS.VIEW_COMMAND_CENTER,
+  PERMISSIONS.VIEW_PREDICTIVE,
+  PERMISSIONS.VIEW_EXECUTIVE_EXPORT,
+  PERMISSIONS.MANAGE_IMPORTS,
+  PERMISSIONS.MANAGE_MENU,
+  PERMISSIONS.EXPORT_DATA,
+];
+
+const RESTRICTED_PERMISSIONS = [PERMISSIONS.VIEW_SETTINGS];
+
+export const ROLE_PERMISSIONS = {
+  [RBAC_ROLES.DEVELOPER]: ALL_PERMISSIONS,
+  [RBAC_ROLES.CEO]: CEO_PERMISSIONS,
+  [RBAC_ROLES.BRANCH_GM]: BRANCH_GM_PERMISSIONS,
+  [RBAC_ROLES.RESTRICTED]: RESTRICTED_PERMISSIONS,
+};
+
+/** Nav view → permission */
+export const NAV_PERMISSIONS = {
+  overview: PERMISSIONS.VIEW_OVERVIEW,
+  intelligence: PERMISSIONS.VIEW_INTELLIGENCE,
+  reviews: PERMISSIONS.VIEW_REVIEWS,
+  menu: PERMISSIONS.VIEW_MENU,
+  branches: PERMISSIONS.VIEW_BRANCHES,
+  settings: PERMISSIONS.VIEW_SETTINGS,
+};
+
+/** Intelligence hub tab → permission */
+export const INTELLIGENCE_TAB_PERMISSIONS = {
+  ai: PERMISSIONS.VIEW_INTELLIGENCE,
+  visual: PERMISSIONS.VIEW_INTELLIGENCE,
+  restaurant: PERMISSIONS.VIEW_INTELLIGENCE,
+  imports: PERMISSIONS.MANAGE_IMPORTS,
+  sales: PERMISSIONS.VIEW_INTELLIGENCE,
+  menu: PERMISSIONS.VIEW_INTELLIGENCE,
+  executive: PERMISSIONS.VIEW_COMMAND_CENTER,
+  predictive: PERMISSIONS.VIEW_PREDICTIVE,
+  operations: PERMISSIONS.VIEW_INTELLIGENCE,
+  competitive: PERMISSIONS.VIEW_COMPETITIVE,
+};
+
+/** Reviews hub tab → permission */
+export const REVIEWS_TAB_PERMISSIONS = {
+  performance: PERMISSIONS.VIEW_REVIEWS,
+  live: PERMISSIONS.VIEW_REVIEWS,
+  team: PERMISSIONS.VIEW_REVIEWS,
+  branches: PERMISSIONS.VIEW_CROSS_BRANCH,
+};
+
+/**
+ * Known NAC OS operators — match by normalized email.
+ * Override / extend via REACT_APP_RBAC_USERS JSON in production.
+ */
+export const RBAC_USER_DIRECTORY = [
+  {
+    id: "raffi",
+    name: "Raffi",
+    role: RBAC_ROLES.DEVELOPER,
+    emails: ["raffi@nac.com", "raffiazarian@gmail.com", "raffi@nac-khobar.com"],
+    branchScope: null,
+  },
+  {
+    id: "ahmad",
+    name: "Ahmad",
+    role: RBAC_ROLES.CEO,
+    emails: ["ahmad@nac.com", "ahmad@nac-khobar.com"],
+    branchScope: null,
+  },
+  {
+    id: "fady",
+    name: "Fady",
+    role: RBAC_ROLES.BRANCH_GM,
+    emails: ["fady@nac.com", "fady@nac-khobar.com"],
+    branchScope: "khobar",
+  },
+  {
+    id: "armel",
+    name: "Armel",
+    role: RBAC_ROLES.BRANCH_GM,
+    emails: ["armel@nac.com", "armel@nac-riyadh.com"],
+    branchScope: "riyadh",
+  },
+  {
+    id: "usama",
+    name: "Usama",
+    role: RBAC_ROLES.BRANCH_GM,
+    emails: ["usama@nac.com", "usama@nac-jeddah.com"],
+    branchScope: "jeddah",
+  },
+];
+
+function loadEnvUserDirectory() {
+  try {
+    const raw = process.env.REACT_APP_RBAC_USERS;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeEmail(email) {
+  return String(email || "")
+    .trim()
+    .toLowerCase();
+}
+
+function directoryEntryForEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+
+  const directory = [...loadEnvUserDirectory(), ...RBAC_USER_DIRECTORY];
+  for (const entry of directory) {
+    const emails = (entry.emails || []).map(normalizeEmail);
+    if (emails.includes(normalized)) return entry;
+  }
+  return null;
+}
+
+export function permissionsForRole(role) {
+  return ROLE_PERMISSIONS[role] || RESTRICTED_PERMISSIONS;
+}
+
+export function hasPermission(profile, permission) {
+  if (!profile) return false;
+  return (profile.permissions || []).includes(permission);
+}
+
+export function canAccessNav(profile, navId) {
+  const perm = NAV_PERMISSIONS[navId];
+  if (!perm) return false;
+  if (!hasPermission(profile, perm)) return false;
+  if (navId === "branches" && profile?.role === RBAC_ROLES.BRANCH_GM) return false;
+  return true;
+}
+
+export function canAccessIntelligenceTab(profile, tabId) {
+  const perm = INTELLIGENCE_TAB_PERMISSIONS[tabId];
+  return perm ? hasPermission(profile, perm) : false;
+}
+
+export function canAccessReviewsTab(profile, tabId) {
+  const perm = REVIEWS_TAB_PERMISSIONS[tabId];
+  return perm ? hasPermission(profile, perm) : false;
+}
+
+export function canAccessAllBranches(profile) {
+  if (!profile?.authenticated) return true;
+  return Boolean(profile.allBranches);
+}
+
+export function allowedBranchIds(profile) {
+  if (!profile?.authenticated) return [...CANONICAL_BRANCH_IDS];
+  if (canAccessAllBranches(profile)) return [...CANONICAL_BRANCH_IDS];
+  if (profile.branchScope) return [profile.branchScope];
+  return [];
+}
+
+export function resolveEffectiveBranch(profile, requestedBranch) {
+  if (!profile?.authenticated) {
+    return normalizeBranchId(requestedBranch);
+  }
+  if (canAccessAllBranches(profile)) {
+    return normalizeBranchId(requestedBranch);
+  }
+  return profile.branchScope || null;
+}
+
+export function isBranchAllowed(profile, branchId) {
+  const id = normalizeBranchId(branchId);
+  if (!id) return canAccessAllBranches(profile);
+  return allowedBranchIds(profile).includes(id);
+}
+
+export function filterRowsByBranchScope(profile, rows = [], branchKey = "branch_id") {
+  if (!profile?.authenticated || canAccessAllBranches(profile)) return rows || [];
+  const allowed = new Set(allowedBranchIds(profile));
+  return (rows || []).filter((row) => {
+    const id = normalizeBranchId(row?.[branchKey] ?? row?.branch);
+    return id && allowed.has(id);
+  });
+}
+
+export function buildBranchFilterOptions(profile) {
+  const ids = allowedBranchIds(profile);
+  const options = ids.map((id) => ({
+    value: id,
+    label: operationalBrandDisplay(id),
+  }));
+  if (canAccessAllBranches(profile)) {
+    return [{ value: "all", label: "All branches" }, ...options];
+  }
+  return options;
+}
+
+export function buildExportBranchOptions(profile) {
+  return allowedBranchIds(profile).map((id) => ({
+    value: id,
+    label: operationalBrandDisplay(id),
+  }));
+}
+
+/**
+ * Resolve RBAC profile from Supabase session (or dev override).
+ * @param {import('@supabase/supabase-js').Session|null} session
+ */
+export function resolveRbacProfile(session) {
+  const devRole = process.env.REACT_APP_RBAC_DEV_ROLE;
+  const devBranch = normalizeBranchId(process.env.REACT_APP_RBAC_DEV_BRANCH);
+  if (devRole && process.env.NODE_ENV !== "production") {
+    return buildProfileFromRole(devRole, devBranch, "dev@local");
+  }
+
+  const email = session?.user?.email || null;
+  if (!email) {
+    return {
+      authenticated: false,
+      email: null,
+      name: null,
+      role: RBAC_ROLES.RESTRICTED,
+      permissions: [],
+      branchScope: null,
+      allBranches: true,
+      rawEmail: null,
+    };
+  }
+
+  const entry = directoryEntryForEmail(email);
+  if (!entry) {
+    return {
+      authenticated: true,
+      email,
+      name: email.split("@")[0],
+      role: RBAC_ROLES.RESTRICTED,
+      permissions: RESTRICTED_PERMISSIONS,
+      branchScope: null,
+      allBranches: false,
+      rawEmail: email,
+      unmapped: true,
+    };
+  }
+
+  const branchScope = normalizeBranchId(entry.branchScope);
+  const role = entry.role || RBAC_ROLES.RESTRICTED;
+  const allBranches = role === RBAC_ROLES.DEVELOPER || role === RBAC_ROLES.CEO;
+
+  return {
+    authenticated: true,
+    email,
+    name: entry.name || email,
+    role,
+    permissions: permissionsForRole(role),
+    branchScope: allBranches ? null : branchScope,
+    allBranches,
+    rawEmail: email,
+    userId: entry.id,
+  };
+}
+
+function buildProfileFromRole(role, branchScope, email) {
+  const normalizedRole = Object.values(RBAC_ROLES).includes(role) ? role : RBAC_ROLES.RESTRICTED;
+  const allBranches = normalizedRole === RBAC_ROLES.DEVELOPER || normalizedRole === RBAC_ROLES.CEO;
+  const scope = allBranches ? null : branchScope;
+
+  return {
+    authenticated: true,
+    email,
+    name: "Dev Override",
+    role: normalizedRole,
+    permissions: permissionsForRole(normalizedRole),
+    branchScope: scope,
+    allBranches,
+    rawEmail: email,
+    devOverride: true,
+  };
+}
+
+export function buildRbacScope(profile) {
+  return {
+    profile,
+    branchIds: allowedBranchIds(profile),
+    allBranches: canAccessAllBranches(profile),
+    defaultBranch: profile?.branchScope || "khobar",
+    effectiveBranch(requested) {
+      return resolveEffectiveBranch(profile, requested);
+    },
+    filterRows(rows, branchKey) {
+      return filterRowsByBranchScope(profile, rows, branchKey);
+    },
+    assertBranch(branchId) {
+      const effective = resolveEffectiveBranch(profile, branchId);
+      if (!effective && profile?.authenticated && !canAccessAllBranches(profile)) {
+        throw new Error("Branch access denied");
+      }
+      return effective;
+    },
+  };
+}

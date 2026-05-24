@@ -6,6 +6,8 @@ import { getImportBatches, getBatchSalesItems, getLatestBatchByType } from "../.
 import { normalizeTopItems } from "../utils/topItemsNormalize";
 import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
+import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { businessDayExportNote } from "../utils/businessDay";
 import { buildSalesCorrelation } from "../engines/salesCorrelationEngine";
 import { formatExecutiveConversion } from "../utils/intelligenceSanity";
@@ -31,6 +33,8 @@ function KpiCard({ label, value, sub }) {
 
 export default function SalesImportsIntelligence() {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
+  const rbacProfile = rbac?.profile || null;
   const { data: biData } = useMenuBiDashboardContext();
   const [salesItems, setSalesItems] = useState([]);
   const [topItems, setTopItems] = useState([]);
@@ -45,11 +49,11 @@ export default function SalesImportsIntelligence() {
     }
     setLoading(true);
     try {
-      const branch = filters?.branch || null;
+      const branch = resolveRbacQueryBranch(rbacProfile, filters?.branch || null);
 
       const [batchList, latestSales] = await Promise.all([
-        getImportBatches(24, IMPORT_TYPE.WAITER_PRODUCT_SALES),
-        getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
+        getImportBatches(24, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbacProfile),
+        getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch, rbacProfile),
       ]);
 
       setBatches(batchList);
@@ -64,7 +68,7 @@ export default function SalesImportsIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, [filters?.branch, biData?.top_items]);
+  }, [filters?.branch, biData?.top_items, rbacProfile]);
 
   useEffect(() => {
     load();

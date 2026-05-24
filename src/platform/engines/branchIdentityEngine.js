@@ -10,6 +10,8 @@ import {
   defaultBranchId,
   aggregateByCanonicalBranch,
   buildCanonicalBranchComparison,
+  operationalBrandDisplay,
+  normalizeOperationalBrandLabel,
 } from "../../dashboard/utils/branchIdentity";
 
 export {
@@ -20,12 +22,14 @@ export {
   defaultBranchId,
   aggregateByCanonicalBranch,
   buildCanonicalBranchComparison,
+  operationalBrandDisplay,
+  normalizeOperationalBrandLabel,
 };
 
 /** Selectors / filters across intelligence modules */
 export const BRANCH_OPTIONS = CANONICAL_BRANCH_IDS.map((id) => ({
   id,
-  label: branchDisplayName(id),
+  label: operationalBrandDisplay(id),
 }));
 
 /** Tracking default when branch is unknown (never use for aggregation buckets). */

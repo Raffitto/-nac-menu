@@ -5,6 +5,8 @@ import {
   getBatchSalesItems,
   IMPORT_TYPE,
 } from "../../lib/foodicsApi";
+import { filterRowsByRbacProfile, resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
+import { useRbacOptional } from "../context/RbacContext";
 import { buildExecutiveUnifiedExportPackage } from "../engines/executiveUnifiedExportEngine";
 import { exportExecutiveUnifiedPdf } from "../engines/executiveUnifiedPdfExport";
 import { exportExecutiveUnifiedXLSX } from "../engines/exportEngine";
@@ -18,18 +20,23 @@ import {
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
 
-async function loadReviewEvents(exportRange) {
+async function loadReviewEvents(exportRange, branchId, rbacProfile) {
   if (!supabase || !exportRange) return [];
-  const { data, error } = await supabase
+  const branch = resolveRbacQueryBranch(rbacProfile, branchId);
+  let query = supabase
     .from("review_events")
     .select(REVIEW_EVENT_SELECT)
     .gte("created_at", exportRange.sinceIso)
     .lte("created_at", exportRange.untilIso);
+  if (branch) query = query.eq("branch_id", branch);
+  const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return filterRowsByRbacProfile(rbacProfile, data || []);
 }
 
 export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions = 0 } = {}) {
+  const rbac = useRbacOptional();
+  const rbacProfile = rbac?.profile || null;
   const [busy, setBusy] = useState(false);
   const [catalogItems, setCatalogItems] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -38,9 +45,13 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
     if (!isSupabaseConfigured()) return [];
     setCatalogLoading(true);
     try {
+      const scopedBranch = resolveRbacQueryBranch(rbacProfile, branchId);
       const salesBatch = await getBatchForExportPeriod(
         IMPORT_TYPE.WAITER_PRODUCT_SALES,
-        branchId,
+        scopedBranch,
+        null,
+        null,
+        rbacProfile,
       );
       const salesItems = salesBatch?.id ? await getBatchSalesItems(salesBatch.id) : [];
       const catalog = enrichCatalogWithGroups(buildFocusItemCatalog(salesItems));
@@ -52,7 +63,7 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
     } finally {
       setCatalogLoading(false);
     }
-  }, []);
+  }, [rbacProfile]);
 
   const buildPackage = useCallback(
     async ({ exportRange, branchId, upsellFocusItems = [], upsellGroupIds = [] }) => {
@@ -66,21 +77,23 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
         catalogItems: catalogItems.length ? catalogItems : await loadUpsellCatalog(branchId),
       });
 
+      const scopedBranch = resolveRbacQueryBranch(rbacProfile, branchId);
       const [salesBatch, reviewEvents] = await Promise.all([
         getBatchForExportPeriod(
           IMPORT_TYPE.WAITER_PRODUCT_SALES,
-          branchId,
+          scopedBranch,
           range.startDate,
           range.endDate,
+          rbacProfile,
         ),
-        loadReviewEvents(range),
+        loadReviewEvents(range, scopedBranch, rbacProfile),
       ]);
 
       const salesItems = salesBatch?.id ? await getBatchSalesItems(salesBatch.id) : [];
 
       return buildExecutiveUnifiedExportPackage({
         exportRange: range,
-        branchId,
+        branchId: scopedBranch || branchId,
         salesItems,
         waiterItems: salesItems,
         reviewEvents,
@@ -90,7 +103,7 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
         menuSessions,
       });
     },
-    [dashboardRange, catalogItems, loadUpsellCatalog, menuSessions],
+    [dashboardRange, catalogItems, loadUpsellCatalog, menuSessions, rbacProfile],
   );
 
   const generatePdf = useCallback(

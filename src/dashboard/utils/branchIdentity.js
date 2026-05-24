@@ -47,6 +47,28 @@ export function branchDisplayName(branch) {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
+/**
+ * Menu-facing / operational brand label — Khobar displays as "NAC".
+ * Internal branch_id remains khobar for RBAC, imports, and analytics.
+ */
+export function operationalBrandDisplay(branch) {
+  const id = normalizeBranchId(branch);
+  if (id === "khobar") return "NAC";
+  return branchDisplayName(branch);
+}
+
+/** Normalize legacy labels like "NAC Khobar" → operational brand where shown in dashboards. */
+export function normalizeOperationalBrandLabel(label) {
+  if (label == null) return label;
+  const raw = String(label).trim();
+  if (!raw) return raw;
+  const lower = raw.toLowerCase();
+  if (/^nac\s*[-_]?\s*khobar$/i.test(lower) || lower === "nac khobar") return "NAC";
+  if (/^nac\s*[-_]?\s*riyadh$/i.test(lower)) return "NAC Riyadh";
+  if (/^nac\s*[-_]?\s*jeddah$/i.test(lower)) return "NAC Jeddah";
+  return raw;
+}
+
 export function defaultBranchId() {
   return normalizeBranchId(process.env.REACT_APP_NAC_BRANCH_ID) || "khobar";
 }

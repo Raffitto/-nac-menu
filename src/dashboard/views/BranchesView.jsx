@@ -10,12 +10,15 @@ import { branchComparisonFromReviewSummary } from "../utils/reviewSummaryMap";
 import { branchDisplayName, rangeToHours } from "../utils/rangeState";
 import { normalizeBranchId, BRANCH_OPTIONS } from "../../platform/engines/branchIdentityEngine";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbac } from "../context/RbacContext";
+import { canFetchCrossBranchComparison, filterRowsByRbacProfile, resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import "../styles/platform-os.css";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "../components/GoogleReputationBadge";
 
 export default function BranchesView() {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbac();
   const [rows, setRows] = useState([]);
   const [menuByBranch, setMenuByBranch] = useState({});
   const [loading, setLoading] = useState(true);
@@ -31,9 +34,12 @@ export default function BranchesView() {
       setLoading(true);
       try {
         const hours = rangeToHours(filters?.selectedRange || "today");
+        const branchFilter = resolveRbacQueryBranch(rbac.profile, null);
         const [reviewSummary, branchCmp] = await Promise.all([
-          fetchReviewEventsSummary(supabase, { branch: null, hours }),
-          fetchBranchComparisonSafe(supabase, hours),
+          fetchReviewEventsSummary(supabase, { branch: branchFilter, hours }),
+          canFetchCrossBranchComparison(rbac.profile)
+            ? fetchBranchComparisonSafe(supabase, hours)
+            : Promise.resolve({ data: [] }),
         ]);
 
         const menuStats = {};
@@ -47,8 +53,16 @@ export default function BranchesView() {
         });
 
         if (!cancelled) {
-          setRows(branchComparisonFromReviewSummary(reviewSummary));
-          setMenuByBranch(menuStats);
+          setRows(filterRowsByRbacProfile(rbac.profile, branchComparisonFromReviewSummary(reviewSummary)));
+          setMenuByBranch(
+            filterRowsByRbacProfile(
+              rbac.profile,
+              Object.entries(menuStats).map(([branch_id, stats]) => ({ branch_id, ...stats })),
+            ).reduce((acc, row) => {
+              acc[row.branch_id] = { sessions: row.sessions, events: row.events };
+              return acc;
+            }, {}),
+          );
         }
       } catch {
         if (!cancelled) {
@@ -62,7 +76,11 @@ export default function BranchesView() {
     return () => {
       cancelled = true;
     };
-  }, [filters?.selectedRange]);
+  }, [filters?.selectedRange, rbac.profile]);
+
+  const visibleBranches = BRANCH_OPTIONS.filter(
+    (b) => rbac.canAccessAllBranches() || b.id === rbac.profile.branchScope,
+  );
 
   const leader = [...rows].sort((a, b) => b.qr_scans - a.qr_scans)[0]?.branch_id;
 
@@ -76,7 +94,7 @@ export default function BranchesView() {
 
       {loading ? (
         <div className="nac-branch-battle-grid">
-          {BRANCH_OPTIONS.map((b) => (
+          {visibleBranches.map((b) => (
             <div key={b.id} className="nac-bi-skeleton" style={{ height: 160, borderRadius: 18 }} />
           ))}
         </div>

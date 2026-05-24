@@ -4,6 +4,12 @@ import { buildIntelligenceRangeContract } from "../../platform/engines/timeRange
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
+import {
+  canFetchCrossBranchComparison,
+  filterRowsByRbacProfile,
+  resolveRbacQueryBranch,
+} from "../../lib/rbacQueryScope";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import { rangeToSince, rangeToHours, defaultBranchId } from "../utils/rangeState";
 import {
@@ -38,9 +44,13 @@ const REVIEW_EVENT_SELECT =
 export function useReviewIntelligenceData(options = {}) {
   const skip = Boolean(options.skip);
   const platform = usePlatformFiltersOptional();
-  const branch = options.networkWide
+  const rbac = useRbacOptional();
+  const branch = options.networkWide && canFetchCrossBranchComparison(rbac?.profile)
     ? null
-    : (options.branch ?? platform?.branch ?? defaultBranchId());
+    : resolveRbacQueryBranch(
+        rbac?.profile,
+        options.branch ?? platform?.branch ?? defaultBranchId(),
+      );
   const selectedRange = options.selectedRange ?? platform?.selectedRange ?? "today";
   const filterKey =
     options.filterKey ??
@@ -88,14 +98,18 @@ export function useReviewIntelligenceData(options = {}) {
       );
 
       if (summaryResult) {
-        const allSummary = await withSupabaseFallback(
-          activeBranch
-            ? fetchReviewEventsSummary(supabase, { branch: null, hours })
-            : Promise.resolve(summaryResult),
-          summaryResult,
-        );
+        const allSummary =
+          canFetchCrossBranchComparison(rbac?.profile) && !activeBranch
+            ? await withSupabaseFallback(
+                fetchReviewEventsSummary(supabase, { branch: null, hours }),
+                summaryResult,
+              )
+            : summaryResult;
 
-        const comparison = branchComparisonFromReviewSummary(allSummary || summaryResult);
+        const comparison = filterRowsByRbacProfile(
+          rbac?.profile,
+          branchComparisonFromReviewSummary(allSummary || summaryResult),
+        );
         const staffRows = await fetchStaffMergedByBranch(supabase, {
           hours,
           activeBranch,
@@ -121,12 +135,19 @@ export function useReviewIntelligenceData(options = {}) {
         .limit(2500);
 
       if (activeBranch) reviewQ = reviewQ.eq("branch_id", activeBranch);
+      else if (rbac?.profile?.authenticated && !rbac.profile.allBranches && rbac.profile.branchScope) {
+        reviewQ = reviewQ.eq("branch_id", rbac.profile.branchScope);
+      }
 
       let reviewAllQ = supabase
         .from("review_events")
         .select("event_type,branch_id,created_at,review_session_id,session_id")
         .order("created_at", { ascending: false })
         .limit(2000);
+
+      if (!canFetchCrossBranchComparison(rbac?.profile)) {
+        reviewAllQ = reviewAllQ.eq("branch_id", activeBranch || rbac?.profile?.branchScope || "__rbac_denied__");
+      }
 
       if (since) {
         reviewQ = reviewQ.gte("created_at", since);
@@ -140,7 +161,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       const events = applyPlatformFilters(branchEvents || [], platformFilters);
       const all = applyPlatformFilters(allEvents || [], platformFilters);
-      const comparison = buildBranchReviewComparison(all);
+      const comparison = filterRowsByRbacProfile(rbac?.profile, buildBranchReviewComparison(all));
 
       setSummary(null);
       setKpis(computeReviewKpis(events));

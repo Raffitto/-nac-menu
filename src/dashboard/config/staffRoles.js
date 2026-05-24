@@ -16,6 +16,14 @@ export const STAFF_ROLE_MAP = {
   "Bashar Ahmed": "manager",
 };
 
+/** Foodics / review name variants → canonical roster name (lowercase keys). */
+export const WAITER_NAME_ALIASES = {
+  "mohamed azhar": "Azhar",
+  azhar: "Azhar",
+  saif: "Saiful",
+  saiful: "Saiful",
+};
+
 /** Core competition waiters — used to ensure export completeness */
 export const EXPECTED_WAITERS = [
   "Abu Sofian",
@@ -48,9 +56,16 @@ export function canonicalStaffName(creatorName) {
   const raw = normStaffName(creatorName);
   if (!raw) return "Unassigned";
 
-  if (STAFF_ROLE_MAP[raw]) return raw;
-
   const lower = raw.toLowerCase();
+  if (WAITER_NAME_ALIASES[lower]) return WAITER_NAME_ALIASES[lower];
+
+  for (const [aliasKey, canonical] of Object.entries(WAITER_NAME_ALIASES)) {
+    if (lower === aliasKey) return canonical;
+    if (lower.endsWith(` ${aliasKey}`) || lower.startsWith(`${aliasKey} `)) return canonical;
+    if (aliasKey.includes(" ") && lower.includes(aliasKey)) return canonical;
+  }
+
+  if (STAFF_ROLE_MAP[raw]) return raw;
   for (const key of CANONICAL_KEYS) {
     const kl = key.toLowerCase();
     if (lower === kl) return key;

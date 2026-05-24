@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Monitor } from "lucide-react";
 import HubTabs from "../components/HubTabs";
@@ -9,10 +9,23 @@ import EmployeePerformanceGrid from "../reviews/EmployeePerformanceGrid";
 import BranchBattle from "../reviews/BranchBattle";
 import ReviewPerformanceSection from "../reviews/ReviewPerformanceSection";
 import { GooglePlacesProvider } from "../context/GooglePlacesContext";
+import { useRbac } from "../context/RbacContext";
 import "../styles/platform-os.css";
 
 export default function ReviewsHub() {
   const [tab, setTab] = useState("performance");
+  const rbac = useRbac();
+  const visibleTabs = useMemo(
+    () => REVIEWS_TABS.filter((t) => rbac.canAccessReviewsTab(t.id)),
+    [rbac],
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.length) return;
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab(visibleTabs[0].id);
+    }
+  }, [tab, visibleTabs]);
 
   const openLeaderboard = () => {
     window.open(`${window.location.origin}/leaderboard`, "_blank", "noopener,noreferrer");
@@ -37,7 +50,7 @@ export default function ReviewsHub() {
 
       <GlobalFilterBar variant="extended" />
 
-      <HubTabs tabs={REVIEWS_TABS} active={tab} onChange={setTab} />
+      <HubTabs tabs={visibleTabs} active={tab} onChange={setTab} />
 
       {tab === "performance" && <ReviewPerformanceSection />}
       {tab === "live" && <LiveActivityFeed />}
