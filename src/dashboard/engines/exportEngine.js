@@ -3,6 +3,7 @@ import {
   exportReviewSummaryPdf,
   buildExecutiveBrief,
 } from "./reviewSummaryPdfExport";
+import { executiveUnifiedExportSheets } from "./executiveUnifiedExportEngine";
 import { exportCSV } from "../utils/formatters";
 import { exportCell, formatExecutiveConversion, filterExecutiveRows } from "../utils/intelligenceSanity";
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
@@ -402,6 +403,37 @@ export function exportReviewIntelligenceReport({
 /** @deprecated use exportReviewIntelligenceReport */
 export function exportUnifiedIntelligenceXLSX(ctx) {
   exportReviewIntelligenceReport({ ...ctx, format: "xlsx" });
+}
+
+/** Unified executive report — multi-sheet XLSX (reuses PDF data package). */
+export function exportExecutiveUnifiedXLSX(pkg) {
+  if (!pkg) return;
+  const sheets = executiveUnifiedExportSheets(pkg);
+  const wb = XLSX.utils.book_new();
+
+  const metaRows = [
+    ["NAC Executive Report"],
+    ["Period", pkg.meta?.periodLabel || ""],
+    ["Branch", pkg.meta?.branchLabel || ""],
+    ["Generated", new Date().toLocaleString("en-GB", { timeZone: "Asia/Riyadh" })],
+    ["Data source", pkg.meta?.dataSourceNote || ""],
+    [],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(metaRows), "Summary");
+
+  sheets.forEach((sheet) => {
+    const rows = sheet.note
+      ? [[sheet.note], [], sheet.headers, ...sheet.rows]
+      : [sheet.headers, ...sheet.rows];
+    const safeName = sheet.name.slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), safeName);
+  });
+
+  const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  downloadBlob(
+    new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    `nac-executive-report-${(pkg.meta?.branchId || "report").toLowerCase()}.xlsx`,
+  );
 }
 
 export {

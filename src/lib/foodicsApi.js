@@ -47,6 +47,32 @@ export async function getLatestBatchByType(importType = IMPORT_TYPE.PRODUCT_SALE
   return data;
 }
 
+/** Best overlapping import batch for an export date range. */
+export async function getBatchForExportPeriod(
+  importType = IMPORT_TYPE.PRODUCT_SALES,
+  branchId = null,
+  startDate = null,
+  endDate = null,
+) {
+  if (!startDate || !endDate) {
+    return getLatestBatchByType(importType, branchId);
+  }
+
+  let query = supabase.from("foodics_import_batches").select("*");
+  if (importType === IMPORT_TYPE.PRODUCT_SALES) {
+    query = query.or("import_type.eq.product_sales,import_type.is.null");
+  } else {
+    query = query.eq("import_type", importType);
+  }
+  if (branchId) query = query.eq("branch_id", branchId.toLowerCase());
+  query = query.lte("period_start", endDate).gte("period_end", startDate);
+
+  const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw error;
+  if (data) return data;
+  return getLatestBatchByType(importType, branchId);
+}
+
 export async function getPreviousBatch(beforeDate) {
   if (!beforeDate) return null;
   const { data, error } = await supabase

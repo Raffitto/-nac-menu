@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { RefreshCw } from "lucide-react";
 import HubTabs from "../components/HubTabs";
 import GlobalFilterBar from "../components/GlobalFilterBar";
+import ExecutiveExportButton from "../components/ExecutiveExportButton";
 import { INTELLIGENCE_TABS } from "../navigation";
 import { MenuBiDashboardProvider } from "../context/MenuBiDashboardContext";
 import MenuIntelligence from "../intelligence/MenuIntelligence";
@@ -11,6 +12,7 @@ import PredictiveAnalytics from "../intelligence/PredictiveAnalytics";
 import OperationsInsights from "../intelligence/OperationsInsights";
 import CompetitiveReputationWatch from "../intelligence/CompetitiveReputationWatch";
 import "../styles/platform-os.css";
+import "../styles/review-intelligence.css";
 
 const AIInsights = lazy(() => import("../AIInsights"));
 const ExecutiveCommandCenter = lazy(() => import("../intelligence/ExecutiveCommandCenter"));
@@ -36,9 +38,14 @@ export default function IntelligenceHub() {
     <MenuBiDashboardProvider options={{ source: "IntelligenceHub" }}>
     <motion.div className="nac-intelligence-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
-        <p className="nac-platform-kicker">NAC Intelligence</p>
-        <h1>Intelligence</h1>
-        <p className="nac-platform-sub">Operational brain — insights, menu, sales, and forecasts</p>
+        <div className="nac-platform-header-row">
+          <div>
+            <p className="nac-platform-kicker">NAC Intelligence</p>
+            <h1>Intelligence</h1>
+            <p className="nac-platform-sub">Operational brain — insights, menu, sales, and forecasts</p>
+          </div>
+          <ExecutiveExportButton />
+        </div>
       </header>
 
       <GlobalFilterBar variant="extended" />
