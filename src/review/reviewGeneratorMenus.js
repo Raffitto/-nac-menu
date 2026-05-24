@@ -100,12 +100,8 @@ const KHOBAR_LEMONADES = [
 
 const LEGACY_FOODS = [
   { en: "popcorn chicken", ar: "بوبكورن تشيكن" },
-  { en: "cajun chicken with fries", ar: "دجاج كاجون مع بطاطس" },
   { en: "Black Angus steak with fries", ar: "ستيك بلاك أنجوس مع بطاطس" },
-  { en: "truffle corn risotto with chicken on top", ar: "ريزوتو ذرة بالكمأة مع دجاج" },
   { en: "kale salad", ar: "سلطة كيل" },
-  { en: "rigatoni pasta with chicken sumac on top", ar: "ريغاتوني مع دجاج سماق" },
-  { en: "oven baked mac & cheese", ar: "ماك آند تشيز بالفرن" },
   { en: "crushed burrata", ar: "بوراتا مفتتة" },
   { en: "truffle burger", ar: "ترافل برجر" },
 ];
@@ -124,34 +120,42 @@ const LEGACY_DRINKS = [
 /** Generic dish terms humans use instead of full menu names */
 export const GENERIC_FOOD_EN = [
   "the pasta",
-  "dessert",
-  "coffee",
-  "breakfast",
   "sliders",
   "the risotto",
   "the burger",
   "salad",
   "the steak",
+  "the chicken",
+  "the prawns",
+  "sharing plates",
+  "the mains",
+];
+
+export const GENERIC_FOOD_EN_BREAKFAST = [
+  "breakfast",
   "brunch",
   "the eggs",
+  "coffee",
   "something sweet",
-  "the chicken",
 ];
 
 export const GENERIC_FOOD_AR = [
   "الباستا",
-  "الحلى",
-  "القهوة",
-  "الفطور",
   "السلايدرز",
   "الريزوتو",
   "البرجر",
   "السلطة",
   "الستيك",
+  "الدجاج",
+  "الأطباق الرئيسية",
+];
+
+export const GENERIC_FOOD_AR_BREAKFAST = [
+  "الفطور",
   "البرانش",
   "البيض",
+  "القهوة",
   "شي حلو",
-  "الدجاج",
 ];
 
 export const KHOBAR_MANAGERS = ["Fady", "Raffi", "Bashar"];

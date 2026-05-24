@@ -12,6 +12,8 @@ import {
   getBranchMenu,
   GENERIC_FOOD_EN,
   GENERIC_FOOD_AR,
+  GENERIC_FOOD_EN_BREAKFAST,
+  GENERIC_FOOD_AR_BREAKFAST,
   KHOBAR_MANAGERS,
 } from "./reviewGeneratorMenus";
 
@@ -204,15 +206,46 @@ function selectPersonality() {
   return pick(PERSONALITIES);
 }
 
-function selectStructure(personality, lengthClass) {
+function genericFoodPool(isAr, meal) {
+  if (meal.period === "breakfast") {
+    const base = isAr ? GENERIC_FOOD_AR : GENERIC_FOOD_EN;
+    const morning = isAr ? GENERIC_FOOD_AR_BREAKFAST : GENERIC_FOOD_EN_BREAKFAST;
+    return [...morning, ...base.filter((g) => !/steak|ستيك|risotto|ريزوتو/i.test(g))];
+  }
+  if (meal.period === "dinner") {
+    return isAr ? GENERIC_FOOD_AR : GENERIC_FOOD_EN;
+  }
+  return isAr ? [...GENERIC_FOOD_AR, ...GENERIC_FOOD_AR_BREAKFAST] : [...GENERIC_FOOD_EN, ...GENERIC_FOOD_EN_BREAKFAST];
+}
+
+function isDrinkDessertOpener(line) {
+  return /coffee|dessert|flat white|cappuccino|latte|قهوة|حلى|stay(ed)? for dessert/i.test(line);
+}
+
+function structuresForMeal(meal, personality, lengthClass) {
+  let pool = [...STRUCTURES];
+  if (meal.period === "dinner") {
+    pool = pool.filter((s) => s !== "coffee_only" && s !== "dessert_only");
+  }
   if (lengthClass === "very_short") {
-    return pick(["quick_line", "waiter_focus", "coffee_only", "food_only"]);
+    const short = ["quick_line", "waiter_focus", "food_only"];
+    if (meal.period !== "dinner") short.push("coffee_only");
+    return pick(short);
   }
   if (lengthClass === "long_story") return "story_long";
-  if (personality === "coffee_lover") return pick(["coffee_only", "mixed_scatter", "food_first"]);
+  if (personality === "coffee_lover" && meal.period !== "dinner") {
+    return pick(["coffee_only", "mixed_scatter", "food_first"]);
+  }
   if (personality === "minimalist") return pick(["quick_line", "waiter_focus", "food_only"]);
   if (personality === "foodie") return pick(["food_first", "food_only", "mixed_scatter", "story_long"]);
-  return pick(STRUCTURES);
+  if (meal.period === "dinner") {
+    return pick(["food_first", "food_only", "mixed_scatter", "story_long", "service_first", "atmosphere_only"]);
+  }
+  return pick(pool);
+}
+
+function selectStructure(personality, lengthClass, meal) {
+  return structuresForMeal(meal, personality, lengthClass);
 }
 
 function openingsFor(personality, branchId, isAr, meal) {
@@ -221,15 +254,34 @@ function openingsFor(personality, branchId, isAr, meal) {
     const ar = [
       "صراحة تجربة حلوة.",
       "مكان مرتب والأجواء مريحة.",
-      "جينا للقهوة وطلعنا مبسوطين.",
       "ما توقعت يكون بهالجودة.",
-      `أحد أفضل أماكن ${place.includes("الخبر") ? "الخبر" : place.includes("جدة") ? "جدة" : "الرياض"} للفطور.`,
+      `أحد أحلى المطاعم في ${place.includes("الخبر") ? "الخبر" : place.includes("جدة") ? "جدة" : "الرياض"}.`,
       "زيارة سريعة بس ممتازة.",
       "الجو هادي والمكان نظيف.",
-      "جربنا المكان بناءً على توصية.",
+      "جينا بناءً على توصية.",
+      "تجربة مرتبة من البداية.",
+      "الأكل طلع فوق التوقعات.",
+      "محل يرتاح الواحد فيه.",
+      "الخدمة ماشية بسلاسة.",
+      "من زمان ما لقينا مكان بهالجودة.",
+      "راحة بال من أول دخول.",
+      "الأجواء تخلي الواحد يطول.",
+      "تفاصيل صغيرة بس فرقت.",
+      "الجلوس مريح والإضاءة حلوة.",
+      "مناسب للعائلة.",
+      "الأكل يستاهل الزيارة.",
+      "تجربة بسيطة بس ممتازة.",
+      "كل شي كان مرتب.",
+      "الطلب وصل بسرعة.",
     ];
-    if (personality === "foodie") ar.push("الريزوتو كان شي ثاني.", "الفرنش توست يستاهل.");
-    if (meal.period === "breakfast") ar.push("فطورنا هنا اليوم.", "المكان ممتاز للبرانش.");
+    if (personality === "foodie") ar.push("الريزوتو كان شي ثاني.", "الستيك طلع ممتاز.", "البوراتا تستاهل.");
+    if (meal.period === "breakfast") {
+      ar.push("فطورنا هنا اليوم.", "المكان ممتاز للبرانش.", "جينا للفطور وطلعنا مبسوطين.");
+    } else if (meal.period === "dinner") {
+      ar.push("عشاء مرتب وخفيف.", "الأطباق الرئيسية كانت ممتازة.", "تجربة عشاء حلوة.");
+    } else {
+      ar.push("غداء سريع بس مضبوط.", "مناسب للغداء مع الأهل.");
+    }
     return ar;
   }
 
@@ -239,17 +291,22 @@ function openingsFor(personality, branchId, isAr, meal) {
   const casual = [...OPENINGS_CASUAL_EN];
 
   if (personality === "foodie") return meal.allowBreakfast ? food : food.filter((line) => !isBreakfastItem(line));
-  if (personality === "coffee_lover") return ["Coffee was on point.", "Came for the flat white.", ...short];
+  if (personality === "coffee_lover" && meal.period !== "dinner") {
+    return ["Coffee was on point.", "Came for the flat white.", ...short];
+  }
   if (personality === "business_lunch") return ["Quick lunch stop.", "Needed a fast bite between meetings.", ...short];
   if (personality === "first_time") return story;
   if (personality === "regular") return ["Back again.", "Always reliable here.", ...casual];
 
-  const pool = [...short, ...story, ...food, ...casual];
+  let pool = [...short, ...story, ...food, ...casual];
   if (meal.period === "breakfast") {
     pool.push(`One of the better brunch spots in ${place.replace("NAC ", "")}.`);
     pool.push("Came in for breakfast.");
+  } else if (meal.period === "dinner") {
+    pool = pool.filter((line) => !isDrinkDessertOpener(line) && !isBreakfastItem(line));
+    pool.push("Dinner here hit the spot.", "Solid mains and good pacing.", "Steak night done right.");
   } else {
-    return pool.filter((line) => !isBreakfastItem(line));
+    pool = pool.filter((line) => !isBreakfastItem(line));
   }
   return pool;
 }
@@ -355,11 +412,17 @@ function buildWaiterMention(staff, role, personality, isAr) {
 }
 
 function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
-  if (useGeneric || chance(0.58)) {
-    const g = isAr ? pick(GENERIC_FOOD_AR) : pick(GENERIC_FOOD_EN);
-    const templates = isAr
-      ? [`${g} كان ممتاز.`, `أحببنا ${g}.`, `${g} 👌`]
-      : [`Loved the ${g}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} was good.`, `${g} hit the spot.`];
+  const genericPool = genericFoodPool(isAr, meal);
+  if (useGeneric || chance(meal.period === "breakfast" ? 0.45 : 0.58)) {
+    const g = pick(genericPool);
+    const templates =
+      meal.period === "breakfast"
+        ? isAr
+          ? [`${g} كان ممتاز.`, `أحببنا ${g}.`, `${g} 👌`, `فطورنا ${g} وكان مضبوط.`]
+          : [`Loved the ${g}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} was good.`, `${g} hit the spot.`, `Breakfast ${g} was on point.`]
+        : isAr
+          ? [`${g} كان ممتاز.`, `أحببنا ${g}.`, `${g} 👌`]
+          : [`Loved the ${g}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} was good.`, `${g} hit the spot.`];
     return pick(templates);
   }
 
@@ -427,8 +490,8 @@ function buildAtmosphereLine(personality, isAr) {
 function buildClosing(personality, isAr) {
   const calmEn = ["Would come back.", "Glad we came.", "Solid.", "👍", "Nice one."];
   const excitedEn = ["Definitely coming back!", "Already planning the next visit.", "10/10 would repeat."];
-  const calmAr = ["نرجع again.", "تجربة حلوة.", "👍", "يعطيكم العافية."];
-  const excitedAr = ["أكيد نرجع!", "نرجع قريب إن شاء الله."];
+  const calmAr = ["تجربة حلوة.", "👍", "يعطيكم العافية.", "نرجع أكيد.", "مبسوطين من الزيارة."];
+  const excitedAr = ["أكيد نرجع!", "نرجع قريب إن شاء الله.", "من أحلى الزيارات.", "بنرجع قريب."];
 
   if (personality === "emotional" || personality === "foodie") {
     return isAr ? pick(excitedAr) : pick(excitedEn);
@@ -474,7 +537,7 @@ function shuffleParts(parts) {
   return out;
 }
 
-function applyHumanImperfections(text, personality, isAr) {
+function applyHumanImperfections(text, personality, isAr, meal) {
   let out = text;
   if (isAr && personality === "arabic_mixed" && chance(0.55)) {
     return out;
@@ -486,7 +549,12 @@ function applyHumanImperfections(text, personality, isAr) {
     if (chance(0.45)) out = out.charAt(0).toLowerCase() + out.slice(1);
     if (chance(0.2)) out = out.replace(/\./g, ",");
   }
-  if (personality === "short_attention" && out.length > 120 && chance(0.5)) {
+  if (
+    personality === "short_attention" &&
+    out.length > 120 &&
+    chance(0.5) &&
+    meal?.period !== "dinner"
+  ) {
     const sentences = out.split(/(?<=[.!?])\s+/);
     out = sentences.slice(0, 2).join(" ");
   }
@@ -517,7 +585,39 @@ function jaccardSimilarity(a, b) {
 }
 
 function openingKey(s) {
-  return normReview(s).slice(0, 48);
+  const first = String(s || "")
+    .split(/[.!?؟]/)
+    .map((x) => x.trim())
+    .filter(Boolean)[0];
+  return normReview(first || s).slice(0, 55);
+}
+
+function hasMainFoodMention(text, isAr, menu) {
+  const lower = normReview(text);
+  for (const item of menu?.main || []) {
+    const token = normReview(item);
+    if (token.length > 3 && lower.includes(token)) return true;
+  }
+  const re = isAr
+    ? /ستيك|ريزوتو|برجر|باستا|دجاج|بوراتا|سلطة|سلايدر|أطباق|mains|sharing|risotto|steak|burger|pasta|sliders|chicken|burrata|salad|prawn|truffle|angus|sweet potato|hummus|aubergine|asparagus|frites|popcorn|halloumi/i
+    : /steak|risotto|burger|pasta|sliders|chicken|burrata|salad|prawn|truffle|angus|mains|sharing|popcorn|asparagus|hummus|aubergine|mac and cheese|sweet potato|frites|halloumi|honey|beetroot|olives|sumac/i;
+  return re.test(text);
+}
+
+function hasBreakfastMention(text) {
+  return /breakfast|brunch|egg|pancake|toast|shakshuka|avocado|halloumi|فطور|برانش|بيض|فرنش|بانكيك/i.test(text);
+}
+
+function ensureMealFoodMention(text, menu, meal, personality, isAr) {
+  if (meal.period === "dinner" && !hasMainFoodMention(text, isAr, menu)) {
+    const foodLine = buildFoodLine(menu, meal, personality, isAr, false);
+    return chance(0.35) ? `${foodLine} ${text}` : `${text} ${foodLine}`;
+  }
+  if (meal.period === "breakfast" && !hasBreakfastMention(text)) {
+    const foodLine = buildFoodLine(menu, meal, personality, isAr, true);
+    return `${text} ${foodLine}`;
+  }
+  return text;
 }
 
 function rhythmKey(s) {
@@ -625,6 +725,53 @@ function ensureStaffMention(text, staff, role, personality, isAr) {
   return `${text} ${mention}`;
 }
 
+function dedupeBlocks(blocks) {
+  const seen = new Set();
+  return blocks.filter((b) => {
+    const key = normReview(b);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function contentFlags(meal, personality, structure, lengthClass) {
+  const isDinner = meal.period === "dinner";
+  const isBreakfast = meal.period === "breakfast";
+
+  let includeFood =
+    structure !== "atmosphere_only" &&
+    structure !== "waiter_focus" &&
+    structure !== "quick_line" &&
+    chance(lengthClass === "very_short" ? (isBreakfast ? 0.55 : 0.45) : 0.78);
+
+  let includeCoffee =
+    !isDinner &&
+    (structure === "coffee_only" ||
+      (personality === "coffee_lover" && chance(0.75)) ||
+      (isBreakfast && chance(0.35)) ||
+      chance(0.18));
+
+  let includeDessert =
+    !isDinner && (structure === "dessert_only" || (chance(0.15) && !isBreakfast));
+
+  if (isDinner) {
+    includeFood = true;
+    includeCoffee = chance(0.05);
+    includeDessert = chance(0.06);
+  }
+
+  if (isBreakfast) {
+    includeFood = true;
+  }
+
+  const includeAtmo =
+    structure === "atmosphere_only" || structure === "story_long" || chance(isDinner ? 0.48 : 0.35);
+  const includeClose = lengthClass !== "very_short" || chance(0.35);
+
+  return { includeFood, includeCoffee, includeDessert, includeAtmo, includeClose };
+}
+
 function buildReviewDraft(ctx) {
   const {
     staff,
@@ -644,14 +791,20 @@ function buildReviewDraft(ctx) {
   const roleL = String(role || "").toLowerCase();
 
   const blocks = [];
-  const includeFood = structure !== "atmosphere_only" && structure !== "coffee_only" && structure !== "waiter_focus" && structure !== "quick_line" && chance(lengthClass === "very_short" ? 0.35 : 0.72);
-  const includeCoffee = structure === "coffee_only" || (personality === "coffee_lover" && chance(0.8)) || chance(0.28);
-  const includeDessert = structure === "dessert_only" || (chance(0.22) && meal.period !== "breakfast");
-  const includeAtmo = structure === "atmosphere_only" || structure === "story_long" || chance(0.38);
-  const includeClose = lengthClass !== "very_short" || chance(0.35);
+  const { includeFood, includeCoffee, includeDessert, includeAtmo, includeClose } = contentFlags(
+    meal,
+    personality,
+    structure,
+    lengthClass,
+  );
+  let waiterAdded = false;
 
-  if (structure === "food_first" && includeFood) {
+  if (meal.period === "dinner" && includeFood) {
     blocks.push(buildFoodLine(menu, meal, personality, isAr, false));
+  }
+
+  if (structure === "food_first" && includeFood && meal.period !== "dinner") {
+    blocks.push(buildFoodLine(menu, meal, personality, isAr, meal.period !== "dinner" && personality !== "foodie"));
   }
 
   if (lengthClass !== "very_short" && structure !== "quick_line" && chance(0.82)) {
@@ -660,18 +813,23 @@ function buildReviewDraft(ctx) {
 
   if (structure === "service_first" || roleL === "receptionist") {
     if (roleL === "receptionist" && staff !== "Team") blocks.push(buildReceptionLine(staff, isAr));
-    else blocks.push(waiterLine);
+    else {
+      blocks.push(waiterLine);
+      waiterAdded = true;
+    }
   }
 
   if (includeFood && structure !== "food_first") {
-    blocks.push(buildFoodLine(menu, meal, personality, isAr, personality !== "foodie"));
+    const preferSpecific = meal.period === "dinner" || personality === "foodie";
+    blocks.push(buildFoodLine(menu, meal, personality, isAr, !preferSpecific && chance(0.5)));
   }
   if (includeCoffee) blocks.push(buildCoffeeLine(menu, isAr));
   if (includeDessert) blocks.push(buildDessertLine(menu, isAr));
   if (includeAtmo) blocks.push(buildAtmosphereLine(personality, isAr));
 
-  if (structure !== "service_first" && roleL !== "receptionist") {
+  if (!waiterAdded && structure !== "service_first" && roleL !== "receptionist") {
     blocks.push(waiterLine);
+    waiterAdded = true;
   }
 
   if (lengthClass === "long_story" && chance(0.45)) {
@@ -689,8 +847,8 @@ function buildReviewDraft(ctx) {
 
   let ordered =
     structure === "mixed_scatter" || personality === "typo_heavy"
-      ? shuffleParts(blocks.filter(Boolean))
-      : blocks.filter(Boolean);
+      ? shuffleParts(dedupeBlocks(blocks.filter(Boolean)))
+      : dedupeBlocks(blocks.filter(Boolean));
 
   if (lengthClass === "very_short") {
     ordered = shuffleParts([waiterLine, ...ordered.filter((b) => b !== waiterLine)]).slice(0, r(2) === 0 ? 2 : 3);
@@ -701,9 +859,9 @@ function buildReviewDraft(ctx) {
   }
 
   let text = ordered.join(" ");
-  text = applyHumanImperfections(text, personality, isAr);
+  text = applyHumanImperfections(text, personality, isAr, meal);
+  text = ensureMealFoodMention(text, menu, meal, personality, isAr);
   text = ensureStaffMention(text, staff, role, personality, isAr);
-
   return { text, opener };
 }
 
@@ -781,7 +939,7 @@ export function generateHumanizedReview(opts = {}) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const personality = selectPersonality();
     const lengthClass = selectLengthClass();
-    const structure = selectStructure(personality, lengthClass);
+    const structure = selectStructure(personality, lengthClass, meal);
 
     const debug = {
       personality,
