@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   runReviewEventsInsertSelfTest,
@@ -142,12 +142,15 @@ export default function ReviewPortal() {
     }
   }, [portalParams, trackingCtx, staffName]);
 
+  const scanTimeRef = useRef(new Date());
+
   useEffect(() => {
     const generated = generatePersonalizedReview({
       staffName: displayName,
       role: resolvedRole,
       branchId: portalParams.normalizedBranch,
       language,
+      scanTime: scanTimeRef.current,
     });
     setText(generated);
     trackReviewGenerate(generated.length, { ...ctx, language });
@@ -160,6 +163,7 @@ export default function ReviewPortal() {
       role: resolvedRole,
       branchId: portalParams.normalizedBranch,
       language,
+      scanTime: scanTimeRef.current,
     });
     setText(generated);
     trackReviewGenerate(generated.length, { ...ctx, language });
@@ -173,6 +177,7 @@ export default function ReviewPortal() {
       role: resolvedRole,
       branchId: portalParams.normalizedBranch,
       language: lang,
+      scanTime: scanTimeRef.current,
     });
     setText(generated);
   };
