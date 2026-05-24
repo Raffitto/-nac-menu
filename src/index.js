@@ -7,6 +7,7 @@ import {
   applyReviewRoutingMode,
   detectReviewQrMode,
 } from "./lib/reviewPortalParams";
+import { resolveRootAppKind } from "./lib/platformMode";
 
 // Route BEFORE loading menu App (prevents qr_session_start / menu_events).
 const isReviewQr =
@@ -16,22 +17,23 @@ const isReviewQr =
 
 applyReviewRoutingMode(isReviewQr);
 
-const isLeaderboard =
-  typeof window !== "undefined" &&
-  window.location.pathname.replace(/\/$/, "") === "/leaderboard";
-
-const isResetPassword =
-  typeof window !== "undefined" &&
-  window.location.pathname.replace(/\/$/, "") === "/reset-password";
-
 const ReviewPortal = lazy(() => import("./review/ReviewPortal"));
 const LeaderboardView = lazy(() => import("./dashboard/LeaderboardView"));
 const ResetPasswordView = lazy(() => import("./dashboard/views/ResetPasswordView"));
+const AdminDashboard = lazy(() => import("./dashboard/AdminDashboard"));
 const MenuApp = lazy(() => import("./App"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-if (isResetPassword) {
+const rootKind =
+  typeof window !== "undefined"
+    ? resolveRootAppKind({
+        pathname: window.location.pathname,
+        isReviewQr,
+      })
+    : "public-menu";
+
+if (rootKind === "reset-password") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
@@ -39,7 +41,7 @@ if (isResetPassword) {
       </Suspense>
     </React.StrictMode>,
   );
-} else if (isLeaderboard) {
+} else if (rootKind === "leaderboard") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
@@ -47,11 +49,19 @@ if (isResetPassword) {
       </Suspense>
     </React.StrictMode>,
   );
-} else if (isReviewQr) {
+} else if (rootKind === "review") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
         <ReviewPortal />
+      </Suspense>
+    </React.StrictMode>,
+  );
+} else if (rootKind === "admin") {
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
+        <AdminDashboard />
       </Suspense>
     </React.StrictMode>,
   );
@@ -65,7 +75,7 @@ if (isResetPassword) {
   );
 }
 
-if (!isReviewQr) {
+if (rootKind !== "review") {
   import("./reportWebVitals").then(({ default: reportWebVitals }) => {
     reportWebVitals();
   });

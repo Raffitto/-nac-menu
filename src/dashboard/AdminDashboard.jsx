@@ -34,6 +34,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import MenuManager from "./MenuManager";
@@ -291,7 +292,11 @@ function AdminDashboardContent({ onBack }) {
             })}
           </div>
         </div>
-        <button className="admin-back" onClick={onBack}>Back to Menu</button>
+        {!isAdminPlatformMode() && onBack && (
+          <button type="button" className="admin-back" onClick={onBack}>
+            Back to Menu
+          </button>
+        )}
       </aside>
 
       <main

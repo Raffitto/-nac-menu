@@ -13,6 +13,7 @@ export const SUPABASE_AUTH_REDIRECT_ALLOWLIST = [
   "https://nac-khobar-reviews.netlify.app/reset-password",
   "https://nacriyadh.netlify.app/reset-password",
   "https://nac-jeddah.netlify.app/reset-password",
+  "https://nacos.netlify.app/reset-password",
 ];
 
 export function getPasswordResetRedirectUrl() {

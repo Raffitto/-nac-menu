@@ -1,4 +1,5 @@
-# Same build for nacmenu.netlify.app, nac-khobar-reviews.netlify.app, and branch sites.
+# Same build for nacmenu.netlify.app, nacos.netlify.app, nac-khobar-reviews.netlify.app, and branch sites.
+# nacos: set REACT_APP_PLATFORM_MODE=admin in Netlify env. nacmenu: leave unset (public default).
 # In Netlify UI: Site configuration → Build & deploy → Branch = main, Command/Publish below.
 
 [build]
