@@ -158,12 +158,14 @@ function drawSectionDivider(doc, margin, y, contentW, title) {
   return y + 10;
 }
 
-function drawRankedTable(doc, { margin, contentW, startY, head, body, foot, topThreeCount = 3 }) {
-  const tableRows = [...body];
-  if (foot?.length) tableRows.push(foot);
+function rankCell(r) {
+  if (r.is_top_three && r.rank_label) return r.rank_label;
+  return String(r.rank ?? "");
+}
 
-  const table = sanitizeTableForPdf(head, tableRows);
-  const bodyRowCount = body.length;
+function drawRankedTable(doc, { margin, contentW, startY, head, body, foot, topThreeCount = 3 }) {
+  const table = sanitizeTableForPdf(head, body);
+  const safeFoot = foot?.length ? sanitizeTableForPdf([], foot).body : undefined;
 
   autoTable(doc, {
     ...buildExportTableStyles({
@@ -177,8 +179,8 @@ function drawRankedTable(doc, { margin, contentW, startY, head, body, foot, topT
     }),
     startY,
     head: table.head,
-    body: table.body.slice(0, bodyRowCount),
-    foot: foot?.length ? [table.body[bodyRowCount]] : undefined,
+    body: table.body,
+    foot: safeFoot,
     margin: { left: margin, right: margin },
     tableWidth: contentW,
     didParseCell: (data) => {
@@ -196,16 +198,11 @@ function drawRankedTable(doc, { margin, contentW, startY, head, body, foot, topT
         data.cell.styles.fillColor = TOP3_FILL;
         data.cell.styles.lineWidth = { top: 0.6, right: 0.3, bottom: 0.6, left: 0.3 };
         data.cell.styles.lineColor = TOP3_BORDER;
-        if (data.column.index === 0) {
+        if (data.column.index === 0 || data.column.index === 1) {
           data.cell.styles.fontStyle = "bold";
-          data.cell.styles.textColor = NAC_GOLD;
-          const raw = String(data.cell.raw ?? "");
-          if (!raw.includes("TOP")) {
-            data.cell.text = [`♛ ${raw}`];
-          }
         }
-        if (data.column.index === 1) {
-          data.cell.styles.fontStyle = "bold";
+        if (data.column.index === 0) {
+          data.cell.styles.textColor = NAC_GOLD;
         }
       }
     },
@@ -230,7 +227,7 @@ function buildFooterRow(section) {
     return ["TOTAL", "—", f.display_quantity, "—", f.display_net_sales, ""];
   }
   if (section.id === "waiterSales") {
-    return ["TOTAL", "All waiters", f.display_net_sales, "100%", f.display_quantity, ""];
+    return ["TOTAL", "All waiters", f.display_net_sales, "100%", f.display_quantity, "—"];
   }
   if (section.id === "bottomItems") {
     return ["—", "—", f.display_quantity, "—", f.display_net_sales];
@@ -244,8 +241,8 @@ function sectionTableConfig(section) {
       return {
         head: [["#", "Item", "Net Qty", "Share %", "Net Sales"]],
         body: (section.rows || []).map((r) => [
-          r.rank,
-          clip(r.item_name),
+          rankCell(r),
+          clip(r.item_name, 42),
           r.display_quantity,
           r.display_contribution,
           r.display_net_sales,
@@ -255,10 +252,10 @@ function sectionTableConfig(section) {
       return {
         head: [["#", "Item", "Net Qty", "Operational label", "Net Sales"]],
         body: (section.rows || []).map((r) => [
-          r.rank,
-          clip(r.item_name),
+          rankCell(r),
+          clip(r.item_name, 42),
           r.display_quantity,
-          clip(r.action_label, 22),
+          r.action_label || "—",
           r.display_net_sales,
         ]),
       };
@@ -266,7 +263,7 @@ function sectionTableConfig(section) {
       return {
         head: [["#", "Waiter", "Net Sales", "Share %", "Units", "Role"]],
         body: (section.rows || []).map((r) => [
-          r.rank,
+          rankCell(r),
           clip(r.waiter, 22),
           r.display_net_sales,
           r.display_contribution,
@@ -278,7 +275,7 @@ function sectionTableConfig(section) {
       return {
         head: [["#", "Waiter", "Upsell Qty", "Share %", "Upsell Net", "Role"]],
         body: (section.rows || []).map((r) => [
-          r.rank,
+          rankCell(r),
           clip(r.waiter, 22),
           r.display_quantity,
           r.display_contribution,
@@ -290,7 +287,7 @@ function sectionTableConfig(section) {
       return {
         head: [["#", "Waiter", "Google", "Share %", "QR Scans", "To Google %", "No redirect"]],
         body: (section.rows || []).map((r) => [
-          r.rank,
+          rankCell(r),
           clip(r.waiter, 20),
           r.google_redirects,
           r.display_contribution,
@@ -317,7 +314,7 @@ function drawSection(doc, { margin, contentW, y, index, section }) {
   setExportFont(doc, 600, 12);
   paintExportText(doc, `${index}. ${section.title}`, margin, y, { tier: "gold", shadow: true });
   y += 16;
-  if (section.subtitle) {
+  if (section.subtitle && !section.note) {
     setExportFont(doc, 500, 7.5);
     const lines = doc.splitTextToSize(section.subtitle, contentW);
     lines.slice(0, 2).forEach((ln, i) => {

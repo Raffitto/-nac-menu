@@ -1,6 +1,6 @@
 import { formatSarMoney } from "../../utils/sarMoneyFormat";
 import { createEmptySection } from "./contract";
-import { formatCoverageSubtitle } from "./periodAlignment";
+import { formatCoverageSubtitle, formatCoverageWarning } from "./periodAlignment";
 import {
   pctOf,
   formatPct,
@@ -18,7 +18,7 @@ function rankRows(rows, sortFn, valueKeyForDisplay = "net_sales") {
     ...row,
     rank: index + 1,
     is_top_three: index < 3,
-    rank_label: index < 3 ? `TOP ${index + 1}` : String(index + 1),
+    rank_label: index < 3 ? `Top ${index + 1}` : String(index + 1),
     display_net_sales: formatSarMoney(row.net_sales ?? row[valueKeyForDisplay]),
     display_quantity: roundDisplayQty(row.quantity ?? row.qty),
   }));
@@ -53,17 +53,18 @@ export function buildTopItemsSection({ rows, coverage, integrityOk }) {
     subtitle: formatCoverageSubtitle(coverage),
   });
   section.coverage = coverage;
+  section.note = formatCoverageWarning(coverage);
 
-  if (coverage?.warning && !coverage.aligned) {
-    section.note = coverage.warning;
+  if (coverage?.warning && !coverage?.aligned && !coverage?.partial) {
+    section.rows = [];
     return section;
   }
   if (!rows?.length) {
-    section.note = "No operational sales data for this period.";
+    section.note = section.note || "No operational sales data for this period.";
     return section;
   }
   if (!integrityOk) {
-    section.note = "Import totals could not be validated — rankings withheld.";
+    section.note = section.note || "Import totals could not be validated — rankings withheld.";
     return section;
   }
 
@@ -85,22 +86,29 @@ export function buildBottomItemsSection({ rows, coverage, integrityOk }) {
     subtitle: "Menu items, sides, add-ons, modifiers — promo/noise excluded",
   });
   section.coverage = coverage;
+  section.note = formatCoverageWarning(coverage);
 
   if (coverage?.warning && !coverage?.aligned && !coverage?.partial) {
-    section.note = coverage.warning;
+    section.rows = [];
     return section;
   }
   if (!rows?.length) {
-    section.note = "No qualifying menu items with sales in this period.";
+    section.note = section.note || "No qualifying menu items with sales in this period.";
     return section;
   }
   if (!integrityOk) {
-    section.note = "Import validation failed — section withheld.";
+    section.note = section.note || "Import validation failed — section withheld.";
     return section;
   }
 
-  const totalQty = rows.reduce((a, r) => a + r.quantity, 0);
-  const sorted = [...rows].sort((a, b) => a.quantity - b.quantity || a.net_sales - b.net_sales);
+  const paidRows = rows.filter((r) => (Number(r.net_sales) || 0) > 0 && (Number(r.quantity) || 0) > 0);
+  if (!paidRows.length) {
+    section.note = section.note || "No paid menu items with net sales in this period.";
+    return section;
+  }
+
+  const totalQty = paidRows.reduce((a, r) => a + r.quantity, 0);
+  const sorted = [...paidRows].sort((a, b) => a.quantity - b.quantity || a.net_sales - b.net_sales);
   const medianQty = sorted[Math.floor(sorted.length / 2)]?.quantity || 0;
 
   const ranked = rankRows(sorted, (a, b) => a.quantity - b.quantity || a.net_sales - b.net_sales)
@@ -130,17 +138,18 @@ export function buildWaiterSalesSection({ rows, coverage, integrityOk }) {
     subtitle: formatCoverageSubtitle(coverage),
   });
   section.coverage = coverage;
+  section.note = formatCoverageWarning(coverage);
 
   if (coverage?.warning && !coverage.aligned && !coverage.partial) {
-    section.note = coverage.warning;
+    section.rows = [];
     return section;
   }
   if (!rows?.length) {
-    section.note = "No waiter product sales import for this period.";
+    section.note = section.note || "No waiter product sales import for this period.";
     return section;
   }
   if (!integrityOk) {
-    section.note = coverage?.warning || "Waiter import validation failed.";
+    section.note = section.note || coverage?.warning || "Waiter import validation failed.";
     return section;
   }
 

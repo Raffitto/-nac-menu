@@ -43,7 +43,8 @@ export function aggregateSalesItemsByName(rows = []) {
 
 export function includeInBottomItemsList(row) {
   const qty = Number(row.quantity) || 0;
-  if (qty <= 0) return false;
+  const net = Number(row.net_sales) || 0;
+  if (qty <= 0 || net <= 0) return false;
 
   const cls = String(row.foodics_class || "").toLowerCase();
   if (PROMO_CLASSES.has(cls)) return false;
@@ -52,7 +53,7 @@ export function includeInBottomItemsList(row) {
 
   const mapped = Boolean(row.matched_menu_item_name);
   if (mapped) return true;
-  if (isModifierOrAddonRow(row)) return true;
+  if (isModifierOrAddonRow(row)) return net > 0;
   if (
     [FOODICS_CLASS.MENU_ITEM, FOODICS_CLASS.DRINK, FOODICS_CLASS.ADDON, "menu_item", "drink", "addon"].includes(
       cls,

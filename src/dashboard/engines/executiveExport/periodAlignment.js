@@ -136,7 +136,18 @@ export function buildPeriodAlignmentBlock({
 
 export function formatCoverageSubtitle(coverage) {
   if (!coverage) return null;
-  if (coverage.warning) return coverage.warning;
-  if (coverage.batchLabel) return `Coverage: ${coverage.batchLabel}`;
+  if (coverage.batchLabel) {
+    return coverage.partial
+      ? `Sales import window: ${coverage.batchLabel}`
+      : `Coverage: ${coverage.batchLabel}`;
+  }
+  return null;
+}
+
+/** Single warning string for section note box (not duplicated in subtitle). */
+export function formatCoverageWarning(coverage) {
+  if (!coverage?.warning) return null;
+  if (!coverage.aligned && !coverage.partial) return coverage.warning;
+  if (coverage.partial) return coverage.warning;
   return null;
 }

@@ -26,7 +26,7 @@ export function classifyBottomItemAction(row, { totalProductQty = 0, medianQty =
 
   if (qty <= 1 && share < 0.3) {
     return {
-      action_label: "Possible removal candidate",
+      action_label: "Validate",
       action_note: "Minimal volume in period — validate menu placement before delisting.",
     };
   }
@@ -43,18 +43,18 @@ export function classifyBottomItemAction(row, { totalProductQty = 0, medianQty =
       (cls === "drink" && qty < medianQty * 0.4))
   ) {
     return {
-      action_label: "Seasonal item",
+      action_label: "Seasonal",
       action_note: "Low period volume may reflect seasonality, not permanent weakness.",
     };
   }
   if (row.matched_menu_item_name && qty < medianQty) {
     return {
-      action_label: "Needs visibility",
+      action_label: "Low visibility",
       action_note: "Mapped menu item with limited sales — consider placement or staff recommendation.",
     };
   }
   return {
-    action_label: "Candidate for repositioning",
+    action_label: "Reposition",
     action_note: "Volume is below menu median — test category placement or pairing.",
   };
 }
@@ -135,7 +135,7 @@ export function buildOperationalConcern({
 
   if (bottomItems.length >= 5) {
     const weakCount = bottomItems.filter((r) =>
-      ["Weak demand", "Possible removal candidate"].includes(r.action_label),
+      ["Weak demand", "Validate"].includes(r.action_label),
     ).length;
     if (weakCount >= 4) {
       return {
