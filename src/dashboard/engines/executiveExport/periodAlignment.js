@@ -1,13 +1,15 @@
 /**
- * Period alignment — never silently merge mismatched Foodics vs report ranges.
+ * Period alignment — sales (waiter import), menu_events, review_events.
  */
+
+import { NAC_ANALYTICS_EPOCH_START, isEpochExportRange } from "../../config/operationalEpoch";
 
 function parseDateKey(d) {
   if (!d) return null;
   return String(d).slice(0, 10);
 }
 
-/** @returns {{ aligned: boolean, partial: boolean, coverageStart, coverageEnd, requestedStart, requestedEnd, warning }} */
+/** @returns coverage assessment for a Foodics sales batch */
 export function assessImportCoverage(batch, exportRange) {
   const requestedStart = parseDateKey(exportRange?.startDate);
   const requestedEnd = parseDateKey(exportRange?.endDate);
@@ -20,7 +22,8 @@ export function assessImportCoverage(batch, exportRange) {
       coverageEnd: null,
       requestedStart,
       requestedEnd,
-      warning: "No Foodics import batch found for this branch and period.",
+      warning: "No operational sales import found for this branch and period.",
+      batchLabel: null,
     };
   }
 
@@ -36,6 +39,7 @@ export function assessImportCoverage(batch, exportRange) {
       requestedStart,
       requestedEnd,
       warning: null,
+      batchLabel: `${coverageStart} to ${coverageEnd}`,
     };
   }
 
@@ -47,14 +51,14 @@ export function assessImportCoverage(batch, exportRange) {
 
   let warning = null;
   if (!overlaps) {
-    warning = `Import batch (${coverageStart} to ${coverageEnd}) does not overlap the selected report range (${requestedStart} to ${requestedEnd}). Section omitted.`;
+    warning = `Sales import (${coverageStart} to ${coverageEnd}) does not overlap the selected report range (${requestedStart} to ${requestedEnd}). Section omitted.`;
   } else if (partial) {
-    warning = `Partial coverage: Foodics import spans ${coverageStart} to ${coverageEnd}; report range is ${requestedStart} to ${requestedEnd}. Figures reflect import batch only.`;
+    warning = `Partial sales coverage: import spans ${coverageStart} to ${coverageEnd}; report range is ${requestedStart} to ${requestedEnd}.`;
   }
 
   return {
     aligned,
-    partial: partial || !aligned,
+    partial: partial || (!aligned && overlaps),
     coverageStart,
     coverageEnd,
     requestedStart,
@@ -64,35 +68,69 @@ export function assessImportCoverage(batch, exportRange) {
   };
 }
 
-export function buildPeriodAlignmentBlock({ exportRange, productBatch, waiterBatch }) {
-  const product = assessImportCoverage(productBatch, exportRange);
-  const waiter = assessImportCoverage(waiterBatch, exportRange);
-  const review = {
-    aligned: true,
-    partial: false,
-    coverageStart: exportRange?.startDate,
-    coverageEnd: exportRange?.endDate,
-    requestedStart: exportRange?.startDate,
-    requestedEnd: exportRange?.endDate,
-    warning: null,
+function assessMenuCoverage(exportRange, menuSessions = 0) {
+  const inEpoch = isEpochExportRange(exportRange);
+  const silent = inEpoch && menuSessions <= 0;
+  return {
+    aligned: menuSessions > 0,
+    partial: silent,
+    warning: silent ? "No menu tracking sessions in the selected period." : null,
     batchLabel: exportRange?.periodLabel || null,
+    sessions: menuSessions,
   };
+}
 
-  const reportPartial = product.partial || waiter.partial || !product.aligned || !waiter.aligned;
+function assessReviewCoverage(exportRange, reviewEventCount = 0) {
+  const inEpoch = isEpochExportRange(exportRange);
+  const missing = inEpoch && reviewEventCount <= 0;
+  return {
+    aligned: reviewEventCount > 0,
+    partial: missing,
+    warning: missing ? "No review scan events in the selected period." : null,
+    batchLabel: exportRange?.periodLabel || null,
+    eventCount: reviewEventCount,
+  };
+}
+
+/**
+ * Three-layer alignment: sales import, menu behavior, review reputation.
+ */
+export function buildPeriodAlignmentBlock({
+  exportRange,
+  salesBatch = null,
+  menuSessions = 0,
+  reviewEventCount = 0,
+}) {
+  const sales = assessImportCoverage(salesBatch, exportRange);
+  const menu = assessMenuCoverage(exportRange, menuSessions);
+  const review = assessReviewCoverage(exportRange, reviewEventCount);
+
+  const inEpoch = isEpochExportRange(exportRange);
+  const preEpoch =
+    exportRange?.startDate && parseDateKey(exportRange.startDate) < NAC_ANALYTICS_EPOCH_START;
+
+  const issues = [sales.warning, menu.warning, review.warning].filter(Boolean);
+  let reportPartial =
+    !sales.aligned ||
+    sales.partial ||
+    (inEpoch && (menu.partial || review.partial));
+
+  let coverageNote = issues.length ? issues.join(" ") : null;
+  if (preEpoch) {
+    coverageNote = `Report range starts before trusted epoch (${NAC_ANALYTICS_EPOCH_START}). Post-epoch metrics are authoritative.`;
+    reportPartial = true;
+  }
 
   return {
-    product,
-    waiter,
+    sales,
+    menu,
     review,
     reportPartial,
-    coverageNote: reportPartial
-      ? [
-          product.warning,
-          waiter.warning,
-        ]
-          .filter(Boolean)
-          .join(" ")
-      : null,
+    coverageNote,
+    inEpoch,
+    preEpoch,
+    // Legacy alias — executive code previously read .product / .waiter
+    waiter: sales,
   };
 }
 

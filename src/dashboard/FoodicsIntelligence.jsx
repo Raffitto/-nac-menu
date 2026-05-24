@@ -64,14 +64,14 @@ function weekAgoISO() {
 }
 
 export default function FoodicsIntelligence({
-  importType = IMPORT_TYPE.PRODUCT_SALES,
+  importType = IMPORT_TYPE.WAITER_PRODUCT_SALES,
   embedded = false,
   laneBranch: laneBranchProp,
   onImported,
 }) {
   const platform = usePlatformFiltersOptional();
   const { data: biData } = useMenuBiDashboardContext();
-  const laneMeta = IMPORT_LANES[importType] || IMPORT_LANES[IMPORT_TYPE.PRODUCT_SALES];
+  const laneMeta = IMPORT_LANES[importType] || IMPORT_LANES[IMPORT_TYPE.WAITER_PRODUCT_SALES];
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [batches, setBatches] = useState([]);
@@ -131,7 +131,7 @@ export default function FoodicsIntelligence({
       setMenuItems(items);
       setAddOns(addons);
       setManualMaps(maps);
-      if (importType === IMPORT_TYPE.PRODUCT_SALES && biData?.top_items?.length) {
+      if (biData?.top_items?.length) {
         setAnalyticsItems(normalizeTopItems(biData.top_items));
       }
 
@@ -171,10 +171,10 @@ export default function FoodicsIntelligence({
   }, [loadAll]);
 
   useEffect(() => {
-    if (importType === IMPORT_TYPE.PRODUCT_SALES && biData?.top_items?.length) {
+    if (biData?.top_items?.length) {
       setAnalyticsItems(normalizeTopItems(biData.top_items));
     }
-  }, [importType, biData]);
+  }, [biData?.top_items]);
 
   const conversionRows = useMemo(() => {
     if (!salesItems.length) return [];
@@ -809,7 +809,7 @@ export default function FoodicsIntelligence({
       <section className="fi-card">
         <h2><History size={18} /> Import history</h2>
         {batches.length === 0 ? (
-          <p className="fi-muted">No Foodics imports yet. Upload a weekly Sales by Product export to unlock sales conversion intelligence.</p>
+          <p className="fi-muted">No operational sales imports yet. Upload a Foodics Sales by Creator export (group by product) to unlock intelligence.</p>
         ) : (
           <div className="fi-batch-list">
             {batches.map((b) => (
@@ -832,8 +832,8 @@ export default function FoodicsIntelligence({
       </section>
       )}
 
-      {/* Opportunities — product lane full page */}
-      {!embedded && importType === IMPORT_TYPE.PRODUCT_SALES && conversionRows.length > 0 && (
+      {/* Menu visibility vs operational sales — full page */}
+      {!embedded && isWaiterLane && conversionRows.length > 0 && (
         <>
           {!visibilityReady && (
             <p className="fi-visibility-note">

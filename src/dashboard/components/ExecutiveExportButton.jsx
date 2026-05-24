@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { FileDown } from "lucide-react";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import ExecutiveExportModal from "./ExecutiveExportModal";
 import { useExecutiveUnifiedExport } from "../hooks/useExecutiveUnifiedExport";
 
@@ -9,12 +10,16 @@ import { useExecutiveUnifiedExport } from "../hooks/useExecutiveUnifiedExport";
  */
 export default function ExecutiveExportButton({ className = "" }) {
   const filters = usePlatformFiltersOptional();
+  const { data: biData } = useMenuBiDashboardContext();
   const dashboardRange = filters?.selectedRange || "7d";
   const defaultBranch = filters?.branch || "khobar";
   const [open, setOpen] = useState(false);
 
   const { busy, catalogItems, catalogLoading, loadUpsellCatalog, generatePdf } =
-    useExecutiveUnifiedExport({ dashboardRange });
+    useExecutiveUnifiedExport({
+      dashboardRange,
+      menuSessions: biData?.total_sessions || 0,
+    });
 
   const handleOpen = useCallback(() => {
     setOpen(true);

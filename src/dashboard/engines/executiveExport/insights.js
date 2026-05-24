@@ -94,7 +94,7 @@ export function buildOperationalConcern({
   if (periodPartial) {
     return {
       title: "Period coverage gap",
-      body: "Foodics import batches do not fully cover the selected report range. Treat rankings as partial-period only.",
+      body: "Operational sales import, menu tracking, or review events do not fully cover the selected report range. Treat rankings as partial-period only.",
     };
   }
 
@@ -154,7 +154,7 @@ export function buildOperationalConcern({
 export function buildRecommendedAction(concern) {
   const map = {
     "Period coverage gap":
-      "Re-import Foodics product and waiter sales for the exact report dates before board review.",
+      "Re-import operational sales (Foodics by creator) for the exact report dates before board review.",
     "Low modifier attachment":
       "Run a focused modifier upsell huddle; track sauce and premium beverage attach next period.",
     "Weak dessert attach":

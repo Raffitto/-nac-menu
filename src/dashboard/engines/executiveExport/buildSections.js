@@ -59,7 +59,7 @@ export function buildTopItemsSection({ rows, coverage, integrityOk }) {
     return section;
   }
   if (!rows?.length) {
-    section.note = "No product import rows for this period.";
+    section.note = "No operational sales data for this period.";
     return section;
   }
   if (!integrityOk) {

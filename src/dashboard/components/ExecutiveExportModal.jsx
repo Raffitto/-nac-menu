@@ -168,7 +168,7 @@ export default function ExecutiveExportModal({
         ) : null}
 
         <label className="rev-export-date-field exec-export-branch-field">
-          <span>Branch (Foodics imports)</span>
+          <span>Branch (operational sales import)</span>
           <select
             value={branch}
             onChange={(e) => {
@@ -217,7 +217,7 @@ export default function ExecutiveExportModal({
           ) : (
             <div className="exec-export-upsell-list">
               {modifierFirst.length === 0 ? (
-                <p className="nac-empty-state">Upload Foodics imports to populate upsell options.</p>
+                <p className="nac-empty-state">Upload operational sales import to populate upsell options.</p>
               ) : (
                 modifierFirst.slice(0, 80).map((item) => (
                   <label key={item.id} className="exec-export-upsell-chip">

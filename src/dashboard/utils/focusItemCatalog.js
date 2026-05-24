@@ -16,10 +16,10 @@ function itemKey(label) {
 }
 
 /** Unique sellable items from Foodics imports for weekly focus picker */
-export function buildFocusItemCatalog(productItems = [], waiterItems = []) {
+export function buildFocusItemCatalog(salesItems = [], legacySecondSource = []) {
   const map = new Map();
-
-  [...(productItems || []), ...(waiterItems || [])].forEach((row) => {
+  const rows = [...(salesItems || []), ...(legacySecondSource || [])];
+  rows.forEach((row) => {
     const label = itemLabel(row);
     if (!label) return;
     const key = itemKey(label);

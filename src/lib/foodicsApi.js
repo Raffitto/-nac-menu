@@ -29,12 +29,12 @@ export async function getBatchSalesItems(batchId) {
   return data || [];
 }
 
-/** Latest batch — defaults to product_sales lane for backward compatibility */
-export async function getLatestBatch(importType = IMPORT_TYPE.PRODUCT_SALES, branchId = null) {
+/** Latest batch — defaults to waiter sales (canonical sales truth). */
+export async function getLatestBatch(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null) {
   return getLatestBatchByType(importType, branchId);
 }
 
-export async function getLatestBatchByType(importType = IMPORT_TYPE.PRODUCT_SALES, branchId = null) {
+export async function getLatestBatchByType(importType = IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId = null) {
   let query = supabase.from("foodics_import_batches").select("*");
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
     query = query.or("import_type.eq.product_sales,import_type.is.null");
@@ -49,7 +49,7 @@ export async function getLatestBatchByType(importType = IMPORT_TYPE.PRODUCT_SALE
 
 /** Best overlapping import batch for an export date range. */
 export async function getBatchForExportPeriod(
-  importType = IMPORT_TYPE.PRODUCT_SALES,
+  importType = IMPORT_TYPE.WAITER_PRODUCT_SALES,
   branchId = null,
   startDate = null,
   endDate = null,
@@ -201,7 +201,7 @@ export async function createImportBatch(meta, salesRows) {
     .from("foodics_import_batches")
     .insert({
       branch_id: meta.branch_id || "khobar",
-      import_type: meta.import_type || IMPORT_TYPE.PRODUCT_SALES,
+      import_type: meta.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES,
       period_type: meta.period_type,
       period_start: meta.period_start,
       period_end: meta.period_end,
@@ -213,7 +213,7 @@ export async function createImportBatch(meta, salesRows) {
     .single();
   if (batchErr) throw batchErr;
 
-  const isWaiterImport = (meta.import_type || IMPORT_TYPE.PRODUCT_SALES) === IMPORT_TYPE.WAITER_PRODUCT_SALES;
+  const isWaiterImport = (meta.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES) !== IMPORT_TYPE.PRODUCT_SALES;
 
   const payload = salesRows
     .map((row) => toSalesItemPayload(row, batch, meta))
@@ -306,10 +306,10 @@ export async function getAddOnsForMatching() {
   return data || [];
 }
 
-/** Load latest Foodics + conversion context for AI Insights */
+/** Load latest Foodics sales + conversion context for AI Insights (waiter import = sales truth). */
 export async function getFoodicsIntelligenceContext(analyticsData) {
   try {
-    const latest = await getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES);
+    const latest = await getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES);
     if (!latest) {
       return { hasImports: false, batches: [], conversionRows: [], opportunities: null };
     }

@@ -128,10 +128,8 @@ export default function VisualIntelligenceEngine() {
     platformStatus,
   } = useMenuBiDashboardContext();
   const [importsLoading, setImportsLoading] = useState(true);
-  const [productItems, setProductItems] = useState([]);
-  const [waiterItems, setWaiterItems] = useState([]);
-  const [hasWaiterBatch, setHasWaiterBatch] = useState(false);
-  const [hasProductBatch, setHasProductBatch] = useState(false);
+  const [salesItems, setSalesItems] = useState([]);
+  const [hasSalesBatch, setHasSalesBatch] = useState(false);
   const [exportConfig, setExportConfig] = useState(() => ({
     ...defaultExportConfig([], loadWeeklyFocusItems()),
     waiterSalesMetric: loadWaiterSalesMetric(),
@@ -144,32 +142,20 @@ export default function VisualIntelligenceEngine() {
   const loadImports = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured() || needsAuth) {
       setImportsLoading(false);
-      setProductItems([]);
-      setWaiterItems([]);
-      setHasWaiterBatch(false);
-      setHasProductBatch(false);
+      setSalesItems([]);
+      setHasSalesBatch(false);
       return;
     }
     setImportsLoading(true);
     try {
       const branch = filters?.branch || null;
-      const [latestProduct, latestWaiter] = await Promise.all([
-        getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
-        getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
-      ]);
-      setHasProductBatch(Boolean(latestProduct?.id));
-      setHasWaiterBatch(Boolean(latestWaiter?.id));
-      const [prod, waiter] = await Promise.all([
-        latestProduct?.id ? getBatchSalesItems(latestProduct.id) : Promise.resolve([]),
-        latestWaiter?.id ? getBatchSalesItems(latestWaiter.id) : Promise.resolve([]),
-      ]);
-      setProductItems(prod);
-      setWaiterItems(waiter);
+      const latestSales = await getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch);
+      setHasSalesBatch(Boolean(latestSales?.id));
+      const rows = latestSales?.id ? await getBatchSalesItems(latestSales.id) : [];
+      setSalesItems(rows);
     } catch {
-      setProductItems([]);
-      setWaiterItems([]);
-      setHasWaiterBatch(false);
-      setHasProductBatch(false);
+      setSalesItems([]);
+      setHasSalesBatch(false);
     } finally {
       setImportsLoading(false);
     }
@@ -188,26 +174,23 @@ export default function VisualIntelligenceEngine() {
   const addonPairs = useMemo(() => biData?.top_addon_pairs || [], [biData]);
 
   const attachment = useMemo(
-    () => buildAttachmentIntelligence({ salesItems: productItems, addonPairs }),
-    [productItems, addonPairs],
+    () => buildAttachmentIntelligence({ salesItems, addonPairs }),
+    [salesItems, addonPairs],
   );
 
   const timeShift = useMemo(
-    () => buildTimeShiftIntelligence({ biData, salesItems: productItems }),
-    [biData, productItems],
+    () => buildTimeShiftIntelligence({ biData, salesItems }),
+    [biData, salesItems],
   );
 
   const menuEngineering = useMemo(() => classifyMenuItems(funnels), [funnels]);
 
   const heat = useMemo(
-    () => buildHeatScores({ funnels, salesItems: productItems, modifierLeaderboard: attachment.modifierLeaderboard }),
-    [funnels, productItems, attachment.modifierLeaderboard],
+    () => buildHeatScores({ funnels, salesItems, modifierLeaderboard: attachment.modifierLeaderboard }),
+    [funnels, salesItems, attachment.modifierLeaderboard],
   );
 
-  const focusCatalog = useMemo(
-    () => buildFocusItemCatalog(productItems, waiterItems),
-    [productItems, waiterItems],
-  );
+  const focusCatalog = useMemo(() => buildFocusItemCatalog(salesItems), [salesItems]);
 
   const weeklyFocusItems = useMemo(
     () => exportConfig.weeklyFocusItems || [],
@@ -218,13 +201,13 @@ export default function VisualIntelligenceEngine() {
 
   const staffIntel = useMemo(
     () =>
-      hasWaiterBatch
-        ? buildWaiterSalesIntelligence(waiterItems, {
+      hasSalesBatch
+        ? buildWaiterSalesIntelligence(salesItems, {
             focusItems: weeklyFocusItems,
             salesMetric,
           })
         : { waiters: [], all: [], managers: [], topUpseller: null },
-    [waiterItems, hasWaiterBatch, weeklyFocusItems, salesMetric],
+    [salesItems, hasSalesBatch, weeklyFocusItems, salesMetric],
   );
 
   const includeManagers = Boolean(exportConfig.includeManagers);
@@ -235,14 +218,14 @@ export default function VisualIntelligenceEngine() {
   }, [staffIntel, includeManagers, salesMetric]);
 
   const calibratedStaff = useMemo(() => {
-    if (!hasWaiterBatch || !waiterItems?.length) {
+    if (!hasSalesBatch || !salesItems?.length) {
       return { waiters: competitionStaff.waiters || [], team: {} };
     }
-    const ops = buildFoodicsWaiterIntelligence(waiterItems, competitionStaff, timeShift);
+    const ops = buildFoodicsWaiterIntelligence(salesItems, competitionStaff, timeShift);
     const team = calibrateTeamContext(ops.team, ops.waiters);
     const waiters = enrichWaitersForVisuals(calibrateWaiterProfiles(ops.waiters, team));
     return { waiters, team };
-  }, [competitionStaff, waiterItems, timeShift, hasWaiterBatch]);
+  }, [competitionStaff, salesItems, timeShift, hasSalesBatch]);
 
   const waiterTargets = useMemo(
     () =>
@@ -307,11 +290,11 @@ export default function VisualIntelligenceEngine() {
       insights,
       kpis: intelligence?.kpis,
       funnels,
-      hasWaiterBatch,
-      waiterSalesItems: waiterItems,
+      hasSalesBatch,
+      waiterSalesItems: salesItems,
       exportMeta: { title: `Visual Intelligence — ${rangeLabel}`, period: rangeLabel },
     }),
-    [attachment, timeShift, heat, menuEngineering, staffIntel, competitionStaff, waiterTargets, insights, intelligence, funnels, rangeLabel, hasWaiterBatch, waiterItems],
+    [attachment, timeShift, heat, menuEngineering, staffIntel, competitionStaff, waiterTargets, insights, intelligence, funnels, rangeLabel, hasSalesBatch, salesItems],
   );
 
   const runExport = async (fmt) => {
@@ -413,7 +396,7 @@ export default function VisualIntelligenceEngine() {
             <p className="vi-subtitle">Highest attachment rates vs parent volume</p>
             {attachment.topAttachments.length === 0 ? (
               <p className="nac-empty-state">
-                {hasProductBatch ? "No attachment patterns in latest import" : "Import sales to unlock attachment leaderboard"}
+                {hasSalesBatch ? "No attachment patterns in latest import" : "Import operational sales to unlock attachment leaderboard"}
               </p>
             ) : (
               attachment.topAttachments.map((p) => (
@@ -440,7 +423,7 @@ export default function VisualIntelligenceEngine() {
             <p className="vi-subtitle">High parent volume · low modifier attachment vs expected threshold</p>
             {attachment.missedUpsells.length === 0 ? (
               <p className="nac-empty-state">
-                {hasProductBatch ? "No critical gaps vs configured thresholds" : "Import sales to score missed upsells"}
+                {hasSalesBatch ? "No critical gaps vs configured thresholds" : "Import operational sales to score missed upsells"}
               </p>
             ) : (
               attachment.missedUpsells.slice(0, 5).map((m) => (
@@ -670,7 +653,7 @@ export default function VisualIntelligenceEngine() {
         </div>
       </Section>
 
-      {hasWaiterBatch && calibratedStaff.waiters?.length > 0 && (
+      {hasSalesBatch && calibratedStaff.waiters?.length > 0 && (
         <>
           <Section
             title="Operational waiter comparison"
@@ -701,7 +684,7 @@ export default function VisualIntelligenceEngine() {
         <div className="vi-grid-2">
           <div className="vi-panel vi-podium">
             <h3><Users size={16} /> Top upseller podium</h3>
-            {!hasWaiterBatch ? (
+            {!hasSalesBatch ? (
               <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
             ) : competitionStaff.topUpseller ? (
               <>
@@ -721,7 +704,7 @@ export default function VisualIntelligenceEngine() {
 
           <div className="vi-panel">
             <h3>Staff comparison</h3>
-            {!hasWaiterBatch ? (
+            {!hasSalesBatch ? (
               <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
             ) : (
               <>
@@ -745,7 +728,7 @@ export default function VisualIntelligenceEngine() {
           </div>
         </div>
 
-        {hasWaiterBatch && !includeManagers && staffIntel.managers?.length > 0 && (
+        {hasSalesBatch && !includeManagers && staffIntel.managers?.length > 0 && (
           <motion.div className="vi-panel" style={{ marginTop: "1rem" }}>
             <h3>Manager contribution (excluded from competitions)</h3>
             <p className="vi-subtitle">Operational overview — not ranked against waiters</p>
@@ -761,7 +744,7 @@ export default function VisualIntelligenceEngine() {
           </motion.div>
         )}
 
-        {hasWaiterBatch && waiterTargets.length > 0 && (
+        {hasSalesBatch && waiterTargets.length > 0 && (
           <div className="vi-panel" style={{ marginTop: "1rem" }}>
             <h3>Operational coaching</h3>
             <p className="vi-subtitle">Calibrated floor coaching — margin-first, shift-aware</p>

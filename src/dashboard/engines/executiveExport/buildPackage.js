@@ -1,5 +1,5 @@
 /**
- * Executive export package builder — orchestrates sections, alignment, briefing.
+ * Executive export package — waiter import = sole sales truth.
  */
 
 import {
@@ -22,54 +22,60 @@ import {
   buildWaiterUpsellSection,
   buildKhobarGoogleSection,
 } from "./buildSections";
-import { aggregateProductItemsByName, includeInBottomItemsList } from "./productRollup";
+import {
+  aggregateSalesItemsByName,
+  includeInBottomItemsList,
+  validateSalesQuantityCoherence,
+} from "./salesRollup";
 
 export function buildExecutiveUnifiedExportPackage(input = {}) {
   const {
     exportRange = null,
     branchId = "khobar",
-    productItems = [],
+    salesItems = [],
     waiterItems = [],
     reviewEvents = [],
     upsellFocusItems = [],
     upsellGroupIds = [],
-    productBatch = null,
-    waiterBatch = null,
+    salesBatch = null,
+    menuSessions = 0,
   } = input;
 
-  const periodAlignment = buildPeriodAlignmentBlock({ exportRange, productBatch, waiterBatch });
+  const items = (waiterItems?.length ? waiterItems : salesItems) || [];
 
-  const productOverlap =
-    productBatch &&
-    periodAlignment.product.coverageStart &&
-    periodAlignment.product.coverageEnd &&
-    !periodAlignment.product.warning?.includes("does not overlap");
-  const waiterOverlap =
-    waiterBatch &&
-    periodAlignment.waiter.coverageStart &&
-    periodAlignment.waiter.coverageEnd &&
-    !periodAlignment.waiter.warning?.includes("does not overlap");
+  const periodAlignment = buildPeriodAlignmentBlock({
+    exportRange,
+    salesBatch,
+    menuSessions,
+    reviewEventCount: (reviewEvents || []).length,
+  });
 
-  const productUsable = productOverlap && (productItems?.length > 0 || productBatch);
-  const waiterUsable = waiterOverlap && (waiterItems?.length > 0 || waiterBatch);
+  const salesOverlap =
+    salesBatch &&
+    periodAlignment.sales.coverageStart &&
+    periodAlignment.sales.coverageEnd &&
+    !periodAlignment.sales.warning?.includes("does not overlap");
 
-  const productValidation = buildWaiterImportValidation(productUsable ? productItems : []);
-  const waiterValidation = buildWaiterImportValidation(waiterUsable ? waiterItems : []);
-  const productIntegrity = productUsable
-    ? validateImportBatchIntegrity(productItems, productValidation.totals)
-    : { valid: false, integrity_failure: true, message: periodAlignment.product.warning };
-  const waiterIntegrity = waiterUsable
-    ? validateImportBatchIntegrity(waiterItems, waiterValidation.totals)
-    : { valid: false, integrity_failure: true, message: periodAlignment.waiter.warning };
+  const salesUsable = salesOverlap && items.length > 0;
 
-  const integrityOk = productUsable && productIntegrity.valid && (!waiterUsable || waiterIntegrity.valid);
+  const salesValidation = buildWaiterImportValidation(salesUsable ? items : []);
+  const salesIntegrity = salesUsable
+    ? validateImportBatchIntegrity(items, salesValidation.totals)
+    : { valid: false, integrity_failure: true, message: periodAlignment.sales.warning };
 
-  const aggregated = productUsable ? aggregateProductItemsByName(productItems) : [];
+  const aggregated = salesUsable ? aggregateSalesItemsByName(items) : [];
+  const qtyCoherence = salesUsable
+    ? validateSalesQuantityCoherence(aggregated, salesValidation.totals)
+    : { valid: true };
+
+  const integrityOk =
+    salesUsable && salesIntegrity.valid && qtyCoherence.valid;
+
   const withQty = aggregated.filter((r) => r.quantity > 0);
   const bottomCandidates = withQty.filter(includeInBottomItemsList);
 
-  const waiterIntel = waiterUsable
-    ? buildWaiterSalesIntelligence(waiterItems, {
+  const waiterIntel = salesUsable
+    ? buildWaiterSalesIntelligence(items, {
         focusItems: upsellFocusItems,
         salesMetric: "net_sales",
       })
@@ -111,27 +117,33 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
     .filter(Boolean)
     .join(" · ");
 
+  const integrityMessage =
+    salesIntegrity.message ||
+    qtyCoherence.message ||
+    (!integrityOk && periodAlignment.coverageNote) ||
+    null;
+
   const sections = {
     topItems: buildTopItemsSection({
       rows: withQty,
-      coverage: periodAlignment.product,
-      integrityOk: productUsable && productIntegrity.valid,
+      coverage: periodAlignment.sales,
+      integrityOk,
     }),
     bottomItems: buildBottomItemsSection({
       rows: bottomCandidates,
-      coverage: periodAlignment.product,
-      integrityOk: productUsable && productIntegrity.valid,
+      coverage: periodAlignment.sales,
+      integrityOk,
     }),
     waiterSales: buildWaiterSalesSection({
       rows: waiterSalesSource,
-      coverage: periodAlignment.waiter,
-      integrityOk: waiterUsable && waiterIntegrity.valid,
+      coverage: periodAlignment.sales,
+      integrityOk,
     }),
     waiterUpsell: buildWaiterUpsellSection({
       rows: upsellSource,
-      coverage: periodAlignment.waiter,
+      coverage: periodAlignment.sales,
       focusLabel,
-      integrityOk: waiterUsable && waiterIntegrity.valid,
+      integrityOk,
     }),
     khobarGoogle: buildKhobarGoogleSection({
       rows: khobarSource,
@@ -144,11 +156,13 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
       valid: integrityOk,
       integrity_failure: !integrityOk,
     },
-    trackingIntegrity: { score: khobarEvents.length > 20 ? 80 : 50 },
-    sessionDensity: { score: Math.min(100, khobarEvents.length) },
+    trackingIntegrity: {
+      score: menuSessions >= 50 ? 88 : menuSessions >= 10 ? 62 : periodAlignment.menu.partial ? 35 : 70,
+    },
+    sessionDensity: { score: Math.min(100, Math.round(menuSessions * 1.2)) },
     attributionConfidence: { score: periodAlignment.reportPartial ? 45 : 72 },
-    branchCoverage: { score: productUsable && waiterUsable ? 88 : 55 },
-    visibilityConfidence: { score: productIntegrity.valid ? 75 : 40 },
+    branchCoverage: { score: salesUsable ? 88 : 40 },
+    visibilityConfidence: { score: salesIntegrity.valid ? 78 : 40 },
   });
 
   const confidenceLevel =
@@ -174,9 +188,9 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
     exportEndDate: exportRange?.endDate,
     branchId,
     branchLabel,
-    dataSourceNote: "Foodics product + waiter imports · Khobar review QR / Google redirect events",
-    productBatchLabel: productBatch ? `${productBatch.period_start} → ${productBatch.period_end}` : null,
-    waiterBatchLabel: waiterBatch ? `${waiterBatch.period_start} → ${waiterBatch.period_end}` : null,
+    dataSourceNote:
+      "Operational sales import (Foodics by creator) · menu_events behavior · review_events reputation",
+    salesBatchLabel: salesBatch ? `${salesBatch.period_start} → ${salesBatch.period_end}` : null,
     filenameBase: buildExecutiveReportFilename({
       branchId,
       exportStartDate: exportRange?.startDate,
@@ -212,15 +226,15 @@ export function buildExecutiveUnifiedExportPackage(input = {}) {
     upsellFocusItems,
     upsellGroupIds,
     importIntegrity: {
-      product: productIntegrity,
-      waiter: waiterIntegrity,
+      sales: salesIntegrity,
+      quantityCoherence: qtyCoherence,
       valid: integrityOk,
+      message: integrityMessage,
     },
     provisional: periodAlignment.reportPartial || !integrityOk,
     suppressRankings: !integrityOk,
     totals: {
-      product: productValidation.totals,
-      waiter: waiterValidation.totals,
+      sales: salesValidation.totals,
     },
     topItems: sections.topItems,
     bottomItems: sections.bottomItems,

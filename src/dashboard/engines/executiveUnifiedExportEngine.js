@@ -2,7 +2,11 @@
  * Unified executive export — re-exports v2 package builder + XLSX sheets.
  */
 
-export { aggregateProductItemsByName, includeInBottomItemsList } from "./executiveExport/productRollup";
+export {
+  aggregateSalesItemsByName,
+  aggregateProductItemsByName,
+  includeInBottomItemsList,
+} from "./executiveExport/salesRollup";
 export { buildExecutiveUnifiedExportPackage } from "./executiveExport/buildPackage";
 
 /** Tabular rows for XLSX reuse */

@@ -9,28 +9,27 @@ import { buildExecutiveUnifiedExportPackage } from "../engines/executiveUnifiedE
 import { exportExecutiveUnifiedPdf } from "../engines/executiveUnifiedPdfExport";
 import { exportExecutiveUnifiedXLSX } from "../engines/exportEngine";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
+import { resolveExportRange } from "../utils/exportRangeState";
 import {
   mergeUpsellFocusItems,
   enrichCatalogWithGroups,
 } from "../engines/executiveExport/upsellGroups";
-import { resolveExportRange } from "../utils/exportRangeState";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
 
 async function loadReviewEvents(exportRange) {
   if (!supabase || !exportRange) return [];
-  let query = supabase
+  const { data, error } = await supabase
     .from("review_events")
     .select(REVIEW_EVENT_SELECT)
     .gte("created_at", exportRange.sinceIso)
     .lte("created_at", exportRange.untilIso);
-  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
 
-export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
+export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions = 0 } = {}) {
   const [busy, setBusy] = useState(false);
   const [catalogItems, setCatalogItems] = useState([]);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -39,15 +38,12 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
     if (!isSupabaseConfigured()) return [];
     setCatalogLoading(true);
     try {
-      const [productBatch, waiterBatch] = await Promise.all([
-        getBatchForExportPeriod(IMPORT_TYPE.PRODUCT_SALES, branchId),
-        getBatchForExportPeriod(IMPORT_TYPE.WAITER_PRODUCT_SALES, branchId),
-      ]);
-      const [productItems, waiterItems] = await Promise.all([
-        productBatch?.id ? getBatchSalesItems(productBatch.id) : Promise.resolve([]),
-        waiterBatch?.id ? getBatchSalesItems(waiterBatch.id) : Promise.resolve([]),
-      ]);
-      const catalog = enrichCatalogWithGroups(buildFocusItemCatalog(productItems, waiterItems));
+      const salesBatch = await getBatchForExportPeriod(
+        IMPORT_TYPE.WAITER_PRODUCT_SALES,
+        branchId,
+      );
+      const salesItems = salesBatch?.id ? await getBatchSalesItems(salesBatch.id) : [];
+      const catalog = enrichCatalogWithGroups(buildFocusItemCatalog(salesItems));
       setCatalogItems(catalog);
       return catalog;
     } catch {
@@ -69,13 +65,8 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
         groupIds: upsellGroupIds,
         catalogItems: catalogItems.length ? catalogItems : await loadUpsellCatalog(branchId),
       });
-      const [productBatch, waiterBatch, reviewEvents] = await Promise.all([
-        getBatchForExportPeriod(
-          IMPORT_TYPE.PRODUCT_SALES,
-          branchId,
-          range.startDate,
-          range.endDate,
-        ),
+
+      const [salesBatch, reviewEvents] = await Promise.all([
         getBatchForExportPeriod(
           IMPORT_TYPE.WAITER_PRODUCT_SALES,
           branchId,
@@ -85,24 +76,21 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d" } = {}) {
         loadReviewEvents(range),
       ]);
 
-      const [productItems, waiterItems] = await Promise.all([
-        productBatch?.id ? getBatchSalesItems(productBatch.id) : Promise.resolve([]),
-        waiterBatch?.id ? getBatchSalesItems(waiterBatch.id) : Promise.resolve([]),
-      ]);
+      const salesItems = salesBatch?.id ? await getBatchSalesItems(salesBatch.id) : [];
 
       return buildExecutiveUnifiedExportPackage({
         exportRange: range,
         branchId,
-        productItems,
-        waiterItems,
+        salesItems,
+        waiterItems: salesItems,
         reviewEvents,
         upsellFocusItems: mergedFocus,
         upsellGroupIds,
-        productBatch,
-        waiterBatch,
+        salesBatch,
+        menuSessions,
       });
     },
-    [dashboardRange, catalogItems, loadUpsellCatalog],
+    [dashboardRange, catalogItems, loadUpsellCatalog, menuSessions],
   );
 
   const generatePdf = useCallback(

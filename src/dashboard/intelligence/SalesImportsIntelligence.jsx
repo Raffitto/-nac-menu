@@ -12,6 +12,7 @@ import { formatExecutiveConversion } from "../utils/intelligenceSanity";
 import { buildWaiterSalesIntelligence } from "../engines/waiterSalesEngine";
 import FoodicsImportLane from "../components/FoodicsImportLane";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
+import { NAC_ANALYTICS_EPOCH_START } from "../config/operationalEpoch";
 import "../styles/platform-os.css";
 import "../styles/foodics-intelligence.css";
 import "../styles/foodics-import-lanes.css";
@@ -31,11 +32,9 @@ function KpiCard({ label, value, sub }) {
 export default function SalesImportsIntelligence() {
   const filters = usePlatformFiltersOptional();
   const { data: biData } = useMenuBiDashboardContext();
-  const [productItems, setProductItems] = useState([]);
-  const [waiterItems, setWaiterItems] = useState([]);
+  const [salesItems, setSalesItems] = useState([]);
   const [topItems, setTopItems] = useState([]);
-  const [productBatch, setProductBatch] = useState(null);
-  const [waiterBatch, setWaiterBatch] = useState(null);
+  const [salesBatch, setSalesBatch] = useState(null);
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,26 +47,19 @@ export default function SalesImportsIntelligence() {
     try {
       const branch = filters?.branch || null;
 
-      const [batchList, latestProduct, latestWaiter] = await Promise.all([
-        getImportBatches(24),
-        getLatestBatchByType(IMPORT_TYPE.PRODUCT_SALES, branch),
+      const [batchList, latestSales] = await Promise.all([
+        getImportBatches(24, IMPORT_TYPE.WAITER_PRODUCT_SALES),
         getLatestBatchByType(IMPORT_TYPE.WAITER_PRODUCT_SALES, branch),
       ]);
 
       setBatches(batchList);
-      setProductBatch(latestProduct);
-      setWaiterBatch(latestWaiter);
+      setSalesBatch(latestSales);
 
-      const [prodSales, waiterSales] = await Promise.all([
-        latestProduct?.id ? getBatchSalesItems(latestProduct.id) : Promise.resolve([]),
-        latestWaiter?.id ? getBatchSalesItems(latestWaiter.id) : Promise.resolve([]),
-      ]);
-      setProductItems(prodSales);
-      setWaiterItems(waiterSales);
+      const rows = latestSales?.id ? await getBatchSalesItems(latestSales.id) : [];
+      setSalesItems(rows);
       setTopItems(normalizeTopItems(biData?.top_items || []));
     } catch {
-      setProductItems([]);
-      setWaiterItems([]);
+      setSalesItems([]);
       setTopItems([]);
     } finally {
       setLoading(false);
@@ -81,45 +73,45 @@ export default function SalesImportsIntelligence() {
   const correlation = useMemo(
     () =>
       buildSalesCorrelation({
-        salesItems: productItems,
+        salesItems,
         topItems,
         totalSessions: biData?.total_sessions || 0,
       }),
-    [productItems, topItems, biData?.total_sessions],
+    [salesItems, topItems, biData?.total_sessions],
   );
 
-  const waiterCorrelation = useMemo(() => {
-    if (!waiterItems.length) return { waiterKpis: [], topUpsellers: [] };
-    const intel = buildWaiterSalesIntelligence(waiterItems);
-    return { waiterKpis: intel.waiters, topUpsellers: intel.waiters.slice(0, 6) };
-  }, [waiterItems]);
+  const waiterIntel = useMemo(() => {
+    if (!salesItems.length) return { waiters: [], topUpsellers: [] };
+    const intel = buildWaiterSalesIntelligence(salesItems);
+    return { waiters: intel.waiters, topUpsellers: intel.waiters.slice(0, 6) };
+  }, [salesItems]);
 
   if (loading && !batches.length) {
-    return <p className="nac-empty-state">Loading sales imports…</p>;
+    return <p className="nac-empty-state">Loading operational sales data…</p>;
   }
 
   return (
     <motion.div className="nac-sales-imports" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <p style={{ margin: "0 0 1.25rem", fontSize: "0.8rem", color: "rgba(249,249,247,0.5)" }}>
-        {businessDayExportNote()} · Product lane drives menu intelligence · Waiter lane drives staff intelligence
+        {businessDayExportNote()} · Sales = waiter import · Behavior = menu_events · Reputation = review_events · Trusted epoch from {NAC_ANALYTICS_EPOCH_START}
       </p>
 
       <motion.div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
         <KpiCard
-          label="Product import net sales"
+          label="Operational net sales"
           value={`${Math.round(correlation.totals.net_sales).toLocaleString()} SAR`}
-          sub={productBatch ? `${productBatch.period_start} → ${productBatch.period_end}` : "Upload product sales"}
+          sub={salesBatch ? `${salesBatch.period_start} → ${salesBatch.period_end}` : "Upload sales by creator"}
         />
-        <KpiCard label="Product units" value={correlation.totals.quantity.toLocaleString()} />
+        <KpiCard label="Units sold" value={correlation.totals.quantity.toLocaleString()} />
         <KpiCard
-          label="Sell-through rate"
+          label="Menu attach signal"
           value={correlation.attachmentRate != null ? `${correlation.attachmentRate}%` : "—"}
-          sub={correlation.provisional ? "Provisional — import integrity check" : "Menu signals vs product import"}
+          sub="Items with sales vs menu visibility rows"
         />
         <KpiCard
-          label="Waiter import rows"
-          value={waiterItems.length.toLocaleString()}
-          sub={waiterBatch ? `Latest ${waiterBatch.period_start}` : "Upload waiter product sales"}
+          label="Sales import lines"
+          value={salesItems.length.toLocaleString()}
+          sub={salesBatch ? `Latest batch · ${salesBatch.branch_id}` : "No batch"}
         />
       </motion.div>
 
@@ -144,14 +136,14 @@ export default function SalesImportsIntelligence() {
       <motion.div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <motion.div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", display: "flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
-            <Users size={16} color="#d7bc8a" /> Waiter performance
+            <Users size={16} color="#d7bc8a" /> Waiter sales ranking
           </h3>
-          {!waiterBatch ? (
-            <p className="nac-empty-state">Upload Waiter Product Sales to activate staff intelligence</p>
-          ) : waiterCorrelation.waiterKpis.length === 0 ? (
-            <p className="nac-empty-state">No waiter rows in latest batch</p>
+          {!salesBatch ? (
+            <p className="nac-empty-state">Upload operational sales import (Foodics by creator)</p>
+          ) : waiterIntel.waiters.length === 0 ? (
+            <p className="nac-empty-state">No sales rows in latest batch</p>
           ) : (
-            waiterCorrelation.waiterKpis.slice(0, 6).map((w) => (
+            waiterIntel.waiters.slice(0, 6).map((w) => (
               <div key={w.waiter} style={{ display: "flex", justifyContent: "space-between", padding: "0.4rem 0", fontSize: "0.85rem" }}>
                 <span>{w.waiter}</span>
                 <strong>
@@ -164,10 +156,10 @@ export default function SalesImportsIntelligence() {
 
         <motion.div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", display: "flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
-            <AlertTriangle size={16} color="#f5a623" /> High interest · low sales
+            <AlertTriangle size={16} color="#f5a623" /> High menu interest · low sales
           </h3>
           {correlation.highInterestLowSales.length === 0 ? (
-            <p className="nac-empty-state">No gaps detected in product batch</p>
+            <p className="nac-empty-state">No visibility gaps in current period</p>
           ) : (
             correlation.highInterestLowSales.map((r) => (
               <motion.div key={r.item_name} style={{ marginBottom: "0.5rem", fontSize: "0.85rem" }}>
@@ -182,12 +174,12 @@ export default function SalesImportsIntelligence() {
 
         <motion.div className="nac-glass-panel">
           <h3 style={{ margin: "0 0 0.75rem", display: "flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
-            <TrendingUp size={16} color="#4ecdc4" /> Top upsellers
+            <TrendingUp size={16} color="#4ecdc4" /> Top sellers (waiter)
           </h3>
-          {!waiterBatch ? (
-            <p className="nac-empty-state">Requires waiter product sales import</p>
+          {!salesBatch ? (
+            <p className="nac-empty-state">Requires operational sales import</p>
           ) : (
-            waiterCorrelation.topUpsellers.map((w) => (
+            waiterIntel.topUpsellers.map((w) => (
               <motion.div key={w.waiter} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", padding: "0.35rem 0" }}>
                 <span>{w.waiter}</span>
                 <span>{w.net_sales.toLocaleString()} SAR</span>
@@ -199,7 +191,7 @@ export default function SalesImportsIntelligence() {
 
       <motion.div className="nac-glass-panel" style={{ marginBottom: "2rem" }}>
         <h3 style={{ margin: "0 0 0.75rem", display: "flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
-          <ShoppingBag size={16} /> Viewed vs sold (product import)
+          <ShoppingBag size={16} /> Menu visibility vs operational sales
         </h3>
         <div style={{ overflowX: "auto" }}>
           <table className="fi-table" style={{ width: "100%", fontSize: "0.8rem" }}>
@@ -207,7 +199,7 @@ export default function SalesImportsIntelligence() {
               <tr>
                 <th>Item</th>
                 <th>Views</th>
-                <th>Orders</th>
+                <th>Units sold</th>
                 <th>Conv %</th>
                 <th>Net sales</th>
               </tr>
@@ -227,16 +219,11 @@ export default function SalesImportsIntelligence() {
         </div>
       </motion.div>
 
-      <h2 style={{ margin: "0 0 1rem", fontSize: "1.15rem", fontWeight: 500 }}>Import lanes</h2>
+      <h2 style={{ margin: "0 0 1rem", fontSize: "1.15rem", fontWeight: 500 }}>Sales import</h2>
       <div className="fi-import-lanes-grid">
         <FoodicsImportLane
-          importType={IMPORT_TYPE.PRODUCT_SALES}
-          latestBatch={productBatch}
-          onImported={load}
-        />
-        <FoodicsImportLane
           importType={IMPORT_TYPE.WAITER_PRODUCT_SALES}
-          latestBatch={waiterBatch}
+          latestBatch={salesBatch}
           onImported={load}
         />
       </div>

@@ -1,5 +1,6 @@
 /** Foodics import lane metadata */
 
+/** @deprecated Product sales lane — use WAITER_PRODUCT_SALES as canonical sales truth. */
 export const IMPORT_TYPE = {
   PRODUCT_SALES: "product_sales",
   WAITER_PRODUCT_SALES: "waiter_product_sales",
@@ -33,8 +34,8 @@ export const IMPORT_LANES = {
   },
   [IMPORT_TYPE.WAITER_PRODUCT_SALES]: {
     id: IMPORT_TYPE.WAITER_PRODUCT_SALES,
-    title: "Waiter Product Sales Import",
-    subtitle: "Staff-level selling performance",
+    title: "Operational Sales Import",
+    subtitle: "Canonical sales truth — Foodics by creator, grouped by product",
     icon: "waiter",
     foodicsReport: "Sales by Creator Report — Group By: product",
     instructions: [
@@ -52,17 +53,17 @@ export const IMPORT_LANES = {
       quantity: "Net Quantity",
     },
     usedFor: [
+      "Executive export top / least items",
       "Waiter leaderboards & upsell %",
-      "Weekly staff target reports",
-      "Dessert / beverage champion tracking",
-      "Per-waiter export targeting",
+      "Modifier / attachment intelligence",
+      "Menu visibility correlation",
     ],
   },
 };
 
 export function normalizeImportType(batch) {
   if (!batch) return null;
-  return batch.import_type || IMPORT_TYPE.PRODUCT_SALES;
+  return batch.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES;
 }
 
 export function laneLabel(importType) {
