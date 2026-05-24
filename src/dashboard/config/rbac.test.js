@@ -57,6 +57,8 @@ describe("NAC OS RBAC", () => {
       expect(canAccessNav(profile, "branches")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_SYSTEM)).toBe(false);
+      expect(hasPerm(profile, PERMISSIONS.MANAGE_MENU)).toBe(false);
+      expect(hasPerm(profile, PERMISSIONS.VIEW_MENU)).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.VIEW_EXECUTIVE_EXPORT)).toBe(true);
     });
   });

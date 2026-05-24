@@ -32,6 +32,7 @@ import {
   resolveCategoryIcon,
   normalizeCategoryIcons,
 } from "./lib/menuPresentation";
+import { resolvePublicBranchFromLocation, branchPublicName } from "./dashboard/config/branchDisplayConfig";
 
 const _fallbackCategories = [
   {
@@ -495,6 +496,9 @@ const _fallback = { categories: _fallbackCategories, menuData: _fallbackMenuData
 
 export default function App() {
   const [adminMode, setAdminMode] = useState(false);
+  const publicBranchId = useMemo(() => resolvePublicBranchFromLocation(), []);
+  const publicBrandEn = useMemo(() => branchPublicName(publicBranchId, { lang: "en" }), [publicBranchId]);
+  const publicBrandAr = useMemo(() => branchPublicName(publicBranchId, { lang: "ar" }), [publicBranchId]);
 
   const {
     categories,
@@ -1188,7 +1192,7 @@ if (adminMode) {
 </button>
 
             <motion.h1 className="branch-title" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-  {isArabic ? "الخبر" : "KHOBAR"}
+  {isArabic ? publicBrandAr : publicBrandEn}
 </motion.h1>
 
             <motion.div
@@ -1256,7 +1260,7 @@ if (adminMode) {
             <section className="home-hero">
               <img src="/logo.png" alt="NAC" className="logo logo-compact" />
               <motion.h1 className="branch-title" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-                {isArabic ? "الخبر" : "KHOBAR"}
+                {isArabic ? publicBrandAr : publicBrandEn}
               </motion.h1>
               <p className="contextual-greeting">
                 {menuMode === "manual" && manualCategory
@@ -1447,7 +1451,7 @@ onDragEnd={(e, info) => {
 </motion.div>
 
               <motion.div className="lux-info" style={{ opacity: infoOpacity }}>
-                <p className="lux-label">NAC KHOBAR</p>
+                <p className="lux-label">{publicBrandEn.toUpperCase()}</p>
                 <h1>{isArabic ? activeItem.ar : activeItem.en}</h1>
                 <p>{isArabic ? activeItem.descAr : activeItem.descEn}</p>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { isSupabaseConfigured, supabase } from "./supabase";
 import { invalidateMenuCache, MENU_CACHE_KEY } from "./menuApi";
+import { resolvePublicBranchFromLocation } from "../dashboard/config/branchDisplayConfig";
 import { filterPublicMenuData, nextVisibilityExpiryMs } from "./menuVisibility";
 
 function setCachedMenu(data) {
@@ -41,8 +42,9 @@ export function useMenuData(fallback) {
     const gen = ++fetchGenRef.current;
     invalidateMenuCache();
     try {
+      const branchId = resolvePublicBranchFromLocation();
       const { getFullMenu } = await import("./menuApi");
-      const { data, error } = await getFullMenu({ bypassCache: true });
+      const { data, error } = await getFullMenu({ bypassCache: true, branchId });
       if (gen !== fetchGenRef.current) return false;
       if (error) throw error;
       if (data?.categories?.length > 0) {

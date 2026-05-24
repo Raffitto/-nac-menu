@@ -181,14 +181,14 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  let normalized = normalizeBiDashboardPayload(payload);
+  let normalized = normalizeBiDashboardPayload(payload, { hours: pHours });
   let menuDataEmpty = isBiTotalsEmpty(normalized);
 
   if (menuDataEmpty) {
     try {
       const { data: legacy, error: legacyErr } = await supabase.rpc("get_dashboard_aggregates");
       if (!legacyErr && legacy && !isBiTotalsEmpty(legacy)) {
-        normalized = normalizeBiDashboardPayload(legacy);
+        normalized = normalizeBiDashboardPayload(legacy, { hours: pHours });
         menuDataEmpty = false;
         partial = true;
         usedFallback = true;
@@ -248,6 +248,9 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     hours: pHours,
     primaryRpcEmpty,
     usedServerPatch: usedFallback,
+    byHourRaw: payload?.by_hour,
+    byHourNormalized: normalized.by_hour,
+    chartRows: normalized.by_hour,
   });
 
   devLog("[fetchBiDashboard]", {

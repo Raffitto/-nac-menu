@@ -35,7 +35,7 @@ function normalizeFeedRow(row) {
 
 async function mergePayload(supabase, params, summary, feedRows) {
   const data = summary || {};
-  let aggregates = mapBiToSessionAggregates(data);
+  let aggregates = mapBiToSessionAggregates(data, { hours: params.p_hours });
   if (supabase && params) {
     aggregates = await applySessionQualityToAggregates(supabase, params, aggregates);
   }
@@ -126,10 +126,7 @@ export async function fetchSessionAnalytics(supabase, filters) {
   }
 
   const [summaryRes, feed] = await Promise.all([
-    supabase.rpc("get_session_analytics", {
-      ...params,
-      p_light: true,
-    }),
+    supabase.rpc("get_session_analytics", params),
     fetchFeed(supabase, params).catch(() => []),
   ]);
 

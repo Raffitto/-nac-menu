@@ -54,6 +54,8 @@ export function branchDisplayName(branch) {
 export function operationalBrandDisplay(branch) {
   const id = normalizeBranchId(branch);
   if (id === "khobar") return "NAC";
+  if (id === "riyadh") return "NAC Riyadh";
+  if (id === "jeddah") return "NAC Jeddah";
   return branchDisplayName(branch);
 }
 

@@ -63,6 +63,13 @@ import {
   formatLinkedPlacementBadge,
   buildPlacementGroupSummary,
 } from "../lib/menuPlacements";
+import { useRbac } from "./context/RbacContext";
+import {
+  resolveMenuEditorBranch,
+  canEditMenuEngineering,
+  assertMenuBranchAccess,
+} from "../lib/menuBranchScope";
+import { branchDisplayOptions } from "./config/branchDisplayConfig";
 import "./styles/menu-manager.css";
 
 function toDatetimeLocalValue(ms) {
@@ -288,6 +295,16 @@ function ItemVisibilityModal({
 }
 
 export default function MenuManager() {
+  const rbac = useRbac();
+  const readOnlyMenu = !canEditMenuEngineering(rbac.profile);
+  const menuBranchOptions = useMemo(
+    () =>
+      rbac.canAccessAllBranches()
+        ? branchDisplayOptions("dashboardName")
+        : branchDisplayOptions("dashboardName").filter((o) => o.value === rbac.profile.branchScope),
+    [rbac],
+  );
+  const [menuBranch, setMenuBranch] = useState(() => resolveMenuEditorBranch(rbac.profile, null));
   const [activeTab, setActiveTab] = useState("menu");
   const [categories, setCategories] = useState([]);
   const [selectedCatId, setSelectedCatId] = useState(null);
@@ -332,7 +349,6 @@ export default function MenuManager() {
 
   const sectionsCatalogRef = useRef([]);
   const categoriesRef = useRef([]);
-  const initStartedRef = useRef(false);
   const lastLoadedCatRef = useRef(null);
 
   useEffect(() => {
@@ -366,10 +382,12 @@ export default function MenuManager() {
   const loadSectionsCatalog = useCallback(async () => {
     if (!supabase) return;
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("sections")
         .select("id, name_en, name_ar, category_id, sort_order, categories(name_en, slug)")
+        .eq("branch_id", menuBranch)
         .order("sort_order");
+      const { data, error } = await query;
       if (error) throw error;
       setSectionsCatalog(
         (data || []).map((s) => ({
@@ -383,11 +401,11 @@ export default function MenuManager() {
     } catch (_) {
       setSectionsCatalog([]);
     }
-  }, []);
+  }, [menuBranch]);
 
   const loadCategories = useCallback(async () => {
     try {
-      const res = await getCategories();
+      const res = await getCategories({ branchId: menuBranch });
       const cats = Array.isArray(res?.data) ? res.data : [];
       setCategories(cats);
       return cats;
@@ -395,7 +413,7 @@ export default function MenuManager() {
       setError("Failed to load categories");
       return [];
     }
-  }, []);
+  }, [menuBranch]);
 
   const loadMenuForCategory = useCallback(async (catId) => {
     if (!catId || !supabase) return;
@@ -405,6 +423,7 @@ export default function MenuManager() {
         .from("sections")
         .select("*")
         .eq("category_id", catId)
+        .eq("branch_id", menuBranch)
         .order("sort_order");
       if (secErr) throw secErr;
 
@@ -415,6 +434,7 @@ export default function MenuManager() {
           .from("menu_items")
           .select("*")
           .in("section_id", secIds)
+          .eq("branch_id", menuBranch)
           .order("sort_order");
         items = itemData || [];
       }
@@ -450,7 +470,7 @@ export default function MenuManager() {
     } finally {
       setItemsLoading(false);
     }
-  }, []);
+  }, [menuBranch]);
 
   const loadAddOns = useCallback(async () => {
     try {
@@ -471,13 +491,16 @@ export default function MenuManager() {
   }, [showToast]);
 
   useEffect(() => {
+    const scoped = resolveMenuEditorBranch(rbac.profile, menuBranch);
+    if (scoped && scoped !== menuBranch) setMenuBranch(scoped);
+  }, [rbac.profile, menuBranch]);
+
+  useEffect(() => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
       setError("Supabase is not configured. Add your keys to .env.local to use the Menu Manager.");
       return undefined;
     }
-    if (initStartedRef.current) return undefined;
-    initStartedRef.current = true;
 
     let cancelled = false;
     async function init() {
@@ -485,8 +508,9 @@ export default function MenuManager() {
       try {
         const cats = await loadCategories();
         await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
-        if (!cancelled && cats.length > 0) {
-          setSelectedCatId((current) => current || cats[0].id);
+        if (!cancelled) {
+          setSelectedCatId(cats[0]?.id || null);
+          lastLoadedCatRef.current = null;
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -496,9 +520,7 @@ export default function MenuManager() {
     return () => {
       cancelled = true;
     };
-    // Intentionally mount-only: loaders are stable useCallbacks
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [menuBranch, loadCategories, loadSectionsCatalog, loadAddOns, loadAllergens]);
 
   useEffect(() => {
     if (!selectedCatId) return undefined;
@@ -575,10 +597,12 @@ export default function MenuManager() {
   }, []);
 
   const handleSaveCategory = useCallback(async () => {
-    if (!catEditData.name_en.trim()) return;
+    if (!catEditData.name_en.trim() || readOnlyMenu) return;
     try {
+      assertMenuBranchAccess(rbac.profile, menuBranch);
+      const payload = { ...catEditData, branch_id: menuBranch };
       if (catEditMode === "create") {
-        await createCategory(catEditData);
+        await createCategory(payload);
         showToast("Category created");
       } else {
         await updateCategory(catEditData.id, catEditData);
@@ -592,7 +616,7 @@ export default function MenuManager() {
     } catch (e) {
       showToast(e?.message || "Failed to save category", "error");
     }
-  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId]);
+  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch]);
 
   const handleDeleteCategory = useCallback((cat, e) => {
     e.stopPropagation();
@@ -640,16 +664,23 @@ export default function MenuManager() {
   const handleAddSection = useCallback(async () => {
     if (!selectedCatId) return;
     const name = prompt("Section name (English):");
-    if (!name?.trim()) return;
+    if (!name?.trim() || readOnlyMenu) return;
     const nameAr = prompt("Section name (Arabic):") || "";
     try {
-      await createSection({ name_en: name.trim(), name_ar: nameAr.trim(), category_id: selectedCatId, sort_order: menuData.length });
+      assertMenuBranchAccess(rbac.profile, menuBranch);
+      await createSection({
+        name_en: name.trim(),
+        name_ar: nameAr.trim(),
+        category_id: selectedCatId,
+        sort_order: menuData.length,
+        branch_id: menuBranch,
+      });
       showToast("Section created");
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to create section", "error");
     }
-  }, [selectedCatId, menuData.length, showToast, loadMenuForCategory]);
+  }, [selectedCatId, menuData.length, showToast, loadMenuForCategory, readOnlyMenu, rbac.profile, menuBranch]);
 
   const handleSaveSection = useCallback(async (sectionId) => {
     try {
@@ -785,12 +816,17 @@ export default function MenuManager() {
   }, [selectedCatId, sectionsCatalog]);
 
   const handleSaveItem = useCallback(async () => {
+    if (readOnlyMenu) {
+      showToast("Read-only menu access", "error");
+      return;
+    }
     if (!editingItem.name_en.trim()) {
       showToast("Name (English) is required", "error");
       return;
     }
     setSaving(true);
     try {
+      assertMenuBranchAccess(rbac.profile, menuBranch);
       let imgUrl = editingItem.image;
 
       if (imageFile) {
@@ -825,6 +861,7 @@ export default function MenuManager() {
         vegan: Boolean(editingItem.vegan),
         active: editingItem.active !== false,
         hidden_until: editingItem.hidden_until || null,
+        branch_id: menuBranch,
       });
 
       let itemId = editingItemId;
@@ -899,6 +936,9 @@ export default function MenuManager() {
     loadMenuForCategory,
     selectedCatId,
     resetPlacementEditor,
+    menuBranch,
+    rbac.profile,
+    readOnlyMenu,
   ]);
 
   const handleToggleSoldOut = useCallback(async (item) => {
@@ -1165,6 +1205,26 @@ export default function MenuManager() {
 
   return (
     <div className="mm">
+      <div
+        className="mm-branch-bar"
+        style={{ display: "flex", gap: "0.75rem", alignItems: "center", padding: "0.65rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
+          Branch
+          <select
+            value={menuBranch}
+            disabled={!rbac.canAccessAllBranches()}
+            onChange={(e) => setMenuBranch(e.target.value)}
+          >
+            {menuBranchOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+        {readOnlyMenu && (
+          <span style={{ fontSize: "0.75rem", opacity: 0.75 }}>Read-only menu view</span>
+        )}
+      </div>
       <div className="mm-bg-glow" />
 
       {/* ═══ SIDEBAR ═══ */}

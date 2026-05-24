@@ -2,6 +2,8 @@ import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 import { filterPublicMenuData } from "./menuVisibility";
 import { newPlacementGroupId } from "./menuPlacements";
+import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
+import { menuBranchQueryFilter } from "./menuBranchScope";
 
 export const MENU_CACHE_KEY = "nac-menu-cache";
 const CACHE_TTL_MS = 60 * 1000;
@@ -62,6 +64,7 @@ const MENU_ITEM_DB_FIELDS = new Set([
   "available_from",
   "available_until",
   "placement_group_id",
+  "branch_id",
 ]);
 
 /** Strip UI-only keys (e.g. category_id) before Supabase writes. */
@@ -157,39 +160,42 @@ function buildTags(item) {
 
 // ═══════════════ PUBLIC READ (for guest menu) ═══════════════
 
-export async function getCategories() {
-  const { data, error } = await supabase
+export async function getCategories(options = {}) {
+  const branchId = normalizeBranchId(options.branchId);
+  let query = supabase
     .from("categories")
     .select("*")
     .eq("active", true)
     .order("sort_order", { ascending: true });
+  if (branchId) query = menuBranchQueryFilter(query, branchId);
 
+  const { data, error } = await query;
   return { data, error };
 }
 
 export async function getFullMenu(options = {}) {
   const bypassCache = options.bypassCache === true;
+  const branchId = normalizeBranchId(options.branchId);
+  const cacheKey = branchId ? `${MENU_CACHE_KEY}:${branchId}` : MENU_CACHE_KEY;
   if (!bypassCache) {
-    const hit = cached(MENU_CACHE_KEY);
+    const hit = cached(cacheKey);
     if (hit) return { data: hit, error: null };
+  }
+
+  let catQuery = supabase.from("categories").select("*").eq("active", true).order("sort_order");
+  let secQuery = supabase.from("sections").select("*").eq("active", true).order("sort_order");
+  let itemQuery = supabase.from("menu_items").select("*").order("sort_order");
+  if (branchId) {
+    catQuery = menuBranchQueryFilter(catQuery, branchId);
+    secQuery = menuBranchQueryFilter(secQuery, branchId);
+    itemQuery = menuBranchQueryFilter(itemQuery, branchId);
   }
 
   const [catRes, secRes, itemRes, addonRes, juncAddonRes, allergenRes, juncAllergenRes] =
     await Promise.all([
-      supabase
-        .from("categories")
-        .select("*")
-        .eq("active", true)
-        .order("sort_order"),
-      supabase
-        .from("sections")
-        .select("*")
-        .eq("active", true)
-        .order("sort_order"),
-      supabase
-        .from("menu_items")
-        .select("*")
-        .order("sort_order"),
+      catQuery,
+      secQuery,
+      itemQuery,
       supabase.from("add_ons").select("*").eq("active", true),
       supabase.from("item_addons").select("*").order("sort_order"),
       supabase.from("allergens").select("*"),
@@ -308,7 +314,7 @@ export async function getFullMenu(options = {}) {
     allergenLabels,
   };
 
-  setCache(MENU_CACHE_KEY, result);
+  setCache(cacheKey, result);
   return { data: result, error: null };
 }
 

@@ -3,7 +3,8 @@
  * Extend RBAC_USER_DIRECTORY or REACT_APP_RBAC_USERS JSON for new staff / branches.
  */
 
-import { CANONICAL_BRANCH_IDS, normalizeBranchId, operationalBrandDisplay } from "../utils/branchIdentity";
+import { CANONICAL_BRANCH_IDS, normalizeBranchId } from "../utils/branchIdentity";
+import { branchDashboardName, branchExportName } from "./branchDisplayConfig";
 
 export const RBAC_ROLES = {
   DEVELOPER: "developer",
@@ -32,7 +33,9 @@ export const PERMISSIONS = {
 
 const ALL_PERMISSIONS = Object.values(PERMISSIONS);
 
-const CEO_PERMISSIONS = ALL_PERMISSIONS.filter((p) => p !== PERMISSIONS.MANAGE_SYSTEM);
+const CEO_PERMISSIONS = ALL_PERMISSIONS.filter(
+  (p) => p !== PERMISSIONS.MANAGE_SYSTEM && p !== PERMISSIONS.MANAGE_MENU,
+);
 
 const BRANCH_GM_PERMISSIONS = [
   PERMISSIONS.VIEW_OVERVIEW,
@@ -228,7 +231,7 @@ export function buildBranchFilterOptions(profile) {
   const ids = allowedBranchIds(profile);
   const options = ids.map((id) => ({
     value: id,
-    label: operationalBrandDisplay(id),
+    label: branchDashboardName(id),
   }));
   if (canAccessAllBranches(profile)) {
     return [{ value: "all", label: "All branches" }, ...options];
@@ -239,7 +242,7 @@ export function buildBranchFilterOptions(profile) {
 export function buildExportBranchOptions(profile) {
   return allowedBranchIds(profile).map((id) => ({
     value: id,
-    label: operationalBrandDisplay(id),
+    label: branchExportName(id),
   }));
 }
 

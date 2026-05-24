@@ -7,6 +7,7 @@ import {
   normalizeHourlyDistribution,
   detectHourlyGranularity,
 } from "../dashboard/utils/hourlyBucketLabels";
+import { resolveChartGranularityForHours, dayCountForHours } from "../dashboard/utils/hourlyPipeline";
 import { canonicalCategoryOpenCount, enrichByEventTypeCanonical } from "./menuEventTypes";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
 import {
@@ -59,7 +60,7 @@ export function biTopItemsNeedsRefresh(payload) {
 }
 
 /** Normalize RPC, server fallback, or client aggregation into one stable shape. */
-export function normalizeBiDashboardPayload(raw) {
+export function normalizeBiDashboardPayload(raw, options = {}) {
   if (!raw || typeof raw !== "object") {
     return { ...emptyBiShell() };
   }
@@ -123,10 +124,13 @@ export function normalizeBiDashboardPayload(raw) {
       })
     : [];
 
-  const hourGranularity = detectHourlyGranularity(by_hour_raw);
+  const rangeHours = Number(options.hours) || 24;
+  const forcedGranularity = resolveChartGranularityForHours(rangeHours);
+  const hourGranularity =
+    forcedGranularity === "hour" ? "hour" : detectHourlyGranularity(by_hour_raw);
   const by_hour = normalizeHourlyDistribution(by_hour_raw, {
     granularity: hourGranularity,
-    dayCount: raw._pipeline?.dayCount || (hourGranularity === "day" ? 7 : undefined),
+    dayCount: options.dayCount || dayCountForHours(rangeHours),
   });
 
   return {

@@ -53,7 +53,14 @@ import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
 import SessionQuality from "./components/SessionQuality";
 import InsightEngine from "./components/InsightEngine";
-import { CATEGORY_NAMES, formatDuration, formatHourLabel, exportCSV } from "./utils/formatters";
+import { CATEGORY_NAMES, formatDuration, exportCSV } from "./utils/formatters";
+import { rangeToHours } from "./utils/rangeState";
+import { hourlyChartRows } from "./utils/hourlyBucketLabels";
+import {
+  buildHourlyDebugPayload,
+  publishHourlyPipelineDebug,
+  resolveChartGranularityForHours,
+} from "./utils/hourlyPipeline";
 import { generateInsights } from "./utils/insights";
 import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
@@ -191,10 +198,31 @@ function AdminDashboardContent({ onBack }) {
   const returningSessions = Number(data?.returning_sessions) || 0;
   const returningPct = qrSessionStarts > 0 ? Math.round((returningSessions / qrSessionStarts) * 100) : 0;
 
-  const hourlyData = (data?.by_hour || []).map((row) => ({
-    label: formatHourLabel(row.hour, row.granularity || "hour"),
-    count: Number(row.count) || 0,
-  }));
+  const hourlyHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
+  const hourlyGranularity = resolveChartGranularityForHours(hourlyHours);
+  const hourlyData = useMemo(
+    () =>
+      hourlyChartRows(data?.by_hour || [], {
+        fillGaps: false,
+        granularity: hourlyGranularity,
+      }),
+    [data?.by_hour, hourlyGranularity],
+  );
+
+  useEffect(() => {
+    if (!data?.by_hour) return;
+    publishHourlyPipelineDebug(
+      buildHourlyDebugPayload({
+        hours: hourlyHours,
+        selectedRange: filters?.selectedRange,
+        branch: filters?.branch,
+        source: "AdminDashboard",
+        byHourRaw: data.by_hour,
+        byHourNormalized: data.by_hour,
+        chartRows: hourlyData,
+      }),
+    );
+  }, [data?.by_hour, hourlyData, hourlyHours, filters?.selectedRange, filters?.branch]);
 
   // Funnel, session quality, dead zones, lost searches, executive data
   const funnel = data?.funnel || {};
@@ -472,8 +500,8 @@ function AdminDashboardContent({ onBack }) {
                 <section className="dashboard-row">
                   <motion.div className="big-glass-card" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
                     <div className="card-header">
-                      <h3>Hourly Activity</h3>
-                      <span>Last 24 hours</span>
+                      <h3>{hourlyGranularity === "day" ? "Daily Activity" : "Hourly Activity"}</h3>
+                      <span>{hourlyGranularity === "day" ? "Last 7 days" : "Today · Asia/Riyadh (24 hours)"}</span>
                     </div>
                     <div className="real-chart">
                       {hourlyData.length === 0 ? (

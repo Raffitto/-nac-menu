@@ -110,7 +110,7 @@ export function useMenuBiDashboard(options = {}) {
         hours,
       });
 
-      const normalized = normalizeBiDashboardPayload(result?.data);
+      const normalized = normalizeBiDashboardPayload(result?.data, { hours });
       setData(normalized);
       setPartial(Boolean(result?.partial));
       setNote(result?.note || null);

@@ -5,6 +5,7 @@
 import { getMenuTrackingDiagnostics } from "./menuTrackingDiagnostics";
 import { isNacDebugEnabled } from "./nacDebug";
 import { getTruthValidation } from "./truthValidationRegistry";
+import { buildHourlyDebugPayload } from "../dashboard/utils/hourlyPipeline";
 
 const MAX_FETCH_HISTORY = 5;
 
@@ -20,17 +21,36 @@ function shouldExpose() {
 }
 
 export function recordPipelineFetch(meta = {}) {
+  const hourlyDebug =
+    meta.hourlyDebug ||
+    (meta.byHourRaw || meta.byHourNormalized
+      ? buildHourlyDebugPayload({
+          hours: meta.hours,
+          selectedRange: meta.selectedRange,
+          branch: meta.branch,
+          source: meta.dataSource || meta.primaryRpc,
+          byHourRaw: meta.byHourRaw,
+          byHourNormalized: meta.byHourNormalized,
+          chartRows: meta.chartRows,
+        })
+      : null);
+
   const entry = {
     ...(lastFetch || {}),
     at: new Date().toISOString(),
     ...meta,
+    hourlyDebug,
   };
   lastFetch = entry;
   fetchHistory.unshift(entry);
   if (fetchHistory.length > MAX_FETCH_HISTORY) fetchHistory.length = MAX_FETCH_HISTORY;
 
   if (shouldExpose()) {
-    window.__NAC_PIPELINE_DEBUG__ = getPipelineDiagnostics();
+    const diagnostics = getPipelineDiagnostics();
+    window.__NAC_PIPELINE_DEBUG__ = diagnostics;
+    if (hourlyDebug) {
+      window.__NAC_PIPELINE_DEBUG__.hourly = hourlyDebug;
+    }
     if (isNacDebugEnabled()) {
       // eslint-disable-next-line no-console
       console.info("[NAC pipeline]", entry);
@@ -63,6 +83,7 @@ export function getPipelineDiagnostics() {
     platformStatus: lastFetch?.platformStatus || null,
     sufficiency: lastFetch?.sufficiency || null,
     hourlyPopulatedBuckets: hourlyBuckets,
+    hourly: lastFetch?.hourlyDebug || null,
     truthValidation: getTruthValidation(),
   };
 }

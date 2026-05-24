@@ -2,6 +2,10 @@
  * Maps get_bi_dashboard RPC payload → Session Analytics aggregate shape.
  */
 
+import { normalizeHourlyForRange } from "./hourlyPipeline";
+import { hourlyChartRows } from "./hourlyBucketLabels";
+import { rangeToHours } from "./rangeState";
+
 const CATEGORY_NAMES = {
   brunch: "Brunch",
   daytime: "Daytime",
@@ -25,8 +29,17 @@ export function mapBiTopAddons(bi) {
     .slice(0, 12);
 }
 
-export function mapBiToSessionAggregates(bi) {
+export function mapBiToSessionAggregates(bi, options = {}) {
   if (!bi || typeof bi !== "object") return null;
+
+  const hours = options.hours ?? rangeToHours(options.selectedRange || "today");
+  const byHourRaw = (bi.by_hour || []).map((row) => ({
+    hour: row.hour ?? row.bucket ?? row.business_day_key ?? row.day_key,
+    count: Number(row.count) || 0,
+    granularity: row.granularity,
+  }));
+  const normalized = normalizeHourlyForRange(byHourRaw, hours);
+  const chartRows = hourlyChartRows(normalized, { fillGaps: false });
 
   const byType = bi.by_event_type || {};
   const topCategories = (bi.top_categories || []).map((c) => ({
@@ -45,10 +58,11 @@ export function mapBiToSessionAggregates(bi) {
     top_searches: bi.top_searches || [],
     top_sections: bi.top_sections || [],
     menu_tab_engagement: bi.menu_tab_engagement || [],
-    by_hour: (bi.by_hour || []).map((row) => ({
-      hour: row.hour ?? row.bucket,
-      count: Number(row.count) || 0,
+    by_hour: chartRows.map((row) => ({
+      hour: row.bucket ?? row.hour,
+      count: row.count,
       granularity: row.granularity,
+      label: row.label,
     })),
     by_role: bi.by_role || {},
     by_branch: bi.by_branch || {},

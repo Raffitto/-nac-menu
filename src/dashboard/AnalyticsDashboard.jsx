@@ -228,9 +228,10 @@ export default function AnalyticsDashboard() {
     if (!Array.isArray(raw)) return [];
     return raw.map((row) => ({
       label:
-        hourlyGranularity === "day"
+        row.label ||
+        (hourlyGranularity === "day"
           ? formatDayLabel(row.hour)
-          : formatHourLabel(row.hour),
+          : formatHourLabel(row.hour, row.granularity || "hour")),
       count: Number(row.count) || 0,
     }));
   }, [aggregates, hourlyGranularity]);
