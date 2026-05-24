@@ -8,6 +8,7 @@ import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { businessDayExportNote } from "../utils/businessDay";
 import { buildSalesCorrelation } from "../engines/salesCorrelationEngine";
+import { formatExecutiveConversion } from "../utils/intelligenceSanity";
 import { buildWaiterSalesIntelligence } from "../engines/waiterSalesEngine";
 import FoodicsImportLane from "../components/FoodicsImportLane";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
@@ -78,8 +79,13 @@ export default function SalesImportsIntelligence() {
   }, [load]);
 
   const correlation = useMemo(
-    () => buildSalesCorrelation({ salesItems: productItems, topItems }),
-    [productItems, topItems],
+    () =>
+      buildSalesCorrelation({
+        salesItems: productItems,
+        topItems,
+        totalSessions: biData?.total_sessions || 0,
+      }),
+    [productItems, topItems, biData?.total_sessions],
   );
 
   const waiterCorrelation = useMemo(() => {
@@ -105,13 +111,35 @@ export default function SalesImportsIntelligence() {
           sub={productBatch ? `${productBatch.period_start} → ${productBatch.period_end}` : "Upload product sales"}
         />
         <KpiCard label="Product units" value={correlation.totals.quantity.toLocaleString()} />
-        <KpiCard label="Sell-through rate" value={`${correlation.attachmentRate}%`} sub="Menu signals vs product import" />
+        <KpiCard
+          label="Sell-through rate"
+          value={correlation.attachmentRate != null ? `${correlation.attachmentRate}%` : "—"}
+          sub={correlation.provisional ? "Provisional — import integrity check" : "Menu signals vs product import"}
+        />
         <KpiCard
           label="Waiter import rows"
           value={waiterItems.length.toLocaleString()}
           sub={waiterBatch ? `Latest ${waiterBatch.period_start}` : "Upload waiter product sales"}
         />
       </motion.div>
+
+      {correlation.integrityMessage ? (
+        <motion.div
+          className="nac-glass-panel"
+          style={{ marginBottom: "1rem", borderColor: "rgba(245,166,35,0.45)" }}
+        >
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#f5a623" }}>
+            <AlertTriangle size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
+            {correlation.integrityMessage} — ranking insights suppressed until totals reconcile.
+          </p>
+        </motion.div>
+      ) : null}
+
+      {correlation.operationalTrust ? (
+        <p style={{ margin: "0 0 1rem", fontSize: "0.75rem", color: "rgba(249,249,247,0.45)" }}>
+          Operational trust score: {correlation.operationalTrust.score}/100 ({correlation.operationalTrust.tier})
+        </p>
+      ) : null}
 
       <motion.div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
         <motion.div className="nac-glass-panel">
@@ -190,7 +218,7 @@ export default function SalesImportsIntelligence() {
                   <td>{r.item_name}</td>
                   <td>{r.item_views ?? r.item_impressions ?? 0}</td>
                   <td>{r.quantity_sold}</td>
-                  <td>{r.impression_conversion_pct ?? r.conversion_rate ?? "—"}</td>
+                  <td>{formatExecutiveConversion(r)}</td>
                   <td>{Number(r.net_sales || 0).toLocaleString()}</td>
                 </tr>
               ))}

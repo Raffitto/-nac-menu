@@ -8,6 +8,7 @@ import {
   resolveAliasFromLookup,
   resolveAmbiguousAlias,
 } from "./foodicsAliasDictionary";
+import { searchModifierCatalog } from "../../platform/engines/catalogSearchEngine";
 import {
   IMPORT_STATUS,
   IGNORE_REASON,
@@ -18,6 +19,17 @@ import {
   resolvePaidModifierRule,
   ignoreReasonLabel,
 } from "./foodicsImportRules";
+
+const MODIFIER_SEMANTIC = new Set([
+  "modifier",
+  "addon",
+  "add_on",
+  "sauce",
+  "sauce_condiment",
+  "condiment",
+  "drink_modifier",
+  "extra",
+]);
 
 const STOP_WORDS = new Set(["the", "a", "an", "with", "and", "or", "of", "sar", "pcs", "pc"]);
 
@@ -322,7 +334,7 @@ function findBestCandidate(foodicsName, catalog, { strictMatch }) {
   };
 }
 
-function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps, classification) {
+function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps, classification, aliasLookup = null) {
   const normalized = normalizeName(nameToMatch);
   const strictMatch = classification?.strictMatch ?? false;
 
@@ -334,6 +346,25 @@ function matchAgainstCatalog(nameToMatch, menuItems, addOns, manualMaps, classif
       matchType: "empty",
       needsReview: false,
     };
+  }
+
+  const lookup = aliasLookup || buildAliasLookup(manualMaps);
+  if (classification?.track_as_modifier || MODIFIER_SEMANTIC.has(classification?.semantic_class || classification?.class)) {
+    const modHit = searchModifierCatalog(nameToMatch, { menuItems, addOns, aliasLookup: lookup });
+    if (modHit.match) {
+      const hit = {
+        id: modHit.match.id,
+        name_en: modHit.match.name_en,
+        kind: modHit.match.kind || "addon",
+      };
+      return {
+        matched: modHit.confidence >= AUTO_MATCH_MIN ? hit : null,
+        suggestion: hit,
+        confidence: modHit.confidence,
+        matchType: normalizeMatchType(modHit.strategy || "partial"),
+        needsReview: modHit.confidence < AUTO_MATCH_MIN,
+      };
+    }
   }
 
   const manual = lookupPersistentMap(normalized, manualMaps);

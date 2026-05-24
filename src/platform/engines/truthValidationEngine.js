@@ -9,6 +9,7 @@ import { computePlatformHealthScore } from "./platformHealthScoreEngine";
 import { runValidationChecklist } from "./validationChecklistEngine";
 import { formatFreshnessSnapshot, getDataFreshness } from "./dataFreshnessEngine";
 import { getPipelineDiagnostics } from "../../lib/pipelineDiagnostics";
+import { computeOperationalTrustScore } from "./reportTruthEngine";
 
 /**
  * @param {object} input
@@ -28,6 +29,8 @@ export function buildTruthValidationPackage(input = {}) {
     freshnessRaw = null,
     observations = null,
     buildId = null,
+    importIntegrity = null,
+    totalSessions = 0,
   } = input;
 
   const pipeline = getPipelineDiagnostics();
@@ -81,6 +84,17 @@ export function buildTruthValidationPackage(input = {}) {
 
   const checklist = runValidationChecklist({ biData, observations });
 
+  const operationalTrust = computeOperationalTrustScore({
+    importIntegrity,
+    trackingIntegrity: { score: integrity?.score ?? 70 },
+    attributionConfidence: { score: menuConfidence?.score ?? 55 },
+    branchCoverage: { score: biData?.by_branch ? 78 : 60 },
+    sessionDensity: {
+      score: Math.min(100, Math.round((totalSessions || biData?.total_sessions || 0) * 1.2)),
+    },
+    visibilityConfidence: { score: menuConfidence?.score ?? 60 },
+  });
+
   return {
     menuConfidence,
     predictiveConfidence,
@@ -89,6 +103,7 @@ export function buildTruthValidationPackage(input = {}) {
     anomalies: anomalyReport,
     healthScore,
     checklist,
+    operationalTrust,
     generated_at: new Date().toISOString(),
   };
 }

@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import { businessDayExportNote } from "../utils/businessDay";
-import { exportCell } from "../utils/intelligenceSanity";
+import { exportCell, formatExecutiveConversion } from "../utils/intelligenceSanity";
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
 import {
   fillPage,
@@ -27,7 +27,7 @@ function heatBarColor(pct) {
 function drawProductCard(doc, margin, y, w, item, maxOrders) {
   const orders = Number(item.orders) || 0;
   const impr = Number(item.impressions ?? item.item_impressions) || 0;
-  const conv = item.impression_conversion_pct ?? item.menu_conversion_pct ?? item.conversion_rate ?? 0;
+  const convLabel = formatExecutiveConversion(item);
   const heat = item.heatIndex ?? item.attention_score ?? 0;
   const pct = maxOrders > 0 ? (orders / maxOrders) * 100 : 0;
   const h = 72;
@@ -45,7 +45,7 @@ function drawProductCard(doc, margin, y, w, item, maxOrders) {
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
   doc.text(
-    `${impr.toLocaleString()} impr · ${orders} orders · ${conv != null ? `${Number(conv).toFixed(1)}%` : "—"} conv`,
+    `${impr.toLocaleString()} impr · ${orders} orders · ${convLabel} conv`,
     margin + 12,
     y + 32,
   );

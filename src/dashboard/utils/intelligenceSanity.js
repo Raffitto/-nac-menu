@@ -1,11 +1,21 @@
 /** Data sanity + trust helpers for all intelligence engines */
 
+import {
+  computeStrictConversionMetrics,
+  safeNumber as platformSafeNumber,
+} from "../../platform/engines/conversionMetricsEngine";
+import {
+  formatExecutiveConversion,
+  filterExecutiveRows,
+  enrichRowWithReportTruth,
+} from "../../platform/engines/reportTruthEngine";
+
+export { formatExecutiveConversion, filterExecutiveRows, enrichRowWithReportTruth };
+
 const MAX_PCT = 100;
 
 export function safeNumber(value, fallback = 0) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return n;
+  return platformSafeNumber(value, fallback);
 }
 
 export function clampMetric(value, min = 0, max = MAX_PCT) {
@@ -121,81 +131,46 @@ export function computeAttentionScore({
 }
 
 /**
- * Visibility-first conversion metrics.
- * Primary denominator: item_impression, fallback item_open.
+ * Visibility-first conversion metrics — delegates to strict report truth rules.
  */
-export function computeConversionMetrics({
-  impressions = 0,
-  modalOpens = 0,
-  orders = 0,
-  netSales = 0,
-  visibleDurationMs = 0,
-  addonOpens = 0,
-  views = 0,
-}) {
-  const imp = Math.max(0, safeNumber(impressions));
-  const opens = Math.max(0, safeNumber(modalOpens || views));
-  const primary = imp > 0 ? imp : opens;
-  const o = Math.max(0, safeNumber(orders));
-  const net = Math.max(0, safeNumber(netSales));
+export function computeConversionMetrics(input = {}) {
+  const strict = computeStrictConversionMetrics({
+    impressions: input.impressions,
+    modalOpens: input.modalOpens,
+    views: input.views,
+    orders: input.orders,
+    netSales: input.netSales,
+    sessions: input.sessions ?? input.tracked_sessions,
+    trackingConfidence: input.trackingConfidence,
+  });
 
-  const ordersFromPrimary = Math.min(o, primary);
-  const impression_conversion_pct =
-    primary > 0 ? safePct(ordersFromPrimary, primary) : (o > 0 ? null : 0);
-  const deep_interest_rate = imp > 0 ? safePct(opens, imp) : null;
-  const modal_open_rate = deep_interest_rate;
-  const addon_curiosity_rate = opens > 0 ? safePct(addonOpens, opens) : null;
-  const offline_ratio_pct = o > 0 ? safePct(Math.max(0, o - primary), o) : 0;
-  const revenue_per_view = primary > 0 ? safeCurrency(net / primary) : null;
+  const imp = strict.item_impressions;
+  const opens = strict.item_modal_opens;
+  const primary = strict.item_views;
+  const o = strict.quantity_sold;
+  const addonOpens = safeNumber(input.addonOpens);
 
-  let trust_label = null;
-  if (imp > 0 && opens > 0 && deep_interest_rate != null && deep_interest_rate < 8 && o >= 5) {
+  let trust_label = strict.trust_label;
+  if (!trust_label && imp > 0 && opens > 0 && strict.deep_interest_rate != null && strict.deep_interest_rate < 8 && o >= 5) {
     trust_label = "Visually confident item — guests see it without opening details.";
-  } else if (imp >= 20 && opens >= 10 && impression_conversion_pct >= 8) {
+  } else if (!trust_label && strict.conversion_allowed && imp >= 20 && opens >= 10 && strict.impression_conversion_pct >= 8) {
     trust_label = "Star performer — strong visibility and efficient conversion.";
-  } else if (primary === 0 && o > 0) {
-    trust_label = "Offline-driven seller — strong POS volume with minimal menu visibility.";
-  } else if (imp >= 25 && impression_conversion_pct < 5 && !offline_ratio_pct) {
-    trust_label = "Menu trap — high visibility, weak sales conversion.";
-  } else if (o > primary && primary > 0) {
-    trust_label =
-      offline_ratio_pct >= 50
-        ? "Strong waiter-driven demand — orders exceed visible menu engagement."
-        : "Extremely strong seller with significant offline ordering behavior.";
-  } else if (imp >= 15 && deep_interest_rate != null && deep_interest_rate < 5 && o === 0) {
-    trust_label = "Attractive but low deep interest — presentation may be self-explanatory.";
   }
 
-  const offline_driven = (primary < 8 && o >= 10) || (primary === 0 && o > 0);
+  const offline_ratio_pct = o > 0 && primary > 0 ? safePct(Math.max(0, o - primary), o) : 0;
+  const addon_curiosity_rate = opens > 0 ? safePct(addonOpens, opens) : null;
 
   return {
-    item_impressions: imp,
-    item_modal_opens: opens,
-    item_views: primary,
-    quantity_sold: o,
-    orders_from_views: ordersFromPrimary,
-    menu_conversion_pct: impression_conversion_pct,
-    impression_conversion_pct,
-    conversion_rate: impression_conversion_pct,
-    deep_interest_rate,
-    modal_open_rate,
-    addon_curiosity_rate,
-    offline_ratio_pct,
-    revenue_per_view,
+    ...strict,
     trust_label,
-    offline_driven,
-    visible_duration_ms: safeNumber(visibleDurationMs),
+    offline_ratio_pct,
+    addon_curiosity_rate,
+    visible_duration_ms: safeNumber(input.visibleDurationMs),
   };
 }
 
 export function formatConversionCell(metrics) {
-  if (!metrics) return "—";
-  if (metrics.trust_label && (metrics.offline_driven || metrics.quantity_sold > metrics.item_views)) {
-    return metrics.trust_label;
-  }
-  if (metrics.impression_conversion_pct == null && metrics.menu_conversion_pct == null) return "—";
-  const pct = metrics.impression_conversion_pct ?? metrics.menu_conversion_pct;
-  return `${pct}%`;
+  return formatExecutiveConversion(metrics || {});
 }
 
 export function sanitizeFunnelRow(row = {}) {
@@ -209,6 +184,8 @@ export function sanitizeFunnelRow(row = {}) {
     netSales: row.net_sales ?? 0,
     visibleDurationMs: row.visible_duration_ms,
     addonOpens: row.addon_opens,
+    sessions: row.impression_sessions ?? row.sessions,
+    trackingConfidence: row.tracking_confidence,
   });
   const attention = computeAttentionScore({
     impressions: metrics.item_impressions,
@@ -221,7 +198,7 @@ export function sanitizeFunnelRow(row = {}) {
     addonOpens: row.addon_opens,
   });
 
-  return {
+  return enrichRowWithReportTruth({
     ...row,
     item_impressions: metrics.item_impressions,
     item_modal_opens: metrics.item_modal_opens,
@@ -230,20 +207,26 @@ export function sanitizeFunnelRow(row = {}) {
     impressions: metrics.item_impressions,
     orders,
     quantity_sold: orders,
-    conversion_pct: metrics.impression_conversion_pct ?? 0,
-    conversion_rate: metrics.impression_conversion_pct ?? 0,
+    conversion_pct: metrics.impression_conversion_pct,
+    conversion_rate: metrics.impression_conversion_pct,
     menu_conversion_pct: metrics.impression_conversion_pct,
     impression_conversion_pct: metrics.impression_conversion_pct,
+    conversion_allowed: metrics.conversion_allowed,
+    insufficient_sample: metrics.insufficient_sample,
+    tracking_confidence: metrics.tracking_confidence,
+    confidence: metrics.confidence,
+    provisional: metrics.provisional,
     deep_interest_rate: metrics.deep_interest_rate,
     modal_open_rate: metrics.modal_open_rate,
     offline_ratio_pct: metrics.offline_ratio_pct,
     revenue_per_view: metrics.revenue_per_view ?? safeNumber(row.revenue_per_view, 0),
     trust_label: metrics.trust_label,
     offline_driven: metrics.offline_driven || row.offline_driven,
+    conversion_display: metrics.conversion_display,
     attention_score: attention.score,
     attention_subscores: attention,
     order_trend_pct: row.order_trend_pct != null ? clampMetric(row.order_trend_pct, -999, 999) : null,
-  };
+  });
 }
 
 export function validateInsightData(data) {

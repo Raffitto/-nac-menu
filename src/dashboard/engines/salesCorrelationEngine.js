@@ -1,11 +1,31 @@
 import { buildConversionRows, getConversionOpportunities } from "../utils/foodicsConversion";
+import { buildWaiterImportValidation } from "../utils/waiterImportValidation";
+import {
+  validateImportBatchIntegrity,
+  computeOperationalTrustScore,
+} from "../../platform/engines/reportTruthEngine";
+import { IMPORT_MISMATCH } from "../../platform/contracts/reportTruthContract";
 
 /**
  * Correlate imported Foodics sales with menu visibility (get_bi_dashboard top_items).
  */
-export function buildSalesCorrelation({ salesItems = [], topItems = [], previousSales = [] }) {
-  const conversionRows = buildConversionRows(salesItems, topItems, previousSales);
-  const opportunities = getConversionOpportunities(conversionRows);
+export function buildSalesCorrelation({
+  salesItems = [],
+  topItems = [],
+  previousSales = [],
+  batchTotals = null,
+  totalSessions = 0,
+}) {
+  const validation = buildWaiterImportValidation(salesItems);
+  const expectedTotals = batchTotals || validation.totals;
+  const importIntegrity = validateImportBatchIntegrity(salesItems, expectedTotals);
+
+  const conversionRows = buildConversionRows(salesItems, topItems, previousSales, {
+    totalSessions,
+    importIntegrity,
+  });
+  const suppressRankings = importIntegrity.integrity_failure;
+  const opportunities = suppressRankings ? null : getConversionOpportunities(conversionRows);
 
   const waiterMap = {};
   (salesItems || []).forEach((row) => {
@@ -48,25 +68,43 @@ export function buildSalesCorrelation({ salesItems = [], topItems = [], previous
     .slice(0, 8);
 
   const attachmentRate =
-    conversionRows.length > 0
+    !suppressRankings && conversionRows.length > 0
       ? Math.round(
           (conversionRows.filter((r) => r.quantity_sold > 0).length / conversionRows.length) * 100,
         )
-      : 0;
+      : null;
 
-  const totalNet = conversionRows.reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
-  const totalQty = conversionRows.reduce((a, r) => a + (Number(r.quantity_sold) || 0), 0);
+  const totalNet = validation.totals.net_sales;
+  const totalQty = validation.totals.quantity;
+
+  const operationalTrust = computeOperationalTrustScore({
+    importIntegrity,
+    trackingIntegrity: {
+      score: totalSessions >= 50 ? 88 : totalSessions >= 15 ? 62 : 35,
+    },
+    sessionDensity: { score: Math.min(100, Math.round(totalSessions * 1.5)) },
+    visibilityConfidence: {
+      score: topItems.length >= 8 ? 75 : topItems.length >= 3 ? 50 : 30,
+    },
+    branchCoverage: { score: salesItems.length > 0 ? 80 : 40 },
+    attributionConfidence: { score: suppressRankings ? 30 : 65 },
+  });
 
   return {
     conversionRows,
     opportunities,
     waiterKpis,
     topUpsellers,
-    highInterestLowSales,
-    viewedNotSold,
+    highInterestLowSales: suppressRankings ? [] : highInterestLowSales,
+    viewedNotSold: suppressRankings ? [] : viewedNotSold,
     attachmentRate,
     totals: { net_sales: totalNet, quantity: totalQty },
     addonClicks,
+    importIntegrity,
+    provisional: importIntegrity.provisional,
+    suppressRankings,
+    integrityMessage: importIntegrity.message || (suppressRankings ? IMPORT_MISMATCH : null),
+    operationalTrust,
   };
 }
 

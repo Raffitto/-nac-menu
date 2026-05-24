@@ -4,7 +4,7 @@ import {
   buildExecutiveBrief,
 } from "./reviewSummaryPdfExport";
 import { exportCSV } from "../utils/formatters";
-import { exportCell, clampMetric } from "../utils/intelligenceSanity";
+import { exportCell, formatExecutiveConversion, filterExecutiveRows } from "../utils/intelligenceSanity";
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
 import { businessDayExportNote } from "../utils/businessDay";
 import { branchDisplayName } from "../utils/rangeState";
@@ -21,9 +21,7 @@ function downloadBlob(blob, filename) {
 }
 
 function formatConvExport(f) {
-  if (f.trust_label && f.offline_driven) return f.trust_label;
-  const pct = clampMetric(f.conversion_pct ?? f.impression_conversion_pct ?? f.menu_conversion_pct, 0, 100);
-  return pct > 0 ? `${pct}%` : "—";
+  return formatExecutiveConversion(f);
 }
 
 /** Premium multi-sheet XLSX — boardroom structure */
@@ -40,7 +38,7 @@ export function exportExecutiveXLSX({
 }) {
   const wb = XLSX.utils.book_new();
   const generated = new Date().toLocaleString();
-  const funnels = intelligence?.funnels || [];
+  const funnels = filterExecutiveRows(intelligence?.funnels || []);
   const bizNote = intelligence?.businessDay?.note || businessDayExportNote();
   const reportTitle = exportMeta?.title || "NAC Menu OS — Operational Intelligence";
 
@@ -222,7 +220,7 @@ export function exportIntelligenceCSV(intelligence) {
     "Confidence",
     "AI note",
   ];
-  const rows = (intelligence?.funnels || []).map((f) => [
+  const rows = filterExecutiveRows(intelligence?.funnels || []).map((f) => [
     f.item_name,
     f.impressions ?? f.item_impressions ?? "",
     f.item_modal_opens ?? f.item_opens ?? "",

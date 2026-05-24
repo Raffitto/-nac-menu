@@ -7,6 +7,7 @@ import {
   safeNumber,
   hasVisibilityTracking,
   buildTopItemVisibilityMap,
+  filterExecutiveRows,
 } from "../utils/intelligenceSanity";
 import { normalizeTopItems } from "../utils/topItemsNormalize";
 import { classifyItemBehavior } from "../utils/itemBehaviorEngine";
@@ -70,7 +71,7 @@ export function buildItemFunnels(biData, conversionRows = []) {
       });
     });
 
-  return [...fromFoodics, ...extras]
+  return filterExecutiveRows([...fromFoodics, ...extras])
     .sort((a, b) => b.item_opens - a.item_opens)
     .slice(0, 40)
     .map((f) => {
@@ -99,6 +100,8 @@ export function buildAttentionScores(funnels = []) {
     .filter(
       (s) =>
         (s.impressions || s.item_opens) >= 25 &&
+        s.conversion_allowed &&
+        s.conversion_pct != null &&
         s.conversion_pct < 5 &&
         !s.offline_driven,
     )
@@ -116,7 +119,14 @@ export function buildFrictionInsights(biData, funnels = []) {
   const bounceRate = safePct(bounce, sessions);
 
   funnels
-    .filter((f) => f.item_opens >= 20 && f.conversion_pct < 4 && !f.offline_driven)
+    .filter(
+      (f) =>
+        f.item_opens >= 20 &&
+        f.conversion_allowed &&
+        f.conversion_pct != null &&
+        f.conversion_pct < 4 &&
+        !f.offline_driven,
+    )
     .forEach((f) => {
       insights.push({
         id: `friction-${f.item_name}`,

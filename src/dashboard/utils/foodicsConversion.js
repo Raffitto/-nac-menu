@@ -3,6 +3,9 @@ import {
   computeAttentionScore,
   trendPct,
   buildTopItemVisibilityMap,
+  filterExecutiveRows,
+  enrichRowWithReportTruth,
+  formatExecutiveConversion,
 } from "./intelligenceSanity";
 import { classifyItemBehavior, BEHAVIOR } from "./itemBehaviorEngine";
 
@@ -14,7 +17,8 @@ export function classifyConversion(row) {
 /**
  * Merge Foodics sales with menu visibility (impressions) + deep interest (opens).
  */
-export function buildConversionRows(salesItems = [], topItems = [], previousSales = []) {
+export function buildConversionRows(salesItems = [], topItems = [], previousSales = [], options = {}) {
+  const { totalSessions = 0, importIntegrity = null } = options;
   const visibilityMap = buildTopItemVisibilityMap(topItems);
 
   const prevByName = {};
@@ -68,7 +72,7 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
     }
   });
 
-  return Object.values(byItem)
+  const mapped = Object.values(byItem)
     .map((row) => {
       const metrics = computeConversionMetrics({
         impressions: row.item_impressions,
@@ -76,6 +80,7 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
         orders: row.quantity_sold,
         netSales: row.net_sales,
         visibleDurationMs: row.visible_duration_ms,
+        sessions: row.impression_sessions || totalSessions,
       });
       const behavior = classifyItemBehavior({ ...row, ...metrics });
       const attention = computeAttentionScore({
@@ -89,19 +94,23 @@ export function buildConversionRows(salesItems = [], topItems = [], previousSale
       });
       const order_trend_pct = trendPct(row.quantity_sold, prevByName[row.item_name.toLowerCase()] ?? null);
 
-      return {
-        ...row,
-        ...metrics,
-        ...behavior,
-        attention_score: attention.score,
-        attention_subscores: attention,
-        order_trend_pct,
-        conversion_display:
-          metrics.trust_label ||
-          `${metrics.impression_conversion_pct ?? 0}% impression conversion`,
-      };
+      return enrichRowWithReportTruth(
+        {
+          ...row,
+          ...metrics,
+          ...behavior,
+          attention_score: attention.score,
+          attention_subscores: attention,
+          order_trend_pct,
+          conversion_display: formatExecutiveConversion({ ...row, ...metrics }),
+          integrity_failure: importIntegrity?.integrity_failure,
+        },
+        { importIntegrity },
+      );
     })
     .sort((a, b) => (b.item_impressions || b.item_views || 0) - (a.item_impressions || a.item_views || 0));
+
+  return filterExecutiveRows(mapped);
 }
 
 export function getConversionOpportunities(rows) {
@@ -113,6 +122,7 @@ export function getConversionOpportunities(rows) {
       .filter(
         (r) =>
           (r.item_impressions || 0) >= 15 &&
+          r.conversion_allowed &&
           (r.impression_conversion_pct ?? 0) < 5 &&
           r.behavior_type === BEHAVIOR.MENU_TRAP,
       )
@@ -131,11 +141,21 @@ export function getConversionOpportunities(rows) {
       .sort((a, b) => b.revenue_per_view - a.revenue_per_view)
       .slice(0, 5),
     bestConversion: menuRows
-      .filter((r) => (r.item_impressions || r.item_views) >= 5 && r.behavior_type !== BEHAVIOR.MENU_TRAP)
+      .filter(
+        (r) =>
+          r.conversion_allowed &&
+          r.impression_conversion_pct != null &&
+          r.behavior_type !== BEHAVIOR.MENU_TRAP,
+      )
       .sort((a, b) => (b.impression_conversion_pct ?? 0) - (a.impression_conversion_pct ?? 0))
       .slice(0, 5),
     worstConversion: menuRows
-      .filter((r) => (r.item_impressions || 0) >= 15 && r.behavior_type === BEHAVIOR.MENU_TRAP)
+      .filter(
+        (r) =>
+          r.conversion_allowed &&
+          (r.item_impressions || 0) >= 15 &&
+          r.behavior_type === BEHAVIOR.MENU_TRAP,
+      )
       .sort((a, b) => (a.impression_conversion_pct ?? 0) - (b.impression_conversion_pct ?? 0))
       .slice(0, 5),
     // legacy keys

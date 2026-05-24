@@ -50,7 +50,8 @@ export default function AnalyticsIntegrityPanel() {
     >
       <strong style={{ color: "#d7bc8a" }}>Analytics integrity</strong>
       <div style={{ marginTop: 6 }}>
-        Health <strong>{h.score ?? "—"}</strong> ({h.tier || "—"}) · Menu conf{" "}
+        Health <strong>{h.score ?? "—"}</strong> ({h.tier || "—"}) · Trust{" "}
+        <strong>{pkg.operationalTrust?.score ?? "—"}</strong> ({pkg.operationalTrust?.tier || "—"}) · Menu conf{" "}
         {CONFIDENCE_LABELS[pkg.menuConfidence?.level] || pkg.menuConfidence?.level || "—"}
       </div>
 

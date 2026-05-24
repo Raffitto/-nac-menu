@@ -59,9 +59,14 @@ export function buildWaiterImportValidation(rows = []) {
 }
 
 /** Compare two validation summaries (raw vs preview vs pivot). */
-export function validationTotalsMatch(a, b, tolerance = { gross: 2, qty: 0 }) {
+export function validationTotalsMatch(a, b, tolerance = { gross: 2, net: 0.5, qty: 0 }) {
   if (!a?.totals || !b?.totals) return false;
   const grossDiff = Math.abs((a.totals.gross_sales || 0) - (b.totals.gross_sales || 0));
+  const netDiff = Math.abs((a.totals.net_sales || 0) - (b.totals.net_sales || 0));
   const qtyDiff = Math.abs((a.totals.quantity || 0) - (b.totals.quantity || 0));
-  return grossDiff <= tolerance.gross && qtyDiff <= tolerance.qty;
+  return (
+    grossDiff <= tolerance.gross &&
+    netDiff <= (tolerance.net ?? 0.5) &&
+    qtyDiff <= tolerance.qty
+  );
 }
