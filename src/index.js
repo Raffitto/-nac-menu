@@ -20,13 +20,26 @@ const isLeaderboard =
   typeof window !== "undefined" &&
   window.location.pathname.replace(/\/$/, "") === "/leaderboard";
 
+const isResetPassword =
+  typeof window !== "undefined" &&
+  window.location.pathname.replace(/\/$/, "") === "/reset-password";
+
 const ReviewPortal = lazy(() => import("./review/ReviewPortal"));
 const LeaderboardView = lazy(() => import("./dashboard/LeaderboardView"));
+const ResetPasswordView = lazy(() => import("./dashboard/views/ResetPasswordView"));
 const MenuApp = lazy(() => import("./App"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
-if (isLeaderboard) {
+if (isResetPassword) {
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
+        <ResetPasswordView />
+      </Suspense>
+    </React.StrictMode>,
+  );
+} else if (isLeaderboard) {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>

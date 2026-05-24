@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { LogIn } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import AuthForgotPassword from "./AuthForgotPassword";
 import "../styles/platform-os.css";
 
 /**
@@ -119,6 +120,7 @@ export default function MenuEditorAuth({ children }) {
         <button type="submit" className="nac-filter-action" disabled={busy} style={{ marginTop: "0.5rem" }}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        <AuthForgotPassword email={email} onEmailChange={setEmail} />
       </form>
     </motion.div>
   );

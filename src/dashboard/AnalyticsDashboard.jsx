@@ -38,6 +38,7 @@ import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay
 import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
+import AuthForgotPassword from "./components/AuthForgotPassword";
 import "./styles/analytics-dashboard.css";
 
 const CATEGORY_NAMES = {
@@ -391,6 +392,7 @@ export default function AnalyticsDashboard() {
               >
                 {loginLoading ? "Signing in…" : "Continue"}
               </button>
+              <AuthForgotPassword email={email} onEmailChange={setEmail} />
             </form>
 
             <p className="nac-an__hint">

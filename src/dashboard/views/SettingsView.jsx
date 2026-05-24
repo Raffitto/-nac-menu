@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Settings, LogOut } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import AuthForgotPassword from "../components/AuthForgotPassword";
 import "../styles/platform-os.css";
 
 export default function SettingsView() {
@@ -90,6 +91,7 @@ export default function SettingsView() {
             <button type="submit" className="nac-filter-action" disabled={busy} style={{ marginTop: "0.5rem" }}>
               {busy ? "Signing in…" : "Sign in"}
             </button>
+            <AuthForgotPassword email={email} onEmailChange={setEmail} />
           </form>
         )}
       </div>
