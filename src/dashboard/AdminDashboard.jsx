@@ -49,6 +49,7 @@ import ReviewsHub from "./views/ReviewsHub";
 import BranchesView from "./views/BranchesView";
 import SettingsView from "./views/SettingsView";
 import MenuEditorAuth from "./components/MenuEditorAuth";
+import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
 
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -128,6 +129,7 @@ function AdminDashboardContent({ onBack }) {
   const [adminView, setAdminView] = useState("overview");
   const [overviewTab, setOverviewTab] = useState("operations");
   const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const rbac = useRbac();
 
   const filters = usePlatformFilters();
@@ -160,8 +162,14 @@ function AdminDashboardContent({ onBack }) {
   });
 
   useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data: d }) => setSession(d.session));
+    if (!supabase) {
+      setAuthChecked(true);
+      return undefined;
+    }
+    supabase.auth.getSession().then(({ data: d }) => {
+      setSession(d.session);
+      setAuthChecked(true);
+    });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -258,9 +266,23 @@ function AdminDashboardContent({ onBack }) {
     exportCSV("nac-dashboard-export.csv", headers, rows);
   }, [data, totalEvents, totalSessions, qrSessionStarts, bouncePct, deepPct, avgTimeSpent, addOnRate, arabicPct, returningPct, topItem, topCategory, topItems]);
 
-  const needsAuth = configured && !session;
+  const needsAuth = configured && !session && !isAdminPlatformMode();
 
   const scrollable = isScrollableView(adminView);
+
+  if (isAdminPlatformMode()) {
+    if (!authChecked) {
+      return <NacAnalyticsSignIn checking kicker="NAC Hospitality OS" />;
+    }
+    if (!session) {
+      return (
+        <NacAnalyticsSignIn
+          kicker="NAC Hospitality OS"
+          subtitle="Sign in with your NAC staff account"
+        />
+      );
+    }
+  }
 
   return (
     <motion.div

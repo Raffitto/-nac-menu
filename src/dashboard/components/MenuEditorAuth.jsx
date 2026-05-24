@@ -74,8 +74,7 @@ export default function MenuEditorAuth({ children }) {
         Sign in to edit the menu
       </h3>
       <p style={{ color: "rgba(249,249,247,0.55)", fontSize: "0.9rem", lineHeight: 1.55, marginBottom: "1.25rem" }}>
-        Menu changes require a Supabase staff account. The app admin password only opens this dashboard;
-        create a user under Authentication → Users, then sign in here.
+        Menu changes require a signed-in NAC staff account.
       </p>
       <form onSubmit={signIn}>
         <label style={{ display: "block", marginBottom: "0.75rem" }}>
