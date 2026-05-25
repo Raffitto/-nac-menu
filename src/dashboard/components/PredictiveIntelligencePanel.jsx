@@ -12,6 +12,7 @@ import {
 } from "./PredictiveIntelligenceVisuals";
 import { branchDisplayName } from "../utils/rangeState";
 import { CONFIDENCE_LABELS, provisionalPhrase } from "../../platform/contracts/dataConfidence";
+import ReviewNetworkIntegrityBanner from "./ReviewNetworkIntegrityBanner";
 import "../styles/predictive-intelligence.css";
 
 /**
@@ -74,6 +75,8 @@ export default function PredictiveIntelligencePanel({
           Signal confidence: {CONFIDENCE_LABELS[predConf.level] || predConf.level}
         </p>
       ) : null}
+
+      <ReviewNetworkIntegrityBanner integrity={reviewData?.integrity} />
 
       <div className="pred-panel-grid">
         <div className="pred-card pred-card--score">

@@ -43,7 +43,7 @@ export function useExecutiveCommandCenter() {
   const filterKey = platform?.filterKey ?? cacheKey(["ecc", selectedRange]);
 
   const reviewData = useReviewIntelligenceData({
-    networkWide: canFetchCrossBranchComparison(rbac?.profile),
+    branch: canFetchCrossBranchComparison(rbac?.profile) ? null : platform?.branch,
     selectedRange,
   });
 

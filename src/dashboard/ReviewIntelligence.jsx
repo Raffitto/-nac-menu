@@ -22,7 +22,7 @@ import {
   YAxis,
 } from "recharts";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { fetchReviewEventsSummary } from "../lib/intelligenceQueryApi";
+import { fetchUnifiedReviewTruth, resolveReviewScope } from "../lib/unifiedReviewTruth";
 import { generateDailySnapshot } from "./utils/unifiedIntelligenceApi";
 import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import {
@@ -54,18 +54,12 @@ import {
   computeReviewKpis,
   buildBranchReviewComparison,
 } from "./utils/reviewEventMetrics";
-import {
-  kpisFromReviewSummary,
-  dailyTrendFromReviewSummary,
-  branchComparisonFromReviewSummary,
-  branchScansFromComparison,
-} from "./utils/reviewSummaryMap";
-import { fetchStaffMergedByBranch } from "./utils/reviewStaffByBranch";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
 import { useGoogleReviewMovement } from "./hooks/useGoogleReviewMovement";
 import GoogleReputationWithMovement from "./components/GoogleReputationWithMovement";
 import PredictiveIntelligencePanel from "./components/PredictiveIntelligencePanel";
+import ReviewNetworkIntegrityBanner from "./components/ReviewNetworkIntegrityBanner";
 import "./styles/review-intelligence.css";
 import "./styles/predictive-intelligence.css";
 
@@ -84,9 +78,14 @@ const CHART_TOOLTIP = {
 export default function ReviewIntelligence({ embedded = false, prefetched = null }) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
-  const [branchLocal, setBranchLocal] = useState(defaultBranchId());
+  const [branchLocal, setBranchLocal] = useState(null);
   const [rangeLocal, setRangeLocal] = useState(DEFAULT_RANGE);
-  const branch = embedded && platform ? (platform.branch || defaultBranchId()) : branchLocal;
+  const rawBranch = embedded && platform ? platform.branch : branchLocal;
+  const reviewScope = useMemo(
+    () => resolveReviewScope(rbac?.profile, rawBranch),
+    [rbac?.profile, rawBranch],
+  );
+  const branch = reviewScope.displayBranch || (reviewScope.networkWide ? null : defaultBranchId());
   const selectedRange = embedded && platform ? platform.selectedRange : rangeLocal;
   const setBranch = embedded && platform ? () => {} : setBranchLocal;
   const setSelectedRange = embedded && platform ? () => {} : setRangeLocal;
@@ -99,8 +98,11 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
   const [loading, setLoading] = useState(true);
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [error, setError] = useState("");
+  const [integrity, setIntegrity] = useState(null);
   const configured = isSupabaseConfigured();
-  const branchLabel = branchDisplayName(branch);
+  const branchLabel = reviewScope.networkWide
+    ? reviewScope.label
+    : branchDisplayName(branch);
   const rangeLabel = rangeExportLabel(selectedRange);
   const { loading: googleLoading, forBranch: googleMetrics, byBranch: googleByBranch } =
     useGooglePlaceMetrics(branch);
@@ -130,6 +132,9 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       branchScans,
       branchComparison,
       branch,
+      networkWide: reviewScope.networkWide,
+      scope: reviewScope,
+      integrity,
       selectedRange,
       loading,
       error,
@@ -142,6 +147,8 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       branchScans,
       branchComparison,
       branch,
+      reviewScope,
+      integrity,
       selectedRange,
       loading,
       error,
@@ -175,38 +182,21 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     try {
       const since = rangeToSince(selectedRange);
       const hours = rangeToHours(selectedRange);
-      const activeBranch = resolveRbacQueryBranch(
-        rbac?.profile,
-        embedded && platform ? platform.branch : branch,
-      );
 
-      const summary = await fetchReviewEventsSummary(supabase, {
-        branch: activeBranch,
+      const truth = await fetchUnifiedReviewTruth(supabase, {
         hours,
-      }).catch(() => null);
+        profile: rbac?.profile,
+        branch: rawBranch,
+      });
 
-      if (summary) {
-        const allSummary =
-          canFetchCrossBranchComparison(rbac?.profile) && !activeBranch
-            ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(
-                () => summary,
-              )
-            : summary;
-
-        const staffRows = await fetchStaffMergedByBranch(supabase, {
-          hours,
-          activeBranch,
-        });
-        setKpis(kpisFromReviewSummary(summary));
-        setStaffMerged(mergeStaffStats([], staffRows));
-        setDailyTrend(dailyTrendFromReviewSummary(summary));
-        const comparison = buildBranchComparisonForProfile(
-          rbac?.profile,
-          branchComparisonFromReviewSummary(allSummary || summary),
-        );
-        setBranchComparison(comparison);
-        setBranchScans(branchScansFromComparison(comparison));
-        if (summary._note) setError(summary._note);
+      if (truth?.summary) {
+        setKpis(truth.kpis);
+        setStaffMerged(truth.staffMerged);
+        setDailyTrend(truth.dailyTrend);
+        setBranchComparison(truth.branchComparison);
+        setBranchScans(truth.branchScans);
+        setIntegrity(truth.integrity);
+        if (truth.note) setError(truth.note);
         return;
       }
 
@@ -216,7 +206,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         .order("created_at", { ascending: false })
         .limit(2500);
 
-      const scopedBranch = resolveRbacQueryBranch(rbac?.profile, activeBranch);
+      const scopedBranch = reviewScope.queryBranch;
       if (scopedBranch) {
         reviewQ = reviewQ.eq("branch_id", scopedBranch);
       } else if (rbac?.profile && !rbac.profile.allBranches) {
@@ -261,7 +251,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, configured, embedded, platform, prefetched, applyPrefetched, rbac?.profile]);
+  }, [rawBranch, reviewScope, selectedRange, configured, embedded, platform, prefetched, applyPrefetched, rbac?.profile]);
 
   useEffect(() => {
     if (prefetched) {
@@ -455,9 +445,11 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             )}
           </motion.div>
 
+          <ReviewNetworkIntegrityBanner integrity={integrity} />
+
           <PredictiveIntelligencePanel
             reviewData={reviewDataForPredictive}
-            showBranchScores={!branch || embedded}
+            showBranchScores={reviewScope.networkWide || !branch || embedded}
             compact={embedded}
           />
 

@@ -1,24 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { resolveReviewPlatformStatus } from "../../platform/engines/platformStatusEngine";
 import { buildIntelligenceRangeContract } from "../../platform/engines/timeRangeEngine";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
+import { fetchUnifiedReviewTruth, resolveReviewScope } from "../../lib/unifiedReviewTruth";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
-import {
-  canFetchCrossBranchComparison,
-  resolveRbacQueryBranch,
-} from "../../lib/rbacQueryScope";
-import { buildBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
-import { rangeToSince, rangeToHours, defaultBranchId } from "../utils/rangeState";
-import {
-  kpisFromReviewSummary,
-  dailyTrendFromReviewSummary,
-  branchComparisonFromReviewSummary,
-  branchScansFromComparison,
-} from "../utils/reviewSummaryMap";
-import { fetchStaffMergedByBranch } from "../utils/reviewStaffByBranch";
+import { rangeToSince, rangeToHours } from "../utils/rangeState";
 import {
   computeReviewKpis,
   buildBranchReviewComparison,
@@ -29,34 +17,30 @@ import {
   buildDailyScanTrend,
   buildBranchScanTotals,
 } from "../utils/staffReviewStats";
-import {
-  withSupabaseFallback,
-  EMPTY_REVIEW_KPIS,
-  isMissingRpcError,
-} from "../utils/supabaseResilience";
+import { buildBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
+import { EMPTY_REVIEW_KPIS, isMissingRpcError } from "../utils/supabaseResilience";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
 
 /**
- * Shared review intelligence payload — RPC-first, single fetch per filterKey.
+ * Shared review intelligence payload — canonical network truth per filterKey.
  */
 export function useReviewIntelligenceData(options = {}) {
   const skip = Boolean(options.skip);
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
   const rbacProfile = rbac?.profile;
-  const branch = options.networkWide && canFetchCrossBranchComparison(rbacProfile)
-    ? null
-    : resolveRbacQueryBranch(
-        rbacProfile,
-        options.branch ?? platform?.branch ?? defaultBranchId(),
-      );
+  const rawBranch = options.branch ?? platform?.branch ?? null;
+  const reviewScope = useMemo(
+    () => resolveReviewScope(rbacProfile, rawBranch),
+    [rbacProfile, rawBranch],
+  );
   const selectedRange = options.selectedRange ?? platform?.selectedRange ?? "today";
   const filterKey =
     options.filterKey ??
     platform?.filterKey ??
-    [branch, selectedRange, platform?.language, platform?.shift, platform?.role].join("|");
+    [reviewScope.networkWide ? "network" : reviewScope.queryBranch, selectedRange, platform?.language, platform?.shift, platform?.role].join("|");
 
   const [kpis, setKpis] = useState(null);
   const [staffMerged, setStaffMerged] = useState([]);
@@ -64,6 +48,8 @@ export function useReviewIntelligenceData(options = {}) {
   const [branchScans, setBranchScans] = useState([]);
   const [branchComparison, setBranchComparison] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [integrity, setIntegrity] = useState(null);
+  const [scope, setScope] = useState(reviewScope);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [partial, setPartial] = useState(false);
@@ -84,48 +70,27 @@ export function useReviewIntelligenceData(options = {}) {
     setPartial(false);
 
     const hours = rangeToHours(selectedRange);
-    const activeBranch = branch || null;
     const platformFilters = options.platformFilters ?? platform;
 
     try {
-      const summaryResult = await withSupabaseFallback(
-        fetchReviewEventsSummary(supabase, { branch: activeBranch, hours }),
-        null,
-        {
-          onError: (e) => {
-            if (!isMissingRpcError(e)) setError(e.message || "Review summary unavailable");
-          },
-        },
-      );
+      const truth = await fetchUnifiedReviewTruth(supabase, {
+        hours,
+        profile: rbacProfile,
+        branch: rawBranch,
+      });
 
-      if (summaryResult) {
-        const allSummary =
-          canFetchCrossBranchComparison(rbacProfile) && !activeBranch
-            ? await withSupabaseFallback(
-                fetchReviewEventsSummary(supabase, { branch: null, hours }),
-                summaryResult,
-              )
-            : summaryResult;
-
-        const comparison = buildBranchComparisonForProfile(
-          rbacProfile,
-          branchComparisonFromReviewSummary(
-            canFetchCrossBranchComparison(rbacProfile) ? allSummary || summaryResult : summaryResult,
-          ),
-        );
-        const staffRows = await fetchStaffMergedByBranch(supabase, {
-          hours,
-          activeBranch,
-        });
-        setSummary(summaryResult);
-        setKpis(kpisFromReviewSummary(summaryResult));
-        setStaffMerged(mergeStaffStats([], staffRows));
-        setDailyTrend(dailyTrendFromReviewSummary(summaryResult));
-        setBranchComparison(comparison);
-        setBranchScans(branchScansFromComparison(comparison));
-        if (summaryResult._partial || summaryResult._note) {
-          setPartial(true);
-          setError(summaryResult._note || "");
+      if (truth?.summary) {
+        setScope(truth.scope);
+        setSummary(truth.summary);
+        setKpis(truth.kpis);
+        setStaffMerged(truth.staffMerged);
+        setDailyTrend(truth.dailyTrend);
+        setBranchComparison(truth.branchComparison);
+        setBranchScans(truth.branchScans);
+        setIntegrity(truth.integrity);
+        if (truth.partial || truth.note) {
+          setPartial(Boolean(truth.partial));
+          setError(truth.note || "");
         }
         return;
       }
@@ -137,7 +102,8 @@ export function useReviewIntelligenceData(options = {}) {
         .order("created_at", { ascending: false })
         .limit(2500);
 
-      if (activeBranch) reviewQ = reviewQ.eq("branch_id", activeBranch);
+      const queryBranch = truth?.scope?.queryBranch ?? reviewScope.queryBranch;
+      if (queryBranch) reviewQ = reviewQ.eq("branch_id", queryBranch);
       else if (rbacProfile?.authenticated && !rbacProfile.allBranches && rbacProfile.branchScope) {
         reviewQ = reviewQ.eq("branch_id", rbacProfile.branchScope);
       }
@@ -148,8 +114,11 @@ export function useReviewIntelligenceData(options = {}) {
         .order("created_at", { ascending: false })
         .limit(2000);
 
-      if (!canFetchCrossBranchComparison(rbacProfile)) {
-        reviewAllQ = reviewAllQ.eq("branch_id", activeBranch || rbacProfile?.branchScope || "__rbac_denied__");
+      if (!reviewScope.networkWide) {
+        reviewAllQ = reviewAllQ.eq(
+          "branch_id",
+          queryBranch || rbacProfile?.branchScope || "__rbac_denied__",
+        );
       }
 
       if (since) {
@@ -170,11 +139,13 @@ export function useReviewIntelligenceData(options = {}) {
       );
 
       setSummary(null);
+      setScope(reviewScope);
       setKpis(computeReviewKpis(events));
       setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(comparison);
+      setIntegrity(null);
     } catch (e) {
       setError(e.message || "Failed to load review data");
       setKpis(EMPTY_REVIEW_KPIS);
@@ -182,10 +153,11 @@ export function useReviewIntelligenceData(options = {}) {
       setDailyTrend([]);
       setBranchScans([]);
       setBranchComparison([]);
+      setIntegrity(null);
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, platform, options.platformFilters, rbacProfile]);
+  }, [rawBranch, reviewScope, selectedRange, platform, options.platformFilters, rbacProfile]);
 
   useEffect(() => {
     if (skip) {
@@ -213,7 +185,9 @@ export function useReviewIntelligenceData(options = {}) {
 
   return useMemo(
     () => ({
-      branch,
+      branch: scope.displayBranch,
+      networkWide: scope.networkWide,
+      scope,
       selectedRange,
       filterKey,
       rangeContract,
@@ -223,6 +197,7 @@ export function useReviewIntelligenceData(options = {}) {
       branchScans,
       branchComparison,
       summary,
+      integrity,
       loading,
       error,
       partial,
@@ -230,7 +205,7 @@ export function useReviewIntelligenceData(options = {}) {
       reload: load,
     }),
     [
-      branch,
+      scope,
       selectedRange,
       filterKey,
       rangeContract,
@@ -240,6 +215,7 @@ export function useReviewIntelligenceData(options = {}) {
       branchScans,
       branchComparison,
       summary,
+      integrity,
       loading,
       error,
       partial,

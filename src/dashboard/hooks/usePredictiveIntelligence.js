@@ -38,11 +38,13 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
   const selectedRange = reviewData?.selectedRange ?? platform?.selectedRange ?? "today";
-  const activeBranch = (
-    reviewData?.branch ??
-    resolveRbacQueryBranch(rbac?.profile, platform?.branch) ??
-    "khobar"
-  ).toLowerCase();
+  const activeBranch = reviewData?.networkWide
+    ? null
+    : (
+        reviewData?.branch ??
+        resolveRbacQueryBranch(rbac?.profile, platform?.branch) ??
+        null
+      )?.toLowerCase?.() || null;
   const filterKey =
     reviewData?.filterKey ??
     platform?.filterKey ??
@@ -78,9 +80,11 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
       let dailyTrend = reviewData?.dailyTrend;
 
       if (!branchComparison?.length) {
-        const scopedBranch = resolveRbacQueryBranch(rbac?.profile, activeBranch);
         const net = await withSupabaseFallback(
-          fetchReviewEventsSummary(supabase, { branch: scopedBranch, hours }),
+          fetchReviewEventsSummary(supabase, {
+            branch: reviewData?.networkWide ? null : resolveRbacQueryBranch(rbac?.profile, activeBranch),
+            hours,
+          }),
           null,
         );
         if (net) {
@@ -128,6 +132,7 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
     reviewData?.kpis,
     reviewData?.branchComparison,
     reviewData?.dailyTrend,
+    reviewData?.networkWide,
     activeBranch,
     selectedRange,
     rbac?.profile,
