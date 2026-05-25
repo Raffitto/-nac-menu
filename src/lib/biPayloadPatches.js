@@ -77,7 +77,7 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
   });
   if (!patch || sessionQualityIsEmpty(patch)) return aggregates;
 
-  return {
+  const merged = {
     ...aggregates,
     session_quality: patch.session_quality,
     bounce_sessions: patch.bounce_sessions,
@@ -88,4 +88,16 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
     funnel: patch.funnel || aggregates.funnel,
     session_diagnostics: patch.session_diagnostics,
   };
+
+  if (patch.funnel?.category_opens > 0) {
+    const catSum = (merged.top_categories || []).reduce(
+      (s, c) => s + (Number(c.opens) || 0),
+      0,
+    );
+    if (catSum < patch.funnel.category_opens * 0.45) {
+      merged.funnel = patch.funnel;
+    }
+  }
+
+  return merged;
 }

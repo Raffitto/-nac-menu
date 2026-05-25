@@ -274,7 +274,32 @@ export function isBiCategoriesEmpty(data) {
 export function isBiAddonsEmpty(data) {
   if (!data) return true;
   if ((data.top_addon_pairs || []).length > 0) return false;
-  return (Number(data.by_event_type?.add_on_click) || 0) === 0;
+  const by = data.by_event_type || {};
+  const funnelAddon = Number(data.funnel?.addon_clicks) || 0;
+  return (
+    canonicalAddonInteractionCount(by) === 0 && funnelAddon === 0
+  );
+}
+
+/** Rollup category rows diverge from session-master funnel totals. */
+export function biEngagementDetailNeedsRefresh(payload) {
+  if (!payload || isBiTotalsEmpty(payload)) return false;
+  if (biTopItemsNeedsRefresh(payload)) return true;
+
+  const funnel = payload.funnel || {};
+  const catFunnel = Number(funnel.category_opens) || 0;
+  const catSum = (payload.top_categories || []).reduce(
+    (s, c) => s + (Number(c.opens) || 0),
+    0,
+  );
+  if (catFunnel > 20 && catSum < catFunnel * 0.45) return true;
+
+  const addonFunnel = Number(funnel.addon_clicks) || 0;
+  const addonBy = canonicalAddonInteractionCount(payload.by_event_type || {});
+  const addonTotal = Math.max(addonFunnel, addonBy);
+  if (addonTotal > 0 && !(payload.top_addon_pairs || []).length) return true;
+
+  return false;
 }
 
 /** True only when RPC + all fallbacks produced no menu activity. */

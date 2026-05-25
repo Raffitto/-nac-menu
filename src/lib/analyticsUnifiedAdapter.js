@@ -12,7 +12,9 @@ import {
 import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { fetchSessionAnalytics } from "./sessionAnalyticsApi";
 import { appendOpsNote } from "./biOpsNotes";
-import { enrichByEventTypeCanonical } from "./menuEventTypes";
+import { enrichByEventTypeCanonical, canonicalAddonInteractionCount } from "./menuEventTypes";
+import { biEngagementDetailNeedsRefresh } from "./biDashboardNormalize";
+import { fetchBiItemDetailFromMenuEvents } from "./menuEventsBiFallback";
 
 export const OPERATIONAL_TRUST = {
   LIVE_VERIFIED: "live_verified",
@@ -48,12 +50,74 @@ export function hourlyBucketsFromSessionAggregates(aggregates, hours = 24) {
   return normalizeHourlyForRange(raw, hours);
 }
 
+function sumCategoryOpens(cats = []) {
+  return (cats || []).reduce((s, c) => s + (Number(c.opens) || 0), 0);
+}
+
+function sumAddonClicks(pairs = []) {
+  return (pairs || []).reduce((s, p) => s + (Number(p.clicks) || 0), 0);
+}
+
+function topItemSignal(items = []) {
+  return (items || []).reduce(
+    (s, t) => s + (Number(t.opens) || 0) + (Number(t.impressions) || 0),
+    0,
+  );
+}
+
+function pickRicherTopCategories(biCats, aggCats, funnel = {}) {
+  const target = Number(funnel.category_opens) || 0;
+  const biSum = sumCategoryOpens(biCats);
+  const aggSum = sumCategoryOpens(aggCats);
+  if (target > 0) {
+    if (aggSum >= biSum && aggSum >= target * 0.45 && (aggCats || []).length) {
+      return aggCats;
+    }
+    if (biSum >= target * 0.45 && (biCats || []).length) return biCats;
+    return (aggCats || []).length ? aggCats : biCats;
+  }
+  return (biCats || []).length ? biCats : aggCats || [];
+}
+
+function pickRicherAddonPairs(biPairs, aggPairs, funnel = {}, byType = {}) {
+  const target = Math.max(
+    Number(funnel.addon_clicks) || 0,
+    canonicalAddonInteractionCount(byType),
+  );
+  const biSum = sumAddonClicks(biPairs);
+  const aggSum = sumAddonClicks(aggPairs);
+  if (target > 0) {
+    if ((aggPairs || []).length && aggSum >= biSum) return aggPairs;
+    if ((biPairs || []).length) return biPairs;
+    return aggPairs || [];
+  }
+  return (biPairs || []).length ? biPairs : aggPairs || [];
+}
+
+function pickRicherTopItems(biItems, aggItems, funnel = {}) {
+  const target = Math.max(
+    Number(funnel.item_opens) || 0,
+    Number(funnel.item_impressions) || 0,
+  );
+  const biSig = topItemSignal(biItems);
+  const aggSig = topItemSignal(aggItems);
+  if (target > 0) {
+    if (aggSig >= biSig && (aggItems || []).length) return aggItems;
+    if (biSig > 0 && (biItems || []).length) return biItems;
+    return aggItems || biItems || [];
+  }
+  return (biItems || []).length >= (aggItems || []).length
+    ? biItems
+    : aggItems || biItems || [];
+}
+
 /**
  * Merge session-master engagement into BI payload before normalizeBiDashboardPayload.
  */
 export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours = 24) {
   if (!aggregates) return { ...biRaw };
 
+  const funnel = aggregates.funnel || biRaw.funnel || {};
   const mergedByType = enrichByEventTypeCanonical({
     ...(biRaw.by_event_type || {}),
     ...(aggregates.by_event_type || {}),
@@ -88,14 +152,18 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
       Number(mergedByType.qr_session_start) ||
       Number(biRaw.today_qr_sessions) ||
       0,
-    top_items:
-      (biRaw.top_items || []).length >= (aggregates.top_items || []).length
-        ? biRaw.top_items
-        : aggregates.top_items || biRaw.top_items,
-    top_categories:
-      (biRaw.top_categories || []).length > 0
-        ? biRaw.top_categories
-        : aggregates.top_categories || biRaw.top_categories,
+    top_items: pickRicherTopItems(biRaw.top_items, aggregates?.top_items, funnel),
+    top_categories: pickRicherTopCategories(
+      biRaw.top_categories,
+      aggregates?.top_categories,
+      funnel,
+    ),
+    top_addon_pairs: pickRicherAddonPairs(
+      biRaw.top_addon_pairs,
+      aggregates?.top_addon_pairs,
+      funnel,
+      mergedByType,
+    ),
     data_source: "unified_session_master",
     partial_mode: Boolean(biRaw.partial_mode || aggregates.partial),
     aggregation_note: biRaw.aggregation_note || null,
@@ -180,11 +248,42 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}) {
       }
     : {};
 
-  const mergedRaw = mergeSessionMasterWithBiRaw(
+  let mergedRaw = mergeSessionMasterWithBiRaw(
     biPayloadRaw,
     aggregates,
     hours,
   );
+
+  let opsNotes = [...(biResult?.opsNotes || [])];
+
+  if (supabase && biEngagementDetailNeedsRefresh(mergedRaw)) {
+    try {
+      const detail = await fetchBiItemDetailFromMenuEvents(supabase, { branch, hours });
+      if (detail) {
+        mergedRaw = {
+          ...mergedRaw,
+          top_items:
+            (detail.top_items || []).length >= (mergedRaw.top_items || []).length
+              ? detail.top_items
+              : mergedRaw.top_items,
+          top_categories:
+            (detail.top_categories || []).length > 0
+              ? detail.top_categories
+              : mergedRaw.top_categories,
+          top_addon_pairs:
+            (detail.top_addon_pairs || []).length > 0
+              ? detail.top_addon_pairs
+              : mergedRaw.top_addon_pairs,
+        };
+        opsNotes = appendOpsNote(
+          opsNotes,
+          "Menu engagement charts aligned from live menu_events (rollup detail gap).",
+        );
+      }
+    } catch {
+      /* keep merged payload */
+    }
+  }
 
   if (sessionResult?.note && !mergedRaw.aggregation_note) {
     mergedRaw.aggregation_note = sessionResult.note;
@@ -195,7 +294,7 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}) {
 
   const normalized = normalizeBiDashboardPayload(mergedRaw, { hours });
 
-  let opsNotes = [...(biResult?.opsNotes || []), ...(sessionResult?.opsNotes || [])];
+  opsNotes = [...opsNotes, ...(sessionResult?.opsNotes || [])];
   if (aggregates && !sessionError) {
     opsNotes = appendOpsNote(
       opsNotes,

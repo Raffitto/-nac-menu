@@ -286,7 +286,12 @@ export function buildAddonIntelligence(biData) {
 export function buildRestaurantIntelligence(biData, foodicsContext = null, options = {}) {
   if (!biData) return null;
 
-  const validation = validateInsightData(biData);
+  const truth = options.truth || biData._truth || null;
+  const menuSessions = (truth?.sessions ?? Number(biData.total_sessions)) || 0;
+  const validation = validateInsightData({
+    ...biData,
+    total_sessions: menuSessions,
+  });
   const topItems = normalizeTopItems(biData?.top_items || []);
   const conversionRows = foodicsContext?.conversionRows || [];
   const funnels = buildItemFunnels({ ...biData, top_items: topItems }, conversionRows);
@@ -330,16 +335,23 @@ export function buildRestaurantIntelligence(biData, foodicsContext = null, optio
     businessDay,
     periodLabel: periodLabelFromHours(periodHours),
     kpis: {
-      sessions: validation.sessions,
-      events: validation.events,
-      impressions: Number(biData?.by_event_type?.item_impression) || 0,
-      modal_opens: Number(biData?.by_event_type?.item_open) || 0,
-      qr: Number(biData.by_event_type?.qr_session_start) || 0,
+      sessions: menuSessions,
+      events: truth?.totalEvents ?? validation.events,
+      impressions:
+        Number(truth?.funnel?.item_impressions) ||
+        Number(biData?.by_event_type?.item_impression) ||
+        0,
+      modal_opens:
+        Number(truth?.itemOpens) || Number(biData?.by_event_type?.item_open) || 0,
+      category_opens: Number(truth?.categoryOpens) || Number(biData?.funnel?.category_opens) || 0,
+      addon_interactions: Number(truth?.addonInteractions) || 0,
+      qr: Number(truth?.qrScans) || Number(biData.by_event_type?.qr_session_start) || 0,
       today_qr: Number(biData?.today_qr_sessions) || 0,
-      today_sessions: Number(biData?.today_unique_sessions) || 0,
-      bounce_pct: safePct(Number(biData.bounce_sessions), validation.sessions),
-      avg_time: Number(biData.avg_time_spent) || 0,
+      today_sessions: Number(biData?.today_unique_sessions) || menuSessions,
+      bounce_pct: safePct(Number(biData.bounce_sessions), menuSessions),
+      avg_time: Number(truth?.avgTimeSpent) || Number(biData.avg_time_spent) || 0,
     },
+    scopeMeta: options.scopeMeta || null,
     validation,
     hasFoodics: Boolean(foodicsContext?.hasImports),
     foodicsCompared: Boolean(foodicsContext?.previousBatch),

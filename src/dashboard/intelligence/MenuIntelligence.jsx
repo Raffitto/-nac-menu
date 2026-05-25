@@ -6,11 +6,13 @@ import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
+import AnalyticsIntegrityStrip from "../components/AnalyticsIntegrityStrip";
 import {
   isBiAddonsEmpty,
   isBiCategoriesEmpty,
   isBiTopItemsEmpty,
 } from "../../lib/biDashboardNormalize";
+import { getCanonicalMenuSurface } from "../../lib/unifiedOperationalTruth";
 import {
   buildMenuIntelligenceChartItems,
   buildMenuIntelligenceLowEngagement,
@@ -27,6 +29,7 @@ const TOOLTIP = {
 export default function MenuIntelligence() {
   const {
     data,
+    truth,
     loading,
     needsAuth,
     showFallbackBanner,
@@ -35,31 +38,50 @@ export default function MenuIntelligence() {
     operationalTrust,
   } = useMenuBiDashboardContext();
 
+  const canonical = useMemo(() => getCanonicalMenuSurface(data), [data]);
+
   const topItems = useMemo(
-    () => buildMenuIntelligenceChartItems(data?.top_items || []),
-    [data?.top_items],
+    () => buildMenuIntelligenceChartItems(canonical?.topItems || []),
+    [canonical?.topItems],
   );
   const bottomItems = useMemo(
-    () => buildMenuIntelligenceLowEngagement(data?.top_items || []),
-    [data?.top_items],
+    () => buildMenuIntelligenceLowEngagement(canonical?.topItems || []),
+    [canonical?.topItems],
   );
-  const topAddons = useMemo(() => (data?.top_addon_pairs || []).slice(0, 8), [data?.top_addon_pairs]);
+  const topAddons = useMemo(
+    () => (canonical?.topAddonPairs || []).slice(0, 8),
+    [canonical?.topAddonPairs],
+  );
   const topCategories = useMemo(
     () =>
-      (data?.top_categories || []).map((c) => ({
+      (canonical?.topCategories || []).map((c) => ({
         name:
           c.id === "__nav_aggregate__"
             ? "Category navigation (all)"
             : CATEGORY_NAMES[c.id] || c.id,
         opens: c.opens,
       })),
-    [data?.top_categories],
+    [canonical?.topCategories],
+  );
+
+  const viewData = useMemo(
+    () =>
+      data
+        ? {
+            ...data,
+            top_items: canonical?.topItems,
+            top_categories: canonical?.topCategories,
+            top_addon_pairs: canonical?.topAddonPairs,
+            funnel: canonical?.funnel,
+          }
+        : null,
+    [data, canonical],
   );
 
   const itemsEmpty =
-    !loading && !menuDataEmpty && (topItems.length === 0 || isBiTopItemsEmpty(data));
-  const categoriesEmpty = !loading && !menuDataEmpty && isBiCategoriesEmpty(data);
-  const addonsEmpty = !loading && !menuDataEmpty && isBiAddonsEmpty(data);
+    !loading && !menuDataEmpty && (topItems.length === 0 || isBiTopItemsEmpty(viewData));
+  const categoriesEmpty = !loading && !menuDataEmpty && isBiCategoriesEmpty(viewData);
+  const addonsEmpty = !loading && !menuDataEmpty && isBiAddonsEmpty(viewData);
 
   if (loading) {
     return (
@@ -88,6 +110,12 @@ export default function MenuIntelligence() {
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       <PlatformStatusBanner platformStatus={platformStatus} />
       <OperationalTrustBadge trust={operationalTrust} />
+      <AnalyticsIntegrityStrip
+        data={data}
+        truth={truth || data?._truth}
+        operationalTrust={operationalTrust}
+        surface="menu_intelligence"
+      />
       <BiLiveFallbackBanner visible={showFallbackBanner && !platformStatus?.showUserBanner} />
 
       <div className="nac-glass-panel">

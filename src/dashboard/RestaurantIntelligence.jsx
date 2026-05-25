@@ -35,6 +35,8 @@ import {
   visibilitySalesChartSeries,
 } from "./engines/chartEngine";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
+import AnalyticsIntegrityStrip from "./components/AnalyticsIntegrityStrip";
+import { buildAnalyticsIntegrityMeta } from "../lib/unifiedOperationalTruth";
 import { businessDayExportNote } from "./utils/businessDay";
 import { DEFAULT_RANGE, RANGE_OPTIONS, rangeExportLabel } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
@@ -67,6 +69,7 @@ export default function RestaurantIntelligence() {
     needsAuth,
     platformStatus,
     operationalTrust,
+    truth,
   } = useMenuBiDashboardContext();
   const error = needsAuth
     ? "Please log in from the Dashboard tab first."
@@ -82,9 +85,25 @@ export default function RestaurantIntelligence() {
       .catch(() => setFoodics(null));
   }, [biData]);
 
+  const scopeMeta = useMemo(
+    () =>
+      buildAnalyticsIntegrityMeta({
+        data: biData,
+        truth: truth || biData?._truth,
+        operationalTrust,
+        foodics,
+        surface: "restaurant_intelligence",
+      }),
+    [biData, truth, operationalTrust, foodics],
+  );
+
   const intelligence = useMemo(
-    () => buildRestaurantIntelligence(biData, foodics),
-    [biData, foodics],
+    () =>
+      buildRestaurantIntelligence(biData, foodics, {
+        truth: truth || biData?._truth,
+        scopeMeta,
+      }),
+    [biData, foodics, truth, scopeMeta],
   );
 
   const menuEngineering = useMemo(
@@ -170,6 +189,14 @@ export default function RestaurantIntelligence() {
       <GoogleReputationStrip title="Google reputation · network" />
       <PlatformStatusBanner platformStatus={platformStatus} />
       <OperationalTrustBadge trust={operationalTrust} className="ri-trust-badge" />
+      <AnalyticsIntegrityStrip
+        data={biData}
+        truth={truth || biData?._truth}
+        operationalTrust={operationalTrust}
+        foodics={foodics}
+        surface="restaurant_intelligence"
+        className="ri-integrity-strip"
+      />
       <header className="ri-header">
         <div>
           <Brain size={22} className="ri-icon" />
@@ -178,10 +205,11 @@ export default function RestaurantIntelligence() {
             <p>Operating intelligence — simple surface, deep analysis underneath</p>
             {intelligence?.validation && (
               <p className="ri-trust-bar">
-                Based on {intelligence.validation.events.toLocaleString()} menu events · {intelligence.validation.sessions.toLocaleString()} sessions
+                {intelligence.kpis.sessions.toLocaleString()} menu sessions (canonical) ·{" "}
+                {intelligence.validation.events.toLocaleString()} events
                 {intelligence.businessDay?.key && ` · business day ${intelligence.businessDay.key} (3AM–3AM)`}
                 {intelligence.visibilityReady === false && " · collecting visibility signals"}
-                {intelligence.hasFoodics && " · Foodics linked"}
+                {intelligence.hasFoodics && " · Foodics import comparison active"}
                 {intelligence.foodicsCompared && " · compared to previous import"}
                 {intelligence.generated_at && ` · updated ${new Date(intelligence.generated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
               </p>
@@ -242,7 +270,8 @@ export default function RestaurantIntelligence() {
       {/* KPIs */}
       {intelligence?.kpis && (
         <div className="ri-kpis">
-          <KpiCard label="Sessions" value={intelligence.kpis.sessions} />
+          <KpiCard label="Menu sessions" value={intelligence.kpis.sessions} />
+          <KpiCard label="Category opens" value={intelligence.kpis.category_opens} />
           <KpiCard label="Impressions" value={intelligence.kpis.impressions} />
           <KpiCard label="QR Today" value={intelligence.kpis.today_qr ?? intelligence.kpis.qr} />
           <KpiCard label="Bounce" value={`${intelligence.kpis.bounce_pct}%`} />

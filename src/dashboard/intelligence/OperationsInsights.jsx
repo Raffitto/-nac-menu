@@ -9,10 +9,11 @@ import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import InsightEngine from "../components/InsightEngine";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
+import AnalyticsIntegrityStrip from "../components/AnalyticsIntegrityStrip";
 import { useState, useEffect } from "react";
 
 export default function OperationsInsights() {
-  const { data: bi, loading, platformStatus, operationalTrust } = useMenuBiDashboardContext();
+  const { data: bi, loading, platformStatus, operationalTrust, truth } = useMenuBiDashboardContext();
   const [foodics, setFoodics] = useState(null);
 
   useEffect(() => {
@@ -57,6 +58,13 @@ export default function OperationsInsights() {
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       <PlatformStatusBanner platformStatus={platformStatus} />
       <OperationalTrustBadge trust={operationalTrust} />
+      <AnalyticsIntegrityStrip
+        data={bi}
+        truth={truth || bi?._truth}
+        operationalTrust={operationalTrust}
+        foodics={foodics}
+        surface="operations_insights"
+      />
       <div className="nac-glass-panel">
         <h3 style={{ margin: "0 0 1rem", display: "flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
           <Sparkles size={18} color="#d7bc8a" />
