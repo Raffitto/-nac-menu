@@ -1471,3 +1471,41 @@ body {
   .nac-bi-fv2-card { min-width: 0; width: 100%; }
   .nac-bi-fv2-arrow { transform: rotate(90deg); margin: -6px auto; }
 }
+
+/* Operational trust badge (executive data confidence) */
+.nac-operational-trust {
+  border: 1px solid rgba(215, 188, 138, 0.22);
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: rgba(12, 12, 14, 0.72);
+  min-width: 200px;
+}
+.nac-operational-trust-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.nac-operational-trust-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 0.68rem;
+}
+.nac-operational-trust-meta dt {
+  opacity: 0.5;
+  margin: 0;
+}
+.nac-operational-trust-meta dd {
+  margin: 0;
+  font-weight: 600;
+}
+.nac-trust--verified { border-color: rgba(78, 205, 196, 0.35); }
+.nac-trust--verified .nac-operational-trust-head { color: #4ecdc4; }
+.nac-trust--partial { border-color: rgba(215, 188, 138, 0.35); }
+.nac-trust--recovered { border-color: rgba(120, 160, 220, 0.35); }
+.nac-trust--stale { border-color: rgba(200, 90, 70, 0.35); }
+.topbar-trust { margin-left: auto; }

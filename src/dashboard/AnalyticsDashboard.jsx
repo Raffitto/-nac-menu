@@ -36,6 +36,9 @@ import { rangeExportLabel, rangeToHours } from "./utils/rangeState";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
 import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
+import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
+import OperationalTrustBadge from "./components/OperationalTrustBadge";
+import { canonicalAddonInteractionCount } from "../lib/menuEventTypes";
 import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
 import { usePlatformSession } from "./hooks/usePlatformSession";
@@ -115,6 +118,7 @@ export default function AnalyticsDashboard() {
   const [topAddons, setTopAddons] = useState([]);
   const [byRole, setByRole] = useState({});
   const [byBranch, setByBranch] = useState({});
+  const [operationalTrust, setOperationalTrust] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!supabase || !session) return;
@@ -132,6 +136,14 @@ export default function AnalyticsDashboard() {
       setByRole(result.byRole || {});
       setByBranch(result.byBranch || {});
       setOpsNotes(result.opsNotes || []);
+      setOperationalTrust(
+        resolveOperationalTrust({
+          sessionPartial: Boolean(result.partial),
+          note: result.note,
+          sessionEvents: Number(result.aggregates?.total_events) || 0,
+          dataSource: "session_analytics",
+        }),
+      );
       if (result.partial && result.note) {
         setPartialNote(result.note);
       }
@@ -222,7 +234,9 @@ export default function AnalyticsDashboard() {
   const byEventType = aggregates?.by_event_type || {};
   const categoryOpenCount = eventCount(byEventType, "category_open");
   const itemOpenCount = eventCount(byEventType, "item_open");
-  const addOnClickCount = eventCount(byEventType, "add_on_click");
+  const addOnClickCount =
+    Number(byEventType.addon_interaction) || canonicalAddonInteractionCount(byEventType);
+  const sessionOps = aggregates?.session_operational || {};
   const languageChangeCount = eventCount(byEventType, "language_change");
   const qrSessionStarts = eventCount(byEventType, "qr_session_start");
   const todayQrSessions = Number(aggregates?.today_qr_sessions) || 0;
@@ -278,6 +292,7 @@ export default function AnalyticsDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <OperationalTrustBadge trust={operationalTrust} />
             <span className="nac-an__pill">
               <Sparkles size={14} />
               Live
@@ -530,6 +545,27 @@ export default function AnalyticsDashboard() {
                 
               </motion.div>
             </div>
+
+            {sessionOps?.avg_dishes_per_session > 0 ? (
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-6">
+                <motion.div className="nac-an__card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                  <div className="text-xs text-white/50 mb-2">Avg categories / session</div>
+                  <div className="nac-an__stat-value text-2xl">{sessionOps.avg_categories_per_session}</div>
+                </motion.div>
+                <motion.div className="nac-an__card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                  <div className="text-xs text-white/50 mb-2">Impression → open</div>
+                  <div className="nac-an__stat-value text-2xl">{sessionOps.impression_to_open_ratio}%</div>
+                </motion.div>
+                <motion.div className="nac-an__card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                  <div className="text-xs text-white/50 mb-2">Reopen rate</div>
+                  <div className="nac-an__stat-value text-2xl">{sessionOps.reopen_rate_pct}%</div>
+                </motion.div>
+                <motion.div className="nac-an__card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                  <div className="text-xs text-white/50 mb-2">Menu completion</div>
+                  <div className="nac-an__stat-value text-2xl">{sessionOps.menu_completion_pct}%</div>
+                </motion.div>
+              </div>
+            ) : null}
 
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 mb-6">
               <motion.div

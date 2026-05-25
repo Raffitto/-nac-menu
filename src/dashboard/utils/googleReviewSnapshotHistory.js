@@ -268,7 +268,9 @@ export function computeBranchGoogleMovement(
 }
 
 export function buildAllBranchGoogleMovement(snapshots = [], options = {}) {
-  return GOOGLE_PLACE_BRANCHES.map((branchId) =>
+  const branchIds =
+    options.branchIds?.length > 0 ? options.branchIds : GOOGLE_PLACE_BRANCHES;
+  return branchIds.map((branchId) =>
     computeBranchGoogleMovement(snapshots, branchId, options),
   );
 }

@@ -1,4 +1,5 @@
 import { markMenuActivity } from "./sessionAttribution";
+import { normalizeSessionDurationSeconds } from "./sessionMetricsConfig";
 import { getBusinessDayRange } from "../dashboard/utils/businessDay";
 import { supabaseMenuTrack, isMenuTrackConfigured } from "./supabaseMenuTrack";
 import {
@@ -81,7 +82,8 @@ export function getSessionStartTime() {
 }
 
 export function getSessionDurationSeconds() {
-  return Math.round((Date.now() - getSessionStartTime()) / 1000);
+  const raw = Math.round((Date.now() - getSessionStartTime()) / 1000);
+  return normalizeSessionDurationSeconds(raw);
 }
 
 function getDeviceType() {

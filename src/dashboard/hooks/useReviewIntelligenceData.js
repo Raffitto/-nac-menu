@@ -7,9 +7,9 @@ import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
 import {
   canFetchCrossBranchComparison,
-  filterRowsByRbacProfile,
   resolveRbacQueryBranch,
 } from "../../lib/rbacQueryScope";
+import { buildBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import { rangeToSince, rangeToHours, defaultBranchId } from "../utils/rangeState";
 import {
@@ -107,9 +107,11 @@ export function useReviewIntelligenceData(options = {}) {
               )
             : summaryResult;
 
-        const comparison = filterRowsByRbacProfile(
+        const comparison = buildBranchComparisonForProfile(
           rbacProfile,
-          branchComparisonFromReviewSummary(allSummary || summaryResult),
+          branchComparisonFromReviewSummary(
+            canFetchCrossBranchComparison(rbacProfile) ? allSummary || summaryResult : summaryResult,
+          ),
         );
         const staffRows = await fetchStaffMergedByBranch(supabase, {
           hours,
@@ -162,7 +164,10 @@ export function useReviewIntelligenceData(options = {}) {
 
       const events = applyPlatformFilters(branchEvents || [], platformFilters);
       const all = applyPlatformFilters(allEvents || [], platformFilters);
-      const comparison = filterRowsByRbacProfile(rbacProfile, buildBranchReviewComparison(all));
+      const comparison = buildBranchComparisonForProfile(
+        rbacProfile,
+        buildBranchReviewComparison(all),
+      );
 
       setSummary(null);
       setKpis(computeReviewKpis(events));

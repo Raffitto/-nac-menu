@@ -32,8 +32,9 @@ import { buildRecommendations, buildManagementBriefing } from "./engines/recomme
 import {
   hourlyChartSeries,
   categoryChartSeries,
-  conversionChartSeries,
+  visibilitySalesChartSeries,
 } from "./engines/chartEngine";
+import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import { businessDayExportNote } from "./utils/businessDay";
 import { DEFAULT_RANGE, RANGE_OPTIONS, rangeExportLabel } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
@@ -65,6 +66,7 @@ export default function RestaurantIntelligence() {
     error: biError,
     needsAuth,
     platformStatus,
+    operationalTrust,
   } = useMenuBiDashboardContext();
   const error = needsAuth
     ? "Please log in from the Dashboard tab first."
@@ -107,7 +109,10 @@ export default function RestaurantIntelligence() {
 
   const hourlyChart = useMemo(() => hourlyChartSeries(biData), [biData]);
   const categoryChart = useMemo(() => categoryChartSeries(intelligence?.categoryHealth), [intelligence]);
-  const conversionChart = useMemo(() => conversionChartSeries(intelligence?.funnels || []), [intelligence]);
+  const visibilitySalesChart = useMemo(
+    () => visibilitySalesChartSeries(intelligence?.funnels || []),
+    [intelligence],
+  );
   const exportPayload = useMemo(
     () => ({
       briefing,
@@ -164,6 +169,7 @@ export default function RestaurantIntelligence() {
     <motion.div className="ri-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <GoogleReputationStrip title="Google reputation · network" />
       <PlatformStatusBanner platformStatus={platformStatus} />
+      <OperationalTrustBadge trust={operationalTrust} className="ri-trust-badge" />
       <header className="ri-header">
         <div>
           <Brain size={22} className="ri-icon" />
@@ -317,15 +323,24 @@ export default function RestaurantIntelligence() {
         <AnimatePresence>
           {deepOpen && (
             <motion.div className="ri-deep-body" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {conversionChart.length > 0 && (
-                <ChartCard title="Visibility vs sales" note="Impressions vs Foodics orders">
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={conversionChart} layout="vertical">
+              {visibilitySalesChart.length > 0 && (
+                <ChartCard title="Visibility vs sales" note="Impressions (teal) vs Foodics orders (gold)">
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={visibilitySalesChart} layout="vertical" barGap={4}>
                       <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                      <XAxis type="number" tick={{ fill: "rgba(249,249,247,0.4)", fontSize: 10 }} />
+                      <XAxis type="number" tick={{ fill: "rgba(249,249,247,0.4)", fontSize: 10 }} domain={[0, "auto"]} />
                       <YAxis type="category" dataKey="name" width={100} tick={{ fill: "rgba(249,249,247,0.4)", fontSize: 9 }} />
-                      <Tooltip contentStyle={TOOLTIP} />
-                      <Bar dataKey="conversion" fill="#4ecdc4" radius={[0, 4, 4, 0]} />
+                      <Tooltip
+                        contentStyle={TOOLTIP}
+                        formatter={(value, key, item) => {
+                          if (key === "orders") {
+                            return [item?.payload?.ordersActual ?? value, "Orders"];
+                          }
+                          return [value, key === "impressions" ? "Impressions" : key];
+                        }}
+                      />
+                      <Bar dataKey="impressions" fill="rgba(78,205,196,0.75)" radius={[0, 4, 4, 0]} minPointSize={4} />
+                      <Bar dataKey="orders" fill="rgba(215,188,138,0.85)" radius={[0, 4, 4, 0]} minPointSize={4} />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>

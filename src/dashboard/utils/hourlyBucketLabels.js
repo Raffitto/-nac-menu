@@ -109,8 +109,15 @@ export function fill24HourBuckets(byHour = []) {
     const gran = row.granularity || parseHourBucket(raw).granularity;
     if (gran === "day") continue;
     const parsed = parseHourBucket(raw, gran);
-    if (parsed.hour == null) continue;
-    counts.set(parsed.hour, (counts.get(parsed.hour) || 0) + (Number(row.count) || 0));
+    let hour = parsed.hour;
+    if (hour == null && (typeof raw === "string" || raw instanceof Date)) {
+      hour = hourInRiyadh(raw);
+    }
+    if (hour == null && typeof raw === "number" && raw >= 0 && raw <= 23) {
+      hour = raw;
+    }
+    if (hour == null) continue;
+    counts.set(hour, (counts.get(hour) || 0) + (Number(row.count) || 0));
   }
   return Array.from({ length: 24 }, (_, hour) => ({
     hour,

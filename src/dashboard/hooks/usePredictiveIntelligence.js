@@ -2,20 +2,25 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
 import { rangeToHours } from "../utils/rangeState";
-import {
-  staffFromReviewSummary,
-  branchComparisonFromReviewSummary,
-} from "../utils/reviewSummaryMap";
+import { staffFromReviewSummary, branchComparisonFromReviewSummary } from "../utils/reviewSummaryMap";
 import { fetchGoogleReviewSnapshots } from "../utils/googleReviewSnapshotHistory";
 import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelligenceEngine";
 import { cacheKey, getCachedIntelligence, invalidateIntelligenceCache } from "../utils/intelligenceCache";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
-import { OPERATIONAL_BRANCHES } from "../engines/branchOperationalReviewEngine";
+import {
+  buildBranchComparisonForProfile,
+  filterExecutiveCommandInput,
+  operationalBranchIdsForProfile,
+  rbacScopeCacheKey,
+} from "../../lib/rbacIntelligenceScope";
+import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 
-async function loadStaffByBranch(hours) {
+async function loadStaffByBranch(hours, rbacProfile) {
+  const branchIds = operationalBranchIdsForProfile(rbacProfile);
   const pairs = await Promise.all(
-    OPERATIONAL_BRANCHES.map(async (branchId) => {
+    branchIds.map(async (branchId) => {
       const summary = await withSupabaseFallback(
         fetchReviewEventsSummary(supabase, { branch: branchId, hours }),
         null,
@@ -31,12 +36,17 @@ async function loadStaffByBranch(hours) {
  */
 export function usePredictiveIntelligence(reviewData = null, options = {}) {
   const platform = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const selectedRange = reviewData?.selectedRange ?? platform?.selectedRange ?? "today";
-  const activeBranch = (reviewData?.branch ?? platform?.branch ?? "khobar").toLowerCase();
+  const activeBranch = (
+    reviewData?.branch ??
+    resolveRbacQueryBranch(rbac?.profile, platform?.branch) ??
+    "khobar"
+  ).toLowerCase();
   const filterKey =
     reviewData?.filterKey ??
     platform?.filterKey ??
-    cacheKey(["predictive", activeBranch, selectedRange]);
+    cacheKey(["predictive", rbacScopeCacheKey(rbac?.profile), activeBranch, selectedRange]);
 
   const [pkg, setPkg] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -53,13 +63,14 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
     setLoading(true);
     setError("");
 
-    const key = cacheKey(["predictive", filterKey]);
+    const key = cacheKey(["predictive", rbacScopeCacheKey(rbac?.profile), filterKey]);
 
     getCachedIntelligence(key, async () => {
       const hours = rangeToHours(selectedRange);
+      const allowedIds = operationalBranchIdsForProfile(rbac?.profile);
       const [staffByBranch, snapResult] = await Promise.all([
-        loadStaffByBranch(hours),
-        fetchGoogleReviewSnapshots().catch(() => ({ data: [] })),
+        loadStaffByBranch(hours, rbac?.profile),
+        fetchGoogleReviewSnapshots(allowedIds).catch(() => ({ data: [] })),
       ]);
 
       let branchComparison = reviewData?.branchComparison;
@@ -67,24 +78,33 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
       let dailyTrend = reviewData?.dailyTrend;
 
       if (!branchComparison?.length) {
+        const scopedBranch = resolveRbacQueryBranch(rbac?.profile, activeBranch);
         const net = await withSupabaseFallback(
-          fetchReviewEventsSummary(supabase, { branch: null, hours }),
+          fetchReviewEventsSummary(supabase, { branch: scopedBranch, hours }),
           null,
         );
         if (net) {
-          branchComparison = branchComparisonFromReviewSummary(net);
+          branchComparison = buildBranchComparisonForProfile(
+            rbac?.profile,
+            branchComparisonFromReviewSummary(net),
+          );
         }
       }
 
-      return buildPredictiveIntelligencePackage({
-        kpis,
-        branchComparison: branchComparison || [],
-        staffByBranch,
-        snapshots: snapResult?.data || [],
-        selectedRange,
-        dailyTrend: dailyTrend || [],
-        activeBranch,
-      });
+      const scoped = filterExecutiveCommandInput(
+        {
+          kpis,
+          branchComparison: branchComparison || [],
+          staffByBranch,
+          snapshots: snapResult?.data || [],
+          selectedRange,
+          dailyTrend: dailyTrend || [],
+          activeBranch,
+        },
+        rbac?.profile,
+      );
+
+      return buildPredictiveIntelligencePackage(scoped);
     })
       .then((data) => {
         if (!cancelled) {
@@ -103,7 +123,15 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
     return () => {
       cancelled = true;
     };
-  }, [filterKey, reviewData?.kpis, reviewData?.branchComparison, reviewData?.dailyTrend, activeBranch, selectedRange]);
+  }, [
+    filterKey,
+    reviewData?.kpis,
+    reviewData?.branchComparison,
+    reviewData?.dailyTrend,
+    activeBranch,
+    selectedRange,
+    rbac?.profile,
+  ]);
 
   const activeScore = useMemo(
     () => pkg?.scoreByBranch?.[activeBranch] || null,

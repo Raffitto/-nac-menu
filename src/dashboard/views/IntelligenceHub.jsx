@@ -6,7 +6,8 @@ import HubTabs from "../components/HubTabs";
 import GlobalFilterBar from "../components/GlobalFilterBar";
 import ExecutiveExportButton from "../components/ExecutiveExportButton";
 import { INTELLIGENCE_TABS } from "../navigation";
-import { MenuBiDashboardProvider } from "../context/MenuBiDashboardContext";
+import { MenuBiDashboardProvider, useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
+import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import { useRbac } from "../context/RbacContext";
 import { PERMISSIONS } from "../config/rbac";
 import MenuIntelligence from "../intelligence/MenuIntelligence";
@@ -22,6 +23,11 @@ const RestaurantIntelligence = lazy(() => import("../RestaurantIntelligence"));
 const FoodicsIntelligence = lazy(() => import("../FoodicsIntelligence"));
 const SalesImportsIntelligence = lazy(() => import("../intelligence/SalesImportsIntelligence"));
 const VisualIntelligenceEngine = lazy(() => import("../intelligence/VisualIntelligenceEngine"));
+
+function IntelligenceTrustStrip() {
+  const { operationalTrust } = useMenuBiDashboardContext();
+  return <OperationalTrustBadge trust={operationalTrust} />;
+}
 
 function ViewFallback({ label }) {
   return (
@@ -60,7 +66,10 @@ export default function IntelligenceHub() {
             <h1>Intelligence</h1>
             <p className="nac-platform-sub">Operational brain — insights, menu, sales, and forecasts</p>
           </div>
-          {showExecutiveExport && <ExecutiveExportButton />}
+          <div className="nac-platform-header-actions">
+            <IntelligenceTrustStrip />
+            {showExecutiveExport ? <ExecutiveExportButton /> : null}
+          </div>
         </div>
       </header>
 

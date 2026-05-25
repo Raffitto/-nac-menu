@@ -193,6 +193,46 @@
 }
 
 .ecc-kpi-muted,
+.ecc-single-branch-state {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ecc-single-branch-metric {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(215, 188, 138, 0.12);
+}
+
+.ecc-single-branch-metric span {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.55;
+  margin-bottom: 6px;
+}
+
+.ecc-single-branch-metric strong {
+  font-size: 1.1rem;
+}
+
+.ecc-trust-badge {
+  margin-right: auto;
+}
+
+.ecc-empty-intel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(215, 188, 138, 0.08);
+  border: 1px solid rgba(215, 188, 138, 0.18);
+  color: rgba(249, 249, 247, 0.72);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .ecc-muted {
   font-size: 0.8rem;
   color: rgba(249, 249, 247, 0.45);

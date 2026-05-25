@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchBiDashboard } from "../../lib/intelligenceQueryApi";
+import { fetchUnifiedOperationalAnalytics } from "../../lib/analyticsUnifiedAdapter";
 import {
   isMenuBiFullyEmpty,
   normalizeBiDashboardPayload,
@@ -41,6 +41,7 @@ const EMPTY_CONTRACT = {
   sparseHistory: false,
   truthValidation: null,
   menuConfidence: null,
+  operationalTrust: null,
   reload: () => {},
 };
 
@@ -66,6 +67,7 @@ export function useMenuBiDashboard(options = {}) {
   const [opsNotes, setOpsNotes] = useState([]);
   const [error, setError] = useState("");
   const [truthValidation, setTruthValidation] = useState(null);
+  const [operationalTrust, setOperationalTrust] = useState(null);
 
   const rangeContract = useMemo(
     () => rangeContractFromFilters(filters || {}),
@@ -105,9 +107,10 @@ export function useMenuBiDashboard(options = {}) {
 
       setNeedsAuth(false);
       const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
-      const result = await fetchBiDashboard(supabase, {
+      const result = await fetchUnifiedOperationalAnalytics(supabase, {
+        ...(filters || {}),
         branch: effectiveBranch,
-        hours,
+        timeRangeHours: hours,
       });
 
       const normalized = normalizeBiDashboardPayload(result?.data, { hours });
@@ -117,6 +120,7 @@ export function useMenuBiDashboard(options = {}) {
       setOpsNotes(result?.opsNotes || []);
       setLiveFallback(Boolean(result?.liveFallback));
       setMenuDataEmpty(Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)));
+      setOperationalTrust(result?.operationalTrust || null);
       await probeLatestEventTimestamps(supabase).catch(() => {});
 
       const sufficiency =
@@ -151,11 +155,12 @@ export function useMenuBiDashboard(options = {}) {
       setMenuDataEmpty(true);
       setOpsNotes([]);
       setTruthValidation(null);
+      setOperationalTrust(null);
       setError(e?.message || "Failed to load menu intelligence");
     } finally {
       setLoading(false);
     }
-  }, [enabled, filters?.branch, filters?.selectedRange, hours, source, rangeContract, rbac?.profile]);
+  }, [enabled, filters, hours, source, rangeContract, rbac?.profile]);
 
   useEffect(() => {
     load();
@@ -229,5 +234,6 @@ export function useMenuBiDashboard(options = {}) {
     menuConfidence: truthValidation?.menuConfidence || null,
     healthScore: truthValidation?.healthScore || null,
     freshness: truthValidation?.freshness || null,
+    operationalTrust,
   };
 }

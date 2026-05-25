@@ -27,16 +27,40 @@ export function categoryChartSeries(categoryHealth = []) {
 }
 
 export function conversionChartSeries(funnels = [], limit = 12) {
-  return [...funnels]
-    .filter((f) => f.item_opens > 0)
+  const rows = [...funnels]
+    .filter((f) => (f.impressions ?? f.item_opens) > 0 || (f.orders || 0) > 0)
     .sort((a, b) => b.conversion_pct - a.conversion_pct)
     .slice(0, limit)
     .map((f) => ({
       name: f.item_name?.length > 18 ? `${f.item_name.slice(0, 16)}…` : f.item_name,
-      conversion: clampMetric(f.conversion_pct, 0, 100),
-      views: f.item_opens,
-      orders: f.orders,
+      conversion: Math.max(clampMetric(f.conversion_pct, 0, 100), (f.orders || 0) > 0 ? 2 : 1),
+      views: f.impressions ?? f.item_opens,
+      orders: f.orders || 0,
+      opens: f.item_opens || 0,
     }));
+  return rows.length ? rows : [];
+}
+
+/** Visibility vs sales — dual bars so sparse Foodics data still renders. */
+export function visibilitySalesChartSeries(funnels = [], limit = 10) {
+  return [...funnels]
+    .filter((f) => (f.impressions ?? f.item_opens) > 0 || (f.orders || 0) > 0)
+    .sort(
+      (a, b) =>
+        (b.impressions ?? b.item_opens ?? 0) - (a.impressions ?? a.item_opens ?? 0),
+    )
+    .slice(0, limit)
+    .map((f) => {
+      const impressions = Math.max(Number(f.impressions ?? f.item_opens) || 0, 1);
+      const orders = Math.max(Number(f.orders) || 0, 0);
+      return {
+        name: f.item_name?.length > 18 ? `${f.item_name.slice(0, 16)}…` : f.item_name,
+        impressions,
+        orders: orders > 0 ? orders : 0.35,
+        ordersActual: orders,
+        conversion: clampMetric(f.conversion_pct, 0, 100),
+      };
+    });
 }
 
 export function menuQuadrantSeries(menuEngineering = []) {

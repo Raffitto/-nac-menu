@@ -5,14 +5,20 @@ export function classifyMenuItems(funnels = []) {
   const visible = filterExecutiveRows(funnels);
   if (!visible.length) return [];
 
-  const withOrders = visible.filter((f) => f.orders > 0 || f.item_opens > 0);
-  const maxViews = Math.max(...withOrders.map((f) => f.item_opens), 1);
+  const withOrders = visible.filter(
+    (f) => (f.orders > 0 || f.item_opens > 0) && ((f.impressions ?? f.item_impressions) > 0 || f.item_opens > 0),
+  );
+  const maxViews = Math.max(
+    ...withOrders.map((f) => (f.impressions ?? f.item_impressions ?? 0) * 0.4 + (f.item_opens || 0) * 0.6),
+    1,
+  );
   const maxRev = Math.max(...withOrders.map((f) => (f.revenue_per_view || 0) * f.item_opens), 1);
   const convEligible = withOrders.filter((f) => f.conversion_allowed && f.conversion_pct != null);
   const maxConv = Math.max(...convEligible.map((f) => clampMetric(f.conversion_pct, 0, 100)), 1);
 
   return withOrders.map((f) => {
-    const viewScore = (f.item_opens / maxViews) * 100;
+    const vis = (f.impressions ?? f.item_impressions ?? 0) * 0.4 + (f.item_opens || 0) * 0.6;
+    const viewScore = (vis / maxViews) * 100;
     const revScore = (((f.revenue_per_view || 0) * f.item_opens) / maxRev) * 100;
     const convScore =
       f.conversion_allowed && f.conversion_pct != null

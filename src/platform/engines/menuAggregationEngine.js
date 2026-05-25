@@ -33,7 +33,16 @@ export function mergeTopItemsByName(items = []) {
           ? Math.round(t.visible_duration_ms / t.impression_sessions)
           : 0,
     }))
-    .sort((a, b) => Math.max(b.impressions, b.opens) - Math.max(a.impressions, a.opens));
+    .sort((a, b) => visibilityEngagementScore(b) - visibilityEngagementScore(a));
+}
+
+/** Weighted visibility score — impressions, opens, open ratio, dwell. */
+export function visibilityEngagementScore(item = {}) {
+  const imp = Number(item.impressions) || 0;
+  const opens = Number(item.opens ?? item.modal_opens) || 0;
+  const rate = imp > 0 ? opens / imp : opens > 0 ? 1 : 0;
+  const dwellSec = Math.min((Number(item.avg_visible_duration_ms) || 0) / 1000, 120);
+  return imp * 1 + opens * 2.5 + rate * 40 + dwellSec * 0.15;
 }
 
 export function mergeCategoriesById(items = []) {

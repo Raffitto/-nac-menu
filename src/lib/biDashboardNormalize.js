@@ -6,10 +6,16 @@ import {
   parseHourBucket,
   normalizeHourlyDistribution,
   detectHourlyGranularity,
+  hourInRiyadh,
 } from "../dashboard/utils/hourlyBucketLabels";
 import { resolveChartGranularityForHours, dayCountForHours } from "../dashboard/utils/hourlyPipeline";
-import { canonicalCategoryOpenCount, enrichByEventTypeCanonical } from "./menuEventTypes";
+import {
+  canonicalCategoryOpenCount,
+  canonicalAddonInteractionCount,
+  enrichByEventTypeCanonical,
+} from "./menuEventTypes";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
+import { normalizeAvgTimeSpent } from "./sessionMetricsConfig";
 import {
   mergeTopItemsByName,
   mergeCategoriesById,
@@ -37,7 +43,9 @@ const EMPTY_FUNNEL = {
 
 /** Rollup / partial RPC missing session-quality tiers despite sessions. */
 export function biSessionQualityNeedsRefresh(payload) {
-  return sessionQualityIsEmpty(payload);
+  if (sessionQualityIsEmpty(payload)) return true;
+  const avg = Number(payload?.avg_time_spent) || 0;
+  return avg > 21 * 60;
 }
 
 /** Rollup totals present but item rows missing, flat, or all-zero. */
@@ -110,13 +118,28 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
   }
 
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
+  const rangeHours = Number(options.hours) || 24;
 
   const by_hour_raw = Array.isArray(raw.by_hour)
     ? raw.by_hour.map((row) => {
         const bucket = row.hour ?? row.business_day_key ?? row.day_key;
-        const gran = row.granularity || parseHourBucket(bucket).granularity || "hour";
+        const parsed = parseHourBucket(bucket, row.granularity);
+        let gran = row.granularity || parsed.granularity || "hour";
+        let hourKey = bucket;
+        if (rangeHours <= 24) {
+          if (parsed.kind === "hour" && parsed.hour != null) {
+            hourKey = parsed.hour;
+            gran = "hour";
+          } else {
+            const h = hourInRiyadh(bucket);
+            if (h != null) {
+              hourKey = h;
+              gran = "hour";
+            }
+          }
+        }
         return {
-          hour: bucket,
+          hour: hourKey,
           count: Number(row.count) || 0,
           granularity: gran,
           business_day_key: row.business_day_key || (gran === "day" ? bucket : null),
@@ -124,7 +147,6 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
       })
     : [];
 
-  const rangeHours = Number(options.hours) || 24;
   const forcedGranularity = resolveChartGranularityForHours(rangeHours);
   const hourGranularity =
     forcedGranularity === "hour" ? "hour" : detectHourlyGranularity(by_hour_raw);
@@ -150,7 +172,7 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
     lang_behavior: raw.lang_behavior && typeof raw.lang_behavior === "object" ? raw.lang_behavior : {},
     bounce_sessions: Number(raw.bounce_sessions) || 0,
     deep_sessions: Number(raw.deep_sessions) || 0,
-    avg_time_spent: Number(raw.avg_time_spent) || 0,
+    avg_time_spent: normalizeAvgTimeSpent(raw.avg_time_spent),
     avg_items_per_session: Number(raw.avg_items_per_session) || 0,
     returning_sessions: Number(raw.returning_sessions) || 0,
     today_unique_sessions: Number(raw.today_unique_sessions) || 0,
@@ -162,7 +184,9 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
         Number(funnelIn.category_opens ?? categoryOpensCanonical ?? byEvent.category_open) || 0,
       item_impressions: Number(funnelIn.item_impressions ?? byEvent.item_impression) || 0,
       item_opens: Number(funnelIn.item_opens ?? byEvent.item_open) || 0,
-      addon_clicks: Number(funnelIn.addon_clicks ?? byEvent.add_on_click) || 0,
+      addon_clicks:
+        Number(funnelIn.addon_clicks ?? byEvent.addon_interaction ?? canonicalAddonInteractionCount(byEventRaw)) ||
+        0,
       time_spent: Number(funnelIn.time_spent ?? byEvent.time_spent) || 0,
       exits: Number(funnelIn.exits ?? byEvent.menu_exit) || 0,
     },
@@ -179,6 +203,10 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
     aggregation_note: raw.aggregation_note || null,
     data_source: raw.data_source || raw._pipeline?.dataSource || null,
     drinks_vs_food_pct: Number(raw.drinks_vs_food_pct) || 0,
+    session_operational:
+      raw.session_operational && typeof raw.session_operational === "object"
+        ? raw.session_operational
+        : {},
   };
 }
 

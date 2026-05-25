@@ -32,6 +32,8 @@ export function buildExecutiveCommandCenterPackage(input = {}) {
     momentum: predictive.momentum,
     branchStatus,
     previousComparison: input.previousComparison,
+    networkWide: input.networkWide !== false,
+    allowedBranchIds: input.allowedBranchIds,
   });
 
   const dailyBrief = buildDailyExecutiveBrief({
@@ -48,6 +50,8 @@ export function buildExecutiveCommandCenterPackage(input = {}) {
     momentum: predictive.momentum,
     branchComparison: input.branchComparison,
     alerts,
+    networkWide: input.networkWide !== false,
+    allowedBranchIds: input.allowedBranchIds,
   });
 
   const heatmap = buildExecutiveHeatmap({

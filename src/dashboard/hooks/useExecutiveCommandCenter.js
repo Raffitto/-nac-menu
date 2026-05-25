@@ -9,12 +9,20 @@ import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandC
 import { cacheKey, getCachedIntelligence } from "../utils/intelligenceCache";
 import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
-import { OPERATIONAL_BRANCHES } from "../engines/branchOperationalReviewEngine";
 import { useReviewIntelligenceData } from "./useReviewIntelligenceData";
+import { useRbacOptional } from "../context/RbacContext";
+import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
+import {
+  filterCommandCenterPackage,
+  filterExecutiveCommandInput,
+  operationalBranchIdsForProfile,
+  rbacScopeCacheKey,
+} from "../../lib/rbacIntelligenceScope";
 
-async function loadStaffByBranch(hours) {
+async function loadStaffByBranch(hours, rbacProfile) {
+  const branchIds = operationalBranchIdsForProfile(rbacProfile);
   const pairs = await Promise.all(
-    OPERATIONAL_BRANCHES.map(async (branchId) => {
+    branchIds.map(async (branchId) => {
       const summary = await withSupabaseFallback(
         fetchReviewEventsSummary(supabase, { branch: branchId, hours }),
         null,
@@ -30,10 +38,14 @@ async function loadStaffByBranch(hours) {
  */
 export function useExecutiveCommandCenter() {
   const platform = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const selectedRange = platform?.selectedRange ?? "today";
   const filterKey = platform?.filterKey ?? cacheKey(["ecc", selectedRange]);
 
-  const reviewData = useReviewIntelligenceData({ networkWide: true, selectedRange });
+  const reviewData = useReviewIntelligenceData({
+    networkWide: canFetchCrossBranchComparison(rbac?.profile),
+    selectedRange,
+  });
 
   const [pkg, setPkg] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,23 +62,30 @@ export function useExecutiveCommandCenter() {
     setLoading(true);
     setError("");
 
-    const key = cacheKey(["executive-cc", filterKey]);
+    const key = cacheKey(["executive-cc", rbacScopeCacheKey(rbac?.profile), filterKey]);
 
     getCachedIntelligence(key, async () => {
       const hours = rangeToHours(selectedRange);
       const [staffByBranch, snapResult] = await Promise.all([
-        loadStaffByBranch(hours),
+        loadStaffByBranch(hours, rbac?.profile),
         fetchGoogleReviewSnapshots().catch(() => ({ data: [] })),
       ]);
 
-      return buildExecutiveCommandCenterPackage({
-        kpis: reviewData.kpis,
-        branchComparison: reviewData.branchComparison || [],
-        staffByBranch,
-        snapshots: snapResult?.data || [],
-        selectedRange,
-        dailyTrend: reviewData.dailyTrend || [],
-      });
+      const scopedInput = filterExecutiveCommandInput(
+        {
+          kpis: reviewData.kpis,
+          branchComparison: reviewData.branchComparison || [],
+          staffByBranch,
+          snapshots: snapResult?.data || [],
+          selectedRange,
+          dailyTrend: reviewData.dailyTrend || [],
+        },
+        rbac?.profile,
+      );
+
+      const rawPkg = buildExecutiveCommandCenterPackage(scopedInput);
+
+      return filterCommandCenterPackage(rawPkg, rbac?.profile);
     })
       .then((data) => {
         if (!cancelled) {
@@ -106,6 +125,7 @@ export function useExecutiveCommandCenter() {
     reviewData.kpis,
     reviewData.branchComparison,
     reviewData.dailyTrend,
+    rbac?.profile,
   ]);
 
   const isLoading = loading || reviewData.loading;

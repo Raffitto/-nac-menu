@@ -37,18 +37,26 @@ function rangeDaysFromId(rangeId) {
  */
 export function buildPredictiveIntelligencePackage(input = {}) {
   const branchComparison = input.branchComparison?.length > 0 ? input.branchComparison : [];
+  const allowedBranchIds =
+    input.allowedBranchIds?.length > 0
+      ? input.allowedBranchIds.map((id) => String(id).toLowerCase())
+      : GOOGLE_PLACE_BRANCHES;
 
   const snapshots = input.snapshots || [];
-  const googleMovementByBranch =
+  const googleMovementAll =
     input.googleMovementByBranch ||
     Object.fromEntries(
       buildAllBranchGoogleMovement(snapshots, {
         periodRange: input.selectedRange || "month",
+        branchIds: allowedBranchIds,
       }).map((g) => [g.branch_id, g]),
     );
+  const googleMovementByBranch = Object.fromEntries(
+    Object.entries(googleMovementAll).filter(([id]) => allowedBranchIds.includes(id)),
+  );
 
-  const staffByBranch = input.staffByBranch || {};
-  GOOGLE_PLACE_BRANCHES.forEach((id) => {
+  const staffByBranch = { ...(input.staffByBranch || {}) };
+  allowedBranchIds.forEach((id) => {
     if (!staffByBranch[id]) staffByBranch[id] = [];
   });
 

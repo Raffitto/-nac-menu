@@ -5,6 +5,7 @@ import { CATEGORY_NAMES } from "../utils/formatters";
 import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
+import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import {
   isBiAddonsEmpty,
   isBiCategoriesEmpty,
@@ -31,6 +32,7 @@ export default function MenuIntelligence() {
     showFallbackBanner,
     menuDataEmpty,
     platformStatus,
+    operationalTrust,
   } = useMenuBiDashboardContext();
 
   const topItems = useMemo(
@@ -85,6 +87,7 @@ export default function MenuIntelligence() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       <PlatformStatusBanner platformStatus={platformStatus} />
+      <OperationalTrustBadge trust={operationalTrust} />
       <BiLiveFallbackBanner visible={showFallbackBanner && !platformStatus?.showUserBanner} />
 
       <div className="nac-glass-panel">

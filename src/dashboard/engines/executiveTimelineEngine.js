@@ -13,9 +13,17 @@ function slot(i) {
  */
 export function buildExecutiveTimeline(input = {}) {
   const events = [];
-  const status = input.branchStatus || [];
+  const networkWide = input.networkWide !== false;
+  const allowed = input.allowedBranchIds?.length
+    ? new Set(input.allowedBranchIds.map((id) => String(id).toLowerCase()))
+    : null;
+  const status = (input.branchStatus || []).filter((b) =>
+    allowed ? allowed.has(String(b.branch_id).toLowerCase()) : true,
+  );
   const momentum = input.momentum || {};
-  const comparison = input.branchComparison || [];
+  const comparison = (input.branchComparison || []).filter((c) =>
+    allowed ? allowed.has(String(c.branch_id).toLowerCase()) : true,
+  );
   const totalGoogle = comparison.reduce((s, r) => s + (r.google_redirects || 0), 0);
   const totalScans = comparison.reduce((s, r) => s + (r.qr_scans || 0), 0);
   let idx = 0;
@@ -47,26 +55,31 @@ export function buildExecutiveTimeline(input = {}) {
     }
   });
 
-  if (momentum.momentum === "Rising" && !momentum.insufficient_data) {
-    events.push({
-      time: slot(idx++),
-      text: "Network review pace above weekly average.",
-      kind: "network",
-    });
-  } else if (momentum.momentum === "Declining") {
-    events.push({
-      time: slot(idx++),
-      text: "Network redirect pace trailing prior period.",
-      kind: "network",
-    });
+  if (networkWide) {
+    if (momentum.momentum === "Rising" && !momentum.insufficient_data) {
+      events.push({
+        time: slot(idx++),
+        text: "Network review pace above weekly average.",
+        kind: "network",
+      });
+    } else if (momentum.momentum === "Declining") {
+      events.push({
+        time: slot(idx++),
+        text: "Network redirect pace trailing prior period.",
+        kind: "network",
+      });
+    }
   }
 
   if (totalGoogle > 0 && totalScans > 0) {
     const conv = Math.round((totalGoogle / totalScans) * 100);
+    const branchLabel =
+      status.length === 1 ? status[0].branch_name : networkWide ? "Network" : status[0]?.branch_name || "Branch";
     events.push({
       time: slot(idx++),
-      text: `Network handoff pulse: ${totalScans} card taps, ${totalGoogle} Google redirects (${conv}% efficiency).`,
-      kind: "pulse",
+      text: `${branchLabel} handoff pulse: ${totalScans} card taps, ${totalGoogle} Google redirects (${conv}% efficiency).`,
+      kind: networkWide ? "pulse" : "branch_pulse",
+      branch_id: status.length === 1 ? status[0].branch_id : null,
     });
   }
 

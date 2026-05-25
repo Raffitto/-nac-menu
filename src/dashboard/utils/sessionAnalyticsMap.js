@@ -2,9 +2,14 @@
  * Maps get_bi_dashboard RPC payload → Session Analytics aggregate shape.
  */
 
-import { normalizeHourlyForRange } from "./hourlyPipeline";
+import {
+  normalizeHourlyForRange,
+  resolveChartGranularityForHours,
+  dayCountForHours,
+} from "./hourlyPipeline";
 import { hourlyChartRows } from "./hourlyBucketLabels";
 import { rangeToHours } from "./rangeState";
+import { enrichByEventTypeCanonical } from "../../lib/menuEventTypes";
 
 const CATEGORY_NAMES = {
   brunch: "Brunch",
@@ -39,9 +44,13 @@ export function mapBiToSessionAggregates(bi, options = {}) {
     granularity: row.granularity,
   }));
   const normalized = normalizeHourlyForRange(byHourRaw, hours);
-  const chartRows = hourlyChartRows(normalized, { fillGaps: false });
+  const chartRows = hourlyChartRows(normalized, {
+    fillGaps: options.fillGaps !== false,
+    granularity: resolveChartGranularityForHours(hours),
+    dayCount: dayCountForHours(hours),
+  });
 
-  const byType = bi.by_event_type || {};
+  const byType = enrichByEventTypeCanonical(bi.by_event_type || {});
   const topCategories = (bi.top_categories || []).map((c) => ({
     id: c.id ?? c.category_id,
     opens: Number(c.opens) || 0,
@@ -78,5 +87,6 @@ export function mapBiToSessionAggregates(bi, options = {}) {
     modal_engagement_events: Number(byType.item_open) || 0,
     funnel: bi.funnel || {},
     session_quality: bi.session_quality || {},
+    session_operational: bi.session_operational || {},
   };
 }

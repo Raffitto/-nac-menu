@@ -18,6 +18,13 @@ import { MomentumChip, TrendArrow } from "../components/PredictiveIntelligenceVi
 import { sortHeatmapRows } from "../engines/executiveHeatmapEngine";
 import { branchDisplayName, rangeExportLabel } from "../utils/rangeState";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
+import OperationalTrustBadge from "../components/OperationalTrustBadge";
+import { useMenuBiDashboardContextOptional } from "../context/MenuBiDashboardContext";
+import { useRbacOptional } from "../context/RbacContext";
+import {
+  commandCenterPulseTitle,
+  commandCenterHeatmapEmptyCopy,
+} from "../../lib/rbacIntelligenceScope";
 import BoardroomMode, { BoardroomLaunchButton } from "../components/BoardroomMode";
 import { isTenantFeatureEnabled } from "../../config/tenantConfig";
 import "../styles/executive-command-center.css";
@@ -44,9 +51,19 @@ function heatCellClass(value) {
   return "ecc-heat-cell--risk";
 }
 
+function CommandCenterTrustBadge() {
+  const ctx = useMenuBiDashboardContextOptional();
+  return <OperationalTrustBadge trust={ctx?.operationalTrust} className="ecc-trust-badge" />;
+}
+
 export default function ExecutiveCommandCenter() {
   const { pkg, loading, error, selectedRange, reviewData } = useExecutiveCommandCenter();
+  const rbac = useRbacOptional();
   const filters = usePlatformFiltersOptional();
+  const pulseTitle = useMemo(
+    () => commandCenterPulseTitle(rbac?.profile),
+    [rbac?.profile],
+  );
   const { exportExecutiveSummaryPdf, busy } = useReviewExports(filters);
   const [sortCol, setSortCol] = useState("operational_score");
   const [sortDir, setSortDir] = useState("desc");
@@ -115,12 +132,13 @@ export default function ExecutiveCommandCenter() {
           <p className="ecc-kicker">
             <Crown size={14} /> Executive Command Center
           </p>
-          <h2 className="ecc-title">Network operational pulse</h2>
+          <h2 className="ecc-title">{pulseTitle}</h2>
           <p className="ecc-sub">
             {rangeExportLabel(selectedRange)} · Real-time leadership view · {pkg.pulse?.live_label}
           </p>
         </div>
         <div className="ecc-hero-actions">
+          <CommandCenterTrustBadge />
           {isTenantFeatureEnabled("boardroomMode") ? (
             <BoardroomLaunchButton onLaunch={() => setBoardroomOpen(true)} />
           ) : null}
@@ -309,7 +327,42 @@ export default function ExecutiveCommandCenter() {
 
       <div className="ecc-grid-2">
         <section className="ecc-panel">
-          <h3 className="ecc-panel-title">Network heatmap</h3>
+          <h3 className="ecc-panel-title">
+            {heatmapRows.length <= 1 ? "Branch operational matrix" : "Network heatmap"}
+          </h3>
+          {commandCenterHeatmapEmptyCopy(
+            rbac?.profile,
+            heatmapRows.length,
+            pkg.heatmap?.mode,
+          ) ? (
+            <p className="ecc-empty-intel">
+              {commandCenterHeatmapEmptyCopy(rbac?.profile, heatmapRows.length, pkg.heatmap?.mode)}
+            </p>
+          ) : null}
+          {pkg.heatmap?.mode === "single" && heatmapRows[0]?.operational ? (
+            <div className="ecc-single-branch-state">
+              <div className="ecc-single-branch-metric">
+                <span>Operational score</span>
+                <strong>{heatmapRows[0].operational.score ?? "—"}</strong>
+              </div>
+              <div className="ecc-single-branch-metric">
+                <span>Momentum</span>
+                <strong>{heatmapRows[0].operational.momentum}</strong>
+              </div>
+              <div className="ecc-single-branch-metric">
+                <span>Redirects</span>
+                <strong>{heatmapRows[0].operational.redirects}</strong>
+              </div>
+              <div className="ecc-single-branch-metric">
+                <span>Participation</span>
+                <strong>{heatmapRows[0].operational.participation}%</strong>
+              </div>
+              <div className="ecc-single-branch-metric">
+                <span>Health</span>
+                <strong>{heatmapRows[0].operational.health}</strong>
+              </div>
+            </div>
+          ) : (
           <div className="ecc-heatmap-wrap">
             <table className="ecc-heatmap">
               <thead>
@@ -357,6 +410,7 @@ export default function ExecutiveCommandCenter() {
               </tbody>
             </table>
           </div>
+          )}
         </section>
 
         <section className="ecc-panel">

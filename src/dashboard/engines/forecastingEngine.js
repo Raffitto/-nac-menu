@@ -1,6 +1,17 @@
 /** Rule-based forecasts with confidence labels — no external ML */
 import { clampMetric, safePct } from "../utils/intelligenceSanity";
 
+/** Executive-safe trend language (no exaggerated % spikes). */
+export function forecastTrendLabel(pct) {
+  if (pct == null || !Number.isFinite(Number(pct))) return "steady momentum";
+  const p = Number(pct);
+  if (p >= 25) return "breakout momentum";
+  if (p >= 10) return "strong momentum";
+  if (p >= 0) return "moderate momentum";
+  if (p >= -10) return "softening";
+  return "declining";
+}
+
 function hourBand(h) {
   if (h == null) return "unknown";
   if (h < 11) return "breakfast";
@@ -24,7 +35,10 @@ export function buildForecasts(biData, intelligence, foodicsContext = null) {
     .slice(0, 5)
     .map((f) => ({
       item_name: f.item_name,
-      signal: f.order_trend_pct > 0 ? `+${f.order_trend_pct}% orders vs prior Foodics batch` : "Strong visibility-to-sales momentum",
+      signal:
+        f.order_trend_pct != null
+          ? `${forecastTrendLabel(f.order_trend_pct)} — orders vs prior Foodics batch`
+          : "Strong visibility-to-sales momentum",
       confidence: f.signal_strength === "Strong signal" ? "high" : "medium",
     }));
 
@@ -37,9 +51,10 @@ export function buildForecasts(biData, intelligence, foodicsContext = null) {
     .slice(0, 5)
     .map((f) => ({
       item_name: f.item_name,
-      signal: f.order_trend_pct != null
-        ? `${f.order_trend_pct}% orders vs prior batch`
-        : "Views stable but orders softening",
+      signal:
+        f.order_trend_pct != null
+          ? `${forecastTrendLabel(f.order_trend_pct)} — orders vs prior batch`
+          : "Views stable but orders softening",
       confidence: "medium",
     }));
 

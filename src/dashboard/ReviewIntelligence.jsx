@@ -35,6 +35,14 @@ import {
   rangeExportLabel,
 } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
+import { useRbacOptional } from "./context/RbacContext";
+import {
+  canFetchCrossBranchComparison,
+  resolveRbacQueryBranch,
+} from "../lib/rbacQueryScope";
+import { buildBranchComparisonForProfile } from "../lib/rbacIntelligenceScope";
+import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
+import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import { applyPlatformFilters } from "./utils/platformFilterApply";
 import {
   aggregateStaffReviewStats,
@@ -75,6 +83,7 @@ const CHART_TOOLTIP = {
 
 export default function ReviewIntelligence({ embedded = false, prefetched = null }) {
   const platform = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const [branchLocal, setBranchLocal] = useState(defaultBranchId());
   const [rangeLocal, setRangeLocal] = useState(DEFAULT_RANGE);
   const branch = embedded && platform ? (platform.branch || defaultBranchId()) : branchLocal;
@@ -102,6 +111,16 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     periodRange: selectedRange,
   });
   const branchGoogleMovement = movementByBranch[branch] || null;
+
+  const operationalTrust = useMemo(
+    () =>
+      resolveOperationalTrust({
+        sessionEvents: Number(kpis?.qr_scans) || 0,
+        partial: prefetched?.partial,
+        dataSource: "review_events",
+      }),
+    [kpis?.qr_scans, prefetched?.partial],
+  );
 
   const reviewDataForPredictive = useMemo(
     () => ({
@@ -156,28 +175,35 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     try {
       const since = rangeToSince(selectedRange);
       const hours = rangeToHours(selectedRange);
-      const activeBranch = embedded && platform ? platform.branch : branch;
+      const activeBranch = resolveRbacQueryBranch(
+        rbac?.profile,
+        embedded && platform ? platform.branch : branch,
+      );
 
       const summary = await fetchReviewEventsSummary(supabase, {
-        branch: activeBranch || null,
+        branch: activeBranch,
         hours,
       }).catch(() => null);
 
       if (summary) {
-        const allSummary = activeBranch
-          ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(
-              () => summary,
-            )
-          : summary;
+        const allSummary =
+          canFetchCrossBranchComparison(rbac?.profile) && !activeBranch
+            ? await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(
+                () => summary,
+              )
+            : summary;
 
         const staffRows = await fetchStaffMergedByBranch(supabase, {
           hours,
-          activeBranch: activeBranch || null,
+          activeBranch,
         });
         setKpis(kpisFromReviewSummary(summary));
         setStaffMerged(mergeStaffStats([], staffRows));
         setDailyTrend(dailyTrendFromReviewSummary(summary));
-        const comparison = branchComparisonFromReviewSummary(allSummary || summary);
+        const comparison = buildBranchComparisonForProfile(
+          rbac?.profile,
+          branchComparisonFromReviewSummary(allSummary || summary),
+        );
         setBranchComparison(comparison);
         setBranchScans(branchScansFromComparison(comparison));
         if (summary._note) setError(summary._note);
@@ -190,8 +216,11 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         .order("created_at", { ascending: false })
         .limit(2500);
 
-      if (activeBranch) {
-        reviewQ = reviewQ.eq("branch_id", activeBranch);
+      const scopedBranch = resolveRbacQueryBranch(rbac?.profile, activeBranch);
+      if (scopedBranch) {
+        reviewQ = reviewQ.eq("branch_id", scopedBranch);
+      } else if (rbac?.profile && !rbac.profile.allBranches) {
+        reviewQ = reviewQ.eq("branch_id", rbac.profile.branchScope || "__rbac_denied__");
       }
 
       let reviewAllQ = supabase
@@ -199,6 +228,13 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         .select("event_type,branch_id,created_at,review_session_id,session_id")
         .order("created_at", { ascending: false })
         .limit(2000);
+
+      if (!canFetchCrossBranchComparison(rbac?.profile)) {
+        reviewAllQ = reviewAllQ.eq(
+          "branch_id",
+          scopedBranch || rbac?.profile?.branchScope || "__rbac_denied__",
+        );
+      }
 
       if (since) {
         reviewQ = reviewQ.gte("created_at", since);
@@ -217,13 +253,15 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
-      setBranchComparison(buildBranchReviewComparison(all));
+      setBranchComparison(
+        buildBranchComparisonForProfile(rbac?.profile, buildBranchReviewComparison(all)),
+      );
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");
     } finally {
       setLoading(false);
     }
-  }, [branch, selectedRange, configured, embedded, platform, prefetched, applyPrefetched]);
+  }, [branch, selectedRange, configured, embedded, platform, prefetched, applyPrefetched, rbac?.profile]);
 
   useEffect(() => {
     if (prefetched) {
@@ -291,6 +329,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
 
   return (
     <motion.div className={`rev-intel-wrap ${embedded ? "rev-intel-wrap--embedded" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <OperationalTrustBadge trust={operationalTrust} />
       {!embedded && (
       <header className="rev-intel-header">
         <motion.div className="rev-intel-header-top">

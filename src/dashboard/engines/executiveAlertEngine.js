@@ -16,9 +16,23 @@ export function buildExecutiveAlerts(input = {}) {
   const staffInsights = input.staffInsights || [];
   const momentum = input.momentum || {};
   const branchStatus = input.branchStatus || [];
+  const networkWide = input.networkWide !== false;
+  const allowed = input.allowedBranchIds?.length
+    ? new Set(input.allowedBranchIds.map((id) => String(id).toLowerCase()))
+    : null;
   const alerts = [];
 
-  branchStatus.forEach((b) => {
+  const statusRows = allowed
+    ? branchStatus.filter((b) => allowed.has(String(b.branch_id).toLowerCase()))
+    : branchStatus;
+  const insightRows = allowed
+    ? staffInsights.filter((ins) => ins.branch_id && allowed.has(String(ins.branch_id).toLowerCase()))
+    : staffInsights;
+  const comparisonRows = allowed
+    ? comparison.filter((c) => allowed.has(String(c.branch_id).toLowerCase()))
+    : comparison;
+
+  statusRows.forEach((b) => {
     if (b.momentum === "Rising" && b.qr_scans >= 10) {
       alerts.push(
         alert(
@@ -70,7 +84,7 @@ export function buildExecutiveAlerts(input = {}) {
     }
   });
 
-  staffInsights.forEach((ins, i) => {
+  insightRows.forEach((ins, i) => {
     if (ins.type === "concentration") {
       alerts.push(
         alert(
@@ -101,7 +115,7 @@ export function buildExecutiveAlerts(input = {}) {
     }
   });
 
-  const rows = comparison.filter((c) => c.qr_scans >= 12);
+  const rows = comparisonRows.filter((c) => c.qr_scans >= 12);
   rows.forEach((row) => {
     const id = row.branch_id;
     const prev = input.previousComparison?.find((p) => p.branch_id === id);
@@ -122,20 +136,22 @@ export function buildExecutiveAlerts(input = {}) {
     }
   });
 
-  if (momentum.redirect_pace_vs_last_week != null && momentum.redirect_pace_vs_last_week < -12) {
-    alerts.push(
-      alert(
-        "pace-network",
-        "watch",
-        `Google redirect pace below expected trend (${momentum.redirect_pace_vs_last_week}%).`,
-      ),
-    );
-  }
+  if (networkWide) {
+    if (momentum.redirect_pace_vs_last_week != null && momentum.redirect_pace_vs_last_week < -12) {
+      alerts.push(
+        alert(
+          "pace-network",
+          "watch",
+          `Google redirect pace below expected trend (${momentum.redirect_pace_vs_last_week}%).`,
+        ),
+      );
+    }
 
-  if (momentum.momentum === "Rising" && !momentum.insufficient_data) {
-    alerts.push(
-      alert("pace-up-network", "info", "Network review redirect momentum is rising."),
-    );
+    if (momentum.momentum === "Rising" && !momentum.insufficient_data) {
+      alerts.push(
+        alert("pace-up-network", "info", "Network review redirect momentum is rising."),
+      );
+    }
   }
 
   const severityOrder = { critical: 0, risk: 1, watch: 2, info: 3 };

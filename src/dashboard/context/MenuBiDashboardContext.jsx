@@ -36,4 +36,9 @@ export function useMenuBiDashboardContext() {
   return ctx;
 }
 
+/** Safe accessor when provider may be absent (e.g. mixed hub layouts). */
+export function useMenuBiDashboardContextOptional() {
+  return useContext(MenuBiDashboardContext);
+}
+
 export default MenuBiDashboardContext;

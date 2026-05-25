@@ -20,7 +20,7 @@ import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
 import { recordPipelineFetch } from "./pipelineDiagnostics";
 import { recordRpcRefresh } from "../platform/engines/dataFreshnessEngine";
 import { assessMenuBiSufficiency } from "../platform/contracts/dataSufficiency";
-import { hoursToRange } from "../dashboard/utils/rangeState";
+import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 
 export { isTimeoutError };
 
@@ -85,6 +85,43 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     : useRollup
       ? "rollup"
       : "rpc";
+
+  if (useRollup && payload && !isBiTotalsEmpty(payload) && !error) {
+    try {
+      const since = rangeToSince(hoursToRange(pHours));
+      let countQ = supabase
+        .from("menu_events")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", since)
+        .lte("created_at", new Date().toISOString());
+      if (pBranch) countQ = countQ.eq("branch_id", pBranch);
+      const { count: liveCount } = await countQ;
+      const rollupEvents = Number(payload.total_events) || 0;
+      if (
+        liveCount != null &&
+        liveCount > 0 &&
+        rollupEvents > 0 &&
+        liveCount > rollupEvents * 1.15 &&
+        liveCount - rollupEvents >= 15
+      ) {
+        const clientPayload = await fetchBiFromMenuEvents(supabase, {
+          branch: pBranch,
+          hours: pHours,
+        });
+        if (clientPayload && !isBiTotalsEmpty(clientPayload)) {
+          payload = mergeBiPayload(clientPayload, payload);
+          partial = true;
+          usedFallback = true;
+          dataSource = "client_fallback";
+          note =
+            "Rollup totals look stale for this range — merged live menu_events for accurate month/7D intelligence.";
+          opsNotes = appendOpsNote(opsNotes, note);
+        }
+      }
+    } catch {
+      /* non-blocking freshness probe */
+    }
+  }
 
   if (useRollup && (error || primaryRpcEmpty)) {
     devLog("[fetchBiDashboard]", { phase: "rollup_empty_fallback", error: error?.message });

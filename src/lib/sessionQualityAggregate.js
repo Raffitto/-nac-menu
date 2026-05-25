@@ -2,6 +2,15 @@
  * Session-quality tiers from menu_events — mirrors server RPC logic with meaningful-interaction depth.
  */
 
+import {
+  isInternalMenuSessionRow,
+  normalizeAvgTimeSpent,
+  normalizeSessionDurationSeconds,
+  MAX_GUEST_SESSION_DURATION_SEC,
+} from "./sessionMetricsConfig";
+import { normalizeEventType, isAddonInteractionEvent } from "./menuEventTypes";
+import { computeSessionOperationalMetrics } from "./sessionOperationalMetrics";
+
 const MEANINGFUL_EVENT_TYPES = new Set([
   "category_open",
   "item_open",
@@ -22,6 +31,7 @@ function buildSessionMap(rows) {
   for (const row of rows || []) {
     const sid = sessionId(row);
     if (!sid) continue;
+    if (isInternalMenuSessionRow(row)) continue;
 
     let s = map.get(sid);
     if (!s) {
@@ -40,7 +50,7 @@ function buildSessionMap(rows) {
       map.set(sid, s);
     }
 
-    const et = row.event_type || "unknown";
+    const et = normalizeEventType(row.event_type || "unknown");
     s.total += 1;
 
     const ts = row.created_at ? new Date(row.created_at).getTime() : NaN;
@@ -52,28 +62,44 @@ function buildSessionMap(rows) {
     if (et === "item_open") s.itemOpens += 1;
     if (et === "item_impression") s.impressions += 1;
     if (et === "category_open") s.categoryOpens += 1;
-    if (et === "add_on_click") s.addonClicks += 1;
+    if (isAddonInteractionEvent(et)) s.addonClicks += 1;
     if (et === "search_used" || et === "search_submit") s.searches += 1;
     if (MEANINGFUL_EVENT_TYPES.has(et)) s.meaningful += 1;
 
     if (et === "time_spent" && row.metadata && typeof row.metadata === "object") {
-      const d = Number(row.metadata.duration_seconds);
-      if (Number.isFinite(d) && d > s.durationSec) s.durationSec = d;
+      const d = normalizeSessionDurationSeconds(row.metadata.duration_seconds);
+      if (d > s.durationSec) s.durationSec = d;
     }
   }
 
   for (const s of map.values()) {
     if (s.durationSec <= 0 && s.firstMs != null && s.lastMs != null && s.lastMs > s.firstMs) {
-      s.durationSec = Math.round((s.lastMs - s.firstMs) / 1000);
+      const spanSec = Math.round((s.lastMs - s.firstMs) / 1000);
+      s.durationSec = normalizeSessionDurationSeconds(spanSec);
+    } else if (s.durationSec > 0) {
+      s.durationSec = normalizeSessionDurationSeconds(s.durationSec);
     }
   }
 
   return map;
 }
 
-/** Classify one session — aligned with get_session_analytics tiers. */
+/** Classify one session — duration-first tiers (15s / 60s / 3m / 8m / 20m cap). */
 export function classifySessionTier(stats) {
   const { total, itemOpens, addonClicks, meaningful } = stats;
+  const duration = Math.min(
+    Number(stats.durationSec) || 0,
+    MAX_GUEST_SESSION_DURATION_SEC,
+  );
+
+  if (duration > 0) {
+    if (duration < 15 && itemOpens === 0) return "bounce";
+    if (duration >= 8 * 60) return "power";
+    if (duration >= 3 * 60) return "deep";
+    if (duration >= 60) return "engaged";
+    if (duration >= 15) return "casual";
+    return "bounce";
+  }
 
   if (meaningful <= 1 && itemOpens === 0) return "bounce";
   if (total >= 12 || (itemOpens >= 5 && addonClicks >= 2)) return "power";
@@ -110,10 +136,11 @@ export function aggregateSessionQualityFromRows(rows) {
     session_quality,
     bounce_sessions,
     deep_sessions,
-    avg_time_spent: durationN > 0 ? Math.round(durationSum / durationN) : 0,
+    avg_time_spent: normalizeAvgTimeSpent(durationN > 0 ? durationSum / durationN : 0),
     avg_items_per_session:
       total_sessions > 0 ? Math.round((itemOpensSum / total_sessions) * 10) / 10 : 0,
     total_sessions,
+    session_operational: computeSessionOperationalMetrics(map),
   };
 }
 

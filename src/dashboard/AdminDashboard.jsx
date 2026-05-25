@@ -37,6 +37,7 @@ import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
+import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
@@ -60,11 +61,10 @@ import SessionQuality from "./components/SessionQuality";
 import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, exportCSV } from "./utils/formatters";
 import { rangeToHours } from "./utils/rangeState";
-import { hourlyChartRows } from "./utils/hourlyBucketLabels";
 import {
+  buildHourlyChartData,
   buildHourlyDebugPayload,
   publishHourlyPipelineDebug,
-  resolveChartGranularityForHours,
 } from "./utils/hourlyPipeline";
 import { generateInsights } from "./utils/insights";
 import "./styles/admin-dashboard.css";
@@ -188,6 +188,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     loading,
     error,
     platformStatus,
+    operationalTrust,
     reload: loadDashboard,
   } = useMenuBiDashboard({
     enabled: Boolean(session) && adminView === "overview",
@@ -229,15 +230,12 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const returningPct = qrSessionStarts > 0 ? Math.round((returningSessions / qrSessionStarts) * 100) : 0;
 
   const hourlyHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
-  const hourlyGranularity = resolveChartGranularityForHours(hourlyHours);
-  const hourlyData = useMemo(
-    () =>
-      hourlyChartRows(data?.by_hour || [], {
-        fillGaps: false,
-        granularity: hourlyGranularity,
-      }),
-    [data?.by_hour, hourlyGranularity],
+  const hourlyChart = useMemo(
+    () => buildHourlyChartData(data?.by_hour || [], hourlyHours),
+    [data?.by_hour, hourlyHours],
   );
+  const hourlyGranularity = hourlyChart.granularity;
+  const hourlyData = hourlyChart.rows;
 
   useEffect(() => {
     if (!data?.by_hour) return;
@@ -396,6 +394,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 <p className="topbar-label">LIVE OPERATIONS</p>
                 <h1 style={{ fontSize: "1.35rem" }}>Today at a glance</h1>
               </div>
+              <OperationalTrustBadge trust={operationalTrust} className="topbar-trust" />
               <div className="topbar-actions">
                 {session && (
                   <button type="button" className="glass-pill" onClick={loadDashboard} disabled={loading}>

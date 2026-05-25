@@ -39,7 +39,7 @@ export function buildHourlyChartData(byHourRaw = [], hours = 24) {
   const gran = resolveChartGranularityForHours(hours);
   const normalized = normalizeHourlyForRange(byHourRaw, hours);
   const rows = hourlyChartRows(normalized, {
-    fillGaps: false,
+    fillGaps: true,
     granularity: gran,
     dayCount: dayCountForHours(hours),
   });
