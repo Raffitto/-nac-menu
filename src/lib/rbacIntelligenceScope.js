@@ -12,7 +12,6 @@ import {
   normalizeBranchId,
 } from "../dashboard/utils/branchIdentity";
 import { branchDashboardName } from "../dashboard/config/branchDisplayConfig";
-import { filterRowsByRbacProfile } from "./rbacQueryScope";
 
 function branchAllowed(profile, branchId) {
   if (!profile?.authenticated || canAccessAllBranches(profile)) return true;
