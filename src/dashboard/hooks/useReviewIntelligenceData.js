@@ -18,7 +18,7 @@ import {
   buildBranchScanTotals,
 } from "../utils/staffReviewStats";
 import { buildBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
-import { EMPTY_REVIEW_KPIS, isMissingRpcError } from "../utils/supabaseResilience";
+import { EMPTY_REVIEW_KPIS } from "../utils/supabaseResilience";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";

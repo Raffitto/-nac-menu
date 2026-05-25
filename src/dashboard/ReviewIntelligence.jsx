@@ -36,10 +36,7 @@ import {
 } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { useRbacOptional } from "./context/RbacContext";
-import {
-  canFetchCrossBranchComparison,
-  resolveRbacQueryBranch,
-} from "../lib/rbacQueryScope";
+import { canFetchCrossBranchComparison } from "../lib/rbacQueryScope";
 import { buildBranchComparisonForProfile } from "../lib/rbacIntelligenceScope";
 import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
