@@ -1,0 +1,103 @@
+/**
+ * NAC OS enterprise design system — spacing, motion, elevation, glass hierarchy.
+ * Import once in platform shell styles; components inherit via CSS variables.
+ */
+
+:root {
+  /* Spacing scale (4px base) */
+  --nac-space-1: 4px;
+  --nac-space-2: 8px;
+  --nac-space-3: 12px;
+  --nac-space-4: 16px;
+  --nac-space-5: 20px;
+  --nac-space-6: 24px;
+  --nac-space-8: 32px;
+  --nac-space-10: 40px;
+  --nac-space-12: 48px;
+
+  /* Radii */
+  --nac-radius-sm: 10px;
+  --nac-radius-md: 14px;
+  --nac-radius-lg: 20px;
+  --nac-radius-xl: 24px;
+
+  /* Motion */
+  --nac-duration-fast: 0.18s;
+  --nac-duration-base: 0.32s;
+  --nac-duration-slow: 0.55s;
+  --nac-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --nac-ease-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  /* Glass & borders */
+  --nac-glass-bg: rgba(255, 255, 255, 0.045);
+  --nac-glass-border: rgba(255, 255, 255, 0.08);
+  --nac-glass-hover: rgba(255, 255, 255, 0.065);
+  --nac-shadow-elev-1: 0 8px 32px rgba(0, 0, 0, 0.28);
+  --nac-shadow-elev-2: 0 16px 48px rgba(0, 0, 0, 0.38);
+
+  /* Brand */
+  --nac-teal: #30484e;
+  --nac-teal-mid: #3d5c64;
+  --nac-gold: #8f7a57;
+  --nac-gold-light: #d7bc8a;
+  --nac-cream: #f9f9f7;
+}
+
+/* Unified dashboard cards */
+.big-glass-card,
+.nac-glass-panel,
+.ecc-panel,
+.nac-an__card {
+  border-radius: var(--nac-radius-lg);
+  transition:
+    border-color var(--nac-duration-fast) var(--nac-ease-out),
+    box-shadow var(--nac-duration-base) var(--nac-ease-out),
+    transform var(--nac-duration-base) var(--nac-ease-out);
+}
+
+.big-glass-card:hover,
+.nac-glass-panel:hover {
+  border-color: rgba(143, 122, 87, 0.22);
+  box-shadow: var(--nac-shadow-elev-1);
+}
+
+/* Chart breathing room */
+.recharts-wrapper {
+  margin-top: var(--nac-space-2);
+}
+
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(255, 255, 255, 0.06);
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  border-radius: var(--nac-radius-md) !important;
+  padding: var(--nac-space-3) var(--nac-space-4) !important;
+  box-shadow: var(--nac-shadow-elev-1);
+}
+
+/* Premium disabled controls */
+button:disabled,
+.nac-an__btn:disabled,
+.nac-filter-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.15);
+}
+
+/* Section entrance */
+.nac-ds-enter {
+  animation: nac-ds-fade-up var(--nac-duration-slow) var(--nac-ease-out) both;
+}
+
+@keyframes nac-ds-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

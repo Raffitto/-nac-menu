@@ -49,7 +49,7 @@ export default function SettingsView() {
 
         {!isSupabaseConfigured() && (
           <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>
-            Add <code>REACT_APP_SUPABASE_URL</code> and <code>REACT_APP_SUPABASE_ANON_KEY</code> to enable analytics.
+            Platform sign-in is unavailable. Contact your NAC administrator.
           </p>
         )}
 

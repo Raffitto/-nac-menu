@@ -18,6 +18,8 @@ import { MomentumChip, TrendArrow } from "../components/PredictiveIntelligenceVi
 import { sortHeatmapRows } from "../engines/executiveHeatmapEngine";
 import { branchDisplayName, rangeExportLabel } from "../utils/rangeState";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
+import BoardroomMode, { BoardroomLaunchButton } from "../components/BoardroomMode";
+import { isTenantFeatureEnabled } from "../../config/tenantConfig";
 import "../styles/executive-command-center.css";
 
 const SEVERITY_CLASS = {
@@ -48,6 +50,7 @@ export default function ExecutiveCommandCenter() {
   const { exportExecutiveSummaryPdf, busy } = useReviewExports(filters);
   const [sortCol, setSortCol] = useState("operational_score");
   const [sortDir, setSortDir] = useState("desc");
+  const [boardroomOpen, setBoardroomOpen] = useState(false);
 
   const heatmapRows = useMemo(() => {
     if (!pkg?.heatmap?.rows) return [];
@@ -99,6 +102,7 @@ export default function ExecutiveCommandCenter() {
             : "critical";
 
   return (
+    <>
     <motion.div
       className="ecc-wrap"
       initial={{ opacity: 0 }}
@@ -117,6 +121,9 @@ export default function ExecutiveCommandCenter() {
           </p>
         </div>
         <div className="ecc-hero-actions">
+          {isTenantFeatureEnabled("boardroomMode") ? (
+            <BoardroomLaunchButton onLaunch={() => setBoardroomOpen(true)} />
+          ) : null}
           <button
             type="button"
             className="ecc-export-btn"
@@ -380,5 +387,13 @@ export default function ExecutiveCommandCenter() {
         </section>
       ) : null}
     </motion.div>
+    {boardroomOpen ? (
+      <BoardroomMode
+        commandPackage={pkg}
+        rangeLabel={rangeExportLabel(selectedRange)}
+        onClose={() => setBoardroomOpen(false)}
+      />
+    ) : null}
+    </>
   );
 }

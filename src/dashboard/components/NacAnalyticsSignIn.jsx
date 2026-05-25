@@ -1,7 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, Lock } from "lucide-react";
+import { AlertCircle, Lock, WifiOff } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import {
+  formatSupabaseSetupMessage,
+  isBrowserOffline,
+  mapAuthError,
+} from "../../lib/platformAuth";
 import AuthForgotPassword from "./AuthForgotPassword";
 import "../styles/analytics-dashboard.css";
 
@@ -13,17 +18,30 @@ export default function NacAnalyticsSignIn({
   kicker = "NAC Analytics",
   title = "Sign in",
   subtitle = "Authorized team members only",
+  sessionIssue = null,
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  const [offline, setOffline] = useState(isBrowserOffline());
+
+  useEffect(() => {
+    const onOnline = () => setOffline(false);
+    const onOffline = () => setOffline(true);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   const configured = isSupabaseConfigured();
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!supabase) return;
+    if (!supabase || offline) return;
     setLoginError("");
     setLoginLoading(true);
     const { error: err } = await supabase.auth.signInWithPassword({
@@ -31,18 +49,25 @@ export default function NacAnalyticsSignIn({
       password,
     });
     setLoginLoading(false);
-    if (err) setLoginError(err.message);
+    if (err) setLoginError(mapAuthError(err.message));
   };
 
   if (checking) {
     return (
-      <div className="nac-an relative min-h-70vh">
+      <div className="nac-an relative min-h-100vh">
         <div className="nac-an__bg" />
-        <div className="nac-an__inner p-6 flex justify-center">
-          <div className="nac-an__card w-full max-w-md">
+        <div className="nac-an__inner p-6 flex justify-center items-center min-h-100vh">
+          <motion.div
+            className="nac-an__card w-full max-w-md"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.35 }}
+          >
             <div className="nac-an__skeleton h-10 w-two-thirds mb-4" />
-            <div className="nac-an__skeleton h-32 w-full" />
-          </div>
+            <div className="nac-an__skeleton h-12 w-full mb-3" />
+            <div className="nac-an__skeleton h-12 w-full mb-3" />
+            <div className="nac-an__skeleton h-11 w-full" />
+          </motion.div>
         </div>
       </div>
     );
@@ -50,32 +75,36 @@ export default function NacAnalyticsSignIn({
 
   if (!configured) {
     return (
-      <div className="nac-an relative min-h-70vh">
+      <div className="nac-an relative min-h-100vh">
         <div className="nac-an__bg" />
-        <div className="nac-an__inner p-6">
-          <div className="nac-an__error flex items-center gap-3">
-            <AlertCircle size={20} />
-            <span>
-              Supabase is not configured. Add{" "}
-              <code className="text-gold">REACT_APP_SUPABASE_URL</code> and{" "}
-              <code className="text-gold">REACT_APP_SUPABASE_ANON_KEY</code> to{" "}
-              <code className="text-gold">.env.local</code>.
-            </span>
+        <div className="nac-an__inner p-6 flex justify-center items-center min-h-100vh">
+          <div className="nac-an__card w-full max-w-md">
+            <div className="nac-an__error flex items-start gap-3">
+              <AlertCircle size={20} className="shrink-0 mt-05" />
+              <span>{formatSupabaseSetupMessage()}</span>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  const sessionMessage =
+    sessionIssue === "session_timeout"
+      ? "Session check timed out. Sign in to continue."
+      : sessionIssue && sessionIssue !== "not_configured"
+        ? mapAuthError(sessionIssue)
+        : null;
+
   return (
-    <div className="nac-an relative min-h-70vh">
+    <div className="nac-an relative min-h-100vh">
       <div className="nac-an__bg" />
-      <div className="nac-an__inner flex justify-center py-10 px-4">
+      <div className="nac-an__inner flex justify-center items-center py-10 px-4 min-h-100vh">
         <motion.div
           className="nac-an__card w-full max-w-md border"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
         >
           <div className="flex items-center gap-3 mb-6">
             <div
@@ -94,6 +123,17 @@ export default function NacAnalyticsSignIn({
             </div>
           </div>
 
+          {offline && (
+            <div className="nac-an__error text-sm mb-4 flex items-center gap-2">
+              <WifiOff size={16} />
+              You appear to be offline. Reconnect to sign in.
+            </div>
+          )}
+
+          {sessionMessage && (
+            <div className="nac-an__error text-sm mb-4">{sessionMessage}</div>
+          )}
+
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
               <label className="text-xs text-white/50 mb-2 block">Email</label>
@@ -105,6 +145,7 @@ export default function NacAnalyticsSignIn({
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@nac.com"
                 required
+                disabled={offline}
               />
             </div>
             <div>
@@ -117,6 +158,7 @@ export default function NacAnalyticsSignIn({
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
+                disabled={offline}
               />
             </div>
 
@@ -136,7 +178,7 @@ export default function NacAnalyticsSignIn({
             <button
               type="submit"
               className="nac-an__btn nac-an__btn--primary w-full py-3"
-              disabled={loginLoading}
+              disabled={loginLoading || offline}
             >
               {loginLoading ? "Signing in…" : "Continue"}
             </button>

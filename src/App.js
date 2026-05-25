@@ -33,6 +33,7 @@ import {
   normalizeCategoryIcons,
 } from "./lib/menuPresentation";
 import { resolvePublicBranchFromLocation, branchPublicName } from "./dashboard/config/branchDisplayConfig";
+import { isPublicPlatformMode } from "./lib/platformMode";
 
 const _fallbackCategories = [
   {
@@ -1176,20 +1177,17 @@ if (adminMode) {
         {showCategorySelector ? (
           <motion.main key="home" className="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.28, ease: "easeOut" }}>
             <img src="/logo.png" alt="NAC" className="logo" />
-            <button
-  className="admin-entry"
-  onClick={() => {
-    const password = prompt("Enter admin password");
-
-    if (password === "nac2025") {
-      setAdminMode(true);
-    } else {
-      alert("Wrong password");
-    }
-  }}
->
-  Admin
-</button>
+            {isPublicPlatformMode() &&
+            process.env.NODE_ENV === "development" &&
+            process.env.REACT_APP_ENABLE_LEGACY_MENU_ADMIN === "1" ? (
+              <button
+                type="button"
+                className="admin-entry"
+                onClick={() => setAdminMode(true)}
+              >
+                Dev OS
+              </button>
+            ) : null}
 
             <motion.h1 className="branch-title" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
   {isArabic ? publicBrandAr : publicBrandEn}

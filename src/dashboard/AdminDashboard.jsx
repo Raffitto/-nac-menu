@@ -50,6 +50,9 @@ import BranchesView from "./views/BranchesView";
 import SettingsView from "./views/SettingsView";
 import MenuEditorAuth from "./components/MenuEditorAuth";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
+import NacPlatformAccessGate from "./components/NacPlatformAccessGate";
+import { usePlatformSession } from "./hooks/usePlatformSession";
+import { formatSupabaseSetupMessage, validateRbacUsersEnv } from "../lib/platformAuth";
 
 import FunnelChart from "./components/FunnelChart";
 import LiveActivity from "./components/LiveActivity";
@@ -115,21 +118,52 @@ function ev(byType, key) {
 }
 
 export default function AdminDashboard(props) {
+  const { session, checked: authChecked, issue: authIssue } = usePlatformSession();
+  const rbacEnv = useMemo(() => validateRbacUsersEnv(), []);
+
+  if (isAdminPlatformMode()) {
+    if (!authChecked) {
+      return <NacAnalyticsSignIn checking kicker="NAC Hospitality OS" title="NAC Hospitality OS" />;
+    }
+    if (!isSupabaseConfigured()) {
+      return (
+        <NacAnalyticsSignIn
+          kicker="NAC Hospitality OS"
+          title="NAC Hospitality OS"
+          subtitle={formatSupabaseSetupMessage()}
+        />
+      );
+    }
+    if (!session) {
+      return (
+        <NacAnalyticsSignIn
+          kicker="NAC Hospitality OS"
+          title="Sign in"
+          subtitle="Sign in with your NAC staff account"
+          sessionIssue={authIssue}
+        />
+      );
+    }
+  }
+
   return (
     <PlatformFiltersProvider>
-      <RbacProvider>
+      <RbacProvider session={session}>
         <RbacBranchConstraint />
-        <AdminDashboardContent {...props} />
+        <AdminDashboardContent
+          {...props}
+          session={session}
+          authChecked={authChecked}
+          rbacEnvInvalid={!rbacEnv.ok}
+        />
       </RbacProvider>
     </PlatformFiltersProvider>
   );
 }
 
-function AdminDashboardContent({ onBack }) {
+function AdminDashboardContent({ onBack, session = null, authChecked = true, rbacEnvInvalid = false }) {
   const [adminView, setAdminView] = useState("overview");
   const [overviewTab, setOverviewTab] = useState("operations");
-  const [session, setSession] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
   const rbac = useRbac();
 
   const filters = usePlatformFilters();
@@ -160,19 +194,6 @@ function AdminDashboardContent({ onBack }) {
     refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
     source: "AdminDashboard",
   });
-
-  useEffect(() => {
-    if (!supabase) {
-      setAuthChecked(true);
-      return undefined;
-    }
-    supabase.auth.getSession().then(({ data: d }) => {
-      setSession(d.session);
-      setAuthChecked(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
 
   // Derived metrics
   const totalEvents = Number(data?.total_events) || 0;
@@ -270,18 +291,8 @@ function AdminDashboardContent({ onBack }) {
 
   const scrollable = isScrollableView(adminView);
 
-  if (isAdminPlatformMode()) {
-    if (!authChecked) {
-      return <NacAnalyticsSignIn checking kicker="NAC Hospitality OS" />;
-    }
-    if (!session) {
-      return (
-        <NacAnalyticsSignIn
-          kicker="NAC Hospitality OS"
-          subtitle="Sign in with your NAC staff account"
-        />
-      );
-    }
+  if (isAdminPlatformMode() && session && rbac.profile?.unmapped) {
+    return <NacPlatformAccessGate email={rbac.profile.email} />;
   }
 
   return (
@@ -399,10 +410,16 @@ function AdminDashboardContent({ onBack }) {
             {/* STATE MESSAGES */}
             {!configured && (
               <motion.div className="big-glass-card" style={{ marginTop: 28 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="card-header"><h3>Supabase not configured</h3></div>
+                <div className="card-header"><h3>Connection unavailable</h3></div>
+                <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>{formatSupabaseSetupMessage()}</p>
+              </motion.div>
+            )}
+
+            {rbacEnvInvalid && (
+              <motion.div className="big-glass-card" style={{ marginTop: 28, borderColor: "rgba(220,160,80,0.25)" }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+                <div className="card-header"><h3>Role configuration</h3></div>
                 <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>
-                  Add <code style={{ color: "#d7bc8a" }}>REACT_APP_SUPABASE_URL</code> and{" "}
-                  <code style={{ color: "#d7bc8a" }}>REACT_APP_SUPABASE_ANON_KEY</code> to <code style={{ color: "#d7bc8a" }}>.env.local</code>.
+                  Staff role configuration is invalid. Default directory roles remain active; contact your platform administrator.
                 </p>
               </motion.div>
             )}

@@ -1,0 +1,153 @@
+/* Boardroom Mode — executive fullscreen presentation */
+
+.boardroom-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #040506;
+  color: var(--nac-cream, #f9f9f7);
+  overflow: hidden;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+}
+
+.boardroom-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 45% at 50% -5%, rgba(48, 72, 78, 0.5), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 100% 100%, rgba(143, 122, 87, 0.12), transparent 55%);
+}
+
+.boardroom-inner {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(20px, 4vw, 48px);
+}
+
+.boardroom-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: clamp(24px, 4vh, 40px);
+}
+
+.boardroom-kicker {
+  font-size: clamp(11px, 1.2vw, 13px);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--nac-gold-light, #d7bc8a);
+  margin: 0;
+}
+
+.boardroom-title {
+  margin: 6px 0 0;
+  font-size: clamp(28px, 4vw, 52px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.boardroom-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.boardroom-btn {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(249, 249, 247, 0.85);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.boardroom-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(143, 122, 87, 0.35);
+}
+
+.boardroom-btn--active {
+  border-color: rgba(143, 122, 87, 0.5);
+  background: rgba(48, 72, 78, 0.45);
+}
+
+.boardroom-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+}
+
+.boardroom-slide-label {
+  font-size: clamp(12px, 1.4vw, 14px);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.45);
+  margin: 0 0 12px;
+}
+
+.boardroom-metric {
+  font-size: clamp(48px, 10vw, 120px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #f9f9f7;
+}
+
+.boardroom-sub {
+  margin-top: 16px;
+  font-size: clamp(16px, 2.2vw, 24px);
+  color: rgba(249, 249, 247, 0.62);
+  max-width: 52rem;
+  line-height: 1.45;
+}
+
+.boardroom-progress {
+  margin-top: auto;
+  padding-top: 24px;
+  display: flex;
+  gap: 8px;
+}
+
+.boardroom-dot {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 0.35s ease;
+}
+
+.boardroom-dot--active {
+  background: linear-gradient(90deg, var(--nac-teal-mid, #3d5c64), var(--nac-gold-light, #d7bc8a));
+}
+
+.boardroom-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.boardroom-heat-cell {
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.boardroom-heat-cell strong {
+  display: block;
+  font-size: clamp(22px, 3vw, 36px);
+  margin-top: 6px;
+}

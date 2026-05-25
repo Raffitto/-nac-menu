@@ -498,7 +498,7 @@ export default function MenuManager() {
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setLoading(false);
-      setError("Supabase is not configured. Add your keys to .env.local to use the Menu Manager.");
+      setError("Menu Manager is temporarily unavailable. Contact your NAC administrator.");
       return undefined;
     }
 

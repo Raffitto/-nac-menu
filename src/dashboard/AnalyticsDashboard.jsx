@@ -38,6 +38,8 @@ import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
+import { usePlatformSession } from "./hooks/usePlatformSession";
+import { mapAuthError } from "../lib/platformAuth";
 import "./styles/analytics-dashboard.css";
 
 const CATEGORY_NAMES = {
@@ -101,8 +103,7 @@ function eventCount(byEventType, key) {
 
 export default function AnalyticsDashboard() {
   const filters = usePlatformFiltersOptional();
-  const [session, setSession] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const { session, checked: authChecked, issue: authIssue } = usePlatformSession();
 
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("Aggregating analytics…");
@@ -114,21 +115,6 @@ export default function AnalyticsDashboard() {
   const [topAddons, setTopAddons] = useState([]);
   const [byRole, setByRole] = useState({});
   const [byBranch, setByBranch] = useState({});
-
-  useEffect(() => {
-    if (!supabase) {
-      setAuthChecked(true);
-      return;
-    }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setAuthChecked(true);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, sess) => {
-      setSession(sess);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, []);
 
   const loadData = useCallback(async () => {
     if (!supabase || !session) return;
@@ -156,7 +142,7 @@ export default function AnalyticsDashboard() {
       setError(
         isTimeout
           ? "Analytics query timed out. Try a shorter date range or select a single branch."
-          : msg,
+          : mapAuthError(msg),
       );
       setAggregates(null);
       setFeed([]);
@@ -264,11 +250,11 @@ export default function AnalyticsDashboard() {
   const pieColors = [CHART_TEAL, CHART_GOLD, "#5c6b70", "#7a6048", "#3d4f54"];
 
   if (!authChecked) {
-    return <NacAnalyticsSignIn checking />;
+    return <NacAnalyticsSignIn checking kicker="Session Analytics" />;
   }
 
   if (!session) {
-    return <NacAnalyticsSignIn />;
+    return <NacAnalyticsSignIn kicker="Session Analytics" sessionIssue={authIssue} />;
   }
 
   return (
