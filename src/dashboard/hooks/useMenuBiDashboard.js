@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchUnifiedOperationalAnalytics } from "../../lib/analyticsUnifiedAdapter";
+import { fetchUnifiedOperationalTruth } from "../../lib/unifiedOperationalTruth";
 import {
   isMenuBiFullyEmpty,
   normalizeBiDashboardPayload,
@@ -42,6 +42,7 @@ const EMPTY_CONTRACT = {
   truthValidation: null,
   menuConfidence: null,
   operationalTrust: null,
+  truth: null,
   reload: () => {},
 };
 
@@ -68,6 +69,7 @@ export function useMenuBiDashboard(options = {}) {
   const [error, setError] = useState("");
   const [truthValidation, setTruthValidation] = useState(null);
   const [operationalTrust, setOperationalTrust] = useState(null);
+  const [truth, setTruth] = useState(null);
 
   const rangeContract = useMemo(
     () => rangeContractFromFilters(filters || {}),
@@ -107,14 +109,15 @@ export function useMenuBiDashboard(options = {}) {
 
       setNeedsAuth(false);
       const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
-      const result = await fetchUnifiedOperationalAnalytics(supabase, {
+      const result = await fetchUnifiedOperationalTruth(supabase, {
         ...(filters || {}),
         branch: effectiveBranch,
         timeRangeHours: hours,
       });
 
-      const normalized = normalizeBiDashboardPayload(result?.data, { hours });
+      const normalized = result?.data || normalizeBiDashboardPayload(result?.data, { hours });
       setData(normalized);
+      setTruth(result?.truth || normalized?._truth || null);
       setPartial(Boolean(result?.partial));
       setNote(result?.note || null);
       setOpsNotes(result?.opsNotes || []);
@@ -156,6 +159,7 @@ export function useMenuBiDashboard(options = {}) {
       setOpsNotes([]);
       setTruthValidation(null);
       setOperationalTrust(null);
+      setTruth(null);
       setError(e?.message || "Failed to load menu intelligence");
     } finally {
       setLoading(false);
@@ -235,5 +239,6 @@ export function useMenuBiDashboard(options = {}) {
     healthScore: truthValidation?.healthScore || null,
     freshness: truthValidation?.freshness || null,
     operationalTrust,
+    truth,
   };
 }

@@ -36,13 +36,15 @@ export function mergeTopItemsByName(items = []) {
     .sort((a, b) => visibilityEngagementScore(b) - visibilityEngagementScore(a));
 }
 
-/** Weighted visibility score — impressions, opens, open ratio, dwell. */
+/** Weighted visibility score — canonical formula (see unifiedOperationalTruth). */
 export function visibilityEngagementScore(item = {}) {
-  const imp = Number(item.impressions) || 0;
-  const opens = Number(item.opens ?? item.modal_opens) || 0;
-  const rate = imp > 0 ? opens / imp : opens > 0 ? 1 : 0;
+  const impressions = Number(item.impressions) || 0;
+  const opens = Number(item.opens ?? item.modal_opens ?? item.item_opens) || 0;
   const dwellSec = Math.min((Number(item.avg_visible_duration_ms) || 0) / 1000, 120);
-  return imp * 1 + opens * 2.5 + rate * 40 + dwellSec * 0.15;
+  const repeatOpens = opens > 1 ? opens - 1 : 0;
+  return (
+    impressions * 0.35 + opens * 1.0 + dwellSec * 0.5 + repeatOpens * 0.25
+  );
 }
 
 export function mergeCategoriesById(items = []) {

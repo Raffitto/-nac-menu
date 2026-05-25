@@ -1,5 +1,5 @@
 /**
- * Session-quality tiers from menu_events — mirrors server RPC logic with meaningful-interaction depth.
+ * Session-quality tiers, funnel (unique sessions per stage), and duration from menu_events.
  */
 
 import {
@@ -7,31 +7,62 @@ import {
   normalizeAvgTimeSpent,
   normalizeSessionDurationSeconds,
   MAX_GUEST_SESSION_DURATION_SEC,
+  SESSION_IDLE_GAP_SEC,
+  PASSIVE_SESSION_EVENT_TYPES,
+  ACTIVE_SESSION_EVENT_TYPES,
 } from "./sessionMetricsConfig";
-import { normalizeEventType, isAddonInteractionEvent } from "./menuEventTypes";
+import {
+  normalizeEventType,
+  isAddonInteractionEvent,
+} from "./menuEventTypes";
 import { computeSessionOperationalMetrics } from "./sessionOperationalMetrics";
 
-const MEANINGFUL_EVENT_TYPES = new Set([
-  "category_open",
-  "item_open",
-  "item_impression",
-  "add_on_click",
-  "search_used",
-  "search_submit",
-]);
+const CATEGORY_NAV_TYPES = new Set(["category_open", "menu_tab_open", "section_open"]);
 
 function sessionId(row) {
   const id = (row.session_id || "").trim();
   return id || null;
 }
 
-function buildSessionMap(rows) {
+function isCategoryNav(et) {
+  return CATEGORY_NAV_TYPES.has(et);
+}
+
+/** Span from active timestamps with idle-gap segmentation (ms). */
+export function computeActiveSpanSeconds(timestampsMs, idleGapSec = SESSION_IDLE_GAP_SEC) {
+  if (!timestampsMs?.length) return 0;
+  const sorted = [...timestampsMs].sort((a, b) => a - b);
+  const gapMs = idleGapSec * 1000;
+  let totalMs = 0;
+  let segStart = sorted[0];
+  let last = sorted[0];
+
+  for (let i = 1; i < sorted.length; i += 1) {
+    const t = sorted[i];
+    if (t - last > gapMs) {
+      totalMs += Math.max(0, last - segStart);
+      segStart = t;
+    }
+    last = t;
+  }
+  totalMs += Math.max(0, last - segStart);
+  return normalizeSessionDurationSeconds(Math.round(totalMs / 1000));
+}
+
+export function buildSessionMap(rows) {
   const map = new Map();
+  let rawRows = 0;
 
   for (const row of rows || []) {
+    rawRows += 1;
     const sid = sessionId(row);
     if (!sid) continue;
     if (isInternalMenuSessionRow(row)) continue;
+
+    const et = normalizeEventType(row.event_type || "unknown");
+    const ts = row.created_at ? new Date(row.created_at).getTime() : NaN;
+    const isPassive = PASSIVE_SESSION_EVENT_TYPES.has(et);
+    const isActive = ACTIVE_SESSION_EVENT_TYPES.has(et) || isCategoryNav(et);
 
     let s = map.get(sid);
     if (!s) {
@@ -42,76 +73,200 @@ function buildSessionMap(rows) {
         categoryOpens: 0,
         addonClicks: 0,
         searches: 0,
-        meaningful: 0,
+        meaningfulScore: 0,
         durationSec: 0,
-        firstMs: null,
-        lastMs: null,
+        rawSpanSec: 0,
+        activeTimestampsMs: [],
+        hasQr: false,
+        hasActive: false,
+        hasTimeSpent: false,
+        hasExit: false,
+        finalized: false,
       };
       map.set(sid, s);
     }
 
-    const et = normalizeEventType(row.event_type || "unknown");
     s.total += 1;
 
-    const ts = row.created_at ? new Date(row.created_at).getTime() : NaN;
     if (Number.isFinite(ts)) {
-      if (s.firstMs == null || ts < s.firstMs) s.firstMs = ts;
-      if (s.lastMs == null || ts > s.lastMs) s.lastMs = ts;
+      if (!isPassive) {
+        if (s.firstMs == null || ts < s.firstMs) s.firstMs = ts;
+        if (s.lastMs == null || ts > s.lastMs) s.lastMs = ts;
+      }
+      if (isActive) {
+        s.activeTimestampsMs.push(ts);
+        s.hasActive = true;
+      }
     }
 
-    if (et === "item_open") s.itemOpens += 1;
+    if (et === "qr_session_start") s.hasQr = true;
+    if (et === "item_open") {
+      s.itemOpens += 1;
+      s.meaningfulScore += 2;
+    }
     if (et === "item_impression") s.impressions += 1;
-    if (et === "category_open") s.categoryOpens += 1;
-    if (isAddonInteractionEvent(et)) s.addonClicks += 1;
-    if (et === "search_used" || et === "search_submit") s.searches += 1;
-    if (MEANINGFUL_EVENT_TYPES.has(et)) s.meaningful += 1;
-
-    if (et === "time_spent" && row.metadata && typeof row.metadata === "object") {
-      const d = normalizeSessionDurationSeconds(row.metadata.duration_seconds);
-      if (d > s.durationSec) s.durationSec = d;
+    if (isCategoryNav(et)) {
+      s.categoryOpens += 1;
+      s.meaningfulScore += 1;
     }
+    if (isAddonInteractionEvent(et)) {
+      s.addonClicks += 1;
+      s.meaningfulScore += 2;
+    }
+    if (et === "search_used" || et === "search_submit") {
+      s.searches += 1;
+      s.meaningfulScore += 1;
+    }
+
+    if (et === "time_spent") {
+      s.hasTimeSpent = true;
+      if (row.metadata && typeof row.metadata === "object") {
+        const d = normalizeSessionDurationSeconds(row.metadata.duration_seconds);
+        if (d > s.durationSec) s.durationSec = d;
+      }
+    }
+    if (et === "menu_exit") s.hasExit = true;
   }
 
   for (const s of map.values()) {
-    if (s.durationSec <= 0 && s.firstMs != null && s.lastMs != null && s.lastMs > s.firstMs) {
-      const spanSec = Math.round((s.lastMs - s.firstMs) / 1000);
-      s.durationSec = normalizeSessionDurationSeconds(spanSec);
-    } else if (s.durationSec > 0) {
-      s.durationSec = normalizeSessionDurationSeconds(s.durationSec);
+    if (s.firstMs != null && s.lastMs != null && s.lastMs > s.firstMs) {
+      s.rawSpanSec = Math.round((s.lastMs - s.firstMs) / 1000);
     }
+
+    const activeSpan = computeActiveSpanSeconds(s.activeTimestampsMs);
+    const metaDuration = s.durationSec;
+    let duration = 0;
+
+    if (activeSpan > 0) duration = activeSpan;
+    else if (metaDuration > 0 && s.hasActive) duration = metaDuration;
+    else if (s.rawSpanSec > 0 && s.hasActive && s.itemOpens > 0) {
+      duration = normalizeSessionDurationSeconds(
+        Math.min(s.rawSpanSec, SESSION_IDLE_GAP_SEC * 4),
+      );
+    }
+
+    s.durationSec = duration;
+    s.finalized = Boolean(s.hasActive && duration > 0);
+    s.passiveOnly =
+      s.itemOpens === 0 &&
+      s.addonClicks === 0 &&
+      s.categoryOpens === 0 &&
+      s.impressions >= 2;
+    s.orphaned = !s.finalized && s.total > 0;
   }
 
-  return map;
+  return { map, rawRows };
 }
 
-/** Classify one session — duration-first tiers (15s / 60s / 3m / 8m / 20m cap). */
+/** Unique session counts per funnel stage (canonical customer journey). */
+export function buildSessionFunnelFromMap(map) {
+  const qr = new Set();
+  const category = new Set();
+  const itemView = new Set();
+  const addon = new Set();
+  const timeSpent = new Set();
+  const exits = new Set();
+  const all = new Set();
+
+  for (const [sid, s] of map.entries()) {
+    all.add(sid);
+    if (s.hasQr) qr.add(sid);
+    if (s.categoryOpens > 0) category.add(sid);
+    if (s.itemOpens > 0) itemView.add(sid);
+    if (s.addonClicks > 0) addon.add(sid);
+    if (s.hasTimeSpent) timeSpent.add(sid);
+    if (s.hasExit) exits.add(sid);
+  }
+
+  const totalSessions = all.size;
+  const entry = qr.size > 0 ? qr.size : totalSessions;
+
+  return {
+    qr_scans: entry,
+    category_opens: category.size,
+    item_opens: itemView.size,
+    item_impressions: 0,
+    addon_clicks: addon.size,
+    time_spent: timeSpent.size,
+    exits: exits.size,
+    total_sessions: totalSessions,
+  };
+}
+
+export function buildSessionDiagnostics(map, rawEventCount = 0) {
+  let orphaned = 0;
+  let capped = 0;
+  let passiveOnly = 0;
+  let finalized = 0;
+  let rawDurationSum = 0;
+  let correctedDurationSum = 0;
+
+  for (const s of map.values()) {
+    if (s.orphaned) orphaned += 1;
+    if (s.passiveOnly) passiveOnly += 1;
+    if (s.finalized) {
+      finalized += 1;
+      correctedDurationSum += s.durationSec;
+    }
+    if (s.rawSpanSec > MAX_GUEST_SESSION_DURATION_SEC) capped += 1;
+    if (s.rawSpanSec > 0) rawDurationSum += Math.min(s.rawSpanSec, s.rawSpanSec);
+  }
+
+  const validSessions = map.size;
+  const passivePct =
+    validSessions > 0 ? Math.round((passiveOnly / validSessions) * 1000) / 10 : 0;
+
+  return {
+    total_raw_events: rawEventCount,
+    valid_sessions: validSessions,
+    finalized_sessions: finalized,
+    orphaned_sessions_removed: orphaned,
+    capped_sessions: capped,
+    passive_only_sessions_pct: passivePct,
+    avg_raw_duration_sec:
+      finalized > 0 ? Math.round(rawDurationSum / Math.max(finalized, 1)) : 0,
+    avg_corrected_duration_sec: normalizeAvgTimeSpent(
+      finalized > 0 ? correctedDurationSum / finalized : 0,
+    ),
+  };
+}
+
+/** Restaurant-realistic tiers — impressions alone never yield deep/power. */
 export function classifySessionTier(stats) {
-  const { total, itemOpens, addonClicks, meaningful } = stats;
-  const duration = Math.min(
-    Number(stats.durationSec) || 0,
-    MAX_GUEST_SESSION_DURATION_SEC,
-  );
+  if (stats.passiveOnly) return "bounce";
 
-  if (duration > 0) {
-    if (duration < 15 && itemOpens === 0) return "bounce";
-    if (duration >= 8 * 60) return "power";
-    if (duration >= 3 * 60) return "deep";
-    if (duration >= 60) return "engaged";
-    if (duration >= 15) return "casual";
-    return "bounce";
-  }
+  const duration = Number(stats.durationSec) || 0;
+  const { itemOpens, addonClicks, categoryOpens, meaningfulScore } = stats;
 
-  if (meaningful <= 1 && itemOpens === 0) return "bounce";
-  if (total >= 12 || (itemOpens >= 5 && addonClicks >= 2)) return "power";
-  if (total >= 8 || itemOpens >= 3 || (itemOpens >= 2 && addonClicks > 0) || meaningful >= 7) {
-    return "deep";
+  if (itemOpens === 0 && categoryOpens === 0 && duration < 20) return "bounce";
+  if (duration > 0 && duration < 15 && itemOpens === 0) return "bounce";
+
+  const canDeep =
+    itemOpens >= 2 &&
+    (addonClicks >= 1 || categoryOpens >= 2) &&
+    meaningfulScore >= 4;
+  const canPower =
+    itemOpens >= 3 &&
+    addonClicks >= 1 &&
+    categoryOpens >= 2 &&
+    duration >= 5 * 60 &&
+    duration <= MAX_GUEST_SESSION_DURATION_SEC;
+
+  if (canPower && duration >= 8 * 60 && duration <= MAX_GUEST_SESSION_DURATION_SEC) {
+    return "power";
   }
-  if (meaningful <= 2 && itemOpens <= 1 && total <= 5) return "casual";
-  return "engaged";
+  if (canDeep && duration >= 5 * 60 && duration <= 12 * 60) return "deep";
+
+  if (itemOpens >= 1 && duration >= 45 && duration < 3 * 60) return "engaged";
+  if (itemOpens >= 2 || (itemOpens >= 1 && addonClicks >= 1)) return "engaged";
+
+  if (duration >= 15 || categoryOpens >= 1 || itemOpens === 1) return "casual";
+
+  return "bounce";
 }
 
 export function aggregateSessionQualityFromRows(rows) {
-  const map = buildSessionMap(rows);
+  const { map, rawRows } = buildSessionMap(rows);
   const session_quality = { bounce: 0, casual: 0, engaged: 0, deep: 0, power: 0 };
 
   let durationSum = 0;
@@ -122,15 +277,17 @@ export function aggregateSessionQualityFromRows(rows) {
     const tier = classifySessionTier(stats);
     session_quality[tier] += 1;
     itemOpensSum += stats.itemOpens;
-    if (stats.durationSec > 0) {
+    if (stats.finalized && stats.durationSec > 0) {
       durationSum += stats.durationSec;
       durationN += 1;
     }
   }
 
-  const total_sessions = map.size;
+  const funnel = buildSessionFunnelFromMap(map);
+  const total_sessions = funnel.total_sessions || map.size;
   const bounce_sessions = session_quality.bounce;
   const deep_sessions = session_quality.deep + session_quality.power;
+  const session_diagnostics = buildSessionDiagnostics(map, rawRows);
 
   return {
     session_quality,
@@ -140,6 +297,8 @@ export function aggregateSessionQualityFromRows(rows) {
     avg_items_per_session:
       total_sessions > 0 ? Math.round((itemOpensSum / total_sessions) * 10) / 10 : 0,
     total_sessions,
+    funnel,
+    session_diagnostics,
     session_operational: computeSessionOperationalMetrics(map),
   };
 }

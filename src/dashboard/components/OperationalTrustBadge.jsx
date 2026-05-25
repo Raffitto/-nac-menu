@@ -1,6 +1,6 @@
 import React from "react";
 import { ShieldCheck, ShieldAlert, RefreshCw, Clock } from "lucide-react";
-import { OPERATIONAL_TRUST } from "../../lib/analyticsUnifiedAdapter";
+import { OPERATIONAL_TRUST } from "../../lib/unifiedOperationalTruth";
 
 const BADGE_CLASS = {
   [OPERATIONAL_TRUST.LIVE_VERIFIED]: "nac-trust--verified",
@@ -17,58 +17,56 @@ const BADGE_ICON = {
 };
 
 function formatSyncTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return null;
   try {
     return new Date(iso).toLocaleTimeString(undefined, {
       hour: "numeric",
       minute: "2-digit",
     });
   } catch {
-    return "—";
+    return null;
   }
 }
 
 /**
- * Executive operational trust — data source, freshness, rollup integrity.
+ * Compact operational trust — executive-facing status only.
  */
-export default function OperationalTrustBadge({ trust = null, className = "" }) {
+export default function OperationalTrustBadge({ trust = null, className = "", compact = true }) {
   if (!trust?.badge) return null;
 
   const Icon = BADGE_ICON[trust.badge] || ShieldCheck;
   const tone = BADGE_CLASS[trust.badge] || "";
+  const label = trust.label || "STATUS";
+  const sync = formatSyncTime(trust.lastSyncAt);
+
+  if (compact) {
+    return (
+      <span
+        className={`nac-operational-trust nac-operational-trust--compact ${tone} ${className}`.trim()}
+        role="status"
+        title={sync ? `Last sync ${sync}` : undefined}
+        aria-label={label}
+      >
+        <Icon size={13} aria-hidden />
+        <strong>{label}</strong>
+        {sync ? <span className="nac-trust-sync">{sync}</span> : null}
+      </span>
+    );
+  }
 
   return (
     <aside
       className={`nac-operational-trust ${tone} ${className}`.trim()}
       role="status"
-      aria-label={trust.label}
+      aria-label={label}
     >
       <div className="nac-operational-trust-head">
-        <Icon size={16} aria-hidden />
-        <strong>{trust.label?.toUpperCase() || "OPERATIONAL STATUS"}</strong>
+        <Icon size={14} aria-hidden />
+        <strong>{label}</strong>
       </div>
-      <dl className="nac-operational-trust-meta">
-        <div>
-          <dt>Last sync</dt>
-          <dd>{formatSyncTime(trust.lastSyncAt)}</dd>
-        </div>
-        {trust.eventCount > 0 ? (
-          <div>
-            <dt>Menu events</dt>
-            <dd>{trust.eventCount.toLocaleString()}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Rollup integrity</dt>
-          <dd>{trust.rollupIntegrity || "—"}</dd>
-        </div>
-        {trust.dataSource ? (
-          <div>
-            <dt>Source</dt>
-            <dd>{trust.dataSource}</dd>
-          </div>
-        ) : null}
-      </dl>
+      {sync ? (
+        <p className="nac-trust-sync-line">Synced {sync}</p>
+      ) : null}
     </aside>
   );
 }

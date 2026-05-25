@@ -93,8 +93,10 @@ export function buildExecutiveCommandCenterPackage(input = {}) {
         totalRedirectsToday > 0
           ? `${totalRedirectsToday} Google redirects in period`
           : activeStaffCount > 0
-            ? `${activeStaffCount} staff active — redirects still building`
-            : "Collecting baseline — card handoffs will appear here",
+            ? `${activeStaffCount} staff with live scan activity — review completion tracking needs more redirect history`
+            : hasScoredBranch
+              ? "Calibrating live pulse — redirect participation will sharpen as card handoffs accumulate"
+              : "Insufficient redirect history for live operational pulse",
       building_baseline: buildingBaseline,
       has_scored_branch: hasScoredBranch,
     },

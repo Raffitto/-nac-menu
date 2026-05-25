@@ -88,5 +88,6 @@ export function mapBiToSessionAggregates(bi, options = {}) {
     funnel: bi.funnel || {},
     session_quality: bi.session_quality || {},
     session_operational: bi.session_operational || {},
+    session_diagnostics: bi.session_diagnostics || null,
   };
 }

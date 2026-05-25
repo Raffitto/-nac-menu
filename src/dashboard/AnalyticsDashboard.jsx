@@ -38,6 +38,7 @@ import { formatDayLabel, formatHourLabel } from "./utils/formatters";
 import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
+import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
 import { canonicalAddonInteractionCount } from "../lib/menuEventTypes";
 import InternalOpsStatusPanel from "./components/InternalOpsStatusPanel";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
@@ -318,6 +319,7 @@ export default function AnalyticsDashboard() {
         </div>
 
         <InternalOpsStatusPanel notes={opsNotes} />
+        <SessionStabilizationDiagnostics diagnostics={aggregates?.session_diagnostics} />
         {partialNote && (
           <p className="nac-ops-user-note mb-6">{partialNote}</p>
         )}

@@ -106,9 +106,10 @@ export default function ExecutiveCommandCenter() {
   const brief = pkg.dailyBrief;
   const momentum = pkg.momentum;
   const buildingBaseline = pkg.networkScoreBuilding || pkg.pulse?.building_baseline;
+  const scoreCalibrating = buildingBaseline || pkg.networkScore == null;
   const ns = pkg.networkScore;
   const networkTier =
-    buildingBaseline || ns == null
+    scoreCalibrating
       ? "unstable"
       : ns >= 90
         ? "elite"
@@ -154,9 +155,16 @@ export default function ExecutiveCommandCenter() {
         </div>
         <div className="ecc-hero-score">
           <ExecutiveScoreRing
-            score={pkg.networkScore}
+            score={scoreCalibrating ? null : pkg.networkScore}
             tier={networkTier}
-            label={buildingBaseline ? "Building baseline" : "Network score"}
+            calibrating={scoreCalibrating}
+            label={
+              scoreCalibrating
+                ? pkg.pulse?.has_scored_branch
+                  ? "Calibrating"
+                  : "Insufficient operational history"
+                : "Network score"
+            }
             size={128}
           />
         </div>
@@ -185,6 +193,9 @@ export default function ExecutiveCommandCenter() {
         <motion.div className="ecc-kpi ecc-kpi--glow" layout>
           <span className="ecc-kpi-label">Active staff (network)</span>
           <strong className="ecc-kpi-value">{pkg.pulse?.active_staff_count ?? 0}</strong>
+          {(pkg.pulse?.active_staff_count ?? 0) === 0 && (pkg.pulse?.total_redirects ?? 0) === 0 ? (
+            <span className="ecc-kpi-muted">Staff activity appears after redirect history builds.</span>
+          ) : null}
         </motion.div>
         <motion.div className="ecc-kpi ecc-kpi--glow" layout>
           <span className="ecc-kpi-label">Est. monthly review gain</span>

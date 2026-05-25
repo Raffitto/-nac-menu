@@ -81,6 +81,8 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
     returning_sessions: aggregates.returning_sessions ?? biRaw.returning_sessions,
     session_quality: aggregates.session_quality || biRaw.session_quality,
     session_operational: aggregates.session_operational || biRaw.session_operational,
+    funnel: aggregates.funnel || biRaw.funnel,
+    session_diagnostics: aggregates.session_diagnostics || biRaw.session_diagnostics,
     today_qr_sessions:
       Number(aggregates.today_qr_sessions) ||
       Number(mergedByType.qr_session_start) ||

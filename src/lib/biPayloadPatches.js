@@ -2,12 +2,16 @@
  * Shared BI payload patches (session quality, item detail).
  */
 
-import { normalizeBiDashboardPayload, biSessionQualityNeedsRefresh } from "./biDashboardNormalize";
+import {
+  normalizeBiDashboardPayload,
+  biSessionQualityNeedsRefresh,
+} from "./biDashboardNormalize";
 import { fetchBiSessionQualityFromMenuEvents } from "./menuEventsBiFallback";
 import {
   sessionQualityIsEmpty,
   sessionQualityTierSum,
 } from "./sessionQualityAggregate";
+import { MAX_CREDIBLE_AVG_TIME_SPENT_SEC } from "./sessionMetricsConfig";
 
 export function mergeBiPayload(base, patch) {
   if (!patch) return base;
@@ -21,8 +25,21 @@ export function mergeBiPayload(base, patch) {
       ...(base?.session_quality || {}),
       ...(patch.session_quality || {}),
     },
+    session_diagnostics: patch.session_diagnostics || base?.session_diagnostics,
   };
   return normalizeBiDashboardPayload(merged);
+}
+
+function sessionMetricsNeedLiveRefresh(aggregates) {
+  if (!aggregates) return true;
+  if (sessionQualityIsEmpty(aggregates)) return true;
+  const avg = Number(aggregates.avg_time_spent) || 0;
+  if (avg > MAX_CREDIBLE_AVG_TIME_SPENT_SEC) return true;
+  const sessions = Number(aggregates.total_sessions) || 0;
+  const funnelQr = Number(aggregates.funnel?.qr_scans) || 0;
+  if (sessions > 10 && funnelQr > 0 && funnelQr < sessions * 0.5) return true;
+  if (sessions > 10 && funnelQr < 20 && sessions > 50) return true;
+  return biSessionQualityNeedsRefresh(aggregates);
 }
 
 /**
@@ -45,14 +62,21 @@ export async function applySessionQualityPatch(supabase, { branch, hours }, payl
   };
 }
 
-/** Map session-quality patch onto session analytics aggregates shape. */
+/** Recompute session metrics from live menu_events (funnel, duration, quality). */
 export async function applySessionQualityToAggregates(supabase, params, aggregates) {
-  if (!aggregates || !sessionQualityIsEmpty(aggregates)) return aggregates;
+  if (!supabase || !params) return aggregates;
+
+  const shouldRefresh =
+    sessionMetricsNeedLiveRefresh(aggregates) || Number(params.p_hours) <= 168;
+
+  if (!shouldRefresh) return aggregates;
+
   const patch = await fetchBiSessionQualityFromMenuEvents(supabase, {
     branch: params.p_branch,
     hours: params.p_hours,
   });
   if (!patch || sessionQualityIsEmpty(patch)) return aggregates;
+
   return {
     ...aggregates,
     session_quality: patch.session_quality,
@@ -60,6 +84,8 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
     deep_sessions: patch.deep_sessions,
     avg_time_spent: patch.avg_time_spent,
     avg_items_per_session: patch.avg_items_per_session,
-    total_sessions: Math.max(aggregates.total_sessions || 0, patch.total_sessions || 0),
+    total_sessions: Math.max(Number(aggregates.total_sessions) || 0, patch.total_sessions || 0),
+    funnel: patch.funnel || aggregates.funnel,
+    session_diagnostics: patch.session_diagnostics,
   };
 }

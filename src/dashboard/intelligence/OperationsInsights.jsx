@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import { Sparkles } from "lucide-react";
 import { generateInsights } from "../utils/insights";
+import { generateOperationalInsights } from "../utils/operationalInsightsEngine";
+import { buildOperationalTruth } from "../../lib/unifiedOperationalTruth";
 import { buildRestaurantIntelligence } from "../engines/analyticsEngine";
 import { getFoodicsIntelligenceContext } from "../../lib/foodicsApi";
 import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
@@ -28,7 +30,8 @@ export default function OperationsInsights() {
   const summaries = useMemo(() => {
     if (!bi) return [];
     const intel = buildRestaurantIntelligence(bi, foodics);
-    const lines = [];
+    const truth = bi._truth || buildOperationalTruth(bi);
+    const lines = generateOperationalInsights(bi).map((i) => i.text);
     const lang = bi?.by_language || {};
     const ar = Number(lang.ar) || 0;
     const en = Number(lang.en) || 0;
@@ -37,23 +40,13 @@ export default function OperationsInsights() {
     } else if (en > ar * 1.2) {
       lines.push("English sessions lead interaction volume — optimize EN item copy.");
     }
-    if (bi?.strongest_hour != null) {
-      const h = Number(bi.strongest_hour);
-      const label = h > 12 ? `${h - 12} PM` : h === 12 ? "12 PM" : h === 0 ? "12 AM" : `${h} AM`;
-      lines.push(`Peak activity clusters around ${label} service.`);
-    }
-    const top = (bi?.top_items || [])[0];
-    if (top?.name) {
-      lines.push(`${top.name} leads views — pair with high-margin add-ons at table.`);
-    }
-    const dead = (bi?.dead_zones || [])[0];
-    if (dead?.category) {
-      lines.push(`Category "${dead.category}" shows browse-without-click — review placement and photos.`);
+    if (truth.peakHourLabel) {
+      lines.push(`Peak activity clusters around ${truth.peakHourLabel} service.`);
     }
     if (intel?.friction?.[0]?.title) {
       lines.push(intel.friction[0].title);
     }
-    return lines.slice(0, 5);
+    return [...new Set(lines)].slice(0, 6);
   }, [bi, foodics]);
 
   if (loading) {

@@ -8,10 +8,7 @@ import {
   hourInRiyadh,
   fill24HourBuckets,
 } from "../dashboard/utils/hourlyBucketLabels";
-import {
-  canonicalCategoryOpenCount,
-  isCategoryNavEvent,
-} from "./menuEventTypes";
+import { isCategoryNavEvent } from "./menuEventTypes";
 import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 import { devLog } from "./devLog";
 import { isBiTotalsEmpty } from "./biDashboardNormalize";
@@ -181,13 +178,16 @@ function aggregateRows(rows, referenceDate = new Date()) {
     returning_sessions: 0,
     today_unique_sessions: today_unique_sessions.size,
     today_qr_sessions,
-    funnel: {
-      qr_scans: Number(byEventType.qr_session_start) || 0,
-      category_opens: canonicalCategoryOpenCount(byEventType),
+    funnel: sessionMetrics.funnel || {
+      qr_scans: sessionMetrics.total_sessions || sessions.size,
+      category_opens: 0,
       item_impressions: Number(byEventType.item_impression) || 0,
-      item_opens: Number(byEventType.item_open) || 0,
-      addon_clicks: Number(byEventType.add_on_click) || 0,
+      item_opens: 0,
+      addon_clicks: 0,
+      time_spent: 0,
+      exits: 0,
     },
+    session_diagnostics: sessionMetrics.session_diagnostics,
     strongest_hour: (() => {
       if (!by_hour.length) return null;
       const peak = by_hour.reduce((best, h) => (h.count > best.count ? h : best), by_hour[0]);
@@ -301,5 +301,7 @@ export async function fetchBiSessionQualityFromMenuEvents(supabase, { branch = n
     avg_time_spent: full.avg_time_spent,
     avg_items_per_session: full.avg_items_per_session,
     total_sessions: full.total_sessions,
+    funnel: full.funnel,
+    session_diagnostics: full.session_diagnostics,
   };
 }

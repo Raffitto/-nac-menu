@@ -119,6 +119,10 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
 
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
   const rangeHours = Number(options.hours) || 24;
+  const totalSessions = Number(raw.total_sessions) || 0;
+  const useSessionFunnel =
+    raw.data_source === "unified_session_master" ||
+    (funnelIn.qr_scans != null && funnelIn.item_opens != null);
 
   const by_hour_raw = Array.isArray(raw.by_hour)
     ? raw.by_hour.map((row) => {
@@ -177,19 +181,33 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
     returning_sessions: Number(raw.returning_sessions) || 0,
     today_unique_sessions: Number(raw.today_unique_sessions) || 0,
     today_qr_sessions: Number(raw.today_qr_sessions) || 0,
-    funnel: {
-      ...EMPTY_FUNNEL,
-      qr_scans: Number(funnelIn.qr_scans ?? byEvent.qr_session_start) || 0,
-      category_opens:
-        Number(funnelIn.category_opens ?? categoryOpensCanonical ?? byEvent.category_open) || 0,
-      item_impressions: Number(funnelIn.item_impressions ?? byEvent.item_impression) || 0,
-      item_opens: Number(funnelIn.item_opens ?? byEvent.item_open) || 0,
-      addon_clicks:
-        Number(funnelIn.addon_clicks ?? byEvent.addon_interaction ?? canonicalAddonInteractionCount(byEventRaw)) ||
-        0,
-      time_spent: Number(funnelIn.time_spent ?? byEvent.time_spent) || 0,
-      exits: Number(funnelIn.exits ?? byEvent.menu_exit) || 0,
-    },
+    funnel: useSessionFunnel
+      ? {
+          ...EMPTY_FUNNEL,
+          qr_scans: Number(funnelIn.qr_scans) || totalSessions,
+          category_opens: Number(funnelIn.category_opens) || 0,
+          item_impressions: Number(funnelIn.item_impressions) || 0,
+          item_opens: Number(funnelIn.item_opens) || 0,
+          addon_clicks: Number(funnelIn.addon_clicks) || 0,
+          time_spent: Number(funnelIn.time_spent) || 0,
+          exits: Number(funnelIn.exits) || 0,
+        }
+      : {
+          ...EMPTY_FUNNEL,
+          qr_scans: Number(funnelIn.qr_scans ?? byEvent.qr_session_start) || totalSessions,
+          category_opens:
+            Number(funnelIn.category_opens ?? categoryOpensCanonical ?? byEvent.category_open) || 0,
+          item_impressions: Number(funnelIn.item_impressions ?? byEvent.item_impression) || 0,
+          item_opens: Number(funnelIn.item_opens ?? byEvent.item_open) || 0,
+          addon_clicks:
+            Number(
+              funnelIn.addon_clicks ??
+                byEvent.addon_interaction ??
+                canonicalAddonInteractionCount(byEventRaw),
+            ) || 0,
+          time_spent: Number(funnelIn.time_spent ?? byEvent.time_spent) || 0,
+          exits: Number(funnelIn.exits ?? byEvent.menu_exit) || 0,
+        },
     strongest_hour: raw.strongest_hour ?? null,
     top_converting_category:
       raw.top_converting_category && typeof raw.top_converting_category === "object"
@@ -207,6 +225,10 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
       raw.session_operational && typeof raw.session_operational === "object"
         ? raw.session_operational
         : {},
+    session_diagnostics:
+      raw.session_diagnostics && typeof raw.session_diagnostics === "object"
+        ? raw.session_diagnostics
+        : null,
   };
 }
 

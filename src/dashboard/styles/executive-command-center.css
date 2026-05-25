@@ -114,6 +114,18 @@
   text-transform: uppercase;
   color: rgba(249, 249, 247, 0.45);
   margin-top: 0.2rem;
+  text-align: center;
+  max-width: 90%;
+  line-height: 1.25;
+}
+
+.ecc-score-ring--calibrating .ecc-score-ring-value {
+  color: rgba(215, 188, 138, 0.85);
+  text-shadow: 0 0 18px rgba(215, 188, 138, 0.25);
+}
+
+.ecc-score-ring--calibrating .ecc-score-ring-label {
+  color: rgba(215, 188, 138, 0.65);
 }
 
 .ecc-kpi-strip {

@@ -1,4 +1,6 @@
 import { formatCategoryName, formatDuration } from "./formatters";
+import { computePeakHourFromByHour } from "../../lib/unifiedOperationalTruth";
+import { generateOperationalInsights } from "./operationalInsightsEngine";
 
 export function generateInsights(data) {
   if (!data || typeof data !== "object") return [];
@@ -98,34 +100,14 @@ export function generateInsights(data) {
     }
   }
 
-  const strongestHour = data.strongest_hour;
-  if (strongestHour != null) {
-    const d = new Date(strongestHour);
-    const label = Number.isNaN(d.getTime())
-      ? strongestHour
-      : d.toLocaleString(undefined, { hour: "numeric", hour12: true });
+  const peakLabel =
+    data.strongest_hour_label ||
+    computePeakHourFromByHour(data.by_hour || []).label;
+  if (peakLabel) {
     insights.push({
-      text: `Peak menu activity at ${label} — consider optimizing staffing.`,
+      text: `Peak menu activity around ${peakLabel} — matches hourly chart intensity.`,
       type: "neutral",
     });
-  } else {
-    const byHour = data.by_hour || [];
-    if (byHour.length > 0) {
-      const peak = byHour.reduce(
-        (best, h) => ((Number(h.count) || 0) > (Number(best.count) || 0) ? h : best),
-        byHour[0],
-      );
-      if (peak.hour) {
-        const pd = new Date(peak.hour);
-        const pLabel = Number.isNaN(pd.getTime())
-          ? peak.hour
-          : pd.toLocaleString(undefined, { hour: "numeric", hour12: true });
-        insights.push({
-          text: `Peak menu activity at ${pLabel} — consider optimizing staffing.`,
-          type: "neutral",
-        });
-      }
-    }
   }
 
   const returningSessions = Number(data.returning_sessions) || 0;
@@ -139,5 +121,14 @@ export function generateInsights(data) {
     });
   }
 
-  return insights;
+  const operational = generateOperationalInsights(data);
+  const seen = new Set(insights.map((i) => i.text));
+  for (const o of operational) {
+    if (!seen.has(o.text)) {
+      insights.push(o);
+      seen.add(o.text);
+    }
+  }
+
+  return insights.slice(0, 10);
 }

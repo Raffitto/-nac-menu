@@ -38,6 +38,7 @@ import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
+import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
 import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
@@ -200,8 +201,10 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const totalEvents = Number(data?.total_events) || 0;
   const totalSessions = Number(data?.total_sessions) || 0;
   const byType = data?.by_event_type || {};
+  const funnel = data?.funnel || {};
   const itemOpenCount = ev(byType, "item_open");
-  const qrSessionStarts = ev(byType, "qr_session_start");
+  const qrSessionStarts =
+    Number(funnel.qr_scans) || totalSessions || ev(byType, "qr_session_start");
   const addOnClickCount = ev(byType, "add_on_click");
   // categoryOpenCount available for future use via ev(byType, "category_open")
 
@@ -252,9 +255,9 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     );
   }, [data?.by_hour, hourlyData, hourlyHours, filters?.selectedRange, filters?.branch]);
 
-  // Funnel, session quality, dead zones, lost searches, executive data
-  const funnel = data?.funnel || {};
+  // Session quality, dead zones, lost searches, executive data
   const sessionQuality = data?.session_quality || {};
+  const sessionDiagnostics = data?.session_diagnostics || null;
   const deadZones = data?.dead_zones || [];
   const lostSearches = data?.lost_searches || [];
   const langBehavior = data?.lang_behavior || {};
@@ -439,6 +442,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             )}
 
             <PlatformStatusBanner platformStatus={platformStatus} />
+            <SessionStabilizationDiagnostics diagnostics={sessionDiagnostics} />
 
             {/* LOADING SKELETONS */}
             {loading && !data && (
@@ -474,7 +478,9 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
                     <p className="nac-bi-exec-label"><Timer size={13} /> Avg Session</p>
-                    <p className="nac-bi-exec-value">{formatDuration(avgTimeSpent)}</p>
+                    <p className="nac-bi-exec-value">
+                      {avgTimeSpent > 0 ? formatDuration(avgTimeSpent) : "—"}
+                    </p>
                     <p className="nac-bi-exec-sub">
                       {strongestHour != null ? `Peak at ${strongestHour > 12 ? strongestHour - 12 : strongestHour || 12} ${strongestHour >= 12 ? "PM" : "AM"}` : "—"}
                     </p>
