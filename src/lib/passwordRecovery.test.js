@@ -1,5 +1,6 @@
 import {
   getPasswordResetRedirectUrl,
+  PRODUCTION_PASSWORD_RESET_URL,
   SUPABASE_AUTH_REDIRECT_ALLOWLIST,
   passwordsMatch,
 } from "./passwordRecovery";
@@ -19,6 +20,7 @@ describe("password recovery redirects", () => {
     expect(SUPABASE_AUTH_REDIRECT_ALLOWLIST).toEqual(
       expect.arrayContaining([
         "http://localhost:3000/reset-password",
+        PRODUCTION_PASSWORD_RESET_URL,
         "https://nacmenu.netlify.app/reset-password",
         "https://nac-khobar-reviews.netlify.app/reset-password",
       ]),
@@ -28,6 +30,20 @@ describe("password recovery redirects", () => {
   test("uses explicit env override when set", () => {
     process.env.REACT_APP_AUTH_RESET_URL = "https://nacmenu.netlify.app/reset-password";
     expect(getPasswordResetRedirectUrl()).toBe("https://nacmenu.netlify.app/reset-password");
+  });
+
+  test("production build uses nac-os reset URL when not on localhost", () => {
+    delete process.env.REACT_APP_AUTH_RESET_URL;
+    const origin = window.location.origin;
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, origin: "https://nac-os.netlify.app" },
+      writable: true,
+    });
+    expect(getPasswordResetRedirectUrl()).toBe(PRODUCTION_PASSWORD_RESET_URL);
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, origin },
+      writable: true,
+    });
   });
 });
 

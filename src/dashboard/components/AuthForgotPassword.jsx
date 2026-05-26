@@ -34,16 +34,23 @@ export default function AuthForgotPassword({
 
   const sendReset = async (e) => {
     e.preventDefault();
+    const trimmed = String(value || "").trim();
+    if (!trimmed) {
+      setError("Enter your email address.");
+      return;
+    }
     setBusy(true);
     setError("");
     setSent(false);
-    const result = await requestPasswordResetEmail(supabase, value);
+    const result = await requestPasswordResetEmail(supabase, trimmed);
     setBusy(false);
     if (!result.ok) {
-      setError(result.error);
+      setError(result.error || "Could not send reset email.");
       return;
     }
     setSent(true);
+    if (onEmailChange) onEmailChange(trimmed);
+    else setLocalEmail(trimmed);
   };
 
   if (!open) {
@@ -89,7 +96,7 @@ export default function AuthForgotPassword({
             style={{ fontSize: "0.85rem", color: "#4ecdc4", lineHeight: 1.5 }}
           >
             <CheckCircle2 size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
-            If an account exists for <strong>{value}</strong>, a reset link is on its way. Check spam if needed.
+            If an account exists for <strong>{String(value || "").trim()}</strong>, a reset link is on its way. Check spam if needed.
           </motion.div>
         ) : (
           <motion.form key="form" onSubmit={sendReset}>

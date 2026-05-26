@@ -5,10 +5,14 @@
 
 const DEFAULT_LOCAL_RESET = "http://localhost:3000/reset-password";
 
+/** Canonical production reset page — must match Supabase Auth → Redirect URLs. */
+export const PRODUCTION_PASSWORD_RESET_URL = "https://nac-os.netlify.app/reset-password";
+
 /** Production Netlify sites that should be allowlisted in Supabase Auth → URL Configuration. */
 export const SUPABASE_AUTH_REDIRECT_ALLOWLIST = [
   "http://localhost:3000/reset-password",
   "http://127.0.0.1:3000/reset-password",
+  PRODUCTION_PASSWORD_RESET_URL,
   "https://nacmenu.netlify.app/reset-password",
   "https://nac-khobar-reviews.netlify.app/reset-password",
   "https://nacriyadh.netlify.app/reset-password",
@@ -16,15 +20,23 @@ export const SUPABASE_AUTH_REDIRECT_ALLOWLIST = [
   "https://nacos.netlify.app/reset-password",
 ];
 
+function isLocalDevOrigin(origin = "") {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(String(origin).trim());
+}
+
 export function getPasswordResetRedirectUrl() {
   const explicit = process.env.REACT_APP_AUTH_RESET_URL;
   if (explicit && String(explicit).trim()) {
     return String(explicit).trim().replace(/\/$/, "");
   }
   if (typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin.replace(/\/$/, "")}/reset-password`;
+    const origin = window.location.origin.replace(/\/$/, "");
+    if (isLocalDevOrigin(origin)) {
+      return `${origin}/reset-password`;
+    }
+    return PRODUCTION_PASSWORD_RESET_URL;
   }
-  return DEFAULT_LOCAL_RESET;
+  return process.env.NODE_ENV === "development" ? DEFAULT_LOCAL_RESET : PRODUCTION_PASSWORD_RESET_URL;
 }
 
 export async function requestPasswordResetEmail(supabase, email) {
@@ -35,8 +47,9 @@ export async function requestPasswordResetEmail(supabase, email) {
   if (!trimmed) {
     return { ok: false, error: "Enter your email address." };
   }
+  const redirectTo = getPasswordResetRedirectUrl();
   const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
-    redirectTo: getPasswordResetRedirectUrl(),
+    redirectTo,
   });
   if (error) {
     return { ok: false, error: error.message || "Could not send reset email." };

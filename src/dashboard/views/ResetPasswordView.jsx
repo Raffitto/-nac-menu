@@ -74,7 +74,7 @@ export default function ResetPasswordView() {
     setPhase("success");
   };
 
-  const goHome = () => {
+  const goToAdminLogin = () => {
     window.location.href = "/";
   };
 
@@ -119,8 +119,8 @@ export default function ResetPasswordView() {
               <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
               {error}
             </p>
-            <button type="button" className="nac-filter-action" onClick={goHome} style={{ marginTop: "1rem" }}>
-              Back to NAC OS
+            <button type="button" className="nac-filter-action" onClick={goToAdminLogin} style={{ marginTop: "1rem" }}>
+              Back to admin login
             </button>
           </>
         )}
@@ -162,10 +162,10 @@ export default function ResetPasswordView() {
           <>
             <p style={{ color: "#4ecdc4", display: "flex", gap: 8, alignItems: "flex-start", lineHeight: 1.55 }}>
               <CheckCircle2 size={18} style={{ flexShrink: 0, marginTop: 2 }} />
-              Password updated. Sign in with your new password from NAC OS → Settings.
+              Password updated. Sign in with your new password on the admin login screen.
             </p>
-            <button type="button" className="nac-filter-action" onClick={goHome} style={{ marginTop: "1rem", width: "100%" }}>
-              Continue to NAC OS
+            <button type="button" className="nac-filter-action" onClick={goToAdminLogin} style={{ marginTop: "1rem", width: "100%" }}>
+              Continue to admin login
             </button>
           </>
         )}
