@@ -91,8 +91,10 @@ export default function SettingsView() {
             <button type="submit" className="nac-filter-action" disabled={busy} style={{ marginTop: "0.5rem" }}>
               {busy ? "Signing in…" : "Sign in"}
             </button>
-            <AuthForgotPassword email={email} onEmailChange={setEmail} />
           </form>
+        )}
+        {isSupabaseConfigured() && !session && (
+          <AuthForgotPassword email={email} onEmailChange={setEmail} />
         )}
       </div>
     </motion.div>

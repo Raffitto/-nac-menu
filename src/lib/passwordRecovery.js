@@ -3,6 +3,8 @@
  * RBAC is email-based only; password reset does not change roles or branch scope.
  */
 
+import { supabase } from "./supabase";
+
 const DEFAULT_LOCAL_RESET = "http://localhost:3000/reset-password";
 
 /** Canonical production reset page — must match Supabase Auth → Redirect URLs. */
@@ -55,6 +57,15 @@ export async function requestPasswordResetEmail(supabase, email) {
     return { ok: false, error: error.message || "Could not send reset email." };
   }
   return { ok: true };
+}
+
+/** Forgot-password UI entry — logs result for debugging submit flow. */
+export async function sendPasswordRecovery(email) {
+  const trimmed = String(email || "").trim().toLowerCase();
+  console.log("Sending reset email to:", trimmed);
+  const result = await requestPasswordResetEmail(supabase, trimmed);
+  console.log("Password reset result:", result);
+  return result;
 }
 
 export async function hydrateRecoverySession(supabase) {

@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mail, CheckCircle2 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
-import { requestPasswordResetEmail } from "../../lib/passwordRecovery";
+import { sendPasswordRecovery } from "../../lib/passwordRecovery";
 
 const inputStyle = {
   width: "100%",
@@ -14,8 +13,11 @@ const inputStyle = {
   color: "#f9f9f7",
 };
 
+const SUCCESS_MESSAGE =
+  "Reset link sent. Please check your inbox and junk folder.";
+
 /**
- * Inline forgot-password flow — Supabase email recovery only.
+ * Forgot-password panel — must render OUTSIDE the login <form> (no nested forms).
  */
 export default function AuthForgotPassword({
   email = "",
@@ -32,25 +34,43 @@ export default function AuthForgotPassword({
   const value = onEmailChange ? email : localEmail;
   const setValue = onEmailChange || setLocalEmail;
 
-  const sendReset = async (e) => {
-    e.preventDefault();
+  const sendReset = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
     const trimmed = String(value || "").trim();
     if (!trimmed) {
       setError("Enter your email address.");
       return;
     }
+
     setBusy(true);
     setError("");
     setSent(false);
-    const result = await requestPasswordResetEmail(supabase, trimmed);
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error || "Could not send reset email.");
-      return;
+
+    try {
+      const result = await sendPasswordRecovery(trimmed);
+      if (!result.ok) {
+        setError(result.error || "Could not send reset email.");
+        return;
+      }
+      setSent(true);
+      if (onEmailChange) onEmailChange(trimmed);
+      else setLocalEmail(trimmed);
+    } catch (err) {
+      setError(err?.message || "Could not send reset email.");
+    } finally {
+      setBusy(false);
     }
-    setSent(true);
-    if (onEmailChange) onEmailChange(trimmed);
-    else setLocalEmail(trimmed);
+  };
+
+  const handleCancel = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (busy) return;
+    setOpen(false);
+    setError("");
+    setSent(false);
   };
 
   if (!open) {
@@ -58,7 +78,13 @@ export default function AuthForgotPassword({
       <button
         type="button"
         className={linkClassName}
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+          setError("");
+          setSent(false);
+        }}
         style={{
           background: "none",
           border: "none",
@@ -68,6 +94,7 @@ export default function AuthForgotPassword({
           cursor: "pointer",
           textDecoration: "underline",
           textUnderlineOffset: 3,
+          marginTop: "0.75rem",
         }}
       >
         Forgot password?
@@ -81,8 +108,18 @@ export default function AuthForgotPassword({
       initial={{ opacity: 0, height: 0 }}
       animate={{ opacity: 1, height: "auto" }}
       style={{ marginTop: "0.85rem", paddingTop: "0.85rem", borderTop: "1px solid rgba(255,255,255,0.08)" }}
+      onClick={(event) => event.stopPropagation()}
     >
-      <p style={{ margin: "0 0 0.65rem", fontSize: "0.82rem", color: "rgba(249,249,247,0.55)", display: "flex", alignItems: "center", gap: 6 }}>
+      <p
+        style={{
+          margin: "0 0 0.65rem",
+          fontSize: "0.82rem",
+          color: "rgba(249,249,247,0.55)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
         <Mail size={14} />
         Reset via email
       </p>
@@ -94,24 +131,36 @@ export default function AuthForgotPassword({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             style={{ fontSize: "0.85rem", color: "#4ecdc4", lineHeight: 1.5 }}
+            role="status"
           >
             <CheckCircle2 size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
-            If an account exists for <strong>{String(value || "").trim()}</strong>, a reset link is on its way. Check spam if needed.
+            {SUCCESS_MESSAGE}
           </motion.div>
         ) : (
-          <motion.form key="form" onSubmit={sendReset}>
+          <motion.form
+            key="form"
+            onSubmit={sendReset}
+            onClick={(event) => event.stopPropagation()}
+          >
             <label style={{ display: "block", marginBottom: "0.65rem" }}>
-              <span style={{ fontSize: "0.75rem", color: "rgba(249,249,247,0.5)" }}>Account email</span>
+              <span style={{ fontSize: "0.75rem", color: "rgba(249,249,247,0.5)" }}>
+                Account email
+              </span>
               <input
                 type="email"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 required
                 autoComplete="username"
+                disabled={busy}
                 style={inputStyle}
               />
             </label>
-            {error && <p style={{ color: "#f5a623", fontSize: "0.85rem", margin: "0 0 0.5rem" }}>{error}</p>}
+            {error ? (
+              <p style={{ color: "#f5a623", fontSize: "0.85rem", margin: "0 0 0.5rem" }} role="alert">
+                {error}
+              </p>
+            ) : null}
             <motion.div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               <button type="submit" className="nac-filter-action" disabled={busy}>
                 {busy ? "Sending…" : "Send reset link"}
@@ -119,11 +168,8 @@ export default function AuthForgotPassword({
               <button
                 type="button"
                 className="nac-filter-action"
-                onClick={() => {
-                  setOpen(false);
-                  setError("");
-                  setSent(false);
-                }}
+                onClick={handleCancel}
+                disabled={busy}
                 style={{ opacity: 0.85 }}
               >
                 Cancel

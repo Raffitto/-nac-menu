@@ -182,8 +182,8 @@ export default function NacAnalyticsSignIn({
             >
               {loginLoading ? "Signing in…" : "Continue"}
             </button>
-            <AuthForgotPassword email={email} onEmailChange={setEmail} />
           </form>
+          <AuthForgotPassword email={email} onEmailChange={setEmail} />
         </motion.div>
       </div>
     </div>
