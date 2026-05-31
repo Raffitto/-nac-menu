@@ -2,11 +2,14 @@
  * Human behavioral simulation engine — all NAC review QR branches.
  */
 
+import { canonName } from "./reviewGeneratorShared";
 import {
-  canonName,
-  withHonorificEN,
-  withHonorificAR,
-} from "./reviewGeneratorShared";
+  buildStaffMention,
+  getReviewRoleProfile,
+  ROLE_CATEGORIES,
+  selectStructureForRole,
+  validateRoleLanguage,
+} from "./reviewRoleProfiles";
 import {
   branchLabel,
   getBranchMenu,
@@ -64,6 +67,7 @@ const STRUCTURES = [
   "atmosphere_only",
   "food_only",
   "waiter_focus",
+  "leadership_focus",
   "coffee_only",
   "dessert_only",
   "quick_line",
@@ -202,7 +206,38 @@ function selectLengthClass() {
   return "long_story";
 }
 
-function selectPersonality() {
+function selectPersonality(role) {
+  const profile = getReviewRoleProfile(role);
+  if (profile.category === ROLE_CATEGORIES.EXECUTIVE) {
+    return pick([
+      "business_lunch",
+      "detail_oriented",
+      "regular",
+      "emotional",
+      "first_time",
+      "family_visitor",
+    ]);
+  }
+  if (profile.category === ROLE_CATEGORIES.MANAGEMENT) {
+    return pick([
+      "business_lunch",
+      "detail_oriented",
+      "regular",
+      "foodie",
+      "family_visitor",
+      "emotional",
+    ]);
+  }
+  if (profile.category === ROLE_CATEGORIES.SUPERVISORY) {
+    return pick([
+      "detail_oriented",
+      "regular",
+      "business_lunch",
+      "family_visitor",
+      "casual_young",
+      "foodie",
+    ]);
+  }
   return pick(PERSONALITIES);
 }
 
@@ -222,7 +257,10 @@ function isDrinkDessertOpener(line) {
   return /coffee|dessert|flat white|cappuccino|latte|قهوة|حلى|stay(ed)? for dessert/i.test(line);
 }
 
-function structuresForMeal(meal, personality, lengthClass) {
+function structuresForMeal(meal, personality, lengthClass, role) {
+  const roleStructure = selectStructureForRole(personality, lengthClass, meal, role);
+  if (roleStructure) return roleStructure;
+
   let pool = [...STRUCTURES];
   if (meal.period === "dinner") {
     pool = pool.filter((s) => s !== "coffee_only" && s !== "dessert_only");
@@ -244,8 +282,8 @@ function structuresForMeal(meal, personality, lengthClass) {
   return pick(pool);
 }
 
-function selectStructure(personality, lengthClass, meal) {
-  return structuresForMeal(meal, personality, lengthClass);
+function selectStructure(personality, lengthClass, meal, role) {
+  return structuresForMeal(meal, personality, lengthClass, role);
 }
 
 function openingsFor(personality, branchId, isAr, meal) {
@@ -355,62 +393,6 @@ const OPENINGS_CASUAL_EN = [
   "Pretty cozy.",
 ];
 
-function staffDisplayName(staff, role, isAr) {
-  const roleL = String(role || "").toLowerCase();
-  if (roleL === "receptionist") {
-    return isAr ? withHonorificAR(staff) : withHonorificEN(staff);
-  }
-  return staff;
-}
-
-function buildWaiterMention(staff, role, personality, isAr) {
-  if (!staff || staff === "Team") {
-    return isAr ? "الفريق كان متعاون." : "The team was helpful.";
-  }
-  const name = staffDisplayName(staff, role, isAr);
-  const plain = staff;
-  const honorEn = withHonorificEN(staff);
-  const honorAr = withHonorificAR(staff);
-
-  if (isAr) {
-    const lines = [
-      `${honorAr} كان منتبهاً.`,
-      `${name} خلّى الزيارة أسهل.`,
-      `شكراً ${honorAr} على الخدمة.`,
-      `${name} تابع معنا بشكل ممتاز.`,
-      `تعامل ${name} كان راقي.`,
-      `مكان جميل والخدمة ممتازة شكراً لـ${honorAr}`,
-      `${plain} كان لطيف جداً.`,
-      `${name} ساعدنا من أول لحظة.`,
-    ];
-    return pick(lines);
-  }
-
-  const en = [
-    `${plain} was very attentive.`,
-    `${plain} was very attentive honestly`,
-    `Thanks to ${honorEn} for the service.`,
-    `${plain} made the experience smooth.`,
-    `${honorEn} handled our table very professionally.`,
-    `${plain} kept checking on us at the right time.`,
-    `Shoutout to ${plain} — solid service.`,
-    `${plain} was sweet.`,
-    `Really appreciated ${plain} today.`,
-    `${plain} took care of everything.`,
-    `nice place for breakfast ${plain.toLowerCase()} was great`,
-    `Loved the vibe. ${plain} was on it.`,
-  ];
-
-  if (personality === "typo_heavy" || personality === "casual_young") {
-    en.push(`${plain.toLowerCase()} was very attentive honestly`);
-    en.push(`${plain} was great lol`);
-  }
-  if (personality === "minimalist") {
-    return pick([`${plain} was great.`, `${plain} — good service.`, `${plain} 👍`]);
-  }
-  return pick(en);
-}
-
 function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
   const genericPool = genericFoodPool(isAr, meal);
   if (useGeneric || chance(meal.period === "breakfast" ? 0.45 : 0.58)) {
@@ -500,21 +482,6 @@ function buildClosing(personality, isAr) {
     return isAr ? pick(calmAr.slice(0, 2)) : pick(calmEn.slice(0, 2));
   }
   return isAr ? pick([...calmAr, ...excitedAr]) : pick([...calmEn, ...excitedEn]);
-}
-
-function buildReceptionLine(staff, isAr) {
-  const name = isAr ? withHonorificAR(staff) : withHonorificEN(staff);
-  return isAr
-    ? pick([
-        `${name} رحبت فينا بحرارة.`,
-        `${name} رتبت الجلوس بسرعة.`,
-        `الاستقبال مع ${name} كان سلس.`,
-      ])
-    : pick([
-        `${name} welcomed us warmly.`,
-        `${name} got us seated quickly.`,
-        `${name} handled check-in smoothly.`,
-       ]);
 }
 
 function buildManagerSnippet(branchId) {
@@ -714,7 +681,7 @@ function staffNamePresent(text, staff) {
 
 function ensureStaffMention(text, staff, role, personality, isAr) {
   if (staffNamePresent(text, staff)) return text;
-  const mention = buildWaiterMention(staff, role, personality, isAr);
+  const mention = buildStaffMention(staff, role, personality, isAr);
   const pos = r(3);
   if (pos === 0) return `${mention} ${text}`;
   if (pos === 1) {
@@ -742,6 +709,7 @@ function contentFlags(meal, personality, structure, lengthClass) {
   let includeFood =
     structure !== "atmosphere_only" &&
     structure !== "waiter_focus" &&
+    structure !== "leadership_focus" &&
     structure !== "quick_line" &&
     chance(lengthClass === "very_short" ? (isBreakfast ? 0.55 : 0.45) : 0.78);
 
@@ -787,8 +755,9 @@ function buildReviewDraft(ctx) {
 
   const openerPool = openingsFor(personality, branchId, isAr, meal);
   const opener = pick(openerPool);
-  const waiterLine = buildWaiterMention(staff, role, personality, isAr);
-  const roleL = String(role || "").toLowerCase();
+  const staffLine = buildStaffMention(staff, role, personality, isAr);
+  const profile = getReviewRoleProfile(role);
+  const roleKey = profile.roleKey;
 
   const blocks = [];
   const { includeFood, includeCoffee, includeDessert, includeAtmo, includeClose } = contentFlags(
@@ -811,12 +780,14 @@ function buildReviewDraft(ctx) {
     blocks.push(opener);
   }
 
-  if (structure === "service_first" || roleL === "receptionist") {
-    if (roleL === "receptionist" && staff !== "Team") blocks.push(buildReceptionLine(staff, isAr));
-    else {
-      blocks.push(waiterLine);
-      waiterAdded = true;
-    }
+  if (structure === "leadership_focus") {
+    blocks.push(staffLine);
+    waiterAdded = true;
+  }
+
+  if (structure === "service_first" || (profile.preferServiceFirst && chance(0.7))) {
+    blocks.push(staffLine);
+    waiterAdded = true;
   }
 
   if (includeFood && structure !== "food_first") {
@@ -827,8 +798,13 @@ function buildReviewDraft(ctx) {
   if (includeDessert) blocks.push(buildDessertLine(menu, isAr));
   if (includeAtmo) blocks.push(buildAtmosphereLine(personality, isAr));
 
-  if (!waiterAdded && structure !== "service_first" && roleL !== "receptionist") {
-    blocks.push(waiterLine);
+  if (
+    !waiterAdded &&
+    structure !== "service_first" &&
+    structure !== "leadership_focus" &&
+    !(roleKey === "receptionist" && waiterAdded)
+  ) {
+    blocks.push(staffLine);
     waiterAdded = true;
   }
 
@@ -838,7 +814,7 @@ function buildReviewDraft(ctx) {
     );
   }
 
-  if (chance(0.18)) {
+  if (chance(0.18) && profile.allowManagerSnippet) {
     const mgr = buildManagerSnippet(branchId);
     if (mgr) blocks.push(mgr);
   }
@@ -851,7 +827,7 @@ function buildReviewDraft(ctx) {
       : dedupeBlocks(blocks.filter(Boolean));
 
   if (lengthClass === "very_short") {
-    ordered = shuffleParts([waiterLine, ...ordered.filter((b) => b !== waiterLine)]).slice(0, r(2) === 0 ? 2 : 3);
+    ordered = shuffleParts([staffLine, ...ordered.filter((b) => b !== staffLine)]).slice(0, r(2) === 0 ? 2 : 3);
   }
 
   if (lengthClass === "long_story") {
@@ -865,11 +841,17 @@ function buildReviewDraft(ctx) {
   return { text, opener };
 }
 
-function validateReview(text, staff, recentGlobal, debug) {
+function validateReview(text, staff, recentGlobal, debug, role) {
   const blocked = blockedPhrasesIn(text);
   if (blocked.length) {
     debug.blockedPhrases = blocked;
     return { ok: false, reason: "cooldown", score: 1 };
+  }
+
+  const roleLang = validateRoleLanguage(text, role);
+  if (!roleLang.ok) {
+    debug.roleLanguage = roleLang.reason;
+    return { ok: false, reason: roleLang.reason, score: 1 };
   }
 
   const open = openingKey(text);
@@ -937,14 +919,17 @@ export function generateHumanizedReview(opts = {}) {
   let lastDebug = {};
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const personality = selectPersonality();
+    const personality = selectPersonality(role);
     const lengthClass = selectLengthClass();
-    const structure = selectStructure(personality, lengthClass, meal);
+    const structure = selectStructure(personality, lengthClass, meal, role);
+    const roleProfile = getReviewRoleProfile(role);
 
     const debug = {
       personality,
       structureType: structure,
       lengthClass,
+      roleCategory: roleProfile.category,
+      roleKey: roleProfile.roleKey,
       mealLogic: meal,
       branchId,
       hour,
@@ -965,7 +950,7 @@ export function generateHumanizedReview(opts = {}) {
       meal,
     });
 
-    const validation = validateReview(draft.text, staff, recentGlobal, debug);
+    const validation = validateReview(draft.text, staff, recentGlobal, debug, role);
     debug.validation = validation.reason || "ok";
     lastDebug = debug;
 

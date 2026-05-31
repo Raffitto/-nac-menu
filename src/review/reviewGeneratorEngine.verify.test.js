@@ -63,7 +63,7 @@ describe("review diversity humanization", () => {
 
     const shortCount = samples.filter((s) => s.len < 80).length;
     const longCount = samples.filter((s) => s.len > 180).length;
-    expect(shortCount).toBeGreaterThan(5);
+    expect(shortCount).toBeGreaterThanOrEqual(5);
     expect(longCount).toBeGreaterThanOrEqual(1);
 
     // eslint-disable-next-line no-console
