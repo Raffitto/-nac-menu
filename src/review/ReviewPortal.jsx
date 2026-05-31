@@ -13,6 +13,10 @@ import {
   buildReviewTrackingContext,
   parseReviewPortalParams,
 } from "../lib/reviewPortalParams";
+import {
+  getStaffLookupKey,
+  resolveReviewPortalStaff,
+} from "../lib/reviewPortalStaffResolve";
 import { fetchReviewPortalStaff } from "../dashboard/utils/unifiedIntelligenceApi";
 import {
   canonName,
@@ -45,6 +49,7 @@ const COPY = {
 const ROLE_LABELS = {
   rm: { en: "Restaurant Manager", ar: "مدير المطعم" },
   arm: { en: "Assistant Restaurant Manager", ar: "مساعد مدير المطعم" },
+  gm: { en: "General Manager", ar: "المدير العام" },
   supervisor: { en: "Supervisor", ar: "مشرف" },
   receptionist: { en: "Receptionist", ar: "موظفة استقبال" },
   waiter: { en: "Waiter", ar: "نادل" },
@@ -67,6 +72,8 @@ export default function ReviewPortal() {
   const [text, setText] = useState("");
   const [staffName, setStaffName] = useState(portalParams.employeeName || "");
   const [staffRole, setStaffRole] = useState(portalParams.employeeRole || "");
+  const [staffReady, setStaffReady] = useState(false);
+  const trackingFiredRef = useRef(false);
 
   const resolvedStaff = staffName || portalParams.employeeName || "";
   const resolvedRole = staffRole || portalParams.employeeRole || "";
@@ -114,37 +121,61 @@ export default function ReviewPortal() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const lookupKey = getStaffLookupKey(portalParams);
+      if (!lookupKey) {
+        if (!cancelled) setStaffReady(true);
+        return;
+      }
+      try {
+        const rows = await fetchReviewPortalStaff(portalParams.normalizedBranch);
+        if (cancelled) return;
+        const resolved = resolveReviewPortalStaff(portalParams, rows);
+        if (resolved.matched) {
+          setStaffName(resolved.employeeName || "");
+          setStaffRole(resolved.employeeRole || "");
+        }
+      } catch {
+        /* keep URL fallback */
+      } finally {
+        if (!cancelled) setStaffReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [portalParams]);
+
+  useEffect(() => {
+    if (!staffReady || trackingFiredRef.current) return;
+    trackingFiredRef.current = true;
+
     console.log("PARSED URL PARAMS", {
       raw: typeof window !== "undefined" ? window.location.search : "",
       employeeName: portalParams.employeeName,
       employeeRole: portalParams.employeeRole,
       storeName: portalParams.storeName,
       normalizedBranch: portalParams.normalizedBranch,
+      resolvedStaff: staffName,
+      resolvedRole: staffRole,
     });
-    console.log("REVIEW TRACKING CONTEXT (mount)", trackingCtx);
+    console.log("REVIEW TRACKING CONTEXT (resolved)", trackingCtx);
 
     (async () => {
       await runReviewEventsInsertSelfTest(portalParams.normalizedBranch);
       trackReviewQrScan(trackingCtx);
       trackReviewPageOpen(trackingCtx);
     })();
-
-    if (portalParams.slug && !staffName && !portalParams.employeeName) {
-      fetchReviewPortalStaff(portalParams.normalizedBranch)
-        .then((rows) => {
-          const match = rows.find((r) => r.url_slug === portalParams.slug);
-          if (match) {
-            setStaffName(match.employee_name);
-            setStaffRole(match.role);
-          }
-        })
-        .catch(() => {});
-    }
-  }, [portalParams, trackingCtx, staffName]);
+  }, [staffReady, portalParams, staffName, staffRole, trackingCtx]);
 
   const scanTimeRef = useRef(new Date());
+  const initialGenerateRef = useRef(false);
 
   useEffect(() => {
+    if (!staffReady) return;
     const generated = generatePersonalizedReview({
       staffName: displayName,
       role: resolvedRole,
@@ -153,9 +184,12 @@ export default function ReviewPortal() {
       scanTime: scanTimeRef.current,
     });
     setText(generated);
-    trackReviewGenerate(generated.length, { ...ctx, language });
+    if (!initialGenerateRef.current) {
+      initialGenerateRef.current = true;
+      trackReviewGenerate(generated.length, { ...ctx, language });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayName, resolvedRole, portalParams.normalizedBranch]);
+  }, [staffReady, displayName, resolvedRole, portalParams.normalizedBranch]);
 
   const runGenerate = useCallback(() => {
     const generated = generatePersonalizedReview({
