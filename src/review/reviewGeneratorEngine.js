@@ -8,6 +8,7 @@ import {
   getReviewRoleProfile,
   ROLE_CATEGORIES,
   selectStructureForRole,
+  sanitizeReviewPunctuation,
   validateRoleLanguage,
 } from "./reviewRoleProfiles";
 import {
@@ -210,22 +211,24 @@ function selectPersonality(role) {
   const profile = getReviewRoleProfile(role);
   if (profile.category === ROLE_CATEGORIES.EXECUTIVE) {
     return pick([
-      "business_lunch",
-      "detail_oriented",
-      "regular",
-      "emotional",
-      "first_time",
       "family_visitor",
+      "regular",
+      "first_time",
+      "emotional",
+      "foodie",
+      "casual_young",
+      "minimalist",
     ]);
   }
   if (profile.category === ROLE_CATEGORIES.MANAGEMENT) {
     return pick([
-      "business_lunch",
-      "detail_oriented",
-      "regular",
-      "foodie",
       "family_visitor",
+      "regular",
+      "first_time",
+      "foodie",
       "emotional",
+      "casual_young",
+      "minimalist",
     ]);
   }
   if (profile.category === ROLE_CATEGORIES.SUPERVISORY) {
@@ -415,11 +418,11 @@ function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
 
   if (personality === "foodie" && chance(0.4)) {
     return isAr
-      ? `جربنا ${a} و ${b} — ممتازين.`
+      ? `جربنا ${a} و ${b}, ممتازين.`
       : pick([
           `The ${a} was crazy good.`,
           `${a} and ${b} both slapped honestly.`,
-          `Ordered ${a} with ${b} — no regrets.`,
+          `Ordered ${a} with ${b}, no regrets.`,
         ]);
   }
 
@@ -428,7 +431,7 @@ function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
     : [
         `The ${item} was really good.`,
         `${item.charAt(0).toUpperCase() + item.slice(1)} surprised us.`,
-        `Got the ${item} — worth it.`,
+        `Got the ${item}, worth it.`,
         `Sliders were crazy good lol`.replace("Sliders", item.includes("slider") ? "Sliders" : item),
       ];
   return pick(templates);
@@ -442,7 +445,7 @@ function buildCoffeeLine(menu, isAr) {
     : pick([
         `The ${d} was perfect.`,
         `Iced americano situation was on point.`,
-        `${d} — no notes.`,
+        `${d}, no notes.`,
         `Coffee (${d}) was great.`,
       ]);
 }
@@ -838,6 +841,7 @@ function buildReviewDraft(ctx) {
   text = applyHumanImperfections(text, personality, isAr, meal);
   text = ensureMealFoodMention(text, menu, meal, personality, isAr);
   text = ensureStaffMention(text, staff, role, personality, isAr);
+  text = sanitizeReviewPunctuation(text);
   return { text, opener };
 }
 

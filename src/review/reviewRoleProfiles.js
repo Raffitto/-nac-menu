@@ -12,7 +12,14 @@ export const ROLE_CATEGORIES = {
   EXECUTIVE: "executive",
 };
 
-/** Waiter-style phrases that must not appear in GM / executive reviews. */
+/** Roles that use Mr. / الأستاذ (gm, general manager, branch manager, restaurant manager, assistant manager). */
+const HONORIFIC_ROLE_KEYS = new Set([
+  "general_manager",
+  "restaurant_manager",
+  "assistant_manager",
+]);
+
+/** Waiter-style phrases that must not appear in GM / management reviews. */
 export const FORBIDDEN_EXECUTIVE_PHRASES = [
   /\btaking orders?\b/i,
   /\btook (our |the )?order\b/i,
@@ -30,6 +37,34 @@ export const FORBIDDEN_EXECUTIVE_PHRASES = [
   /\bwas sweet\b/i,
   /\bvery attentive\b/i,
   /\battentive team\b/i,
+];
+
+/** Consultant / operational-report tone — reject and regenerate. */
+export const CONSULTANT_LANGUAGE_PATTERNS = [
+  /\boperational excellence\b/i,
+  /\bdemonstrated (excellent |strong )?leadership\b/i,
+  /\bexcellent leadership\b/i,
+  /\bstrong leadership\b/i,
+  /\bstrong operational\b/i,
+  /\boperational control\b/i,
+  /\bguest satisfaction\b/i,
+  /\bhospitality leadership\b/i,
+  /\bservice standards were\b/i,
+  /\bstandards (were|never|stayed) (high|clear)\b/i,
+  /\bguest-focused culture\b/i,
+  /\bcoordinated execution\b/i,
+  /\bteam coordination\b/i,
+  /\bteam operated\b/i,
+  /\bthe team executed\b/i,
+  /\boperations felt\b/i,
+  /\bprofessionally run\b/i,
+  /\bprofessionally managed\b/i,
+  /\breflect(ed)? professional management\b/i,
+  /\bculture (on the floor|was evident)\b/i,
+  /\bquality of the operation\b/i,
+  /\bindustrial\b/i,
+  /\bcompliance\b/i,
+  /\bleadership\b/i,
 ];
 
 const ROLE_KEY_ALIASES = {
@@ -85,6 +120,23 @@ export function resolveRoleCategory(role) {
   return ROLE_CATEGORIES.FRONTLINE;
 }
 
+export function isManagementHonorificRole(role) {
+  return HONORIFIC_ROLE_KEYS.has(normalizeRoleKey(role));
+}
+
+export function managementHonorificPresent(text) {
+  if (/[\u0600-\u06FF]/.test(text)) return /الأستاذ/.test(text);
+  return /\bMr\.\s+\S/i.test(text);
+}
+
+/** Mr. Name (EN) / الأستاذ Name (AR) for GM and restaurant management roles. */
+export function managementDisplayName(staff, isAr) {
+  if (!staff || staff === "Team") {
+    return isAr ? "الفريق" : "the team";
+  }
+  return isAr ? `الأستاذ ${staff}` : `Mr. ${staff}`;
+}
+
 export function getReviewRoleProfile(role) {
   const roleKey = normalizeRoleKey(role);
   const category = resolveRoleCategory(role);
@@ -95,30 +147,23 @@ export function getReviewRoleProfile(role) {
     preferServiceFirst: false,
     allowManagerSnippet: false,
     structurePool: null,
-    leadershipStructures: ["leadership_focus", "story_long", "atmosphere_only", "mixed_scatter"],
+    guestManagementStructures: ["mixed_scatter", "story_long", "atmosphere_only", "service_first", "food_first"],
   };
 
   switch (category) {
     case ROLE_CATEGORIES.EXECUTIVE:
       return {
         ...base,
-        preferServiceFirst: true,
+        preferServiceFirst: chance(0.5),
         allowManagerSnippet: false,
-        structurePool: base.leadershipStructures,
+        structurePool: base.guestManagementStructures,
       };
     case ROLE_CATEGORIES.MANAGEMENT:
       return {
         ...base,
-        preferServiceFirst: chance(0.55),
+        preferServiceFirst: chance(0.45),
         allowManagerSnippet: false,
-        structurePool: [
-          "leadership_focus",
-          "service_first",
-          "story_long",
-          "mixed_scatter",
-          "atmosphere_only",
-          "food_first",
-        ],
+        structurePool: [...base.guestManagementStructures, "quick_line"],
       };
     case ROLE_CATEGORIES.SUPERVISORY:
       return {
@@ -203,7 +248,7 @@ function buildFrontlineMention(staff, roleKey, personality, isAr) {
     `${plain} made the experience smooth.`,
     `${honorEn} handled our table very professionally.`,
     `${plain} kept checking on us at the right time.`,
-    `Shoutout to ${plain} — solid service.`,
+    `Shoutout to ${plain}, solid service.`,
     `${plain} was friendly and knowledgeable about the menu.`,
     `Really appreciated ${plain} today.`,
     `${plain} took care of everything.`,
@@ -216,7 +261,7 @@ function buildFrontlineMention(staff, roleKey, personality, isAr) {
     en.push(`${plain} was great lol`);
   }
   if (personality === "minimalist") {
-    return pick([`${plain} was great.`, `${plain} — good service.`, `${plain} 👍`]);
+    return pick([`${plain} was great.`, `${plain}, good service.`, `${plain} 👍`]);
   }
   return pick(en);
 }
@@ -244,84 +289,78 @@ function buildSupervisoryMention(staff, personality, isAr) {
     `${plain} had a strong floor presence and kept service flowing smoothly.`,
     `${honorEn} coordinated the team well and responded quickly when we needed anything.`,
     `${plain} supported the staff visibly and made sure guests were taken care of.`,
-    `Service stayed organized during a busy period — ${plain} handled it professionally.`,
+    `Service stayed organized during a busy period. ${plain} handled it well.`,
     `${plain} resolved a small issue quickly and kept the atmosphere calm.`,
   ];
   if (personality === "minimalist") {
-    return pick([`${plain} kept the floor running smoothly.`, `${plain} — solid supervision.`]);
+    return pick([`${plain} kept the floor running smoothly.`, `${plain}, solid supervision.`]);
   }
   return pick(en);
+}
+
+function buildGuestManagementMention(staff, personality, isAr, tier) {
+  const name = managementDisplayName(staff, isAr);
+  const isGm = tier === "executive";
+
+  if (!staff || staff === "Team") {
+    return isAr
+      ? "المطعم كان مرتب والخدمة سلسة."
+      : "The restaurant felt organized and service was smooth.";
+  }
+
+  if (isAr) {
+    const arGm = [
+      `${name} كان موجود في الصالة والزيارة كانت مريحة. الفريق شغال سوا والخدمة ما تأخرت.`,
+      `زيارة حلوة. ${name} ظهر في الصالة والمطعم كان مرتب حتى مع الزحمة.`,
+      `${name} رحّب فينا وخلّى الجو مريح. حسّينا بالترحيب من أول دقيقة.`,
+      `وقت الزحمة والكل ماشي بسلاسة. ${name} كان موجود والطاقم متعاون.`,
+      `تجربة ناجحة. ${name} واضح في الصالة والخدمة كانت ثابتة.`,
+    ];
+    const arRm = [
+      `${name} كان حاضر والمطعم مرتب. الخدمة سلسة والفريق متعاون.`,
+      `${name} تابع الضيوف والجو مريح. نرجع أكيد.`,
+      `زيارة ممتازة. ${name} خلّى التجربة منظمة والخدمة ما تأخرت.`,
+      `${name} كان موجود والطاقم شغال بانسجام.`,
+    ];
+    return pick(isGm ? arGm : arRm);
+  }
+
+  const enGm = [
+    `${name} was around during our visit and the restaurant felt organized. Staff worked well together and service stayed smooth even when it got busy.`,
+    `Great evening. ${name} had a visible presence on the floor and everyone seemed comfortable. We felt welcomed from the start.`,
+    `Busy night but everything stayed calm. ${name} was checking in with guests and the team kept up. Would come back.`,
+    `${name} was on the floor and the place ran smoothly. Food came on time and the vibe was relaxed. Happy we came here.`,
+    `Really nice visit. ${name} was around and you could tell the staff worked well together. Service felt easy, not rushed.`,
+    `Loved it here. ${name} was visible during a busy period and guests still felt looked after. Definitely returning.`,
+    `${name} made the visit feel relaxed. Restaurant felt organized and the team was friendly throughout.`,
+    `We felt welcomed right away. ${name} was present on the floor and service stayed smooth the whole meal.`,
+  ];
+
+  const enRm = [
+    `The restaurant felt organized and ${name} was around when we needed anything. Staff worked well together.`,
+    `${name} kept things running smoothly. Service timing was good and we felt welcomed.`,
+    `Solid visit. ${name} was on the floor and the team seemed in sync. Would return.`,
+    `${name} was present and the meal flowed nicely. Place felt calm even with other tables full.`,
+    `Good experience. ${name} checked in with guests and the restaurant felt well run.`,
+    `${name} was around and service never felt chaotic. Friendly team, smooth night.`,
+  ];
+
+  const pool = isGm ? enGm : enRm;
+  if (personality === "minimalist") {
+    return pick([
+      `${name} was around. Smooth visit, would return.`,
+      `Good night. ${name} on the floor, staff worked well.`,
+    ]);
+  }
+  return pick(pool);
 }
 
 function buildManagementMention(staff, personality, isAr) {
-  if (!staff || staff === "Team") {
-    return isAr
-      ? "كان الإدارة واضحة والمطعم مرتب."
-      : "The restaurant felt well managed and professionally run.";
-  }
-  const plain = staff;
-  const honorEn = withHonorificEN(staff);
-
-  if (isAr) {
-    return pick([
-      `${plain} أدار التجربة باحتراف ووضوح في المعايير.`,
-      `تنظيم ${plain} للفريق كان واضح والخدمة ثابتة.`,
-      `${plain} اهتم برضا الضيوف وظهرت جودة التشغيل.`,
-      `المطعم كان مرتباً و${plain} قاد الخدمة بشكل ممتاز.`,
-    ]);
-  }
-
-  const en = [
-    `The restaurant was well organized and professionally managed. ${plain} kept service timing and staff coordination on point.`,
-    `${plain} showed strong hospitality leadership — guest needs were handled exceptionally well.`,
-    `${honorEn} maintained clear service standards and the team performed consistently.`,
-    `Operations felt controlled and guest-focused under ${plain}'s management.`,
-    `${plain} balanced leadership and attention to detail — a smooth visit overall.`,
-    `Service standards were high and ${plain} made sure the team delivered consistently.`,
-  ];
-  if (personality === "minimalist") {
-    return pick([
-      `${plain} ran a tight, professional service.`,
-      `Well managed — thanks to ${plain}.`,
-    ]);
-  }
-  return pick(en);
+  return buildGuestManagementMention(staff, personality, isAr, "management");
 }
 
 function buildExecutiveMention(staff, personality, isAr) {
-  if (!staff || staff === "Team") {
-    return isAr
-      ? "القيادة التشغيلية كانت واضحة والتجربة احترافية."
-      : "Leadership was visible and the operation felt professionally run.";
-  }
-  const plain = staff;
-
-  if (isAr) {
-    return pick([
-      `${plain} كان حاضراً في الصالة وأظهر قيادة ممتازة. الفريق اشتغل بكفاءة والخدمة بقيت ثابتة حتى في وقت الزحمة.`,
-      `${plain} حافظ على معايير عالية ورضا الضيوف كان واضحاً. التجربة عكست إدارة تشغيلية قوية.`,
-      `ثقافة الضيافة واضحة تحت قيادة ${plain} — تنظيم ممتاز وتنسيق فريق محترف.`,
-      `${plain} قاد التشغيل باحتراف وخلّى الأجواء مريحة والخدمة منظمة.`,
-    ]);
-  }
-
-  const en = [
-    `${plain} maintained a strong presence throughout the restaurant and demonstrated excellent leadership. The team operated efficiently, service remained consistent during busy periods, and guest satisfaction was clearly a priority.`,
-    `${plain} showed visible management on the floor and strong operational control. Service standards were high and the team coordination was impressive.`,
-    `The overall experience reflected professional management — ${plain} kept operations smooth and guest-focused culture evident.`,
-    `${plain} led with professionalism and problem-solving was handled discreetly. Atmosphere and service quality both felt intentional.`,
-    `Operational excellence was clear: ${plain} ensured the team executed well and the guest experience stayed polished throughout.`,
-    `${plain} demonstrated strong leadership and culture on the floor. Busy periods were handled calmly and standards never dropped.`,
-    `Guest experience felt prioritized under ${plain}'s leadership — organized service, a well-coordinated team, and a well-run restaurant.`,
-  ];
-
-  if (personality === "minimalist") {
-    return pick([
-      `${plain} showed excellent leadership — smooth operations and happy guests.`,
-      `Strong management presence from ${plain}. Professional throughout.`,
-    ]);
-  }
-  return pick(en);
+  return buildGuestManagementMention(staff, personality, isAr, "executive");
 }
 
 /** Role-specific staff mention (replaces generic waiter-only lines). */
@@ -345,11 +384,8 @@ export function selectStructureForRole(personality, lengthClass, meal, role) {
   const profile = getReviewRoleProfile(role);
 
   if (lengthClass === "very_short") {
-    if (profile.category === ROLE_CATEGORIES.EXECUTIVE) {
-      return pick(["leadership_focus", "quick_line"]);
-    }
-    if (profile.category === ROLE_CATEGORIES.MANAGEMENT) {
-      return pick(["leadership_focus", "quick_line", "service_first"]);
+    if (profile.category === ROLE_CATEGORIES.EXECUTIVE || profile.category === ROLE_CATEGORIES.MANAGEMENT) {
+      return pick(["quick_line", "mixed_scatter", "atmosphere_only"]);
     }
     const short = ["quick_line", "waiter_focus", "food_only"];
     if (meal.period !== "dinner") short.push("coffee_only");
@@ -358,7 +394,7 @@ export function selectStructureForRole(personality, lengthClass, meal, role) {
 
   if (lengthClass === "long_story") {
     if (profile.category === ROLE_CATEGORIES.EXECUTIVE || profile.category === ROLE_CATEGORIES.MANAGEMENT) {
-      return "leadership_focus";
+      return pick(["story_long", "mixed_scatter", "atmosphere_only"]);
     }
     return "story_long";
   }
@@ -369,7 +405,7 @@ export function selectStructureForRole(personality, lengthClass, meal, role) {
       pool = pool.filter((s) => s !== "coffee_only" && s !== "dessert_only");
     }
     if (personality === "business_lunch" && profile.category !== ROLE_CATEGORIES.FRONTLINE) {
-      return pick(["leadership_focus", "service_first", "atmosphere_only"]);
+      return pick(["mixed_scatter", "atmosphere_only", "service_first"]);
     }
     return pick(pool);
   }
@@ -377,14 +413,56 @@ export function selectStructureForRole(personality, lengthClass, meal, role) {
   return null;
 }
 
+/** Strip AI-style dashes and heavy semicolon chains. */
+export function sanitizeReviewPunctuation(text) {
+  let out = String(text || "")
+    .replace(/[\u2013\u2014]/g, ", ")
+    .replace(/\s*—\s*/g, ", ")
+    .replace(/\s*–\s*/g, ", ");
+
+  const semis = (out.match(/;/g) || []).length;
+  if (semis > 0) {
+    out = out.replace(/;/g, ".");
+  }
+
+  return out
+    .replace(/,\s*,/g, ",")
+    .replace(/\.\s*\./g, ".")
+    .replace(/,\s*\./g, ".")
+    .replace(/\s+/g, " ")
+    .replace(/ \./g, ".")
+    .trim();
+}
+
 export function containsForbiddenExecutiveLanguage(text) {
   return FORBIDDEN_EXECUTIVE_PHRASES.some((re) => re.test(text));
 }
 
+export function containsConsultantLanguage(text) {
+  return CONSULTANT_LANGUAGE_PATTERNS.some((re) => re.test(text));
+}
+
+export function containsAiPunctuation(text) {
+  return /[\u2013\u2014]/.test(text) || (text.match(/;/g) || []).length > 1;
+}
+
 export function validateRoleLanguage(text, role) {
   const profile = getReviewRoleProfile(role);
-  if (profile.category === ROLE_CATEGORIES.EXECUTIVE && containsForbiddenExecutiveLanguage(text)) {
+  const isGuestManagement =
+    profile.category === ROLE_CATEGORIES.EXECUTIVE ||
+    profile.category === ROLE_CATEGORIES.MANAGEMENT;
+
+  if (isGuestManagement && containsForbiddenExecutiveLanguage(text)) {
     return { ok: false, reason: "executive_waiter_phrase" };
+  }
+  if (isGuestManagement && containsConsultantLanguage(text)) {
+    return { ok: false, reason: "consultant_language" };
+  }
+  if (containsAiPunctuation(text)) {
+    return { ok: false, reason: "ai_punctuation" };
+  }
+  if (isManagementHonorificRole(role) && !managementHonorificPresent(text)) {
+    return { ok: false, reason: "missing_management_honorific" };
   }
   return { ok: true };
 }
