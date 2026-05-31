@@ -138,6 +138,45 @@ export function buildExportTableStyles(extra = {}) {
   };
 }
 
+/** PDF export headers: smaller type, wrap at spaces, avoid mid-word linebreaks. */
+export function applyExportTableHeadCellStyles(data) {
+  if (data.section !== "head") return;
+  const doc = data.doc;
+  const fontSize = 7;
+  data.cell.styles.fontSize = fontSize;
+  data.cell.styles.overflow = "linebreak";
+
+  const text = String(data.cell.raw ?? "").trim();
+  if (!text) return;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 1) {
+    data.cell.text = words;
+  }
+
+  const longest = words.reduce((a, b) => (a.length >= b.length ? a : b), "");
+  const font = data.cell.styles.font || "helvetica";
+  const fontStyle = data.cell.styles.fontStyle || "bold";
+  doc.setFont(font, fontStyle);
+  const scale = doc.internal.scaleFactor;
+  const wordWidth = (doc.getStringUnitWidth(longest) * fontSize) / scale;
+  const pad =
+    typeof data.cell.styles.cellPadding === "number"
+      ? data.cell.styles.cellPadding * 2
+      : (data.cell.styles.cellPadding?.left ?? 6) +
+        (data.cell.styles.cellPadding?.right ?? 6);
+  const minW = pad + wordWidth + 4;
+  const fixedWidth = data.cell.styles.cellWidth;
+  const cappedMin =
+    typeof fixedWidth === "number" ? Math.min(minW, fixedWidth) : minW;
+  if (cappedMin > data.cell.minWidth) {
+    data.cell.minWidth = cappedMin;
+  }
+  if (data.column && cappedMin > data.column.minWidth) {
+    data.column.minWidth = cappedMin;
+  }
+}
+
 export function applyExportTableRowStriping(data, rowIndex) {
   if (data.section !== "body") return;
   data.cell.styles.fillColor = rowIndex % 2 === 0 ? TABLE_ROW_A : TABLE_ROW_B;

@@ -14,6 +14,7 @@ import {
   setExportFont,
   buildExportTableStyles,
   applyExportTableRowStriping,
+  applyExportTableHeadCellStyles,
   applyConvPctHighlight,
   parsePctValue,
   sanitizeExportText,
@@ -31,6 +32,7 @@ import {
 import {
   REVIEW_METRIC_PDF,
   STAFF_AUDIT_TABLE_HEAD_PDF,
+  STAFF_AUDIT_EXPORT_COLUMN_STYLES,
   drawStaffAuditTableLegend,
 } from "../config/reviewMetricLabels";
 import { formatPredictiveExportLines } from "./predictiveIntelligenceEngine";
@@ -329,13 +331,19 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
   const tableData = sanitizeTableForPdf([STAFF_AUDIT_TABLE_HEAD_PDF], staffTableBody(staffRows));
 
   autoTable(doc, {
-    ...buildExportTableStyles(),
+    ...buildExportTableStyles({
+      headStyles: { fontSize: 7, cellPadding: { top: 5, right: 4, bottom: 5, left: 4 } },
+    }),
     startY: startY + 2,
     head: tableData.head,
     body: tableData.body,
     margin: { left: margin, right: margin },
     tableWidth: contentW,
     didParseCell: (data) => {
+      if (data.section === "head") {
+        applyExportTableHeadCellStyles(data);
+        return;
+      }
       if (data.section !== "body") return;
       const row = staffRows[data.row.index];
       if (!row) return;
@@ -364,26 +372,13 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
       }
       if (data.column.index === 9) {
         data.cell.styles.overflow = "hidden";
-        data.cell.styles.cellWidth = 118;
       }
       if (data.column.index === 10) {
         data.cell.styles.overflow = "hidden";
         data.cell.styles.minCellWidth = 36;
       }
     },
-    columnStyles: {
-      0: { cellWidth: 58 },
-      1: { cellWidth: 32 },
-      2: { cellWidth: 26, halign: "right" },
-      3: { cellWidth: 26, halign: "right" },
-      4: { cellWidth: 28, halign: "right", fontStyle: "bold" },
-      5: { cellWidth: 34, halign: "right", fontStyle: "bold" },
-      6: { cellWidth: 36, halign: "right", fontStyle: "bold" },
-      7: { cellWidth: 42 },
-      8: { cellWidth: 52 },
-      9: { cellWidth: 118 },
-      10: { cellWidth: 38, overflow: "hidden" },
-    },
+    columnStyles: STAFF_AUDIT_EXPORT_COLUMN_STYLES,
   });
 }
 

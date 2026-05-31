@@ -45,19 +45,35 @@ export const STAFF_AUDIT_TABLE_HEAD = [
   "Shift",
 ];
 
+/** Landscape operational-review PDF — short headers to avoid mid-word wraps. */
 export const STAFF_AUDIT_TABLE_HEAD_PDF = [
   "Staff",
   "Role",
-  "Card taps",
+  "Taps",
   "Interactions",
   "Google",
   "To Google %",
-  "Card to Review %",
+  "Review %",
   "Profile",
   "Status",
   "Action",
   "Shift",
 ];
+
+/** Column widths for staff audit export (sum ≈ landscape A4 content width). */
+export const STAFF_AUDIT_EXPORT_COLUMN_STYLES = {
+  0: { cellWidth: 86 },
+  1: { cellWidth: 46 },
+  2: { cellWidth: 38, halign: "right" },
+  3: { cellWidth: 60, halign: "right" },
+  4: { cellWidth: 44, halign: "right", fontStyle: "bold" },
+  5: { cellWidth: 52, halign: "right", fontStyle: "bold" },
+  6: { cellWidth: 48, halign: "right", fontStyle: "bold" },
+  7: { cellWidth: 64 },
+  8: { cellWidth: 70 },
+  9: { cellWidth: 186 },
+  10: { cellWidth: 46, overflow: "hidden" },
+};
 
 /** Staff summary table (summary PDF / exports). */
 export const STAFF_SUMMARY_TABLE_HEAD = [
