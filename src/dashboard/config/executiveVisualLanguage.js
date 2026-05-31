@@ -95,6 +95,7 @@ export const EXECUTIVE_LABELS = {
   morningShift: "Morning shift",
   grossSales: "Gross sales",
   avgTicket: "Average ticket",
+  avgItemValue: "Avg item value",
   recoverableOpportunity: "Recoverable operational opportunity",
   attachmentLeakage: "Modifier monetization leakage",
   beverageOpportunity: "Premium beverage conversion potential",

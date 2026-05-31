@@ -6,6 +6,7 @@ import { buildExecutiveSummary } from "./executiveSummaryEngine";
 import { calibrateWaiterProfiles, calibrateTeamContext } from "./intelligenceCalibration";
 import { enrichWaitersForVisuals } from "./waiterVisualEngine";
 import { buildFinancialAggregation } from "./financialAggregationEngine";
+import { buildMenuVisibilitySignals } from "./menuVisibilitySignalsEngine";
 import { buildVisualInsights } from "./visualInsightEngine";
 import { partitionStaffByRole, staffNamesMatch } from "../config/staffRoles";
 import { waiterSalesValue } from "../utils/waiterSalesMetric";
@@ -174,6 +175,11 @@ export function applyVisualExportConfig(payload, config) {
       ? buildWaiterCoaching(scoredWaiters, { focusItems, team: calibratedTeam })
       : [];
   const sortedProducts = sortProducts(payload.heat, payload.funnels, cfg.productSort);
+  const menuVisibility = buildMenuVisibilitySignals({
+    funnels: payload.funnels,
+    salesItems,
+    menuEngineering: payload.menuEngineering,
+  });
 
   return {
     ...payload,
@@ -188,6 +194,7 @@ export function applyVisualExportConfig(payload, config) {
     financial,
     insights,
     sortedProducts,
+    menuVisibility,
     weeklyFocusItems: focusItems,
     exportConfig: cfg,
     exportMeta: {

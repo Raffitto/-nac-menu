@@ -121,9 +121,11 @@ export function buildExecutiveOpsInsights({
     const item = gateTeamInsight({
       confidence: m.parentOrders >= 80 ? CONFIDENCE.HIGH : CONFIDENCE.MODERATE,
       minConfidence: CONFIDENCE.MODERATE,
-      title: `Attachment gap: ${m.label}`,
-      body: `${m.attachmentRate}% attach vs ${m.expectedPct}% target on ${m.parentOrders} parent orders.`,
-      impact: `Observed gap ~${Math.round(m.estimatedLostRevenue).toLocaleString()} SAR — validate against next Foodics export before treating as fixed loss.`,
+      title: `Proxy attach gap: ${m.exportTitle || m.label}`,
+      body: m.exportBody || `${m.attachmentRate}% proxy attach vs ${m.expectedPct}% target on ${m.parentOrders} parent items.`,
+      impact: m.requiresBasketValidation
+        ? "Validate basket-level pairing needed — product export cannot prove item-level pairing."
+        : `Estimated upside ~${Math.round(m.estimatedLostRevenue).toLocaleString()} SAR — proxy estimate; validate with basket-level export.`,
       severity: m.opportunityScore >= 50 ? "high" : "medium",
     });
     if (item) risks.push(item);

@@ -5,16 +5,23 @@
 export const ATTACHMENT_EXPECTATIONS = [
   {
     id: "fries_burger",
-    label: "Fries with burgers",
-    parentPatterns: ["burger", "angus", "beef", "smash", "wagyu"],
-    modifierPatterns: ["fries", "halloumi fries", "sweet potato"],
+    label: "Fries with burgers / steaks",
+    parentPatterns: ["burger", "angus", "beef", "smash", "wagyu", "steak", "ribeye", "tenderloin"],
+    modifierPatterns: ["fries", "frites", "halloumi fries", "sweet potato"],
     expectedPct: 25,
   },
   {
-    id: "truffle_rigatoni",
-    label: "Protein with rigatoni",
-    parentPatterns: ["rigatoni", "pasta", "penne"],
-    modifierPatterns: ["chicken", "shrimp", "prawn", "beef"],
+    id: "protein_pasta_risotto",
+    label: "Protein with rigatoni / risotto",
+    parentPatterns: ["rigatoni", "risotto", "truffle risotto", "corn and white"],
+    modifierPatterns: [
+      "sumac chicken",
+      "paprika prawn",
+      "smoked paprika",
+      "add chicken",
+      "add prawn",
+      "add shrimp",
+    ],
     expectedPct: 18,
   },
   {

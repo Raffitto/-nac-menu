@@ -1,3 +1,4 @@
+import autoTable from "jspdf-autotable";
 import {
   fillPage,
   drawPageTitle,
@@ -12,6 +13,53 @@ import {
   COLOR_OPPORTUNITY,
 } from "./pdfVisualTheme";
 import { EXECUTIVE_LABELS } from "../config/executiveVisualLanguage";
+import { MENU_VISIBILITY_DISCLAIMER } from "./attachmentOpportunityCopy";
+
+export function formatStaffPerformanceSummaryLine(w, labels = EXECUTIVE_LABELS) {
+  const hasTicketCount = (w.orderCount ?? w.ticketCount ?? w.checkCount ?? 0) > 0;
+  const avgLabel = hasTicketCount ? labels.avgTicket : labels.avgItemValue;
+  return `${labels.grossSales} ${Math.round(w.gross_sales || 0).toLocaleString()} SAR · ${avgLabel} ${Math.round(w.avgCheck || 0)} SAR · ${labels.modifierAttach} ${w.modifierAttachPct}% · ${labels.premiumBeverageMix} ${w.ops?.premiumBevPct ?? "—"}% · ${labels.revenueQuality} ${w.revenueQualityScore}/100`;
+}
+
+/** Manager PDF — menu views vs Foodics qty (no false zero orders). */
+export function drawMenuVisibilitySignalsPage(doc, margin, contentW, menuVisibility = {}) {
+  fillPage(doc);
+  let y = drawPageTitle(
+    doc,
+    margin,
+    "Menu visibility signals",
+    "Menu analytics separate from Foodics product sales",
+  );
+
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.splitTextToSize(menuVisibility.disclaimer || MENU_VISIBILITY_DISCLAIMER, contentW).forEach((ln, i) => {
+    doc.text(ln, margin, y + i * 10);
+  });
+  y += 28;
+
+  const rows = (menuVisibility.rows || []).slice(0, 14);
+  if (!rows.length) {
+    doc.text("No menu visibility rows for this period.", margin, y);
+    return y + 20;
+  }
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Product", "Menu views", "Menu orders", "Foodics qty"]],
+    body: rows.map((r) => [
+      r.item_name,
+      String(r.menuViews ?? "—"),
+      r.showZeroMenuOrders ? "—" : String(r.menuOrders ?? "—"),
+      r.foodicsQty != null ? String(r.foodicsQty) : "—",
+    ]),
+    styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [22, 24, 28] },
+    headStyles: { fillColor: [78, 205, 196] },
+    margin: { left: margin, right: margin },
+  });
+
+  return doc.lastAutoTable.finalY + 16;
+}
 
 /** Dense financial opportunity page — executive cold-read */
 export function drawFinancialOpportunityPage(doc, margin, contentW, financial = {}) {
@@ -20,7 +68,7 @@ export function drawFinancialOpportunityPage(doc, margin, contentW, financial = 
     doc,
     margin,
     "Recoverable commercial opportunity",
-    "Aggregated monetization leakage — validate on next Foodics period",
+    "Proxy attach estimates — validate with basket-level Foodics export",
   );
 
   const primary = financial.lines?.find((l) => l.primary) || financial.lines?.[financial.lines.length - 1];
@@ -69,7 +117,9 @@ export function drawFinancialOpportunityPage(doc, margin, contentW, financial = 
       severity: leak.strategicallyPrioritized ? "high" : "medium",
       category: EXECUTIVE_LABELS.attachmentLeakage,
       title: leak.label,
-      body: `${leak.attachRate}% attach vs ${leak.targetRate}% target · estimated ${Math.round(leak.amount).toLocaleString()} SAR monetization gap`,
+      body:
+        leak.body ||
+        `${leak.attachRate}% proxy attach vs ${leak.targetRate}% target · estimated ${Math.round(leak.amount).toLocaleString()} SAR upside`,
     });
   });
 
@@ -101,7 +151,7 @@ export function drawStaffPerformancePage(doc, margin, contentW, waiters = [], ch
     y = drawCallout(doc, margin, y, contentW, {
       accent: i === 0 ? NAC_GOLD : w.archetype?.tone === "critical" ? COLOR_RISK : NAC_TEAL,
       title: `#${i + 1} ${w.waiter} — ${arch}`,
-      body: `${EXECUTIVE_LABELS.grossSales} ${Math.round(w.gross_sales || 0).toLocaleString()} SAR · ${EXECUTIVE_LABELS.avgTicket} ${Math.round(w.avgCheck || 0)} SAR · ${EXECUTIVE_LABELS.modifierAttach} ${w.modifierAttachPct}% · ${EXECUTIVE_LABELS.premiumBeverageMix} ${w.ops?.premiumBevPct ?? "—"}% · ${EXECUTIVE_LABELS.revenueQuality} ${w.revenueQualityScore}/100`,
+      body: formatStaffPerformanceSummaryLine(w),
       hint: w.scatterCallout || w.archetype?.hint || "",
     });
   });

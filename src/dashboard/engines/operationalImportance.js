@@ -4,6 +4,7 @@
 
 const RULE_WEIGHTS = {
   fries_burger: 1.05,
+  protein_pasta_risotto: 1.45,
   truffle_rigatoni: 1.45,
   chocolate_dessert: 1.35,
   shot_coffee: 0.72,

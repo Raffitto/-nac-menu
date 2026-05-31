@@ -1,3 +1,5 @@
+import { formatAttachmentOpportunityBody, formatAttachmentOpportunityTitle } from "./attachmentOpportunityCopy";
+
 /**
  * Operational narrative insights for Visual Intelligence OS.
  */
@@ -15,8 +17,8 @@ export function buildVisualInsights({
       id: `missed-${m.id}`,
       type: "opportunity",
       confidence: m.opportunityScore >= 50 ? "high" : "medium",
-      title: `Missed upsell: ${m.label}`,
-      body: `${m.parentOrders.toLocaleString()} parent orders · ${m.attachmentRate}% attachment vs ${m.expectedPct}% expected. Est. gap ~${m.estimatedLostRevenue.toLocaleString()} SAR.`,
+      title: `Proxy attach gap: ${formatAttachmentOpportunityTitle(m)}`,
+      body: m.exportBody || formatAttachmentOpportunityBody(m),
       trend: "down",
     });
   });
@@ -50,7 +52,7 @@ export function buildVisualInsights({
       type: "warning",
       confidence: "medium",
       title: `High interest · low sales: ${h.item_name}`,
-      body: `${h.views} menu opens with only ${h.orders} orders — investigate pricing, placement, or photography.`,
+      body: `${h.views} menu opens with only ${h.orders} menu-tracked orders — cross-check Foodics sales before acting; SKU mapping may differ.`,
       trend: "flat",
     });
   });

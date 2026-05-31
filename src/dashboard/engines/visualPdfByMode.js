@@ -27,7 +27,15 @@ import {
 } from "./pdfExecutivePages";
 import { appendOperationalVisualPages } from "./pdfVisualIntelligencePages";
 import { buildOperationalVisualBundle } from "./waiterVisualEngine";
-import { drawFinancialOpportunityPage, drawStaffPerformancePage } from "./executivePdfLayout";
+import {
+  drawFinancialOpportunityPage,
+  drawStaffPerformancePage,
+  drawMenuVisibilitySignalsPage,
+} from "./executivePdfLayout";
+import {
+  formatAttachmentOpportunityTableRow,
+  ATTACHMENT_PROXY_DISCLAIMER,
+} from "./attachmentOpportunityCopy";
 import { EXECUTIVE_LABELS, MENU_QUADRANT_COPY } from "../config/executiveVisualLanguage";
 
 function baseCtx(payload) {
@@ -129,6 +137,7 @@ function exportManagerReviewPDF(payload) {
     menuEngineering,
     waiters,
     sortedProducts,
+    menuVisibility,
     insights,
     kpis,
     sections = {},
@@ -172,22 +181,23 @@ function exportManagerReviewPDF(payload) {
   if (sectionOn(sections, "missed") && attachment?.missedUpsells?.length) {
     doc.setTextColor(...NAC_GOLD);
     doc.setFontSize(10);
-    doc.text("Monetization leakage — attachment gaps", margin, y);
+    doc.text("Monetization leakage — proxy attachment gaps", margin, y);
     y += 12;
     autoTable(doc, {
       startY: y,
-      head: [["Opportunity", "Attach %", "Target %", "Est. gap SAR"]],
-      body: attachment.missedUpsells.slice(0, 10).map((m) => [
-        m.label,
-        `${m.attachmentRate}%`,
-        `${m.expectedPct}%`,
-        m.estimatedLostRevenue.toLocaleString(),
-      ]),
+      head: [["Opportunity", "Proxy attach", "Target", "Est. upside SAR"]],
+      body: attachment.missedUpsells.slice(0, 10).map((m) => formatAttachmentOpportunityTableRow(m)),
       styles: { fontSize: 8, textColor: NAC_WHITE, fillColor: CARD_BG },
       headStyles: { fillColor: [120, 50, 40] },
       margin: { left: margin, right: margin },
     });
-    y = doc.lastAutoTable.finalY + 16;
+    y = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(7);
+    doc.setTextColor(130, 130, 130);
+    doc.splitTextToSize(ATTACHMENT_PROXY_DISCLAIMER, contentW).forEach((ln, i) => {
+      doc.text(ln, margin, y + i * 9);
+    });
+    y += 20;
   }
 
   if (sectionOn(sections, "waiter") && mgrWaiters.length) {
@@ -196,27 +206,16 @@ function exportManagerReviewPDF(payload) {
     y = margin + 20;
   }
 
-  if (sectionOn(sections, "product") && sortedProducts?.length) {
+  if (sectionOn(sections, "product") && (menuVisibility?.rows?.length || sortedProducts?.length)) {
     doc.addPage();
-    fillPage(doc);
-    y = drawPageTitle(doc, margin, "Product & menu signals", "Visibility-linked performance");
-    autoTable(doc, {
-      startY: y,
-      head: [["Product", "Heat", "Orders", "Views"]],
-      body: sortedProducts.slice(0, 12).map((p) => [
-        exportCell(p.item_name),
-        String(p.heatIndex ?? "—"),
-        String(p.orders ?? "—"),
-        String(p.views ?? "—"),
-      ]),
-      styles: { fontSize: 8, textColor: NAC_WHITE, fillColor: CARD_BG },
-      headStyles: { fillColor: NAC_TEAL },
-      margin: { left: margin, right: margin },
-    });
-    y = doc.lastAutoTable.finalY + 12;
+    y = drawMenuVisibilitySignalsPage(doc, margin, contentW, menuVisibility);
   }
 
-  if (sectionOn(sections, "menuEng") && menuEngineering?.length) {
+  if (
+    sectionOn(sections, "menuEng") &&
+    menuEngineering?.length &&
+    !menuVisibility?.hideMenuEngineeringQuadrant
+  ) {
     if (y > 600) {
       doc.addPage();
       fillPage(doc);
@@ -239,7 +238,11 @@ function exportManagerReviewPDF(payload) {
       quadrants[q].slice(0, 3).forEach((m) => {
         doc.setFontSize(8);
         doc.setTextColor(180, 180, 180);
-        doc.text(`· ${m.item_name} — ${m.orders} orders`, margin + 8, y);
+        const orderNote =
+          (m.orders || 0) > 0
+            ? `${m.orders} menu orders`
+            : "menu orders not matched to Foodics";
+        doc.text(`· ${m.item_name} — ${orderNote}`, margin + 8, y);
         y += 11;
       });
       y += 4;
@@ -369,7 +372,7 @@ function exportExecutiveBoardroomPDF(payload) {
         severity: m.opportunityScore >= 50 ? "high" : "medium",
         category: "Missed upsell",
         title: m.label,
-        body: `${m.attachmentRate}% attach vs ${m.expectedPct}% target · est. ${m.estimatedLostRevenue.toLocaleString()} SAR gap`,
+        body: m.exportBody || `${m.attachmentRate}% proxy attach vs ${m.expectedPct}% target`,
       });
     });
   }

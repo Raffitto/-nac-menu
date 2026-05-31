@@ -1,6 +1,10 @@
 import { normalizeFoodicsName } from "../utils/foodicsNameNormalize";
 import { ATTACHMENT_EXPECTATIONS } from "../config/attachmentThresholds";
 import { rankAttachmentOpportunities } from "./operationalImportance";
+import {
+  formatAttachmentOpportunityBody,
+  formatAttachmentOpportunityTitle,
+} from "./attachmentOpportunityCopy";
 
 function norm(s) {
   return normalizeFoodicsName(s);
@@ -34,6 +38,50 @@ function aggregateRevenue(rows) {
   return (rows || []).reduce((a, r) => a + (Number(r.net_sales) || 0), 0);
 }
 
+/** Parent dish rows — base menu items, not standalone add-on SKUs. */
+function parentQty(menuRows, rule) {
+  return aggregateQty(
+    menuRows.filter((r) => {
+      const label = rowLabel(r);
+      return matchesAny(label, rule.parentPatterns);
+    }),
+  );
+}
+
+/**
+ * Add-on qty from modifier lines + standalone add-on menu SKUs (product export).
+ * Skips combined entrees like "rigatoni with chicken" when they match parent patterns only.
+ */
+function addonQty(menuRows, modifierRows, rule) {
+  const fromModifiers = aggregateQty(
+    modifierRows.filter((r) => matchesAny(rowLabel(r), rule.modifierPatterns)),
+  );
+
+  const fromMenuAddons = aggregateQty(
+    menuRows.filter((r) => {
+      const label = rowLabel(r);
+      if (!matchesAny(label, rule.modifierPatterns)) return false;
+      const n = norm(label);
+      if (n.includes("with chicken") || n.includes("with prawn") || n.includes("with shrimp")) {
+        return false;
+      }
+      if (matchesAny(label, rule.parentPatterns)) {
+        return n.includes("add ") || n.startsWith("add ");
+      }
+      return true;
+    }),
+  );
+
+  return fromModifiers + fromMenuAddons;
+}
+
+function computeAttachmentRate(parentOrders, attachedOrders) {
+  if (parentOrders <= 0) return attachedOrders > 0 ? 100 : 0;
+  let rate = Math.round((attachedOrders / parentOrders) * 1000) / 10;
+  if (attachedOrders > 0 && rate === 0) rate = 0.1;
+  return rate;
+}
+
 /**
  * Rule-based attachment pairs from imported sales + menu click pairs.
  */
@@ -46,41 +94,63 @@ export function buildAttachmentIntelligence({
   const modifierRows = (salesItems || []).filter((r) => isModifierRow(r));
 
   const pairs = expectations.map((rule) => {
-    const parentRows = menuRows.filter((r) => matchesAny(rowLabel(r), rule.parentPatterns));
-    const modifierRowsHit = modifierRows.filter((r) => matchesAny(rowLabel(r), rule.modifierPatterns));
-    const parentOrders = aggregateQty(parentRows);
-    const attachedOrders = aggregateQty(modifierRowsHit);
-    const attachmentRate = parentOrders > 0 ? Math.round((attachedOrders / parentOrders) * 1000) / 10 : 0;
-    const attachmentRevenue = aggregateRevenue(modifierRowsHit);
+    const parentOrders = parentQty(menuRows, rule);
+    const attachedOrders = addonQty(menuRows, modifierRows, rule);
+    const attachmentRate = computeAttachmentRate(parentOrders, attachedOrders);
+    const attachmentRevenue = aggregateRevenue(
+      modifierRows.filter((r) => matchesAny(rowLabel(r), rule.modifierPatterns)),
+    );
+    const requiresBasketValidation = parentOrders > 0 && attachedOrders > parentOrders;
+    const targetAttached = Math.round((parentOrders * rule.expectedPct) / 100);
+    const missedAddonOrders = requiresBasketValidation
+      ? 0
+      : Math.max(0, targetAttached - attachedOrders);
     const gap = Math.max(0, rule.expectedPct - attachmentRate);
     const avgModPrice = attachedOrders > 0 ? attachmentRevenue / attachedOrders : 8;
-    const estimatedLostRevenue = Math.round(((gap / 100) * parentOrders * avgModPrice) / 10) * 10;
-    const opportunityScore = Math.min(100, Math.round(gap * 2 + (parentOrders > 50 ? 15 : 0)));
+    const estimatedLostRevenue = requiresBasketValidation
+      ? 0
+      : Math.round(((gap / 100) * parentOrders * avgModPrice) / 10) * 10;
+    const opportunityScore = requiresBasketValidation
+      ? 0
+      : Math.min(100, Math.round(gap * 2 + (parentOrders > 50 ? 15 : 0)));
 
     const topParents = Object.entries(
-      parentRows.reduce((m, r) => {
-        const k = rowLabel(r);
-        m[k] = (m[k] || 0) + (Number(r.quantity_sold) || 0);
-        return m;
-      }, {}),
+      menuRows
+        .filter((r) => matchesAny(rowLabel(r), rule.parentPatterns))
+        .reduce((m, r) => {
+          const k = rowLabel(r);
+          m[k] = (m[k] || 0) + (Number(r.quantity_sold) || 0);
+          return m;
+        }, {}),
     )
       .map(([name, qty]) => ({ name, qty }))
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 5);
 
-    return {
+    const pair = {
       ...rule,
       parentOrders,
       attachedOrders,
       attachmentRate,
       attachmentRevenue,
       gap,
+      missedAddonOrders,
       estimatedLostRevenue,
       opportunityScore,
-      underperforming: attachmentRate < rule.expectedPct * 0.65 && parentOrders >= 8,
+      requiresBasketValidation,
+      proxyAttach: true,
+      underperforming:
+        !requiresBasketValidation &&
+        missedAddonOrders >= 8 &&
+        attachmentRate < rule.expectedPct * 0.65 &&
+        parentOrders >= 8,
       heat: attachmentRate >= rule.expectedPct ? "good" : attachmentRate >= rule.expectedPct * 0.65 ? "warn" : "critical",
       topParents,
+      exportTitle: formatAttachmentOpportunityTitle({ ...rule, id: rule.id }),
+      exportBody: "",
     };
+    pair.exportBody = formatAttachmentOpportunityBody(pair);
+    return pair;
   });
 
   const clickPairs = (addonPairs || []).map((p) => ({
@@ -102,8 +172,8 @@ export function buildAttachmentIntelligence({
       const bestParent = pairs
         .filter((p) => matchesAny(mod.name, p.modifierPatterns))
         .sort((a, b) => b.parentOrders - a.parentOrders)[0];
-      const parentOrders = bestParent?.parentOrders || 0;
-      const rate = parentOrders > 0 ? Math.round((mod.quantity / parentOrders) * 1000) / 10 : 0;
+      const parentOrderCount = bestParent?.parentOrders || 0;
+      const rate = computeAttachmentRate(parentOrderCount, mod.quantity);
       return {
         ...mod,
         attachmentRate: rate,
@@ -112,7 +182,9 @@ export function buildAttachmentIntelligence({
     })
     .sort((a, b) => b.revenue - a.revenue);
 
-  const missedUpsells = rankAttachmentOpportunities(pairs.filter((p) => p.underperforming));
+  const missedUpsells = rankAttachmentOpportunities(
+    pairs.filter((p) => p.underperforming || (p.missedAddonOrders > 0 && !p.requiresBasketValidation)),
+  );
 
   const topAttachments = [...pairs]
     .filter((p) => p.attachedOrders > 0)
