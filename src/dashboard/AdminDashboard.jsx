@@ -36,6 +36,7 @@ import {
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
+import { useOperationalDashboard } from "./hooks/useOperationalDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
@@ -45,6 +46,8 @@ import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacConte
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
+import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
+import OperationalDashboard from "./views/OperationalDashboard";
 import HubTabs from "./components/HubTabs";
 import IntelligenceHub from "./views/IntelligenceHub";
 import ReviewsHub from "./views/ReviewsHub";
@@ -164,6 +167,7 @@ export default function AdminDashboard(props) {
 
 function AdminDashboardContent({ onBack, session = null, authChecked = true, rbacEnvInvalid = false }) {
   const [adminView, setAdminView] = useState("overview");
+  const unifiedOverview = isUnifiedOverviewEnabled();
   const [overviewTab, setOverviewTab] = useState("operations");
   const rbac = useRbac();
 
@@ -184,6 +188,19 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
   const configured = isSupabaseConfigured();
 
+  const menuBi = useMenuBiDashboard({
+    enabled: Boolean(session) && adminView === "overview" && !unifiedOverview,
+    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
+    source: "AdminDashboard",
+  });
+
+  const operationalBi = useOperationalDashboard({
+    enabled: Boolean(session) && adminView === "overview" && unifiedOverview,
+    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
+    source: "AdminDashboard",
+  });
+
+  const dashboardLoader = unifiedOverview ? operationalBi : menuBi;
   const {
     data,
     loading,
@@ -191,11 +208,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     platformStatus,
     operationalTrust,
     reload: loadDashboard,
-  } = useMenuBiDashboard({
-    enabled: Boolean(session) && adminView === "overview",
-    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
-    source: "AdminDashboard",
-  });
+  } = dashboardLoader;
 
   // Derived metrics
   const totalEvents = Number(data?.total_events) || 0;
@@ -369,11 +382,17 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           <>
             <header className="nac-platform-header">
               <p className="nac-platform-kicker">NAC Hospitality OS</p>
-              <h1>Overview</h1>
-              <p className="nac-platform-sub">Operational pulse — menu, sessions, and live performance</p>
+              <h1>{unifiedOverview ? "Operational Dashboard" : "Overview"}</h1>
+              <p className="nac-platform-sub">
+                {unifiedOverview
+                  ? "One source of truth — live guests, journey, and menu intelligence"
+                  : "Operational pulse — menu, sessions, and live performance"}
+              </p>
             </header>
 
-            <HubTabs tabs={OVERVIEW_TABS} active={overviewTab} onChange={setOverviewTab} />
+            {OVERVIEW_TABS.length > 0 ? (
+              <HubTabs tabs={OVERVIEW_TABS} active={overviewTab} onChange={setOverviewTab} />
+            ) : null}
 
             {session && (
               <GlobalFilterBar
@@ -384,7 +403,9 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
               />
             )}
 
-            {overviewTab === "sessions" ? (
+            {unifiedOverview ? (
+              <OperationalDashboard session={session} />
+            ) : overviewTab === "sessions" ? (
               <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
                 <AnalyticsDashboard
                   key={`${filters.selectedRange}-${filters.timeRangeHours}-${filters.branch || "all"}-${filters.language}-${filters.shift}-${filters.eventType}-${filters.dayType}-${filters.role}`}
@@ -442,7 +463,9 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             )}
 
             <PlatformStatusBanner platformStatus={platformStatus} />
-            <SessionStabilizationDiagnostics diagnostics={sessionDiagnostics} />
+            {!unifiedOverview ? (
+              <SessionStabilizationDiagnostics diagnostics={sessionDiagnostics} />
+            ) : null}
 
             {/* LOADING SKELETONS */}
             {loading && !data && (

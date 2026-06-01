@@ -1,5 +1,7 @@
 /** Primary platform navigation — maps sidebar to views and legacy adminView keys. */
 
+import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
+
 export const NAV_ITEMS = [
   { id: "overview", label: "Overview", legacyViews: ["overview", "analytics"] },
   { id: "intelligence", label: "Intelligence", legacyViews: ["ai-insights", "restaurant-intelligence", "sales-intelligence"] },
@@ -29,10 +31,13 @@ export const REVIEWS_TABS = [
   { id: "branches", label: "Branch Battle" },
 ];
 
-export const OVERVIEW_TABS = [
+export const OVERVIEW_TABS_LEGACY = [
   { id: "operations", label: "Operations" },
   { id: "sessions", label: "Session Analytics" },
 ];
+
+/** Empty when unified overview is enabled (single dashboard, no sub-tabs). */
+export const OVERVIEW_TABS = isUnifiedOverviewEnabled() ? [] : OVERVIEW_TABS_LEGACY;
 
 export function navIdFromLegacyView(view) {
   const v = view || "overview";

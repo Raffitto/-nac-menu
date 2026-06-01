@@ -1,0 +1,103 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
+import { mergeReviewIntoOperationalPayload } from "../../lib/operationalDashboardEnrich";
+import { applyTruthToBiPayload } from "../../lib/unifiedOperationalTruth";
+import { normalizeBranchForRpc } from "../../lib/menuEventsBiFallback";
+import { rangeToHours } from "../utils/rangeState";
+import { useMenuBiDashboard } from "./useMenuBiDashboard";
+import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+
+async function fetchActivityFeed(hours, branch) {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_session_analytics_feed", {
+      p_branch: normalizeBranchForRpc(branch),
+      p_hours: hours,
+      p_limit: 25,
+    });
+    if (error) return [];
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Canonical operational dashboard loader — menu BI truth + review funnel + activity feed.
+ */
+export function useOperationalDashboard(options = {}) {
+  const { enabled = true, refreshIntervalMs = 0, source = "useOperationalDashboard" } = options;
+  const filters = usePlatformFiltersOptional();
+  const hours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
+
+  const menuBi = useMenuBiDashboard({
+    enabled,
+    refreshIntervalMs,
+    source,
+  });
+
+  const [reviewSummary, setReviewSummary] = useState(null);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [activeGuestsNow, setActiveGuestsNow] = useState(0);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+
+  const loadEnrichment = useCallback(async () => {
+    if (!enabled || !supabase || menuBi.needsAuth) {
+      setReviewSummary(null);
+      setActivityFeed([]);
+      setActiveGuestsNow(0);
+      return;
+    }
+    setEnrichLoading(true);
+    try {
+      const [review, feed, liveRes] = await Promise.all([
+        fetchReviewEventsSummary(supabase, {
+          branch: filters?.branch,
+          hours,
+        }),
+        fetchActivityFeed(hours, filters?.branch),
+        supabase.rpc("get_live_activity"),
+      ]);
+      setReviewSummary(review);
+      setActivityFeed(feed);
+      const live = liveRes?.data;
+      setActiveGuestsNow(Number(live?.active_sessions) || 0);
+    } catch {
+      setReviewSummary(null);
+      setActivityFeed([]);
+      setActiveGuestsNow(0);
+    } finally {
+      setEnrichLoading(false);
+    }
+  }, [enabled, menuBi.needsAuth, filters?.branch, hours]);
+
+  useEffect(() => {
+    if (!menuBi.loading && menuBi.data) {
+      loadEnrichment();
+    }
+  }, [menuBi.loading, menuBi.data, loadEnrichment]);
+
+  const data = useMemo(() => {
+    if (!menuBi.data) return null;
+    const merged = mergeReviewIntoOperationalPayload(menuBi.data, reviewSummary);
+    return applyTruthToBiPayload(merged, { hours });
+  }, [menuBi.data, reviewSummary, hours]);
+
+  const reload = useCallback(async () => {
+    await menuBi.reload();
+    await loadEnrichment();
+  }, [menuBi, loadEnrichment]);
+
+  return {
+    ...menuBi,
+    data,
+    truth: data?._truth || menuBi.truth,
+    reviewSummary,
+    activityFeed,
+    activeGuestsNow,
+    enrichLoading,
+    reload,
+    loading: menuBi.loading || enrichLoading,
+  };
+}

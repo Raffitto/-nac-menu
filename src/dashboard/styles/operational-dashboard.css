@@ -1,0 +1,126 @@
+.nac-ops-dash {
+  margin-top: 8px;
+}
+
+.nac-ops-dash__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.nac-ops-dash__title {
+  margin: 4px 0 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.nac-ops-exec-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .nac-ops-exec-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.nac-ops-health {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 16px;
+  margin: 8px 0 28px;
+  border: 1px solid rgba(48, 72, 78, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nac-ops-health__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.nac-ops-health--healthy .nac-ops-health__badge {
+  background: rgba(118, 214, 159, 0.2);
+  color: #76d69f;
+}
+
+.nac-ops-health--watch .nac-ops-health__badge {
+  background: rgba(215, 168, 74, 0.2);
+  color: #d7a84a;
+}
+
+.nac-ops-health--risk .nac-ops-health__badge {
+  background: rgba(176, 80, 80, 0.25);
+  color: #e8a0a0;
+}
+
+.nac-ops-health__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(249, 249, 247, 0.78);
+}
+
+.nac-ops-funnel-wrap {
+  margin-bottom: 24px;
+}
+
+.nac-ops-feed-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.nac-ops-feed-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+}
+
+.nac-ops-feed-type {
+  color: #d7bc8a;
+  text-transform: capitalize;
+  font-weight: 600;
+}
+
+.nac-ops-feed-detail {
+  color: rgba(249, 249, 247, 0.65);
+}
+
+.nac-ops-diagnostics {
+  margin: 12px 0 20px;
+  border: 1px solid rgba(48, 72, 78, 0.12);
+  border-radius: 14px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.nac-ops-diagnostics summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.55);
+  list-style: none;
+}
+
+.nac-ops-diagnostics summary::-webkit-details-marker {
+  display: none;
+}
+
+.nac-ops-user-note {
+  font-size: 13px;
+  color: rgba(249, 249, 247, 0.55);
+  margin: 0 0 16px;
+}

@@ -3,16 +3,26 @@ import { motion } from "framer-motion";
 
 const STAGES = [
   { key: "qr_scans", label: "QR Scan", icon: "📱" },
-  { key: "category_opens", label: "Category", icon: "📂" },
-  { key: "item_opens", label: "Item View", icon: "🍽" },
-  { key: "addon_clicks", label: "Add-on", icon: "➕" },
+  { key: "category_opens", label: "Category Open", icon: "📂" },
+  { key: "item_opens", label: "Item Open", icon: "🍽" },
+  { key: "addon_clicks", label: "Add-on Interaction", icon: "➕" },
+  { key: "review_redirect", label: "Review Redirect", icon: "⭐" },
+  { key: "google_review_open", label: "Google Review Open", icon: "🔗" },
+];
+
+/** Legacy menu-only funnel (time spent / exit) — not used on unified operational dashboard. */
+export const LEGACY_FUNNEL_STAGES = [
   { key: "time_spent", label: "Time Spent", icon: "⏱" },
   { key: "exits", label: "Exit", icon: "👋" },
 ];
 
 const BAR_COLORS = [
-  "#4a6d76", "#5a7f85", "#7a9a7e",
-  "#a3ad7a", "#c4b07f", "#d7bc8a",
+  "#4a6d76",
+  "#5a7f85",
+  "#7a9a7e",
+  "#a3ad7a",
+  "#c4b07f",
+  "#d7bc8a",
 ];
 
 export default function FunnelChart({ funnel }) {

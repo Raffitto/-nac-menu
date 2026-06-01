@@ -50,7 +50,7 @@ export default function LiveActivity({ supabase, session, CATEGORY_NAMES }) {
     >
       <div className="nac-bi-live-header">
         <span className="nac-bi-live-dot" />
-        <span>Currently Browsing</span>
+        <span>Guests Active Now</span>
       </div>
 
       <div className="nac-bi-live-count">{activeSessions}</div>
