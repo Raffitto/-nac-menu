@@ -8,6 +8,8 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   border: none;
+  /* Keep card positions identical in AR (site RTL must not mirror columns). */
+  direction: ltr;
 }
 
 .nac-category-card {
@@ -40,6 +42,7 @@
   box-shadow: 0 16px 36px rgba(48, 72, 78, 0.1);
 }
 
+/* Fixed artwork slot — card geometry; tuning only inside wrap. */
 .nac-category-card__icon-slot {
   width: 100%;
   height: 86px;
@@ -47,6 +50,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+}
+
+.nac-category-card__art-wrap {
+  --art-scale: 1;
+  --art-x: 0px;
+  --art-y: 0px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
 }
 
 .nac-category-card__icon {
@@ -57,6 +73,8 @@
   height: auto;
   object-fit: contain;
   object-position: center;
+  transform: translate(var(--art-x), var(--art-y)) scale(var(--art-scale));
+  transform-origin: center center;
 }
 
 .nac-category-card__title {
