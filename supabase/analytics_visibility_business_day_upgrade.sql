@@ -112,12 +112,13 @@ as $$
     from session_stats
   ),
   session_lang as (
-    select
+    select distinct on (session_id)
       session_id,
-      mode() within group (order by coalesce(nullif(trim(language), ''), 'unknown')) as dominant_lang
+      coalesce(nullif(trim(language), ''), 'unknown') as dominant_lang
     from filtered
     where coalesce(trim(session_id), '') <> ''
-    group by session_id
+      and coalesce(nullif(trim(language), ''), '') <> ''
+    order by session_id, created_at asc
   ),
   biz_today as (
     select
@@ -147,6 +148,18 @@ as $$
           from filtered
           group by 1
         ) s
+      ),
+      '{}'::jsonb
+    ),
+    'by_language_sessions', coalesce(
+      (
+        select jsonb_object_agg(language_key, cnt)
+        from (
+          select dominant_lang as language_key, count(*)::bigint as cnt
+          from session_lang
+          where dominant_lang in ('en', 'ar')
+          group by 1
+        ) sl
       ),
       '{}'::jsonb
     ),
@@ -219,6 +232,7 @@ as $$
           order by greatest(coalesce(i.impressions, 0), coalesce(o.opens, 0)) desc
           limit 40
         ) m
+        where coalesce(m.opens, 0) > 0
       ),
       '[]'::jsonb
     ),
@@ -262,6 +276,30 @@ as $$
             count(*)::bigint as c
           from filtered
           where created_at >= public.nac_filter_since(case when coalesce(p_hours, 0) in (0, 24) then 24 else p_hours end)
+          group by 1, 2
+          order by 1
+        ) w
+      ),
+      '[]'::jsonb
+    ),
+    'by_hour_qr', coalesce(
+      (
+        select jsonb_agg(
+          jsonb_build_object(
+            'hour', w.hour_bucket,
+            'count', w.c,
+            'business_day_key', w.biz_key
+          )
+          order by w.hour_bucket
+        )
+        from (
+          select
+            date_trunc('hour', created_at) as hour_bucket,
+            public.nac_business_day_key(created_at) as biz_key,
+            count(*)::bigint as c
+          from filtered
+          where event_type = 'qr_session_start'
+            and created_at >= public.nac_filter_since(case when coalesce(p_hours, 0) in (0, 24) then 24 else p_hours end)
           group by 1, 2
           order by 1
         ) w

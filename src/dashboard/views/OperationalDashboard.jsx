@@ -38,12 +38,9 @@ import SessionQuality from "../components/SessionQuality";
 import InsightEngine from "../components/InsightEngine";
 import { assessOperationalHealth } from "../engines/operationalHealthEngine";
 import { CATEGORY_NAMES, formatDuration } from "../utils/formatters";
-import { generateInsights } from "../utils/insights";
-import {
-  buildHourlyChartData,
-} from "../utils/hourlyPipeline";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { rangeToHours } from "../utils/rangeState";
+import { generateOperationalDashboardInsights } from "../utils/operationalInsightsIntegrity";
+import { humanizeActivityFeedRow } from "../utils/activityFeedHumanize";
 import "../styles/operational-dashboard.css";
 
 const TOOLTIP_STYLE = {
@@ -97,17 +94,18 @@ export default function OperationalDashboard({ session }) {
   const byType = data?.by_event_type || {};
   const funnel = data?.funnel || {};
   const itemOpenCount = ev(byType, "item_open");
-  const qrSessionStarts = Number(funnel.qr_scans) || totalSessions || ev(byType, "qr_session_start");
+  const menuQrScans = Number(data?.menu_qr_scans) || Number(funnel.qr_scans) || 0;
+  const reviewQrScans = Number(data?.review_qr_scans) || 0;
   const addOnClickCount = ev(byType, "add_on_click") || ev(byType, "addon_interaction");
   const reviewRedirect = Number(funnel.review_redirect) || 0;
   const googleReviewOpen = Number(funnel.google_review_open) || 0;
 
-  const byLanguage = data?.by_language || {};
-  const arCount = Number(byLanguage.ar) || 0;
-  const enCount = Number(byLanguage.en) || 0;
-  const totalLangEvents = arCount + enCount;
-  const arabicPct = totalLangEvents > 0 ? Math.round((arCount / totalLangEvents) * 100) : 0;
-  const englishPct = totalLangEvents > 0 ? 100 - arabicPct : 0;
+  const langStats = data?.session_language || {};
+  const arCount = Number(langStats.ar_sessions) || 0;
+  const enCount = Number(langStats.en_sessions) || 0;
+  const totalLangSessions = Number(langStats.total_sessions) || arCount + enCount;
+  const arabicPct = Number(langStats.arabic_pct) || 0;
+  const englishPct = Number(langStats.english_pct) || 0;
 
   const avgTimeSpent = Number(data?.avg_time_spent) || 0;
   const bounceSessions = Number(data?.bounce_sessions) || 0;
@@ -116,16 +114,12 @@ export default function OperationalDashboard({ session }) {
   const deepPct = totalSessions > 0 ? Math.round((deepSessions / totalSessions) * 100) : 0;
   const addOnRate = itemOpenCount > 0 ? ((addOnClickCount / itemOpenCount) * 100).toFixed(1) : "0";
   const returningSessions = Number(data?.returning_sessions) || 0;
-  const returningPct = qrSessionStarts > 0 ? Math.round((returningSessions / qrSessionStarts) * 100) : 0;
+  const returningPct = menuQrScans > 0 ? Math.round((returningSessions / menuQrScans) * 100) : 0;
   const reviewConversionPct = Number(data?.review_kpis?.review_conversion_pct) || 0;
 
-  const hourlyHours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
-  const hourlyChart = useMemo(
-    () => buildHourlyChartData(data?.by_hour || [], hourlyHours),
-    [data?.by_hour, hourlyHours],
-  );
-  const hourlyData = hourlyChart.rows;
-  const hourlyGranularity = hourlyChart.granularity;
+  const scanChart = data?.scan_chart || { rows: [], title: "Menu QR scans", usesQrEventsOnly: false };
+  const hourlyData = scanChart.rows || [];
+  const scanChartTitle = scanChart.title || "Menu QR scans";
 
   const sessionQuality = data?.session_quality || {};
   const sessionDiagnostics = data?.session_diagnostics || null;
@@ -135,7 +129,8 @@ export default function OperationalDashboard({ session }) {
   const topCategories = data?.top_categories || [];
   const topSearches = data?.top_searches || [];
   const topAddonPairs = data?.top_addon_pairs || [];
-  const insights = useMemo(() => generateInsights(data), [data]);
+  const insights = useMemo(() => generateOperationalDashboardInsights(data), [data]);
+  const funnelStageMetrics = data?.funnel_stage_metrics;
 
   const health = useMemo(
     () =>
@@ -215,6 +210,9 @@ export default function OperationalDashboard({ session }) {
       <details className="nac-ops-diagnostics">
         <summary>System diagnostics</summary>
         <SessionStabilizationDiagnostics diagnostics={sessionDiagnostics} />
+        <p className="nac-ops-audit-hint">
+          Data trust audit: open devtools → <code>window.__NAC_DASHBOARD_AUDIT__</code>
+        </p>
       </details>
 
       <p className="bi-section-title">
@@ -223,10 +221,17 @@ export default function OperationalDashboard({ session }) {
       <div className="nac-bi-exec-grid nac-ops-exec-grid">
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="nac-bi-exec-label">
-            <Users size={13} /> QR Scans
+            <Users size={13} /> Menu QR Scans
           </p>
-          <p className="nac-bi-exec-value">{qrSessionStarts.toLocaleString()}</p>
-          <p className="nac-bi-exec-sub">{totalSessions.toLocaleString()} sessions</p>
+          <p className="nac-bi-exec-value">{menuQrScans.toLocaleString()}</p>
+          <p className="nac-bi-exec-sub">Menu experience entry</p>
+        </motion.div>
+        <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
+          <p className="nac-bi-exec-label">
+            <Users size={13} /> Review QR Scans
+          </p>
+          <p className="nac-bi-exec-value">{reviewQrScans.toLocaleString()}</p>
+          <p className="nac-bi-exec-sub">Review experience entry</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
           <p className="nac-bi-exec-label">
@@ -263,7 +268,7 @@ export default function OperationalDashboard({ session }) {
             <Languages size={13} /> Language
           </p>
           <p className="nac-bi-exec-value">
-            {totalLangEvents > 0 ? (
+            {totalLangSessions > 0 ? (
               <>
                 {englishPct}% EN · {arabicPct}% AR
               </>
@@ -271,7 +276,7 @@ export default function OperationalDashboard({ session }) {
               "—"
             )}
           </p>
-          <p className="nac-bi-exec-sub">{totalLangEvents.toLocaleString()} language events</p>
+          <p className="nac-bi-exec-sub">{totalLangSessions.toLocaleString()} sessions (first language)</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
           <p className="nac-bi-exec-label">
@@ -300,11 +305,8 @@ export default function OperationalDashboard({ session }) {
               <p className="bi-empty">No recent events</p>
             ) : (
               activityFeed.slice(0, 20).map((row) => (
-                <div key={row.id} className="nac-ops-feed-row">
-                  <span className="nac-ops-feed-type">{row.event_type}</span>
-                  <span className="nac-ops-feed-detail">
-                    {row.item_name_en || row.category_id || row.search_query || "—"}
-                  </span>
+                <div key={row.id || `${row.event_type}-${row.created_at}`} className="nac-ops-feed-row">
+                  <span className="nac-ops-feed-detail">{humanizeActivityFeedRow(row)}</span>
                 </div>
               ))
             )}
@@ -317,7 +319,7 @@ export default function OperationalDashboard({ session }) {
       </p>
       <motion.div className="bi-table nac-ops-funnel-wrap" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
         <p className="bi-table-sub">Unique sessions at each stage · drop-off between steps</p>
-        <FunnelChart funnel={funnel} />
+        <FunnelChart funnel={funnel} stageMetrics={funnelStageMetrics} />
       </motion.div>
 
       <SessionQuality quality={sessionQuality} totalSessions={totalSessions} />
@@ -328,12 +330,16 @@ export default function OperationalDashboard({ session }) {
       <section className="dashboard-row">
         <motion.div className="big-glass-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
           <div className="card-header">
-            <h3>{hourlyGranularity === "day" ? "Daily Activity" : "Hourly Activity"}</h3>
+            <h3>{scanChartTitle}</h3>
           </div>
           <div className="real-chart">
-            {hourlyData.length === 0 ? (
+            {!scanChart.usesQrEventsOnly ? (
+              <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)", padding: 16, textAlign: "center" }}>
+                {scanChart.emptyReason || "QR scan chart unavailable until Supabase analytics upgrade is applied"}
+              </div>
+            ) : hourlyData.length === 0 ? (
               <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)" }}>
-                No events in range
+                No menu QR scans in range
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -444,7 +450,7 @@ export default function OperationalDashboard({ session }) {
             <Layers size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />
             Language Usage
           </h4>
-          {totalLangEvents > 0 ? (
+          {totalLangSessions > 0 ? (
             <>
               <div className="bi-lang-bar">
                 <div className="bi-lang-bar-en" style={{ width: `${englishPct}%` }}>

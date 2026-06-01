@@ -159,10 +159,30 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
     dayCount: options.dayCount || dayCountForHours(rangeHours),
   });
 
+  const by_hour_qr_raw = Array.isArray(raw.by_hour_qr)
+    ? raw.by_hour_qr.map((row) => ({
+        hour: row.hour ?? row.business_day_key ?? row.day_key,
+        count: Number(row.count) || 0,
+        granularity: row.granularity || "hour",
+        business_day_key: row.business_day_key || null,
+      }))
+    : [];
+  const by_hour_qr = by_hour_qr_raw.length
+    ? normalizeHourlyDistribution(by_hour_qr_raw, {
+        granularity: hourGranularity,
+        dayCount: options.dayCount || dayCountForHours(rangeHours),
+      })
+    : [];
+
   return {
     total_events: Number(raw.total_events) || 0,
     total_sessions: Number(raw.total_sessions) || 0,
     by_language: raw.by_language && typeof raw.by_language === "object" ? raw.by_language : {},
+    by_language_sessions:
+      raw.by_language_sessions && typeof raw.by_language_sessions === "object"
+        ? raw.by_language_sessions
+        : {},
+    by_hour_qr,
     by_event_type: byEvent,
     top_items,
     top_categories,

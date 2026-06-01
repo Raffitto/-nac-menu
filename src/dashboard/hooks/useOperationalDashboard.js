@@ -3,6 +3,7 @@ import { supabase } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { mergeReviewIntoOperationalPayload } from "../../lib/operationalDashboardEnrich";
 import { applyTruthToBiPayload } from "../../lib/unifiedOperationalTruth";
+import { applyOperationalIntegrityToPayload } from "../../lib/operationalMetricsIntegrity";
 import { normalizeBranchForRpc } from "../../lib/menuEventsBiFallback";
 import { rangeToHours } from "../utils/rangeState";
 import { useMenuBiDashboard } from "./useMenuBiDashboard";
@@ -81,8 +82,9 @@ export function useOperationalDashboard(options = {}) {
   const data = useMemo(() => {
     if (!menuBi.data) return null;
     const merged = mergeReviewIntoOperationalPayload(menuBi.data, reviewSummary);
-    return applyTruthToBiPayload(merged, { hours });
-  }, [menuBi.data, reviewSummary, hours]);
+    const truthed = applyTruthToBiPayload(merged, { hours, branch: filters?.branch });
+    return applyOperationalIntegrityToPayload(truthed, { hours, branch: filters?.branch });
+  }, [menuBi.data, reviewSummary, hours, filters?.branch]);
 
   const reload = useCallback(async () => {
     await menuBi.reload();

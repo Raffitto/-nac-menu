@@ -134,6 +134,7 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
     total_sessions: pickMaster(aggregates.total_sessions, biRaw.total_sessions),
     by_event_type: mergedByType,
     by_hour: sessionHourlySum >= biHourlySum && sessionHourly.length ? sessionHourly : biHourly,
+    by_hour_qr: Array.isArray(biRaw.by_hour_qr) ? biRaw.by_hour_qr : [],
     by_language:
       Object.keys(aggregates.by_language || {}).length > 0
         ? aggregates.by_language

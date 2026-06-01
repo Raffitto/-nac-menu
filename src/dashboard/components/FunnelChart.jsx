@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { motion } from "framer-motion";
+import { buildFunnelStageMetrics } from "../../lib/operationalMetricsIntegrity";
 
 const STAGES = [
   { key: "qr_scans", label: "QR Scan", icon: "📱" },
@@ -25,28 +26,21 @@ const BAR_COLORS = [
   "#d7bc8a",
 ];
 
-export default function FunnelChart({ funnel }) {
-  const data = useMemo(() => funnel || {}, [funnel]);
-
+export default function FunnelChart({ funnel, stageMetrics: stageMetricsProp }) {
   const stages = useMemo(() => {
-    const raw = STAGES.map((s) => ({
-      ...s,
-      value: Number(data[s.key]) || 0,
-    }));
-    const maxVal = Math.max(...raw.map((v) => v.value), 1);
-
-    return raw.map((stage, i) => {
-      const prev = i > 0 ? raw[i - 1].value : null;
-      let convPct = null;
-      let dropPct = null;
-      if (prev != null && prev > 0) {
-        convPct = Math.min((stage.value / prev) * 100, 100);
-        dropPct = Math.max(100 - convPct, 0);
-      }
-      const widthPct = (stage.value / maxVal) * 100;
-      return { ...stage, widthPct, convPct, dropPct };
+    const computed = stageMetricsProp || buildFunnelStageMetrics(funnel || {});
+    return STAGES.map((s, i) => {
+      const m = computed[i] || {};
+      return {
+        ...s,
+        value: Number(m.value) || 0,
+        widthPct: m.widthPct ?? 0,
+        convPct: m.convPct,
+        dropPct: m.dropPct,
+        convNote: m.convNote || "entry",
+      };
     });
-  }, [data]);
+  }, [funnel, stageMetricsProp]);
 
   const allZero = stages.every((s) => s.value === 0);
 
@@ -87,7 +81,11 @@ export default function FunnelChart({ funnel }) {
               <div className="nac-bi-fv2-pcts">
                 <span style={{ color: "#76d69f" }}>{stage.convPct.toFixed(0)}%</span>
                 <span style={{ color: "rgba(249,249,247,0.3)" }}> · </span>
-                <span style={{ color: "rgba(249,249,247,0.4)" }}>↓{stage.dropPct.toFixed(0)}%</span>
+                <span style={{ color: "rgba(249,249,247,0.4)" }}>
+                  {stage.convNote === "step" && stage.dropPct != null
+                    ? `↓${stage.dropPct.toFixed(0)}%`
+                    : stage.convNote}
+                </span>
               </div>
             )}
             {stage.convPct == null && (

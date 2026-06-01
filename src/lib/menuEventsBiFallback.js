@@ -49,8 +49,8 @@ function sessionKey(row) {
 }
 
 function aggregateRows(rows, referenceDate = new Date()) {
-  const byLanguage = {};
   const byEventType = {};
+  const sessionFirstLang = new Map();
   const itemImpressions = new Map();
   const itemOpens = new Map();
   const categoryOpens = new Map();
@@ -62,17 +62,22 @@ function aggregateRows(rows, referenceDate = new Date()) {
   const todayRange = getBusinessDayRange(referenceDate);
 
   for (const row of rows) {
-    const lang = (row.language || "unknown").toString().slice(0, 2) || "unknown";
-    byLanguage[lang] = (byLanguage[lang] || 0) + 1;
-
     const et = row.event_type || "unknown";
     byEventType[et] = (byEventType[et] || 0) + 1;
 
     const sk = sessionKey(row);
-    if (sk) sessions.add(sk);
+    if (sk) {
+      sessions.add(sk);
+      const langRaw = (row.language || "").toString().trim().slice(0, 2).toLowerCase();
+      if (!sessionFirstLang.has(sk) && (langRaw === "en" || langRaw === "ar")) {
+        sessionFirstLang.set(sk, langRaw);
+      }
+    }
 
     const h = row.created_at ? hourInRiyadh(row.created_at) : null;
-    if (h != null) hourly.set(h, (hourly.get(h) || 0) + 1);
+    if (et === "qr_session_start" && h != null) {
+      hourly.set(h, (hourly.get(h) || 0) + 1);
+    }
 
     const name = (row.item_name_en || "").trim();
     if (et === "item_impression" && name) {
@@ -116,7 +121,8 @@ function aggregateRows(rows, referenceDate = new Date()) {
         avg_visible_duration_ms: 0,
       };
     })
-    .sort((a, b) => Math.max(b.impressions, b.opens) - Math.max(a.impressions, a.opens))
+    .filter((t) => t.opens > 0)
+    .sort((a, b) => b.opens - a.opens || b.impressions - a.impressions)
     .slice(0, 20);
 
   const top_categories = [...categoryOpens.entries()]
@@ -131,6 +137,17 @@ function aggregateRows(rows, referenceDate = new Date()) {
     })
     .sort((a, b) => b.clicks - a.clicks)
     .slice(0, 12);
+
+  const byLanguage = {};
+  for (const lang of sessionFirstLang.values()) {
+    byLanguage[lang] = (byLanguage[lang] || 0) + 1;
+  }
+  const enSess = byLanguage.en || 0;
+  const arSess = byLanguage.ar || 0;
+  const lang_behavior = {
+    en: { sessions: enSess, avg_events: 0, avg_duration: 0 },
+    ar: { sessions: arSess, avg_events: 0, avg_duration: 0 },
+  };
 
   const top_searches = [...searches.entries()]
     .map(([query, count]) => ({ query, count }))
@@ -167,10 +184,12 @@ function aggregateRows(rows, referenceDate = new Date()) {
     top_addon_pairs,
     top_searches,
     by_hour,
+    by_hour_qr: by_hour,
     dead_zones: [],
     lost_searches: [],
     session_quality: sessionMetrics.session_quality,
-    lang_behavior: {},
+    lang_behavior,
+    by_language_sessions: byLanguage,
     bounce_sessions: sessionMetrics.bounce_sessions,
     deep_sessions: sessionMetrics.deep_sessions,
     avg_time_spent: sessionMetrics.avg_time_spent,

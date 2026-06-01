@@ -20,6 +20,7 @@ import {
   mergeTopItemsByName,
   normalizeAddonPairs,
 } from "../platform/engines/menuAggregationEngine";
+import { filterRankedTopItems } from "./operationalMetricsIntegrity";
 
 export { OPERATIONAL_TRUST, resolveOperationalTrust };
 
@@ -160,11 +161,12 @@ export function hydrateCanonicalBiPayload(bi = {}, options = {}) {
     funnel: truth.funnel,
   });
   const top_addon_pairs = reconcileTopAddonPairs(bi);
-  const top_items = sortTopItems(
+  const top_items = filterRankedTopItems(
     mergeTopItemsByName(bi.top_items || []).map((t) => ({
       ...t,
       visibility_score: visibilityEngagementScore(t),
     })),
+    { limit: 10 },
   );
 
   return {
