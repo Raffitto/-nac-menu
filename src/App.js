@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
+import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
 import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
@@ -29,8 +30,7 @@ import {
   findSectionTitleEnForItem,
   getMenuLevelTabs,
   hasMenuLevelTabs,
-  resolveCategoryIcon,
-  normalizeCategoryIcons,
+  orderCategoriesForSelector,
 } from "./lib/menuPresentation";
 import { resolvePublicBranchFromLocation, branchPublicName } from "./dashboard/config/branchDisplayConfig";
 import { isPublicPlatformMode } from "./lib/platformMode";
@@ -706,23 +706,10 @@ const touchEndX = useRef(0);
   }, [menuHostId, activeMenuTab]);
   const modalCategoryId = itemCategoryId || navSourceCategoryId || effectiveCategory;
 
-  const now = new Date();
-const currentMinutes = now.getHours() * 60 + now.getMinutes();
-const isEveningShift = currentMinutes >= 16 * 60 + 30;
-
-const displayCategories = useMemo(() => {
-  const list = isEveningShift
-    ? [
-        categories.find((cat) => cat.id === "evening"),
-        categories.find((cat) => cat.id === "drinks"),
-        categories.find((cat) => cat.id === "desserts"),
-        categories.find((cat) => cat.id === "breakfast"),
-        categories.find((cat) => cat.id === "brunch"),
-        categories.find((cat) => cat.id === "daytime"),
-      ].filter(Boolean)
-    : categories;
-  return list.map(normalizeCategoryIcons);
-}, [categories, isEveningShift]);
+const displayCategories = useMemo(
+  () => orderCategoriesForSelector(categories),
+  [categories],
+);
 const toggleAllergen = (code) => {
   setSelectedAllergens((prev) =>
     prev.includes(code)
@@ -1194,62 +1181,36 @@ if (adminMode) {
 </motion.h1>
 
             <motion.div
-  className="category-row"
-  initial={{ opacity: 0, y: 18 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: 0.45, ease: "easeOut" }}
-  variants={{
-    hidden: {},
-    show: {
-      transition: {
-        staggerChildren: 0.045,
-        delayChildren: 0.08,
-      },
-    },
-  }}
->
+              className="nac-category-grid"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: "easeOut" }}
+            >
               {displayCategories.map((cat, index) => (
-                <motion.button
-  key={cat.id}
-  className="category-card"
-  onClick={() => {
-  setShowCategorySelector(false);
-  setMenuMode("manual");
-  setManualCategory(cat.id);
-  setActiveCategory(cat.id);
-  setActiveSection("");
-  trackEvent({ event_type: "category_open", category_id: cat.id, language: lang });
-  trackEvent({ event_type: "page_view", language: lang, category_id: cat.id, metadata: { page: cat.id, menu_mode: "manual" } });
-  const categoryAnalytics = JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
-  categoryAnalytics[cat.en] = (categoryAnalytics[cat.en] || 0) + 1;
-  localStorage.setItem("nacCategoryAnalytics", JSON.stringify(categoryAnalytics));
-}}
-  initial={{ opacity: 0, y: 30 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{
-    delay: index * 0.06,
-    duration: 0.45,
-    ease: "easeOut",
-  }}
-  whileHover={{ y: -8, scale: 1.03 }}
-  whileTap={{ scale: 0.94 }}
->
-                  <img
-                    src={
-                      cat.id === "breakfast" && !isArabic
-                        ? BREAKFAST_ICON_EN
-                        : resolveCategoryIcon(cat, isArabic)
-                    }
-                    alt={isArabic ? cat.ar : cat.en}
-                    className={`category-icon category-card-icon ${cat.id}`}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                  <span className="category-card-title">{isArabic ? cat.ar : cat.en}</span>
-                  <small className="category-time">
-  {isArabic ? cat.timeAr : cat.timeEn}
-</small>
-                </motion.button>
+                <CategoryCard
+                  key={cat.id}
+                  category={cat}
+                  isArabic={isArabic}
+                  index={index}
+                  onClick={() => {
+                    setShowCategorySelector(false);
+                    setMenuMode("manual");
+                    setManualCategory(cat.id);
+                    setActiveCategory(cat.id);
+                    setActiveSection("");
+                    trackEvent({ event_type: "category_open", category_id: cat.id, language: lang });
+                    trackEvent({
+                      event_type: "page_view",
+                      language: lang,
+                      category_id: cat.id,
+                      metadata: { page: cat.id, menu_mode: "manual" },
+                    });
+                    const categoryAnalytics =
+                      JSON.parse(localStorage.getItem("nacCategoryAnalytics")) || {};
+                    categoryAnalytics[cat.en] = (categoryAnalytics[cat.en] || 0) + 1;
+                    localStorage.setItem("nacCategoryAnalytics", JSON.stringify(categoryAnalytics));
+                  }}
+                />
               ))}
             </motion.div>
           </motion.main>

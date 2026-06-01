@@ -30,6 +30,16 @@ export function getBrandCategoryImage(categoryId) {
 export const BREAKFAST_ICON_EN = "/menu-icons/breakfast-en.png";
 export const BREAKFAST_ICON_AR = "/menu-icons-ar/Breakfast.png";
 
+/** Fixed All Menus card order (EN and AR use the same positions). */
+export const CATEGORY_SELECTOR_ORDER = [
+  "evening",
+  "drinks",
+  "desserts",
+  "breakfast",
+  "brunch",
+  "daytime",
+];
+
 const MENU_TAB_HOSTS = new Set(["evening", "daytime", "breakfast", "brunch"]);
 
 const MENU_TAB_SOURCES = {
@@ -123,6 +133,15 @@ export function normalizeCategoryIcons(category) {
     icon: override.icon,
     iconAr: override.iconAr,
   };
+}
+
+/** Order categories for the public All Menus grid (identical in EN and AR). */
+export function orderCategoriesForSelector(categories) {
+  if (!categories?.length) return [];
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  return CATEGORY_SELECTOR_ORDER.map((id) => byId.get(id))
+    .filter(Boolean)
+    .map(normalizeCategoryIcons);
 }
 
 /** Category card icon — language-specific only (no cross-language fallback). */
