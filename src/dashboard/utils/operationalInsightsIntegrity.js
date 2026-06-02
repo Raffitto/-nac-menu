@@ -3,14 +3,15 @@
  */
 
 import { formatCategoryName } from "./formatters";
-import {
-  buildOperationalTruth,
-  computePeakHourFromByHour,
-} from "../../lib/unifiedOperationalTruth";
+import { buildOperationalTruth, computePeakHourFromByHour } from "../../lib/unifiedOperationalTruth";
 import {
   INSIGHT_MIN_CONFIDENCE,
   insightPassesConfidence,
 } from "../../lib/operationalMetricsIntegrity";
+import {
+  filterCustomerFacingCategories,
+  isSyntheticCategoryId,
+} from "../../lib/customerFacingAnalytics";
 
 function insight({ text, type, source, value, confidence }) {
   return { text, type, source, value, confidence };
@@ -21,20 +22,21 @@ export function generateOperationalDashboardInsights(data) {
 
   const truth = data._truth || buildOperationalTruth(data);
   const out = [];
-  const sessions = truth.sessions || 0;
 
-  const topCategories = truth.topCategories || [];
+  const topCategories = filterCustomerFacingCategories(truth.topCategories || []);
   if (topCategories.length > 0 && Number(topCategories[0].opens) > 0) {
     const top = topCategories[0];
-    out.push(
-      insight({
-        text: `${formatCategoryName(top.id)} leads category engagement with ${Number(top.opens).toLocaleString()} opens.`,
-        type: "positive",
-        source: "top_categories[0].opens",
-        value: top.opens,
-        confidence: sessions >= 10 ? 0.85 : 0.7,
-      }),
-    );
+    if (!isSyntheticCategoryId(top.id)) {
+      out.push(
+        insight({
+          text: `${formatCategoryName(top.id)} leads category engagement with ${Number(top.opens).toLocaleString()} opens.`,
+          type: "positive",
+          source: "top_categories[0].opens",
+          value: top.opens,
+          confidence: (truth.sessions || 0) >= 10 ? 0.85 : 0.7,
+        }),
+      );
+    }
   }
 
   const topItems = (data.top_items || truth.topItems || []).filter(
@@ -53,6 +55,7 @@ export function generateOperationalDashboardInsights(data) {
     );
   }
 
+  const sessions = truth.sessions || 0;
   if (sessions > 0) {
     const bounceRate = truth.bouncePct;
     if (bounceRate > 30) {
@@ -78,21 +81,20 @@ export function generateOperationalDashboardInsights(data) {
     }
   }
 
-  const peak =
-    truth.peakHourLabel && truth.peakHourCount > 0
-      ? { label: truth.peakHourLabel, count: truth.peakHourCount }
-      : computePeakHourFromByHour(truth.hourly || data.by_hour || []);
-
-  if (peak.label && Number(peak.count) > 0) {
-    out.push(
-      insight({
-        text: `Peak menu activity around ${peak.label} (${peak.count} events in that bucket).`,
-        type: "neutral",
-        source: "by_hour peak",
-        value: peak.count,
-        confidence: 0.72,
-      }),
-    );
+  const scanChart = data.scan_chart;
+  if (scanChart?.usesQrEventsOnly && Array.isArray(scanChart.rows) && scanChart.rows.length) {
+    const peak = computePeakHourFromByHour(scanChart.rows);
+    if (peak.label && Number(peak.count) > 0) {
+      out.push(
+        insight({
+          text: `Peak menu QR activity around ${peak.label} (${peak.count} scans in that bucket).`,
+          type: "neutral",
+          source: "by_hour_qr peak",
+          value: peak.count,
+          confidence: 0.72,
+        }),
+      );
+    }
   }
 
   const lang = data.session_language;

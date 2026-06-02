@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Info } from "lucide-react";
+import { resolveSessionQualityDenominator } from "../../lib/customerFacingAnalytics";
 
 const TIERS = [
   { key: "bounce", label: "Bounce", color: "#6b4040", desc: "Left after 1–2 events, no real interaction" },
@@ -12,17 +13,20 @@ const TIERS = [
 
 export default function SessionQuality({ quality, totalSessions }) {
   const data = useMemo(() => quality || {}, [quality]);
-  const total = totalSessions || Object.values(data).reduce((a, b) => a + (Number(b) || 0), 0) || 0;
+  const { denominator, classifiedCount, isPartial } = useMemo(
+    () => resolveSessionQualityDenominator(data, totalSessions),
+    [data, totalSessions],
+  );
   const [hoveredTier, setHoveredTier] = useState(null);
 
   const segments = useMemo(
     () =>
       TIERS.map((tier) => {
         const count = Number(data[tier.key]) || 0;
-        const pct = total > 0 ? (count / total) * 100 : 0;
+        const pct = denominator > 0 ? (count / denominator) * 100 : 0;
         return { ...tier, count, pct };
       }),
-    [data, total],
+    [data, denominator],
   );
 
   const hasTierData = segments.some((s) => s.count > 0);
@@ -42,6 +46,13 @@ export default function SessionQuality({ quality, totalSessions }) {
         </span>
       </div>
 
+      {isPartial && classifiedCount > 0 ? (
+        <p className="bi-table-sub" style={{ marginTop: 0, marginBottom: 10 }}>
+          Based on {classifiedCount.toLocaleString()} classified session
+          {classifiedCount === 1 ? "" : "s"}.
+        </p>
+      ) : null}
+
       <div className="nac-bi-quality-bar">
         {segments.map((seg) =>
           seg.pct > 0 ? (
@@ -60,7 +71,7 @@ export default function SessionQuality({ quality, totalSessions }) {
             />
           ) : null
         )}
-        {total === 0 && !baseline && (
+        {denominator === 0 && !baseline && (
           <div style={{ width: "100%", height: "100%", background: "rgba(255,255,255,0.06)", borderRadius: 18 }} />
         )}
         {baseline && (
@@ -103,7 +114,7 @@ export default function SessionQuality({ quality, totalSessions }) {
             )}
             <span className="nac-bi-quality-tier-count">{seg.count.toLocaleString()}</span>
             <span className="nac-bi-quality-tier-pct">
-              {total > 0 ? `${seg.pct.toFixed(0)}%` : "—"}
+              {denominator > 0 ? `${seg.pct.toFixed(0)}%` : "—"}
             </span>
           </motion.div>
         ))}

@@ -11,16 +11,18 @@ import {
   resolveOperationalTrust,
   OPERATIONAL_TRUST,
 } from "./analyticsUnifiedAdapter";
-import {
-  canonicalAddonInteractionCount,
-  canonicalCategoryOpenCount,
-} from "./menuEventTypes";
+import { canonicalAddonInteractionCount } from "./menuEventTypes";
 import {
   mergeCategoriesById,
   mergeTopItemsByName,
   normalizeAddonPairs,
 } from "../platform/engines/menuAggregationEngine";
 import { filterRankedTopItems } from "./operationalMetricsIntegrity";
+import {
+  filterCustomerFacingCategories,
+  enforceMenuFunnelIntegrity,
+  reconcileRollupFunnelWithSessions,
+} from "./customerFacingAnalytics";
 
 export { OPERATIONAL_TRUST, resolveOperationalTrust };
 
@@ -83,65 +85,44 @@ export function computePeakHourFromByHour(byHour = []) {
 }
 
 /**
- * QR Scan = funnel entry (unique sessions). Session = unique session_id count.
+ * Sessions = unique session_id count. Menu QR = distinct sessions with qr_session_start (not forced equal).
  */
 export function reconcileSessionCounts(payload = {}) {
   const sessions = Number(payload.total_sessions) || 0;
   const funnelIn = payload.funnel && typeof payload.funnel === "object" ? payload.funnel : {};
   const funnelEntry = Number(funnelIn.qr_scans) || 0;
-  const qrScans = sessions > 0 ? Math.max(sessions, funnelEntry) : funnelEntry;
+  const qrScans =
+    funnelEntry > 0
+      ? funnelEntry
+      : Number(payload.by_event_type?.qr_session_start) || 0;
+
+  const funnel = reconcileRollupFunnelWithSessions(
+    { ...funnelIn, qr_scans: qrScans > 0 ? qrScans : funnelIn.qr_scans },
+    sessions,
+    { sessionFunnel: payload._sessionFunnel },
+  );
 
   return {
     sessions,
-    qrScans,
+    qrScans: Number(funnel.qr_scans) || 0,
     uniqueVisitors: Number(payload.today_unique_sessions) || sessions,
     funnel: {
-      ...funnelIn,
-      qr_scans: qrScans,
+      ...funnel,
       total_sessions: sessions,
     },
   };
 }
 
-function sumCategoryOpens(categories = []) {
-  return categories.reduce((s, c) => s + (Number(c.opens) || 0), 0);
-}
-
-/**
- * Align category rows with funnel / canonical event totals (fixes stale rollup slices).
- */
+/** Customer-facing category rows only — no synthetic aggregate placeholders. */
 export function reconcileTopCategories(bi = {}) {
-  const funnelOpens = Number(bi.funnel?.category_opens) || 0;
-  const byCanon = canonicalCategoryOpenCount(bi.by_event_type || {});
-  const targetOpens = Math.max(funnelOpens, byCanon);
-  let cats = mergeCategoriesById(
+  const cats = mergeCategoriesById(
     (bi.top_categories || []).map((c) => ({
       id: c.id || c.category_id || "",
       opens: Number(c.opens) || 0,
       impressions: Number(c.impressions) || 0,
     })),
   );
-  const catSum = sumCategoryOpens(cats);
-
-  if (targetOpens > 0 && catSum < targetOpens * 0.5) {
-    if (cats.length === 0 || catSum < targetOpens * 0.2) {
-      cats = [
-        {
-          id: "__nav_aggregate__",
-          opens: targetOpens,
-          impressions: Number(bi.by_event_type?.item_impression) || 0,
-        },
-      ];
-    } else {
-      const scale = targetOpens / Math.max(catSum, 1);
-      cats = cats.map((c) => ({
-        ...c,
-        opens: Math.max(1, Math.round((Number(c.opens) || 0) * scale)),
-      }));
-    }
-  }
-
-  return cats.sort((a, b) => b.opens - a.opens);
+  return filterCustomerFacingCategories(cats);
 }
 
 /** Prefer live addon pairs; keep funnel-backed addon totals for empty states. */
@@ -260,7 +241,6 @@ export function buildOperationalTruth(normalizedBi = {}, options = {}) {
   const bi = normalizedBi || {};
   const counts = reconcileSessionCounts(bi);
   const byType = bi.by_event_type || {};
-  const peak = computePeakHourFromByHour(bi.by_hour || []);
   const funnel = counts.funnel;
 
   const totalEvents = Number(bi.total_events) || 0;
@@ -277,6 +257,13 @@ export function buildOperationalTruth(normalizedBi = {}, options = {}) {
   const totalSessions = counts.sessions;
   const bounceSessions = Number(bi.bounce_sessions) || 0;
   const deepSessions = Number(bi.deep_sessions) || 0;
+
+  const scanChart = bi.scan_chart;
+  const peakFromChart =
+    scanChart?.usesQrEventsOnly && Array.isArray(scanChart.rows) && scanChart.rows.length
+      ? computePeakHourFromByHour(scanChart.rows)
+      : null;
+  const peak = peakFromChart?.count > 0 ? peakFromChart : computePeakHourFromByHour(bi.by_hour || []);
 
   return {
     sessions: totalSessions,

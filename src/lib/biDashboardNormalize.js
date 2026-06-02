@@ -103,20 +103,6 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
       : [],
   );
 
-  if (
-    top_categories.length === 0 &&
-    categoryOpensCanonical > 0 &&
-    !isBiTotalsEmpty(raw)
-  ) {
-    top_categories = [
-      {
-        id: "__nav_aggregate__",
-        opens: categoryOpensCanonical,
-        impressions: Number(byEventRaw.item_impression) || 0,
-      },
-    ];
-  }
-
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
   const rangeHours = Number(options.hours) || 24;
   const totalSessions = Number(raw.total_sessions) || 0;

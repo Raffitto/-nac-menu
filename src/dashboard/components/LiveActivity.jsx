@@ -3,7 +3,12 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const POLL_INTERVAL = 5000;
 
-export default function LiveActivity({ supabase, session, CATEGORY_NAMES }) {
+export default function LiveActivity({
+  supabase,
+  session,
+  CATEGORY_NAMES,
+  activeSessions: activeSessionsProp,
+}) {
   const [data, setData] = useState(null);
   const mountedRef = useRef(true);
   const categoryMap = CATEGORY_NAMES || {};
@@ -32,7 +37,11 @@ export default function LiveActivity({ supabase, session, CATEGORY_NAMES }) {
 
   if (!supabase || !session) return null;
 
-  const activeSessions = data?.active_sessions ?? 0;
+  const polledActive = data?.active_sessions ?? 0;
+  const activeSessions =
+    activeSessionsProp != null && activeSessionsProp !== undefined
+      ? Number(activeSessionsProp) || 0
+      : polledActive;
   const languages = data?.languages || {};
   const hotCategory = data?.hot_category ?? null;
   const recentItems = (data?.recent_items || []).slice(0, 8);

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DEFAULT_RANGE, hoursToRange, rangeToHours } from "../utils/rangeState";
 
 const STORAGE_KEY = "nac_platform_filters_v1";
@@ -26,22 +26,42 @@ function loadStored() {
   }
 }
 
+function reconcileStoredHours(stored = {}) {
+  const range = stored.selectedRange ?? DEFAULTS.selectedRange;
+  const expected = rangeToHours(range);
+  const storedHours = Number(stored.timeRangeHours);
+  if (!Number.isFinite(storedHours) || hoursToRange(storedHours) !== range) {
+    return expected;
+  }
+  return storedHours;
+}
+
 export function PlatformFiltersProvider({ children }) {
   const stored = useMemo(() => loadStored(), []);
 
+  const initialRange = stored.selectedRange ?? DEFAULTS.selectedRange;
+  const initialHours = reconcileStoredHours(stored);
+
   const [branch, setBranch] = useState(stored.branch ?? DEFAULTS.branch);
-  const [selectedRange, setSelectedRange] = useState(
-    stored.selectedRange ?? DEFAULTS.selectedRange,
-  );
-  const [timeRangeHours, setTimeRangeHours] = useState(
-    stored.timeRangeHours ?? rangeToHours(stored.selectedRange ?? DEFAULTS.selectedRange),
-  );
+  const [selectedRange, setSelectedRange] = useState(initialRange);
+  const [timeRangeHours, setTimeRangeHours] = useState(initialHours);
   const [language, setLanguage] = useState(stored.language ?? DEFAULTS.language);
   const [shift, setShift] = useState(stored.shift ?? DEFAULTS.shift);
   const [eventType, setEventType] = useState(stored.eventType ?? DEFAULTS.eventType);
   const [dayType, setDayType] = useState(stored.dayType ?? DEFAULTS.dayType);
   const [role, setRole] = useState(stored.role ?? DEFAULTS.role);
   const [liveMode, setLiveMode] = useState(Boolean(stored.liveMode));
+
+  useEffect(() => {
+    if (initialHours === rangeToHours(initialRange)) return;
+    try {
+      const next = { ...stored, selectedRange: initialRange, timeRangeHours: initialHours };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time storage reconcile on mount
+  }, []);
 
   const setSelectedRangeSync = useCallback((range) => {
     setSelectedRange(range);

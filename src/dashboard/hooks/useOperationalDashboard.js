@@ -5,7 +5,7 @@ import { mergeReviewIntoOperationalPayload } from "../../lib/operationalDashboar
 import { applyTruthToBiPayload } from "../../lib/unifiedOperationalTruth";
 import { applyOperationalIntegrityToPayload } from "../../lib/operationalMetricsIntegrity";
 import { normalizeBranchForRpc } from "../../lib/menuEventsBiFallback";
-import { rangeToHours } from "../utils/rangeState";
+import { hoursFromPlatformFilters } from "../../platform/engines/timeRangeEngine";
 import { useMenuBiDashboard } from "./useMenuBiDashboard";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 
@@ -30,7 +30,7 @@ async function fetchActivityFeed(hours, branch) {
 export function useOperationalDashboard(options = {}) {
   const { enabled = true, refreshIntervalMs = 0, source = "useOperationalDashboard" } = options;
   const filters = usePlatformFiltersOptional();
-  const hours = filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today");
+  const hours = hoursFromPlatformFilters(filters || {});
 
   const menuBi = useMenuBiDashboard({
     enabled,
@@ -78,6 +78,21 @@ export function useOperationalDashboard(options = {}) {
       loadEnrichment();
     }
   }, [menuBi.loading, menuBi.data, loadEnrichment]);
+
+  useEffect(() => {
+    if (!enabled || !supabase || menuBi.needsAuth || !filters?.liveMode) return undefined;
+    const pollActive = async () => {
+      try {
+        const liveRes = await supabase.rpc("get_live_activity");
+        setActiveGuestsNow(Number(liveRes?.data?.active_sessions) || 0);
+      } catch {
+        /* keep last value */
+      }
+    };
+    pollActive();
+    const id = setInterval(pollActive, 5000);
+    return () => clearInterval(id);
+  }, [enabled, menuBi.needsAuth, filters?.liveMode]);
 
   const data = useMemo(() => {
     if (!menuBi.data) return null;

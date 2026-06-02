@@ -12,6 +12,8 @@ import {
   sessionQualityTierSum,
 } from "./sessionQualityAggregate";
 import { MAX_CREDIBLE_AVG_TIME_SPENT_SEC } from "./sessionMetricsConfig";
+import { MONTH_HOURS } from "../dashboard/utils/rangeState";
+import { enforceMenuFunnelIntegrity } from "./customerFacingAnalytics";
 
 export function mergeBiPayload(base, patch) {
   if (!patch) return base;
@@ -66,8 +68,11 @@ export async function applySessionQualityPatch(supabase, { branch, hours }, payl
 export async function applySessionQualityToAggregates(supabase, params, aggregates) {
   if (!supabase || !params) return aggregates;
 
+  const hours = Number(params.p_hours);
   const shouldRefresh =
-    sessionMetricsNeedLiveRefresh(aggregates) || Number(params.p_hours) <= 168;
+    sessionMetricsNeedLiveRefresh(aggregates) ||
+    hours <= 168 ||
+    hours === MONTH_HOURS;
 
   if (!shouldRefresh) return aggregates;
 
@@ -77,6 +82,12 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
   });
   if (!patch || sessionQualityIsEmpty(patch)) return aggregates;
 
+  const patchSessions = Number(patch.total_sessions) || 0;
+  const rollupSessions = Number(aggregates.total_sessions) || 0;
+  const usePatchSessions =
+    patchSessions > 0 &&
+    (rollupSessions <= 0 || patchSessions <= rollupSessions * 1.05);
+
   const merged = {
     ...aggregates,
     session_quality: patch.session_quality,
@@ -84,20 +95,15 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
     deep_sessions: patch.deep_sessions,
     avg_time_spent: patch.avg_time_spent,
     avg_items_per_session: patch.avg_items_per_session,
-    total_sessions: Math.max(Number(aggregates.total_sessions) || 0, patch.total_sessions || 0),
-    funnel: patch.funnel || aggregates.funnel,
+    total_sessions: usePatchSessions ? patchSessions : rollupSessions,
+    funnel: enforceMenuFunnelIntegrity(patch.funnel || aggregates.funnel || {}),
+    _sessionFunnel: patch.funnel || aggregates.funnel,
     session_diagnostics: patch.session_diagnostics,
+    top_categories:
+      (patch.top_categories || []).length > 0
+        ? patch.top_categories
+        : aggregates.top_categories,
   };
-
-  if (patch.funnel?.category_opens > 0) {
-    const catSum = (merged.top_categories || []).reduce(
-      (s, c) => s + (Number(c.opens) || 0),
-      0,
-    );
-    if (catSum < patch.funnel.category_opens * 0.45) {
-      merged.funnel = patch.funnel;
-    }
-  }
 
   return merged;
 }

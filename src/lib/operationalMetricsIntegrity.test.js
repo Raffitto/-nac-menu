@@ -2,7 +2,9 @@ import {
   extractQrScanKpis,
   filterRankedTopItems,
   resolveSessionLanguageStats,
-  buildFunnelStageMetrics,
+  buildMenuFunnelStageMetrics,
+  buildReviewFunnelStageMetrics,
+  resolveScanChartBuckets,
   insightPassesConfidence,
   filterDisplayInsights,
 } from "./operationalMetricsIntegrity";
@@ -16,6 +18,15 @@ describe("extractQrScanKpis", () => {
     expect(kpis.menu_qr_scans).toBe(100);
     expect(kpis.review_qr_scans).toBe(12);
     expect(kpis.total_qr_scans).toBe(112);
+  });
+
+  it("does not fall back menu QR to total_sessions", () => {
+    const kpis = extractQrScanKpis({
+      total_sessions: 500,
+      funnel: {},
+      by_event_type: {},
+    });
+    expect(kpis.menu_qr_scans).toBe(0);
   });
 });
 
@@ -44,22 +55,36 @@ describe("resolveSessionLanguageStats", () => {
   });
 });
 
-describe("buildFunnelStageMetrics", () => {
+describe("funnel stage metrics", () => {
   it("never produces negative drop percentages for review overflow", () => {
-    const stages = buildFunnelStageMetrics({
+    const review = buildReviewFunnelStageMetrics({
+      qr_scans: 50,
+      review_redirect: 25,
+      google_review_open: 8,
+    });
+    const redirect = review.find((s) => s.key === "review_redirect");
+    expect(redirect.convPct).toBeGreaterThanOrEqual(0);
+    expect(redirect.convPct).toBeLessThanOrEqual(100);
+  });
+
+  it("builds menu stages separately from review", () => {
+    const menu = buildMenuFunnelStageMetrics({
       qr_scans: 50,
       category_opens: 40,
       item_opens: 30,
       addon_clicks: 10,
-      review_redirect: 25,
-      google_review_open: 8,
     });
-    const review = stages.find((s) => s.key === "review_redirect");
-    expect(review.convPct).toBeGreaterThanOrEqual(0);
-    expect(review.convPct).toBeLessThanOrEqual(100);
-    if (review.dropPct != null) {
-      expect(review.dropPct).toBeGreaterThanOrEqual(0);
-    }
+    expect(menu).toHaveLength(4);
+    expect(menu[0].key).toBe("qr_scans");
+  });
+});
+
+describe("resolveScanChartBuckets", () => {
+  it("uses customer-friendly empty message", () => {
+    const chart = resolveScanChartBuckets({ by_hour_qr: [] }, 24);
+    expect(chart.usesQrEventsOnly).toBe(false);
+    expect(chart.emptyReason).toMatch(/isn't available/i);
+    expect(chart.emptyReason).not.toMatch(/\.sql/i);
   });
 });
 

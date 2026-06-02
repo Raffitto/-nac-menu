@@ -14,12 +14,16 @@ import {
   resolveMenuPlatformStatus,
   PLATFORM_STATUS,
 } from "../../platform/engines/platformStatusEngine";
-import { rangeContractFromFilters } from "../../platform/engines/timeRangeEngine";
+import {
+  rangeContractFromFilters,
+  hoursFromPlatformFilters,
+} from "../../platform/engines/timeRangeEngine";
 import { assessMenuBiSufficiency } from "../../platform/contracts/dataSufficiency";
 import { recordPipelineFetch } from "../../lib/pipelineDiagnostics";
 import { isNacDebugEnabled } from "../../lib/nacDebug";
 import { probeLatestEventTimestamps } from "../../platform/engines/dataFreshnessEngine";
 import { buildAndPublishTruthValidation } from "../../lib/truthValidationRegistry";
+import { applyOperationalIntegrityToPayload } from "../../lib/operationalMetricsIntegrity";
 import { getMenuTrackingDiagnostics } from "../../lib/menuTrackingDiagnostics";
 import { getPipelineDiagnostics } from "../../lib/pipelineDiagnostics";
 
@@ -75,7 +79,7 @@ export function useMenuBiDashboard(options = {}) {
     () => rangeContractFromFilters(filters || {}),
     [filters],
   );
-  const hours = filters?.timeRangeHours ?? rangeContract.hours;
+  const hours = hoursFromPlatformFilters(filters || {});
 
   const load = useCallback(async () => {
     if (!enabled) {
@@ -115,7 +119,10 @@ export function useMenuBiDashboard(options = {}) {
         timeRangeHours: hours,
       });
 
-      const normalized = result?.data || normalizeBiDashboardPayload(result?.data, { hours });
+      const normalized = applyOperationalIntegrityToPayload(
+        result?.data || normalizeBiDashboardPayload(result?.data, { hours }),
+        { hours, branch: effectiveBranch },
+      );
       setData(normalized);
       setTruth(result?.truth || normalized?._truth || null);
       setPartial(Boolean(result?.partial));

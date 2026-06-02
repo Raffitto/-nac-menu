@@ -47,12 +47,36 @@ as $$
       public.nac_business_day_start() as day_start,
       public.nac_business_day_end() as day_end,
       public.nac_business_day_key() as day_key
+  ),
+  funnel_raw as (
+    select
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'qr_session_start'), 0)::bigint as qr_scans,
+      coalesce(sum(r.session_ids) filter (where r.event_type in ('category_open', 'menu_tab_open', 'section_open')), 0)::bigint as category_opens,
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'item_open'), 0)::bigint as item_opens,
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'add_on_click'), 0)::bigint as addon_clicks,
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'item_impression'), 0)::bigint as item_impressions,
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'time_spent'), 0)::bigint as time_spent,
+      coalesce(sum(r.session_ids) filter (where r.event_type = 'menu_exit'), 0)::bigint as exits
+    from filtered r
+  ),
+  funnel_bounded as (
+    select
+      qr_scans,
+      least(category_opens, qr_scans) as category_opens,
+      least(item_opens, least(category_opens, qr_scans)) as item_opens,
+      least(addon_clicks, qr_scans) as addon_clicks,
+      item_impressions,
+      time_spent,
+      exits
+    from funnel_raw
   )
   select jsonb_build_object(
     'partial_mode', true,
-    'aggregation_note', '7D/Month — daily rollup. Run refresh_menu_events_daily_rollup(45) if stale.',
+    'aggregation_note', '7D/Month — daily rollup (session-scoped funnel). Run refresh_menu_events_daily_rollup(45) if stale.',
     'total_events', coalesce((select sum(event_count)::bigint from filtered), 0),
-    'total_sessions', coalesce((select sum(session_ids)::bigint from filtered), 0),
+    'total_sessions', coalesce((
+      select sum(session_ids)::bigint from filtered where event_type = 'qr_session_start'
+    ), 0),
     'business_day', jsonb_build_object(
       'key', (select day_key::text from biz_today),
       'start', (select day_start from biz_today),
@@ -97,14 +121,17 @@ as $$
       select sum(event_count)::bigint from filtered f, biz_today b
       where f.event_type = 'qr_session_start' and f.day_key = b.day_key
     ), 0),
-    'funnel', jsonb_build_object(
-      'qr_scans', coalesce((select sum(event_count) from filtered where event_type = 'qr_session_start'), 0),
-      'category_opens', coalesce((select sum(event_count) from filtered where event_type = 'category_open'), 0),
-      'item_impressions', coalesce((select sum(event_count) from filtered where event_type = 'item_impression'), 0),
-      'item_opens', coalesce((select sum(event_count) from filtered where event_type = 'item_open'), 0),
-      'addon_clicks', coalesce((select sum(event_count) from filtered where event_type = 'add_on_click'), 0),
-      'time_spent', coalesce((select sum(event_count) from filtered where event_type = 'time_spent'), 0),
-      'exits', coalesce((select sum(event_count) from filtered where event_type = 'menu_exit'), 0)
+    'funnel', (
+      select jsonb_build_object(
+        'qr_scans', qr_scans,
+        'category_opens', category_opens,
+        'item_opens', item_opens,
+        'item_impressions', item_impressions,
+        'addon_clicks', addon_clicks,
+        'time_spent', time_spent,
+        'exits', exits
+      )
+      from funnel_bounded
     ),
     'strongest_hour', null,
     'top_converting_category', '{}'::jsonb,

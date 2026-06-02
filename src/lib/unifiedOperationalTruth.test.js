@@ -5,24 +5,34 @@ import {
 } from "./unifiedOperationalTruth";
 
 describe("unifiedOperationalTruth", () => {
-  it("reconciles category opens when rollup rows lag funnel", () => {
+  it("does not inject synthetic category rows when rollup detail lags", () => {
     const bi = {
       funnel: { category_opens: 627 },
       top_categories: [{ id: "evening", opens: 19 }],
       by_event_type: { category_open: 627 },
     };
     const cats = reconcileTopCategories(bi);
-    const sum = cats.reduce((s, c) => s + c.opens, 0);
-    expect(sum).toBeGreaterThanOrEqual(500);
+    expect(cats.some((c) => String(c.id).startsWith("__"))).toBe(false);
+    expect(cats).toHaveLength(1);
+    expect(cats[0].opens).toBe(19);
   });
 
-  it("aligns qr scans with sessions", () => {
+  it("does not force menu QR scans to equal total sessions", () => {
     const { qrScans, sessions } = reconcileSessionCounts({
       total_sessions: 280,
-      funnel: { qr_scans: 275 },
+      funnel: { qr_scans: 275, category_opens: 200, item_opens: 120 },
     });
-    expect(qrScans).toBe(280);
     expect(sessions).toBe(280);
+    expect(qrScans).toBe(275);
+  });
+
+  it("enforces item_opens <= category_opens <= qr_scans", () => {
+    const { funnel } = reconcileSessionCounts({
+      total_sessions: 100,
+      funnel: { qr_scans: 50, category_opens: 80, item_opens: 90 },
+    });
+    expect(funnel.item_opens).toBeLessThanOrEqual(funnel.category_opens);
+    expect(funnel.category_opens).toBeLessThanOrEqual(funnel.qr_scans);
   });
 
   it("uses canonical visibility formula", () => {

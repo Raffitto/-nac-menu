@@ -9,10 +9,14 @@ import {
   resolveChartGranularityForHours,
 } from "../dashboard/utils/hourlyPipeline";
 import { rangeToHours } from "../dashboard/utils/rangeState";
+import {
+  reconcileRollupFunnelWithSessions,
+  SCAN_CHART_EMPTY_MESSAGE,
+} from "./customerFacingAnalytics";
 
 export const INSIGHT_MIN_CONFIDENCE = 0.62;
 
-/** Menu QR = sessions that started via menu QR. Review QR = review card taps. */
+/** Menu QR = distinct sessions with qr_session_start — never alias total_sessions. */
 export function extractQrScanKpis(payload = {}) {
   const funnel = payload.funnel || {};
   const review = payload.review_kpis || {};
@@ -22,7 +26,6 @@ export function extractQrScanKpis(payload = {}) {
     Number(funnel.qr_scans) ||
     Number(payload.menu_qr_scans) ||
     Number(byType.qr_session_start) ||
-    Number(payload.total_sessions) ||
     0;
 
   const reviewQrScans =
@@ -147,33 +150,13 @@ export function resolveScanChartBuckets(payload = {}, hours = 24) {
     granularity: chart.granularity,
     title,
     usesQrEventsOnly: hasQrBuckets,
-    emptyReason: hasQrBuckets
-      ? null
-      : "QR hourly buckets require operational_dashboard_integrity.sql on Supabase",
+    emptyReason: hasQrBuckets ? null : SCAN_CHART_EMPTY_MESSAGE,
   };
 }
 
-/** Funnel stage display metadata — avoids invalid negative step drop-offs. */
-export function buildFunnelStageMetrics(funnel = {}) {
-  const menuQr = Number(funnel.qr_scans) || 0;
-  const stages = [
-    { key: "qr_scans", label: "QR Scan", value: menuQr },
-    { key: "category_opens", label: "Category Open", value: Number(funnel.category_opens) || 0 },
-    { key: "item_opens", label: "Item Open", value: Number(funnel.item_opens) || 0 },
-    { key: "addon_clicks", label: "Add-on Interaction", value: Number(funnel.addon_clicks) || 0 },
-    {
-      key: "review_redirect",
-      label: "Review Redirect",
-      value: Number(funnel.review_redirect) || 0,
-    },
-    {
-      key: "google_review_open",
-      label: "Google Review Open",
-      value: Number(funnel.google_review_open) || 0,
-    },
-  ];
-
+function mapStageMetrics(stages, menuQr) {
   const MENU_KEYS = new Set(["qr_scans", "category_opens", "item_opens", "addon_clicks"]);
+  const maxVal = Math.max(...stages.map((s) => s.value), 1);
 
   return stages.map((stage, i) => {
     const prev = i > 0 ? stages[i - 1].value : null;
@@ -194,7 +177,7 @@ export function buildFunnelStageMetrics(funnel = {}) {
       convPct = Math.min(100, (stage.value / menuQr) * 100);
       convNote = "of menu QR";
     } else if (stage.key === "google_review_open") {
-      const rr = Number(funnel.review_redirect) || 0;
+      const rr = Number(stages.find((s) => s.key === "review_redirect")?.value) || 0;
       const denom = rr > 0 ? rr : menuQr;
       if (denom > 0) {
         convPct = Math.min(100, (stage.value / denom) * 100);
@@ -202,7 +185,6 @@ export function buildFunnelStageMetrics(funnel = {}) {
       }
     }
 
-    const maxVal = Math.max(...stages.map((s) => s.value), 1);
     return {
       ...stage,
       widthPct: (stage.value / maxVal) * 100,
@@ -211,6 +193,44 @@ export function buildFunnelStageMetrics(funnel = {}) {
       convNote,
     };
   });
+}
+
+/** Menu journey — unique sessions per stage. */
+export function buildMenuFunnelStageMetrics(funnel = {}) {
+  const menuQr = Number(funnel.qr_scans) || 0;
+  const stages = [
+    { key: "qr_scans", label: "QR Scan", value: menuQr },
+    { key: "category_opens", label: "Category Open", value: Number(funnel.category_opens) || 0 },
+    { key: "item_opens", label: "Item Open", value: Number(funnel.item_opens) || 0 },
+    { key: "addon_clicks", label: "Add-on Interaction", value: Number(funnel.addon_clicks) || 0 },
+  ];
+  return mapStageMetrics(stages, menuQr);
+}
+
+/** Review funnel — separate path (not sequential menu steps). */
+export function buildReviewFunnelStageMetrics(funnel = {}) {
+  const menuQr = Number(funnel.qr_scans) || 0;
+  const stages = [
+    {
+      key: "review_redirect",
+      label: "Review Redirect",
+      value: Number(funnel.review_redirect) || 0,
+    },
+    {
+      key: "google_review_open",
+      label: "Google Review Open",
+      value: Number(funnel.google_review_open) || 0,
+    },
+  ];
+  return mapStageMetrics(stages, menuQr);
+}
+
+/** @deprecated Use buildMenuFunnelStageMetrics + buildReviewFunnelStageMetrics */
+export function buildFunnelStageMetrics(funnel = {}) {
+  return [
+    ...buildMenuFunnelStageMetrics(funnel),
+    ...buildReviewFunnelStageMetrics(funnel),
+  ];
 }
 
 export function insightPassesConfidence(insight) {
@@ -245,7 +265,19 @@ export function applyOperationalIntegrityToPayload(payload = {}, options = {}) {
   if (!payload || typeof payload !== "object") return payload;
 
   const hours = options.hours ?? rangeToHours("today");
-  const qrKpis = extractQrScanKpis(payload);
+  const sessions = Number(payload.total_sessions) || 0;
+  const menuFunnel = reconcileRollupFunnelWithSessions(
+    payload.funnel || {},
+    sessions,
+    { sessionFunnel: payload._sessionFunnel },
+  );
+  const funnel = {
+    ...menuFunnel,
+    review_redirect: Number(payload.funnel?.review_redirect) || 0,
+    google_review_open: Number(payload.funnel?.google_review_open) || 0,
+  };
+
+  const qrKpis = extractQrScanKpis({ ...payload, funnel });
   const langStats = resolveSessionLanguageStats(payload);
   const top_items = filterRankedTopItems(payload.top_items || [], {
     limit: 10,
@@ -255,11 +287,15 @@ export function applyOperationalIntegrityToPayload(payload = {}, options = {}) {
 
   const enriched = {
     ...payload,
+    funnel,
     ...qrKpis,
     session_language: langStats,
     top_items,
     scan_chart: scanChart,
-    funnel_stage_metrics: buildFunnelStageMetrics(payload.funnel || {}),
+    funnel_stage_metrics: {
+      menu: buildMenuFunnelStageMetrics(menuFunnel),
+      review: buildReviewFunnelStageMetrics(funnel),
+    },
   };
 
   publishDashboardTrustAudit(enriched, { hours, ...options });
@@ -275,7 +311,7 @@ export function publishDashboardTrustAudit(data, options = {}) {
   const widgets = [
     {
       widget: "Executive — Menu QR Scans",
-      source: "menu_events.funnel.qr_scans / qr_session_start",
+      source: "menu_events.funnel.qr_scans",
       aggregation: "distinct session_id",
       sampleCount: qr.menu_qr_scans,
       confidence: qr.menu_qr_scans > 0 ? "high" : "none",
@@ -311,11 +347,10 @@ export function publishDashboardTrustAudit(data, options = {}) {
     },
     {
       widget: "Customer Journey funnel",
-      source: "menu funnel + review_events summary",
-      aggregation: "distinct sessions / review counts",
+      source: "menu funnel (sessions) + review_events",
+      aggregation: "distinct sessions; review path separate",
       sampleCount: Number(data.funnel?.qr_scans) || 0,
       confidence: "medium",
-      note: "Review stages use menu QR or review redirect denominators (not invalid step drops)",
     },
     {
       widget: "AI Insights",

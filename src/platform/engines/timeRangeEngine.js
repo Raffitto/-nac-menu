@@ -4,6 +4,7 @@
 
 import {
   buildIntelligenceRangeContract,
+  hoursToRange,
   rangeToHours,
 } from "../contracts/intelligenceRangeContract";
 
@@ -21,10 +22,13 @@ export {
   hoursToRange,
 } from "../contracts/intelligenceRangeContract";
 
-/** RPC `p_hours` from platform filter state. */
+/** RPC `p_hours` from platform filter state (selectedRange wins when out of sync). */
 export function hoursFromPlatformFilters(filters = {}) {
-  if (filters.timeRangeHours != null) return Number(filters.timeRangeHours) || 24;
-  return rangeToHours(filters.selectedRange || "today");
+  const fromRange = rangeToHours(filters.selectedRange || "today");
+  const stored = Number(filters.timeRangeHours);
+  if (!Number.isFinite(stored)) return fromRange;
+  if (hoursToRange(stored) !== (filters.selectedRange || "today")) return fromRange;
+  return stored;
 }
 
 /** Full contract from platform filter context. */

@@ -31,7 +31,6 @@ import { useOperationalDashboard } from "../hooks/useOperationalDashboard";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import SessionStabilizationDiagnostics from "../components/SessionStabilizationDiagnostics";
-import InternalOpsStatusPanel from "../components/InternalOpsStatusPanel";
 import LiveActivity from "../components/LiveActivity";
 import FunnelChart from "../components/FunnelChart";
 import SessionQuality from "../components/SessionQuality";
@@ -93,7 +92,7 @@ export default function OperationalDashboard({ session }) {
   const totalSessions = Number(data?.total_sessions) || 0;
   const byType = data?.by_event_type || {};
   const funnel = data?.funnel || {};
-  const itemOpenCount = ev(byType, "item_open");
+  const itemOpenCount = Number(funnel.item_opens) || ev(byType, "item_open");
   const menuQrScans = Number(data?.menu_qr_scans) || Number(funnel.qr_scans) || 0;
   const reviewQrScans = Number(data?.review_qr_scans) || 0;
   const addOnClickCount = ev(byType, "add_on_click") || ev(byType, "addon_interaction");
@@ -204,7 +203,6 @@ export default function OperationalDashboard({ session }) {
       </div>
 
       <PlatformStatusBanner platformStatus={platformStatus} />
-      <InternalOpsStatusPanel notes={opsNotes} />
       {partial && note ? <p className="nac-ops-user-note">{note}</p> : null}
 
       <details className="nac-ops-diagnostics">
@@ -296,7 +294,12 @@ export default function OperationalDashboard({ session }) {
         <Activity size={14} /> Live Activity
       </p>
       <div className="bi-row-grid">
-        <LiveActivity supabase={supabase} session={session} CATEGORY_NAMES={CATEGORY_NAMES} />
+        <LiveActivity
+          supabase={supabase}
+          session={session}
+          CATEGORY_NAMES={CATEGORY_NAMES}
+          activeSessions={activeGuestsNow}
+        />
         <motion.div className="bi-table nac-ops-feed">
           <h4>Recent Activity</h4>
           <p className="bi-table-sub">Latest guest interactions</p>
@@ -318,7 +321,6 @@ export default function OperationalDashboard({ session }) {
         <Zap size={14} /> Customer Journey
       </p>
       <motion.div className="bi-table nac-ops-funnel-wrap" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-        <p className="bi-table-sub">Unique sessions at each stage · drop-off between steps</p>
         <FunnelChart funnel={funnel} stageMetrics={funnelStageMetrics} />
       </motion.div>
 
@@ -335,7 +337,7 @@ export default function OperationalDashboard({ session }) {
           <div className="real-chart">
             {!scanChart.usesQrEventsOnly ? (
               <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)", padding: 16, textAlign: "center" }}>
-                {scanChart.emptyReason || "QR scan chart unavailable until Supabase analytics upgrade is applied"}
+                {scanChart.emptyReason || "Hourly scan breakdown isn't available for this period yet."}
               </div>
             ) : hourlyData.length === 0 ? (
               <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)" }}>

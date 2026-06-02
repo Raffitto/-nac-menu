@@ -13,6 +13,7 @@ import {
   isBiTopItemsEmpty,
 } from "../../lib/biDashboardNormalize";
 import { getCanonicalMenuSurface } from "../../lib/unifiedOperationalTruth";
+import { filterCustomerFacingCategories } from "../../lib/customerFacingAnalytics";
 import {
   buildMenuIntelligenceChartItems,
   buildMenuIntelligenceLowEngagement,
@@ -54,11 +55,8 @@ export default function MenuIntelligence() {
   );
   const topCategories = useMemo(
     () =>
-      (canonical?.topCategories || []).map((c) => ({
-        name:
-          c.id === "__nav_aggregate__"
-            ? "Category navigation (all)"
-            : CATEGORY_NAMES[c.id] || c.id,
+      filterCustomerFacingCategories(canonical?.topCategories || []).map((c) => ({
+        name: CATEGORY_NAMES[c.id] || c.id,
         opens: c.opens,
       })),
     [canonical?.topCategories],

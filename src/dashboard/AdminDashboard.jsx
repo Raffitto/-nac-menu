@@ -71,6 +71,9 @@ import {
   publishHourlyPipelineDebug,
 } from "./utils/hourlyPipeline";
 import { generateInsights } from "./utils/insights";
+import { filterCustomerFacingCategories } from "../lib/customerFacingAnalytics";
+import { filterDisplayInsights } from "../lib/operationalMetricsIntegrity";
+import { generateOperationalDashboardInsights } from "./utils/operationalInsightsIntegrity";
 import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
 
@@ -233,7 +236,10 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const topAddonPairs = data?.top_addon_pairs || [];
   const topAddon = topAddonPairs[0];
   const topItems = useMemo(() => data?.top_items || [], [data]);
-  const topCategories = data?.top_categories || [];
+  const topCategories = useMemo(
+    () => filterCustomerFacingCategories(data?.top_categories || []),
+    [data?.top_categories],
+  );
   const topSearches = data?.top_searches || [];
 
   const avgTimeSpent = Number(data?.avg_time_spent) || 0;
@@ -277,7 +283,13 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const strongestHour = data?.strongest_hour;
   // topConvertingCat available via data?.top_converting_category
 
-  const insights = useMemo(() => generateInsights(data), [data]);
+  const insights = useMemo(() => {
+    if (!data) return [];
+    if (unifiedOverview) return [];
+    const fromOps = filterDisplayInsights(generateOperationalDashboardInsights(data));
+    if (fromOps.length > 0) return fromOps;
+    return generateInsights(data);
+  }, [data, unifiedOverview]);
 
   const handleExport = useCallback(() => {
     if (!data) return;
