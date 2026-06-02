@@ -3,7 +3,7 @@
  * BI dashboard supplements item/category depth. All intelligence modules should consume this path.
  */
 
-import { rangeToHours } from "../dashboard/utils/rangeState";
+import { rangeToHours, isRollupRangeHours } from "../dashboard/utils/rangeState";
 import { normalizeHourlyForRange } from "../dashboard/utils/hourlyPipeline";
 import {
   normalizeBiDashboardPayload,
@@ -37,6 +37,30 @@ function pickMaster(sessionVal, biVal) {
   if (s <= 0) return b;
   if (b <= 0) return s;
   return s >= b ? s : b;
+}
+
+/** Rollup ranges: BI month funnel wins over truncated live session patch. */
+export function pickFunnelForOperationalMerge(biRaw = {}, aggregates = null, hours = 24) {
+  const biFunnel = biRaw?.funnel && typeof biRaw.funnel === "object" ? biRaw.funnel : {};
+  const aggFunnel =
+    aggregates?.funnel && typeof aggregates.funnel === "object" ? aggregates.funnel : {};
+
+  if (!isRollupRangeHours(hours)) {
+    return Object.keys(aggFunnel).length ? aggFunnel : biFunnel;
+  }
+
+  const biQr = Number(biFunnel.qr_scans) || 0;
+  const aggQr = Number(aggFunnel.qr_scans) || 0;
+
+  if (aggregates?._sessionMetricsFromLivePatch) {
+    if (biQr > 0 && biQr >= aggQr) return biFunnel;
+    if (aggQr > 0) return aggFunnel;
+    return biFunnel;
+  }
+
+  if (biQr >= aggQr && biQr > 0) return biFunnel;
+  if (aggQr > 0) return aggFunnel;
+  return Object.keys(biFunnel).length ? biFunnel : aggFunnel;
 }
 
 /** Session chart rows → BI by_hour buckets (filled via shared hourly pipeline). */
@@ -118,7 +142,7 @@ function pickRicherTopItems(biItems, aggItems, funnel = {}) {
 export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours = 24) {
   if (!aggregates) return { ...biRaw };
 
-  const funnel = aggregates.funnel || biRaw.funnel || {};
+  const funnel = pickFunnelForOperationalMerge(biRaw, aggregates, hours);
   const mergedByType = enrichByEventTypeCanonical({
     ...(biRaw.by_event_type || {}),
     ...(aggregates.by_event_type || {}),
@@ -147,8 +171,8 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
     returning_sessions: aggregates.returning_sessions ?? biRaw.returning_sessions,
     session_quality: aggregates.session_quality || biRaw.session_quality,
     session_operational: aggregates.session_operational || biRaw.session_operational,
-    _sessionFunnel: aggregates?.funnel || null,
-    funnel: aggregates.funnel || biRaw.funnel,
+    _sessionFunnel: aggregates?.funnel || biRaw.funnel || null,
+    funnel,
     session_diagnostics: aggregates.session_diagnostics || biRaw.session_diagnostics,
     today_qr_sessions:
       Number(aggregates.today_qr_sessions) ||

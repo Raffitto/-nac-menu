@@ -16,6 +16,7 @@ import { MONTH_HOURS } from "../dashboard/utils/rangeState";
 import {
   applyCanonicalMenuSessionsToPayload,
   enforceMenuFunnelIntegrity,
+  isMonthRangeHours,
 } from "./customerFacingAnalytics";
 
 export function mergeBiPayload(base, patch) {
@@ -45,6 +46,20 @@ function sessionMetricsNeedLiveRefresh(aggregates) {
   if (sessions > 10 && funnelQr > 0 && funnelQr < sessions * 0.5) return true;
   if (sessions > 10 && funnelQr < 20 && sessions > 50) return true;
   return biSessionQualityNeedsRefresh(aggregates);
+}
+
+/** Session-quality fields only — never overwrites rollup session totals or funnel. */
+export function applyLiveSessionQualityFields(aggregates, patch) {
+  return {
+    ...aggregates,
+    session_quality: patch.session_quality,
+    bounce_sessions: patch.bounce_sessions,
+    deep_sessions: patch.deep_sessions,
+    avg_time_spent: patch.avg_time_spent,
+    avg_items_per_session: patch.avg_items_per_session,
+    session_diagnostics: patch.session_diagnostics,
+    _sessionMetricsFromLivePatch: true,
+  };
 }
 
 /**
@@ -87,6 +102,22 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
 
   const patchSessions = Number(patch.total_sessions) || 0;
   const rollupSessions = Number(aggregates.total_sessions) || 0;
+  const rollupFunnel = aggregates.funnel && typeof aggregates.funnel === "object"
+    ? aggregates.funnel
+    : {};
+  const rollupQr = Number(rollupFunnel.qr_scans) || 0;
+
+  // Month MTD: live 12k scan is quality-only; preserve rollup session entry counts.
+  if (isMonthRangeHours(hours) && rollupSessions > 0) {
+    const withQuality = applyLiveSessionQualityFields(aggregates, patch);
+    return applyCanonicalMenuSessionsToPayload({
+      ...withQuality,
+      total_sessions: rollupSessions,
+      funnel: enforceMenuFunnelIntegrity(rollupFunnel),
+      _sessionFunnel: rollupFunnel,
+    });
+  }
+
   const usePatchSessions =
     patchSessions > 0 &&
     (rollupSessions <= 0 || patchSessions <= rollupSessions * 1.05);
@@ -99,8 +130,13 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
     avg_time_spent: patch.avg_time_spent,
     avg_items_per_session: patch.avg_items_per_session,
     total_sessions: usePatchSessions ? patchSessions : rollupSessions,
-    funnel: enforceMenuFunnelIntegrity(patch.funnel || aggregates.funnel || {}),
-    _sessionFunnel: patch.funnel || aggregates.funnel,
+    funnel: enforceMenuFunnelIntegrity(
+      usePatchSessions && patchSessions >= rollupQr
+        ? patch.funnel || rollupFunnel
+        : rollupFunnel,
+    ),
+    _sessionFunnel: usePatchSessions ? patch.funnel || rollupFunnel : rollupFunnel,
+    _sessionMetricsFromLivePatch: usePatchSessions,
     session_diagnostics: patch.session_diagnostics,
     top_categories:
       (patch.top_categories || []).length > 0

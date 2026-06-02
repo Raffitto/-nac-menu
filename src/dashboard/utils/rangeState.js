@@ -4,6 +4,12 @@ import { getBusinessDayRange, getCurrentMonthStart } from "./businessDay";
 
 export const MONTH_HOURS = 999;
 
+/** 7D + calendar month use daily rollup RPCs (not live 12k menu_events scan for session totals). */
+export function isRollupRangeHours(hours) {
+  const h = Number(hours);
+  return h >= 168 || h === MONTH_HOURS;
+}
+
 export const DEFAULT_RANGE = "today";
 
 export const RANGE_OPTIONS = [

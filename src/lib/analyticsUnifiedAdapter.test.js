@@ -1,5 +1,7 @@
+import { MONTH_HOURS } from "../dashboard/utils/rangeState";
 import {
   mergeSessionMasterWithBiRaw,
+  pickFunnelForOperationalMerge,
   resolveOperationalTrust,
   OPERATIONAL_TRUST,
   hourlyBucketsFromSessionAggregates,
@@ -54,5 +56,40 @@ describe("analyticsUnifiedAdapter", () => {
       biEvents: 480,
     });
     expect(trust.badge).toBe(OPERATIONAL_TRUST.LIVE_VERIFIED);
+  });
+
+  test("month merge keeps rollup QR sessions over truncated live patch funnel", () => {
+    const biRaw = {
+      total_sessions: 200,
+      funnel: { qr_scans: 200, category_opens: 150, item_opens: 80 },
+    };
+    const aggregates = {
+      total_sessions: 10,
+      funnel: { qr_scans: 10, category_opens: 8, item_opens: 5 },
+      _sessionMetricsFromLivePatch: true,
+      session_quality: { bounce: 2, casual: 3, engaged: 4, deep: 1, power: 0 },
+    };
+
+    expect(pickFunnelForOperationalMerge(biRaw, aggregates, MONTH_HOURS).qr_scans).toBe(200);
+
+    const merged = mergeSessionMasterWithBiRaw(biRaw, aggregates, MONTH_HOURS);
+    expect(merged.total_sessions).toBe(200);
+    expect(merged.funnel.qr_scans).toBe(200);
+    expect(merged.menu_qr_scans).toBe(200);
+    expect(merged.session_quality.engaged).toBe(4);
+  });
+
+  test("today merge still prefers session funnel when denser", () => {
+    const merged = mergeSessionMasterWithBiRaw(
+      { total_sessions: 5, funnel: { qr_scans: 5 } },
+      {
+        total_sessions: 11,
+        funnel: { qr_scans: 11, category_opens: 9, item_opens: 6 },
+        session_quality: { bounce: 1, casual: 2, engaged: 3, deep: 0, power: 0 },
+      },
+      24,
+    );
+    expect(merged.funnel.qr_scans).toBe(11);
+    expect(merged.total_sessions).toBe(11);
   });
 });
