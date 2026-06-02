@@ -36,8 +36,6 @@ export function filterCustomerFacingCategories(categories = []) {
     .sort((a, b) => b.opens - a.opens || b.impressions - a.impressions);
 }
 
-const CATEGORY_NAV_TYPES = new Set(["category_open", "menu_tab_open", "section_open"]);
-
 /**
  * Enforce distinct-session funnel ordering: item_opens ≤ category_opens ≤ qr_scans.
  */

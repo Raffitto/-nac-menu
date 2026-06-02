@@ -20,7 +20,6 @@ import {
 import { filterRankedTopItems } from "./operationalMetricsIntegrity";
 import {
   filterCustomerFacingCategories,
-  enforceMenuFunnelIntegrity,
   reconcileRollupFunnelWithSessions,
 } from "./customerFacingAnalytics";
 

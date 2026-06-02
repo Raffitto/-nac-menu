@@ -80,7 +80,6 @@ export default function OperationalDashboard({ session }) {
     operationalTrust,
     partial,
     note,
-    opsNotes,
     activityFeed,
     activeGuestsNow,
     reload,
