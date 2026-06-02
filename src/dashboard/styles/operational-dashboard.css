@@ -124,3 +124,20 @@
   color: rgba(249, 249, 247, 0.55);
   margin: 0 0 16px;
 }
+
+.nac-ops-range-note {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(249, 249, 247, 0.62);
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(143, 122, 87, 0.22);
+  background: rgba(143, 122, 87, 0.08);
+}
+
+.nac-ops-range-note--warn {
+  border-color: rgba(220, 160, 80, 0.35);
+  background: rgba(220, 160, 80, 0.1);
+  color: rgba(255, 232, 200, 0.85);
+}

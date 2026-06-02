@@ -40,6 +40,12 @@ import { CATEGORY_NAMES, formatDuration } from "../utils/formatters";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { generateOperationalDashboardInsights } from "../utils/operationalInsightsIntegrity";
 import { humanizeActivityFeedRow } from "../utils/activityFeedHumanize";
+import {
+  operationalRangeContextNote,
+  monthSevenDayIntegrityWarning,
+  rememberSevenDayMenuQr,
+  readCachedSevenDayMenuQr,
+} from "../../lib/operationalRangeHelpers";
 import "../styles/operational-dashboard.css";
 
 const TOOLTIP_STYLE = {
@@ -130,6 +136,20 @@ export default function OperationalDashboard({ session }) {
   const topAddonPairs = data?.top_addon_pairs || [];
   const insights = useMemo(() => generateOperationalDashboardInsights(data), [data]);
   const funnelStageMetrics = data?.funnel_stage_metrics;
+  const selectedRange = filters?.selectedRange || "today";
+
+  React.useEffect(() => {
+    if (selectedRange === "7d" && menuQrScans > 0) {
+      rememberSevenDayMenuQr(menuQrScans);
+    }
+  }, [selectedRange, menuQrScans]);
+
+  const rangeContextNote = operationalRangeContextNote(selectedRange);
+  const monthIntegrityWarning = monthSevenDayIntegrityWarning({
+    selectedRange,
+    monthQr: menuQrScans,
+    sevenDayQr: readCachedSevenDayMenuQr(),
+  });
 
   const health = useMemo(
     () =>
@@ -204,6 +224,16 @@ export default function OperationalDashboard({ session }) {
 
       <PlatformStatusBanner platformStatus={platformStatus} />
       {partial && note ? <p className="nac-ops-user-note">{note}</p> : null}
+      {rangeContextNote ? (
+        <p className="nac-ops-range-note" role="note">
+          {rangeContextNote}
+        </p>
+      ) : null}
+      {monthIntegrityWarning ? (
+        <p className="nac-ops-range-note nac-ops-range-note--warn" role="note">
+          {monthIntegrityWarning}
+        </p>
+      ) : null}
 
       <details className="nac-ops-diagnostics">
         <summary>System diagnostics</summary>
@@ -324,7 +354,12 @@ export default function OperationalDashboard({ session }) {
         <FunnelChart funnel={funnel} stageMetrics={funnelStageMetrics} />
       </motion.div>
 
-      <SessionQuality quality={sessionQuality} totalSessions={totalSessions} />
+      <SessionQuality
+        quality={sessionQuality}
+        totalSessions={totalSessions}
+        selectedRange={selectedRange}
+        fromLivePatch={Boolean(data?._sessionMetricsFromLivePatch)}
+      />
 
       <p className="bi-section-title">
         <BarChart3 size={14} /> Menu Intelligence

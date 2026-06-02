@@ -12,7 +12,7 @@ const EXPORT_RANGE_PRESETS = [
   { id: "today", label: "Today" },
   { id: "7d", label: "7D" },
   { id: "30d", label: "30D" },
-  { id: "month", label: "This Month" },
+  { id: "month", label: "Month-to-date" },
   { id: "custom", label: "Custom range" },
 ];
 

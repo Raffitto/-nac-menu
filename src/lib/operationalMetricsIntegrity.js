@@ -12,6 +12,7 @@ import { rangeToHours } from "../dashboard/utils/rangeState";
 import {
   applyCanonicalMenuSessionsToPayload,
   resolveCanonicalMenuSessions,
+  isMonthRangeHours,
   SCAN_CHART_EMPTY_MESSAGE,
 } from "./customerFacingAnalytics";
 
@@ -134,8 +135,8 @@ export function resolveScanChartBuckets(payload = {}, hours = 24) {
   let title;
   if (gran === "hour") {
     title = "Menu QR scans by hour (today)";
-  } else if (hours >= 720) {
-    title = "Menu QR scans per day (month)";
+  } else if (isMonthRangeHours(hours)) {
+    title = "Menu QR scans per day (month-to-date)";
   } else {
     title = "Menu QR scans per day (7D)";
   }

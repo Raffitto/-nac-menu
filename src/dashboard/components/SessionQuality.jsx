@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Info } from "lucide-react";
 import { resolveSessionQualityDenominator } from "../../lib/customerFacingAnalytics";
+import { sessionQualityCaption } from "../../lib/operationalRangeHelpers";
 
 const TIERS = [
   { key: "bounce", label: "Bounce", color: "#6b4040", desc: "Left after 1–2 events, no real interaction" },
@@ -11,7 +12,12 @@ const TIERS = [
   { key: "power", label: "Power User", color: "#76d69f", desc: "12+ events, extensive menu exploration" },
 ];
 
-export default function SessionQuality({ quality, totalSessions }) {
+export default function SessionQuality({
+  quality,
+  totalSessions,
+  selectedRange = "today",
+  fromLivePatch = false,
+}) {
   const data = useMemo(() => quality || {}, [quality]);
   const { denominator, classifiedCount, isPartial } = useMemo(
     () => resolveSessionQualityDenominator(data, totalSessions),
@@ -31,6 +37,13 @@ export default function SessionQuality({ quality, totalSessions }) {
 
   const hasTierData = segments.some((s) => s.count > 0);
   const baseline = totalSessions > 0 && !hasTierData;
+  const caption = sessionQualityCaption({
+    isPartial,
+    classifiedCount,
+    totalSessions,
+    selectedRange,
+    fromLivePatch,
+  });
 
   return (
     <motion.div
@@ -46,10 +59,9 @@ export default function SessionQuality({ quality, totalSessions }) {
         </span>
       </div>
 
-      {isPartial && classifiedCount > 0 ? (
+      {caption ? (
         <p className="bi-table-sub" style={{ marginTop: 0, marginBottom: 10 }}>
-          Based on {classifiedCount.toLocaleString()} classified session
-          {classifiedCount === 1 ? "" : "s"}.
+          {caption}
         </p>
       ) : null}
 

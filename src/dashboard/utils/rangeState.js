@@ -15,7 +15,7 @@ export const DEFAULT_RANGE = "today";
 export const RANGE_OPTIONS = [
   { id: "today", label: "Today", hours: 24, title: "NAC business day · 3:00 AM – 2:59 AM (Asia/Riyadh)" },
   { id: "7d", label: "7D", hours: 168, title: "Last 7 business-day windows" },
-  { id: "month", label: "This Month", hours: MONTH_HOURS, title: "Calendar month to date (Asia/Riyadh)" },
+  { id: "month", label: "Month-to-date", hours: MONTH_HOURS, title: "Calendar month to date from the 1st (Asia/Riyadh)" },
 ];
 
 export function rangeToHours(range) {

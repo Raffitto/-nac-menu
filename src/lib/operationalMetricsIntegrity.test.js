@@ -80,6 +80,11 @@ describe("funnel stage metrics", () => {
 });
 
 describe("resolveScanChartBuckets", () => {
+  it("month chart title uses month-to-date label", () => {
+    const chart = resolveScanChartBuckets({ by_hour_qr: [{ hour: 1, count: 2 }] }, 999);
+    expect(chart.title).toBe("Menu QR scans per day (month-to-date)");
+  });
+
   it("uses customer-friendly empty message", () => {
     const chart = resolveScanChartBuckets({ by_hour_qr: [] }, 24);
     expect(chart.usesQrEventsOnly).toBe(false);
