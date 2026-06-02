@@ -12,7 +12,6 @@ import { rangeToHours } from "../dashboard/utils/rangeState";
 import {
   applyCanonicalMenuSessionsToPayload,
   resolveCanonicalMenuSessions,
-  reconcileRollupFunnelWithSessions,
   SCAN_CHART_EMPTY_MESSAGE,
 } from "./customerFacingAnalytics";
 

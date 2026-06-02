@@ -105,7 +105,6 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
 
   const top_addon_pairs = normalizeAddonPairs(raw.top_addon_pairs || []);
   const rangeHours = Number(options.hours) || 24;
-  const totalSessions = Number(raw.total_sessions) || 0;
   const useSessionFunnel =
     raw.data_source === "unified_session_master" ||
     (funnelIn.qr_scans != null && funnelIn.item_opens != null);
