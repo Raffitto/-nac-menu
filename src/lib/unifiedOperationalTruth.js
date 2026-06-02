@@ -20,6 +20,7 @@ import {
 import { filterRankedTopItems } from "./operationalMetricsIntegrity";
 import {
   filterCustomerFacingCategories,
+  resolveCanonicalMenuSessions,
   reconcileRollupFunnelWithSessions,
 } from "./customerFacingAnalytics";
 
@@ -84,30 +85,28 @@ export function computePeakHourFromByHour(byHour = []) {
 }
 
 /**
- * Sessions = unique session_id count. Menu QR = distinct sessions with qr_session_start (not forced equal).
+ * Sessions and Menu QR Scans share one canonical count: distinct sessions with qr_session_start.
  */
 export function reconcileSessionCounts(payload = {}) {
-  const sessions = Number(payload.total_sessions) || 0;
+  const canon = resolveCanonicalMenuSessions(payload);
   const funnelIn = payload.funnel && typeof payload.funnel === "object" ? payload.funnel : {};
-  const funnelEntry = Number(funnelIn.qr_scans) || 0;
-  const qrScans =
-    funnelEntry > 0
-      ? funnelEntry
-      : Number(payload.by_event_type?.qr_session_start) || 0;
 
   const funnel = reconcileRollupFunnelWithSessions(
-    { ...funnelIn, qr_scans: qrScans > 0 ? qrScans : funnelIn.qr_scans },
-    sessions,
+    { ...funnelIn, qr_scans: canon.menuQrScans },
+    canon.menuSessions,
     { sessionFunnel: payload._sessionFunnel },
   );
 
   return {
-    sessions,
-    qrScans: Number(funnel.qr_scans) || 0,
-    uniqueVisitors: Number(payload.today_unique_sessions) || sessions,
+    sessions: canon.menuSessions,
+    qrScans: canon.menuQrScans,
+    allSessionIdsWithEvents: canon.allSessionIdsWithEvents,
+    uniqueVisitors:
+      Number(payload.today_unique_sessions) || canon.menuSessions,
     funnel: {
       ...funnel,
-      total_sessions: sessions,
+      qr_scans: canon.menuQrScans,
+      total_sessions: canon.menuSessions,
     },
   };
 }

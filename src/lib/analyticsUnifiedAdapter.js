@@ -12,6 +12,7 @@ import {
 import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { fetchSessionAnalytics } from "./sessionAnalyticsApi";
 import { appendOpsNote } from "./biOpsNotes";
+import { applyCanonicalMenuSessionsToPayload } from "./customerFacingAnalytics";
 import { enrichByEventTypeCanonical, canonicalAddonInteractionCount } from "./menuEventTypes";
 import { biEngagementDetailNeedsRefresh } from "./biDashboardNormalize";
 import { fetchBiItemDetailFromMenuEvents } from "./menuEventsBiFallback";
@@ -128,7 +129,7 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
   const sessionHourlySum = sessionHourly.reduce((s, r) => s + (Number(r.count) || 0), 0);
   const biHourlySum = biHourly.reduce((s, r) => s + (Number(r.count) || 0), 0);
 
-  return {
+  const merged = {
     ...biRaw,
     total_events: pickMaster(aggregates.total_events, biRaw.total_events),
     total_sessions: pickMaster(aggregates.total_sessions, biRaw.total_sessions),
@@ -170,6 +171,8 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
     partial_mode: Boolean(biRaw.partial_mode || aggregates.partial),
     aggregation_note: biRaw.aggregation_note || null,
   };
+
+  return applyCanonicalMenuSessionsToPayload(merged);
 }
 
 /**

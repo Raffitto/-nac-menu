@@ -1,6 +1,7 @@
 import {
   enforceMenuFunnelIntegrity,
   filterCustomerFacingCategories,
+  resolveCanonicalMenuSessions,
   resolveSessionQualityDenominator,
   isSyntheticCategoryId,
 } from "./customerFacingAnalytics";
@@ -26,6 +27,26 @@ describe("customerFacingAnalytics", () => {
     expect(f.category_opens).toBe(10);
     expect(f.item_opens).toBe(10);
     expect(f.addon_clicks).toBe(10);
+  });
+
+  it("uses qr_session_start funnel for sessions when SQL counted all event sessions", () => {
+    const canon = resolveCanonicalMenuSessions({
+      total_sessions: 224,
+      funnel: { qr_scans: 4, category_opens: 3, item_opens: 2 },
+    });
+    expect(canon.menuSessions).toBe(4);
+    expect(canon.menuQrScans).toBe(4);
+    expect(canon.allSessionIdsWithEvents).toBe(224);
+  });
+
+  it("aligns today sessions and menu QR from funnel", () => {
+    const canon = resolveCanonicalMenuSessions({
+      total_sessions: 11,
+      funnel: { qr_scans: 5 },
+      by_event_type: { qr_session_start: 5 },
+    });
+    expect(canon.menuSessions).toBe(5);
+    expect(canon.menuQrScans).toBe(5);
   });
 
   it("uses classified session count as denominator when partial", () => {

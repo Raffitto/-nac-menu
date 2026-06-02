@@ -141,7 +141,8 @@ as $$
     'total_sessions', (
       select count(distinct session_id)::bigint
       from filtered
-      where coalesce(trim(session_id), '') <> ''
+      where event_type = 'qr_session_start'
+        and coalesce(trim(session_id), '') <> ''
     ),
     'business_day', jsonb_build_object(
       'key', (select day_key::text from biz_today),

@@ -178,8 +178,8 @@ export function buildSessionFunnelFromMap(map) {
     if (s.hasExit) exits.add(sid);
   }
 
-  const totalSessions = all.size;
-  const entry = qr.size > 0 ? qr.size : totalSessions;
+  const entry = qr.size > 0 ? qr.size : all.size;
+  const menuSessions = entry;
 
   return {
     qr_scans: entry,
@@ -189,7 +189,7 @@ export function buildSessionFunnelFromMap(map) {
     addon_clicks: addon.size,
     time_spent: timeSpent.size,
     exits: exits.size,
-    total_sessions: totalSessions,
+    total_sessions: menuSessions,
   };
 }
 
@@ -284,7 +284,7 @@ export function aggregateSessionQualityFromRows(rows) {
   }
 
   const funnel = buildSessionFunnelFromMap(map);
-  const total_sessions = funnel.total_sessions || map.size;
+  const total_sessions = funnel.qr_scans || funnel.total_sessions || map.size;
   const bounce_sessions = session_quality.bounce;
   const deep_sessions = session_quality.deep + session_quality.power;
   const session_diagnostics = buildSessionDiagnostics(map, rawRows);

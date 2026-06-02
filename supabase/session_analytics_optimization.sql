@@ -218,7 +218,8 @@ begin
       'total_sessions', (
         select count(distinct session_id)::bigint
         from filtered
-        where coalesce(trim(session_id), '') <> ''
+        where event_type = 'qr_session_start'
+          and coalesce(trim(session_id), '') <> ''
       ),
       'by_language', coalesce((
         select jsonb_object_agg(language_key, cnt)

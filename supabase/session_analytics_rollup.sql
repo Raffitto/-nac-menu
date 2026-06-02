@@ -143,7 +143,9 @@ as $$
     'partial_mode', true,
     'aggregation_note', 'Month/long range — daily rollup (fast path). Refresh rollup if stale.',
     'total_events', coalesce((select sum(event_count) from filtered), 0),
-    'total_sessions', coalesce((select sum(session_ids) from filtered), 0),
+    'total_sessions', coalesce((
+      select sum(session_ids) from filtered where event_type = 'qr_session_start'
+    ), 0),
     'by_language', coalesce((
       select jsonb_object_agg(language, cnt) from (
         select language, sum(event_count)::bigint as cnt from filtered group by 1

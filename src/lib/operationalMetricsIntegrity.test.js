@@ -20,13 +20,13 @@ describe("extractQrScanKpis", () => {
     expect(kpis.total_qr_scans).toBe(112);
   });
 
-  it("does not fall back menu QR to total_sessions", () => {
+  it("uses QR funnel not inflated all-event session count when QR is present", () => {
     const kpis = extractQrScanKpis({
       total_sessions: 500,
-      funnel: {},
+      funnel: { qr_scans: 12 },
       by_event_type: {},
     });
-    expect(kpis.menu_qr_scans).toBe(0);
+    expect(kpis.menu_qr_scans).toBe(12);
   });
 });
 

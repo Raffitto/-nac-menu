@@ -17,13 +17,23 @@ describe("unifiedOperationalTruth", () => {
     expect(cats[0].opens).toBe(19);
   });
 
-  it("does not force menu QR scans to equal total sessions", () => {
+  it("aligns sessions and menu QR to canonical qr_session_start count", () => {
     const { qrScans, sessions } = reconcileSessionCounts({
       total_sessions: 280,
       funnel: { qr_scans: 275, category_opens: 200, item_opens: 120 },
     });
-    expect(sessions).toBe(280);
+    expect(sessions).toBe(275);
     expect(qrScans).toBe(275);
+  });
+
+  it("prefers funnel QR over inflated all-event session SQL", () => {
+    const { qrScans, sessions, allSessionIdsWithEvents } = reconcileSessionCounts({
+      total_sessions: 224,
+      funnel: { qr_scans: 4 },
+    });
+    expect(sessions).toBe(4);
+    expect(qrScans).toBe(4);
+    expect(allSessionIdsWithEvents).toBe(224);
   });
 
   it("enforces item_opens <= category_opens <= qr_scans", () => {

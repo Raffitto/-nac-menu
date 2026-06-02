@@ -10,23 +10,19 @@ import {
 } from "../dashboard/utils/hourlyPipeline";
 import { rangeToHours } from "../dashboard/utils/rangeState";
 import {
+  applyCanonicalMenuSessionsToPayload,
+  resolveCanonicalMenuSessions,
   reconcileRollupFunnelWithSessions,
   SCAN_CHART_EMPTY_MESSAGE,
 } from "./customerFacingAnalytics";
 
 export const INSIGHT_MIN_CONFIDENCE = 0.62;
 
-/** Menu QR = distinct sessions with qr_session_start — never alias total_sessions. */
+/** Menu QR = canonical menu session count (qr_session_start), same as Sessions KPI. */
 export function extractQrScanKpis(payload = {}) {
-  const funnel = payload.funnel || {};
   const review = payload.review_kpis || {};
-  const byType = payload.by_event_type || {};
-
-  const menuQrScans =
-    Number(funnel.qr_scans) ||
-    Number(payload.menu_qr_scans) ||
-    Number(byType.qr_session_start) ||
-    0;
+  const canon = resolveCanonicalMenuSessions(payload);
+  const menuQrScans = canon.menuQrScans;
 
   const reviewQrScans =
     Number(review.review_qr_scans) ||
@@ -265,19 +261,14 @@ export function applyOperationalIntegrityToPayload(payload = {}, options = {}) {
   if (!payload || typeof payload !== "object") return payload;
 
   const hours = options.hours ?? rangeToHours("today");
-  const sessions = Number(payload.total_sessions) || 0;
-  const menuFunnel = reconcileRollupFunnelWithSessions(
-    payload.funnel || {},
-    sessions,
-    { sessionFunnel: payload._sessionFunnel },
-  );
+  const withCanon = applyCanonicalMenuSessionsToPayload(payload);
   const funnel = {
-    ...menuFunnel,
+    ...withCanon.funnel,
     review_redirect: Number(payload.funnel?.review_redirect) || 0,
     google_review_open: Number(payload.funnel?.google_review_open) || 0,
   };
 
-  const qrKpis = extractQrScanKpis({ ...payload, funnel });
+  const qrKpis = extractQrScanKpis({ ...withCanon, funnel });
   const langStats = resolveSessionLanguageStats(payload);
   const top_items = filterRankedTopItems(payload.top_items || [], {
     limit: 10,
@@ -286,14 +277,14 @@ export function applyOperationalIntegrityToPayload(payload = {}, options = {}) {
   const scanChart = resolveScanChartBuckets(payload, hours);
 
   const enriched = {
-    ...payload,
+    ...withCanon,
     funnel,
     ...qrKpis,
     session_language: langStats,
     top_items,
     scan_chart: scanChart,
     funnel_stage_metrics: {
-      menu: buildMenuFunnelStageMetrics(menuFunnel),
+      menu: buildMenuFunnelStageMetrics(funnel),
       review: buildReviewFunnelStageMetrics(funnel),
     },
   };

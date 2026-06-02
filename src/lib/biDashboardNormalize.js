@@ -190,7 +190,7 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
     funnel: useSessionFunnel
       ? {
           ...EMPTY_FUNNEL,
-          qr_scans: Number(funnelIn.qr_scans) || totalSessions,
+          qr_scans: Number(funnelIn.qr_scans) || 0,
           category_opens: Number(funnelIn.category_opens) || 0,
           item_impressions: Number(funnelIn.item_impressions) || 0,
           item_opens: Number(funnelIn.item_opens) || 0,
@@ -200,7 +200,7 @@ export function normalizeBiDashboardPayload(raw, options = {}) {
         }
       : {
           ...EMPTY_FUNNEL,
-          qr_scans: Number(funnelIn.qr_scans ?? byEvent.qr_session_start) || totalSessions,
+          qr_scans: Number(funnelIn.qr_scans ?? byEvent.qr_session_start) || 0,
           category_opens:
             Number(funnelIn.category_opens ?? categoryOpensCanonical ?? byEvent.category_open) || 0,
           item_impressions: Number(funnelIn.item_impressions ?? byEvent.item_impression) || 0,

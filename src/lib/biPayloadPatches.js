@@ -13,7 +13,10 @@ import {
 } from "./sessionQualityAggregate";
 import { MAX_CREDIBLE_AVG_TIME_SPENT_SEC } from "./sessionMetricsConfig";
 import { MONTH_HOURS } from "../dashboard/utils/rangeState";
-import { enforceMenuFunnelIntegrity } from "./customerFacingAnalytics";
+import {
+  applyCanonicalMenuSessionsToPayload,
+  enforceMenuFunnelIntegrity,
+} from "./customerFacingAnalytics";
 
 export function mergeBiPayload(base, patch) {
   if (!patch) return base;
@@ -88,7 +91,7 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
     patchSessions > 0 &&
     (rollupSessions <= 0 || patchSessions <= rollupSessions * 1.05);
 
-  const merged = {
+  const merged = applyCanonicalMenuSessionsToPayload({
     ...aggregates,
     session_quality: patch.session_quality,
     bounce_sessions: patch.bounce_sessions,
@@ -103,7 +106,7 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
       (patch.top_categories || []).length > 0
         ? patch.top_categories
         : aggregates.top_categories,
-  };
+  });
 
   return merged;
 }

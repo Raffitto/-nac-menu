@@ -88,11 +88,12 @@ export default function OperationalDashboard({ session }) {
     refreshIntervalMs: filters?.liveMode ? 30000 : 0,
   });
 
-  const totalSessions = Number(data?.total_sessions) || 0;
-  const byType = data?.by_event_type || {};
   const funnel = data?.funnel || {};
+  const menuQrScans =
+    Number(data?.menu_qr_scans) || Number(funnel.qr_scans) || 0;
+  const totalSessions = Number(data?.total_sessions) || menuQrScans;
+  const byType = data?.by_event_type || {};
   const itemOpenCount = Number(funnel.item_opens) || ev(byType, "item_open");
-  const menuQrScans = Number(data?.menu_qr_scans) || Number(funnel.qr_scans) || 0;
   const reviewQrScans = Number(data?.review_qr_scans) || 0;
   const addOnClickCount = ev(byType, "add_on_click") || ev(byType, "addon_interaction");
   const reviewRedirect = Number(funnel.review_redirect) || 0;
@@ -235,7 +236,7 @@ export default function OperationalDashboard({ session }) {
             <Activity size={13} /> Sessions
           </p>
           <p className="nac-bi-exec-value">{totalSessions.toLocaleString()}</p>
-          <p className="nac-bi-exec-sub">Unique menu sessions</p>
+          <p className="nac-bi-exec-sub">Same as menu QR entry sessions</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <p className="nac-bi-exec-label">

@@ -37,6 +37,82 @@ export function filterCustomerFacingCategories(categories = []) {
 }
 
 /**
+ * Canonical menu session model — one count for Executive Sessions + Menu QR Scans.
+ * Uses distinct sessions with qr_session_start (menu QR entry), not all session_ids with any event.
+ */
+export function resolveCanonicalMenuSessions(payload = {}) {
+  const funnel = payload.funnel && typeof payload.funnel === "object" ? payload.funnel : {};
+  const sessionFunnel =
+    payload._sessionFunnel && typeof payload._sessionFunnel === "object"
+      ? payload._sessionFunnel
+      : {};
+  const byType = payload.by_event_type && typeof payload.by_event_type === "object"
+    ? payload.by_event_type
+    : {};
+
+  let menuQrSessions = Math.max(
+    0,
+    Number(funnel.qr_scans) || 0,
+    Number(sessionFunnel.qr_scans) || 0,
+    Number(payload.menu_qr_scans) || 0,
+  );
+
+  if (menuQrSessions === 0) {
+    menuQrSessions = Math.max(
+      0,
+      Number(byType.qr_session_start) || 0,
+      Number(payload.today_qr_sessions) || 0,
+    );
+  }
+
+  const allSessionIdsWithEvents = Math.max(0, Number(payload.total_sessions) || 0);
+
+  // Legacy SQL / rollup sums count every session_id that emitted any event — often >> QR entry.
+  if (menuQrSessions > 0 && allSessionIdsWithEvents > menuQrSessions) {
+    return {
+      menuSessions: menuQrSessions,
+      menuQrScans: menuQrSessions,
+      allSessionIdsWithEvents,
+    };
+  }
+
+  if (menuQrSessions === 0 && allSessionIdsWithEvents > 0) {
+    return {
+      menuSessions: allSessionIdsWithEvents,
+      menuQrScans: allSessionIdsWithEvents,
+      allSessionIdsWithEvents: 0,
+    };
+  }
+
+  const n = menuQrSessions || allSessionIdsWithEvents;
+  return {
+    menuSessions: n,
+    menuQrScans: n,
+    allSessionIdsWithEvents:
+      allSessionIdsWithEvents > n ? allSessionIdsWithEvents : 0,
+  };
+}
+
+/** Apply canonical session counts onto a BI payload (mutates derived fields only). */
+export function applyCanonicalMenuSessionsToPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") return payload;
+  const canon = resolveCanonicalMenuSessions(payload);
+  const funnel = enforceMenuFunnelIntegrity({
+    ...(payload.funnel || {}),
+    qr_scans: canon.menuQrScans,
+    total_sessions: canon.menuSessions,
+  });
+
+  return {
+    ...payload,
+    total_sessions: canon.menuSessions,
+    menu_qr_scans: canon.menuQrScans,
+    funnel,
+    _canonicalSessions: canon,
+  };
+}
+
+/**
  * Enforce distinct-session funnel ordering: item_opens ≤ category_opens ≤ qr_scans.
  */
 export function enforceMenuFunnelIntegrity(funnel = {}) {
@@ -67,8 +143,16 @@ export function enforceMenuFunnelIntegrity(funnel = {}) {
  * Rollup funnels often use event_count sums — detect and prefer session-scoped funnel when inflated.
  */
 export function reconcileRollupFunnelWithSessions(funnel = {}, totalSessions = 0, options = {}) {
-  const sessions = Math.max(0, Number(totalSessions) || 0);
-  let normalized = enforceMenuFunnelIntegrity(funnel);
+  const canon = resolveCanonicalMenuSessions({
+    funnel,
+    total_sessions: totalSessions,
+    _sessionFunnel: options.sessionFunnel,
+  });
+  const sessions = canon.menuSessions;
+  let normalized = enforceMenuFunnelIntegrity({
+    ...funnel,
+    qr_scans: canon.menuQrScans,
+  });
   const qr = Number(normalized.qr_scans) || 0;
 
   if (sessions > 0 && qr > sessions * 1.05) {

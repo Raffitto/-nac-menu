@@ -12,6 +12,7 @@ describe("analyticsUnifiedAdapter", () => {
       {
         total_events: 26000,
         total_sessions: 223,
+        funnel: { qr_scans: 223, category_opens: 180, item_opens: 120 },
         by_event_type: { qr_session_start: 200, item_open: 400 },
         by_hour: [{ hour: 14, count: 120, granularity: "hour", label: "2 PM" }],
         bounce_sessions: 40,
