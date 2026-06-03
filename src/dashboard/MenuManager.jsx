@@ -474,10 +474,11 @@ export default function MenuManager() {
 
   const loadAddOns = useCallback(async () => {
     try {
-      const res = await getAddOns();
-      setAddOns(Array.isArray(res?.data) ? res.data : []);
+      const res = await getAddOns({ includeInactive: true });
+      if (res.error) throw res.error;
+      setAddOns(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      showToast("Failed to load add-ons", "error");
+      showToast(e?.message || "Failed to load add-ons", "error");
     }
   }, [showToast]);
 
@@ -1081,21 +1082,25 @@ export default function MenuManager() {
     if (!addonFormData.name_en.trim()) return;
     setAddonSaving(true);
     try {
-      const payload = {
-        ...addonFormData,
-        price: addonFormData.price !== "" ? Number(addonFormData.price) : null,
-      };
-      if (addonEditId) {
-        await updateAddOn(addonEditId, payload);
-        showToast("Add-on updated");
-      } else {
-        await createAddOn(payload);
-        showToast("Add-on created");
-      }
+      const saved = assertMenuMutation(
+        addonEditId
+          ? await updateAddOn(addonEditId, addonFormData)
+          : await createAddOn(addonFormData),
+        addonEditId ? "updateAddOn" : "createAddOn",
+      );
+      setAddOns((prev) => {
+        const next = addonEditId
+          ? prev.map((a) => (a.id === saved.id ? saved : a))
+          : [...prev, saved];
+        return next.sort((a, b) =>
+          String(a.slug || a.name_en).localeCompare(String(b.slug || b.name_en)),
+        );
+      });
+      showToast(addonEditId ? "Add-on updated" : "Add-on created");
       setAddonFormOpen(false);
       setAddonEditId(null);
       setAddonFormData({ name_en: "", name_ar: "", price: "" });
-      loadAddOns();
+      await loadAddOns();
     } catch (e) {
       showToast(e?.message || "Failed to save add-on", "error");
     } finally {
@@ -1110,9 +1115,10 @@ export default function MenuManager() {
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
-          await deleteAddOn(addon.id);
+          assertMenuMutation(await deleteAddOn(addon.id), "deleteAddOn");
+          setAddOns((prev) => prev.filter((a) => a.id !== addon.id));
           showToast("Add-on deleted");
-          loadAddOns();
+          await loadAddOns();
         } catch (e) {
           showToast(e?.message || "Failed to delete add-on", "error");
         } finally {

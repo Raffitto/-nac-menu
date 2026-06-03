@@ -78,6 +78,66 @@ export function sanitizeMenuItemPayload(raw = {}) {
   return out;
 }
 
+/** CamelCase slug for add_ons (matches menu_seed.sql conventions). */
+export function buildAddonSlug(nameEn) {
+  const words = String(nameEn || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9\s]/g, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return "";
+  const [first, ...rest] = words;
+  return (
+    first.toLowerCase() +
+    rest.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join("")
+  );
+}
+
+/** DB stores price as text e.g. "6 SAR". */
+export function formatAddonPrice(raw) {
+  if (raw == null || raw === "") return "-";
+  const s = String(raw).trim();
+  if (/sar/i.test(s)) return s;
+  const n = Number(s.replace(/[^\d.]/g, ""));
+  if (Number.isFinite(n) && n >= 0) return `${n} SAR`;
+  return s || "-";
+}
+
+export function sanitizeAddonPayload(raw = {}, { slug: slugOverride } = {}) {
+  const name_en = String(raw.name_en || "").trim();
+  const name_ar = String(raw.name_ar || "").trim() || name_en;
+  const price = formatAddonPrice(raw.price);
+  const payload = {
+    name_en,
+    name_ar,
+    price,
+    active: raw.active !== false,
+  };
+  if (slugOverride) payload.slug = slugOverride;
+  if (raw.preview_image != null) payload.preview_image = raw.preview_image;
+  if (raw.calories != null) payload.calories = raw.calories;
+  return payload;
+}
+
+async function resolveUniqueAddonSlug(nameEn, excludeId = null) {
+  let base = buildAddonSlug(nameEn);
+  if (!base) base = `addon${Date.now()}`;
+  let slug = base;
+  let n = 2;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const { data, error } = await supabase
+      .from("add_ons")
+      .select("id")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data || (excludeId && data.id === excludeId)) return slug;
+    slug = `${base}${n}`;
+    n += 1;
+  }
+  throw new Error("Could not generate a unique add-on slug");
+}
+
 export function logMenuMutation(label, payload, response) {
   if (process.env.NODE_ENV !== "production" || process.env.REACT_APP_MENU_DEBUG === "1") {
     // eslint-disable-next-line no-console
@@ -852,50 +912,72 @@ export async function deleteSection(id) {
 
 // ═══════════════ ADD-ON CRUD ═══════════════
 
-export async function getAddOns() {
-  const { data, error } = await supabase
-    .from("add_ons")
-    .select("*")
-    .eq("active", true)
-    .order("slug");
-
+export async function getAddOns({ includeInactive = false } = {}) {
+  let q = supabase.from("add_ons").select("*").order("slug");
+  if (!includeInactive) q = q.eq("active", true);
+  const { data, error } = await q;
   return { data, error };
 }
 
 export async function createAddOn(data) {
   await requireMenuEditorAuth();
-  const { data: addon, error } = await supabase
-    .from("add_ons")
-    .insert(data)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data: addon, error };
+  const slug = await resolveUniqueAddonSlug(data?.name_en);
+  const payload = sanitizeAddonPayload(data, { slug });
+  const result = await supabase.from("add_ons").insert(payload).select().single();
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function updateAddOn(id, updates) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("add_ons")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const payload = sanitizeAddonPayload(updates);
+  delete payload.slug;
+  const result = await supabase.from("add_ons").update(payload).eq("id", id).select().single();
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function deleteAddOn(id) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("add_ons")
-    .delete()
-    .eq("id", id)
-    .select()
-    .single();
+  const result = await supabase.from("add_ons").delete().eq("id", id).select().single();
+  if (!result.error) invalidateMenuCache();
+  return result;
+}
 
+/** Link an add-on slug to menu items matched by English name (admin seed/helper). */
+export async function linkAddonToItemsByName(namePattern, addonSlug) {
+  await requireMenuEditorAuth();
+  const { data: addon, error: addonErr } = await supabase
+    .from("add_ons")
+    .select("id")
+    .eq("slug", addonSlug)
+    .maybeSingle();
+  if (addonErr) return { data: null, error: addonErr };
+  if (!addon) return { data: null, error: new Error(`Add-on not found: ${addonSlug}`) };
+
+  const { data: items, error: itemsErr } = await supabase
+    .from("menu_items")
+    .select("id")
+    .ilike("name_en", namePattern);
+  if (itemsErr) return { data: null, error: itemsErr };
+  if (!items?.length) return { data: [], error: null };
+
+  const rows = [];
+  for (const item of items) {
+    const { data: existing } = await supabase
+      .from("item_addons")
+      .select("sort_order")
+      .eq("item_id", item.id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextOrder = existing?.length ? (Number(existing[0].sort_order) || 0) + 1 : 0;
+    rows.push({ item_id: item.id, addon_id: addon.id, sort_order: nextOrder });
+  }
+
+  const { data, error } = await supabase.from("item_addons").upsert(rows, {
+    onConflict: "item_id,addon_id",
+    ignoreDuplicates: true,
+  });
   if (!error) invalidateMenuCache();
   return { data, error };
 }
