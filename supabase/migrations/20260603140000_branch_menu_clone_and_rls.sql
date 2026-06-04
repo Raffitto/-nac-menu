@@ -340,11 +340,16 @@ begin
       new_id uuid not null
     ) on commit drop;
 
+    -- One map row per distinct source placement_group_id (GROUP BY — not DISTINCT + gen_random_uuid()).
     insert into _pg_map (old_id, new_id)
-    select distinct mi.placement_group_id, gen_random_uuid()
-    from public.menu_items mi
-    where mi.branch_id = v_source
-      and mi.placement_group_id is not null;
+    select pg_id, gen_random_uuid()
+    from (
+      select mi.placement_group_id as pg_id
+      from public.menu_items mi
+      where mi.branch_id = v_source
+        and mi.placement_group_id is not null
+      group by mi.placement_group_id
+    ) distinct_groups;
 
     -- Menu items
     insert into public.menu_items (
