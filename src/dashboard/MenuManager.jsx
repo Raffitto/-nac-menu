@@ -68,6 +68,8 @@ import {
   resolveMenuEditorBranch,
   canEditMenuEngineering,
   assertMenuBranchAccess,
+  canManageGlobalAddOns,
+  lockBranchIdOnPayload,
 } from "../lib/menuBranchScope";
 import { branchDisplayOptions } from "./config/branchDisplayConfig";
 import "./styles/menu-manager.css";
@@ -304,6 +306,7 @@ export default function MenuManager() {
         : branchDisplayOptions("dashboardName").filter((o) => o.value === rbac.profile.branchScope),
     [rbac],
   );
+  const showMenuBranchSelector = menuBranchOptions.length > 1;
   const [menuBranch, setMenuBranch] = useState(() => resolveMenuEditorBranch(rbac.profile, null));
   const [activeTab, setActiveTab] = useState("menu");
   const [categories, setCategories] = useState([]);
@@ -601,7 +604,11 @@ export default function MenuManager() {
     if (!catEditData.name_en.trim() || readOnlyMenu) return;
     try {
       assertMenuBranchAccess(rbac.profile, menuBranch);
-      const payload = { ...catEditData, branch_id: menuBranch };
+      const payload = lockBranchIdOnPayload(
+        { ...catEditData, branch_id: menuBranch },
+        menuBranch,
+        rbac.profile,
+      );
       if (catEditMode === "create") {
         await createCategory(payload);
         showToast("Category created");
@@ -847,23 +854,27 @@ export default function MenuManager() {
         return;
       }
 
-      const contentPayload = sanitizeMenuItemPayload({
-        name_en: editingItem.name_en.trim(),
-        name_ar: editingItem.name_ar?.trim() || "",
-        desc_en: editingItem.desc_en || "",
-        desc_ar: editingItem.desc_ar || "",
-        price: editingItem.price || "",
-        calories: editingItem.calories || "-",
-        image: imgUrl || "",
-        sold_out: Boolean(editingItem.sold_out),
-        featured: Boolean(editingItem.featured),
-        new_item: Boolean(editingItem.new_item),
-        vegetarian: Boolean(editingItem.vegetarian),
-        vegan: Boolean(editingItem.vegan),
-        active: editingItem.active !== false,
-        hidden_until: editingItem.hidden_until || null,
-        branch_id: menuBranch,
-      });
+      const contentPayload = lockBranchIdOnPayload(
+        sanitizeMenuItemPayload({
+          name_en: editingItem.name_en.trim(),
+          name_ar: editingItem.name_ar?.trim() || "",
+          desc_en: editingItem.desc_en || "",
+          desc_ar: editingItem.desc_ar || "",
+          price: editingItem.price || "",
+          calories: editingItem.calories || "-",
+          image: imgUrl || "",
+          sold_out: Boolean(editingItem.sold_out),
+          featured: Boolean(editingItem.featured),
+          new_item: Boolean(editingItem.new_item),
+          vegetarian: Boolean(editingItem.vegetarian),
+          vegan: Boolean(editingItem.vegan),
+          active: editingItem.active !== false,
+          hidden_until: editingItem.hidden_until || null,
+          branch_id: menuBranch,
+        }),
+        menuBranch,
+        rbac.profile,
+      );
 
       let itemId = editingItemId;
       const extraSectionIds = extraPlacements
@@ -1080,6 +1091,13 @@ export default function MenuManager() {
 
   const handleSaveAddOn = useCallback(async () => {
     if (!addonFormData.name_en.trim()) return;
+    if (!addonEditId && !canManageGlobalAddOns(rbac.profile)) {
+      showToast(
+        "Only network admins can create new global add-ons. You can link existing add-ons on menu items.",
+        "error",
+      );
+      return;
+    }
     setAddonSaving(true);
     try {
       const saved = assertMenuMutation(
@@ -1106,7 +1124,7 @@ export default function MenuManager() {
     } finally {
       setAddonSaving(false);
     }
-  }, [addonFormData, addonEditId, showToast, loadAddOns]);
+  }, [addonFormData, addonEditId, showToast, loadAddOns, rbac.profile]);
 
   const handleDeleteAddOn = useCallback((addon) => {
     setConfirm({
@@ -1217,15 +1235,26 @@ export default function MenuManager() {
       >
         <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
           Branch
-          <select
-            value={menuBranch}
-            disabled={!rbac.canAccessAllBranches()}
-            onChange={(e) => setMenuBranch(e.target.value)}
-          >
-            {menuBranchOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+          {showMenuBranchSelector ? (
+            <select
+              value={menuBranch}
+              disabled={!rbac.canAccessAllBranches()}
+              onChange={(e) => {
+                try {
+                  assertMenuBranchAccess(rbac.profile, e.target.value);
+                  setMenuBranch(e.target.value);
+                } catch (err) {
+                  showToast(err?.message || "Branch access denied", "error");
+                }
+              }}
+            >
+              {menuBranchOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          ) : (
+            <strong>{branchDisplayOptions("dashboardName").find((o) => o.value === menuBranch)?.label || menuBranch}</strong>
+          )}
         </label>
         {readOnlyMenu && (
           <span style={{ fontSize: "0.75rem", opacity: 0.75 }}>Read-only menu view</span>
@@ -1691,17 +1720,19 @@ export default function MenuManager() {
                     {addOns.length} add-on{addOns.length !== 1 ? "s" : ""}
                   </p>
                 </div>
-                <button
-                  className="mm-btn mm-btn-gold"
-                  onClick={() => {
-                    setAddonFormOpen(true);
-                    setAddonEditId(null);
-                    setAddonFormData({ name_en: "", name_ar: "", price: "" });
-                  }}
-                >
-                  <Plus size={14} />
-                  New Add-on
-                </button>
+                {canManageGlobalAddOns(rbac.profile) ? (
+                  <button
+                    className="mm-btn mm-btn-gold"
+                    onClick={() => {
+                      setAddonFormOpen(true);
+                      setAddonEditId(null);
+                      setAddonFormData({ name_en: "", name_ar: "", price: "" });
+                    }}
+                  >
+                    <Plus size={14} />
+                    New Add-on
+                  </button>
+                ) : null}
               </div>
 
               <AnimatePresence>

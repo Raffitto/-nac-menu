@@ -275,10 +275,11 @@ export async function getFullMenu(options = {}) {
   const categories = catRes.data;
   const sections = secRes.data;
   const items = itemRes.data;
+  const itemIds = new Set((items || []).map((it) => it.id));
   const addons = addonRes.data;
-  const itemAddonJunc = juncAddonRes.data;
+  const itemAddonJunc = (juncAddonRes.data || []).filter((j) => itemIds.has(j.item_id));
   const allergens = allergenRes.data;
-  const itemAllergenJunc = juncAllergenRes.data;
+  const itemAllergenJunc = (juncAllergenRes.data || []).filter((j) => itemIds.has(j.item_id));
 
   const addonById = Object.fromEntries(addons.map((a) => [a.id, a]));
   const allergenById = Object.fromEntries(allergens.map((a) => [a.id, a]));

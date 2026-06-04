@@ -44,3 +44,17 @@ export function menuBranchQueryFilter(query, branchId, column = "branch_id") {
   if (!id) return query;
   return query.eq(column, id);
 }
+
+/** Prevent branch managers from retargeting rows to another branch via API payload. */
+export function lockBranchIdOnPayload(payload = {}, branchId, rbacProfile) {
+  if (!payload || typeof payload !== "object") return payload;
+  const locked = normalizeBranchId(branchId);
+  if (!locked) return payload;
+  if (rbacProfile?.allBranches) return payload;
+  return { ...payload, branch_id: locked };
+}
+
+/** Global add-on catalog CRUD (network admin / developer only at DB layer). */
+export function canManageGlobalAddOns(rbacProfile) {
+  return Boolean(rbacProfile?.allBranches);
+}
