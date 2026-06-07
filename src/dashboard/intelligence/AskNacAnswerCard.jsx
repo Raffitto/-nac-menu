@@ -58,6 +58,15 @@ function AskNacAnswerDetails({ response, isMissing, isError }) {
         </div>
       ) : null}
 
+      {response.conversationResolution?.usedContext && response.conversationResolution?.resolvedQuestion ? (
+        <div className="nac-ask-nac-details__block">
+          <h4>Resolved as</h4>
+          <p className="nac-ask-nac-details__resolved">
+            &ldquo;{response.conversationResolution.resolvedQuestion}&rdquo;
+          </p>
+        </div>
+      ) : null}
+
       {technical.length ? (
         <div className="nac-ask-nac-details__block">
           <h4>Diagnostics</h4>

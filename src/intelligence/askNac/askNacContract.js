@@ -45,6 +45,7 @@ export function createAskNacResponse(fields = {}) {
     readiness: fields.readiness || null,
     diagnostics: fields.diagnostics || null,
     vaultSources: Array.isArray(fields.vaultSources) ? fields.vaultSources : [],
+    conversationResolution: fields.conversationResolution || null,
   };
 }
 

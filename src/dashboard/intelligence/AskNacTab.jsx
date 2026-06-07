@@ -15,6 +15,11 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
 import { askNac } from "../../intelligence/askNac";
+import {
+  createEmptyConversationContext,
+  resetConversationContext,
+  updateConversationContext,
+} from "../../intelligence/askNac/conversation/conversationContext";
 import AskNacComposer from "./AskNacComposer";
 import AskNacMessageList from "./AskNacMessageList";
 import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
@@ -72,6 +77,7 @@ export default function AskNacTab({
   const rbac = useRbacOptional();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState([]);
+  const [conversationContext, setConversationContext] = useState(() => createEmptyConversationContext());
   const [loading, setLoading] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const inputRef = useRef(null);
@@ -103,6 +109,7 @@ export default function AskNacTab({
   const clearChat = useCallback(() => {
     setMessages([]);
     setDraft("");
+    setConversationContext(resetConversationContext());
     focusInput();
   }, [focusInput]);
 
@@ -123,7 +130,15 @@ export default function AskNacTab({
           session,
           profile: rbac?.profile ?? null,
           filters,
+          conversationContext,
         });
+        setConversationContext((prev) =>
+          updateConversationContext(prev, {
+            question: text,
+            resolvedQuestion: result.conversationResolution?.resolvedQuestion || text,
+            response: result,
+          }),
+        );
         setMessages((prev) => [
           ...prev,
           createAssistantMessage({ question: text, response: result }),
@@ -141,7 +156,7 @@ export default function AskNacTab({
         focusInput();
       }
     },
-    [draft, loading, session, rbac?.profile, filters, focusInput],
+    [draft, loading, session, rbac?.profile, filters, conversationContext, focusInput],
   );
 
   useEffect(() => {

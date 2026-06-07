@@ -31,6 +31,13 @@ export function getTechnicalTrustDetails(response) {
 
   const rows = [];
 
+  if (response.conversationResolution?.usedContext && response.conversationResolution?.resolvedQuestion) {
+    rows.push({
+      label: "Resolved as",
+      value: `"${response.conversationResolution.resolvedQuestion}"`,
+    });
+  }
+
   if (response.isAiGenerated) {
     rows.push({ label: "Narration", value: "AI explained (server)" });
   } else if (response.serverConnected && !response.localFallback) {

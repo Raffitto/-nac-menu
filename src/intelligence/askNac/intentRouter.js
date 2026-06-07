@@ -227,6 +227,8 @@ const INTENT_RULES = [
     score(q) {
       if (/\b(staff|waiter|waitress|server|employee).*(leaderboard|top|best|rank|drove|drive|most)\b/.test(q)) return 14;
       if (/\b(who|which).*(staff|waiter|employee).*(redirect|google)\b/.test(q)) return 15;
+      if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
+      if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
       if (/\b(leaderboard|top staff|top waiters)\b/.test(q)) return 11;
       return 0;
     },
@@ -286,8 +288,14 @@ export function parseAskNacPeriod(question = "", fallbackHours = 24) {
   if (/\b(this month|month to date|month-to-date|mtd)\b/.test(q)) {
     return { hours: MONTH_HOURS, rangeId: "month", source: "question" };
   }
+  if (/\b(last month|previous month)\b/.test(q)) {
+    return { hours: MONTH_HOURS, rangeId: "last_month", source: "question" };
+  }
   if (/\b(last 7|7d|7 days|past week|this week)\b/.test(q)) {
     return { hours: 168, rangeId: "7d", source: "question" };
+  }
+  if (/\byesterday\b/.test(q)) {
+    return { hours: 48, rangeId: "yesterday", source: "question" };
   }
   if (/\b(today|business day)\b/.test(q)) {
     return { hours: 24, rangeId: "today", source: "question" };

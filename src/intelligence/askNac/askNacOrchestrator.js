@@ -7,6 +7,7 @@ import { assessIntentReadiness, assessIntentReadinessSync } from "./readinessEng
 import { runAskNacQueryTool } from "./queryTools";
 import { buildDeterministicAskNacAnswer } from "./answerBuilder";
 import { resolveFoodicsPeriodWithFallback } from "./shared/periodFallback";
+import { prepareAskNacQuestion, applyReviewPeriodDefaults } from "./conversation/prepareAskNacQuestion";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -23,10 +24,15 @@ export async function processAskNacQuestion({
   supabase,
   profile = null,
   filters = {},
+  conversationContext = null,
   options = {},
 }) {
-  const fallbackHours = filters.timeRangeHours ?? 24;
-  const route = routeAskNacIntent(question, { fallbackHours });
+  const prepareResult = prepareAskNacQuestion({ question, conversationContext, filters });
+  const effectiveQuestion = prepareResult.effectiveQuestion;
+  const effectiveFilters = prepareResult.filters;
+  const fallbackHours = effectiveFilters.timeRangeHours ?? 24;
+  let route = routeAskNacIntent(effectiveQuestion, { fallbackHours });
+  route = applyReviewPeriodDefaults(route, effectiveFilters);
   const periodFallbackWarnings = [];
 
   if (
@@ -36,9 +42,9 @@ export async function processAskNacQuestion({
     (!route.foodicsPeriod?.startDate || !route.foodicsPeriod?.endDate)
   ) {
     const resolved = await resolveFoodicsPeriodWithFallback(supabase, {
-      question,
-      filters,
-      branch: route.branchMention || filters.branch,
+      question: effectiveQuestion,
+      filters: effectiveFilters,
+      branch: route.branchMention || effectiveFilters.branch,
       profile,
     });
     if (resolved.period?.startDate && resolved.period?.endDate) {
@@ -50,7 +56,7 @@ export async function processAskNacQuestion({
 
   const readiness = await assessIntentReadiness(route.intent, {
     profile,
-    branch: route.branchMention || filters.branch,
+    branch: route.branchMention || effectiveFilters.branch,
     branchMention: route.branchMention,
     supabaseConfigured: Boolean(supabase),
     supabase,
@@ -76,9 +82,9 @@ export async function processAskNacQuestion({
       hours: route.period.hours,
       period: route.period,
       branchMention: route.branchMention,
-      filters,
+      filters: effectiveFilters,
       profile,
-      question,
+      question: effectiveQuestion,
       foodicsPeriod: route.foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
@@ -93,11 +99,19 @@ export async function processAskNacQuestion({
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
   }
 
+  const conversationResolution = {
+    originalQuestion: prepareResult.originalQuestion,
+    resolvedQuestion: effectiveQuestion,
+    usedContext: Boolean(prepareResult.conversationResolution?.usedContext),
+    resolutionNotes: prepareResult.conversationResolution?.resolutionNotes || [],
+  };
+
   return {
     ...deterministic,
     intent: route.intent,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
+    conversationResolution,
     localFallback: true,
     aiConnected: false,
   };

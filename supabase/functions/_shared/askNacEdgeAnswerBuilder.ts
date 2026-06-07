@@ -435,8 +435,8 @@ function foodicsBranchSalesResponse(route: Route, tool: Tool) {
 
 export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, readiness: Readiness) {
   if (readiness?.status === "blocked") return buildBlockedResponse(route, readiness);
-  if (readiness?.status === "missing" && !readiness.canQuery) return buildMissingDataResponse(route, readiness);
   if (route.intent === "unknown") return buildUnknownResponse(route);
+  if (readiness?.status === "missing" && !readiness.canQuery) return buildMissingDataResponse(route, readiness);
   if (!tool) return buildBlockedResponse(route, { status: "blocked", reasons: ["Query tool returned no data — check Supabase connection."] });
   if (tool.missingBatch || tool.missingPeriod) return buildFoodicsMissingToolResponse(route, tool, readiness);
 

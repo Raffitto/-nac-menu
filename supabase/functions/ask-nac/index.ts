@@ -57,6 +57,7 @@ Deno.serve(async (req) => {
 
     const answered = await processAskNacOnEdge(supabase, {
       question,
+      conversationContext: body?.conversationContext ?? null,
       branch: body?.branch ?? null,
       hours: body?.hours,
       range: body?.range,

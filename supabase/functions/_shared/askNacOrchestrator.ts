@@ -30,6 +30,7 @@ import {
   runVaultQueryTool,
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
+import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -217,6 +218,9 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
     score(q) {
       if (/\b(staff|waiter|waitress|server|employee).*(leaderboard|top|best|rank|drove|drive|most)\b/.test(q)) return 14;
       if (/\b(who|which).*(staff|waiter|employee).*(redirect|google)\b/.test(q)) return 15;
+      if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
+      if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
+      if (/\b(leaderboard|top staff|top waiters)\b/.test(q)) return 11;
       return 0;
     },
   },
@@ -269,8 +273,14 @@ function parseAskNacPeriod(question = "", fallbackHours = 24) {
   if (/\b(this month|month to date|month-to-date|mtd)\b/.test(q)) {
     return { hours: MONTH_HOURS, rangeId: "month", source: "question" };
   }
+  if (/\b(last month|previous month)\b/.test(q)) {
+    return { hours: MONTH_HOURS, rangeId: "last_month", source: "question" };
+  }
   if (/\b(last 7|7d|7 days|past week|this week)\b/.test(q)) {
     return { hours: 168, rangeId: "7d", source: "question" };
+  }
+  if (/\byesterday\b/.test(q)) {
+    return { hours: 48, rangeId: "yesterday", source: "question" };
   }
   if (/\b(today|business day)\b/.test(q)) return { hours: 24, rangeId: "today", source: "question" };
   const fb = Number(fallbackHours) || 24;
@@ -564,6 +574,7 @@ export async function processAskNacOnEdge(
     range,
     profileHint = null,
     filters = {},
+    conversationContext = null,
   }: {
     question: string;
     branch?: string | null;
@@ -571,17 +582,26 @@ export async function processAskNacOnEdge(
     range?: string;
     profileHint?: Record<string, unknown> | null;
     filters?: Record<string, unknown>;
+    conversationContext?: Record<string, unknown> | null;
   },
 ) {
-  const mergedFilters = {
+  const baseFilters = {
     ...filters,
     branch: branch ?? (filters.branch as string | null) ?? null,
     timeRangeHours: hours ?? filters.timeRangeHours,
     selectedRange: range ?? filters.selectedRange,
   };
 
+  const prepareResult = prepareAskNacQuestionEdge({
+    question,
+    conversationContext,
+    filters: baseFilters,
+  });
+  const effectiveQuestion = prepareResult.effectiveQuestion;
+
+  const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
-  const route = routeIntent(question, { fallbackHours });
+  const route = routeIntent(effectiveQuestion, { fallbackHours });
   const readiness = assessReadiness(route);
 
   let foodicsPeriod = route.foodicsPeriod;
@@ -589,7 +609,7 @@ export async function processAskNacOnEdge(
 
   if (isFoodicsDataIntent(route.intent)) {
     const fallback = await resolveFoodicsPeriodWithFallback(supabase, {
-      question,
+      question: effectiveQuestion,
       filters: mergedFilters,
       branch: (route.branchMention || mergedFilters.branch) as string | null,
       profileHint,
@@ -608,7 +628,7 @@ export async function processAskNacOnEdge(
       filters: mergedFilters,
       profile: profileHint,
       branch: mergedFilters.branch,
-      question,
+      question: effectiveQuestion,
       foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
@@ -629,7 +649,7 @@ export async function processAskNacOnEdge(
   deterministic.readiness = readiness;
 
   const { answer, aiConnected } = await narrateWithOpenAi(deterministic, {
-    question,
+    question: effectiveQuestion,
     intent: route.intent,
     tool,
     diagnostics: (tool?.mtdHybrid as Record<string, unknown>) || null,
@@ -640,6 +660,12 @@ export async function processAskNacOnEdge(
     intent: route.intent,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
+    conversationResolution: {
+      originalQuestion: prepareResult.originalQuestion,
+      resolvedQuestion: effectiveQuestion,
+      usedContext: Boolean(prepareResult.conversationResolution?.usedContext),
+      resolutionNotes: prepareResult.conversationResolution?.resolutionNotes || [],
+    },
     serverConnected: true,
     aiConnected,
     localFallback: false,

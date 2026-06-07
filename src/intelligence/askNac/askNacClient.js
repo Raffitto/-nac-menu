@@ -47,6 +47,7 @@ export async function askNac({
   session = null,
   profile = null,
   filters = {},
+  conversationContext = null,
   preferServer = true,
 }) {
   const edgeUrl = resolveAskNacEdgeUrl();
@@ -63,6 +64,7 @@ export async function askNac({
         },
         body: JSON.stringify({
           question,
+          conversationContext,
           branch: filters.branch ?? null,
           hours: filters.timeRangeHours ?? 24,
           range: filters.selectedRange ?? null,
@@ -87,6 +89,7 @@ export async function askNac({
         supabase,
         profile,
         filters,
+        conversationContext,
       });
       return {
         ...local,
@@ -104,6 +107,7 @@ export async function askNac({
         supabase,
         profile,
         filters,
+        conversationContext,
       });
       return {
         ...local,
@@ -138,6 +142,7 @@ export async function askNac({
     supabase,
     profile,
     filters,
+    conversationContext,
   });
   return {
     ...local,

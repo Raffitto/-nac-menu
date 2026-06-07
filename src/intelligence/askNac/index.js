@@ -12,3 +12,10 @@ export { runAskNacQueryTool, queryMenuMetrics, queryReviewMetrics } from "./quer
 export { buildDeterministicAskNacAnswer } from "./answerBuilder";
 export { processAskNacQuestion } from "./askNacOrchestrator";
 export { askNac, isAskNacServerConfigured, resolveAskNacEdgeUrl } from "./askNacClient";
+export {
+  createEmptyConversationContext,
+  resetConversationContext,
+  updateConversationContext,
+} from "./conversation/conversationContext";
+export { resolveFollowUpQuestion } from "./conversation/resolveFollowUpQuestion";
+export { prepareAskNacQuestion } from "./conversation/prepareAskNacQuestion";

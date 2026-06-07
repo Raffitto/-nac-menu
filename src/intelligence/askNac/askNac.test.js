@@ -25,6 +25,11 @@ describe("askNac intentRouter", () => {
     expect(route.intent).toBe(ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD);
   });
 
+  test("routes Who drove the most Google redirects without staff keyword", () => {
+    const route = routeAskNacIntent("Who drove the most Google redirects?");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD);
+  });
+
   test("routes branch comparison", () => {
     const route = routeAskNacIntent("Compare branches this month");
     expect(route.intent).toBe(ASK_NAC_INTENTS.BRANCH_COMPARISON);

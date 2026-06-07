@@ -14,6 +14,7 @@ import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
 import { READINESS } from "./readinessEngine";
 import { buildVaultAnswer } from "./vault/vaultAnswerBuilder";
 import { collectAskNacMetricWarnings } from "./shared/mtdDiagnostics";
+import { buildSpecificMissingDataMessage, buildSpecificUnknownMessage } from "./conversation/missingDataMessages";
 
 function confidenceFromTool(tool, routingConfidence) {
   if (tool?.partial) return CONFIDENCE_LEVELS.MEDIUM;
@@ -29,9 +30,7 @@ function buildMissingDataResponse(route, readiness) {
   return createAskNacResponse({
     answerType: ANSWER_TYPES.MISSING_DATA,
     title: metricDef?.label || "Data not available yet",
-    directAnswer:
-      readiness.reasons?.[0] ||
-      "This question maps to a metric that is not fully available in NAC Intelligence yet.",
+    directAnswer: buildSpecificMissingDataMessage(route, readiness),
     keyMetrics: [],
     insights: metricDef
       ? [`Canonical source when live: ${metricDef.canonicalSource}`]
@@ -55,8 +54,7 @@ function buildUnknownResponse(route) {
   return createAskNacResponse({
     answerType: ANSWER_TYPES.UNKNOWN,
     title: "Need a clearer metric question",
-    directAnswer:
-      "Try asking about menu QR scans, menu sessions, Google redirects, review QR scans, staff redirect leaderboard, branch comparison, or Foodics sales (total sales, top items, categories) for a calendar month.",
+    directAnswer: buildSpecificUnknownMessage(),
     insights: [
       "Examples: “How many menu QR scans today?” · “What were sales in May?” · “What were the top 10 items last month?”",
     ],
@@ -147,7 +145,7 @@ function staffLeaderboardResponse(route, tool) {
   const top = tool.leaderboard?.[0];
   const directAnswer = top
     ? `${top.name} leads with ${top.googleRedirects} Google redirect${top.googleRedirects === 1 ? "" : "s"} (${tool.periodLabel}, ${tool.branchLabel}).`
-    : `No staff-attributed redirect activity in ${tool.periodLabel} for ${tool.branchLabel}.`;
+    : `No staff-attributed Google redirect data was found for ${tool.periodLabel} at ${tool.branchLabel}.`;
 
   return createAskNacResponse({
     answerType: ANSWER_TYPES.LEADERBOARD,
@@ -430,12 +428,12 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
     return buildBlockedResponse(route, readiness);
   }
 
-  if (readiness?.status === READINESS.MISSING && !readiness.canQuery) {
-    return buildMissingDataResponse(route, readiness);
-  }
-
   if (route.intent === ASK_NAC_INTENTS.UNKNOWN) {
     return buildUnknownResponse(route);
+  }
+
+  if (readiness?.status === READINESS.MISSING && !readiness.canQuery) {
+    return buildMissingDataResponse(route, readiness);
   }
 
   if (isVaultDataIntent(route.intent)) {

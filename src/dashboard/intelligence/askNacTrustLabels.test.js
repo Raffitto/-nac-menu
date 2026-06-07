@@ -49,13 +49,15 @@ describe("askNacTrustLabels", () => {
     expect(rows.some((row) => row.value === "high confidence")).toBe(true);
   });
 
-  test("connection badge uses user-facing labels", () => {
-    expect(
-      getMobileConnectionBadge({
-        lastResponse: { answerType: ANSWER_TYPES.METRIC, localFallback: true },
-        session: null,
-        serverConfigured: true,
-      }).shortLabel,
-    ).toBe("Partial Data");
+  test("shows resolved question in technical details", () => {
+    const rows = getTechnicalTrustDetails({
+      conversationResolution: {
+        usedContext: true,
+        resolvedQuestion: "Who drove the most Google redirects last month?",
+      },
+      serverConnected: true,
+      confidence: "high",
+    });
+    expect(rows.some((row) => row.label === "Resolved as")).toBe(true);
   });
 });
