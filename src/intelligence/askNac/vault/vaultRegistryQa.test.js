@@ -13,6 +13,10 @@ const COVERAGE_MIGRATION_PATH = path.resolve(
   __dirname,
   "../../../../supabase/migrations/20260606150000_ask_nac_vault_parser_coverage.sql",
 );
+const HARDENING_MIGRATION_PATH = path.resolve(
+  __dirname,
+  "../../../../supabase/migrations/20260606200000_ask_nac_vault_permission_hardening.sql",
+);
 
 describe("vault registry QA (static migration checks)", () => {
   let foundationSql;
@@ -59,5 +63,11 @@ describe("vault registry QA (static migration checks)", () => {
     expect(ingestionSql).toMatch(/vault-prototype-v1/);
     expect(readFileSync(COVERAGE_MIGRATION_PATH, "utf8")).toMatch(/ccm_reconciliation/);
     expect(readFileSync(COVERAGE_MIGRATION_PATH, "utf8")).toMatch(/vault-prototype-v2/);
+  });
+
+  test("permission hardening migration tightens coverage and brand-wide uploads", () => {
+    const hardeningSql = readFileSync(HARDENING_MIGRATION_PATH, "utf8");
+    expect(hardeningSql).toMatch(/ask_nac_vault_can_read_file\(source_file_id\)/);
+    expect(hardeningSql).toMatch(/ask_nac_vault_storage_select/);
   });
 });

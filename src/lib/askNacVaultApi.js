@@ -3,6 +3,7 @@
  */
 
 import { VAULT_STORAGE_BUCKET } from "../intelligence/askNac/vault/vaultConstants";
+import { vaultCanUploadBrandWide } from "../intelligence/askNac/vault/vaultAccess";
 import { PARSEABLE_REPORT_TYPES, runVaultIngestion } from "../intelligence/askNac/vault/vaultIngestion";
 
 const FILE_COLUMNS =
@@ -105,8 +106,21 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     return { ok: false, error: "Sign in to upload to the Data Vault." };
   }
 
-  const branch = metadata.brandWide || metadata.branch === "brand" ? null : metadata.branch;
+  let vaultRole = metadata.vaultRole || null;
+  if (!vaultRole) {
+    const staff = await fetchVaultStaffRole(supabase);
+    vaultRole = staff.role;
+  }
+
   const brandWide = metadata.brandWide || metadata.branch === "brand";
+  if (brandWide && !vaultCanUploadBrandWide(vaultRole)) {
+    return {
+      ok: false,
+      error: "Brand-wide uploads require CEO, super admin, or marketing access.",
+    };
+  }
+
+  const branch = brandWide ? null : metadata.branch;
   const branchScopeType = brandWide ? "brand_wide" : "single_branch";
   const primaryBranchId = brandWide ? null : branch;
   const storageBranch = brandWide ? "brand" : branch;
