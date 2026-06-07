@@ -67,6 +67,18 @@ export function navIdFromLegacyView(view) {
   return hit?.id || "overview";
 }
 
+/** Bottom navigation for mobile Intelligence shell (UI only). */
+export const MOBILE_INTELLIGENCE_NAV = [
+  { id: "ask", label: "Ask NAC" },
+  { id: "dashboards", label: "Dashboards" },
+  { id: "vault", label: "Vault" },
+  { id: "settings", label: "Settings" },
+];
+
+export const MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS = INTELLIGENCE_TABS.filter(
+  (tab) => tab.id !== "ask",
+).map((tab) => tab.id);
+
 export function isScrollableView(view) {
   return [
     "overview",

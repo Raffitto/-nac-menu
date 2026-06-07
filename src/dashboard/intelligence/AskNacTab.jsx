@@ -17,7 +17,7 @@ import { askNac, isAskNacServerConfigured } from "../../intelligence/askNac";
 import AskNacComposer from "./AskNacComposer";
 import AskNacMessageList from "./AskNacMessageList";
 import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
-import { createAssistantMessage, createUserMessage } from "./askNacChatUtils";
+import { createAssistantMessage, createUserMessage, resolveAskNacSuggestions } from "./askNacChatUtils";
 import "../styles/ask-nac.css";
 import "../styles/ask-nac-data-vault.css";
 
@@ -40,10 +40,20 @@ const SUGGESTED_PROMPTS = [
   { text: "Summarize reception performance on 5 June.", icon: TrendingUp },
 ];
 
+const MOBILE_SUGGESTED_PROMPTS = [
+  { text: "What were sales in May?", icon: TrendingUp },
+  { text: "Which category generated the most revenue?", icon: TrendingUp },
+  { text: "Compare branches this month", icon: GitBranch },
+  { text: "How many menu QR scans today?", icon: BarChart3 },
+];
+
 export default function AskNacTab({
   initialQuestion = "",
   prefillSeed = 0,
   onInitialQuestionConsumed,
+  mobileFirst = false,
+  showVaultPanel = true,
+  maxSuggestions = 8,
 }) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
@@ -162,19 +172,46 @@ export default function AskNacTab({
     onInitialQuestionConsumed?.();
   }, [initialQuestion, prefillSeed, onInitialQuestionConsumed, submitQuestion]);
 
-  const showEmptyState = messages.length === 0 && !loading;
+  const showEmptyState = messages.length === 0 && !loading && !mobileFirst;
+
+  const suggestions = useMemo(
+    () =>
+      resolveAskNacSuggestions({
+        mobileFirst,
+        maxSuggestions,
+        messageCount: messages.length,
+        allPrompts: SUGGESTED_PROMPTS,
+        mobilePrompts: MOBILE_SUGGESTED_PROMPTS,
+      }),
+    [mobileFirst, maxSuggestions, messages.length],
+  );
+
+  const composerPlaceholder = mobileFirst
+    ? "Ask NAC anything…"
+    : "Ask about menu scans, sales, staff, branches, Foodics, or vault reports…";
 
   return (
-    <div className="nac-ask-nac-tab">
-      <header className="nac-glass-panel nac-ask-nac-hero">
+    <div className={`nac-ask-nac-tab ${mobileFirst ? "nac-ask-nac-tab--mobile-first" : ""}`.trim()}>
+      <header
+        className={`nac-glass-panel nac-ask-nac-hero ${mobileFirst ? "nac-ask-nac-hero--compact" : ""}`.trim()}
+      >
         <div className="nac-ask-nac-hero__top">
           <div>
-            <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
-            <h2>Ask NAC</h2>
-            <p className="nac-ask-nac-subtitle">
-              Answers come from verified Supabase metrics only — never guessed. OpenAI (when connected
-              on the server) may explain structured facts returned by internal tools.
-            </p>
+            {mobileFirst ? (
+              <>
+                <p className="nac-ask-nac-eyebrow">NAC Intelligence</p>
+                <h2 className="nac-ask-nac-hero__mobile-title">Ask NAC</h2>
+              </>
+            ) : (
+              <>
+                <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
+                <h2>Ask NAC</h2>
+                <p className="nac-ask-nac-subtitle">
+                  Answers come from verified Supabase metrics only — never guessed. OpenAI (when connected
+                  on the server) may explain structured facts returned by internal tools.
+                </p>
+              </>
+            )}
           </div>
           <div className="nac-ask-nac-hero__actions">
             {messages.length ? (
@@ -186,7 +223,7 @@ export default function AskNacTab({
                 aria-label="Start a new chat"
               >
                 <MessageSquarePlus size={16} aria-hidden />
-                <span>New chat</span>
+                <span>{mobileFirst ? "New" : "New chat"}</span>
               </button>
             ) : null}
             <div
@@ -202,12 +239,12 @@ export default function AskNacTab({
               }
             >
               {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
-              <span>{statusBadge.label}</span>
+              <span>{mobileFirst && statusBadge.label === "AI connected" ? "AI Connected" : statusBadge.label}</span>
             </div>
           </div>
         </div>
 
-        {!isSupabaseConfigured() ? (
+        {!mobileFirst && !isSupabaseConfigured() ? (
           <p className="nac-ask-nac-config-warn">Supabase is not configured — metric queries will not run.</p>
         ) : null}
       </header>
@@ -235,12 +272,13 @@ export default function AskNacTab({
           onChange={setDraft}
           onSubmit={submitQuestion}
           loading={loading}
-          suggestions={messages.length === 0 ? SUGGESTED_PROMPTS : SUGGESTED_PROMPTS.slice(0, 8)}
+          suggestions={suggestions}
           inputRef={inputRef}
+          placeholder={composerPlaceholder}
         />
       </section>
 
-      <AskNacDataVaultPanel session={session} />
+      {showVaultPanel ? <AskNacDataVaultPanel session={session} /> : null}
     </div>
   );
 }

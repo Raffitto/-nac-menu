@@ -610,3 +610,64 @@
   clip: rect(0, 0, 0, 0);
   border: 0;
 }
+
+/* Mobile-first Ask NAC — full-height chat inside Intelligence mobile shell */
+.nac-ask-nac-tab--mobile-first {
+  gap: 0;
+  min-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom, 0px));
+  height: 100%;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero--compact {
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  margin-bottom: 0.5rem;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__mobile-title {
+  margin: 0.15rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__top {
+  align-items: center;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__actions {
+  width: auto;
+  justify-content: flex-end;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-chat {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  border-radius: 12px;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-composer {
+  position: sticky;
+  bottom: 0;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-suggestions__track {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+  gap: 0.4rem;
+}
+
+.nac-ask-nac-tab--mobile-first .nac-ask-nac-suggestions__track .nac-ask-nac-chip {
+  white-space: normal;
+  text-align: left;
+  justify-content: flex-start;
+}
+
+.nac-intelligence-hub--mobile .nac-ask-nac-tab--mobile-first {
+  min-height: calc(100dvh - 4.5rem - env(safe-area-inset-bottom, 0px));
+}
+
+.nac-intelligence-hub--mobile .nac-ask-nac-tab--mobile-first .nac-ask-nac-chat {
+  min-height: calc(100dvh - 9.5rem - env(safe-area-inset-bottom, 0px));
+}

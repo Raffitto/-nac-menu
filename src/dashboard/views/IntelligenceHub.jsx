@@ -1,7 +1,6 @@
-import React, { useMemo, useState, Suspense, lazy, useCallback } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import { GooglePlacesProvider } from "../context/GooglePlacesContext";
 import { motion } from "framer-motion";
-import { RefreshCw } from "lucide-react";
 import HubTabs from "../components/HubTabs";
 import GlobalFilterBar from "../components/GlobalFilterBar";
 import ExecutiveExportButton from "../components/ExecutiveExportButton";
@@ -11,30 +10,16 @@ import { MenuBiDashboardProvider, useMenuBiDashboardContext } from "../context/M
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import { useRbac } from "../context/RbacContext";
 import { PERMISSIONS } from "../config/rbac";
-import MenuIntelligence from "../intelligence/MenuIntelligence";
-import CompetitiveReputationWatch from "../intelligence/CompetitiveReputationWatch";
-import AskNacTab from "../intelligence/AskNacTab";
-import SalesIntelligenceHub from "../intelligence/SalesIntelligenceHub";
-import RestaurantIntelligenceHub from "../intelligence/RestaurantIntelligenceHub";
+import IntelligenceTabPanels from "../intelligence/IntelligenceTabPanels";
+import IntelligenceMobileShell from "../intelligence/mobile/IntelligenceMobileShell";
+import { useMobileIntelligenceLayout } from "../hooks/useMobileIntelligenceLayout";
 import "../styles/platform-os.css";
 import "../styles/review-intelligence.css";
 import "../styles/intelligence-polish.css";
 
-const ExecutiveCommandCenter = lazy(() => import("../intelligence/ExecutiveCommandCenter"));
-const VisualIntelligenceEngine = lazy(() => import("../intelligence/VisualIntelligenceEngine"));
-
 function IntelligenceTrustStrip() {
   const { operationalTrust } = useMenuBiDashboardContext();
   return <OperationalTrustBadge trust={operationalTrust} />;
-}
-
-function ViewFallback({ label }) {
-  return (
-    <div className="nac-bi-loading" style={{ minHeight: 200, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <RefreshCw size={20} className="nac-bi-spin" />
-      <span style={{ marginLeft: 8 }}>{label}</span>
-    </div>
-  );
 }
 
 function applyLegacyTabHints(rawTab, setSalesSection, setRestaurantSection) {
@@ -43,7 +28,7 @@ function applyLegacyTabHints(rawTab, setSalesSection, setRestaurantSection) {
   if (raw === "operations") setRestaurantSection("operations");
 }
 
-export default function IntelligenceHub() {
+function IntelligenceHubDesktop() {
   const [tab, setTab] = useState("ask");
   const [salesSection, setSalesSection] = useState("upload");
   const [restaurantSection, setRestaurantSection] = useState("overview");
@@ -89,8 +74,6 @@ export default function IntelligenceHub() {
   const showExecutiveExport = rbac.hasPermission(PERMISSIONS.VIEW_EXECUTIVE_EXPORT);
 
   return (
-    <GooglePlacesProvider>
-    <MenuBiDashboardProvider options={{ source: "IntelligenceHub" }}>
     <motion.div className="nac-intelligence-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
         <div className="nac-platform-header-row">
@@ -114,51 +97,56 @@ export default function IntelligenceHub() {
 
       <HubTabs tabs={visibleTabs} active={activeTab} onChange={handleTabChange} />
 
-      {activeTab === "ask" && (
-        <div className="nac-intelligence-panel">
-          <AskNacTab
-            initialQuestion={askNacPrefill}
-            prefillSeed={askNacPrefillSeed}
-            onInitialQuestionConsumed={handleAskNacPrefillConsumed}
-          />
-        </div>
-      )}
-      {activeTab === "visual" && (
-        <div className="nac-intelligence-panel">
-        <Suspense fallback={<ViewFallback label="Loading visual intelligence…" />}>
-          <VisualIntelligenceEngine />
-        </Suspense>
-        </div>
-      )}
-      {activeTab === "restaurant" && (
-        <div className="nac-intelligence-panel">
-        <RestaurantIntelligenceHub initialSection={restaurantSection} />
-        </div>
-      )}
-      {activeTab === "sales" && (
-        <div className="nac-intelligence-panel">
-        <SalesIntelligenceHub initialSection={salesSection} onAskNac={handleAskNacFromSales} />
-        </div>
-      )}
-      {activeTab === "menu" && (
-        <div className="nac-intelligence-panel">
-          <MenuIntelligence />
-        </div>
-      )}
-      {activeTab === "executive" && (
-        <div className="nac-intelligence-panel">
-        <Suspense fallback={<ViewFallback label="Loading command center…" />}>
-          <ExecutiveCommandCenter />
-        </Suspense>
-        </div>
-      )}
-      {activeTab === "competitive" && (
-        <div className="nac-intelligence-panel">
-          <CompetitiveReputationWatch />
-        </div>
-      )}
+      <IntelligenceTabPanels
+        activeTab={activeTab}
+        salesSection={salesSection}
+        restaurantSection={restaurantSection}
+        askNacPrefill={askNacPrefill}
+        askNacPrefillSeed={askNacPrefillSeed}
+        onAskNacPrefillConsumed={handleAskNacPrefillConsumed}
+        onAskNacFromSales={handleAskNacFromSales}
+      />
     </motion.div>
-    </MenuBiDashboardProvider>
+  );
+}
+
+function IntelligenceHubMobile() {
+  const [salesSection, setSalesSection] = useState("upload");
+  const [restaurantSection, setRestaurantSection] = useState("overview");
+  const [askNacPrefill, setAskNacPrefill] = useState("");
+  const [askNacPrefillSeed, setAskNacPrefillSeed] = useState(0);
+
+  const handleAskNacFromSales = useCallback((question) => {
+    setAskNacPrefill(String(question || "").trim());
+    setAskNacPrefillSeed((seed) => seed + 1);
+  }, []);
+
+  const handleAskNacPrefillConsumed = useCallback(() => {
+    setAskNacPrefill("");
+  }, []);
+
+  return (
+    <IntelligenceMobileShell
+      askNacPrefill={askNacPrefill}
+      askNacPrefillSeed={askNacPrefillSeed}
+      onAskNacPrefillConsumed={handleAskNacPrefillConsumed}
+      onAskNacFromSales={handleAskNacFromSales}
+      salesSection={salesSection}
+      setSalesSection={setSalesSection}
+      restaurantSection={restaurantSection}
+      setRestaurantSection={setRestaurantSection}
+    />
+  );
+}
+
+export default function IntelligenceHub() {
+  const isMobile = useMobileIntelligenceLayout();
+
+  return (
+    <GooglePlacesProvider>
+      <MenuBiDashboardProvider options={{ source: "IntelligenceHub" }}>
+        {isMobile ? <IntelligenceHubMobile /> : <IntelligenceHubDesktop />}
+      </MenuBiDashboardProvider>
     </GooglePlacesProvider>
   );
 }

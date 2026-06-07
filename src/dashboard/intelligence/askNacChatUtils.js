@@ -65,3 +65,20 @@ export function resizeComposerTextarea(textarea, maxHeight = COMPOSER_MAX_HEIGHT
   const next = Math.min(textarea.scrollHeight, maxHeight);
   textarea.style.height = `${Math.max(next, COMPOSER_MIN_HEIGHT_PX)}px`;
 }
+
+/** Suggestion chips — mobile collapses after first message; desktop keeps post-chat chips. */
+export function resolveAskNacSuggestions({
+  mobileFirst = false,
+  maxSuggestions = 8,
+  messageCount = 0,
+  allPrompts = [],
+  mobilePrompts = [],
+}) {
+  if (messageCount > 0) {
+    return mobileFirst ? [] : allPrompts.slice(0, maxSuggestions);
+  }
+  if (mobileFirst) {
+    return mobilePrompts.slice(0, maxSuggestions);
+  }
+  return allPrompts;
+}

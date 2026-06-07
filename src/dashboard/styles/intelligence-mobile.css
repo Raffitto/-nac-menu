@@ -1,0 +1,134 @@
+/* Mobile-first Intelligence shell — desktop hub layout unchanged above 768px */
+
+.nac-intelligence-hub--mobile {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--nac-app-header-offset, 0px));
+  max-height: calc(100dvh - var(--nac-app-header-offset, 0px));
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+
+.nac-intelligence-mobile-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.65rem 0.75rem 0;
+}
+
+.nac-intelligence-mobile-main .nac-intelligence-panel {
+  padding: 0;
+}
+
+.nac-intelligence-mobile-nav {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  padding: 0.45rem 0.5rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(10, 10, 9, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  z-index: 20;
+}
+
+.nac-intelligence-mobile-nav__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 3.25rem;
+  padding: 0.35rem 0.25rem;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(249, 249, 247, 0.55);
+  font-size: 0.62rem;
+  line-height: 1.15;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.nac-intelligence-mobile-nav__item span {
+  text-align: center;
+}
+
+.nac-intelligence-mobile-nav__item.is-active {
+  color: #d7bc8a;
+  background: rgba(215, 188, 138, 0.08);
+}
+
+.nac-intelligence-mobile-nav__item:focus-visible {
+  outline: 2px solid rgba(215, 188, 138, 0.45);
+  outline-offset: 2px;
+}
+
+.nac-intelligence-mobile-section-header {
+  margin-bottom: 0.85rem;
+}
+
+.nac-intelligence-mobile-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  color: rgba(249, 249, 247, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.nac-intelligence-mobile-section-header h2 {
+  margin: 0.3rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+.nac-intelligence-mobile-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.58);
+  line-height: 1.45;
+}
+
+.nac-intelligence-mobile-dashboards {
+  padding-bottom: 0.75rem;
+}
+
+.nac-intelligence-mobile-dashboard-tabs {
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+}
+
+.nac-intelligence-mobile-dashboard-tabs .nac-hub-tab {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.nac-intelligence-mobile-vault,
+.nac-intelligence-mobile-settings {
+  padding-bottom: 0.75rem;
+}
+
+.nac-intelligence-mobile-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.nac-intelligence-mobile-empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+@media (min-width: 769px) {
+  .nac-intelligence-hub--mobile {
+    display: none;
+  }
+}
