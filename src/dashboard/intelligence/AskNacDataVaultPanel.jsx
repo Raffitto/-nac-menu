@@ -216,8 +216,8 @@ export default function AskNacDataVaultPanel({ session }) {
           <p className="nac-ask-nac-eyebrow">Company archive foundation</p>
           <h3 id="ask-nac-vault-heading">Data Vault</h3>
           <p className="nac-ask-vault__intro">
-            Upload NAC operational reports (XLSX, CSV, PDF, DOCX, TXT). Prototype parsers extract structured
-            facts — not connected to Ask NAC answers yet. Foodics stays on Sales Intelligence.
+            Upload NAC operational reports (XLSX, CSV, PDF, DOCX, TXT). Parsed facts power Ask NAC vault
+            answers on the server when signed in. Foodics stays on Sales Intelligence.
           </p>
         </div>
         <div className="nac-ask-vault__meta">

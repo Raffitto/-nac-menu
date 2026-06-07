@@ -48,14 +48,21 @@
   color: rgba(249, 249, 247, 0.7);
 }
 
-.nac-ask-nac-server-status.is-connected {
+.nac-ask-nac-server-status.is-connected,
+.nac-ask-nac-server-status--connected {
   border-color: rgba(78, 205, 196, 0.35);
   color: #4ecdc4;
 }
 
-.nac-ask-nac-server-status.is-local {
+.nac-ask-nac-server-status.is-local,
+.nac-ask-nac-server-status--local {
   border-color: rgba(245, 166, 35, 0.35);
   color: #f5a623;
+}
+
+.nac-ask-nac-server-status--ai {
+  border-color: rgba(167, 139, 250, 0.4);
+  color: #c4b5fd;
 }
 
 .nac-ask-nac-filter-status {
@@ -203,8 +210,13 @@
 }
 
 .nac-ask-nac-badge--ai {
-  border-color: rgba(215, 188, 138, 0.45);
-  color: #d7bc8a;
+  border-color: rgba(167, 139, 250, 0.35);
+  color: #c4b5fd;
+}
+
+.nac-ask-nac-badge--local {
+  border-color: rgba(245, 166, 35, 0.35);
+  color: #f5a623;
 }
 
 .nac-ask-nac-response__answer {

@@ -54,6 +54,31 @@ export default function AskNacTab({
   const serverConfigured = isAskNacServerConfigured();
   const session = rbac?.session;
   const serverConnected = response?.serverConnected === true;
+  const localFallback = response?.localFallback === true;
+  const aiConnected = response?.aiConnected === true;
+  const aiExplained = response?.isAiGenerated === true;
+
+  const statusBadge = useMemo(() => {
+    if (aiExplained) {
+      return { label: "AI explained", tone: "ai" };
+    }
+    if (response && aiConnected) {
+      return { label: "AI connected", tone: "connected" };
+    }
+    if (response && serverConnected && !localFallback) {
+      return { label: "Verified deterministic", tone: "connected" };
+    }
+    if (response && localFallback) {
+      return { label: "Local fallback", tone: "local" };
+    }
+    if (serverConfigured && session?.access_token) {
+      return { label: "AI connected", tone: "connected" };
+    }
+    if (serverConfigured) {
+      return { label: "Local fallback", tone: "local" };
+    }
+    return { label: "Local fallback", tone: "local" };
+  }, [aiExplained, aiConnected, response, serverConnected, localFallback, serverConfigured, session]);
 
   const filters = useMemo(
     () => ({
@@ -123,23 +148,19 @@ export default function AskNacTab({
             </p>
           </div>
           <div
-            className={`nac-ask-nac-server-status ${serverConnected ? "is-connected" : "is-local"}`}
+            className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
             title={
-              serverConnected
-                ? "Ask NAC Edge Function connected"
-                : serverConfigured
-                  ? "Edge Function configured — sign in or use local fallback"
-                  : "Server AI not connected — local deterministic answers"
+              statusBadge.label === "AI explained"
+                ? "OpenAI narrated verified facts on the server"
+                : statusBadge.label === "AI connected"
+                  ? "Ask NAC Edge Function connected — server-side tools and optional AI narration"
+                  : statusBadge.label === "Verified deterministic"
+                    ? "Verified facts from server tools without AI rewrite"
+                    : "Deterministic answers computed locally in the browser"
             }
           >
-            {serverConnected ? <Server size={16} /> : <ServerOff size={16} />}
-            <span>
-              {serverConnected
-                ? "Server connected"
-                : serverConfigured
-                  ? "Server AI ready (local fallback)"
-                  : "Server AI not connected"}
-            </span>
+            {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
+            <span>{statusBadge.label}</span>
           </div>
         </div>
 
@@ -205,8 +226,9 @@ export default function AskNacTab({
           <Sparkles size={20} aria-hidden />
           <p>
             Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
-            comparison, or Foodics sales (totals, top items, categories). Planned metrics like average
-            spend and delivery sales return a clear missing-data report — never fabricated numbers.
+            comparison, Foodics sales (totals, top items, categories), and Data Vault operational reports.
+            Planned metrics like average spend and delivery sales return a clear missing-data report — never
+            fabricated numbers.
           </p>
         </section>
       )}

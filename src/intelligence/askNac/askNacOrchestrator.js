@@ -2,10 +2,11 @@
  * Ask NAC orchestrator — route → readiness → read-only tools → deterministic answer.
  */
 
-import { routeAskNacIntent } from "./intentRouter";
+import { routeAskNacIntent, isFoodicsCompareIntent, isFoodicsDataIntent, ASK_NAC_INTENTS } from "./intentRouter";
 import { assessIntentReadiness, assessIntentReadinessSync } from "./readinessEngine";
 import { runAskNacQueryTool } from "./queryTools";
-import { buildDeterministicAskNacAnswer, maybeEnhanceWithOpenAi } from "./answerBuilder";
+import { buildDeterministicAskNacAnswer } from "./answerBuilder";
+import { resolveFoodicsPeriodWithFallback } from "./shared/periodFallback";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -26,6 +27,26 @@ export async function processAskNacQuestion({
 }) {
   const fallbackHours = filters.timeRangeHours ?? 24;
   const route = routeAskNacIntent(question, { fallbackHours });
+  const periodFallbackWarnings = [];
+
+  if (
+    isFoodicsDataIntent(route.intent) &&
+    route.intent !== ASK_NAC_INTENTS.FOODICS_QUERY &&
+    !isFoodicsCompareIntent(route.intent) &&
+    (!route.foodicsPeriod?.startDate || !route.foodicsPeriod?.endDate)
+  ) {
+    const resolved = await resolveFoodicsPeriodWithFallback(supabase, {
+      question,
+      filters,
+      branch: route.branchMention || filters.branch,
+      profile,
+    });
+    if (resolved.period?.startDate && resolved.period?.endDate) {
+      route.foodicsPeriod = resolved.period;
+      route.debug = { ...route.debug, foodicsPeriod: resolved.period, periodFallbackSource: resolved.source };
+      periodFallbackWarnings.push(...(resolved.warnings || []));
+    }
+  }
 
   const readiness = await assessIntentReadiness(route.intent, {
     profile,
@@ -68,17 +89,16 @@ export async function processAskNacQuestion({
 
   const deterministic = buildDeterministicAskNacAnswer(route, tool, effectiveReadiness);
   deterministic.readiness = effectiveReadiness;
-
-  const enhanced = await maybeEnhanceWithOpenAi(
-    deterministic,
-    { route, tool, readiness: effectiveReadiness },
-    options,
-  );
+  if (periodFallbackWarnings.length) {
+    deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
+  }
 
   return {
-    ...enhanced,
+    ...deterministic,
     intent: route.intent,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
+    localFallback: true,
+    aiConnected: false,
   };
 }

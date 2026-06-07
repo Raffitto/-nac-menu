@@ -45,9 +45,14 @@ export default function AskNacAnswerCard({ response, question = "", filters = {}
         <div className="nac-ask-nac-response__meta">
           {response.isAiGenerated ? (
             <span className="nac-ask-nac-badge nac-ask-nac-badge--ai">AI explained</span>
+          ) : response.serverConnected && !response.localFallback ? (
+            <span className="nac-ask-nac-badge nac-ask-nac-badge--verified">Verified deterministic</span>
           ) : (
             <span className="nac-ask-nac-badge nac-ask-nac-badge--verified">Verified data</span>
           )}
+          {response.localFallback ? (
+            <span className="nac-ask-nac-badge nac-ask-nac-badge--local">Local fallback</span>
+          ) : null}
           {response.confidence ? (
             <span className="nac-ask-nac-badge">{response.confidence} confidence</span>
           ) : null}

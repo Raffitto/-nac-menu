@@ -6,7 +6,6 @@
 import { supabase as defaultSupabase } from "../../lib/supabase";
 import { processAskNacQuestion } from "./askNacOrchestrator";
 import { createAskNacResponse, ANSWER_TYPES, CONFIDENCE_LEVELS } from "./askNacContract";
-import { routeAskNacIntent, isFoodicsDataIntent, ASK_NAC_INTENTS } from "./intentRouter";
 
 const ASK_NAC_FUNCTION = "ask-nac";
 
@@ -22,6 +21,15 @@ export function resolveAskNacEdgeUrl() {
 
 export function isAskNacServerConfigured() {
   return Boolean(resolveAskNacEdgeUrl());
+}
+
+function buildProfileHint(profile) {
+  if (!profile) return null;
+  return {
+    authenticated: Boolean(profile.authenticated),
+    allBranches: Boolean(profile.allBranches),
+    branchScope: profile.branchScope ?? null,
+  };
 }
 
 /**
@@ -43,22 +51,6 @@ export async function askNac({
 }) {
   const edgeUrl = resolveAskNacEdgeUrl();
   const serverConfigured = Boolean(edgeUrl);
-  const fallbackHours = filters.timeRangeHours ?? 24;
-  const preRoute = routeAskNacIntent(question, { fallbackHours });
-
-  if (isFoodicsDataIntent(preRoute.intent) && preRoute.intent !== ASK_NAC_INTENTS.FOODICS_QUERY) {
-    const local = await processAskNacQuestion({ question, supabase, profile, filters });
-    return {
-      ...local,
-      serverConnected: false,
-      warnings: [
-        ...(local.warnings || []),
-        serverConfigured
-          ? "Foodics queries run locally — server Foodics not wired yet on Edge."
-          : null,
-      ].filter(Boolean),
-    };
-  }
 
   if (preferServer && serverConfigured && session?.access_token) {
     try {
@@ -74,6 +66,8 @@ export async function askNac({
           branch: filters.branch ?? null,
           hours: filters.timeRangeHours ?? 24,
           range: filters.selectedRange ?? null,
+          profileHint: buildProfileHint(profile),
+          filters,
         }),
       });
 
@@ -81,29 +75,41 @@ export async function askNac({
         const payload = await res.json();
         return {
           ...payload,
-          serverConnected: true,
+          serverConnected: payload.serverConnected !== false,
+          localFallback: payload.localFallback === true,
+          aiConnected: payload.aiConnected === true,
         };
       }
 
       const errText = await res.text().catch(() => "");
-      return processAskNacQuestion({
+      const local = await processAskNacQuestion({
         question,
         supabase,
         profile,
         filters,
-      }).then((local) => ({
+      });
+      return {
         ...local,
         serverConnected: false,
+        localFallback: true,
+        aiConnected: false,
         warnings: [
           ...(local.warnings || []),
           `Ask NAC server returned ${res.status}${errText ? `: ${errText.slice(0, 120)}` : ""} — using local verified fallback.`,
         ],
-      }));
+      };
     } catch (err) {
-      const local = await processAskNacQuestion({ question, supabase, profile, filters });
+      const local = await processAskNacQuestion({
+        question,
+        supabase,
+        profile,
+        filters,
+      });
       return {
         ...local,
         serverConnected: false,
+        localFallback: true,
+        aiConnected: false,
         warnings: [
           ...(local.warnings || []),
           `Ask NAC server unreachable (${err?.message || "network"}) — using local verified fallback.`,
@@ -119,22 +125,31 @@ export async function askNac({
       directAnswer: "Connect Supabase to query verified NAC Intelligence metrics.",
       confidence: CONFIDENCE_LEVELS.NONE,
       serverConnected: false,
+      localFallback: true,
+      aiConnected: false,
       warnings: serverConfigured
-        ? ["Server AI endpoint configured but sign in required for remote Ask NAC."]
-        : ["Server AI not connected — configure REACT_APP_SUPABASE_URL and deploy ask-nac Edge Function."],
+        ? ["Server endpoint configured but sign in required for remote Ask NAC."]
+        : ["Server not connected — configure REACT_APP_SUPABASE_URL and deploy ask-nac Edge Function."],
     });
   }
 
-  const local = await processAskNacQuestion({ question, supabase, profile, filters });
+  const local = await processAskNacQuestion({
+    question,
+    supabase,
+    profile,
+    filters,
+  });
   return {
     ...local,
     serverConnected: false,
+    localFallback: true,
+    aiConnected: false,
     warnings: [
       ...(local.warnings || []),
       ...(serverConfigured && !session?.access_token
         ? ["Sign in to use the Ask NAC Edge Function; showing local verified answers."]
         : !serverConfigured
-          ? ["Server AI not connected — deterministic local answers only."]
+          ? ["Server not connected — deterministic local answers only."]
           : []),
     ].filter(Boolean),
   };
