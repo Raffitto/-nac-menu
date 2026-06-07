@@ -11,6 +11,7 @@ import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
 import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
 import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
+import { queryGoogleReviewCount } from "./googleReviews/googleReviewQueryTools";
 import { fetchAskNacMenuMetrics } from "./shared/askNacMenuMetrics";
 import {
   compareFoodicsTopItems,
@@ -184,6 +185,8 @@ export async function runAskNacQueryTool(supabase, intent, context = {}) {
       });
     case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
       return queryOperationalKnowledge(supabase, context);
+    case ASK_NAC_INTENTS.GOOGLE_REVIEWS:
+      return queryGoogleReviewCount(supabase, context);
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return getFoodicsSalesSummary(supabase, context);
     case ASK_NAC_INTENTS.TOP_ITEMS:

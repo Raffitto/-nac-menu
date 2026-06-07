@@ -16,6 +16,11 @@ export function buildSpecificMissingDataMessage(route, readiness) {
     return `Executive analysis needs network-wide review, redirect, and Google snapshot history for ${route?.period?.rangeId || "the selected period"}.`;
   }
 
+  if (intent === ASK_NAC_INTENTS.GOOGLE_REVIEWS) {
+    const period = route?.period?.rangeId || "the selected period";
+    return reason || `No Google review snapshot history covers ${period} for the selected branch.`;
+  }
+
   if (intent === ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD) {
     const period = route?.period?.rangeId || "the selected period";
     return `No staff-attributed Google redirect data was found for ${period}. Staff attribution requires employee fields on review redirect events.`;

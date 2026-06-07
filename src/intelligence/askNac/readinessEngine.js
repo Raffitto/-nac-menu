@@ -16,6 +16,7 @@ import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { probeFoodicsBatchForPeriod } from "./foodics/foodicsQueryTools";
 import { probeVaultCoverage } from "./vault/vaultQueryTools";
+import { probeGoogleReviewSnapshots } from "./googleReviews/googleReviewQueryTools";
 import {
   assessNetworkDataConfidence,
   evaluateExecutiveRankingEligibility,
@@ -199,6 +200,7 @@ export function assessIntentReadinessSync(
     [ASK_NAC_INTENTS.BRANCH_COMPARISON]: METRIC_IDS.MENU_QR_SCAN,
     [ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS]: METRIC_IDS.MENU_QR_SCAN,
     [ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE]: METRIC_IDS.MENU_QR_SCAN,
+    [ASK_NAC_INTENTS.GOOGLE_REVIEWS]: METRIC_IDS.GOOGLE_REVIEW,
   };
 
   const def = metricDef(defMap[intent]);
@@ -221,10 +223,6 @@ function buildMissingReadiness(intent) {
     [ASK_NAC_INTENTS.DELIVERY_SALES]: {
       metricId: METRIC_IDS.DELIVERY_SALES,
       message: "Delivery platform sales parsing is not enabled yet.",
-    },
-    [ASK_NAC_INTENTS.GOOGLE_REVIEWS]: {
-      metricId: METRIC_IDS.GOOGLE_REVIEW,
-      message: "Actual Google review counts require google_review_snapshots for the selected branch and period.",
     },
   };
 
@@ -458,6 +456,27 @@ export async function assessIntentReadiness(intent, context = {}) {
         assessment.confidenceLevel !== CONFIDENCE.HIGH
           ? [`Coverage confidence: ${assessment.confidenceLevel}`]
           : [],
+    };
+  }
+
+  if (intent === ASK_NAC_INTENTS.GOOGLE_REVIEWS && context.supabase) {
+    const probe = await probeGoogleReviewSnapshots().catch(() => ({ hasSnapshots: false, count: 0 }));
+    if (!probe.hasSnapshots) {
+      return {
+        status: READINESS.MISSING,
+        canQuery: false,
+        reasons: [
+          "No Google review snapshots are stored yet. Capture daily Google review snapshots from Intelligence dashboards.",
+        ],
+        missingData: [{ intent, label: "Google review snapshots", planned: false }],
+      };
+    }
+    return {
+      status: READINESS.READY,
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+      warnings: probe.count < 3 ? ["Limited snapshot history — review deltas may be partial."] : [],
     };
   }
 

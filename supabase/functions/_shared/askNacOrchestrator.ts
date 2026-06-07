@@ -38,6 +38,8 @@ import {
   requiresExecutiveRankingSafeguard,
 } from "./askNacDataConfidenceLayer.ts";
 import { queryOperationalKnowledgeEdge } from "./askNacKnowledgeTools.ts";
+import { normalizeAskNacQuestionEdge, resolveIntentFromScoresEdge } from "./askNacNlu.ts";
+import { probeGoogleReviewSnapshotsEdge, queryGoogleReviewCountEdge } from "./askNacGoogleReviewTools.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -159,9 +161,11 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
   {
     id: ASK_NAC_INTENTS.GOOGLE_REVIEWS,
     score(q) {
-      if (hasVaultDayPeriod(q) && /\b(star|stars)\b/.test(q)) return 0;
-      if (/\b(actual google review|published review|new google review|google review count)\b/.test(q)) return 14;
-      if (/\bgoogle reviews\b/.test(q) && !/\bredirect\b/.test(q)) return 12;
+      if (/\b(redirect|qr scan|review qr)\b/.test(q)) return 0;
+      if (/\bhow many google reviews\b/.test(q)) return 17;
+      if (/\bgoogle reviews\b/.test(q)) return 16;
+      if (/\bhow many reviews\b/.test(q)) return 15;
+      if (/\breviews?\b/.test(q) && /\b(last month|this month|may|june)\b/.test(q)) return 15;
       return 0;
     },
   },
@@ -185,7 +189,8 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
   {
     id: ASK_NAC_INTENTS.TOP_ITEMS,
     score(q) {
-      if (/\b(top \d+|top ten|best sellers?|top items?|highest selling|most sold)\b/.test(q)) return 14;
+      if (/\b(top \d+|top ten|best sellers?|top items?|highest selling|most sold|top selling items?)\b/.test(q)) return 14;
+      if (/\b(best sell|sells most|most popular|top item)\b/.test(q)) return 15;
       return 0;
     },
   },
@@ -225,7 +230,10 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
   {
     id: ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD,
     score(q) {
-      if (/\b(staff|waiter|waitress|server|employee).*(leaderboard|top|best|rank|drove|drive|most)\b/.test(q)) return 14;
+      if (/\b(staff|waiter|waitress|server|employee)\b/.test(q) && /\b(top|best|perform|leaderboard|rank)\b/.test(q)) {
+        return /\breviews?\b/.test(q) && !/\bredirect/.test(q) ? 19 : 18;
+      }
+      if (/\b(waiter|waitress|server|employee).*(perform|performance|best|top)\b/.test(q)) return 17;
       if (/\b(who|which).*(staff|waiter|employee).*(redirect|google)\b/.test(q)) return 15;
       if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
       if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
@@ -352,14 +360,14 @@ function isMissingDataIntent(intent: string) {
   return [
     ASK_NAC_INTENTS.AVG_SPEND_PER_GUEST,
     ASK_NAC_INTENTS.DELIVERY_SALES,
-    ASK_NAC_INTENTS.GOOGLE_REVIEWS,
   ].includes(intent as typeof ASK_NAC_INTENTS[keyof typeof ASK_NAC_INTENTS]);
 }
 
 export function routeIntent(question: string, options: { fallbackHours?: number } = {}) {
-  const q = String(question || "").trim().toLowerCase();
-  const period = parseAskNacPeriod(question, options.fallbackHours ?? 24);
-  const branchMention = parseAskNacBranch(question);
+  const normalized = normalizeAskNacQuestionEdge(question);
+  const q = normalized.text.trim().toLowerCase();
+  const period = parseAskNacPeriod(normalized.text, options.fallbackHours ?? 24);
+  const branchMention = parseAskNacBranch(normalized.text);
 
   if (!q) {
     return {
@@ -376,30 +384,18 @@ export function routeIntent(question: string, options: { fallbackHours?: number 
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  const MIN = 8;
-  let intent: string = ASK_NAC_INTENTS.UNKNOWN;
-  let score = 0;
-
-  if (scored.length && scored[0].score >= MIN) {
-    intent = scored[0].id;
-    score = scored[0].score;
-  } else if (/\b(session|sessions)\b/.test(q) && !/\breview\b/.test(q)) {
-    intent = ASK_NAC_INTENTS.MENU_SESSIONS;
-    score = 6;
-  } else if (/\b(qr|scan|scans)\b/.test(q) && !/\breview\b/.test(q)) {
-    intent = ASK_NAC_INTENTS.MENU_QR_SCANS;
-    score = 6;
-  }
-
-  const confidence = score >= 12 ? "high" : score >= 8 ? "medium" : score > 0 ? "low" : "none";
-  const foodicsPeriod = isFoodicsDataIntent(intent) ? parseFoodicsPeriodFromQuestion(question) : null;
-  const foodicsCompare = isFoodicsCompareIntent(intent) ? parseFoodicsComparePeriods(question) : null;
-  const rankingBasis = isFoodicsDataIntent(intent) ? detectRankingBasis(question) : null;
-  const topLimit = isFoodicsDataIntent(intent) ? detectTopLimit(question) : null;
+  const resolved = resolveIntentFromScoresEdge(scored, q, normalized.hints);
+  const intent = resolved.intent;
+  const score = resolved.score;
+  const confidence = resolved.confidence;
+  const foodicsPeriod = isFoodicsDataIntent(intent) ? parseFoodicsPeriodFromQuestion(normalized.text) : null;
+  const foodicsCompare = isFoodicsCompareIntent(intent) ? parseFoodicsComparePeriods(normalized.text) : null;
+  const rankingBasis = isFoodicsDataIntent(intent) ? detectRankingBasis(normalized.text) : null;
+  const topLimit = isFoodicsDataIntent(intent) ? detectTopLimit(normalized.text) : null;
   const rankChangeDirection = intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE
-    ? detectRankChangeDirection(question)
+    ? detectRankChangeDirection(normalized.text)
     : null;
-  const vaultPeriod = parseVaultPeriodFromQuestion(question);
+  const vaultPeriod = parseVaultPeriodFromQuestion(normalized.text);
 
   return {
     intent,
@@ -456,6 +452,18 @@ async function assessReadiness(
       reasons: ["Could not parse a calendar day or month for this vault question."],
       missingData: [{ intent: route.intent, label: "Vault period" }],
     };
+  }
+  if (route.intent === ASK_NAC_INTENTS.GOOGLE_REVIEWS) {
+    const probe = await probeGoogleReviewSnapshotsEdge(supabase);
+    if (!probe.hasSnapshots) {
+      return {
+        status: "missing",
+        canQuery: false,
+        reasons: ["No Google review snapshots are stored yet."],
+        missingData: [{ intent: route.intent, label: "Google review snapshots" }],
+      };
+    }
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
   }
   if (route.intent === ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE) {
     return {
@@ -646,6 +654,8 @@ async function runQueryTool(
       });
     case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
       return queryOperationalKnowledgeEdge(supabase, context);
+    case ASK_NAC_INTENTS.GOOGLE_REVIEWS:
+      return queryGoogleReviewCountEdge(supabase, context);
     case ASK_NAC_INTENTS.SALES_TOTAL:
     case ASK_NAC_INTENTS.FOODICS_QUERY:
       return getFoodicsSalesSummary(supabase, context);

@@ -35,6 +35,26 @@ describe("askNac intentRouter", () => {
     expect(route.intent).toBe(ASK_NAC_INTENTS.BRANCH_COMPARISON);
   });
 
+  test("routes google reviews natural phrasing", () => {
+    expect(routeAskNacIntent("Reviews this month").intent).toBe(ASK_NAC_INTENTS.GOOGLE_REVIEWS);
+    expect(routeAskNacIntent("How many reviews was done last month").intent).toBe(ASK_NAC_INTENTS.GOOGLE_REVIEWS);
+  });
+
+  test("routes best selling to top items", () => {
+    const route = routeAskNacIntent("What is the best selling in the NAC restaurant");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.TOP_ITEMS);
+  });
+
+  test("routes waiter performance to staff leaderboard", () => {
+    expect(routeAskNacIntent("Which waiter performs best").intent).toBe(ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD);
+  });
+
+  test("routes branch improvement", () => {
+    const route = routeAskNacIntent("Did Khobar improve");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS);
+    expect(route.executiveKind).toBe("improved_most");
+  });
+
   test("routes missing-data avg spend", () => {
     const route = routeAskNacIntent("What is average spend per guest?");
     expect(route.intent).toBe(ASK_NAC_INTENTS.AVG_SPEND_PER_GUEST);

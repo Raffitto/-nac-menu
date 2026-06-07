@@ -117,6 +117,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBounds(year, monthIndex);
   }
 
+  const contextualMonth = q.match(
+    /\b(cash[\s-]?up|ccm|reconciliation|reconcile|logbook|reception|uploaded|coverage|report|files)\b.*\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b(?:\s+(20\d{2}))?/,
+  );
+  if (contextualMonth) {
+    const monthIndex = MONTH_MAP[contextualMonth[2]];
+    let year = contextualMonth[3] ? Number(contextualMonth[3]) : referenceDate.getFullYear();
+    if (!contextualMonth[3] && monthIndex > referenceDate.getMonth()) year -= 1;
+    return monthBounds(year, monthIndex);
+  }
+
   return null;
 }
 

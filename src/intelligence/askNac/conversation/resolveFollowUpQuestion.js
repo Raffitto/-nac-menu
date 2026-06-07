@@ -98,6 +98,36 @@ function resolveBranchFollowUp(question, context) {
   return `${base} for ${branch.charAt(0).toUpperCase()}${branch.slice(1)}?`;
 }
 
+function resolveTopicFollowUp(question, context) {
+  const q = normalizeQuestion(question).toLowerCase();
+  if (!/^what about\b/.test(q) && !/^how about\b/.test(q)) return null;
+
+  const topic = q.replace(/^(what|how) about\s*/i, "").replace(/\?+$/, "").trim();
+  const base = stripQuestionMark(context.lastResolvedQuestion || context.lastQuestion);
+  const period =
+    extractPeriodFragment(base) ||
+    extractPeriodFragment(context.lastPeriod || "") ||
+    extractPeriodFragment(question);
+
+  const topicMap = {
+    reviews: "how many google reviews",
+    "google reviews": "how many google reviews",
+    sales: "what were total sales",
+    redirects: "how many google redirects",
+    items: "what were the top items",
+    waiters: "which waiter drove most google redirects",
+    staff: "which staff drove most google redirects",
+  };
+
+  const mapped = topicMap[topic];
+  if (!mapped) return null;
+
+  const branch = extractBranchFragment(question) || extractBranchFragment(base);
+  const branchSuffix = branch ? ` for ${branch.charAt(0).toUpperCase()}${branch.slice(1)}` : "";
+  const periodSuffix = period ? ` ${period}` : "";
+  return `${mapped}${periodSuffix}${branchSuffix}?`;
+}
+
 function resolveEntityFollowUp(question, context) {
   const q = normalizeQuestion(question).toLowerCase();
   const base = stripQuestionMark(context.lastResolvedQuestion || context.lastQuestion);
@@ -157,6 +187,7 @@ export function resolveFollowUpQuestion(question, context = {}) {
   const attempts = [
     () => resolvePeriodFollowUp(original, context),
     () => resolveBranchFollowUp(original, context),
+    () => resolveTopicFollowUp(original, context),
     () => resolveTemporalSwapFollowUp(original, context),
     () => resolveEntityFollowUp(original, context),
   ];

@@ -389,6 +389,36 @@ function operationalKnowledgeResponse(route: Route, tool: Tool) {
   };
 }
 
+function googleReviewCountResponse(route: Route, tool: Tool) {
+  const delta = tool.reviewDelta;
+  const deltaLabel = delta == null ? null : delta > 0 ? `+${delta}` : String(delta);
+  const directAnswer =
+    delta != null
+      ? `${tool.branchLabel} ${deltaLabel} published Google reviews in ${tool.periodLabel}. Current total: ${tool.currentReviewCount ?? "—"}.`
+      : `Google review snapshot history is not available for ${tool.periodLabel}.`;
+
+  return {
+    answerType: "metric",
+    title: `Google reviews · ${tool.periodLabel}`,
+    directAnswer,
+    keyMetrics: [
+      metricEntry("Review delta", delta ?? "—", { unit: "reviews", source: "google_review_snapshots" }),
+      metricEntry("Current total", tool.currentReviewCount ?? "—", { unit: "reviews" }),
+    ],
+    insights: [],
+    recommendations: [],
+    sources: ((tool.sources as { name: string; detail?: string }[]) || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: (tool.warnings as string[]) || [],
+    missingData: [],
+    confidence: delta != null ? confidenceFromTool(tool, String(route.confidence)) : "low",
+    exportOptions: [],
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    branchLabel: tool.branchLabel,
+  };
+}
+
 function foodicsSalesTotalResponse(route: Route, tool: Tool) {
   const totals = (tool.totals as Record<string, number>) || {};
   return {
@@ -601,6 +631,8 @@ export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, 
       return executiveAnalysisResponse(route, tool);
     case "operational_knowledge":
       return operationalKnowledgeResponse(route, tool);
+    case "google_reviews":
+      return googleReviewCountResponse(route, tool);
     case "sales_total":
       return foodicsSalesTotalResponse(route, tool);
     case "top_items":

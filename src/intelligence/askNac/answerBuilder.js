@@ -342,6 +342,47 @@ function foodicsCompareResponse(route, tool) {
   });
 }
 
+function googleReviewCountResponse(route, tool) {
+  const delta = tool.reviewDelta;
+  const deltaLabel = delta == null ? null : delta > 0 ? `+${delta}` : String(delta);
+  const directAnswer =
+    delta != null
+      ? `${tool.branchLabel} ${deltaLabel} published Google reviews in ${tool.periodLabel}. Current total: ${tool.currentReviewCount ?? "—"}.`
+      : tool.branchReports?.length
+        ? `Network published Google review delta for ${tool.periodLabel} is unavailable from snapshot history.`
+        : `Google review snapshot history is not available for ${tool.branchLabel} (${tool.periodLabel}).`;
+
+  const keyMetrics = tool.branchReports?.length
+    ? tool.branchReports.slice(0, 3).map((row) =>
+        metricEntry(row.branch_name, row.period_delta ?? row.month_delta ?? "—", {
+          unit: "reviews",
+          note: row.current_review_count != null ? `${row.current_review_count} total` : "no history",
+        }),
+      )
+    : [
+        metricEntry("Review delta", delta ?? "—", { unit: "reviews", source: "google_review_snapshots" }),
+        metricEntry("Current total", tool.currentReviewCount ?? "—", { unit: "reviews" }),
+        ...(tool.currentRating != null
+          ? [metricEntry("Current rating", tool.currentRating, { unit: "stars" })]
+          : []),
+      ];
+
+  return createAskNacResponse({
+    answerType: ANSWER_TYPES.METRIC,
+    title: `Google reviews · ${tool.periodLabel}`,
+    directAnswer,
+    keyMetrics,
+    insights: [tool.historyNote].filter(Boolean),
+    sources: (tool.sources || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: tool.warnings || [],
+    confidence: delta != null ? confidenceFromTool(tool, route.confidence) : CONFIDENCE_LEVELS.LOW,
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    branchLabel: tool.branchLabel,
+  });
+}
+
 function foodicsCategoryResponse(route, tool) {
   const top = tool.topCategory;
   const directAnswer = top
@@ -602,6 +643,8 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
       return executiveAnalysisResponse(route, tool);
     case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
       return operationalKnowledgeResponse(route, tool);
+    case ASK_NAC_INTENTS.GOOGLE_REVIEWS:
+      return googleReviewCountResponse(route, tool);
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return foodicsSalesTotalResponse(route, tool);
     case ASK_NAC_INTENTS.TOP_ITEMS:

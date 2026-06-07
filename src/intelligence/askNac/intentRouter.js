@@ -13,6 +13,9 @@ import {
   parseFoodicsPeriodFromQuestion,
 } from "./foodics/foodicsPeriodParser";
 import { parseVaultPeriodFromQuestion, hasVaultDayPeriod } from "./vault/vaultPeriodParser";
+import { normalizeAskNacQuestion } from "./nlu/normalizeQuestion";
+import { resolveIntentFromScores } from "./nlu/resolveIntentAmbiguity";
+import { applyMetricDefaultsToRoute } from "./nlu/metricDefaults";
 
 export const ASK_NAC_INTENTS = Object.freeze({
   MENU_QR_SCANS: "menu_qr_scans",
@@ -69,6 +72,7 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY,
     score(q) {
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
+      if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
       if (/\b(operation|operational)\b/.test(q) && /\b(on|for)\b/.test(q)) return 17;
       return 0;
@@ -77,7 +81,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_COVERAGE_LIST,
     score(q) {
-      if (/\b(which uploaded files|uploaded files cover|files cover|data coverage|what data do we have)\b/.test(q)) {
+      if (/\b(which uploaded files|uploaded files cover|files cover|data coverage|what data do we have|summarize uploaded files)\b/.test(q)) {
         return 18;
       }
       if (/\b(coverage|uploaded data)\b/.test(q) && parseVaultPeriodFromQuestion(q)) return 16;
@@ -116,7 +120,8 @@ const INTENT_RULES = [
     score(q) {
       const period = parseVaultPeriodFromQuestion(q);
       if (!period?.isSingleDay) return 0;
-      if (/\b(sales|revenue|guests?|guest count|orders?|avg|average spend|cash[\s-]?up)\b/.test(q)) {
+      if (/\b(cash[\s-]?up|cash up summary)\b/.test(q)) return 18;
+      if (/\b(sales|revenue|guests?|guest count|orders?|avg|average spend)\b/.test(q)) {
         return 16;
       }
       return 0;
@@ -151,17 +156,25 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.GOOGLE_REVIEWS,
     score(q) {
-      if (hasVaultDayPeriod(q) && /\b(star|stars)\b/.test(q)) return 0;
-      if (/\b(actual google review|published review|new google review|google review count)\b/.test(q)) return 14;
-      if (/\bgoogle reviews\b/.test(q) && !/\bredirect\b/.test(q)) return 12;
-      if (/\b(reviews on google|places review)\b/.test(q)) return 11;
+      if (/\b(redirect|qr scan|review qr|review card)\b/.test(q)) return 0;
+      if (/\bhow many google reviews\b/.test(q)) return 17;
+      if (/\bgoogle review count\b/.test(q)) return 17;
+      if (/\bgoogle reviews\b/.test(q)) return 16;
+      if (/\bhow many reviews\b/.test(q)) return 15;
+      if (/\breviews?\b/.test(q) && /\b(last month|this month|month|may|june|july|august|september|october|november|december|january|february|march|april)\b/.test(q)) {
+        return 15;
+      }
+      if (/^\s*reviews\s*$/.test(q)) return 14;
+      if (/\b(actual google review|published review|new google review)\b/.test(q)) return 14;
+      if (/\breviews on google\b/.test(q)) return 12;
       return 0;
     },
   },
   {
     id: ASK_NAC_INTENTS.ITEM_RANK_CHANGE,
     score(q) {
-      if (/\b(entered|joined|new in|moved into)\b.*\btop\b/.test(q)) return 16;
+      if (/\b(entered|joined|new in|moved into|rank change|rank changes)\b.*\btop\b/.test(q)) return 16;
+      if (/\b(item rank change|rank changes)\b/.test(q)) return 15;
       if (/\b(dropped|fell|left|removed from)\b.*\btop\b/.test(q)) return 16;
       if (/\b(which item).*(entered|dropped|left|joined)\b.*\btop\b/.test(q)) return 15;
       if (/\b(top \d+|top ten)\b.*\b(compare|compared|vs|versus|change|movement)\b/.test(q)) return 12;
@@ -179,7 +192,9 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.TOP_ITEMS,
     score(q) {
-      if (/\b(top \d+|top ten|best sellers?|top items?|highest selling|most sold)\b/.test(q)) return 14;
+      if (/\b(top \d+|top ten|best sellers?|top items?|highest selling|most sold|top selling items?)\b/.test(q)) return 14;
+      if (/\b(best sell|sells most|most popular|top item)\b/.test(q)) return 15;
+      if (/\b(which item|what item).*(sell|sold|popular)\b/.test(q)) return 14;
       if (/\b(rank items?|ranking)\b/.test(q)) return 12;
       return 0;
     },
@@ -187,7 +202,8 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.CATEGORY_SALES,
     score(q) {
-      if (/\b(category|categories)\b.*\b(sales|revenue|sold|most|highest|generated)\b/.test(q)) return 15;
+      if (/\b(top category|category.*most|most.*category)\b/.test(q)) return 16;
+      if (/\b(category|categories)\b.*\b(sales|revenue|sold|most|highest|generated|top)\b/.test(q)) return 15;
       if (/\b(which category|category revenue|category sales)\b/.test(q)) return 14;
       return 0;
     },
@@ -196,6 +212,7 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.BRANCH_SALES,
     score(q) {
       if (!FOODICS_SALES_SIGNAL.test(q)) return 0;
+      if (/\b(branch sales|sales by branch|branch revenue|revenue by branch|branch revenue comparison)\b/.test(q)) return 16;
       if (/\b(sales|revenue).*\b(by branch|each branch|per branch|all branches)\b/.test(q)) return 14;
       if (/\b(which branch).*(sales|revenue|sold most)\b/.test(q)) return 14;
       if (/\bbranch sales\b/.test(q)) return 13;
@@ -227,11 +244,16 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD,
     score(q) {
+      if (/\b(staff|waiter|waitress|server|employee)\b/.test(q) && /\b(top|best|winning|leaderboard|rank)\b/.test(q)) {
+        return /\breviews?\b/.test(q) && !/\bredirect/.test(q) ? 19 : 18;
+      }
+      if (/\b(waiter|waitress|server|employee).*(perform|performance|best|top)\b/.test(q)) return 17;
+      if (/\bperform(s|ing)? best\b/.test(q) && /\b(waiter|waitress|server|staff|employee)\b/.test(q)) return 17;
       if (/\b(staff|waiter|waitress|server|employee).*(leaderboard|top|best|rank|drove|drive|most)\b/.test(q)) return 14;
       if (/\b(who|which).*(staff|waiter|employee).*(redirect|google)\b/.test(q)) return 15;
       if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
       if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
-      if (/\b(leaderboard|top staff|top waiters)\b/.test(q)) return 11;
+      if (/\b(leaderboard|top staff|top waiters|best waiter)\b/.test(q)) return 12;
       return 0;
     },
   },
@@ -252,8 +274,12 @@ const INTENT_RULES = [
       if (/\b(which branch is performing|performing best|performing better|best overall|which location is winning|location is winning)\b/.test(q)) {
         return 19;
       }
-      if (/\bgoogle maps\b/.test(q) && /\b(perform|better|overall|compare|winning)\b/.test(q)) return 19;
+      if (/\bgoogle maps\b/.test(q) && /\b(perform|performance|better|overall|compare|winning)\b/.test(q)) return 19;
+      if (/\bgoogle maps performance\b/.test(q)) return 19;
       if (/\b(which branch improved|improved the most|most improvement|biggest improvement)\b/.test(q)) return 18;
+      if (/\b(khobar|riyadh|jeddah|branch).*\bimprove(d|ment)?\b/.test(q)) return 18;
+      if (/\bdid\b.*\bimprove\b/.test(q)) return 17;
+      if (/\bimprove(d|ment)?\b.*\b(khobar|riyadh|jeddah)\b/.test(q)) return 17;
       if (/\b(stars? (gained|added)|how many stars|review(s)? (gained|added)|since follow[\s-]?up)\b/.test(q)) return 18;
       if (/\b(what should (i|we|management) focus|focus on this week|management focus|priorit(y|ies) this week)\b/.test(q)) {
         return 18;
@@ -291,7 +317,7 @@ const INTENT_RULES = [
     score(q) {
       if (/\b(review qr|review card|review portal).*(scan|tap|open)\b/.test(q)) return 14;
       if (/\b(review qr scans|review scans)\b/.test(q)) return 13;
-      if (/\bhow many review\b/.test(q)) return 10;
+      if (/\bhow many review qr\b/.test(q)) return 12;
       return 0;
     },
   },
@@ -366,9 +392,10 @@ export function detectExecutiveAnalysisKind(question = "") {
  * @returns {{ intent: string, confidence: string, score: number, period: object, branchMention: string|null, debug: object }}
  */
 export function routeAskNacIntent(question, options = {}) {
-  const q = String(question || "").trim().toLowerCase();
-  const period = parseAskNacPeriod(question, options.fallbackHours ?? 24);
-  const branchMention = parseAskNacBranch(question);
+  const normalized = normalizeAskNacQuestion(question);
+  const q = normalized.text.trim().toLowerCase();
+  const period = parseAskNacPeriod(normalized.text, options.fallbackHours ?? 24);
+  const branchMention = parseAskNacBranch(normalized.text);
 
   if (!q) {
     return {
@@ -388,60 +415,48 @@ export function routeAskNacIntent(question, options = {}) {
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  const MIN = 8;
-  let intent = ASK_NAC_INTENTS.UNKNOWN;
-  let score = 0;
+  const resolved = resolveIntentFromScores(scored, q, normalized.hints);
+  let intent = resolved.intent;
+  let score = resolved.score;
+  let confidence = resolved.confidence;
 
-  if (scored.length && scored[0].score >= MIN) {
-    intent = scored[0].id;
-    score = scored[0].score;
-  } else if (/\b(session|sessions)\b/.test(q) && !/\breview\b/.test(q)) {
-    intent = ASK_NAC_INTENTS.MENU_SESSIONS;
-    score = 6;
-  } else if (/\b(qr|scan|scans)\b/.test(q) && !/\breview\b/.test(q)) {
-    intent = ASK_NAC_INTENTS.MENU_QR_SCANS;
-    score = 6;
-  }
-
-  const confidence = score >= 12 ? "high" : score >= 8 ? "medium" : score > 0 ? "low" : "none";
-
-  const foodicsPeriod = isFoodicsDataIntent(intent)
-    ? parseFoodicsPeriodFromQuestion(question)
-    : null;
-  const foodicsCompare = isFoodicsCompareIntent(intent)
-    ? parseFoodicsComparePeriods(question)
-    : null;
-  const rankingBasis = isFoodicsDataIntent(intent) ? detectRankingBasis(question) : null;
-  const topLimit = isFoodicsDataIntent(intent) ? detectTopLimit(question) : null;
-  const rankChangeDirection =
-    intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE ? detectRankChangeDirection(question) : null;
-  const vaultPeriod = parseVaultPeriodFromQuestion(question);
-
-  return {
+  let route = {
     intent,
     confidence,
     score,
     period,
     branchMention,
-    foodicsPeriod,
-    foodicsCompare,
-    rankingBasis,
-    topLimit,
-    rankChangeDirection,
-    vaultPeriod,
+    foodicsPeriod: isFoodicsDataIntent(intent) ? parseFoodicsPeriodFromQuestion(normalized.text) : null,
+    foodicsCompare: isFoodicsCompareIntent(intent) ? parseFoodicsComparePeriods(normalized.text) : null,
+    rankingBasis: isFoodicsDataIntent(intent) ? detectRankingBasis(normalized.text) : null,
+    topLimit: isFoodicsDataIntent(intent) ? detectTopLimit(normalized.text) : null,
+    rankChangeDirection:
+      intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE ? detectRankChangeDirection(normalized.text) : null,
+    vaultPeriod: parseVaultPeriodFromQuestion(normalized.text),
     executiveKind:
-      intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKind(question) : null,
+      intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKind(normalized.text) : null,
     debug: {
       topMatches: scored.slice(0, 3),
       branchLabel: branchMention ? branchDisplayName(branchMention) : null,
       periodHours: period.hours,
       rangeId: period.rangeId,
-      foodicsPeriod,
-      vaultPeriod,
-      rankingBasis,
-      topLimit,
+      nlu: {
+        normalizedQuestion: normalized.text,
+        appliedRules: normalized.appliedRules,
+        hints: normalized.hints,
+        ambiguity: resolved.ambiguity || null,
+      },
     },
   };
+
+  route = applyMetricDefaultsToRoute(route, normalized.text, normalized.hints);
+
+  route.debug.foodicsPeriod = route.foodicsPeriod;
+  route.debug.vaultPeriod = route.vaultPeriod;
+  route.debug.rankingBasis = route.rankingBasis;
+  route.debug.topLimit = route.topLimit;
+
+  return route;
 }
 
 export function isVaultDataIntent(intent) {
@@ -504,7 +519,6 @@ export function isMissingDataIntent(intent) {
   return [
     ASK_NAC_INTENTS.AVG_SPEND_PER_GUEST,
     ASK_NAC_INTENTS.DELIVERY_SALES,
-    ASK_NAC_INTENTS.GOOGLE_REVIEWS,
   ].includes(intent);
 }
 
@@ -524,6 +538,7 @@ export function isRealDataIntent(intent) {
     ASK_NAC_INTENTS.ITEM_RANK_CHANGE,
     ASK_NAC_INTENTS.CATEGORY_SALES,
     ASK_NAC_INTENTS.BRANCH_SALES,
+    ASK_NAC_INTENTS.GOOGLE_REVIEWS,
     ...Object.values(ASK_NAC_INTENTS).filter((id) => String(id).startsWith("vault_")),
   ].includes(intent);
 }

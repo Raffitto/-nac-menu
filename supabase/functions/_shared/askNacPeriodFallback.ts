@@ -90,7 +90,7 @@ export function parseFoodicsComparePeriods(question = "", referenceDate = new Da
 
 export function detectRankingBasis(question = "") {
   const q = String(question || "").toLowerCase();
-  if (/\b(by quantity|quantity|units sold|qty|rank.*quantity|quantity instead)\b/.test(q)) {
+  if (/\b(by quantity|quantity|units sold|qty|rank.*quantity|quantity instead|sells most|best selling|top selling|most popular)\b/.test(q)) {
     return "quantity";
   }
   return "net_sales";
