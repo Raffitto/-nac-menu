@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AskNacComposer from "./AskNacComposer";
 import AskNacMessageList from "./AskNacMessageList";
+import AskNacAnswerCard from "./AskNacAnswerCard";
 import {
   createAssistantMessage,
   createUserMessage,
@@ -123,6 +124,41 @@ describe("AskNacComposer", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Compare branches this month" }));
     expect(onSubmit).toHaveBeenCalledWith("Compare branches this month");
+  });
+});
+
+describe("AskNacAnswerCard mobile", () => {
+  test("collapses diagnostics and shows export trigger", () => {
+    render(
+      <AskNacAnswerCard
+        variant="mobile"
+        question="Menu QR scans today"
+        filters={{}}
+        response={{
+          answerType: ANSWER_TYPES.METRIC,
+          title: "Menu QR Scans · Today",
+          directAnswer: "42 menu QR scans for Khobar (Today).",
+          keyMetrics: [{ label: "Menu QR Scans", value: 42 }],
+          insights: ["Insight line"],
+          recommendations: [],
+          sources: [{ name: "fetchAskNacMenuMetrics", detail: "hybrid" }],
+          warnings: [],
+          missingData: [],
+          confidence: "high",
+          exportOptions: [],
+          isAiGenerated: false,
+          serverConnected: true,
+          localFallback: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Today, Khobar recorded 42 menu QR scans.")).toBeInTheDocument();
+    expect(screen.getByText("Verified Data")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Details" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("fetchAskNacMenuMetrics")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export answer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "CSV" })).not.toBeInTheDocument();
   });
 });
 

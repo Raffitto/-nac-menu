@@ -47,6 +47,7 @@ export default function AskNacMessageList({
                   response={message.response}
                   question={message.question}
                   filters={filters}
+                  variant={compact ? "mobile" : "desktop"}
                 />
               ) : null}
             </div>

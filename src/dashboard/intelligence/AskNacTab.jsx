@@ -46,11 +46,18 @@ const SUGGESTED_PROMPTS = [
 const MOBILE_SUGGESTED_PROMPTS = [
   { text: "What were sales in May?", icon: TrendingUp },
   { text: "Which category generated the most revenue?", icon: TrendingUp },
-  { text: "Compare branches this month", icon: GitBranch },
+  { text: "Who drove the most Google redirects?", icon: Users },
 ];
 
 const MOBILE_WELCOME =
-  "Ask NAC anything about sales, menu, reviews, staff, branches, or vault reports.";
+  "Ask NAC anything about sales, menu performance, reviews, staff, branches, or uploaded reports.";
+
+const MOBILE_WELCOME_EXAMPLES = [
+  "What were sales in May?",
+  "Which category generated the most revenue?",
+  "Who drove the most Google redirects?",
+  "What happened in Khobar on 5 June?",
+];
 
 export default function AskNacTab({
   initialQuestion = "",
@@ -188,7 +195,18 @@ export default function AskNacTab({
 
         <main className="nac-ask-nac-mobile__body">
           {messages.length === 0 && !loading ? (
-            <p className="nac-ask-nac-mobile__welcome">{MOBILE_WELCOME}</p>
+            <div className="nac-ask-nac-mobile__empty">
+              <p className="nac-ask-nac-mobile__welcome">{MOBILE_WELCOME}</p>
+              <ul className="nac-ask-nac-mobile__examples" aria-label="Example questions">
+                {MOBILE_WELCOME_EXAMPLES.map((example) => (
+                  <li key={example}>
+                    <button type="button" onClick={() => submitQuestion(example)} disabled={loading}>
+                      {example}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
           <AskNacMessageList
             messages={messages}
