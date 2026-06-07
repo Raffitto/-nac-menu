@@ -8,6 +8,7 @@ import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { periodLabelFromHours } from "../../dashboard/utils/businessDay";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
+import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
 import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
 import { fetchAskNacMenuMetrics } from "./shared/askNacMenuMetrics";
@@ -181,6 +182,8 @@ export async function runAskNacQueryTool(supabase, intent, context = {}) {
         ...context,
         executiveKind: context.executiveKind || context.route?.executiveKind,
       });
+    case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
+      return queryOperationalKnowledge(supabase, context);
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return getFoodicsSalesSummary(supabase, context);
     case ASK_NAC_INTENTS.TOP_ITEMS:

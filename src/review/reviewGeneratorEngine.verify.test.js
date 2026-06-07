@@ -7,6 +7,7 @@ import {
   generateHumanizedReview,
   resetReviewDiversityState,
 } from "./reviewGeneratorEngine";
+import { mockSeededMathRandom } from "./reviewGeneratorTestSeed";
 
 const STAFF = ["Ronald", "Azhar", "Rana", "Mohamed", "Boyboy"];
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
@@ -17,8 +18,15 @@ function openingPrefix(text) {
 }
 
 describe("review diversity humanization", () => {
+  let randomSpy;
+
   beforeEach(() => {
     resetReviewDiversityState();
+    randomSpy = mockSeededMathRandom(0x4e414302);
+  });
+
+  afterEach(() => {
+    randomSpy?.mockRestore();
   });
 
   it("generates 60 varied reviews with waiter names and meal realism", () => {

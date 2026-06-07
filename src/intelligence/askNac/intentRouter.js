@@ -22,6 +22,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   STAFF_REDIRECT_LEADERBOARD: "staff_redirect_leaderboard",
   BRANCH_COMPARISON: "branch_comparison",
   EXECUTIVE_ANALYSIS: "executive_analysis",
+  OPERATIONAL_KNOWLEDGE: "operational_knowledge",
   SALES_TOTAL: "sales_total",
   TOP_ITEMS: "top_items",
   TOP_ITEMS_COMPARE: "top_items_compare",
@@ -231,6 +232,17 @@ const INTENT_RULES = [
       if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
       if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
       if (/\b(leaderboard|top staff|top waiters)\b/.test(q)) return 11;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE,
+    score(q) {
+      if (/\bwhy did sales drop\b/.test(q)) return 18;
+      if (/\b(operational issues? repeated|issues? repeated|same problem)\b/.test(q)) return 17;
+      if (/\bwhat changed between\b/.test(q)) return 16;
+      if (/\bwhich reports mention\b/.test(q)) return 16;
+      if (/\b(linked reports|connected reports|across reports)\b/.test(q)) return 15;
       return 0;
     },
   },
@@ -505,6 +517,7 @@ export function isRealDataIntent(intent) {
     ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD,
     ASK_NAC_INTENTS.BRANCH_COMPARISON,
     ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
+    ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE,
     ASK_NAC_INTENTS.SALES_TOTAL,
     ASK_NAC_INTENTS.TOP_ITEMS,
     ASK_NAC_INTENTS.TOP_ITEMS_COMPARE,

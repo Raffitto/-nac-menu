@@ -63,6 +63,8 @@ export async function processAskNacQuestion({
     foodicsPeriod: route.foodicsPeriod,
     foodicsCompare: route.foodicsCompare,
     vaultPeriod: route.vaultPeriod,
+    executiveKind: route.executiveKind,
+    hours: route.period?.hours,
   });
 
   const syncBlocked = assessIntentReadinessSync(route.intent, {

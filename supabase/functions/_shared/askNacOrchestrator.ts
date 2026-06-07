@@ -32,6 +32,12 @@ import {
 } from "./askNacVaultTools.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
 import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
+import {
+  assessNetworkDataConfidence,
+  evaluateExecutiveRankingEligibility,
+  requiresExecutiveRankingSafeguard,
+} from "./askNacDataConfidenceLayer.ts";
+import { queryOperationalKnowledgeEdge } from "./askNacKnowledgeTools.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -41,6 +47,7 @@ export const ASK_NAC_INTENTS = {
   STAFF_REDIRECT_LEADERBOARD: "staff_redirect_leaderboard",
   BRANCH_COMPARISON: "branch_comparison",
   EXECUTIVE_ANALYSIS: "executive_analysis",
+  OPERATIONAL_KNOWLEDGE: "operational_knowledge",
   SALES_TOTAL: "sales_total",
   TOP_ITEMS: "top_items",
   TOP_ITEMS_COMPARE: "top_items_compare",
@@ -223,6 +230,17 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
       if (/\b(who|which).*(drove|drive).*(most).*(redirect|google)\b/.test(q)) return 16;
       if (/\b(who|which).*(most).*(google redirect|redirects|redirect)\b/.test(q)) return 15;
       if (/\b(leaderboard|top staff|top waiters)\b/.test(q)) return 11;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE,
+    score(q) {
+      if (/\bwhy did sales drop\b/.test(q)) return 18;
+      if (/\b(operational issues? repeated|issues? repeated|same problem)\b/.test(q)) return 17;
+      if (/\bwhat changed between\b/.test(q)) return 16;
+      if (/\bwhich reports mention\b/.test(q)) return 16;
+      if (/\b(linked reports|connected reports|across reports)\b/.test(q)) return 15;
       return 0;
     },
   },
@@ -410,7 +428,11 @@ export function routeIntent(question: string, options: { fallbackHours?: number 
   };
 }
 
-function assessReadiness(route: ReturnType<typeof routeIntent>) {
+async function assessReadiness(
+  route: ReturnType<typeof routeIntent>,
+  supabase: SupabaseClient,
+  context: Record<string, unknown> = {},
+) {
   if (isMissingDataIntent(route.intent)) {
     const labels: Record<string, string> = {
       [ASK_NAC_INTENTS.AVG_SPEND_PER_GUEST]: "Average spend per guest",
@@ -433,6 +455,57 @@ function assessReadiness(route: ReturnType<typeof routeIntent>) {
       canQuery: false,
       reasons: ["Could not parse a calendar day or month for this vault question."],
       missingData: [{ intent: route.intent, label: "Vault period" }],
+    };
+  }
+  if (route.intent === ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE) {
+    return {
+      status: "ready",
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+    };
+  }
+  if (route.intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS) {
+    const assessment = await assessNetworkDataConfidence(supabase, {
+      hours: route.period.hours,
+      profile: context.profile,
+    }).catch(() => null);
+
+    if (!assessment) {
+      return {
+        status: "missing",
+        canQuery: false,
+        reasons: ["Could not assess network data coverage for executive analysis."],
+        missingData: [],
+      };
+    }
+
+    const executiveKind = (context.executiveKind as string) || route.executiveKind || "general";
+    const eligibility = evaluateExecutiveRankingEligibility(assessment, executiveKind);
+    if (!eligibility.allowed && requiresExecutiveRankingSafeguard(executiveKind)) {
+      return {
+        status: "ready",
+        canQuery: true,
+        reasons: [eligibility.reason],
+        missingData: [],
+        dataConfidence: assessment,
+        executiveCoverageBlocked: true,
+      };
+    }
+
+    return {
+      status: assessment.confidenceLevel === "low" ? "partial" : "ready",
+      canQuery: true,
+      reasons:
+        assessment.confidenceLevel === "low"
+          ? ["Network data confidence is low — executive conclusions may be directional only."]
+          : [],
+      missingData: [],
+      dataConfidence: assessment,
+      warnings:
+        assessment.confidenceLevel !== "high"
+          ? [`Coverage confidence: ${assessment.confidenceLevel}`]
+          : [],
     };
   }
   return { status: "ready", canQuery: true, reasons: [], missingData: [] };
@@ -571,6 +644,8 @@ async function runQueryTool(
         ...context,
         executiveKind: context.executiveKind || detectExecutiveAnalysisKindEdge(String(context.question || "")),
       });
+    case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
+      return queryOperationalKnowledgeEdge(supabase, context);
     case ASK_NAC_INTENTS.SALES_TOTAL:
     case ASK_NAC_INTENTS.FOODICS_QUERY:
       return getFoodicsSalesSummary(supabase, context);
@@ -625,7 +700,11 @@ export async function processAskNacOnEdge(
   const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
   const route = routeIntent(effectiveQuestion, { fallbackHours });
-  const readiness = assessReadiness(route);
+  const readiness = await assessReadiness(route, supabase, {
+    profile: profileHint,
+    executiveKind: route.executiveKind,
+    hours: route.period.hours,
+  });
 
   let foodicsPeriod = route.foodicsPeriod;
   let periodWarnings: string[] = [];

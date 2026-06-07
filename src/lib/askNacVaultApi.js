@@ -2,6 +2,7 @@
  * Ask NAC Data Vault registry + ingestion API.
  */
 
+import { classifyVaultUpload, mergeAutoClassification } from "../intelligence/askNac/vault/vaultAutoClassifier";
 import { VAULT_STORAGE_BUCKET } from "../intelligence/askNac/vault/vaultConstants";
 import { vaultCanUploadBrandWide } from "../intelligence/askNac/vault/vaultAccess";
 import { PARSEABLE_REPORT_TYPES, runVaultIngestion } from "../intelligence/askNac/vault/vaultIngestion";
@@ -120,38 +121,48 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     };
   }
 
-  const branch = brandWide ? null : metadata.branch;
-  const branchScopeType = brandWide ? "brand_wide" : "single_branch";
-  const primaryBranchId = brandWide ? null : branch;
-  const storageBranch = brandWide ? "brand" : branch;
+  const autoClassification = classifyVaultUpload({
+    filename: file.name,
+    metadata,
+  });
+  const mergedMetadata = mergeAutoClassification(metadata, autoClassification);
+
+  const branch = mergedMetadata.brandWide ? null : mergedMetadata.branch;
+  const branchScopeType = mergedMetadata.brandWide ? "brand_wide" : "single_branch";
+  const primaryBranchId = mergedMetadata.brandWide ? null : branch;
+  const storageBranch = mergedMetadata.brandWide ? "brand" : branch;
 
   const fileId = crypto.randomUUID();
   const storagePath = storagePathForUpload({
     fileId,
     branch: storageBranch,
-    department: metadata.department,
+    department: mergedMetadata.department,
     filename: file.name,
   });
 
   const row = {
     id: fileId,
-    title: metadata.title?.trim() || file.name,
+    title: mergedMetadata.title?.trim() || file.name,
     original_filename: file.name,
     storage_bucket: VAULT_STORAGE_BUCKET,
     storage_path: storagePath,
     branch_scope_type: branchScopeType,
     primary_branch_id: primaryBranchId,
     brand_wide: brandWide,
-    department: metadata.department,
-    report_type: metadata.reportType,
-    data_layer: metadata.dataLayer,
-    period_start: metadata.periodStart || null,
-    period_end: metadata.periodEnd || null,
-    period_label: metadata.periodLabel || null,
-    sensitivity_level: metadata.sensitivity,
+    department: mergedMetadata.department,
+    report_type: mergedMetadata.reportType,
+    data_layer: mergedMetadata.dataLayer,
+    period_start: mergedMetadata.periodStart || null,
+    period_end: mergedMetadata.periodEnd || null,
+    period_label: mergedMetadata.periodLabel || null,
+    sensitivity_level: mergedMetadata.sensitivity,
     status: "active",
     uploaded_by: profile?.name || email.split("@")[0],
     uploader_email: email,
+    classification_confidence: autoClassification.classificationConfidence,
+    notes: autoClassification.matchedRules?.length
+      ? `Auto-detected ${autoClassification.detectedReportType} (${autoClassification.classificationConfidence}). Manual override allowed.`
+      : null,
   };
 
   const { error: storageError } = await supabase.storage
@@ -193,7 +204,7 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     return { ok: true, file: inserted, warning: versionError.message };
   }
 
-  const parseable = PARSEABLE_REPORT_TYPES.includes(metadata.reportType);
+  const parseable = PARSEABLE_REPORT_TYPES.includes(mergedMetadata.reportType);
   const { data: jobRow, error: jobError } = await supabase
     .from("ask_nac_ingestion_jobs")
     .insert({
@@ -213,10 +224,10 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
   const { error: coverageError } = await supabase.from("ask_nac_data_coverage").insert({
     branch_id: primaryBranchId,
     brand_wide: brandWide,
-    department: metadata.department,
-    report_type: metadata.reportType,
-    period_start: metadata.periodStart || null,
-    period_end: metadata.periodEnd || null,
+    department: mergedMetadata.department,
+    report_type: mergedMetadata.reportType,
+    period_start: mergedMetadata.periodStart || null,
+    period_end: mergedMetadata.periodEnd || null,
     source_file_id: fileId,
     fact_count: 0,
     readiness_status: "registered",
@@ -227,9 +238,10 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     user_email: email,
     action: "upload",
     detail: {
-      report_type: metadata.reportType,
-      department: metadata.department,
-      data_layer: metadata.dataLayer,
+      report_type: mergedMetadata.reportType,
+      department: mergedMetadata.department,
+      data_layer: mergedMetadata.dataLayer,
+      auto_classification: autoClassification,
     },
   });
 
@@ -247,6 +259,7 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     ok: true,
     file: inserted,
     ingestion,
+    autoClassification,
     warning: coverageError?.message || ingestion?.warning || null,
   };
 }

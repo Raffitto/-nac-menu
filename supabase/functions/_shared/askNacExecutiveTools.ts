@@ -5,6 +5,12 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { MONTH_HOURS } from "./mtdHybridMerge.ts";
 import { branchDisplayName, periodLabelFromHours } from "./askNacEdgeAnswerBuilder.ts";
+import {
+  assessNetworkDataConfidence,
+  DATA_SOURCE_KEYS,
+  evaluateExecutiveRankingEligibility,
+  requiresExecutiveRankingSafeguard,
+} from "./askNacDataConfidenceLayer.ts";
 
 const BRANCH_IDS = ["khobar", "riyadh", "jeddah"];
 
@@ -201,12 +207,45 @@ export async function queryExecutiveAnalysisEdge(
     })
     .filter(Boolean) as Record<string, unknown>[];
 
+  const coverageAssessment = await assessNetworkDataConfidence(supabase, {
+    hours,
+    profile: context.profile,
+  });
+  const rankingEligibility = evaluateExecutiveRankingEligibility(coverageAssessment, analysisKind);
+
+  if (!rankingEligibility.allowed && requiresExecutiveRankingSafeguard(analysisKind)) {
+    return {
+      hours,
+      periodLabel: periodLabelFromHours(hours),
+      analysisKind,
+      coverageBlocked: true,
+      coverageAssessment,
+      rankingEligibility,
+      summary: {
+        headline: rankingEligibility.reason || "Insufficient data for a valid network-wide comparison.",
+        winner: null,
+        reason: null,
+        rankingTable: [],
+        keyFindings: coverageAssessment.branchCoverage.map(
+          (row: Record<string, unknown>) =>
+            `${row.branch_name}: ${row.availableSourceCount}/${DATA_SOURCE_KEYS.length} sources available`,
+        ),
+        recommendedActions: [coverageAssessment.recommendation],
+      },
+      branchScores: [],
+      reviewGrowthRows: [],
+      warnings: coverageAssessment.missingSources.map((source: string) => `Missing: ${source}`),
+      sources: [{ name: "dataConfidenceLayer", detail: "network coverage assessment" }],
+    };
+  }
+
   const summary = buildSummary(analysisKind, branchScores, reviewGrowthRows);
 
   return {
     hours,
     periodLabel: periodLabelFromHours(hours),
     analysisKind,
+    coverageAssessment,
     summary,
     branchScores,
     reviewGrowthRows,

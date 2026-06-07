@@ -31,6 +31,13 @@ export const VAULT_REPORT_TYPES = [
   { value: "reception_daily_report", label: "Reception Daily Report" },
   { value: "daily_logbook", label: "Daily Logbook" },
   { value: "ccm_reconciliation", label: "CCM Reconciliation" },
+  { value: "weekly_sales_overview", label: "Weekly Sales Overview" },
+  { value: "foodics_export", label: "Foodics Export" },
+  { value: "pnl", label: "P&L" },
+  { value: "budget", label: "Budget" },
+  { value: "forecast", label: "Forecast" },
+  { value: "gm_report", label: "GM Report" },
+  { value: "audit_report", label: "Audit Report" },
   { value: "brand_brain_sop", label: "Brand Brain SOP" },
   { value: "other", label: "Other (unsorted)" },
 ];

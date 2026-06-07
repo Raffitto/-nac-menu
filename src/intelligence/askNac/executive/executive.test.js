@@ -170,4 +170,46 @@ describe("executive answer builder", () => {
     expect(answer.executiveSummary.ranking.length).toBeGreaterThan(0);
     expect(answer.recommendations.length).toBeGreaterThan(0);
   });
+
+  test("blocks executive ranking with insufficient branch coverage", () => {
+    const route = routeAskNacIntent("Which branch is performing best overall?");
+    const answer = buildDeterministicAskNacAnswer(
+      route,
+      {
+        periodLabel: "This month",
+        analysisKind: "best_overall",
+        coverageBlocked: true,
+        rankingEligibility: {
+          allowed: false,
+          reason: "Insufficient data for a valid network-wide comparison.",
+        },
+        coverageAssessment: {
+          confidenceLevel: "low",
+          branchCoverage: [
+            { branch_name: "Khobar", availableSourceCount: 2, meaningful: true },
+            { branch_name: "Riyadh", availableSourceCount: 0, meaningful: false },
+          ],
+          missingSources: ["googleSnapshots"],
+          recommendation: "Capture daily Google snapshots.",
+          dataCoverageScore: 20,
+          branchCoverageScore: 33,
+          timeCoverageScore: 10,
+          sourceCoverageScore: 25,
+        },
+        summary: {
+          headline: "Insufficient data for a valid network-wide comparison.",
+          keyFindings: ["Khobar: 2/8 sources available"],
+          recommendedActions: ["Capture daily Google snapshots."],
+          rankingTable: [],
+        },
+        sources: [{ name: "dataConfidenceLayer", detail: "coverage" }],
+        warnings: [],
+      },
+      { status: READINESS.READY, canQuery: true },
+    );
+
+    expect(answer.directAnswer).toMatch(/Insufficient data/i);
+    expect(answer.executiveSummary.ranking).toHaveLength(0);
+    expect(answer.dataConfidence.branchCoverage.length).toBeGreaterThan(0);
+  });
 });

@@ -9,6 +9,7 @@ import { parseCashUpReport } from "./parsers/parseCashUp";
 import { parseReceptionDailyReport } from "./parsers/parseReceptionDaily";
 import { parseDailyLogbookReport } from "./parsers/parseDailyLogbook";
 import { parseCcmReconciliationReport } from "./parsers/parseCcmReconciliation";
+import { rebuildKnowledgeGraphForBranch } from "./knowledgeGraph";
 
 export const PARSEABLE_REPORT_TYPES = [
   "cash_up",
@@ -302,6 +303,12 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
         : "Low confidence — raw extract saved. Needs mapping/review.",
     })
     .eq("id", jobId);
+
+  if (fileRecord.primary_branch_id) {
+    await rebuildKnowledgeGraphForBranch(supabase, {
+      branchId: fileRecord.primary_branch_id,
+    }).catch(() => null);
+  }
 
   return {
     ok: true,

@@ -7,6 +7,7 @@ import {
   generateHumanizedReview,
   resetReviewDiversityState,
 } from "./reviewGeneratorEngine";
+import { mockSeededMathRandom } from "./reviewGeneratorTestSeed";
 import { getBranchMenu, GENERIC_FOOD_EN, GENERIC_FOOD_AR } from "./reviewGeneratorMenus";
 
 const BRANCHES = ["khobar", "riyadh", "jeddah"];
@@ -272,8 +273,15 @@ function analyzeSamples(samples) {
 }
 
 describe("review engine full audit", () => {
-  beforeAll(() => {
+  let randomSpy;
+
+  beforeEach(() => {
     resetReviewDiversityState();
+    randomSpy = mockSeededMathRandom(0x4e414301);
+  });
+
+  afterEach(() => {
+    randomSpy?.mockRestore();
   });
 
   it("passes massive sample audit (100 EN + 100 AR)", () => {

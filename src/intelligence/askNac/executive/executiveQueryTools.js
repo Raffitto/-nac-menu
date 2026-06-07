@@ -13,6 +13,12 @@ import {
   buildGoogleMovementMap,
   calculateReviewGrowthRows,
 } from "./executiveMetrics";
+import {
+  assessNetworkDataConfidence,
+  evaluateExecutiveRankingEligibility,
+  requiresExecutiveRankingSafeguard,
+  DATA_SOURCE_KEYS,
+} from "../confidence/dataConfidenceLayer";
 
 function defaultExecutiveHours(context = {}) {
   const hours = Number(context.hours) || 0;
@@ -56,6 +62,39 @@ export async function queryExecutiveAnalysis(supabase, context = {}) {
 
   const reviewGrowthRows = calculateReviewGrowthRows(googleMovementByBranch);
   const analysisKind = context.executiveKind || "general";
+  const coverageAssessment = await assessNetworkDataConfidence(supabase, {
+    hours,
+    profile: context.profile,
+  });
+  const rankingEligibility = evaluateExecutiveRankingEligibility(coverageAssessment, analysisKind);
+
+  if (!rankingEligibility.allowed && requiresExecutiveRankingSafeguard(analysisKind)) {
+    return {
+      hours,
+      periodLabel: periodLabelFromHours(hours),
+      analysisKind,
+      coverageBlocked: true,
+      coverageAssessment,
+      rankingEligibility,
+      summary: {
+        headline: rankingEligibility.reason || "Insufficient data for a valid network-wide comparison.",
+        winner: null,
+        reason: null,
+        rankingTable: [],
+        keyFindings: coverageAssessment.branchCoverage.map(
+          (row) =>
+            `${row.branch_name}: ${row.availableSourceCount}/${DATA_SOURCE_KEYS?.length || 8} sources available`,
+        ),
+        recommendedActions: [coverageAssessment.recommendation],
+      },
+      branchScores: [],
+      reviewGrowthRows: [],
+      rankings: [],
+      warnings: coverageAssessment.missingSources.map((source) => `Missing: ${source}`),
+      sources: [{ name: "dataConfidenceLayer", detail: "network coverage assessment" }],
+    };
+  }
+
   const summary = buildExecutiveSummary({
     analysisKind,
     branchScores,
@@ -68,6 +107,7 @@ export async function queryExecutiveAnalysis(supabase, context = {}) {
     hours,
     periodLabel: periodLabelFromHours(hours),
     analysisKind,
+    coverageAssessment,
     summary,
     branchScores,
     reviewGrowthRows,

@@ -250,6 +250,53 @@ function executiveAnalysisResponse(route: Route, tool: Tool) {
   const rankingTable = (summary.rankingTable as Record<string, unknown>[]) || [];
   const keyFindings = (summary.keyFindings as string[]) || [];
   const recommendedActions = (summary.recommendedActions as string[]) || [];
+  const coverage = (tool.coverageAssessment as Record<string, unknown>) || null;
+
+  if (tool.coverageBlocked) {
+    const confidenceLevel = coverage?.confidenceLevel ? String(coverage.confidenceLevel) : "low";
+    const confidenceLabel =
+      confidenceLevel === "high" ? "High Confidence" : confidenceLevel === "medium" ? "Medium Confidence" : "Low Confidence";
+
+    return {
+      answerType: "executive",
+      title: "Insufficient network coverage",
+      directAnswer: String(summary.headline || "Insufficient data for a valid network-wide comparison."),
+      keyMetrics: ((coverage?.branchCoverage as Record<string, unknown>[]) || []).map((row) =>
+        metricEntry(String(row.branch_name), row.availableSourceCount, {
+          unit: "sources",
+          note: row.meaningful ? "Meaningful coverage" : "Limited coverage",
+        }),
+      ),
+      insights: keyFindings.slice(0, 6),
+      recommendations: recommendedActions.slice(0, 3),
+      sources: [{ name: "dataConfidenceLayer", detail: "coverage assessment before ranking" }],
+      warnings: ((coverage?.missingSources as string[]) || []).map((source) => `Missing source: ${source}`),
+      missingData: [],
+      confidence: "none",
+      exportOptions: [],
+      isAiGenerated: false,
+      intent: route.intent,
+      periodLabel: tool.periodLabel,
+      dataConfidence: coverage,
+      executiveSummary: {
+        winner: null,
+        reason: (tool.rankingEligibility as Record<string, unknown>)?.reason || null,
+        ranking: [],
+        keyFindings,
+        recommendedActions,
+        confidenceLabel,
+        coverageScores: coverage
+          ? {
+              dataCoverageScore: coverage.dataCoverageScore,
+              branchCoverageScore: coverage.branchCoverageScore,
+              timeCoverageScore: coverage.timeCoverageScore,
+              sourceCoverageScore: coverage.sourceCoverageScore,
+            }
+          : null,
+      },
+    };
+  }
+
   const keyMetrics =
     tool.analysisKind === "stars_gained"
       ? ((tool.reviewGrowthRows as Record<string, unknown>[]) || []).slice(0, 6).map((row) =>
@@ -290,7 +337,55 @@ function executiveAnalysisResponse(route: Route, tool: Tool) {
       recommendedActions,
       reviewGrowthRows: tool.reviewGrowthRows || [],
       networkScore: tool.networkScore ?? null,
+      confidenceLabel: coverage?.confidenceLevel
+        ? String(coverage.confidenceLevel) === "high"
+          ? "High Confidence"
+          : String(coverage.confidenceLevel) === "medium"
+            ? "Medium Confidence"
+            : "Low Confidence"
+        : null,
+      coverageScores: coverage
+        ? {
+            dataCoverageScore: coverage.dataCoverageScore,
+            branchCoverageScore: coverage.branchCoverageScore,
+            timeCoverageScore: coverage.timeCoverageScore,
+            sourceCoverageScore: coverage.sourceCoverageScore,
+          }
+        : null,
     },
+    dataConfidence: coverage,
+  };
+}
+
+function operationalKnowledgeResponse(route: Route, tool: Tool) {
+  const summary = (tool.summary as Record<string, unknown>) || {};
+  return {
+    answerType: "executive",
+    title: `Operational knowledge · ${tool.periodLabel || "linked reports"}`,
+    directAnswer: String(summary.headline || "Operational knowledge graph results."),
+    keyMetrics: ((tool.links as Record<string, unknown>[]) || []).slice(0, 6).map((link, index) =>
+      metricEntry(`Link ${index + 1}`, link.link_type, {
+        note: String(link.link_reason || ""),
+      }),
+    ),
+    insights: [
+      ...((summary.linkedReports as string[]) || []),
+      ...((tool.repeatedIssues as Record<string, unknown>[]) || []).map(
+        (issue) => `${issue.branch}: ${((issue.terms as string[]) || []).join(", ")}`,
+      ),
+    ].slice(0, 5),
+    recommendations: (tool.links as unknown[])?.length
+      ? ["Review linked operational reports together before assigning corrective actions."]
+      : ["Upload daily logbooks, reception reports, and sales exports for the same period to build links."],
+    sources: ((tool.sources as { name: string; detail?: string }[]) || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: (tool.warnings as string[]) || [],
+    missingData: [],
+    confidence: (tool.links as unknown[])?.length ? "medium" : "low",
+    exportOptions: [],
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    branchLabel: tool.branchLabel,
   };
 }
 
@@ -504,6 +599,8 @@ export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, 
       return branchComparisonResponse(route, tool);
     case "executive_analysis":
       return executiveAnalysisResponse(route, tool);
+    case "operational_knowledge":
+      return operationalKnowledgeResponse(route, tool);
     case "sales_total":
       return foodicsSalesTotalResponse(route, tool);
     case "top_items":

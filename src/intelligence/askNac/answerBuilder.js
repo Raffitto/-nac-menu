@@ -12,6 +12,7 @@ import {
 } from "./askNacContract";
 import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
 import { READINESS } from "./readinessEngine";
+import { CONFIDENCE_LABELS } from "../../platform/contracts/dataConfidence";
 import { buildVaultAnswer } from "./vault/vaultAnswerBuilder";
 import { collectAskNacMetricWarnings } from "./shared/mtdDiagnostics";
 import { buildSpecificMissingDataMessage, buildSpecificUnknownMessage } from "./conversation/missingDataMessages";
@@ -425,6 +426,49 @@ function executiveAnalysisResponse(route, tool) {
   const rankingTable = summary.rankingTable || [];
   const keyFindings = summary.keyFindings || [];
   const recommendedActions = summary.recommendedActions || [];
+  const coverage = tool.coverageAssessment || null;
+
+  if (tool.coverageBlocked) {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.EXECUTIVE,
+      title: "Insufficient network coverage",
+      directAnswer:
+        summary.headline || "Insufficient data for a valid network-wide comparison.",
+      keyMetrics: (coverage?.branchCoverage || []).map((row) =>
+        metricEntry(row.branch_name, row.availableSourceCount, {
+          unit: "sources",
+          note: row.meaningful ? "Meaningful coverage" : "Limited coverage",
+        }),
+      ),
+      insights: keyFindings.slice(0, 6),
+      recommendations: recommendedActions.slice(0, 3),
+      sources: [{ name: "dataConfidenceLayer", detail: "coverage assessment before ranking" }],
+      warnings: (coverage?.missingSources || []).map((source) => `Missing source: ${source}`),
+      confidence: CONFIDENCE_LEVELS.NONE,
+      isAiGenerated: false,
+      intent: route.intent,
+      periodLabel: tool.periodLabel,
+      dataConfidence: coverage,
+      executiveSummary: {
+        winner: null,
+        reason: tool.rankingEligibility?.reason || null,
+        ranking: [],
+        keyFindings,
+        recommendedActions,
+        confidenceLabel: coverage?.confidenceLevel
+          ? CONFIDENCE_LABELS[coverage.confidenceLevel]
+          : "Low confidence",
+        coverageScores: coverage
+          ? {
+              dataCoverageScore: coverage.dataCoverageScore,
+              branchCoverageScore: coverage.branchCoverageScore,
+              timeCoverageScore: coverage.timeCoverageScore,
+              sourceCoverageScore: coverage.sourceCoverageScore,
+            }
+          : null,
+      },
+    });
+  }
 
   const keyMetrics =
     tool.analysisKind === "stars_gained"
@@ -464,7 +508,49 @@ function executiveAnalysisResponse(route, tool) {
       recommendedActions,
       reviewGrowthRows: tool.reviewGrowthRows || [],
       networkScore: tool.networkScore ?? null,
+      confidenceLabel: coverage?.confidenceLevel
+        ? CONFIDENCE_LABELS[coverage.confidenceLevel]
+        : null,
+      coverageScores: coverage
+        ? {
+            dataCoverageScore: coverage.dataCoverageScore,
+            branchCoverageScore: coverage.branchCoverageScore,
+            timeCoverageScore: coverage.timeCoverageScore,
+            sourceCoverageScore: coverage.sourceCoverageScore,
+          }
+        : null,
     },
+    dataConfidence: coverage,
+  });
+}
+
+function operationalKnowledgeResponse(route, tool) {
+  const summary = tool.summary || {};
+  return createAskNacResponse({
+    answerType: ANSWER_TYPES.EXECUTIVE,
+    title: `Operational knowledge · ${tool.periodLabel || "linked reports"}`,
+    directAnswer: summary.headline || "Operational knowledge graph results.",
+    keyMetrics: (tool.links || []).slice(0, 6).map((link, index) =>
+      metricEntry(`Link ${index + 1}`, link.link_type, {
+        note: link.link_reason,
+      }),
+    ),
+    insights: [
+      ...(summary.linkedReports || []),
+      ...(tool.repeatedIssues || []).map(
+        (issue) => `${issue.branch}: ${(issue.terms || []).join(", ")}`,
+      ),
+    ].slice(0, 5),
+    recommendations: tool.links?.length
+      ? ["Review linked operational reports together before assigning corrective actions."]
+      : ["Upload daily logbooks, reception reports, and sales exports for the same period to build links."],
+    sources: (tool.sources || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: tool.warnings || [],
+    confidence: tool.links?.length ? CONFIDENCE_LEVELS.MEDIUM : CONFIDENCE_LEVELS.LOW,
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    branchLabel: tool.branchLabel,
   });
 }
 
@@ -514,6 +600,8 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
       return branchComparisonResponse(route, tool);
     case ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS:
       return executiveAnalysisResponse(route, tool);
+    case ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE:
+      return operationalKnowledgeResponse(route, tool);
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return foodicsSalesTotalResponse(route, tool);
     case ASK_NAC_INTENTS.TOP_ITEMS:

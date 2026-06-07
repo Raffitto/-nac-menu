@@ -16,6 +16,12 @@ import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { probeFoodicsBatchForPeriod } from "./foodics/foodicsQueryTools";
 import { probeVaultCoverage } from "./vault/vaultQueryTools";
+import {
+  assessNetworkDataConfidence,
+  evaluateExecutiveRankingEligibility,
+  requiresExecutiveRankingSafeguard,
+} from "./confidence/dataConfidenceLayer";
+import { CONFIDENCE } from "../../platform/contracts/dataConfidence";
 
 const READINESS = Object.freeze({
   READY: "ready",
@@ -192,6 +198,7 @@ export function assessIntentReadinessSync(
     [ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD]: METRIC_IDS.STAFF_ATTRIBUTION,
     [ASK_NAC_INTENTS.BRANCH_COMPARISON]: METRIC_IDS.MENU_QR_SCAN,
     [ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS]: METRIC_IDS.MENU_QR_SCAN,
+    [ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE]: METRIC_IDS.MENU_QR_SCAN,
   };
 
   const def = metricDef(defMap[intent]);
@@ -406,6 +413,59 @@ export async function assessIntentReadiness(intent, context = {}) {
       missingData: [],
       vaultCoverage: probe,
       warnings: probe.lowConfidenceFiles?.length ? ["Low parser confidence on some vault files."] : [],
+    };
+  }
+
+  if (intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS && context.supabase) {
+    const hours = context.hours || context.filters?.timeRangeHours;
+    const assessment = await assessNetworkDataConfidence(context.supabase, {
+      hours,
+      profile: context.profile,
+    }).catch(() => null);
+
+    if (!assessment) {
+      return {
+        status: READINESS.MISSING,
+        canQuery: false,
+        reasons: ["Could not assess network data coverage for executive analysis."],
+        missingData: [],
+      };
+    }
+
+    const executiveKind = context.executiveKind || null;
+    const eligibility = evaluateExecutiveRankingEligibility(assessment, executiveKind || "general");
+    if (!eligibility.allowed && requiresExecutiveRankingSafeguard(executiveKind || "general")) {
+      return {
+        status: READINESS.READY,
+        canQuery: true,
+        reasons: [eligibility.reason],
+        missingData: [],
+        dataConfidence: assessment,
+        executiveCoverageBlocked: true,
+      };
+    }
+
+    return {
+      status: assessment.confidenceLevel === CONFIDENCE.LOW ? READINESS.PARTIAL : READINESS.READY,
+      canQuery: true,
+      reasons:
+        assessment.confidenceLevel === CONFIDENCE.LOW
+          ? ["Network data confidence is low — executive conclusions may be directional only."]
+          : [],
+      missingData: [],
+      dataConfidence: assessment,
+      warnings:
+        assessment.confidenceLevel !== CONFIDENCE.HIGH
+          ? [`Coverage confidence: ${assessment.confidenceLevel}`]
+          : [],
+    };
+  }
+
+  if (intent === ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE) {
+    return {
+      ...sync,
+      canQuery: Boolean(context.supabase),
+      status: context.supabase ? READINESS.READY : READINESS.MISSING,
     };
   }
 
