@@ -1,7 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Send,
-  Loader2,
   Sparkles,
   Server,
   ServerOff,
@@ -10,13 +8,16 @@ import {
   GitBranch,
   HelpCircle,
   TrendingUp,
+  MessageSquarePlus,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
 import { askNac, isAskNacServerConfigured } from "../../intelligence/askNac";
-import AskNacAnswerCard from "./AskNacAnswerCard";
+import AskNacComposer from "./AskNacComposer";
+import AskNacMessageList from "./AskNacMessageList";
 import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
+import { createAssistantMessage, createUserMessage } from "./askNacChatUtils";
 import "../styles/ask-nac.css";
 import "../styles/ask-nac-data-vault.css";
 
@@ -46,29 +47,39 @@ export default function AskNacTab({
 }) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
-  const [question, setQuestion] = useState("");
-  const [response, setResponse] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+  const scrollAnchorRef = useRef(null);
 
   const serverConfigured = isAskNacServerConfigured();
   const session = rbac?.session;
-  const serverConnected = response?.serverConnected === true;
-  const localFallback = response?.localFallback === true;
-  const aiConnected = response?.aiConnected === true;
-  const aiExplained = response?.isAiGenerated === true;
+
+  const lastResponse = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      if (msg.role === "assistant" && msg.response) return msg.response;
+    }
+    return null;
+  }, [messages]);
+
+  const serverConnected = lastResponse?.serverConnected === true;
+  const localFallback = lastResponse?.localFallback === true;
+  const aiConnected = lastResponse?.aiConnected === true;
+  const aiExplained = lastResponse?.isAiGenerated === true;
 
   const statusBadge = useMemo(() => {
     if (aiExplained) {
       return { label: "AI explained", tone: "ai" };
     }
-    if (response && aiConnected) {
+    if (lastResponse && aiConnected) {
       return { label: "AI connected", tone: "connected" };
     }
-    if (response && serverConnected && !localFallback) {
+    if (lastResponse && serverConnected && !localFallback) {
       return { label: "Verified deterministic", tone: "connected" };
     }
-    if (response && localFallback) {
+    if (lastResponse && localFallback) {
       return { label: "Local fallback", tone: "local" };
     }
     if (serverConfigured && session?.access_token) {
@@ -78,7 +89,7 @@ export default function AskNacTab({
       return { label: "Local fallback", tone: "local" };
     }
     return { label: "Local fallback", tone: "local" };
-  }, [aiExplained, aiConnected, response, serverConnected, localFallback, serverConfigured, session]);
+  }, [aiExplained, aiConnected, lastResponse, serverConnected, localFallback, serverConfigured, session]);
 
   const filters = useMemo(
     () => ({
@@ -94,14 +105,27 @@ export default function AskNacTab({
     [platform],
   );
 
+  const focusInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, []);
+
+  const clearChat = useCallback(() => {
+    setMessages([]);
+    setDraft("");
+    focusInput();
+  }, [focusInput]);
+
   const submitQuestion = useCallback(
     async (q) => {
-      const text = String(q || question).trim();
-      if (!text) return;
+      const text = String(q ?? draft).trim();
+      if (!text || loading) return;
 
+      const userMessage = createUserMessage(text);
+      setMessages((prev) => [...prev, userMessage]);
+      setDraft("");
       setLoading(true);
-      setError("");
-      setResponse(null);
 
       try {
         const result = await askNac({
@@ -111,29 +135,34 @@ export default function AskNacTab({
           profile: rbac?.profile ?? null,
           filters,
         });
-        setResponse(result);
-        setQuestion(text);
+        setMessages((prev) => [
+          ...prev,
+          createAssistantMessage({ question: text, response: result }),
+        ]);
       } catch (err) {
-        setError(err?.message || "Ask NAC failed.");
+        setMessages((prev) => [
+          ...prev,
+          createAssistantMessage({
+            question: text,
+            error: err?.message || "Ask NAC failed.",
+          }),
+        ]);
       } finally {
         setLoading(false);
+        focusInput();
       }
     },
-    [question, session, rbac?.profile, filters],
+    [draft, loading, session, rbac?.profile, filters, focusInput],
   );
 
   useEffect(() => {
     const prefill = String(initialQuestion || "").trim();
     if (!prefill || !prefillSeed) return;
-    setQuestion(prefill);
     submitQuestion(prefill);
     onInitialQuestionConsumed?.();
   }, [initialQuestion, prefillSeed, onInitialQuestionConsumed, submitQuestion]);
 
-  const onSubmit = (e) => {
-    e.preventDefault();
-    submitQuestion(question);
-  };
+  const showEmptyState = messages.length === 0 && !loading;
 
   return (
     <div className="nac-ask-nac-tab">
@@ -147,20 +176,34 @@ export default function AskNacTab({
               on the server) may explain structured facts returned by internal tools.
             </p>
           </div>
-          <div
-            className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
-            title={
-              statusBadge.label === "AI explained"
-                ? "OpenAI narrated verified facts on the server"
-                : statusBadge.label === "AI connected"
-                  ? "Ask NAC Edge Function connected — server-side tools and optional AI narration"
-                  : statusBadge.label === "Verified deterministic"
-                    ? "Verified facts from server tools without AI rewrite"
-                    : "Deterministic answers computed locally in the browser"
-            }
-          >
-            {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
-            <span>{statusBadge.label}</span>
+          <div className="nac-ask-nac-hero__actions">
+            {messages.length ? (
+              <button
+                type="button"
+                className="nac-ask-nac-new-chat"
+                onClick={clearChat}
+                disabled={loading}
+                aria-label="Start a new chat"
+              >
+                <MessageSquarePlus size={16} aria-hidden />
+                <span>New chat</span>
+              </button>
+            ) : null}
+            <div
+              className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
+              title={
+                statusBadge.label === "AI explained"
+                  ? "OpenAI narrated verified facts on the server"
+                  : statusBadge.label === "AI connected"
+                    ? "Ask NAC Edge Function connected — server-side tools and optional AI narration"
+                    : statusBadge.label === "Verified deterministic"
+                      ? "Verified facts from server tools without AI rewrite"
+                      : "Deterministic answers computed locally in the browser"
+              }
+            >
+              {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
+              <span>{statusBadge.label}</span>
+            </div>
           </div>
         </div>
 
@@ -169,69 +212,33 @@ export default function AskNacTab({
         ) : null}
       </header>
 
-      <section className="nac-glass-panel nac-ask-nac-compose">
-        <form onSubmit={onSubmit} className="nac-ask-nac-form">
-          <label htmlFor="ask-nac-input" className="sr-only">
-            Ask a question
-          </label>
-          <textarea
-            id="ask-nac-input"
-            rows={2}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. How many menu QR scans today in Khobar?"
-            disabled={loading}
-          />
-          <button type="submit" disabled={loading || !question.trim()} className="nac-ask-nac-submit">
-            {loading ? <Loader2 size={18} className="nac-bi-spin" /> : <Send size={18} />}
-            <span>{loading ? "Querying…" : "Ask"}</span>
-          </button>
-        </form>
+      <section className="nac-glass-panel nac-ask-nac-chat">
+        {showEmptyState ? (
+          <div className="nac-ask-nac-empty nac-ask-nac-empty--chat">
+            <Sparkles size={20} aria-hidden />
+            <p>
+              Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
+              comparison, Foodics sales, and Data Vault operational reports. Press Enter to send.
+            </p>
+          </div>
+        ) : null}
 
-        <div className="nac-ask-nac-suggestions">
-          <span className="nac-ask-nac-suggestions__label">Try:</span>
-          {SUGGESTED_PROMPTS.map(({ text, icon: Icon }) => (
-            <button
-              key={text}
-              type="button"
-              className="nac-ask-nac-chip"
-              disabled={loading}
-              onClick={() => {
-                setQuestion(text);
-                submitQuestion(text);
-              }}
-            >
-              <Icon size={14} aria-hidden />
-              {text}
-            </button>
-          ))}
-        </div>
+        <AskNacMessageList
+          messages={messages}
+          loading={loading}
+          filters={filters}
+          scrollAnchorRef={scrollAnchorRef}
+        />
+
+        <AskNacComposer
+          value={draft}
+          onChange={setDraft}
+          onSubmit={submitQuestion}
+          loading={loading}
+          suggestions={messages.length === 0 ? SUGGESTED_PROMPTS : SUGGESTED_PROMPTS.slice(0, 8)}
+          inputRef={inputRef}
+        />
       </section>
-
-      {error ? (
-        <div className="nac-ask-nac-error nac-glass-panel" role="alert">
-          {error}
-        </div>
-      ) : null}
-
-      {loading ? (
-        <section className="nac-glass-panel nac-ask-nac-loading" aria-live="polite">
-          <Loader2 size={22} className="nac-bi-spin" />
-          <p>Querying verified metrics…</p>
-        </section>
-      ) : response ? (
-        <AskNacAnswerCard response={response} question={question} filters={filters} />
-      ) : (
-        <section className="nac-glass-panel nac-ask-nac-empty">
-          <Sparkles size={20} aria-hidden />
-          <p>
-            Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
-            comparison, Foodics sales (totals, top items, categories), and Data Vault operational reports.
-            Planned metrics like average spend and delivery sales return a clear missing-data report — never
-            fabricated numbers.
-          </p>
-        </section>
-      )}
 
       <AskNacDataVaultPanel session={session} />
     </div>
