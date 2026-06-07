@@ -1,0 +1,72 @@
+/* Intelligence hub — shared polish (Phase QA pass) */
+
+.nac-intelligence-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+}
+
+.nac-intel-section-intro {
+  margin: 0 0 0.25rem;
+}
+
+.nac-intel-section-intro__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.nac-intel-section-intro p {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: rgba(249, 249, 247, 0.52);
+  max-width: 52rem;
+}
+
+.nac-intel-section-intro strong {
+  color: rgba(215, 188, 138, 0.95);
+  font-weight: 500;
+}
+
+.nac-restaurant-intelligence-hub,
+.nac-menu-intelligence {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.ri-header--embedded {
+  margin-bottom: 0.5rem;
+}
+
+.ri-embedded-lede {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.55);
+  line-height: 1.55;
+}
+
+.fi-upload-embedded-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.fi-page--embedded .fi-upload-card {
+  border: none;
+  padding-top: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.fi-page--embedded .fi-card {
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .nac-intelligence-hub .nac-platform-header h1 {
+    font-size: 1.35rem;
+  }
+}

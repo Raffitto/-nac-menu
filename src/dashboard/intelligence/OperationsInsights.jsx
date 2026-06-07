@@ -10,9 +10,10 @@ import InsightEngine from "../components/InsightEngine";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import AnalyticsIntegrityStrip from "../components/AnalyticsIntegrityStrip";
+import IntelligenceDataStatus from "../components/IntelligenceDataStatus";
 import { useState, useEffect } from "react";
 
-export default function OperationsInsights() {
+export default function OperationsInsights({ embeddedInHub = false }) {
   const { data: bi, loading, platformStatus, operationalTrust, truth } = useMenuBiDashboardContext();
   const [foodics, setFoodics] = useState(null);
 
@@ -56,8 +57,9 @@ export default function OperationsInsights() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {!embeddedInHub ? <IntelligenceDataStatus /> : null}
       <PlatformStatusBanner platformStatus={platformStatus} />
-      <OperationalTrustBadge trust={operationalTrust} />
+      {!embeddedInHub ? <OperationalTrustBadge trust={operationalTrust} /> : null}
       <AnalyticsIntegrityStrip
         data={bi}
         truth={truth || bi?._truth}

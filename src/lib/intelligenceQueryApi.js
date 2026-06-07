@@ -20,9 +20,29 @@ import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
 import { recordPipelineFetch } from "./pipelineDiagnostics";
 import { recordRpcRefresh } from "../platform/engines/dataFreshnessEngine";
 import { assessMenuBiSufficiency } from "../platform/contracts/dataSufficiency";
+import { isMonthRangeHours, hydrateMonthToDateHybrid } from "./mtdHybridMerge";
 import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
 
 export { isTimeoutError };
+
+/**
+ * Wide-range timeout handling — never substitute Today as Month.
+ */
+export function resolveWideRangeTimeout({ error, payload, isEmpty, hours }) {
+  if (!error || !isTimeoutError(error) || Number(hours) <= 24) {
+    return { throwError: error, partial: false, note: null };
+  }
+
+  const note = isMonthRangeHours(hours)
+    ? "Month-to-date query timed out — showing partial data only. Retry or narrow branch filter."
+    : "Wide-range query timed out — data is partial. Run intelligence_query_optimization.sql.";
+
+  if (isEmpty(payload)) {
+    return { throwError: error, partial: true, note };
+  }
+
+  return { throwError: null, partial: true, note };
+}
 
 export function biRollupForHours(hours) {
   const h = Number(hours);
@@ -86,7 +106,29 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
       ? "rollup"
       : "rpc";
 
-  if (useRollup && payload && !isBiTotalsEmpty(payload) && !error) {
+  if (useRollup && payload && !isBiTotalsEmpty(payload) && !error && isMonthRangeHours(pHours)) {
+    const hybridRes = await hydrateMonthToDateHybrid(
+      payload,
+      async () => {
+        const todayRes = await rpcBiDashboard(supabase, "get_bi_dashboard", {
+          p_branch: pBranch,
+          p_hours: 24,
+        });
+        if (todayRes.error || !todayRes.payload || isBiTotalsEmpty(todayRes.payload)) {
+          return null;
+        }
+        return todayRes.payload;
+      },
+    );
+    if (hybridRes?.payload) {
+      payload = hybridRes.payload;
+      partial = partial || hybridRes.partial;
+      dataSource = "hybrid";
+      if (hybridRes.note) note = hybridRes.note;
+      opsNotes = [...opsNotes, ...(hybridRes.opsNotes || [])];
+      usedFallback = true;
+    }
+  } else if (useRollup && payload && !isBiTotalsEmpty(payload) && !error && pHours >= 168) {
     try {
       const since = rangeToSince(hoursToRange(pHours));
       let countQ = supabase
@@ -141,26 +183,26 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  if (error && isTimeoutError(error) && !useRollup) {
+  if (error && isTimeoutError(error) && pHours > 24) {
+    const timeoutRes = resolveWideRangeTimeout({
+      error,
+      payload,
+      isEmpty: isBiTotalsEmpty,
+      hours: pHours,
+    });
+    partial = partial || timeoutRes.partial;
+    usedFallback = true;
+    if (timeoutRes.note) note = timeoutRes.note;
+    if (timeoutRes.throwError) {
+      throw timeoutRes.throwError;
+    }
+    error = null;
+  } else if (error && isTimeoutError(error) && !useRollup) {
     const rollupRes = await rpcBiDashboard(supabase, "get_bi_dashboard_from_rollup", params);
     if (rollupRes.payload && !isBiTotalsEmpty(rollupRes.payload)) {
       payload = rollupRes.payload;
       partial = true;
       note = "Loaded from daily rollup after timeout. Item-level charts may be limited.";
-      error = null;
-    }
-  }
-
-  if (error && isTimeoutError(error) && pHours > 24) {
-    const todayRes = await rpcBiDashboard(supabase, "get_bi_dashboard", {
-      p_branch: pBranch,
-      p_hours: 24,
-    });
-    if (todayRes.payload && !isBiTotalsEmpty(todayRes.payload)) {
-      payload = todayRes.payload;
-      partial = true;
-      usedFallback = true;
-      note = "Showing today only — wider range timed out. Run intelligence_query_optimization.sql.";
       error = null;
     }
   }

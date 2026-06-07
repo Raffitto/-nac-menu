@@ -13,6 +13,11 @@ import {
 } from "./analyticsUnifiedAdapter";
 import { canonicalAddonInteractionCount } from "./menuEventTypes";
 import {
+  getMetricLabel,
+  getMetricWarning,
+  METRIC_IDS,
+} from "../intelligence/metrics/metricDefinitions";
+import {
   mergeCategoriesById,
   mergeTopItemsByName,
   normalizeAddonPairs,
@@ -195,8 +200,9 @@ export function buildAnalyticsIntegrityMeta({
   surface = "analytics",
 } = {}) {
   const t = truth || (data ? buildOperationalTruth(data) : null);
+  const sessionLabel = getMetricLabel(METRIC_IDS.SESSION);
   const scopeLabels = [
-    `${(t?.sessions || 0).toLocaleString()} menu sessions · canonical operational truth`,
+    `${(t?.sessions || 0).toLocaleString()} ${sessionLabel.toLowerCase()} · canonical operational truth`,
   ];
 
   if (t?.categoryOpens > 0) {
@@ -214,10 +220,16 @@ export function buildAnalyticsIntegrityMeta({
   }
 
   if (operationalTrust?.partial) {
-    scopeLabels.push("Partial live data — some tiles may use recovered rollup");
+    const partialCopy = getMetricWarning(METRIC_IDS.PARTIAL_LIVE, {
+      partial: true,
+      operationalTrust,
+    });
+    scopeLabels.push(partialCopy || "Partial live data — some tiles may use recovered rollup");
   }
   if (operationalTrust?.liveFallback) {
-    scopeLabels.push("Live recompute active for recent range");
+    scopeLabels.push(
+      "Live recompute active for recent range — totals may differ from rollup until refresh",
+    );
   }
 
   return {

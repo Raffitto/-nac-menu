@@ -3,10 +3,14 @@ import { motion } from "framer-motion";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { CATEGORY_NAMES } from "../utils/formatters";
 import { useMenuBiDashboardContext } from "../context/MenuBiDashboardContext";
+import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import BiLiveFallbackBanner from "../components/BiLiveFallbackBanner";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
 import OperationalTrustBadge from "../components/OperationalTrustBadge";
 import AnalyticsIntegrityStrip from "../components/AnalyticsIntegrityStrip";
+import MetricLabel from "../components/MetricLabel";
+import { rangeExportLabel } from "../utils/rangeState";
+import { METRIC_IDS, getMetricTooltip } from "../../intelligence/metrics/metricDefinitions";
 import {
   isBiAddonsEmpty,
   isBiCategoriesEmpty,
@@ -28,6 +32,8 @@ const TOOLTIP = {
 };
 
 export default function MenuIntelligence() {
+  const platform = usePlatformFiltersOptional();
+  const periodLabel = rangeExportLabel(platform?.selectedRange || "today");
   const {
     data,
     truth,
@@ -81,7 +87,7 @@ export default function MenuIntelligence() {
   const categoriesEmpty = !loading && !menuDataEmpty && isBiCategoriesEmpty(viewData);
   const addonsEmpty = !loading && !menuDataEmpty && isBiAddonsEmpty(viewData);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div style={{ display: "grid", gap: "1rem" }}>
         <div className="nac-bi-skeleton" style={{ height: 200, borderRadius: 18 }} />
@@ -105,9 +111,25 @@ export default function MenuIntelligence() {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div className="nac-menu-intelligence">
+      <header className="nac-intel-section-intro">
+        <h2 className="nac-intel-section-intro__title">Menu Intelligence</h2>
+        <p>
+          Browsing behavior for <strong>{periodLabel}</strong> — not POS sales. Today and month-to-date
+          use the same canonical session rules as Ask NAC (hybrid rollup + live day when applicable).
+        </p>
+      </header>
       <PlatformStatusBanner platformStatus={platformStatus} />
       <OperationalTrustBadge trust={operationalTrust} />
+      <div className="nac-glass-panel" style={{ padding: "0.85rem 1rem" }}>
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "rgba(249,249,247,0.55)", lineHeight: 1.55 }}>
+          <MetricLabel metricId={METRIC_IDS.MENU_QR_SCAN} /> and{" "}
+          <MetricLabel metricId={METRIC_IDS.SESSION} /> reflect menu entry only — not{" "}
+          <MetricLabel metricId={METRIC_IDS.REVIEW_QR_SCAN} showTooltip={false} /> or{" "}
+          <MetricLabel metricId={METRIC_IDS.GOOGLE_REDIRECT} showTooltip={false} />.
+          Category and item charts measure browsing behavior ({getMetricTooltip(METRIC_IDS.CATEGORY_PERFORMANCE)}).
+        </p>
+      </div>
       <AnalyticsIntegrityStrip
         data={data}
         truth={truth || data?._truth}

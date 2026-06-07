@@ -46,6 +46,7 @@ import {
   rememberSevenDayMenuQr,
   readCachedSevenDayMenuQr,
 } from "../../lib/operationalRangeHelpers";
+import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 import "../styles/operational-dashboard.css";
 
 const TOOLTIP_STYLE = {
@@ -263,25 +264,25 @@ export default function OperationalDashboard({ session }) {
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
           <p className="nac-bi-exec-label">
-            <Activity size={13} /> Sessions
+            <Activity size={13} /> {getMetricLabel(METRIC_IDS.SESSION)}
           </p>
           <p className="nac-bi-exec-value">{totalSessions.toLocaleString()}</p>
-          <p className="nac-bi-exec-sub">Same as menu QR entry sessions</p>
+          <p className="nac-bi-exec-sub">Canonical menu entry sessions</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <p className="nac-bi-exec-label">
-            <Zap size={13} /> Review Redirects
+            <Zap size={13} /> {getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT)}
           </p>
           <p className="nac-bi-exec-value">{reviewRedirect.toLocaleString()}</p>
-          <p className="nac-bi-exec-sub">Review page opens</p>
+          <p className="nac-bi-exec-sub">Not {getMetricLabel(METRIC_IDS.GOOGLE_REVIEW).toLowerCase()}</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }}>
           <p className="nac-bi-exec-label">
-            <TrendingUp size={13} /> Google Review Opens
+            <TrendingUp size={13} /> Google review page open
           </p>
           <p className="nac-bi-exec-value">{googleReviewOpen.toLocaleString()}</p>
           <p className="nac-bi-exec-sub">
-            {reviewConversionPct > 0 ? `${reviewConversionPct}% tap-to-Google` : "Review QR flow"}
+            {reviewConversionPct > 0 ? `${reviewConversionPct}% tap-to-Google` : "Review funnel step — not public review count"}
           </p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>

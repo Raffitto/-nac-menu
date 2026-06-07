@@ -5,6 +5,7 @@ import { RANGE_OPTIONS } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
 import FilterBar from "./FilterBar";
+import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 
 const LANG_OPTIONS = [
   { value: "all", label: "All languages" },
@@ -21,10 +22,10 @@ const SHIFT_OPTIONS = [
 
 const EVENT_OPTIONS = [
   { value: "all", label: "All events" },
-  { value: "qr_scan", label: "QR scans" },
+  { value: "qr_scan", label: getMetricLabel(METRIC_IDS.MENU_QR_SCAN) },
   { value: "item_open", label: "Item views" },
-  { value: "google_redirect", label: "Google clicks" },
-  { value: "category_open", label: "Categories" },
+  { value: "google_redirect", label: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT) },
+  { value: "category_open", label: "Category opens" },
 ];
 
 const DAY_OPTIONS = [

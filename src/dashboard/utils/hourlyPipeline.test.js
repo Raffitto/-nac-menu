@@ -23,8 +23,8 @@ describe("hourlyPipeline", () => {
       168,
     );
     expect(granularity).toBe("day");
-    expect(rows.length).toBeGreaterThanOrEqual(7);
-    expect(rows.some((r) => String(r.label).includes("May"))).toBe(true);
+    expect(rows).toHaveLength(7);
+    expect(rows.every((r) => /^[A-Z][a-z]{2} \d{1,2}$/.test(String(r.label)))).toBe(true);
   });
 
   test("Today chart uses hour labels even if RPC returns a daily bucket", () => {

@@ -36,6 +36,9 @@ import {
 } from "./engines/chartEngine";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import AnalyticsIntegrityStrip from "./components/AnalyticsIntegrityStrip";
+import IntelligenceDataStatus from "./components/IntelligenceDataStatus";
+import MetricLabel from "./components/MetricLabel";
+import { METRIC_IDS, getMetricLabel } from "../intelligence/metrics/metricDefinitions";
 import { buildAnalyticsIntegrityMeta } from "../lib/unifiedOperationalTruth";
 import { businessDayExportNote } from "./utils/businessDay";
 import { DEFAULT_RANGE, RANGE_OPTIONS, rangeExportLabel } from "./utils/rangeState";
@@ -51,7 +54,7 @@ const TOOLTIP = {
   fontSize: 12,
 };
 
-export default function RestaurantIntelligence() {
+export default function RestaurantIntelligence({ embeddedInHub = false }) {
   const [foodics, setFoodics] = useState(null);
   const [mgmtOpen, setMgmtOpen] = useState(true);
   const [deepOpen, setDeepOpen] = useState(false);
@@ -166,7 +169,7 @@ export default function RestaurantIntelligence() {
     );
   }
 
-  if (loading) {
+  if (loading && !biData) {
     return (
       <motion.div className="ri-page ri-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <Loader2 size={32} className="ri-spin" />
@@ -187,8 +190,11 @@ export default function RestaurantIntelligence() {
   return (
     <motion.div className="ri-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <GoogleReputationStrip title="Google reputation · network" />
+      {!embeddedInHub ? <IntelligenceDataStatus /> : null}
       <PlatformStatusBanner platformStatus={platformStatus} />
-      <OperationalTrustBadge trust={operationalTrust} className="ri-trust-badge" />
+      {!embeddedInHub ? (
+        <OperationalTrustBadge trust={operationalTrust} className="ri-trust-badge" />
+      ) : null}
       <AnalyticsIntegrityStrip
         data={biData}
         truth={truth || biData?._truth}
@@ -197,15 +203,22 @@ export default function RestaurantIntelligence() {
         surface="restaurant_intelligence"
         className="ri-integrity-strip"
       />
-      <header className="ri-header">
+      <header className={`ri-header ${embeddedInHub ? "ri-header--embedded" : ""}`}>
         <div>
-          <Brain size={22} className="ri-icon" />
+          {!embeddedInHub ? <Brain size={22} className="ri-icon" /> : null}
           <div>
-            <h1>Restaurant Intelligence</h1>
-            <p>Operating intelligence — simple surface, deep analysis underneath</p>
+            {!embeddedInHub ? (
+              <>
+                <h1>Restaurant Intelligence</h1>
+                <p>Operating intelligence — simple surface, deep analysis underneath</p>
+              </>
+            ) : (
+              <p className="ri-embedded-lede">Menu behavior, friction signals, and Foodics-linked comparisons for the selected period.</p>
+            )}
             {intelligence?.validation && (
               <p className="ri-trust-bar">
-                {intelligence.kpis.sessions.toLocaleString()} menu sessions (canonical) ·{" "}
+                {intelligence.kpis.sessions.toLocaleString()}{" "}
+                <MetricLabel metricId={METRIC_IDS.SESSION} showTooltip={false} /> (canonical) ·{" "}
                 {intelligence.validation.events.toLocaleString()} events
                 {intelligence.businessDay?.key && ` · business day ${intelligence.businessDay.key} (3AM–3AM)`}
                 {intelligence.visibilityReady === false && " · collecting visibility signals"}
@@ -270,10 +283,13 @@ export default function RestaurantIntelligence() {
       {/* KPIs */}
       {intelligence?.kpis && (
         <div className="ri-kpis">
-          <KpiCard label="Menu sessions" value={intelligence.kpis.sessions} />
+          <KpiCard label={getMetricLabel(METRIC_IDS.SESSION)} value={intelligence.kpis.sessions} />
           <KpiCard label="Category opens" value={intelligence.kpis.category_opens} />
           <KpiCard label="Impressions" value={intelligence.kpis.impressions} />
-          <KpiCard label="QR Today" value={intelligence.kpis.today_qr ?? intelligence.kpis.qr} />
+          <KpiCard
+            label={getMetricLabel(METRIC_IDS.MENU_QR_SCAN, "shortLabel")}
+            value={intelligence.kpis.today_qr ?? intelligence.kpis.qr}
+          />
           <KpiCard label="Bounce" value={`${intelligence.kpis.bounce_pct}%`} />
           <KpiCard label="Foodics" value={foodics?.hasImports ? "Linked" : "—"} />
         </div>

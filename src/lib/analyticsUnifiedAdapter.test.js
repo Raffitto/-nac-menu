@@ -8,9 +8,14 @@ import {
 } from "./analyticsUnifiedAdapter";
 
 describe("analyticsUnifiedAdapter", () => {
-  test("session master wins higher engagement totals", () => {
+  test("session master does not inflate BI today sessions with denser session sample", () => {
     const merged = mergeSessionMasterWithBiRaw(
-      { total_events: 19, total_sessions: 16, by_hour: [{ hour: 10, count: 2 }] },
+      {
+        total_events: 19,
+        total_sessions: 16,
+        funnel: { qr_scans: 16 },
+        by_hour: [{ hour: 10, count: 2 }],
+      },
       {
         total_events: 26000,
         total_sessions: 223,
@@ -24,8 +29,8 @@ describe("analyticsUnifiedAdapter", () => {
       24,
     );
     expect(merged.total_events).toBe(26000);
-    expect(merged.total_sessions).toBe(223);
-    expect(merged.data_source).toBe("unified_session_master");
+    expect(merged.total_sessions).toBe(16);
+    expect(merged.funnel.qr_scans).toBe(16);
   });
 
   test("hourly buckets prefer session pipeline when denser", () => {
@@ -79,7 +84,7 @@ describe("analyticsUnifiedAdapter", () => {
     expect(merged.session_quality.engaged).toBe(4);
   });
 
-  test("today merge still prefers session funnel when denser", () => {
+  test("today merge prefers live BI canonical sessions over denser session funnel", () => {
     const merged = mergeSessionMasterWithBiRaw(
       { total_sessions: 5, funnel: { qr_scans: 5 } },
       {
@@ -89,7 +94,7 @@ describe("analyticsUnifiedAdapter", () => {
       },
       24,
     );
-    expect(merged.funnel.qr_scans).toBe(11);
-    expect(merged.total_sessions).toBe(11);
+    expect(merged.funnel.qr_scans).toBe(5);
+    expect(merged.total_sessions).toBe(5);
   });
 });

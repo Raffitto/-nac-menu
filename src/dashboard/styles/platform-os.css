@@ -490,3 +490,41 @@
     max-width: 100%;
   }
 }
+
+/* Phase C — metric labels & intelligence data status */
+.nac-metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nac-metric-label-icon {
+  opacity: 0.45;
+  vertical-align: middle;
+}
+
+.nac-intelligence-data-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(249, 249, 247, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nac-intelligence-data-status--updating {
+  border-color: rgba(78, 205, 196, 0.35);
+  background: rgba(78, 205, 196, 0.08);
+  color: rgba(249, 249, 247, 0.88);
+}
+
+.nac-intelligence-data-status--partial,
+.nac-intelligence-data-status--fallback {
+  border-color: rgba(245, 166, 35, 0.35);
+  background: rgba(245, 166, 35, 0.08);
+}

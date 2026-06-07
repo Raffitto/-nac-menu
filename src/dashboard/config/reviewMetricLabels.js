@@ -3,6 +3,7 @@
  */
 
 import { paintExportText, setExportFont } from "../engines/pdfVisualTheme";
+import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 
 export const REVIEW_FUNNEL_SUBTITLE =
   "Card tap → Review interaction → Google redirect";
@@ -12,9 +13,9 @@ export const REVIEW_FUNNEL_SUBTITLE_PDF =
   "Card tap to Review interaction to Google redirect";
 
 export const REVIEW_METRIC = {
-  cardTaps: "Card taps",
+  cardTaps: "Review QR scans",
   reviewInteractions: "Review interactions",
-  googleRedirects: "Google redirects",
+  googleRedirects: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT),
   toGooglePct: "To Google %",
   cardToReviewPct: "Card→Review %",
   tapToGooglePct: "Tap→Google %",
@@ -34,9 +35,9 @@ export const REVIEW_METRIC_PDF = {
 export const STAFF_AUDIT_TABLE_HEAD = [
   "Staff",
   "Role",
-  "Card taps",
+  "Review QR scans",
   "Interactions",
-  "Google",
+  "Google Redirects",
   "To Google %",
   "Card→Review %",
   "Profile",
@@ -79,26 +80,26 @@ export const STAFF_AUDIT_EXPORT_COLUMN_STYLES = {
 export const STAFF_SUMMARY_TABLE_HEAD = [
   "Staff",
   "Role",
-  "Card taps",
+  "Review QR scans",
   "Interactions",
-  "Google",
+  "Google Redirects",
   "To Google %",
 ];
 
 export const BRANCH_BENCHMARK_TABLE_HEAD = [
   "Branch",
-  "Card taps",
+  "Review QR scans",
   "Interactions",
-  "Google",
+  "Google Redirects",
   "To Google %",
 ];
 
 export const STAFF_AUDIT_LEGEND_LINES = [
-  "Card taps = QR/NFC card taps",
+  "Review QR scans = review portal QR / NFC entry (not menu QR)",
   "Interactions = generated review pages (not published Google reviews)",
-  "Google = redirected to Google review page",
+  "Google = Google Redirects to the public review page",
   "To Google % = tap-to-Google redirect conversion",
-  "Card→Review % = taps converted into review interactions",
+  "Card→Review % = review QR scans converted into review interactions",
 ];
 
 export const STAFF_AUDIT_LEGEND_LINES_PDF = [

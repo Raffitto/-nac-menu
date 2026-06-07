@@ -49,6 +49,25 @@ describe("customerFacingAnalytics", () => {
     expect(canon.menuQrScans).toBe(5);
   });
 
+  it("does not treat all event sessions as menu QR when qr_session_start missing", () => {
+    const canon = resolveCanonicalMenuSessions({
+      total_sessions: 224,
+      funnel: {},
+    });
+    expect(canon.menuSessions).toBe(0);
+    expect(canon._missingQrSessionStart).toBe(true);
+  });
+
+  it("prefers primary funnel over denser _sessionFunnel when both present", () => {
+    const canon = resolveCanonicalMenuSessions({
+      total_sessions: 223,
+      funnel: { qr_scans: 16 },
+      _sessionFunnel: { qr_scans: 223 },
+    });
+    expect(canon.menuSessions).toBe(16);
+    expect(canon.menuQrScans).toBe(16);
+  });
+
   it("uses classified session count as denominator when partial", () => {
     const d = resolveSessionQualityDenominator(
       { casual: 3, engaged: 2, bounce: 0, deep: 0, power: 0 },

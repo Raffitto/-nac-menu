@@ -11,18 +11,40 @@ export const NAV_ITEMS = [
   { id: "settings", label: "Settings", legacyViews: ["settings"] },
 ];
 
+/** Visible Intelligence hub tabs (Phase B — simplified navigation). */
 export const INTELLIGENCE_TABS = [
-  { id: "ai", label: "AI Insights" },
-  { id: "visual", label: "Visual OS" },
-  { id: "restaurant", label: "Restaurant" },
-  { id: "imports", label: "Sales Imports" },
-  { id: "sales", label: "Foodics" },
-  { id: "menu", label: "Menu Intelligence" },
+  { id: "ask", label: "Ask NAC" },
   { id: "executive", label: "Command Center" },
-  { id: "predictive", label: "Predictive" },
-  { id: "operations", label: "Operations" },
+  { id: "restaurant", label: "Restaurant Intelligence" },
+  { id: "sales", label: "Sales Intelligence" },
+  { id: "menu", label: "Menu Intelligence" },
+  { id: "visual", label: "Visual OS" },
   { id: "competitive", label: "Competitive Watch" },
 ];
+
+/**
+ * Legacy tab ids → canonical hub tab (backward compatibility for bookmarks, RBAC tests, deep links).
+ * Removed tabs: predictive → ask; operations → restaurant; imports → sales; ai → ask.
+ */
+export const INTELLIGENCE_TAB_ALIASES = {
+  ai: "ask",
+  imports: "sales",
+  operations: "restaurant",
+  predictive: "ask",
+};
+
+/** @deprecated use INTELLIGENCE_TAB_ALIASES — kept for import stability */
+export const LEGACY_INTELLIGENCE_TAB_IDS = Object.keys(INTELLIGENCE_TAB_ALIASES);
+
+export function normalizeIntelligenceTabId(tabId) {
+  if (!tabId) return "ask";
+  const key = String(tabId).toLowerCase();
+  return INTELLIGENCE_TAB_ALIASES[key] || key;
+}
+
+export function isLegacyIntelligenceTabId(tabId) {
+  return LEGACY_INTELLIGENCE_TAB_IDS.includes(String(tabId || "").toLowerCase());
+}
 
 export const REVIEWS_TABS = [
   { id: "performance", label: "Performance" },

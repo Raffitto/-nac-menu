@@ -1,14 +1,16 @@
 import React from "react";
+import { resolveIntelligenceStatusBanner } from "../../intelligence/metrics/metricDefinitions";
 
 /**
- * Subtle internal notice when primary RPC was empty but menu_events fallback supplied data.
+ * Subtle notice when primary RPC was empty but menu_events fallback supplied data.
  */
 export default function BiLiveFallbackBanner({ visible }) {
   if (!visible) return null;
 
+  const banner = resolveIntelligenceStatusBanner({ liveFallback: true });
   return (
     <p className="nac-bi-live-fallback" role="status">
-      Live fallback active
+      {banner?.message || "Live fallback active"}
     </p>
   );
 }

@@ -504,8 +504,13 @@ export default function FoodicsIntelligence({
 
       {/* Upload */}
       <section className="fi-card fi-upload-card">
-        <h2><Upload size={18} /> {embedded ? laneMeta.title : "Import Foodics Report"}</h2>
-        {embedded && <p className="fi-muted" style={{ marginTop: 0 }}>{laneMeta.foodicsReport}</p>}
+        {!embedded ? (
+          <>
+            <h2><Upload size={18} /> Import Foodics Report</h2>
+          </>
+        ) : (
+          <h3 className="fi-upload-embedded-title">Upload & map columns</h3>
+        )}
         <motion.div className="fi-period-row">
           <label>
             Branch

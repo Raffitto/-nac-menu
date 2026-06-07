@@ -15,6 +15,7 @@ import {
   isMonthRangeHours,
   SCAN_CHART_EMPTY_MESSAGE,
 } from "./customerFacingAnalytics";
+import { getMetricLabel, METRIC_IDS } from "../intelligence/metrics/metricDefinitions";
 
 export const INSIGHT_MIN_CONFIDENCE = 0.62;
 
@@ -195,7 +196,7 @@ function mapStageMetrics(stages, menuQr) {
 export function buildMenuFunnelStageMetrics(funnel = {}) {
   const menuQr = Number(funnel.qr_scans) || 0;
   const stages = [
-    { key: "qr_scans", label: "QR Scan", value: menuQr },
+    { key: "qr_scans", label: getMetricLabel(METRIC_IDS.MENU_QR_SCAN, "shortLabel"), value: menuQr },
     { key: "category_opens", label: "Category Open", value: Number(funnel.category_opens) || 0 },
     { key: "item_opens", label: "Item Open", value: Number(funnel.item_opens) || 0 },
     { key: "addon_clicks", label: "Add-on Interaction", value: Number(funnel.addon_clicks) || 0 },
@@ -209,12 +210,12 @@ export function buildReviewFunnelStageMetrics(funnel = {}) {
   const stages = [
     {
       key: "review_redirect",
-      label: "Review Redirect",
+      label: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT),
       value: Number(funnel.review_redirect) || 0,
     },
     {
       key: "google_review_open",
-      label: "Google Review Open",
+      label: "Google review page open",
       value: Number(funnel.google_review_open) || 0,
     },
   ];
@@ -290,6 +291,13 @@ export function applyOperationalIntegrityToPayload(payload = {}, options = {}) {
   };
 
   publishDashboardTrustAudit(enriched, { hours, ...options });
+
+  if (payload._mtdHybrid?.warnings?.length) {
+    publishIntegrityDebug({
+      mtdHybrid: payload._mtdHybrid,
+      rangeIntegrityWarnings: payload._mtdHybrid.warnings,
+    });
+  }
 
   return enriched;
 }

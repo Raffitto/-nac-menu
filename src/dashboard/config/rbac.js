@@ -70,18 +70,20 @@ export const NAV_PERMISSIONS = {
   settings: PERMISSIONS.VIEW_SETTINGS,
 };
 
-/** Intelligence hub tab → permission */
+/** Intelligence hub tab → permission (canonical + legacy ids for alias resolution). */
 export const INTELLIGENCE_TAB_PERMISSIONS = {
-  ai: PERMISSIONS.VIEW_INTELLIGENCE,
+  ask: PERMISSIONS.VIEW_INTELLIGENCE,
   visual: PERMISSIONS.VIEW_INTELLIGENCE,
   restaurant: PERMISSIONS.VIEW_INTELLIGENCE,
-  imports: PERMISSIONS.MANAGE_IMPORTS,
   sales: PERMISSIONS.VIEW_INTELLIGENCE,
   menu: PERMISSIONS.VIEW_INTELLIGENCE,
   executive: PERMISSIONS.VIEW_COMMAND_CENTER,
+  competitive: PERMISSIONS.VIEW_COMPETITIVE,
+  /** Legacy tab ids — still honored via normalizeIntelligenceTabId */
+  ai: PERMISSIONS.VIEW_INTELLIGENCE,
+  imports: PERMISSIONS.MANAGE_IMPORTS,
   predictive: PERMISSIONS.VIEW_PREDICTIVE,
   operations: PERMISSIONS.VIEW_INTELLIGENCE,
-  competitive: PERMISSIONS.VIEW_COMPETITIVE,
 };
 
 /** Reviews hub tab → permission */
@@ -181,7 +183,24 @@ export function canAccessNav(profile, navId) {
 }
 
 export function canAccessIntelligenceTab(profile, tabId) {
-  const perm = INTELLIGENCE_TAB_PERMISSIONS[tabId];
+  const raw = String(tabId || "").toLowerCase();
+  const normalized =
+    raw === "ai" || raw === "predictive"
+      ? "ask"
+      : raw === "imports"
+        ? "sales"
+        : raw === "operations"
+          ? "restaurant"
+          : raw;
+
+  if (normalized === "sales") {
+    return (
+      hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE) ||
+      hasPermission(profile, PERMISSIONS.MANAGE_IMPORTS)
+    );
+  }
+
+  const perm = INTELLIGENCE_TAB_PERMISSIONS[normalized] || INTELLIGENCE_TAB_PERMISSIONS[raw];
   return perm ? hasPermission(profile, perm) : false;
 }
 

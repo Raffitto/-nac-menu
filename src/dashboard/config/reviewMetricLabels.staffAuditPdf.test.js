@@ -25,8 +25,8 @@ describe("staff audit PDF export headers", () => {
   it("uses short export-safe labels distinct from dashboard headers", () => {
     expect(STAFF_AUDIT_TABLE_HEAD_PDF).toEqual(EXPECTED_PDF_HEADERS);
     expect(STAFF_AUDIT_TABLE_HEAD).not.toEqual(STAFF_AUDIT_TABLE_HEAD_PDF);
-    expect(STAFF_AUDIT_TABLE_HEAD).toContain("Card taps");
-    expect(STAFF_AUDIT_TABLE_HEAD_PDF).not.toContain("Card taps");
+    expect(STAFF_AUDIT_TABLE_HEAD).toContain("Review QR scans");
+    expect(STAFF_AUDIT_TABLE_HEAD_PDF).not.toContain("Review QR scans");
   });
 
   it("allocates column widths within landscape page content", () => {

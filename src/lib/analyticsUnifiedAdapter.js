@@ -12,10 +12,11 @@ import {
 import { fetchBiDashboard } from "./intelligenceQueryApi";
 import { fetchSessionAnalytics } from "./sessionAnalyticsApi";
 import { appendOpsNote } from "./biOpsNotes";
-import { applyCanonicalMenuSessionsToPayload } from "./customerFacingAnalytics";
+import { applyCanonicalMenuSessionsToPayload, resolveCanonicalMenuSessions, enforceMenuFunnelIntegrity } from "./customerFacingAnalytics";
 import { enrichByEventTypeCanonical, canonicalAddonInteractionCount } from "./menuEventTypes";
 import { biEngagementDetailNeedsRefresh } from "./biDashboardNormalize";
 import { fetchBiItemDetailFromMenuEvents } from "./menuEventsBiFallback";
+import { isMonthRangeHours } from "./mtdHybridMerge";
 
 export const OPERATIONAL_TRUST = {
   LIVE_VERIFIED: "live_verified",
@@ -39,6 +40,41 @@ function pickMaster(sessionVal, biVal) {
   return s >= b ? s : b;
 }
 
+/**
+ * Canonical session / menu QR total — never MAX-inflate; prefer BI (especially hybrid MTD).
+ */
+export function pickCanonicalSessionTotal(biRaw = {}, aggregates = null, hours = 24) {
+  const biCanon = resolveCanonicalMenuSessions(biRaw || {});
+  if (!aggregates) return biCanon.menuSessions;
+
+  const aggCanon = resolveCanonicalMenuSessions(aggregates);
+
+  if (isRollupRangeHours(hours) || isMonthRangeHours(hours)) {
+    if (biRaw?._mtdHybrid || biRaw?.data_source === "hybrid") {
+      return biCanon.menuSessions;
+    }
+    if (aggregates._sessionMetricsFromLivePatch) {
+      return biCanon.menuSessions;
+    }
+    if (aggCanon.menuSessions > biCanon.menuSessions * 1.05 && biCanon.menuSessions > 0) {
+      biRaw._sessionSourceWarning =
+        "Session analytics sample exceeded BI rollup — using canonical BI menu session count.";
+      return biCanon.menuSessions;
+    }
+    return biCanon.menuSessions || aggCanon.menuSessions;
+  }
+
+  if (biCanon.menuSessions > 0) {
+    if (aggCanon.menuSessions > biCanon.menuSessions * 1.15) {
+      biRaw._sessionSourceWarning =
+        "Session analytics count exceeds live BI Today — using BI canonical menu QR sessions.";
+    }
+    return biCanon.menuSessions;
+  }
+
+  return aggCanon.menuSessions;
+}
+
 /** Rollup ranges: BI month funnel wins over truncated live session patch. */
 export function pickFunnelForOperationalMerge(biRaw = {}, aggregates = null, hours = 24) {
   const biFunnel = biRaw?.funnel && typeof biRaw.funnel === "object" ? biRaw.funnel : {};
@@ -46,6 +82,8 @@ export function pickFunnelForOperationalMerge(biRaw = {}, aggregates = null, hou
     aggregates?.funnel && typeof aggregates.funnel === "object" ? aggregates.funnel : {};
 
   if (!isRollupRangeHours(hours)) {
+    const biQr = Number(biFunnel.qr_scans) || 0;
+    if (biQr > 0) return biFunnel;
     return Object.keys(aggFunnel).length ? aggFunnel : biFunnel;
   }
 
@@ -142,7 +180,12 @@ function pickRicherTopItems(biItems, aggItems, funnel = {}) {
 export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours = 24) {
   if (!aggregates) return { ...biRaw };
 
-  const funnel = pickFunnelForOperationalMerge(biRaw, aggregates, hours);
+  let funnel = pickFunnelForOperationalMerge(biRaw, aggregates, hours);
+  const total_sessions = pickCanonicalSessionTotal(biRaw, aggregates, hours);
+  if (total_sessions > 0 && Number(funnel.qr_scans) !== total_sessions) {
+    funnel = enforceMenuFunnelIntegrity({ ...funnel, qr_scans: total_sessions });
+  }
+
   const mergedByType = enrichByEventTypeCanonical({
     ...(biRaw.by_event_type || {}),
     ...(aggregates.by_event_type || {}),
@@ -156,7 +199,7 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
   const merged = {
     ...biRaw,
     total_events: pickMaster(aggregates.total_events, biRaw.total_events),
-    total_sessions: pickMaster(aggregates.total_sessions, biRaw.total_sessions),
+    total_sessions,
     by_event_type: mergedByType,
     by_hour: sessionHourlySum >= biHourlySum && sessionHourly.length ? sessionHourly : biHourly,
     by_hour_qr: Array.isArray(biRaw.by_hour_qr) ? biRaw.by_hour_qr : [],
@@ -194,6 +237,8 @@ export function mergeSessionMasterWithBiRaw(biRaw = {}, aggregates = null, hours
     data_source: "unified_session_master",
     partial_mode: Boolean(biRaw.partial_mode || aggregates.partial),
     aggregation_note: biRaw.aggregation_note || null,
+    _sessionSourceWarning: biRaw._sessionSourceWarning || null,
+    _mtdHybrid: biRaw._mtdHybrid || null,
   };
 
   return applyCanonicalMenuSessionsToPayload(merged);
@@ -316,6 +361,12 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}) {
 
   if (sessionResult?.note && !mergedRaw.aggregation_note) {
     mergedRaw.aggregation_note = sessionResult.note;
+  }
+  if (mergedRaw._mtdHybrid?.warnings?.length) {
+    opsNotes = appendOpsNote(opsNotes, ...mergedRaw._mtdHybrid.warnings);
+  }
+  if (mergedRaw._sessionSourceWarning) {
+    opsNotes = appendOpsNote(opsNotes, mergedRaw._sessionSourceWarning);
   }
   mergedRaw.partial_mode = Boolean(
     mergedRaw.partial_mode || sessionResult?.partial || biResult?.partial,

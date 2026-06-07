@@ -4,17 +4,18 @@ import {
   buildMenuFunnelStageMetrics,
   buildReviewFunnelStageMetrics,
 } from "../../lib/operationalMetricsIntegrity";
+import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 
 const MENU_STAGE_DEFS = [
-  { key: "qr_scans", label: "QR Scan", icon: "📱" },
+  { key: "qr_scans", label: getMetricLabel(METRIC_IDS.MENU_QR_SCAN, "shortLabel"), icon: "📱" },
   { key: "category_opens", label: "Category Open", icon: "📂" },
   { key: "item_opens", label: "Item Open", icon: "🍽" },
   { key: "addon_clicks", label: "Add-on Interaction", icon: "➕" },
 ];
 
 const REVIEW_STAGE_DEFS = [
-  { key: "review_redirect", label: "Review Redirect", icon: "⭐" },
-  { key: "google_review_open", label: "Google Review Open", icon: "🔗" },
+  { key: "review_redirect", label: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT), icon: "⭐" },
+  { key: "google_review_open", label: "Google review page open", icon: "🔗" },
 ];
 
 /** Legacy menu-only funnel (time spent / exit) — not used on unified operational dashboard. */
@@ -152,12 +153,12 @@ export default function FunnelChart({
     <div className="nac-bi-funnel-sections">
       <FunnelSection
         title="Menu journey"
-        subtitle="Unique sessions at each step · drop-off between steps"
+        subtitle={`Unique ${getMetricLabel(METRIC_IDS.SESSION).toLowerCase()} at each step · drop-off between steps`}
         stages={menuStages}
       />
       <FunnelSection
         title="Review funnel"
-        subtitle="Review experience (separate path — not a sequential menu step)"
+        subtitle={`${getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT)} and review page opens — not ${getMetricLabel(METRIC_IDS.GOOGLE_REVIEW).toLowerCase()}`}
         stages={reviewStages}
       />
     </div>

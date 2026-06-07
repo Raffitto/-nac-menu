@@ -53,13 +53,13 @@ export function resolveCanonicalMenuSessions(payload = {}) {
   let menuQrSessions = Math.max(
     0,
     Number(funnel.qr_scans) || 0,
-    Number(sessionFunnel.qr_scans) || 0,
     Number(payload.menu_qr_scans) || 0,
   );
 
   if (menuQrSessions === 0) {
     menuQrSessions = Math.max(
       0,
+      Number(sessionFunnel.qr_scans) || 0,
       Number(byType.qr_session_start) || 0,
       Number(payload.today_qr_sessions) || 0,
     );
@@ -78,9 +78,10 @@ export function resolveCanonicalMenuSessions(payload = {}) {
 
   if (menuQrSessions === 0 && allSessionIdsWithEvents > 0) {
     return {
-      menuSessions: allSessionIdsWithEvents,
-      menuQrScans: allSessionIdsWithEvents,
-      allSessionIdsWithEvents: 0,
+      menuSessions: 0,
+      menuQrScans: 0,
+      allSessionIdsWithEvents,
+      _missingQrSessionStart: true,
     };
   }
 
