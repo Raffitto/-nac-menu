@@ -47,6 +47,7 @@ import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
+import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
 import OperationalDashboard from "./views/OperationalDashboard";
 import HubTabs from "./components/HubTabs";
 import IntelligenceHub from "./views/IntelligenceHub";
@@ -316,6 +317,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const needsAuth = configured && !session && !isAdminPlatformMode();
 
   const scrollable = isScrollableView(adminView);
+  const isMobileIntelligence = useMobileIntelligenceLayout();
+  const intelligenceFullscreen = isMobileIntelligence && adminView === "intelligence";
 
   if (isAdminPlatformMode() && session && rbac.profile?.unmapped) {
     return <NacPlatformAccessGate email={rbac.profile.email} />;
@@ -323,11 +326,12 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
   return (
     <motion.div
-      className="admin-shell"
-      style={scrollable ? { overflow: "auto", minHeight: "100vh" } : undefined}
+      className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""}`.trim()}
+      style={scrollable && !intelligenceFullscreen ? { overflow: "auto", minHeight: "100vh" } : undefined}
     >
       <div className="admin-bg-glow" />
 
+      {!intelligenceFullscreen ? (
       <aside className="admin-sidebar">
         <div>
           <p className="sidebar-logo">NAC HOSPITALITY OS</p>
@@ -357,10 +361,15 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </button>
         )}
       </aside>
+      ) : null}
 
       <main
         className="admin-content"
-        style={scrollable ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" } : undefined}
+        style={
+          scrollable && !intelligenceFullscreen
+            ? { flex: 1, minHeight: 0, overflowY: "auto", alignSelf: "stretch" }
+            : undefined
+        }
       >
         {adminView === "intelligence" ? (
           rbac.canAccessNav("intelligence") ? (

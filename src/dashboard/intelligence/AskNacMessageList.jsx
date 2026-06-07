@@ -10,6 +10,7 @@ export default function AskNacMessageList({
   loading = false,
   filters = {},
   scrollAnchorRef = null,
+  compact = false,
 }) {
   const localAnchorRef = useRef(null);
   const anchorRef = scrollAnchorRef || localAnchorRef;
@@ -57,10 +58,17 @@ export default function AskNacMessageList({
 
       {loading ? (
         <div className="nac-ask-nac-message nac-ask-nac-message--assistant">
-          <section className="nac-glass-panel nac-ask-nac-loading" aria-live="polite">
-            <Loader2 size={22} className="nac-bi-spin" />
-            <p>Querying verified metrics…</p>
-          </section>
+          {compact ? (
+            <div className="nac-ask-nac-loading nac-ask-nac-loading--compact" aria-live="polite">
+              <Loader2 size={18} className="nac-bi-spin" />
+              <span>Querying verified metrics…</span>
+            </div>
+          ) : (
+            <section className="nac-glass-panel nac-ask-nac-loading" aria-live="polite">
+              <Loader2 size={22} className="nac-bi-spin" />
+              <p>Querying verified metrics…</p>
+            </section>
+          )}
         </div>
       ) : null}
 

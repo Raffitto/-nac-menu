@@ -9,14 +9,17 @@ import {
   HelpCircle,
   TrendingUp,
   MessageSquarePlus,
+  Menu,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
-import { askNac, isAskNacServerConfigured } from "../../intelligence/askNac";
+import { askNac } from "../../intelligence/askNac";
 import AskNacComposer from "./AskNacComposer";
 import AskNacMessageList from "./AskNacMessageList";
 import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
+import IntelligenceMobileMoreMenu from "./mobile/IntelligenceMobileMoreMenu";
+import { useAskNacConnectionStatus } from "./useAskNacConnectionStatus";
 import { createAssistantMessage, createUserMessage, resolveAskNacSuggestions } from "./askNacChatUtils";
 import "../styles/ask-nac.css";
 import "../styles/ask-nac-data-vault.css";
@@ -44,8 +47,10 @@ const MOBILE_SUGGESTED_PROMPTS = [
   { text: "What were sales in May?", icon: TrendingUp },
   { text: "Which category generated the most revenue?", icon: TrendingUp },
   { text: "Compare branches this month", icon: GitBranch },
-  { text: "How many menu QR scans today?", icon: BarChart3 },
 ];
+
+const MOBILE_WELCOME =
+  "Ask NAC anything about sales, menu, reviews, staff, branches, or vault reports.";
 
 export default function AskNacTab({
   initialQuestion = "",
@@ -54,52 +59,19 @@ export default function AskNacTab({
   mobileFirst = false,
   showVaultPanel = true,
   maxSuggestions = 8,
+  onMobileNavigate,
 }) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const inputRef = useRef(null);
   const scrollAnchorRef = useRef(null);
 
-  const serverConfigured = isAskNacServerConfigured();
   const session = rbac?.session;
-
-  const lastResponse = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const msg = messages[i];
-      if (msg.role === "assistant" && msg.response) return msg.response;
-    }
-    return null;
-  }, [messages]);
-
-  const serverConnected = lastResponse?.serverConnected === true;
-  const localFallback = lastResponse?.localFallback === true;
-  const aiConnected = lastResponse?.aiConnected === true;
-  const aiExplained = lastResponse?.isAiGenerated === true;
-
-  const statusBadge = useMemo(() => {
-    if (aiExplained) {
-      return { label: "AI explained", tone: "ai" };
-    }
-    if (lastResponse && aiConnected) {
-      return { label: "AI connected", tone: "connected" };
-    }
-    if (lastResponse && serverConnected && !localFallback) {
-      return { label: "Verified deterministic", tone: "connected" };
-    }
-    if (lastResponse && localFallback) {
-      return { label: "Local fallback", tone: "local" };
-    }
-    if (serverConfigured && session?.access_token) {
-      return { label: "AI connected", tone: "connected" };
-    }
-    if (serverConfigured) {
-      return { label: "Local fallback", tone: "local" };
-    }
-    return { label: "Local fallback", tone: "local" };
-  }, [aiExplained, aiConnected, lastResponse, serverConnected, localFallback, serverConfigured, session]);
+  const statusBadge = useAskNacConnectionStatus({ messages, session });
 
   const filters = useMemo(
     () => ({
@@ -172,8 +144,6 @@ export default function AskNacTab({
     onInitialQuestionConsumed?.();
   }, [initialQuestion, prefillSeed, onInitialQuestionConsumed, submitQuestion]);
 
-  const showEmptyState = messages.length === 0 && !loading && !mobileFirst;
-
   const suggestions = useMemo(
     () =>
       resolveAskNacSuggestions({
@@ -190,28 +160,82 @@ export default function AskNacTab({
     ? "Ask NAC anything…"
     : "Ask about menu scans, sales, staff, branches, Foodics, or vault reports…";
 
+  if (mobileFirst) {
+    return (
+      <div className="nac-ask-nac-mobile">
+        <header className="nac-intelligence-mobile-topbar">
+          <div className="nac-intelligence-mobile-topbar__title">
+            <p className="nac-intelligence-mobile-topbar__kicker">NAC</p>
+            <h1>Ask NAC</h1>
+          </div>
+          <div
+            className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone} nac-intelligence-mobile-topbar__status`}
+            title={statusBadge.label}
+          >
+            {statusBadge.tone === "local" ? <ServerOff size={14} /> : <Server size={14} />}
+            <span>{statusBadge.shortLabel}</span>
+          </div>
+          <button
+            type="button"
+            className="nac-intelligence-mobile-topbar__more"
+            aria-label="Open Intelligence menu"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
+        </header>
+
+        <main className="nac-ask-nac-mobile__body">
+          {messages.length === 0 && !loading ? (
+            <p className="nac-ask-nac-mobile__welcome">{MOBILE_WELCOME}</p>
+          ) : null}
+          <AskNacMessageList
+            messages={messages}
+            loading={loading}
+            filters={filters}
+            scrollAnchorRef={scrollAnchorRef}
+            compact={true}
+          />
+        </main>
+
+        <footer className="nac-ask-nac-mobile__footer">
+          <AskNacComposer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={submitQuestion}
+            loading={loading}
+            suggestions={suggestions}
+            inputRef={inputRef}
+            placeholder={composerPlaceholder}
+            variant="mobile"
+          />
+        </footer>
+
+        <IntelligenceMobileMoreMenu
+          open={moreOpen}
+          onClose={() => setMoreOpen(false)}
+          onSelect={onMobileNavigate}
+          showNewChat={messages.length > 0}
+          onNewChat={clearChat}
+        />
+      </div>
+    );
+  }
+
+  const showEmptyState = messages.length === 0 && !loading;
+
   return (
-    <div className={`nac-ask-nac-tab ${mobileFirst ? "nac-ask-nac-tab--mobile-first" : ""}`.trim()}>
-      <header
-        className={`nac-glass-panel nac-ask-nac-hero ${mobileFirst ? "nac-ask-nac-hero--compact" : ""}`.trim()}
-      >
+    <div className="nac-ask-nac-tab">
+      <header className="nac-glass-panel nac-ask-nac-hero">
         <div className="nac-ask-nac-hero__top">
           <div>
-            {mobileFirst ? (
-              <>
-                <p className="nac-ask-nac-eyebrow">NAC Intelligence</p>
-                <h2 className="nac-ask-nac-hero__mobile-title">Ask NAC</h2>
-              </>
-            ) : (
-              <>
-                <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
-                <h2>Ask NAC</h2>
-                <p className="nac-ask-nac-subtitle">
-                  Answers come from verified Supabase metrics only — never guessed. OpenAI (when connected
-                  on the server) may explain structured facts returned by internal tools.
-                </p>
-              </>
-            )}
+            <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
+            <h2>Ask NAC</h2>
+            <p className="nac-ask-nac-subtitle">
+              Answers come from verified Supabase metrics only — never guessed. OpenAI (when connected
+              on the server) may explain structured facts returned by internal tools.
+            </p>
           </div>
           <div className="nac-ask-nac-hero__actions">
             {messages.length ? (
@@ -223,28 +247,20 @@ export default function AskNacTab({
                 aria-label="Start a new chat"
               >
                 <MessageSquarePlus size={16} aria-hidden />
-                <span>{mobileFirst ? "New" : "New chat"}</span>
+                <span>New chat</span>
               </button>
             ) : null}
             <div
               className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
-              title={
-                statusBadge.label === "AI explained"
-                  ? "OpenAI narrated verified facts on the server"
-                  : statusBadge.label === "AI connected"
-                    ? "Ask NAC Edge Function connected — server-side tools and optional AI narration"
-                    : statusBadge.label === "Verified deterministic"
-                      ? "Verified facts from server tools without AI rewrite"
-                      : "Deterministic answers computed locally in the browser"
-              }
+              title={statusBadge.label}
             >
               {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
-              <span>{mobileFirst && statusBadge.label === "AI connected" ? "AI Connected" : statusBadge.label}</span>
+              <span>{statusBadge.label}</span>
             </div>
           </div>
         </div>
 
-        {!mobileFirst && !isSupabaseConfigured() ? (
+        {!isSupabaseConfigured() ? (
           <p className="nac-ask-nac-config-warn">Supabase is not configured — metric queries will not run.</p>
         ) : null}
       </header>

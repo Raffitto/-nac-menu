@@ -611,63 +611,105 @@
   border: 0;
 }
 
-/* Mobile-first Ask NAC — full-height chat inside Intelligence mobile shell */
-.nac-ask-nac-tab--mobile-first {
-  gap: 0;
-  min-height: calc(100dvh - 5.5rem - env(safe-area-inset-bottom, 0px));
+/* Fullscreen mobile Ask NAC chat (ChatGPT-style) */
+.nac-ask-nac-mobile {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero--compact {
-  padding: 0.65rem 0.85rem;
-  border-radius: 12px;
+.nac-ask-nac-mobile__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.75rem 0.85rem 0.5rem;
+}
+
+.nac-ask-nac-mobile__welcome {
+  margin: 0 auto 1rem;
+  max-width: 18rem;
+  text-align: center;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(249, 249, 247, 0.52);
+}
+
+.nac-ask-nac-mobile__footer {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 12, 11, 0.98);
+  backdrop-filter: blur(12px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.nac-ask-nac-mobile .nac-ask-nac-chat__messages {
+  padding: 0;
+}
+
+.nac-ask-nac-composer--mobile {
+  position: relative;
+  bottom: auto;
+  padding: 0.65rem 0.75rem 0.55rem;
+  background: transparent;
+  border-top: none;
+}
+
+.nac-ask-nac-composer--mobile .nac-ask-nac-suggestions {
   margin-bottom: 0.5rem;
 }
 
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__mobile-title {
-  margin: 0.15rem 0 0;
-  font-size: 1.05rem;
-  font-weight: 500;
+.nac-ask-nac-composer--mobile .nac-ask-nac-suggestions__track {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__top {
+.nac-ask-nac-composer--mobile .nac-ask-nac-chip {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.55rem;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.nac-ask-nac-composer--mobile .nac-ask-nac-form--chat textarea {
+  min-height: 44px;
+  border-radius: 22px;
+  padding: 0.6rem 0.85rem;
+}
+
+.nac-ask-nac-composer--mobile .nac-ask-nac-form--chat .nac-ask-nac-submit {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 50%;
+  padding: 0;
+  justify-content: center;
+}
+
+.nac-ask-nac-composer--mobile .nac-ask-nac-submit__label {
+  display: none;
+}
+
+.nac-ask-nac-composer--mobile .nac-ask-nac-composer__hint {
+  display: none;
+}
+
+.nac-ask-nac-loading--compact {
+  display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  color: rgba(249, 249, 247, 0.55);
+  font-size: 0.82rem;
 }
 
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-hero__actions {
-  width: auto;
-  justify-content: flex-end;
-}
-
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-chat {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
+.nac-ask-nac-mobile .nac-ask-nac-message--assistant .nac-ask-nac-response {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
-}
-
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-composer {
-  position: sticky;
-  bottom: 0;
-}
-
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-suggestions__track {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: visible;
-  gap: 0.4rem;
-}
-
-.nac-ask-nac-tab--mobile-first .nac-ask-nac-suggestions__track .nac-ask-nac-chip {
-  white-space: normal;
-  text-align: left;
-  justify-content: flex-start;
-}
-
-.nac-intelligence-hub--mobile .nac-ask-nac-tab--mobile-first {
-  min-height: calc(100dvh - 4.5rem - env(safe-area-inset-bottom, 0px));
-}
-
-.nac-intelligence-hub--mobile .nac-ask-nac-tab--mobile-first .nac-ask-nac-chat {
-  min-height: calc(100dvh - 9.5rem - env(safe-area-inset-bottom, 0px));
 }

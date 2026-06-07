@@ -31,6 +31,7 @@ export default function IntelligenceTabPanels({
   onAskNacPrefillConsumed,
   onAskNacFromSales,
   askNacMobileFirst = false,
+  onMobileNavigate,
 }) {
   if (activeTab === "ask") {
     return (
@@ -41,7 +42,8 @@ export default function IntelligenceTabPanels({
           onInitialQuestionConsumed={onAskNacPrefillConsumed}
           mobileFirst={askNacMobileFirst}
           showVaultPanel={!askNacMobileFirst}
-          maxSuggestions={askNacMobileFirst ? 4 : 8}
+          maxSuggestions={askNacMobileFirst ? 3 : 8}
+          onMobileNavigate={onMobileNavigate}
         />
       </div>
     );

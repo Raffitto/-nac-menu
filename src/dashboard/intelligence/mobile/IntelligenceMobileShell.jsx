@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
+import { ArrowLeft } from "lucide-react";
 import { useRbac } from "../../context/RbacContext";
 import { PERMISSIONS } from "../../config/rbac";
 import {
@@ -7,11 +8,10 @@ import {
   MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS,
   normalizeIntelligenceTabId,
 } from "../../navigation";
-import IntelligenceMobileNav from "./IntelligenceMobileNav";
 import IntelligenceDashboardsTab from "./IntelligenceDashboardsTab";
 import IntelligenceVaultTab from "./IntelligenceVaultTab";
 import IntelligenceMobileSettingsTab from "./IntelligenceMobileSettingsTab";
-import IntelligenceTabPanels from "../IntelligenceTabPanels";
+import AskNacTab from "../AskNacTab";
 import "../../styles/intelligence-mobile.css";
 
 function applyLegacyTabHints(rawTab, setSalesSection, setRestaurantSection) {
@@ -73,24 +73,48 @@ export default function IntelligenceMobileShell({
     [onAskNacFromSales],
   );
 
+  const handleMobileNavigate = useCallback((sectionId) => {
+    setMobileTab(sectionId);
+  }, []);
+
   const showExecutiveExport = rbac.hasPermission(PERMISSIONS.VIEW_EXECUTIVE_EXPORT);
   const session = rbac.session;
+  const isAskTab = mobileTab === "ask";
 
   return (
     <motion.div
-      className="nac-intelligence-hub nac-intelligence-hub--mobile"
+      className={`nac-intelligence-hub nac-intelligence-hub--mobile ${isAskTab ? "nac-intelligence-hub--ask" : "nac-intelligence-hub--section"}`.trim()}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
+      {!isAskTab ? (
+        <header className="nac-intelligence-mobile-section-topbar">
+          <button
+            type="button"
+            className="nac-intelligence-mobile-section-topbar__back"
+            onClick={() => setMobileTab("ask")}
+            aria-label="Back to Ask NAC"
+          >
+            <ArrowLeft size={18} aria-hidden />
+            <span>Ask NAC</span>
+          </button>
+          <span className="nac-intelligence-mobile-section-topbar__label">
+            {mobileTab === "dashboards" ? "Dashboards" : mobileTab === "vault" ? "Vault" : "Settings"}
+          </span>
+        </header>
+      ) : null}
+
       <main className="nac-intelligence-mobile-main">
-        {mobileTab === "ask" ? (
-          <IntelligenceTabPanels
-            activeTab="ask"
-            askNacPrefill={askNacPrefill}
-            askNacPrefillSeed={askNacPrefillSeed}
-            onAskNacPrefillConsumed={onAskNacPrefillConsumed}
+        {isAskTab ? (
+          <AskNacTab
+            initialQuestion={askNacPrefill}
+            prefillSeed={askNacPrefillSeed}
+            onInitialQuestionConsumed={onAskNacPrefillConsumed}
             onAskNacFromSales={handleAskNacFromSalesMobile}
-            askNacMobileFirst
+            mobileFirst
+            showVaultPanel={false}
+            maxSuggestions={3}
+            onMobileNavigate={handleMobileNavigate}
           />
         ) : null}
 
@@ -111,8 +135,6 @@ export default function IntelligenceMobileShell({
           <IntelligenceMobileSettingsTab showExecutiveExport={showExecutiveExport} />
         ) : null}
       </main>
-
-      <IntelligenceMobileNav active={mobileTab} onChange={setMobileTab} />
     </motion.div>
   );
 }

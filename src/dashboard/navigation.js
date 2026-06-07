@@ -75,6 +75,11 @@ export const MOBILE_INTELLIGENCE_NAV = [
   { id: "settings", label: "Settings" },
 ];
 
+/** Sections reachable from the mobile Ask NAC “More” menu. */
+export const MOBILE_INTELLIGENCE_MORE_SECTIONS = MOBILE_INTELLIGENCE_NAV.filter(
+  (item) => item.id !== "ask",
+);
+
 export const MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS = INTELLIGENCE_TABS.filter(
   (tab) => tab.id !== "ask",
 ).map((tab) => tab.id);

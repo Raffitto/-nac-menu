@@ -17,6 +17,7 @@ export default function AskNacComposer({
   suggestions = [],
   inputRef = null,
   placeholder = "Ask about menu scans, sales, staff, branches, Foodics, or vault reports…",
+  variant = "default",
 }) {
   const localRef = useRef(null);
   const textareaRef = inputRef || localRef;
@@ -47,7 +48,7 @@ export default function AskNacComposer({
   };
 
   return (
-    <div className="nac-ask-nac-composer">
+    <div className={`nac-ask-nac-composer ${variant === "mobile" ? "nac-ask-nac-composer--mobile" : ""}`.trim()}>
       {suggestions?.length ? (
         <div className="nac-ask-nac-suggestions nac-ask-nac-suggestions--scroll">
           <span className="nac-ask-nac-suggestions__label">Try:</span>
