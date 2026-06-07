@@ -31,6 +31,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
+import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -39,6 +40,7 @@ export const ASK_NAC_INTENTS = {
   REVIEW_QR_SCANS: "review_qr_scans",
   STAFF_REDIRECT_LEADERBOARD: "staff_redirect_leaderboard",
   BRANCH_COMPARISON: "branch_comparison",
+  EXECUTIVE_ANALYSIS: "executive_analysis",
   SALES_TOTAL: "sales_total",
   TOP_ITEMS: "top_items",
   TOP_ITEMS_COMPARE: "top_items_compare",
@@ -225,6 +227,20 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
     },
   },
   {
+    id: ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
+    score(q) {
+      if (/\b(which branch is performing|performing best|performing better|best overall|which location is winning)\b/.test(q)) return 19;
+      if (/\bgoogle maps\b/.test(q) && /\b(perform|better|overall|compare|winning)\b/.test(q)) return 19;
+      if (/\b(which branch improved|improved the most|most improvement)\b/.test(q)) return 18;
+      if (/\b(stars? (gained|added)|how many stars|since follow[\s-]?up)\b/.test(q)) return 18;
+      if (/\b(what should (i|we|management) focus|focus on this week|priorit(y|ies) this week)\b/.test(q)) return 18;
+      if (/\b(which manager|manager.*(impact|biggest influence))\b/.test(q)) return 17;
+      if (/\b(needs attention|weakest branch|underperforming branch)\b/.test(q)) return 17;
+      if (/\bcompare all branches\b/.test(q)) return 15;
+      return 0;
+    },
+  },
+  {
     id: ASK_NAC_INTENTS.BRANCH_COMPARISON,
     score(q) {
       if (/\bcompare branches\b/.test(q)) return 15;
@@ -379,6 +395,8 @@ export function routeIntent(question: string, options: { fallbackHours?: number 
     topLimit,
     rankChangeDirection,
     vaultPeriod,
+    executiveKind:
+      intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
       topMatches: scored.slice(0, 3),
       branchLabel: branchMention ? branchDisplayName(branchMention) : null,
@@ -548,6 +566,11 @@ async function runQueryTool(
       return queryStaffLeaderboard(supabase, context);
     case ASK_NAC_INTENTS.BRANCH_COMPARISON:
       return queryBranchComparison(supabase, context);
+    case ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS:
+      return queryExecutiveAnalysisEdge(supabase, {
+        ...context,
+        executiveKind: context.executiveKind || detectExecutiveAnalysisKindEdge(String(context.question || "")),
+      });
     case ASK_NAC_INTENTS.SALES_TOTAL:
     case ASK_NAC_INTENTS.FOODICS_QUERY:
       return getFoodicsSalesSummary(supabase, context);
@@ -634,6 +657,7 @@ export async function processAskNacOnEdge(
       vaultPeriod: route.vaultPeriod,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
+      executiveKind: route.executiveKind,
     }) as Record<string, unknown> | null;
 
     if (periodWarnings.length && tool) {

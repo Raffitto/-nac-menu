@@ -44,6 +44,10 @@ export function formatMobileAnswerLead(response) {
   const raw = String(response?.directAnswer || "").trim();
   if (!raw) return raw;
 
+  if (response?.answerType === "executive" && response?.executiveSummary) {
+    return ensurePeriod(raw);
+  }
+
   if (response?.isAiGenerated && raw.split(/\s+/).length >= 8 && /[.!?]/.test(raw)) {
     return ensurePeriod(raw);
   }

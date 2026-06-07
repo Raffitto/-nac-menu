@@ -18,4 +18,14 @@ export {
   updateConversationContext,
 } from "./conversation/conversationContext";
 export { resolveFollowUpQuestion } from "./conversation/resolveFollowUpQuestion";
-export { prepareAskNacQuestion } from "./conversation/prepareAskNacQuestion";
+export { detectExecutiveAnalysisKind } from "./intentRouter";
+export {
+  buildExecutiveBranchScore,
+  buildExecutiveSummary,
+  calculateBranchMomentum,
+  calculateGoogleImpact,
+  calculateRatingGrowth,
+  calculateReviewGrowth,
+  calculateReviewVelocity,
+} from "./executive/executiveMetrics";
+export { queryExecutiveAnalysis } from "./executive/executiveQueryTools";

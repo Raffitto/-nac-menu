@@ -420,6 +420,54 @@ function branchComparisonResponse(route, tool) {
   });
 }
 
+function executiveAnalysisResponse(route, tool) {
+  const summary = tool.summary || {};
+  const rankingTable = summary.rankingTable || [];
+  const keyFindings = summary.keyFindings || [];
+  const recommendedActions = summary.recommendedActions || [];
+
+  const keyMetrics =
+    tool.analysisKind === "stars_gained"
+      ? (tool.reviewGrowthRows || []).slice(0, 6).map((row) =>
+          metricEntry(row.branch_name, row.growth, {
+            unit: "reviews",
+            note: `${row.startingReviews} → ${row.currentReviews} (${row.growthPct}%)`,
+          }),
+        )
+      : rankingTable.slice(0, 6).map((row) =>
+          metricEntry(`#${row.rank} ${row.branch}`, row.score ?? "—", {
+            unit: "score",
+            note: `${row.strengths || "—"} · Risk: ${row.risks || "—"}`,
+          }),
+        );
+
+  return createAskNacResponse({
+    answerType: ANSWER_TYPES.EXECUTIVE,
+    title: `Executive summary · ${tool.periodLabel || route.period?.rangeId || "network"}`,
+    directAnswer: summary.headline || "Executive analysis complete.",
+    keyMetrics,
+    insights: keyFindings.slice(0, 4),
+    recommendations: recommendedActions.slice(0, 3),
+    sources: (tool.sources || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: [...(tool.warnings || []), tool.note].filter(Boolean),
+    confidence: rankingTable.length || tool.reviewGrowthRows?.length
+      ? confidenceFromTool(tool, route.confidence)
+      : CONFIDENCE_LEVELS.LOW,
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    executiveSummary: {
+      winner: summary.winner || null,
+      reason: summary.reason || null,
+      ranking: rankingTable,
+      keyFindings,
+      recommendedActions,
+      reviewGrowthRows: tool.reviewGrowthRows || [],
+      networkScore: tool.networkScore ?? null,
+    },
+  });
+}
+
 /**
  * Build deterministic structured response from routing + tool output.
  */
@@ -464,6 +512,8 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
       return staffLeaderboardResponse(route, tool);
     case ASK_NAC_INTENTS.BRANCH_COMPARISON:
       return branchComparisonResponse(route, tool);
+    case ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS:
+      return executiveAnalysisResponse(route, tool);
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return foodicsSalesTotalResponse(route, tool);
     case ASK_NAC_INTENTS.TOP_ITEMS:

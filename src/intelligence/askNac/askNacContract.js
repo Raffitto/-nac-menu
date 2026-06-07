@@ -6,6 +6,7 @@ export const ANSWER_TYPES = Object.freeze({
   METRIC: "metric",
   LEADERBOARD: "leaderboard",
   COMPARISON: "comparison",
+  EXECUTIVE: "executive",
   MISSING_DATA: "missing_data",
   UNKNOWN: "unknown",
   ERROR: "error",
@@ -46,6 +47,7 @@ export function createAskNacResponse(fields = {}) {
     diagnostics: fields.diagnostics || null,
     vaultSources: Array.isArray(fields.vaultSources) ? fields.vaultSources : [],
     conversationResolution: fields.conversationResolution || null,
+    executiveSummary: fields.executiveSummary || null,
   };
 }
 

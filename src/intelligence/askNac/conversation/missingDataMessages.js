@@ -12,6 +12,10 @@ export function buildSpecificMissingDataMessage(route, readiness) {
     return "I could not map this question to a supported NAC metric. Try naming the metric (menu QR scans, sales, Google redirects, staff leaderboard, vault report).";
   }
 
+  if (intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS) {
+    return `Executive analysis needs network-wide review, redirect, and Google snapshot history for ${route?.period?.rangeId || "the selected period"}.`;
+  }
+
   if (intent === ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD) {
     const period = route?.period?.rangeId || "the selected period";
     return `No staff-attributed Google redirect data was found for ${period}. Staff attribution requires employee fields on review redirect events.`;

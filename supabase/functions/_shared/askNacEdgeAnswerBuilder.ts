@@ -245,6 +245,55 @@ function branchComparisonResponse(route: Route, tool: Tool) {
   };
 }
 
+function executiveAnalysisResponse(route: Route, tool: Tool) {
+  const summary = (tool.summary as Record<string, unknown>) || {};
+  const rankingTable = (summary.rankingTable as Record<string, unknown>[]) || [];
+  const keyFindings = (summary.keyFindings as string[]) || [];
+  const recommendedActions = (summary.recommendedActions as string[]) || [];
+  const keyMetrics =
+    tool.analysisKind === "stars_gained"
+      ? ((tool.reviewGrowthRows as Record<string, unknown>[]) || []).slice(0, 6).map((row) =>
+          metricEntry(String(row.branch_name), row.growth, {
+            unit: "reviews",
+            note: `${row.startingReviews} → ${row.currentReviews} (${row.growthPct}%)`,
+          }),
+        )
+      : rankingTable.slice(0, 6).map((row) =>
+          metricEntry(`#${row.rank} ${row.branch}`, row.score ?? "—", {
+            unit: "score",
+            note: `${row.strengths || "—"} · Risk: ${row.risks || "—"}`,
+          }),
+        );
+
+  return {
+    answerType: "executive",
+    title: `Executive summary · ${tool.periodLabel || route.period?.rangeId || "network"}`,
+    directAnswer: String(summary.headline || "Executive analysis complete."),
+    keyMetrics,
+    insights: keyFindings.slice(0, 4),
+    recommendations: recommendedActions.slice(0, 3),
+    sources: ((tool.sources as { name: string; detail?: string }[]) || []).map((s) => sourceEntry(s.name, s.detail)),
+    warnings: [...((tool.warnings as string[]) || []), tool.note as string].filter(Boolean),
+    missingData: [],
+    confidence: rankingTable.length || (tool.reviewGrowthRows as unknown[])?.length
+      ? confidenceFromTool(tool, String(route.confidence))
+      : "low",
+    exportOptions: [],
+    isAiGenerated: false,
+    intent: route.intent,
+    periodLabel: tool.periodLabel,
+    executiveSummary: {
+      winner: summary.winner || null,
+      reason: summary.reason || null,
+      ranking: rankingTable,
+      keyFindings,
+      recommendedActions,
+      reviewGrowthRows: tool.reviewGrowthRows || [],
+      networkScore: tool.networkScore ?? null,
+    },
+  };
+}
+
 function foodicsSalesTotalResponse(route: Route, tool: Tool) {
   const totals = (tool.totals as Record<string, number>) || {};
   return {
@@ -453,6 +502,8 @@ export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, 
       return staffLeaderboardResponse(route, tool);
     case "branch_comparison":
       return branchComparisonResponse(route, tool);
+    case "executive_analysis":
+      return executiveAnalysisResponse(route, tool);
     case "sales_total":
       return foodicsSalesTotalResponse(route, tool);
     case "top_items":

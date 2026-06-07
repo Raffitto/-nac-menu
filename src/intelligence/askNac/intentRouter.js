@@ -21,6 +21,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   REVIEW_QR_SCANS: "review_qr_scans",
   STAFF_REDIRECT_LEADERBOARD: "staff_redirect_leaderboard",
   BRANCH_COMPARISON: "branch_comparison",
+  EXECUTIVE_ANALYSIS: "executive_analysis",
   SALES_TOTAL: "sales_total",
   TOP_ITEMS: "top_items",
   TOP_ITEMS_COMPARE: "top_items_compare",
@@ -234,6 +235,26 @@ const INTENT_RULES = [
     },
   },
   {
+    id: ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
+    score(q) {
+      if (/\b(which branch is performing|performing best|performing better|best overall|which location is winning|location is winning)\b/.test(q)) {
+        return 19;
+      }
+      if (/\bgoogle maps\b/.test(q) && /\b(perform|better|overall|compare|winning)\b/.test(q)) return 19;
+      if (/\b(which branch improved|improved the most|most improvement|biggest improvement)\b/.test(q)) return 18;
+      if (/\b(stars? (gained|added)|how many stars|review(s)? (gained|added)|since follow[\s-]?up)\b/.test(q)) return 18;
+      if (/\b(what should (i|we|management) focus|focus on this week|management focus|priorit(y|ies) this week)\b/.test(q)) {
+        return 18;
+      }
+      if (/\b(which manager|manager.*(impact|biggest influence|having the biggest))\b/.test(q)) return 17;
+      if (/\b(needs attention|weakest branch|underperforming branch|branch needs attention)\b/.test(q)) return 17;
+      if (/\b(executive|network health|operational score|command center|management insight)\b/.test(q)) return 16;
+      if (/\bcompare all branches\b/.test(q)) return 15;
+      if (/\bwhat changed since\b/.test(q)) return 16;
+      return 0;
+    },
+  },
+  {
     id: ASK_NAC_INTENTS.BRANCH_COMPARISON,
     score(q) {
       if (/\bcompare branches\b/.test(q)) return 15;
@@ -315,6 +336,20 @@ export function parseAskNacBranch(question = "") {
   return null;
 }
 
+export function detectExecutiveAnalysisKind(question = "") {
+  const q = String(question || "").toLowerCase();
+  if (/\b(stars? (gained|added)|how many stars|reviews? (gained|added)|since follow[\s-]?up)\b/.test(q)) {
+    return "stars_gained";
+  }
+  if (/\b(focus on|priorit(y|ies)|what should (i|we|management)|this week)\b/.test(q)) return "management_focus";
+  if (/\b(manager|management).*(impact|biggest|influence)\b/.test(q)) return "manager_impact";
+  if (/\b(improved|improvement|momentum|gaining ground)\b/.test(q)) return "improved_most";
+  if (/\b(needs attention|weakest|underperform|concern|struggling)\b/.test(q)) return "needs_attention";
+  if (/\b(google maps|maps performance|google rating)\b/.test(q)) return "google_maps";
+  if (/\b(best overall|performing best|performing better|winning|strongest)\b/.test(q)) return "best_overall";
+  return "general";
+}
+
 /**
  * @returns {{ intent: string, confidence: string, score: number, period: object, branchMention: string|null, debug: object }}
  */
@@ -382,6 +417,8 @@ export function routeAskNacIntent(question, options = {}) {
     topLimit,
     rankChangeDirection,
     vaultPeriod,
+    executiveKind:
+      intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKind(question) : null,
     debug: {
       topMatches: scored.slice(0, 3),
       branchLabel: branchMention ? branchDisplayName(branchMention) : null,
@@ -467,6 +504,7 @@ export function isRealDataIntent(intent) {
     ASK_NAC_INTENTS.REVIEW_QR_SCANS,
     ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD,
     ASK_NAC_INTENTS.BRANCH_COMPARISON,
+    ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
     ASK_NAC_INTENTS.SALES_TOTAL,
     ASK_NAC_INTENTS.TOP_ITEMS,
     ASK_NAC_INTENTS.TOP_ITEMS_COMPARE,

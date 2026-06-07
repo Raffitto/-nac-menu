@@ -43,6 +43,7 @@ export function applyReviewPeriodDefaults(route, filters = {}) {
     ASK_NAC_INTENTS.REVIEW_QR_SCANS,
     ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD,
     ASK_NAC_INTENTS.BRANCH_COMPARISON,
+    ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
   ];
 
   if (!reviewIntents.includes(route.intent)) return route;

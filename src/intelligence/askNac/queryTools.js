@@ -9,6 +9,7 @@ import { periodLabelFromHours } from "../../dashboard/utils/businessDay";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
+import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
 import { fetchAskNacMenuMetrics } from "./shared/askNacMenuMetrics";
 import {
   compareFoodicsTopItems,
@@ -175,6 +176,11 @@ export async function runAskNacQueryTool(supabase, intent, context = {}) {
       return queryStaffRedirectLeaderboard(supabase, context);
     case ASK_NAC_INTENTS.BRANCH_COMPARISON:
       return queryBranchComparison(supabase, context);
+    case ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS:
+      return queryExecutiveAnalysis(supabase, {
+        ...context,
+        executiveKind: context.executiveKind || context.route?.executiveKind,
+      });
     case ASK_NAC_INTENTS.SALES_TOTAL:
       return getFoodicsSalesSummary(supabase, context);
     case ASK_NAC_INTENTS.TOP_ITEMS:

@@ -90,6 +90,7 @@ export async function processAskNacQuestion({
       vaultPeriod: route.vaultPeriod,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
+      executiveKind: route.executiveKind,
     });
   }
 

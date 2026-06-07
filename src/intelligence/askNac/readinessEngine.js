@@ -77,11 +77,19 @@ export function assessIntentReadinessSync(
     };
   }
 
-  if (intent === ASK_NAC_INTENTS.BRANCH_COMPARISON && profile?.authenticated && !canFetchCrossBranchComparison(profile)) {
+  if (
+    (intent === ASK_NAC_INTENTS.BRANCH_COMPARISON || intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS) &&
+    profile?.authenticated &&
+    !canFetchCrossBranchComparison(profile)
+  ) {
     return {
       status: READINESS.BLOCKED,
       canQuery: false,
-      reasons: ["Branch comparison requires network-wide access. Your role is scoped to one branch."],
+      reasons: [
+        intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS
+          ? "Executive network analysis requires network-wide access. Your role is scoped to one branch."
+          : "Branch comparison requires network-wide access. Your role is scoped to one branch.",
+      ],
       missingData: [],
     };
   }
@@ -183,6 +191,7 @@ export function assessIntentReadinessSync(
     [ASK_NAC_INTENTS.REVIEW_QR_SCANS]: METRIC_IDS.REVIEW_QR_SCAN,
     [ASK_NAC_INTENTS.STAFF_REDIRECT_LEADERBOARD]: METRIC_IDS.STAFF_ATTRIBUTION,
     [ASK_NAC_INTENTS.BRANCH_COMPARISON]: METRIC_IDS.MENU_QR_SCAN,
+    [ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS]: METRIC_IDS.MENU_QR_SCAN,
   };
 
   const def = metricDef(defMap[intent]);
