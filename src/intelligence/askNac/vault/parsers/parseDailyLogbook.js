@@ -12,20 +12,20 @@ import {
 import { normalizeBranchId } from "../../../../dashboard/utils/branchIdentity";
 
 const LOGBOOK_PATTERNS = [
-  { key: "branch", re: /^\s*branch\s*[:=\-]\s*(.+)$/i },
-  { key: "log_date", re: /^\s*(?:day|date)\s*[:=\-]\s*(.+)$/i },
-  { key: "shift", re: /^\s*shift\s*[:=\-]\s*(.+)$/i },
-  { key: "lunch_mod", re: /^\s*lunch\s*(?:mod|manager)\s*[:=\-]\s*(.+)$/i },
-  { key: "dinner_mod", re: /^\s*dinner\s*(?:mod|manager)\s*[:=\-]\s*(.+)$/i },
-  { key: "mod_on_duty", re: /^\s*(mod|manager on duty)\s*[:=\-]\s*(.+)$/i },
-  { key: "chef_on_duty", re: /^\s*(chef on duty|head chef|chef)\s*[:=\-]\s*(.+)$/i },
-  { key: "bar_mod", re: /^\s*(bar mod|bar manager)\s*[:=\-]\s*(.+)$/i },
-  { key: "operational_highlights", re: /^\s*(operational highlights?|highlights?)\s*[:=\-]\s*(.+)$/i },
-  { key: "complaints", re: /^\s*complaints?\s*[:=\-]\s*(.+)$/i },
-  { key: "operational_issues", re: /^\s*(operational issues?|issues?)\s*[:=\-]\s*(.+)$/i },
-  { key: "staff_performance_notes", re: /^\s*(staff performance(?: notes)?)\s*[:=\-]\s*(.+)$/i },
-  { key: "training_notes", re: /^\s*(training(?: notes)?)\s*[:=\-]\s*(.+)$/i },
-  { key: "dinner_notes", re: /^\s*(dinner notes?|dinner service notes?)\s*[:=\-]\s*(.+)$/i },
+  { key: "branch", re: /^\s*branch\s*[:=-]\s*(.+)$/i },
+  { key: "log_date", re: /^\s*(?:day|date)\s*[:=-]\s*(.+)$/i },
+  { key: "shift", re: /^\s*shift\s*[:=-]\s*(.+)$/i },
+  { key: "lunch_mod", re: /^\s*lunch\s*(?:mod|manager)\s*[:=-]\s*(.+)$/i },
+  { key: "dinner_mod", re: /^\s*dinner\s*(?:mod|manager)\s*[:=-]\s*(.+)$/i },
+  { key: "mod_on_duty", re: /^\s*(mod|manager on duty)\s*[:=-]\s*(.+)$/i },
+  { key: "chef_on_duty", re: /^\s*(chef on duty|head chef|chef)\s*[:=-]\s*(.+)$/i },
+  { key: "bar_mod", re: /^\s*(bar mod|bar manager)\s*[:=-]\s*(.+)$/i },
+  { key: "operational_highlights", re: /^\s*(operational highlights?|highlights?)\s*[:=-]\s*(.+)$/i },
+  { key: "complaints", re: /^\s*complaints?\s*[:=-]\s*(.+)$/i },
+  { key: "operational_issues", re: /^\s*(operational issues?|issues?)\s*[:=-]\s*(.+)$/i },
+  { key: "staff_performance_notes", re: /^\s*(staff performance(?: notes)?)\s*[:=-]\s*(.+)$/i },
+  { key: "training_notes", re: /^\s*(training(?: notes)?)\s*[:=-]\s*(.+)$/i },
+  { key: "dinner_notes", re: /^\s*(dinner notes?|dinner service notes?)\s*[:=-]\s*(.+)$/i },
 ];
 
 const RECEPTION_INLINE = [
@@ -52,9 +52,9 @@ function extractGoogleReviewCounts(text) {
   };
 
   const pairPatterns = [
-    /([1-5])[\s-]*star\s*[:=\-]?\s*(\d+)/gi,
+    /([1-5])[\s-]*star\s*[:=-]?\s*(\d+)/gi,
     /([1-5])\s*-\s*star\s*(\d+)/gi,
-    /([1-5])\s*\*\s*[:=\-]?\s*(\d+)/gi,
+    /([1-5])\s*\*\s*[:=-]?\s*(\d+)/gi,
   ];
   for (const re of pairPatterns) {
     let m;
@@ -94,7 +94,7 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
   const branchId =
     normalizeBranchId(extracted.branch) ||
     resolveBranchFromMatrix(
-      lines.map((line) => line.split(/[:=\-]/).map((p) => p.trim())),
+      lines.map((line) => line.split(/[:=-]/).map((p) => p.trim())),
       context.branchId,
     );
 
@@ -245,7 +245,7 @@ export function parseLogbookLine(line) {
     if (value) return { key: pattern.key, value };
   }
   if (normHeader(line).startsWith("branch")) {
-    const parts = line.split(/[:=\-]/);
+    const parts = line.split(/[:=-]/);
     return { key: "branch", value: normCell(parts[1]) };
   }
   return null;

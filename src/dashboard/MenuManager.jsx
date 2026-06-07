@@ -47,6 +47,8 @@ import {
   updateAddOn,
   deleteAddOn,
   getAllergens,
+  fetchItemAddonIds,
+  fetchItemAllergenIds,
   uploadMenuImage,
   deleteMenuImage,
   duplicateMenuItem,
@@ -793,8 +795,20 @@ export default function MenuManager() {
       hidden_until: item.hidden_until || null,
     });
     setEditingItemId(item.id);
-    setItemAllergenIds((item.allergens || []).map((a) => a.id || a));
-    setItemAddOnIds((item.add_ons || []).map((a) => a.id || a));
+
+    let linkedAddonIds = [];
+    let linkedAllergenIds = [];
+    try {
+      [linkedAddonIds, linkedAllergenIds] = await Promise.all([
+        fetchItemAddonIds(item.id),
+        fetchItemAllergenIds(item.id),
+      ]);
+    } catch {
+      linkedAddonIds = (item.add_ons || []).map((a) => a.id || a);
+      linkedAllergenIds = (item.allergens || []).map((a) => a.id || a);
+    }
+    setItemAllergenIds(linkedAllergenIds);
+    setItemAddOnIds(linkedAddonIds);
     setImageFile(null);
     setImagePreview(item.image || "");
     setApplyToAllLinked(false);

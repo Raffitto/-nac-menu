@@ -119,6 +119,42 @@ export function sanitizeAddonPayload(raw = {}, { slug: slugOverride } = {}) {
   return payload;
 }
 
+/** Guest menu must only surface add-ons explicitly active in Supabase. */
+export function isPublicAddonVisible(addon) {
+  return Boolean(addon && addon.active !== false);
+}
+
+/** Map item_addons rows to active add-on records (ignores inactive/unlinked add-ons). */
+export function buildAddonsByItemFromJunctions(junctionRows = [], addonById = {}) {
+  const addonsByItem = {};
+  for (const j of junctionRows) {
+    const addon = addonById[j.addon_id] ?? j.add_ons ?? null;
+    if (!isPublicAddonVisible(addon)) continue;
+    if (!addonsByItem[j.item_id]) addonsByItem[j.item_id] = [];
+    addonsByItem[j.item_id].push(addon);
+  }
+  return addonsByItem;
+}
+
+export async function fetchItemAddonIds(itemId) {
+  const { data, error } = await supabase
+    .from("item_addons")
+    .select("addon_id")
+    .eq("item_id", itemId)
+    .order("sort_order");
+  if (error) throw error;
+  return (data || []).map((row) => row.addon_id);
+}
+
+export async function fetchItemAllergenIds(itemId) {
+  const { data, error } = await supabase
+    .from("item_allergens")
+    .select("allergen_id")
+    .eq("item_id", itemId);
+  if (error) throw error;
+  return (data || []).map((row) => row.allergen_id);
+}
+
 async function resolveUniqueAddonSlug(nameEn, excludeId = null) {
   let base = buildAddonSlug(nameEn);
   if (!base) base = `addon${Date.now()}`;
@@ -284,12 +320,7 @@ export async function getFullMenu(options = {}) {
   const addonById = Object.fromEntries(addons.map((a) => [a.id, a]));
   const allergenById = Object.fromEntries(allergens.map((a) => [a.id, a]));
 
-  const addonsByItem = {};
-  for (const j of itemAddonJunc) {
-    if (!addonsByItem[j.item_id]) addonsByItem[j.item_id] = [];
-    const addon = addonById[j.addon_id];
-    if (addon) addonsByItem[j.item_id].push(addon);
-  }
+  const addonsByItem = buildAddonsByItemFromJunctions(itemAddonJunc, addonById);
 
   const allergensByItem = {};
   for (const j of itemAllergenJunc) {
@@ -424,11 +455,7 @@ export async function getMenuByCategory(categorySlug) {
   if (juncAddonRes.error) return { data: null, error: juncAddonRes.error };
   if (juncAllergenRes.error) return { data: null, error: juncAllergenRes.error };
 
-  const addonsByItem = {};
-  for (const j of juncAddonRes.data) {
-    if (!addonsByItem[j.item_id]) addonsByItem[j.item_id] = [];
-    if (j.add_ons) addonsByItem[j.item_id].push(j.add_ons);
-  }
+  const addonsByItem = buildAddonsByItemFromJunctions(juncAddonRes.data, {});
 
   const allergensByItem = {};
   for (const j of juncAllergenRes.data) {

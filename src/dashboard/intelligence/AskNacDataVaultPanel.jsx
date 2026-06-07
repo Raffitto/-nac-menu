@@ -138,7 +138,7 @@ export default function AskNacDataVaultPanel({ session }) {
       sensitivity: prev.sensitivity,
       dataLayer: prev.dataLayer,
     }));
-  }, [profile?.branchScope, profile?.allBranches]);
+  }, [profile]);
 
   const onFieldChange = (key, value) => {
     setForm((prev) => {

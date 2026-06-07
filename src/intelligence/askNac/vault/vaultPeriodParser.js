@@ -59,7 +59,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  const dmy = q.match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})\b/);
+  const dmy = q.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
   if (dmy) {
     const iso = isoDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
     return { startDate: iso, endDate: iso, label: iso, isSingleDay: true };

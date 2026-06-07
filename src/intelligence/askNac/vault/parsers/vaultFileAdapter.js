@@ -138,7 +138,7 @@ async function readDocxText(file) {
  * @param {{ reportType?: string }} metadata
  */
 export async function parseUploadedFile(file, metadata = {}) {
-  const { extension, mimeType, fileType } = detectVaultFileType(file);
+  const { extension, mimeType } = detectVaultFileType(file);
 
   if (!isVaultParseableExtension(extension)) {
     return {

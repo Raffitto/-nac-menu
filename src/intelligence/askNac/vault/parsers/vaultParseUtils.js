@@ -37,7 +37,7 @@ export function parseIsoDate(raw) {
   if (!text) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
 
-  const dmy = text.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/);
+  const dmy = text.match(/(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})/);
   if (dmy) {
     const day = dmy[1].padStart(2, "0");
     const month = dmy[2].padStart(2, "0");
@@ -53,7 +53,7 @@ export function parseNacDateFromText(text) {
   const blob = String(text || "");
   const isoInline = blob.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
   if (isoInline) return isoInline[1];
-  const dmy = blob.match(/\b(\d{1,2})[\/.\-](\d{1,2})[\/.\-](20\d{2})\b/);
+  const dmy = blob.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
   if (dmy) return parseIsoDate(`${dmy[1]}/${dmy[2]}/${dmy[3]}`);
   return null;
 }

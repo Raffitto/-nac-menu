@@ -104,6 +104,16 @@ export function useMenuData(fallback) {
         { event: "*", schema: "public", table: "categories" },
         () => loadFromSupabase(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "add_ons" },
+        () => loadFromSupabase(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "item_addons" },
+        () => loadFromSupabase(),
+      )
       .subscribe();
 
     const onVisible = () => {

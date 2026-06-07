@@ -122,14 +122,14 @@ function extractReceptionDateColumns(matrix, context, branchId) {
   if (!matrix?.length) return facts;
 
   const header = matrix.find((row) =>
-    Array.isArray(row) && row.filter((c) => /\d{1,2}[\/.\-]\d{1,2}/.test(String(c))).length >= 2,
+    Array.isArray(row) && row.filter((c) => /\d{1,2}[/.-]\d{1,2}/.test(String(c))).length >= 2,
   );
   if (!header) return facts;
 
   const dateCols = [];
   header.forEach((cell, idx) => {
     if (idx === 0) return;
-    const iso = String(cell).match(/\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}/);
+    const iso = String(cell).match(/\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}/);
     if (iso) dateCols.push({ idx, label: String(cell) });
   });
   if (!dateCols.length) return facts;

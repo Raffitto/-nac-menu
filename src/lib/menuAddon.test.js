@@ -1,4 +1,4 @@
-import { buildAddonSlug, formatAddonPrice, sanitizeAddonPayload } from "./menuApi";
+import { buildAddonSlug, formatAddonPrice, sanitizeAddonPayload, buildAddonsByItemFromJunctions, isPublicAddonVisible } from "./menuApi";
 
 describe("menu add-on payload", () => {
   test("buildAddonSlug camelCases English name", () => {
@@ -23,5 +23,29 @@ describe("menu add-on payload", () => {
     expect(payload.name_ar).toBe("كورن فليكس");
     expect(payload.price).toBe("6 SAR");
     expect(payload.active).toBe(true);
+  });
+
+  test("inactive add-ons are excluded from public item mapping", () => {
+    const addonById = {
+      a1: { id: "a1", name_en: "Cornflakes", active: false, price: "6 SAR" },
+      a2: { id: "a2", name_en: "Dark Chocolate", active: true, price: "6 SAR" },
+    };
+    const byItem = buildAddonsByItemFromJunctions(
+      [
+        { item_id: "cookie-1", addon_id: "a1" },
+        { item_id: "cookie-1", addon_id: "a2" },
+      ],
+      addonById,
+    );
+    expect(byItem["cookie-1"].map((a) => a.name_en)).toEqual(["Dark Chocolate"]);
+    expect(isPublicAddonVisible(addonById.a1)).toBe(false);
+  });
+
+  test("fallback junction rows cannot override inactive database add-ons", () => {
+    const byItem = buildAddonsByItemFromJunctions(
+      [{ item_id: "cookie-1", addon_id: "missing", add_ons: { name_en: "Cornflakes", active: false } }],
+      {},
+    );
+    expect(byItem["cookie-1"] || []).toHaveLength(0);
   });
 });
