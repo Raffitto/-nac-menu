@@ -6,10 +6,10 @@ export default function IntelligenceVaultTab({ session }) {
   return (
     <div className="nac-intelligence-mobile-vault">
       <header className="nac-intelligence-mobile-section-header">
-        <p className="nac-intelligence-mobile-kicker">Data Vault</p>
-        <h2>Vault</h2>
+        <p className="nac-intelligence-mobile-kicker">Company Knowledge</p>
+        <h2>Knowledge Base</h2>
         <p className="nac-intelligence-mobile-sub">
-          Upload operational reports and browse registry history. Permissions apply per role and department.
+          Upload operational reports, connect Google Drive, and review what Ask NAC knows about your branches.
         </p>
       </header>
       <AskNacDataVaultPanel session={session} />
