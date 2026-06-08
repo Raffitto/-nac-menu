@@ -6,6 +6,26 @@ import { classifyVaultUpload, mergeAutoClassification } from "../intelligence/as
 import { VAULT_STORAGE_BUCKET } from "../intelligence/askNac/vault/vaultConstants";
 import { vaultCanUploadBrandWide } from "../intelligence/askNac/vault/vaultAccess";
 import { PARSEABLE_REPORT_TYPES, runVaultIngestion } from "../intelligence/askNac/vault/vaultIngestion";
+import {
+  findDuplicateByContentHash,
+  resolveDuplicateAction,
+  hashFileForIngestion,
+  createFileVersion,
+} from "../intelligence/askNac/vault/vaultDuplicateDetection";
+import {
+  createBulkImportBatch,
+  runBulkImportBatch,
+  fetchBulkImportBatchStatus,
+} from "../intelligence/askNac/vault/vaultBulkIngestion";
+import { fetchCoverageDashboardData } from "../intelligence/askNac/vault/vaultCoverageDashboard";
+import { sanitizeDriveApiResponse } from "./vaultDriveSecrets";
+
+export { createBulkImportBatch, runBulkImportBatch, fetchBulkImportBatchStatus, fetchCoverageDashboardData };
+
+function driveOAuthRedirectUri() {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
 
 const FILE_COLUMNS =
   "id,title,original_filename,storage_bucket,storage_path,primary_branch_id,brand_wide,department,report_type,data_layer,period_start,period_end,period_label,sensitivity_level,status,uploaded_by,uploader_email,classification_confidence,parser_version,created_at,updated_at";
@@ -133,15 +153,35 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
   const storageBranch = mergedMetadata.brandWide ? "brand" : branch;
 
   const fileId = crypto.randomUUID();
+  const contentHash = await hashFileForIngestion(file);
+
+  const existingDuplicate = await findDuplicateByContentHash(supabase, {
+    contentHash,
+    uploaderEmail: email,
+  });
+  const duplicateDecision = resolveDuplicateAction({ existingFile: existingDuplicate, contentHash });
+
+  if (duplicateDecision.action === "skip_duplicate") {
+    return {
+      ok: true,
+      skipped: true,
+      reason: duplicateDecision.reason,
+      fileId: duplicateDecision.existingFileId,
+    };
+  }
+
+  const resolvedFileId =
+    duplicateDecision.action === "new_version" ? duplicateDecision.existingFileId : fileId;
+
   const storagePath = storagePathForUpload({
-    fileId,
+    fileId: resolvedFileId,
     branch: storageBranch,
     department: mergedMetadata.department,
     filename: file.name,
   });
 
   const row = {
-    id: fileId,
+    id: resolvedFileId,
     title: mergedMetadata.title?.trim() || file.name,
     original_filename: file.name,
     storage_bucket: VAULT_STORAGE_BUCKET,
@@ -160,6 +200,8 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     uploaded_by: profile?.name || email.split("@")[0],
     uploader_email: email,
     classification_confidence: autoClassification.classificationConfidence,
+    content_hash: contentHash,
+    ingestion_source: "manual_upload",
     notes: autoClassification.matchedRules?.length
       ? `Auto-detected ${autoClassification.detectedReportType} (${autoClassification.classificationConfidence}). Manual override allowed.`
       : null,
@@ -167,7 +209,10 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
 
   const { error: storageError } = await supabase.storage
     .from(VAULT_STORAGE_BUCKET)
-    .upload(storagePath, file, { upsert: false, contentType: file.type || undefined });
+    .upload(storagePath, file, {
+      upsert: duplicateDecision.action === "new_version",
+      contentType: file.type || undefined,
+    });
 
   if (storageError) {
     return {
@@ -177,38 +222,58 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     };
   }
 
-  const { data: inserted, error: insertError } = await supabase
-    .from("ask_nac_files")
-    .insert(row)
-    .select(FILE_COLUMNS)
-    .single();
-
-  if (insertError) {
-    await supabase.storage.from(VAULT_STORAGE_BUCKET).remove([storagePath]);
-    return { ok: false, error: insertError.message };
+  let inserted;
+  if (duplicateDecision.action === "new_version") {
+    const { data, error: updateError } = await supabase
+      .from("ask_nac_files")
+      .update(row)
+      .eq("id", resolvedFileId)
+      .select(FILE_COLUMNS)
+      .single();
+    if (updateError) {
+      return { ok: false, error: updateError.message };
+    }
+    inserted = data;
+  } else {
+    const { data, error: insertError } = await supabase
+      .from("ask_nac_files")
+      .insert(row)
+      .select(FILE_COLUMNS)
+      .single();
+    if (insertError) {
+      await supabase.storage.from(VAULT_STORAGE_BUCKET).remove([storagePath]);
+      return { ok: false, error: insertError.message };
+    }
+    inserted = data;
   }
 
-  const { data: versionRow, error: versionError } = await supabase
-    .from("ask_nac_file_versions")
-    .insert({
-      file_id: fileId,
-      version_no: 1,
-      storage_path: storagePath,
-      size_bytes: file.size,
-      mime_type: file.type || null,
-    })
-    .select("id")
-    .single();
-
-  if (versionError) {
-    return { ok: true, file: inserted, warning: versionError.message };
-  }
+  const versionRow = await createFileVersion(supabase, {
+    fileId: resolvedFileId,
+    storagePath,
+    contentHash,
+    sizeBytes: file.size,
+    mimeType: file.type || null,
+  }).catch(async () => {
+    const { data } = await supabase
+      .from("ask_nac_file_versions")
+      .insert({
+        file_id: resolvedFileId,
+        version_no: 1,
+        storage_path: storagePath,
+        size_bytes: file.size,
+        mime_type: file.type || null,
+        content_hash: contentHash,
+      })
+      .select("id")
+      .single();
+    return data;
+  });
 
   const parseable = PARSEABLE_REPORT_TYPES.includes(mergedMetadata.reportType);
   const { data: jobRow, error: jobError } = await supabase
     .from("ask_nac_ingestion_jobs")
     .insert({
-      file_id: fileId,
+      file_id: resolvedFileId,
       file_version_id: versionRow?.id || null,
       status: parseable ? "queued" : "registered",
       stage: parseable ? "parse" : "registry_only",
@@ -221,20 +286,26 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     return { ok: true, file: inserted, warning: jobError.message };
   }
 
-  const { error: coverageError } = await supabase.from("ask_nac_data_coverage").insert({
-    branch_id: primaryBranchId,
-    brand_wide: brandWide,
-    department: mergedMetadata.department,
-    report_type: mergedMetadata.reportType,
-    period_start: mergedMetadata.periodStart || null,
-    period_end: mergedMetadata.periodEnd || null,
-    source_file_id: fileId,
-    fact_count: 0,
-    readiness_status: "registered",
-  });
+  if (duplicateDecision.action !== "new_version") {
+    const { error: coverageError } = await supabase.from("ask_nac_data_coverage").insert({
+      branch_id: primaryBranchId,
+      brand_wide: brandWide,
+      department: mergedMetadata.department,
+      report_type: mergedMetadata.reportType,
+      period_start: mergedMetadata.periodStart || null,
+      period_end: mergedMetadata.periodEnd || null,
+      source_file_id: resolvedFileId,
+      fact_count: 0,
+      readiness_status: "registered",
+    });
+
+    if (coverageError?.message) {
+      return { ok: true, file: inserted, warning: coverageError.message };
+    }
+  }
 
   await supabase.from("ask_nac_file_access_log").insert({
-    file_id: fileId,
+    file_id: resolvedFileId,
     user_email: email,
     action: "upload",
     detail: {
@@ -260,7 +331,7 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     file: inserted,
     ingestion,
     autoClassification,
-    warning: coverageError?.message || ingestion?.warning || null,
+    warning: ingestion?.warning || null,
   };
 }
 
@@ -314,4 +385,146 @@ export async function runVaultRegistryQaChecks(supabase) {
     ok: checks.every((c) => c.pass || c.id === "staff_map"),
     checks,
   };
+}
+
+function vaultFunctionsBaseUrl() {
+  const url = process.env.REACT_APP_SUPABASE_URL || "";
+  return url ? `${url}/functions/v1` : null;
+}
+
+export async function fetchDriveSyncStatus(supabase, session) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { connected: false, folders: [], error: "Drive sync unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "status" }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { connected: false, folders: [], error: data.error || "Drive status failed" };
+  return data;
+}
+
+export async function startDriveOAuth(session, redirectUri = driveOAuthRedirectUri()) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive sync unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "authorize", redirectUri }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "OAuth start failed" };
+  return { ok: true, authorizeUrl: data.authorizeUrl };
+}
+
+export async function completeDriveOAuth(session, { code, redirectUri = driveOAuthRedirectUri() }) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token || !code) {
+    return { ok: false, error: "Drive OAuth callback unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "callback", code, redirectUri }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "OAuth callback failed" };
+  return { ok: true, googleAccountEmail: data.googleAccountEmail };
+}
+
+export async function registerDriveSyncFolder(supabase, session, { folderId, folderName, defaultBranchId, schedule }) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive sync unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "register_folder",
+      folderId,
+      folderName,
+      defaultBranchId,
+      schedule,
+    }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Register folder failed" };
+  return { ok: true, folder: data.folder };
+}
+
+export async function triggerDriveSync(session, { folderRowId, triggerType = "manual" }) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive sync unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "sync", folderId: folderRowId, triggerType }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Sync failed" };
+  return { ok: true, ...data };
+}
+
+export async function startFolderBulkImport(supabase, {
+  fileList,
+  label,
+  defaultBranch,
+  defaultDepartment,
+  session,
+  profile,
+  vaultRole,
+  onProgress,
+}) {
+  const batch = await createBulkImportBatch(supabase, {
+    files: fileList,
+    label,
+    defaultBranch,
+    defaultDepartment,
+    session,
+    profile,
+    vaultRole,
+  });
+
+  if (!batch.ok) return batch;
+
+  const result = await runBulkImportBatch(supabase, {
+    batchId: batch.batchId,
+    entries: batch.entries,
+    email: batch.email,
+    profile,
+    vaultRole,
+    defaultBranch,
+    defaultDepartment,
+    onProgress,
+  });
+
+  return { ...result, batchId: batch.batchId };
 }

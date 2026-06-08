@@ -7,6 +7,9 @@ import {
   FileText,
   AlertCircle,
   RefreshCw,
+  FolderInput,
+  Cloud,
+  BarChart3,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { useRbacOptional } from "../context/RbacContext";
@@ -15,6 +18,13 @@ import {
   registerVaultUpload,
   fetchVaultStaffRole,
   runVaultRegistryQaChecks,
+  startFolderBulkImport,
+  fetchCoverageDashboardData,
+  fetchDriveSyncStatus,
+  startDriveOAuth,
+  completeDriveOAuth,
+  registerDriveSyncFolder,
+  triggerDriveSync,
 } from "../../lib/askNacVaultApi";
 import {
   VAULT_DEPARTMENTS,
@@ -47,12 +57,21 @@ export default function AskNacDataVaultPanel({ session }) {
   const rbac = useRbacOptional();
   const profile = rbac?.profile ?? null;
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
   const [form, setForm] = useState(() => defaultVaultUploadForm(profile));
   const [selectedFile, setSelectedFile] = useState(null);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
+  const [coverageData, setCoverageData] = useState(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [driveStatus, setDriveStatus] = useState(null);
+  const [driveFolderId, setDriveFolderId] = useState("");
+  const [driveFolderName, setDriveFolderName] = useState("");
+  const [driveSyncing, setDriveSyncing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [vaultRole, setVaultRole] = useState(null);
@@ -130,6 +149,51 @@ export default function AskNacDataVaultPanel({ session }) {
     loadRegistry();
   }, [loadRegistry]);
 
+  const loadCoverage = useCallback(async () => {
+    if (!supabase) return;
+    setCoverageLoading(true);
+    const result = await fetchCoverageDashboardData(supabase);
+    setCoverageData(result.branches || {});
+    setCoverageLoading(false);
+  }, []);
+
+  const loadDriveStatus = useCallback(async () => {
+    if (!session?.access_token) return;
+    const status = await fetchDriveSyncStatus(supabase, session);
+    setDriveStatus(status);
+  }, [session]);
+
+  useEffect(() => {
+    if (schemaReady) {
+      loadCoverage();
+      loadDriveStatus();
+    }
+  }, [schemaReady, loadCoverage, loadDriveStatus]);
+
+  useEffect(() => {
+    if (!session?.access_token || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    if (!code) return;
+
+    let cancelled = false;
+    (async () => {
+      const result = await completeDriveOAuth(session, { code });
+      if (cancelled) return;
+      window.history.replaceState({}, "", `${window.location.origin}${window.location.pathname}`);
+      if (!result.ok) {
+        setError(result.error || "Google Drive connection failed.");
+        return;
+      }
+      setNotice(`Google Drive connected${result.googleAccountEmail ? `: ${result.googleAccountEmail}` : ""}.`);
+      await loadDriveStatus();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, loadDriveStatus]);
+
   useEffect(() => {
     setForm((prev) => ({
       ...defaultVaultUploadForm(profile),
@@ -191,6 +255,12 @@ export default function AskNacDataVaultPanel({ session }) {
       return;
     }
 
+    if (result.skipped) {
+      setNotice(result.reason || "Duplicate file skipped.");
+      await loadRegistry();
+      return;
+    }
+
     const ingest = result.ingestion;
     const ingestLine = ingest
       ? ingest.ok
@@ -205,6 +275,106 @@ export default function AskNacDataVaultPanel({ session }) {
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
     await loadRegistry();
+    await loadCoverage();
+  };
+
+  const onFolderSelected = async (fileList) => {
+    if (!fileList?.length || !session?.user) return;
+
+    setBulkImporting(true);
+    setBulkProgress({ processed: 0, total: fileList.length, succeeded: 0, failed: 0, skipped: 0 });
+    setError("");
+    setNotice("");
+
+    const result = await startFolderBulkImport(supabase, {
+      fileList,
+      label: `Folder import (${fileList.length} files)`,
+      defaultBranch: form.branch === "brand" ? "khobar" : form.branch,
+      defaultDepartment: form.department,
+      session,
+      profile,
+      vaultRole,
+      onProgress: setBulkProgress,
+    });
+
+    setBulkImporting(false);
+    if (folderInputRef.current) folderInputRef.current.value = "";
+
+    if (!result.ok && !result.succeeded) {
+      setError(result.error || "Bulk import failed.");
+      return;
+    }
+
+    setNotice(
+      `Bulk import complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
+    );
+    await loadRegistry();
+    await loadCoverage();
+  };
+
+  const onFolderDrop = (event) => {
+    event.preventDefault();
+    const items = event.dataTransfer?.items;
+    if (!items?.length) return;
+    const files = [];
+    for (const item of items) {
+      if (item.kind === "file") {
+        const entry = item.webkitGetAsEntry?.();
+        if (entry?.isFile) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+    }
+    if (files.length) onFolderSelected(files);
+  };
+
+  const onConnectDrive = async () => {
+    const result = await startDriveOAuth(session);
+    if (!result.ok) {
+      setError(result.error || "Could not start Google Drive connection.");
+      return;
+    }
+    window.location.href = result.authorizeUrl;
+  };
+
+  const onRegisterDriveFolder = async () => {
+    if (!driveFolderId.trim()) {
+      setError("Enter a Google Drive folder ID.");
+      return;
+    }
+    const result = await registerDriveSyncFolder(supabase, session, {
+      folderId: driveFolderId.trim(),
+      folderName: driveFolderName.trim() || driveFolderId.trim(),
+      defaultBranchId: form.branch === "brand" ? null : form.branch,
+      schedule: "daily",
+    });
+    if (!result.ok) {
+      setError(result.error || "Could not register folder.");
+      return;
+    }
+    setNotice("Drive folder registered for sync.");
+    setDriveFolderId("");
+    setDriveFolderName("");
+    await loadDriveStatus();
+  };
+
+  const onManualDriveSync = async (folderRowId) => {
+    setDriveSyncing(true);
+    const result = await triggerDriveSync(session, { folderRowId });
+    setDriveSyncing(false);
+    if (!result.ok) {
+      setError(result.error || "Drive sync failed.");
+      return;
+    }
+    setNotice(
+      [
+        result.note ||
+          "Drive sync completed as metadata-only. Download and ingestion require the separate vault bulk pipeline.",
+        `${result.discovered} discovered, ${result.changed} new/changed, ${result.skipped} skipped.`,
+      ].join(" "),
+    );
+    await loadDriveStatus();
   };
 
   const showUploadControls = Boolean(session?.user) && schemaReady !== false;
@@ -381,8 +551,35 @@ export default function AskNacDataVaultPanel({ session }) {
               </div>
               <p className="nac-ask-vault__hint">
                 Supported: XLSX, CSV, PDF (text extract), DOCX (plain text), TXT. Parsers: cash-up, reception,
-                logbook, CCM reconciliation.
+                logbook, CCM, weekly sales, P&L.
               </p>
+
+              <div
+                className="nac-ask-vault__bulk-drop"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onFolderDrop}
+              >
+                <FolderInput size={18} aria-hidden />
+                <div>
+                  <strong>Import folder</strong>
+                  <p>Drag a folder here or choose hundreds of files. Processing continues if one file fails.</p>
+                </div>
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  multiple
+                  webkitdirectory=""
+                  directory=""
+                  onChange={(e) => onFolderSelected(e.target.files)}
+                  disabled={bulkImporting || uploading}
+                />
+                {bulkImporting && bulkProgress ? (
+                  <div className="nac-ask-vault__bulk-progress" role="status">
+                    <Loader2 size={14} className="nac-bi-spin" />
+                    {bulkProgress.processed}/{bulkProgress.total} — {bulkProgress.currentFile || "Processing…"}
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : (
             <p className="nac-ask-vault__warn">Sign in with a mapped NAC staff account to upload.</p>
@@ -407,6 +604,105 @@ export default function AskNacDataVaultPanel({ session }) {
           ) : null}
 
           {notice ? <p className="nac-ask-vault__notice">{notice}</p> : null}
+
+          <div className="nac-ask-vault__coverage">
+            <h4>
+              <BarChart3 size={16} aria-hidden />
+              Data coverage by branch
+            </h4>
+            {coverageLoading ? (
+              <div className="nac-ask-vault__loading">
+                <Loader2 size={16} className="nac-bi-spin" />
+                Loading coverage…
+              </div>
+            ) : (
+              <div className="nac-ask-vault__coverage-grid">
+                {["khobar", "riyadh", "jeddah"].map((branchId) => {
+                  const branch = coverageData?.[branchId];
+                  return (
+                    <div key={branchId} className="nac-ask-vault__coverage-card">
+                      <div className="nac-ask-vault__coverage-head">
+                        <span>{branchDashboardName(branchId)}</span>
+                        <strong>{branch?.overallScore ?? 0}%</strong>
+                      </div>
+                      <ul>
+                        {(branch?.categories || []).slice(0, 6).map((cat) => (
+                          <li key={cat.key} className={`is-${cat.status}`}>
+                            <span>{cat.label}</span>
+                            <span>{cat.score}%</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {showUploadControls ? (
+            <div className="nac-ask-vault__drive">
+              <h4>
+                <Cloud size={16} aria-hidden />
+                Google Drive sync
+              </h4>
+              <p className="nac-ask-vault__hint">
+                Connect Drive, register folder IDs, and sync metadata only (file names, types, dates). Sync does not
+                download files or ingest content — use Import folder or the bulk pipeline for that.
+              </p>
+              <div className="nac-ask-vault__drive-row">
+                {driveStatus?.connected ? (
+                  <span className="nac-ask-vault__badge">
+                    Connected: {driveStatus.connection?.google_account_email || "Google account"}
+                  </span>
+                ) : (
+                  <button type="button" className="nac-ask-vault__upload-btn" onClick={onConnectDrive}>
+                    Connect Google Drive
+                  </button>
+                )}
+                <input
+                  type="text"
+                  placeholder="Drive folder ID"
+                  value={driveFolderId}
+                  onChange={(e) => setDriveFolderId(e.target.value)}
+                  disabled={!driveStatus?.connected}
+                />
+                <input
+                  type="text"
+                  placeholder="Folder label (optional)"
+                  value={driveFolderName}
+                  onChange={(e) => setDriveFolderName(e.target.value)}
+                  disabled={!driveStatus?.connected}
+                />
+                <button
+                  type="button"
+                  className="nac-ask-vault__refresh"
+                  onClick={onRegisterDriveFolder}
+                  disabled={!driveStatus?.connected}
+                >
+                  Add folder
+                </button>
+              </div>
+              {(driveStatus?.folders || []).length ? (
+                <ul className="nac-ask-vault__drive-folders">
+                  {driveStatus.folders.map((folder) => (
+                    <li key={folder.id}>
+                      <span>{folder.folder_name || folder.drive_folder_id}</span>
+                      <span>{folder.schedule}</span>
+                      <button
+                        type="button"
+                        className="nac-ask-vault__refresh"
+                        onClick={() => onManualDriveSync(folder.id)}
+                        disabled={driveSyncing}
+                      >
+                        {driveSyncing ? "Syncing…" : "Sync now"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           {uploadPreview ? (
             <div className="nac-ask-vault__preview">

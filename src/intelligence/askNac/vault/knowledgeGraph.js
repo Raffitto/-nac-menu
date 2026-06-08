@@ -4,10 +4,13 @@
 
 const OPERATIONAL_CHAIN = [
   ["weekly_sales_overview", "reception_daily_report", "sales_to_reception"],
+  ["weekly_sales_overview", "daily_logbook", "weekly_to_daily"],
   ["foodics_export", "reception_daily_report", "sales_to_reception"],
+  ["foodics_export", "cash_up", "foodics_to_cash_up"],
   ["reception_daily_report", "daily_logbook", "reception_to_logbook"],
   ["daily_logbook", "ccm_reconciliation", "logbook_to_audit"],
   ["daily_logbook", "audit_report", "logbook_to_audit"],
+  ["cash_up", "daily_logbook", "cash_up_to_logbook"],
   ["cash_up", "daily_logbook", "operational_chain"],
 ];
 
@@ -122,6 +125,31 @@ export function inferOperationalLinks(files = [], factsByFileId = {}) {
     });
   }
 
+  const logbooks = activeFiles.filter((f) => f.report_type === "daily_logbook");
+  const receptionFiles = activeFiles.filter((f) => f.report_type === "reception_daily_report");
+  logbooks.forEach((logbook) => {
+    const facts = factsByFileId[logbook.id] || [];
+    const hasReviews = facts.some((f) => String(f.metric_key || f.metricKey || "").startsWith("google_review"));
+    if (!hasReviews) return;
+    receptionFiles.forEach((reception) => {
+      if (logbook.primary_branch_id !== reception.primary_branch_id) return;
+      if (!overlapDays(logbook.period_start, logbook.period_end, reception.period_start, reception.period_end)) {
+        return;
+      }
+      links.push({
+        source_file_id: logbook.id,
+        target_file_id: reception.id,
+        link_type: "logbook_to_reviews",
+        link_reason: "Logbook Google review counts linked to reception period",
+        confidence: 0.78,
+        branch_id: logbook.primary_branch_id,
+        period_start: logbook.period_start,
+        period_end: logbook.period_end,
+        shared_terms: ["google_review"],
+      });
+    });
+  });
+
   const dedup = new Map();
   links.forEach((link) => {
     const key = `${link.source_file_id}:${link.target_file_id}:${link.link_type}`;
@@ -150,7 +178,7 @@ export async function fetchDocumentLinksForFile(supabase, fileId) {
   return data || [];
 }
 
-export async function rebuildKnowledgeGraphForBranch(supabase, { branchId = null, limit = 100 } = {}) {
+export async function rebuildKnowledgeGraphForBranch(supabase, { branchId = null, limit = 500 } = {}) {
   if (!supabase) return { links: [], error: "Supabase not configured" };
 
   let query = supabase

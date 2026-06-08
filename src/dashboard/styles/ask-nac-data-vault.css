@@ -341,3 +341,140 @@
 .nac-ask-vault__status {
   color: #f5a623;
 }
+
+.nac-ask-vault__bulk-drop {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px dashed rgba(78, 205, 196, 0.35);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.nac-ask-vault__bulk-drop strong {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.nac-ask-vault__bulk-drop p {
+  margin: 0.2rem 0 0;
+  font-size: 0.74rem;
+  color: rgba(249, 249, 247, 0.58);
+}
+
+.nac-ask-vault__bulk-progress {
+  width: 100%;
+  font-size: 0.74rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #4ecdc4;
+}
+
+.nac-ask-vault__coverage,
+.nac-ask-vault__drive {
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.nac-ask-vault__coverage h4,
+.nac-ask-vault__drive h4 {
+  margin: 0 0 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.nac-ask-vault__coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+@media (max-width: 900px) {
+  .nac-ask-vault__coverage-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nac-ask-vault__coverage-card {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.nac-ask-vault__coverage-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.nac-ask-vault__coverage-card ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.72rem;
+}
+
+.nac-ask-vault__coverage-card li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  color: rgba(249, 249, 247, 0.62);
+}
+
+.nac-ask-vault__coverage-card li.is-good {
+  color: #4ecdc4;
+}
+
+.nac-ask-vault__coverage-card li.is-partial {
+  color: #f5a623;
+}
+
+.nac-ask-vault__coverage-card li.is-missing {
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.nac-ask-vault__drive-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.nac-ask-vault__drive-row input {
+  min-width: 140px;
+  flex: 1;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
+.nac-ask-vault__drive-folders {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+}
+
+.nac-ask-vault__drive-folders li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}

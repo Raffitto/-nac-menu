@@ -9,13 +9,18 @@ import { parseCashUpReport } from "./parsers/parseCashUp";
 import { parseReceptionDailyReport } from "./parsers/parseReceptionDaily";
 import { parseDailyLogbookReport } from "./parsers/parseDailyLogbook";
 import { parseCcmReconciliationReport } from "./parsers/parseCcmReconciliation";
+import { parseWeeklySalesReport } from "./parsers/parseWeeklySales";
+import { parsePnlReport } from "./parsers/parsePnl";
 import { rebuildKnowledgeGraphForBranch } from "./knowledgeGraph";
+import { rebuildTimelineForFile } from "./vaultOperationalTimeline";
 
 export const PARSEABLE_REPORT_TYPES = [
   "cash_up",
   "reception_daily_report",
   "daily_logbook",
   "ccm_reconciliation",
+  "weekly_sales_overview",
+  "pnl",
 ];
 
 export function routeVaultParser(reportType) {
@@ -28,6 +33,10 @@ export function routeVaultParser(reportType) {
       return parseDailyLogbookReport;
     case "ccm_reconciliation":
       return parseCcmReconciliationReport;
+    case "weekly_sales_overview":
+      return parseWeeklySalesReport;
+    case "pnl":
+      return parsePnlReport;
     default:
       return null;
   }
@@ -220,6 +229,7 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
 
   const rowsToInsert = parseResult.publishedFacts || [];
   let insertedCount = 0;
+  let insertedFacts = [];
 
   if (rowsToInsert.length > 0) {
     const { data, error } = await supabase.from("ask_nac_structured_facts").insert(rowsToInsert).select("id");
@@ -237,6 +247,12 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
       return { ok: false, error: error.message, status: "failed" };
     }
     insertedCount = data?.length || rowsToInsert.length;
+    insertedFacts = (data || []).map((row, idx) => ({
+      ...rowsToInsert[idx],
+      id: row.id,
+      file_id: fileRecord.id,
+      branch_id: rowsToInsert[idx].branch_id || fileRecord.primary_branch_id,
+    }));
   }
 
   const confidenceMeta = parseResult.confidenceMeta;
@@ -303,6 +319,13 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
         : "Low confidence — raw extract saved. Needs mapping/review.",
     })
     .eq("id", jobId);
+
+  if (insertedFacts.length > 0) {
+    await rebuildTimelineForFile(supabase, {
+      fileRecord,
+      facts: insertedFacts,
+    }).catch(() => null);
+  }
 
   if (fileRecord.primary_branch_id) {
     await rebuildKnowledgeGraphForBranch(supabase, {
