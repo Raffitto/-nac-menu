@@ -181,10 +181,50 @@ export function logMenuMutation(label, payload, response) {
   }
 }
 
+/** Structured console error for Supabase menu writes (always logged). */
+export function logMenuDbError(operation, context = {}, error) {
+  // eslint-disable-next-line no-console
+  console.error(`[menu] ${operation} failed`, {
+    table: context.table,
+    itemId: context.itemId ?? context.id,
+    branchId: context.branchId ?? null,
+    payload: context.payload ?? null,
+    code: error?.code ?? null,
+    message: error?.message ?? String(error),
+    details: error?.details ?? null,
+    hint: error?.hint ?? null,
+  });
+}
+
+function missingRowError(table, operation, id) {
+  return {
+    code: "PGRST116",
+    message: `No ${table} row ${operation} for id ${id}. The record may not exist or your branch may not have edit access.`,
+  };
+}
+
+function coerceSingleRowError(error) {
+  const msg = error?.message || "";
+  if (/coerce the result to a single JSON object|PGRST116|JSON object requested, multiple/i.test(msg)) {
+    return {
+      ...error,
+      message:
+        "Menu save affected an unexpected number of rows. Refresh the page and try again, or check branch access.",
+    };
+  }
+  return error;
+}
+
 export function assertMenuMutation(result, label) {
   if (result?.error) {
     logMenuMutation(`${label} FAILED`, null, result.error);
-    const msg = result.error.message || `Menu operation failed: ${label}`;
+    let msg = result.error.message || `Menu operation failed: ${label}`;
+    if (
+      result.error.code === "PGRST116" ||
+      /coerce the result to a single JSON object|JSON object requested, multiple/i.test(msg)
+    ) {
+      msg = "Menu item was not saved. Check branch access and try again.";
+    }
     if (/row-level security/i.test(msg)) {
       throw new Error(
         `${msg} — sign in with a Supabase staff account (Settings → Supabase access) before editing the menu.`,
@@ -208,13 +248,88 @@ export async function requireMenuEditorAuth() {
   return session;
 }
 
-export async function fetchMenuItemById(id) {
-  const { data, error } = await supabase
+async function selectMenuItemById(id) {
+  if (!id) {
+    const error = new Error("menu_items fetch requires id");
+    logMenuDbError("fetchMenuItemById", { table: "menu_items", itemId: id }, error);
+    return { data: null, error };
+  }
+  const { data, error: queryError } = await supabase
     .from("menu_items")
     .select("*")
     .eq("id", id)
-    .single();
-  return { data, error };
+    .maybeSingle();
+  const error = queryError ? coerceSingleRowError(queryError) : null;
+  if (error) {
+    logMenuDbError("fetchMenuItemById", { table: "menu_items", itemId: id }, error);
+    return { data: null, error };
+  }
+  if (!data) {
+    const notFound = missingRowError("menu_items", "matched", id);
+    logMenuDbError("fetchMenuItemById", { table: "menu_items", itemId: id }, notFound);
+    return { data: null, error: notFound };
+  }
+  return { data, error: null };
+}
+
+export async function fetchMenuItemById(id) {
+  return selectMenuItemById(id);
+}
+
+async function mutateMenuItemById(id, payload, operation) {
+  if (!id) {
+    const error = new Error(`menu_items ${operation} requires id`);
+    logMenuDbError(`${operation}MenuItem`, { table: "menu_items", itemId: id, payload }, error);
+    return { data: null, error };
+  }
+
+  let query = supabase.from("menu_items");
+  if (operation === "update") query = query.update(payload);
+  else if (operation === "delete") query = query.delete();
+
+  const { data, error: queryError } = await query.eq("id", id).select("*").maybeSingle();
+  const error = queryError ? coerceSingleRowError(queryError) : null;
+
+  if (error) {
+    logMenuDbError(`${operation}MenuItem`, { table: "menu_items", itemId: id, payload }, error);
+    return { data: null, error };
+  }
+  if (!data) {
+    const notFound = missingRowError("menu_items", operation === "delete" ? "deleted" : "updated", id);
+    logMenuDbError(
+      `${operation}MenuItem`,
+      { table: "menu_items", itemId: id, branchId: payload?.branch_id, payload },
+      notFound,
+    );
+    return { data: null, error: notFound };
+  }
+  return { data, error: null };
+}
+
+async function mutateMenuTableRow(table, id, payload, operation) {
+  if (!id) {
+    const error = new Error(`${table} ${operation} requires id`);
+    logMenuDbError(`${operation}${table}`, { table, itemId: id, payload }, error);
+    return { data: null, error };
+  }
+
+  let query = supabase.from(table);
+  if (operation === "update") query = query.update(payload);
+  else if (operation === "delete") query = query.delete();
+
+  const { data, error: queryError } = await query.eq("id", id).select("*").maybeSingle();
+  const error = queryError ? coerceSingleRowError(queryError) : null;
+
+  if (error) {
+    logMenuDbError(`${operation}${table}`, { table, itemId: id, payload }, error);
+    return { data: null, error };
+  }
+  if (!data) {
+    const notFound = missingRowError(table, operation === "delete" ? "deleted" : "updated", id);
+    logMenuDbError(`${operation}${table}`, { table, itemId: id, payload }, notFound);
+    return { data: null, error: notFound };
+  }
+  return { data, error: null };
 }
 
 async function compressImage(file, maxWidth = 1200, quality = 0.8) {
@@ -526,16 +641,10 @@ export async function updateMenuItem(id, updates) {
   await requireMenuEditorAuth();
   const payload = sanitizeMenuItemPayload(updates);
   logMenuMutation("updateMenuItem request", { id, payload }, null);
-  const { data, error } = await supabase
-    .from("menu_items")
-    .update(payload)
-    .eq("id", id)
-    .select()
-    .single();
-
-  logMenuMutation("updateMenuItem response", { id, payload }, { data, error });
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuItemById(id, payload, "update");
+  logMenuMutation("updateMenuItem response", { id, payload }, result);
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function createMenuItem(item, allergenCodes = [], addonSlugs = []) {
@@ -786,15 +895,9 @@ export async function updateMenuItemPlacements({
 
 export async function deleteMenuItem(id) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("menu_items")
-    .delete()
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuItemById(id, null, "delete");
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function toggleSoldOut(id, soldOut) {
@@ -802,14 +905,62 @@ export async function toggleSoldOut(id, soldOut) {
   return result;
 }
 
-/** Apply visibility + sold-out in one persisted write. */
+/** Apply visibility + sold-out in one persisted write (syncs linked placement rows). */
 export async function applyMenuItemVisibility(id, { active, hidden_until, sold_out }) {
+  await requireMenuEditorAuth();
   const patch = sanitizeMenuItemPayload({
     active,
     hidden_until: hidden_until ?? null,
     ...(sold_out !== undefined ? { sold_out: Boolean(sold_out) } : {}),
   });
-  return updateMenuItem(id, patch);
+
+  const { data: item, error: fetchErr } = await selectMenuItemById(id);
+  if (fetchErr) return { data: null, error: fetchErr };
+
+  const targetIds = [id];
+  if (item.placement_group_id) {
+    const { data: members, error: membersErr } = await fetchPlacementGroupMembers(item.placement_group_id);
+    if (membersErr) {
+      logMenuDbError("applyMenuItemVisibility.members", {
+        table: "menu_items",
+        itemId: id,
+        branchId: item.branch_id,
+        payload: patch,
+      }, membersErr);
+      return { data: null, error: membersErr };
+    }
+    for (const member of members || []) {
+      if (member?.id) targetIds.push(member.id);
+    }
+  }
+
+  const uniqueIds = [...new Set(targetIds)];
+  logMenuMutation("applyMenuItemVisibility request", {
+    id,
+    branchId: item.branch_id,
+    placementGroupId: item.placement_group_id,
+    targetIds: uniqueIds,
+    patch,
+  }, null);
+
+  let primary = null;
+  for (const targetId of uniqueIds) {
+    const result = await mutateMenuItemById(targetId, patch, "update");
+    if (result.error) {
+      logMenuDbError("applyMenuItemVisibility", {
+        table: "menu_items",
+        itemId: targetId,
+        branchId: item.branch_id,
+        payload: patch,
+      }, result.error);
+      return result;
+    }
+    if (targetId === id) primary = result.data;
+  }
+
+  invalidateMenuCache();
+  logMenuMutation("applyMenuItemVisibility response", { id, patch }, { data: primary });
+  return { data: primary, error: null };
 }
 
 export async function toggleItemActive(id, active) {
@@ -861,28 +1012,16 @@ export async function createCategory(data) {
 
 export async function updateCategory(id, updates) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("categories")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuTableRow("categories", id, updates, "update");
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function deleteCategory(id) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("categories")
-    .delete()
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuTableRow("categories", id, null, "delete");
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function reorderCategories(updates) {
@@ -914,28 +1053,16 @@ export async function createSection(data) {
 
 export async function updateSection(id, updates) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("sections")
-    .update(updates)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuTableRow("sections", id, updates, "update");
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 export async function deleteSection(id) {
   await requireMenuEditorAuth();
-  const { data, error } = await supabase
-    .from("sections")
-    .delete()
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (!error) invalidateMenuCache();
-  return { data, error };
+  const result = await mutateMenuTableRow("sections", id, null, "delete");
+  if (!result.error) invalidateMenuCache();
+  return result;
 }
 
 // ═══════════════ ADD-ON CRUD ═══════════════
