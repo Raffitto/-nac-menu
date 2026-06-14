@@ -55,6 +55,7 @@ describe("vaultBulkIngestion helpers", () => {
     ];
     expect(walkFileList(files)).toHaveLength(1);
     expect(isSupportedFile({ name: "report.xlsx" })).toBe(true);
+    expect(isSupportedFile({ name: "legacy.doc" })).toBe(false);
   });
 });
 

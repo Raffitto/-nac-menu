@@ -58,13 +58,62 @@ export const VAULT_DATA_LAYERS = [
 ];
 
 export const VAULT_INGESTION_STATUS_LABELS = {
-  registered: "Registered (no parser)",
+  registered: "Registered (stored)",
   queued: "Queued",
   processing: "Processing",
   completed: "Completed",
   failed: "Failed",
   skipped: "Skipped",
 };
+
+/** Report types with structured parsers (numeric / operational facts). */
+export const PARSEABLE_REPORT_TYPES = [
+  "cash_up",
+  "reception_daily_report",
+  "daily_logbook",
+  "ccm_reconciliation",
+  "weekly_sales_overview",
+  "pnl",
+];
+
+/** Registry-only report types until chunk search ships (CK-2+). */
+export const STORED_ONLY_REPORT_TYPES = VAULT_REPORT_TYPES.map((item) => item.value).filter(
+  (value) => !PARSEABLE_REPORT_TYPES.includes(value),
+);
+
+export const VAULT_UPLOAD_ACCEPT = ".pdf,.xlsx,.xls,.csv,.docx,.txt";
+
+export const LEGACY_DOC_EXTENSION = ".doc";
+
+export const LEGACY_DOC_MESSAGE =
+  "Legacy Word .doc files are not supported. Save as DOCX and upload again.";
+
+export const VAULT_SUPPORTED_UPLOAD_EXTENSIONS = new Set([
+  ".pdf",
+  ".xlsx",
+  ".xls",
+  ".csv",
+  ".docx",
+  ".txt",
+]);
+
+export function getVaultFileExtension(fileOrName) {
+  const name = String(typeof fileOrName === "string" ? fileOrName : fileOrName?.name || "").toLowerCase();
+  if (!name.includes(".")) return "";
+  return name.slice(name.lastIndexOf("."));
+}
+
+export function isLegacyDocFile(fileOrName) {
+  return getVaultFileExtension(fileOrName) === LEGACY_DOC_EXTENSION;
+}
+
+export function isSupportedVaultUploadFile(fileOrName) {
+  return VAULT_SUPPORTED_UPLOAD_EXTENSIONS.has(getVaultFileExtension(fileOrName));
+}
+
+export function isVaultReportTypeParseable(reportType) {
+  return PARSEABLE_REPORT_TYPES.includes(String(reportType || ""));
+}
 
 /** Map client RBAC role → vault role hint for UI branch options. */
 export function vaultBranchOptionsForProfile(profile) {

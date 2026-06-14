@@ -5,7 +5,8 @@
 import { classifyVaultUpload, mergeAutoClassification } from "../intelligence/askNac/vault/vaultAutoClassifier";
 import { VAULT_STORAGE_BUCKET } from "../intelligence/askNac/vault/vaultConstants";
 import { vaultCanUploadBrandWide } from "../intelligence/askNac/vault/vaultAccess";
-import { PARSEABLE_REPORT_TYPES, runVaultIngestion } from "../intelligence/askNac/vault/vaultIngestion";
+import { runVaultFileIngestionPipeline } from "../intelligence/askNac/vault/vaultUploadIngestion";
+import { computeVaultKnowledgeTier } from "../intelligence/askNac/vault/vaultKnowledgeTier";
 import {
   findDuplicateByContentHash,
   resolveDuplicateAction,
@@ -71,7 +72,7 @@ export function enrichVaultFileRow(row) {
   const coverage = primaryCoverage(row);
   const stats = job?.stats || {};
   const preview = stats.preview || null;
-  return {
+  const enriched = {
     ...row,
     latestJob: job,
     coverage,
@@ -89,6 +90,10 @@ export function enrichVaultFileRow(row) {
     parseWarning:
       job?.error ||
       (stats.needsMapping || preview?.needsMapping ? "Needs mapping/review." : null),
+  };
+  return {
+    ...enriched,
+    knowledgeTier: computeVaultKnowledgeTier(enriched),
   };
 }
 
@@ -266,19 +271,17 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     return { id: versionId };
   });
 
-  const parseable = PARSEABLE_REPORT_TYPES.includes(mergedMetadata.reportType);
-  const jobId = crypto.randomUUID();
-  const { error: jobError } = await supabase.from("ask_nac_ingestion_jobs").insert({
-    id: jobId,
-    file_id: resolvedFileId,
-    file_version_id: versionRow?.id || null,
-    status: parseable ? "queued" : "registered",
-    stage: parseable ? "parse" : "registry_only",
-    stats: { note: parseable ? "Prototype parser queued" : "No parser for this report type yet" },
+  const pipeline = await runVaultFileIngestionPipeline(supabase, {
+    file,
+    fileRecord: inserted,
+    fileId: resolvedFileId,
+    versionRowId: versionRow?.id || null,
+    email,
+    reportType: mergedMetadata.reportType,
   });
 
-  if (jobError) {
-    return { ok: true, file: inserted, warning: jobError.message };
+  if (pipeline.jobError) {
+    return { ok: true, file: inserted, warning: pipeline.jobError };
   }
 
   if (duplicateDecision.action !== "new_version") {
@@ -311,22 +314,13 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     },
   });
 
-  let ingestion = null;
-  if (parseable && !jobError) {
-    ingestion = await runVaultIngestion(supabase, {
-      file,
-      fileRecord: inserted,
-      jobId,
-      email,
-    });
-  }
-
   return {
     ok: true,
     file: inserted,
-    ingestion,
+    ingestion: pipeline.ingestion,
     autoClassification,
-    warning: ingestion?.warning || null,
+    storedOnly: pipeline.storedOnly,
+    warning: pipeline.ingestion?.warning || pipeline.jobError || null,
   };
 }
 
@@ -519,7 +513,8 @@ export async function startFolderBulkImport(supabase, {
     defaultBranch,
     defaultDepartment,
     onProgress,
+    legacyDocSkipped: batch.legacyDocSkipped || 0,
   });
 
-  return { ...result, batchId: batch.batchId };
+  return { ...result, batchId: batch.batchId, legacyDocSkipped: batch.legacyDocSkipped || 0 };
 }

@@ -31,11 +31,9 @@ describe("vault upload registration", () => {
     );
   });
 
-  test("registerVaultUpload uses client-generated ingestion job id without RETURNING", () => {
-    expect(registerVaultUploadSource).toMatch(/const jobId = crypto\.randomUUID\(\)/);
-    expect(registerVaultUploadSource).toMatch(
-      /\.from\("ask_nac_ingestion_jobs"\)\.insert\(\{[\s\S]*id: jobId/,
-    );
+  test("registerVaultUpload delegates ingestion to shared pipeline", () => {
+    expect(registerVaultUploadSource).toMatch(/runVaultFileIngestionPipeline\(/);
+    expect(registerVaultUploadSource).toMatch(/storedOnly: pipeline\.storedOnly/);
     expect(registerVaultUploadSource).not.toMatch(
       /\.from\("ask_nac_ingestion_jobs"\)[\s\S]*?\.insert\([^)]+\)\s*\.select/,
     );

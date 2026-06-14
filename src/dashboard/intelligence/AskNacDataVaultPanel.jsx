@@ -38,9 +38,19 @@ import {
   VAULT_SENSITIVITY_LEVELS,
   VAULT_DATA_LAYERS,
   VAULT_INGESTION_STATUS_LABELS,
+  VAULT_UPLOAD_ACCEPT,
+  LEGACY_DOC_MESSAGE,
+  isLegacyDocFile,
+  isSupportedVaultUploadFile,
+  PARSEABLE_REPORT_TYPES,
   defaultVaultUploadForm,
   vaultBranchOptionsForProfile,
 } from "../../intelligence/askNac/vault/vaultConstants";
+import {
+  VAULT_KNOWLEDGE_TIER,
+  VAULT_SEARCH_INDEX_COMING_SOON,
+  computeVaultKnowledgeTier,
+} from "../../intelligence/askNac/vault/vaultKnowledgeTier";
 import { branchDashboardName } from "../config/branchDisplayConfig";
 import "../styles/ask-nac-data-vault.css";
 
@@ -156,7 +166,13 @@ export default function AskNacDataVaultPanel({ session }) {
 
   const knowledgeStats = useMemo(() => {
     const documentsStored = files.length;
-    const reportsImported = files.filter((row) => row.report_type && row.report_type !== "other").length;
+    const reportsParsed = files.filter((row) => {
+      const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
+      return (
+        tier.tier === VAULT_KNOWLEDGE_TIER.PARSED ||
+        tier.tier === VAULT_KNOWLEDGE_TIER.ASK_NAC_READY
+      );
+    }).length;
     const foldersRegistered = (driveStatus?.folders || []).length;
     const connectedSources = driveStatus?.connected ? 1 : 0;
     const lastUpdated = files.reduce((latest, row) => {
@@ -167,7 +183,14 @@ export default function AskNacDataVaultPanel({ session }) {
     const coveragePct = branchScores.length
       ? Math.round(branchScores.reduce((a, b) => a + b, 0) / branchScores.length)
       : 0;
-    return { documentsStored, reportsImported, foldersRegistered, connectedSources, lastUpdated, coveragePct };
+    return {
+      documentsStored,
+      reportsParsed,
+      foldersRegistered,
+      connectedSources,
+      lastUpdated,
+      coveragePct,
+    };
   }, [files, driveStatus, coverageData]);
 
   const driveLastSyncAt = useMemo(() => {
@@ -343,9 +366,38 @@ export default function AskNacDataVaultPanel({ session }) {
     });
   };
 
+  const onFileSelected = (file) => {
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+    if (isLegacyDocFile(file)) {
+      setSelectedFile(null);
+      setError(LEGACY_DOC_MESSAGE);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (!isSupportedVaultUploadFile(file)) {
+      setSelectedFile(null);
+      setError("Unsupported file type. Use PDF, XLSX, XLS, CSV, DOCX, or TXT.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setError("");
+    setSelectedFile(file);
+  };
+
   const onUpload = async () => {
     if (!selectedFile) {
       setError("Select a file before uploading.");
+      return;
+    }
+    if (isLegacyDocFile(selectedFile)) {
+      setError(LEGACY_DOC_MESSAGE);
+      return;
+    }
+    if (!isSupportedVaultUploadFile(selectedFile)) {
+      setError("Unsupported file type. Use PDF, XLSX, XLS, CSV, DOCX, or TXT.");
       return;
     }
     if (!session?.user) {
@@ -375,6 +427,22 @@ export default function AskNacDataVaultPanel({ session }) {
     if (result.skipped) {
       setNotice(result.reason || "Duplicate file skipped.");
       await loadRegistry();
+      return;
+    }
+
+    if (result.storedOnly) {
+      setNotice(
+        [
+          "Document stored. No structured parser for this report type — Ask NAC uses parsed operational reports today.",
+          result.warning,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      await loadRegistry();
+      await loadCoverage();
       return;
     }
 
@@ -420,8 +488,18 @@ export default function AskNacDataVaultPanel({ session }) {
       return;
     }
 
+    const legacyLine =
+      result.legacyDocSkipped > 0
+        ? `${result.legacyDocSkipped} legacy .doc file(s) skipped — DOCX required.`
+        : "";
+
     setNotice(
-      `Folder import complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
+      [
+        `Folder import complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
+        legacyLine,
+      ]
+        .filter(Boolean)
+        .join(" "),
     );
     await loadRegistry();
     await loadCoverage();
@@ -742,8 +820,8 @@ export default function AskNacDataVaultPanel({ session }) {
                   ref={fileInputRef}
                   type="file"
                   className="nac-vault-hidden-input"
-                  accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  accept={VAULT_UPLOAD_ACCEPT}
+                  onChange={(e) => onFileSelected(e.target.files?.[0] || null)}
                   disabled={uploading}
                 />
                 <input
@@ -811,8 +889,12 @@ export default function AskNacDataVaultPanel({ session }) {
                 >
                   {metadataFields}
                   <p className="nac-ask-vault__hint">
-                    Supported: XLSX, CSV, PDF, DOCX, TXT. Parsers: cash-up, reception, logbook, CCM, weekly sales,
-                    P&amp;L.
+                    Supported: PDF, XLSX, XLS, CSV, DOCX, TXT. Legacy .doc is not supported — save as
+                    DOCX.
+                  </p>
+                  <p className="nac-ask-vault__hint">
+                    Structured parsers: {PARSEABLE_REPORT_TYPES.join(", ")}. Other report types are
+                    stored only until search indexing ships.
                   </p>
                 </CollapsibleSection>
               </>
@@ -937,12 +1019,18 @@ export default function AskNacDataVaultPanel({ session }) {
                 {statusNotice ? <p className="nac-vault-status__notice">{statusNotice}</p> : null}
                 <div className="nac-vault-status__grid">
                   <div className="nac-vault-stat-card">
-                    <span className="nac-vault-stat-card__label">Documents stored</span>
+                    <span className="nac-vault-stat-card__label">Documents Stored</span>
                     <strong className="nac-vault-stat-card__value">{knowledgeStats.documentsStored}</strong>
                   </div>
                   <div className="nac-vault-stat-card">
-                    <span className="nac-vault-stat-card__label">Reports imported</span>
-                    <strong className="nac-vault-stat-card__value">{knowledgeStats.reportsImported}</strong>
+                    <span className="nac-vault-stat-card__label">Reports Parsed</span>
+                    <strong className="nac-vault-stat-card__value">{knowledgeStats.reportsParsed}</strong>
+                  </div>
+                  <div className="nac-vault-stat-card nac-vault-stat-card--muted">
+                    <span className="nac-vault-stat-card__label">Search Index</span>
+                    <strong className="nac-vault-stat-card__value nac-vault-stat-card__value--text">
+                      {VAULT_SEARCH_INDEX_COMING_SOON}
+                    </strong>
                   </div>
                   <div className="nac-vault-stat-card">
                     <span className="nac-vault-stat-card__label">Folders registered</span>
@@ -1149,9 +1237,21 @@ export default function AskNacDataVaultPanel({ session }) {
                 </div>
               ) : (
                 <ul className="nac-ask-vault__files">
-                  {files.map((row) => (
+                  {files.map((row) => {
+                    const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
+                    return (
                     <li key={row.id} className="nac-ask-vault__file-card">
-                      <div className="nac-ask-vault__file-title">{row.title || row.original_filename}</div>
+                      <div className="nac-ask-vault__file-title-row">
+                        <div className="nac-ask-vault__file-title">{row.title || row.original_filename}</div>
+                        <div className="nac-vault-tier-badges">
+                          <span className={`nac-vault-tier-badge is-${tier.tier}`}>{tier.label}</span>
+                          {!tier.searchable ? (
+                            <span className="nac-vault-tier-badge is-search-pending">
+                              Search index: {tier.searchableLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
                       <div className="nac-ask-vault__file-meta">
                         <span>{branchLabel(row)}</span>
                         <span>{row.department}</span>
@@ -1194,7 +1294,8 @@ export default function AskNacDataVaultPanel({ session }) {
                         <span>{row.readinessStatus || "registered"}</span>
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>

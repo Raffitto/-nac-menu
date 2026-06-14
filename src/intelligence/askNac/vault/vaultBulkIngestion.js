@@ -3,7 +3,12 @@
  */
 
 import { classifyVaultUpload, mergeAutoClassification } from "./vaultAutoClassifier";
-import { VAULT_STORAGE_BUCKET } from "./vaultConstants";
+import {
+  VAULT_STORAGE_BUCKET,
+  isSupportedVaultUploadFile,
+  isLegacyDocFile,
+  LEGACY_DOC_MESSAGE,
+} from "./vaultConstants";
 import { vaultCanUploadBrandWide } from "./vaultAccess";
 import {
   findDuplicateByContentHash,
@@ -12,17 +17,10 @@ import {
   hashFileForIngestion,
   createFileVersion,
 } from "./vaultDuplicateDetection";
-import { runVaultIngestion } from "./vaultIngestion";
-
-const SUPPORTED_EXTENSIONS = new Set([
-  ".pdf",
-  ".xlsx",
-  ".xls",
-  ".csv",
-  ".doc",
-  ".docx",
-  ".txt",
-]);
+import {
+  runVaultFileIngestionPipeline,
+  resolveVaultRegistrationStatus,
+} from "./vaultUploadIngestion";
 
 function normalizeEmail(email) {
   return String(email || "")
@@ -39,9 +37,7 @@ function storagePathForUpload({ fileId, branch, department, filename }) {
 }
 
 function isSupportedFile(file) {
-  const name = String(file?.name || "").toLowerCase();
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
-  return SUPPORTED_EXTENSIONS.has(ext);
+  return isSupportedVaultUploadFile(file);
 }
 
 function walkFileList(fileList) {
@@ -52,6 +48,26 @@ function walkFileList(fileList) {
     entries.push({ file, relativePath });
   }
   return entries.filter(({ file }) => isSupportedFile(file));
+}
+
+/** Split folder uploads into supported files vs legacy .doc (not ingested). */
+export function partitionVaultUploadFiles(fileList) {
+  const legacyDocFiles = [];
+  const candidates = [];
+
+  for (const file of fileList || []) {
+    if (!file?.name) continue;
+    if (isLegacyDocFile(file)) {
+      legacyDocFiles.push(file);
+      continue;
+    }
+    candidates.push(file);
+  }
+
+  return {
+    legacyDocFiles,
+    entries: walkFileList(candidates),
+  };
 }
 
 export async function createBulkImportBatch(supabase, {
@@ -67,9 +83,15 @@ export async function createBulkImportBatch(supabase, {
   const email = normalizeEmail(session?.user?.email || profile?.email);
   if (!email) return { ok: false, error: "Sign in to import folders." };
 
-  const entries = walkFileList(files);
+  const { legacyDocFiles, entries } = partitionVaultUploadFiles(files);
   if (!entries.length) {
-    return { ok: false, error: "No supported files found in folder (PDF, XLSX, CSV, DOCX, TXT)." };
+    const legacyHint =
+      legacyDocFiles.length > 0 ? ` ${LEGACY_DOC_MESSAGE}` : "";
+    return {
+      ok: false,
+      error: `No supported files found in folder (PDF, XLSX, CSV, DOCX, TXT).${legacyHint}`,
+      legacyDocSkipped: legacyDocFiles.length,
+    };
   }
 
   const { data: batch, error: batchError } = await supabase
@@ -117,6 +139,7 @@ export async function createBulkImportBatch(supabase, {
     email,
     vaultRole,
     ingestionSource,
+    legacyDocSkipped: legacyDocFiles.length,
   };
 }
 
@@ -248,33 +271,25 @@ async function registerSingleBulkFile(supabase, {
     });
   }
 
-  const { data: jobRow } = await supabase
-    .from("ask_nac_ingestion_jobs")
-    .insert({
-      file_id: fileId,
-      file_version_id: versionRow?.id || null,
-      status: "queued",
-      stage: "parse",
-    })
-    .select("id")
-    .single();
+  const pipeline = await runVaultFileIngestionPipeline(supabase, {
+    file,
+    fileRecord: fileRow,
+    fileId,
+    versionRowId: versionRow?.id || null,
+    email,
+    reportType: mergedMetadata.reportType,
+  });
 
-  const ingestion = jobRow?.id
-    ? await runVaultIngestion(supabase, {
-        file,
-        fileRecord: fileRow,
-        jobId: jobRow.id,
-        email,
-      })
-    : null;
+  const registrationStatus = resolveVaultRegistrationStatus(pipeline);
 
   return {
     ok: true,
-    status: ingestion?.ok ? "completed" : ingestion ? "failed" : "registered",
+    status: registrationStatus,
     fileId,
-    ingestion,
+    ingestion: pipeline.ingestion,
     autoClassification,
     isNewVersion: duplicateDecision.action === "new_version",
+    storedOnly: pipeline.storedOnly,
   };
 }
 
@@ -291,6 +306,7 @@ export async function runBulkImportBatch(supabase, {
   defaultDepartment,
   ingestionSource = "bulk_import",
   onProgress,
+  legacyDocSkipped = 0,
 }) {
   const startedAt = new Date().toISOString();
   await supabase
@@ -379,6 +395,7 @@ export async function runBulkImportBatch(supabase, {
     succeeded,
     failed,
     skipped,
+    legacyDocSkipped,
     results,
   };
 }

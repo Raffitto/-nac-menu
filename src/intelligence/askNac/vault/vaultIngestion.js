@@ -13,15 +13,9 @@ import { parseWeeklySalesReport } from "./parsers/parseWeeklySales";
 import { parsePnlReport } from "./parsers/parsePnl";
 import { rebuildKnowledgeGraphForBranch } from "./knowledgeGraph";
 import { rebuildTimelineForFile } from "./vaultOperationalTimeline";
+import { PARSEABLE_REPORT_TYPES } from "./vaultConstants";
 
-export const PARSEABLE_REPORT_TYPES = [
-  "cash_up",
-  "reception_daily_report",
-  "daily_logbook",
-  "ccm_reconciliation",
-  "weekly_sales_overview",
-  "pnl",
-];
+export { PARSEABLE_REPORT_TYPES };
 
 export function routeVaultParser(reportType) {
   switch (reportType) {

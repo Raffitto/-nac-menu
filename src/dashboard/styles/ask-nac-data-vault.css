@@ -859,3 +859,56 @@
   align-items: center;
 }
 
+.nac-vault-stat-card--muted {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.nac-ask-vault__file-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.nac-vault-tier-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.nac-vault-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(249, 249, 247, 0.82);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nac-vault-tier-badge.is-stored {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.nac-vault-tier-badge.is-parsed {
+  border-color: rgba(78, 205, 196, 0.35);
+  background: rgba(78, 205, 196, 0.08);
+}
+
+.nac-vault-tier-badge.is-ask_nac_ready {
+  border-color: rgba(120, 210, 120, 0.4);
+  background: rgba(120, 210, 120, 0.1);
+}
+
+.nac-vault-tier-badge.is-search-pending {
+  font-weight: 500;
+  color: rgba(249, 249, 247, 0.55);
+  border-style: dashed;
+}
+
