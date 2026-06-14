@@ -42,6 +42,11 @@ function normalizeEmail(email) {
     .toLowerCase();
 }
 
+/** File record for ingestion/response without INSERT RETURNING (SELECT RLS can block RETURNING). */
+export function vaultFileRecordFromRegistryRow(row) {
+  return { ...row };
+}
+
 function storagePathForUpload({ fileId, branch, department, filename }) {
   const safeName = String(filename || "upload")
     .replace(/[^a-zA-Z0-9._-]+/g, "_")
@@ -222,30 +227,23 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     };
   }
 
-  let inserted;
   if (duplicateDecision.action === "new_version") {
-    const { data, error: updateError } = await supabase
+    const { error: updateError } = await supabase
       .from("ask_nac_files")
       .update(row)
-      .eq("id", resolvedFileId)
-      .select(FILE_COLUMNS)
-      .single();
+      .eq("id", resolvedFileId);
     if (updateError) {
       return { ok: false, error: updateError.message };
     }
-    inserted = data;
   } else {
-    const { data, error: insertError } = await supabase
-      .from("ask_nac_files")
-      .insert(row)
-      .select(FILE_COLUMNS)
-      .single();
+    const { error: insertError } = await supabase.from("ask_nac_files").insert(row);
     if (insertError) {
       await supabase.storage.from(VAULT_STORAGE_BUCKET).remove([storagePath]);
       return { ok: false, error: insertError.message };
     }
-    inserted = data;
   }
+
+  const inserted = vaultFileRecordFromRegistryRow(row);
 
   const versionRow = await createFileVersion(supabase, {
     fileId: resolvedFileId,
@@ -254,33 +252,30 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     sizeBytes: file.size,
     mimeType: file.type || null,
   }).catch(async () => {
-    const { data } = await supabase
-      .from("ask_nac_file_versions")
-      .insert({
-        file_id: resolvedFileId,
-        version_no: 1,
-        storage_path: storagePath,
-        size_bytes: file.size,
-        mime_type: file.type || null,
-        content_hash: contentHash,
-      })
-      .select("id")
-      .single();
-    return data;
+    const versionId = crypto.randomUUID();
+    const { error } = await supabase.from("ask_nac_file_versions").insert({
+      id: versionId,
+      file_id: resolvedFileId,
+      version_no: 1,
+      storage_path: storagePath,
+      size_bytes: file.size,
+      mime_type: file.type || null,
+      content_hash: contentHash,
+    });
+    if (error) return null;
+    return { id: versionId };
   });
 
   const parseable = PARSEABLE_REPORT_TYPES.includes(mergedMetadata.reportType);
-  const { data: jobRow, error: jobError } = await supabase
-    .from("ask_nac_ingestion_jobs")
-    .insert({
-      file_id: resolvedFileId,
-      file_version_id: versionRow?.id || null,
-      status: parseable ? "queued" : "registered",
-      stage: parseable ? "parse" : "registry_only",
-      stats: { note: parseable ? "Prototype parser queued" : "No parser for this report type yet" },
-    })
-    .select("id")
-    .single();
+  const jobId = crypto.randomUUID();
+  const { error: jobError } = await supabase.from("ask_nac_ingestion_jobs").insert({
+    id: jobId,
+    file_id: resolvedFileId,
+    file_version_id: versionRow?.id || null,
+    status: parseable ? "queued" : "registered",
+    stage: parseable ? "parse" : "registry_only",
+    stats: { note: parseable ? "Prototype parser queued" : "No parser for this report type yet" },
+  });
 
   if (jobError) {
     return { ok: true, file: inserted, warning: jobError.message };
@@ -317,11 +312,11 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
   });
 
   let ingestion = null;
-  if (parseable && jobRow?.id) {
+  if (parseable && !jobError) {
     ingestion = await runVaultIngestion(supabase, {
       file,
       fileRecord: inserted,
-      jobId: jobRow.id,
+      jobId,
       email,
     });
   }

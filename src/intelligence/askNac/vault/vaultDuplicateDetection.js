@@ -99,21 +99,20 @@ export async function createFileVersion(supabase, {
 
   const versionNo = (latest?.version_no || 0) + 1;
 
-  const { data: versionRow, error } = await supabase
-    .from("ask_nac_file_versions")
-    .insert({
-      file_id: fileId,
-      version_no: versionNo,
-      storage_path: storagePath,
-      size_bytes: sizeBytes,
-      mime_type: mimeType,
-      content_hash: contentHash,
-      supersedes_version_id: supersedesVersionId || latest?.id || null,
-    })
-    .select("id, version_no")
-    .single();
+  const versionId = crypto.randomUUID();
+  const { error } = await supabase.from("ask_nac_file_versions").insert({
+    id: versionId,
+    file_id: fileId,
+    version_no: versionNo,
+    storage_path: storagePath,
+    size_bytes: sizeBytes,
+    mime_type: mimeType,
+    content_hash: contentHash,
+    supersedes_version_id: supersedesVersionId || latest?.id || null,
+  });
 
   if (error) throw new Error(error.message);
+  const versionRow = { id: versionId, version_no: versionNo };
 
   await supabase
     .from("ask_nac_files")
