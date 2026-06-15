@@ -92,6 +92,25 @@ describe("vaultChunking CK-3", () => {
 });
 
 describe("vault_document_search", () => {
+  test("routes production document-search phrases over analytics", () => {
+    const cases = [
+      "Search company knowledge for Google Review",
+      "Find mentions of Google Review",
+      "Summarize the June 14 Khobar logbook",
+      "Search uploaded documents for dinner operation",
+    ];
+    for (const question of cases) {
+      const route = routeAskNacIntent(question);
+      expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);
+    }
+  });
+
+  test("extractDocumentSearchTerms strips company knowledge and logbook phrasing", () => {
+    expect(extractDocumentSearchTerms("Search company knowledge for Google Review")).toBe("Google Review");
+    expect(extractDocumentSearchTerms("Search uploaded documents for dinner operation")).toBe("dinner operation");
+    expect(extractDocumentSearchTerms("Summarize the June 14 Khobar logbook")).toBe("June 14 Khobar logbook");
+  });
+
   test("routes find mentions of terrace AC", () => {
     const route = routeAskNacIntent("Find mentions of terrace AC");
     expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);

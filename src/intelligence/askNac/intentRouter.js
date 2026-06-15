@@ -13,6 +13,10 @@ import {
   parseFoodicsPeriodFromQuestion,
 } from "./foodics/foodicsPeriodParser";
 import { parseVaultPeriodFromQuestion, hasVaultDayPeriod } from "./vault/vaultPeriodParser";
+import {
+  isVaultDocumentSearchQuery,
+  scoreVaultDocumentSearchIntent,
+} from "./vault/vaultDocumentSearchRouting";
 import { normalizeAskNacQuestion } from "./nlu/normalizeQuestion";
 import { resolveIntentFromScores } from "./nlu/resolveIntentAmbiguity";
 import { applyMetricDefaultsToRoute } from "./nlu/metricDefaults";
@@ -61,22 +65,13 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH,
     score(q) {
-      if (/\bfind mentions of\b/.test(q)) return 22;
-      if (/\bsearch uploaded reports for\b/.test(q)) return 22;
-      if (/\bshow references? to\b/.test(q)) return 21;
-      if (
-        /\b(find|search|look up|mentions? of|contains?)\b/.test(q) &&
-        /\b(uploaded|document|file|report|vault|knowledge|sop)\b/.test(q)
-      ) {
-        return 20;
-      }
-      if (/\b(find|search)\b/.test(q) && /\b(waste|complaint|terrace|ac)\b/.test(q)) return 19;
-      return 0;
+      return scoreVaultDocumentSearchIntent(q);
     },
   },
   {
     id: ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
     score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(management report|generate report|executive report)\b/.test(q)) return 20;
       if (/\b(summarize|summary report).*\b(operation|branch)\b/.test(q) && /\b(report)\b/.test(q)) {
@@ -88,6 +83,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY,
     score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
       if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
@@ -108,6 +104,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_GOOGLE_REVIEW_STAR_SUMMARY,
     score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(5[\s-]?star|five star|google review star|star reviews?)\b/.test(q)) return 17;
       if (/\bgoogle reviews?\b/.test(q) && hasVaultDayPeriod(q)) return 14;
@@ -147,6 +144,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_LOGBOOK_SUMMARY,
     score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(logbook|complaints?|training notes?|mod on duty|chef on duty|operational issues?)\b/.test(q)) {
         return 15;
@@ -173,6 +171,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.GOOGLE_REVIEWS,
     score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
       if (/\b(redirect|qr scan|review qr|review card)\b/.test(q)) return 0;
       if (/\bhow many google reviews\b/.test(q)) return 17;
       if (/\bgoogle review count\b/.test(q)) return 17;

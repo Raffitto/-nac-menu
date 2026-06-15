@@ -2,6 +2,8 @@
  * Intent ambiguity resolution — prefer likely meaning; clarify only when genuinely tied.
  */
 
+import { isVaultDocumentSearchQuery } from "../vault/vaultDocumentSearchRouting";
+
 const I = {
   UNKNOWN: "unknown",
   GOOGLE_REVIEWS: "google_reviews",
@@ -59,6 +61,7 @@ function tieBreakIntent(top, second, q, hints) {
 export function inferFallbackIntent(q, hints = {}) {
   const text = String(q || "").toLowerCase();
   if (!text) return null;
+  if (isVaultDocumentSearchQuery(text)) return null;
 
   if (hints.reviews && !hints.redirects) {
     return { id: I.GOOGLE_REVIEWS, score: 9 };

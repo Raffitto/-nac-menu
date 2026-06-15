@@ -5,6 +5,9 @@
 
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../../dashboard/utils/rangeState";
+import { extractDocumentSearchTerms } from "./vaultDocumentSearchRouting";
+
+export { extractDocumentSearchTerms };
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -272,18 +275,6 @@ function buildVaultWarnings(coverage = [], facts = []) {
     warnings.push("No structured vault facts matched this period under your access scope.");
   }
   return warnings;
-}
-
-/** Strip intent phrasing to raw keyword query for FTS. */
-export function extractDocumentSearchTerms(question = "") {
-  let q = String(question || "").trim();
-  q = q.replace(/^search uploaded reports for\s+/i, "");
-  q = q.replace(/^(please\s+)?(find|search|look up|show references? to)\s+(mentions?\s+of\s+)?/i, "");
-  q = q.replace(
-    /\b(in uploaded (files|documents|reports)|from (the )?vault|in company knowledge)\b/gi,
-    "",
-  );
-  return q.replace(/\?$/, "").trim();
 }
 
 export function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {

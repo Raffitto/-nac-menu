@@ -2,6 +2,8 @@
  * Ask NAC NLU — synonym normalization and ambiguity resolution (Edge).
  */
 
+import { isVaultDocumentSearchQuery } from "./askNacVaultTools.ts";
+
 const PHRASE_REPLACEMENTS: [RegExp, string][] = [
   [/how many reviews were (?:done|posted|received|written)/gi, "how many google reviews"],
   [/how many reviews\b/gi, "how many google reviews"],
@@ -51,6 +53,7 @@ export function resolveIntentFromScoresEdge(
 ) {
   const sorted = [...scored].filter((row) => row.score > 0).sort((a, b) => b.score - a.score);
   if (!sorted.length) {
+    if (isVaultDocumentSearchQuery(q)) return { intent: "unknown", score: 0, confidence: "none" };
     if (hints.reviews && !hints.redirects) return { intent: "google_reviews", score: 9, confidence: "medium" };
     if (hints.topItems) return { intent: "top_items", score: 9, confidence: "medium" };
     if (hints.sales) return { intent: "sales_total", score: 9, confidence: "medium" };
