@@ -150,6 +150,21 @@ describe("vault_document_search", () => {
     expect(readiness.searchTerms).toBe("terrace AC");
   });
 
+  test("document search readiness requires question for term extraction (Edge parity)", () => {
+    const withoutQuestion = assessIntentReadinessSync(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH, {
+      supabaseConfigured: true,
+    });
+    expect(withoutQuestion.canQuery).toBe(false);
+    expect(withoutQuestion.reasons[0]).toMatch(/extract search terms/i);
+
+    const withQuestion = assessIntentReadinessSync(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH, {
+      supabaseConfigured: true,
+      question: "Find mentions of Google Review",
+    });
+    expect(withQuestion.canQuery).toBe(true);
+    expect(withQuestion.searchTerms).toBe("Google Review");
+  });
+
   test("buildVaultDocumentSearchAnswer includes summary, excerpt, citation", () => {
     const route = routeAskNacIntent("Find mentions of terrace AC");
     const tool = {

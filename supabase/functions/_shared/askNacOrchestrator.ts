@@ -741,6 +741,7 @@ export async function processAskNacOnEdge(
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
+    question: effectiveQuestion,
   });
 
   let foodicsPeriod = route.foodicsPeriod;
