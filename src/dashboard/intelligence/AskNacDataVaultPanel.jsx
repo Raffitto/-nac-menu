@@ -48,7 +48,7 @@ import {
 } from "../../intelligence/askNac/vault/vaultConstants";
 import {
   VAULT_KNOWLEDGE_TIER,
-  VAULT_SEARCH_INDEX_COMING_SOON,
+  computeVaultSearchIndexStats,
   computeVaultKnowledgeTier,
 } from "../../intelligence/askNac/vault/vaultKnowledgeTier";
 import { branchDashboardName } from "../config/branchDisplayConfig";
@@ -183,6 +183,7 @@ export default function AskNacDataVaultPanel({ session }) {
     const coveragePct = branchScores.length
       ? Math.round(branchScores.reduce((a, b) => a + b, 0) / branchScores.length)
       : 0;
+    const searchIndex = computeVaultSearchIndexStats(files);
     return {
       documentsStored,
       reportsParsed,
@@ -190,6 +191,9 @@ export default function AskNacDataVaultPanel({ session }) {
       connectedSources,
       lastUpdated,
       coveragePct,
+      searchIndexLabel: searchIndex.label,
+      searchableFiles: searchIndex.searchableFiles,
+      totalChunks: searchIndex.totalChunks,
     };
   }, [files, driveStatus, coverageData]);
 
@@ -1032,10 +1036,12 @@ export default function AskNacDataVaultPanel({ session }) {
                     <span className="nac-vault-stat-card__label">Reports Parsed</span>
                     <strong className="nac-vault-stat-card__value">{knowledgeStats.reportsParsed}</strong>
                   </div>
-                  <div className="nac-vault-stat-card nac-vault-stat-card--muted">
+                  <div
+                    className={`nac-vault-stat-card${knowledgeStats.searchableFiles > 0 ? "" : " nac-vault-stat-card--muted"}`}
+                  >
                     <span className="nac-vault-stat-card__label">Search Index</span>
                     <strong className="nac-vault-stat-card__value nac-vault-stat-card__value--text">
-                      {VAULT_SEARCH_INDEX_COMING_SOON}
+                      {knowledgeStats.searchIndexLabel}
                     </strong>
                   </div>
                   <div className="nac-vault-stat-card">

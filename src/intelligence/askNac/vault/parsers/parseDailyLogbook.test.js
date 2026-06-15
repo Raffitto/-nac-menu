@@ -49,4 +49,31 @@ describe("parseDailyLogbookText", () => {
     expect(complaints.dimensions.text_value).toMatch(/waited 20/);
     expect(result.facts.find((f) => f.metric_key === "google_review_5").metric_value).toBe(4);
   });
+
+  test("boosts confidence for NAC logbook filename with substantive PDF-style text", () => {
+    const blob = `
+Guest complaints: Long wait at terrace tables during dinner service.
+Dinner operation: Full house; kitchen ran 15 minutes behind on mains.
+Google Review: 5 star 3, 4 star 1
+`.repeat(8);
+
+    const result = parseDailyLogbookText(
+      blob,
+      {
+        fileId: "file-logbook",
+        branchId: "khobar",
+        department: "operations",
+        reportType: "daily_logbook",
+        sensitivityLevel: "internal",
+        createdBy: "test@nac.com",
+        originalFilename: "14_June_NAC_Khobar_Logbook.docx.pdf",
+      },
+      null,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.confidenceMeta.publish).toBe(true);
+    expect(result.facts.some((f) => f.metric_key === "complaints")).toBe(true);
+    expect(result.facts.some((f) => f.metric_key === "dinner_notes")).toBe(true);
+  });
 });

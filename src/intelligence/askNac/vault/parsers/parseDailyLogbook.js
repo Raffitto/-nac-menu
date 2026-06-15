@@ -28,6 +28,27 @@ const LOGBOOK_PATTERNS = [
   { key: "dinner_notes", re: /^\s*(dinner notes?|dinner service notes?)\s*[:=-]\s*(.+)$/i },
 ];
 
+const FREEFORM_LOGBOOK_SECTIONS = [
+  { key: "complaints", re: /\b(?:guest\s+)?complaints?\b\s*[:.-]?\s*([^\n]+)/i },
+  { key: "dinner_notes", re: /\bdinner\s+(?:operation|service|notes?)\b\s*[:.-]?\s*([^\n]+)/i },
+  { key: "operational_highlights", re: /\boperational\s+(?:highlights?|summary)\b\s*[:.-]?\s*([^\n]+)/i },
+  { key: "operational_issues", re: /\boperational\s+issues?\b\s*[:.-]?\s*([^\n]+)/i },
+  { key: "training_notes", re: /\btraining(?:\s+notes?)?\b\s*[:.-]?\s*([^\n]+)/i },
+];
+
+function extractFreeformLogbookSections(text) {
+  const extracted = {};
+  for (const section of FREEFORM_LOGBOOK_SECTIONS) {
+    const match = String(text || "").match(section.re);
+    if (match?.[1]) extracted[section.key] = normCell(match[1]);
+  }
+  return extracted;
+}
+
+function logbookFilenameHint(context = {}) {
+  return String(context.originalFilename || context.filename || "").toLowerCase();
+}
+
 const RECEPTION_INLINE = [
   { key: "reservations", re: /reservations?\s*[:=]?\s*([\d,.]+)/i },
   { key: "covers", re: /\bcovers?\s*[:=]?\s*([\d,.]+)/i },
@@ -89,6 +110,8 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
     }
   }
 
+  Object.assign(extracted, extractFreeformLogbookSections(text));
+
   const receptionInline = extractInlineMetrics(text, RECEPTION_INLINE);
 
   const branchId =
@@ -127,15 +150,30 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
   const receptionMatched = Object.values(receptionInline).filter((v) => v != null).length;
   const googleMatched = Object.values(googleCounts).filter((n) => n > 0).length;
 
-  const rawConfidence = Math.min(
+  let rawConfidence = Math.min(
     1,
     matchedText * 0.08 +
       matchedMeta * 0.06 +
       receptionMatched * 0.07 +
       (googleMatched > 0 ? 0.12 : 0),
   );
+
+  const filenameHint = logbookFilenameHint(context);
+  const substantiveText = String(text || "").trim().length;
+  const filenameLogbook = /\blogbook\b/i.test(filenameHint);
+  if (filenameLogbook && substantiveText >= 120) {
+    rawConfidence = Math.max(rawConfidence, 0.62);
+  }
+  if (context.reportType === "daily_logbook" && branchId && substantiveText >= 80) {
+    rawConfidence = Math.max(rawConfidence, 0.58);
+  }
+
   const confidenceMeta = explainConfidence(rawConfidence, {
-    coreMatched: receptionMatched + matchedMeta,
+    coreMatched:
+      receptionMatched +
+      matchedMeta +
+      (filenameLogbook && branchId ? 1 : 0) +
+      (periodStart ? 1 : 0),
     coreRequired: 2,
     warnings: intermediate?.adapterWarnings || [],
   });

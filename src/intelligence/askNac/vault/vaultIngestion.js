@@ -159,6 +159,8 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
     periodStart: fileRecord.period_start,
     periodEnd: fileRecord.period_end,
     createdBy: email,
+    originalFilename: fileRecord.original_filename,
+    filename: file?.name || fileRecord.original_filename,
   };
 
   const startedAt = new Date().toISOString();

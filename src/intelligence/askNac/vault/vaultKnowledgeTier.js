@@ -20,6 +20,31 @@ export const VAULT_KNOWLEDGE_TIER_LABELS = Object.freeze({
 export const VAULT_SEARCH_INDEX_COMING_SOON = "Coming soon";
 
 /**
+ * Aggregate search index stats for Knowledge Status cards.
+ * @param {Array<object>} files
+ */
+export function computeVaultSearchIndexStats(files = []) {
+  let searchableFiles = 0;
+  let totalChunks = 0;
+
+  for (const row of files) {
+    const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
+    const chunks = Number(row.chunkCount ?? row.chunk_count ?? 0) || 0;
+    totalChunks += chunks;
+    if (tier.searchable) searchableFiles += 1;
+  }
+
+  return {
+    searchableFiles,
+    totalChunks,
+    label:
+      searchableFiles > 0
+        ? `${searchableFiles} searchable · ${totalChunks} chunk${totalChunks === 1 ? "" : "s"}`
+        : VAULT_SEARCH_INDEX_COMING_SOON,
+  };
+}
+
+/**
  * @param {{
  *   factsPersisted?: number,
  *   readinessStatus?: string,

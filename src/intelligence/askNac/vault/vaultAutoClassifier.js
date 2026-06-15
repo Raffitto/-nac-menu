@@ -7,7 +7,8 @@ import { VAULT_REPORT_TYPES } from "./vaultConstants";
 const REPORT_PATTERNS = [
   { type: "cash_up", score: 16, patterns: [/\bcash[\s_-]?up\b/i, /\bdaily cash\b/i] },
   { type: "reception_daily_report", score: 16, patterns: [/\breception\b/i, /\bcovers?\b/i, /\breservations?\b/i] },
-  { type: "daily_logbook", score: 16, patterns: [/\blogbook\b/i, /\bdaily log\b/i, /\bshift log\b/i] },
+  { type: "daily_logbook", score: 18, patterns: [/nac[\s_./-]*logbook|logbook[\s_./-]*nac/i] },
+  { type: "daily_logbook", score: 16, patterns: [/logbook/i, /\bdaily log\b/i, /\bshift log\b/i] },
   { type: "ccm_reconciliation", score: 15, patterns: [/\bccm\b/i, /\breconcil/i, /\baudit\b/i] },
   { type: "weekly_sales_overview", score: 14, patterns: [/\bweekly sales\b/i, /\bsales overview\b/i] },
   { type: "foodics_export", score: 14, patterns: [/\bfoodics\b/i, /\bwaiter sales\b/i, /\bproduct sales\b/i] },
@@ -21,9 +22,9 @@ const REPORT_PATTERNS = [
 ];
 
 const BRANCH_PATTERNS = [
-  { id: "khobar", patterns: [/\bkhobar\b/i, /\bnac\b/i, /\bal khobar\b/i] },
-  { id: "riyadh", patterns: [/\briyadh\b/i] },
-  { id: "jeddah", patterns: [/\bjeddah\b/i, /\bjedda\b/i] },
+  { id: "khobar", patterns: [/khobar/i, /\bnac\b/i, /\bal khobar\b/i] },
+  { id: "riyadh", patterns: [/riyadh/i] },
+  { id: "jeddah", patterns: [/jeddah/i, /\bjedda\b/i] },
 ];
 
 const DEPARTMENT_HINTS = [
@@ -116,6 +117,16 @@ function detectPeriod(text, referenceYear = new Date().getUTCFullYear()) {
   if (dmy) {
     const date = `${dmy[3]}-${pad2(dmy[2])}-${pad2(dmy[1])}`;
     return { periodStart: date, periodEnd: date, periodLabel: date };
+  }
+
+  for (const [name, monthNum] of Object.entries(MONTHS)) {
+    const dayMonth = text.match(
+      new RegExp(`(\\d{1,2})[\\s_/-]+${name}(?:[\\s_./-]|$)`, "i"),
+    );
+    if (dayMonth) {
+      const date = `${referenceYear}-${pad2(monthNum)}-${pad2(dayMonth[1])}`;
+      return { periodStart: date, periodEnd: date, periodLabel: date };
+    }
   }
 
   for (const [name, monthNum] of Object.entries(MONTHS)) {

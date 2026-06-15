@@ -10,6 +10,7 @@ import {
   VAULT_KNOWLEDGE_TIER_LABELS,
   VAULT_SEARCH_INDEX_COMING_SOON,
   computeVaultKnowledgeTier,
+  computeVaultSearchIndexStats,
 } from "./vaultKnowledgeTier";
 import {
   resolveVaultRegistrationStatus,
@@ -59,6 +60,27 @@ describe("computeVaultKnowledgeTier", () => {
     const tier = computeVaultKnowledgeTier({ searchStatus: "searchable", chunkCount: 2 });
     expect(tier.searchable).toBe(true);
     expect(tier.searchableLabel).toBe(VAULT_KNOWLEDGE_TIER_LABELS.searchable);
+  });
+});
+
+describe("computeVaultSearchIndexStats", () => {
+  test("returns coming soon when no searchable files", () => {
+    const stats = computeVaultSearchIndexStats([
+      { searchStatus: "not_searchable", chunkCount: 0 },
+    ]);
+    expect(stats.label).toBe(VAULT_SEARCH_INDEX_COMING_SOON);
+    expect(stats.searchableFiles).toBe(0);
+  });
+
+  test("aggregates searchable files and chunk totals", () => {
+    const stats = computeVaultSearchIndexStats([
+      { searchStatus: "searchable", chunkCount: 12 },
+      { searchStatus: "not_searchable", chunkCount: 0 },
+      { chunkCount: 3 },
+    ]);
+    expect(stats.searchableFiles).toBe(2);
+    expect(stats.totalChunks).toBe(15);
+    expect(stats.label).toBe("2 searchable · 15 chunks");
   });
 });
 

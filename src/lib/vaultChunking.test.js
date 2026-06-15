@@ -105,6 +105,20 @@ describe("vault_document_search", () => {
   test("extractDocumentSearchTerms strips intent phrasing", () => {
     expect(extractDocumentSearchTerms("Find mentions of terrace AC")).toBe("terrace AC");
     expect(extractDocumentSearchTerms("Search uploaded reports for waste issues")).toBe("waste issues");
+    expect(extractDocumentSearchTerms("Find mentions of guest complaints")).toBe("guest complaints");
+    expect(extractDocumentSearchTerms("Find mentions of dinner operation")).toBe("dinner operation");
+    expect(extractDocumentSearchTerms("Find mentions of Google Review")).toBe("Google Review");
+  });
+
+  test("routes logbook keyword document search queries", () => {
+    for (const question of [
+      "Find mentions of guest complaints",
+      "Find mentions of dinner operation",
+      "Find mentions of Google Review",
+    ]) {
+      const route = routeAskNacIntent(question);
+      expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);
+    }
   });
 
   test("readiness does not require vault period", () => {

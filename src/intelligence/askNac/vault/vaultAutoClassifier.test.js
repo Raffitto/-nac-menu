@@ -12,6 +12,17 @@ describe("vaultAutoClassifier", () => {
     expect(result.allowManualOverride).toBe(true);
   });
 
+  test("detects NAC Khobar logbook day-month filename", () => {
+    const result = classifyVaultUpload({
+      filename: "14_June_NAC_Khobar_Logbook.docx.pdf",
+      metadata: {},
+    });
+    expect(result.detectedReportType).toBe("daily_logbook");
+    expect(result.detectedBranch).toBe("khobar");
+    expect(result.detectedPeriod.periodStart).toBe("2026-06-14");
+    expect(result.detectedPeriod.periodEnd).toBe("2026-06-14");
+  });
+
   test("detects foodics export and sales department", () => {
     const result = classifyVaultUpload({
       filename: "Riyadh foodics waiter sales May.xlsx",
