@@ -10,7 +10,7 @@ import {
   metricEntry,
   sourceEntry,
 } from "./askNacContract";
-import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent, isVaultDocumentSearchIntent } from "./intentRouter";
+import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent } from "./intentRouter";
 import { READINESS } from "./readinessEngine";
 import { CONFIDENCE_LABELS } from "../../platform/contracts/dataConfidence";
 import { buildVaultAnswer } from "./vault/vaultAnswerBuilder";

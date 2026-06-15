@@ -7,7 +7,7 @@ import { fetchBranchComparisonSafe } from "../../lib/intelligenceQueryApi";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { periodLabelFromHours } from "../../dashboard/utils/businessDay";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
-import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent, isVaultDocumentSearchIntent } from "./intentRouter";
+import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent } from "./intentRouter";
 import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
 import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
