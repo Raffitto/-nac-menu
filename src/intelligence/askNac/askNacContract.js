@@ -8,6 +8,7 @@ export const ANSWER_TYPES = Object.freeze({
   COMPARISON: "comparison",
   EXECUTIVE: "executive",
   MISSING_DATA: "missing_data",
+  DOCUMENT_NO_MATCH: "document_no_match",
   UNKNOWN: "unknown",
   ERROR: "error",
 });

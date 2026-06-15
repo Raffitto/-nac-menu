@@ -10,6 +10,10 @@ export function getMobileTrustSummary(response) {
     return { label: "Data Unavailable", tone: "error" };
   }
 
+  if (response.answerType === ANSWER_TYPES.DOCUMENT_NO_MATCH) {
+    return { label: "Verified Data", tone: "verified" };
+  }
+
   if (response.answerType === ANSWER_TYPES.MISSING_DATA) {
     return { label: "Partial Data", tone: "partial" };
   }

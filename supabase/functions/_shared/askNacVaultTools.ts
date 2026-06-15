@@ -515,6 +515,121 @@ function formatChunkCitation(match: { fileTitle?: string; pageNo?: number | null
   return parts.join(" · ");
 }
 
+const CHUNK_SELECT =
+  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
+
+const DOCUMENT_SEARCH_MESSAGES = {
+  NO_MATCH: "No matching information found in uploaded documents.",
+  AUTH_FAILED: "You do not have access to search uploaded documents.",
+  CONNECTION_FAILED: "Could not search uploaded documents — connection failed.",
+} as const;
+
+const DOCUMENT_SEARCH_STATUS = {
+  OK: "ok",
+  NO_MATCH: "no_match",
+  AUTH_ERROR: "auth_error",
+  CONNECTION_ERROR: "connection_error",
+} as const;
+
+const SEARCH_STOPWORDS = new Set([
+  "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "with",
+  "is", "are", "was", "were", "be", "been", "it", "this", "that", "these", "those",
+  "what", "which", "who", "how", "when", "where", "about", "any", "all", "our", "their",
+  "mentions", "mention", "find", "search", "show", "summarize", "summary", "uploaded",
+  "document", "documents", "report", "reports", "file", "files", "vault", "knowledge",
+]);
+
+const TOKEN_ALIASES: Record<string, string[]> = {
+  complaint: ["complaint", "complaints", "feedback", "issue", "issues"],
+  complaints: ["complaint", "complaints", "feedback", "issue", "issues"],
+  guest: ["guest", "guests", "table", "cover", "covers", "walkin", "walkins"],
+  service: ["service", "feedback", "slow", "wait", "waiting"],
+  quality: ["quality", "average", "food", "price"],
+  issue: ["issue", "issues", "problem", "feedback", "complaint"],
+  issues: ["issue", "issues", "problem", "feedback", "complaint"],
+  dinner: ["dinner", "lunch", "shift", "operation"],
+  operation: ["operation", "operations", "shift", "service"],
+};
+
+function escapeIlikePattern(value = ""): string {
+  return String(value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+function tokenizeDocumentSearchQuery(searchTerms = ""): string[] {
+  const raw = String(searchTerms || "")
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2 && !SEARCH_STOPWORDS.has(t));
+
+  const expanded = new Set<string>();
+  for (const token of raw) {
+    expanded.add(token);
+    for (const alias of TOKEN_ALIASES[token] || []) expanded.add(alias);
+  }
+  return [...expanded];
+}
+
+function scoreChunkTermOverlap(chunkText: string, tokens: string[]): number {
+  const text = String(chunkText || "").toLowerCase();
+  if (!text || !tokens.length) return 0;
+  let matched = 0;
+  for (const token of tokens) {
+    if (text.includes(token.toLowerCase())) matched += 1;
+  }
+  return matched / tokens.length;
+}
+
+function rankChunksByTermOverlap(rows: Record<string, unknown>[], tokens: string[]) {
+  return [...rows]
+    .map((row) => ({ row, score: scoreChunkTermOverlap(String(row.chunk_text || ""), tokens) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Number(a.row.chunk_index ?? 0) - Number(b.row.chunk_index ?? 0);
+    })
+    .slice(0, 20)
+    .map((entry) => entry.row);
+}
+
+function classifyDocumentSearchError(error: { message?: string } | null): string {
+  if (!error) return DOCUMENT_SEARCH_STATUS.OK;
+  const msg = String(error.message || error).toLowerCase();
+  if (
+    msg.includes("jwt")
+    || msg.includes("permission denied")
+    || msg.includes("row-level security")
+    || msg.includes("not authorized")
+    || msg.includes("insufficient privilege")
+  ) {
+    return DOCUMENT_SEARCH_STATUS.AUTH_ERROR;
+  }
+  return DOCUMENT_SEARCH_STATUS.CONNECTION_ERROR;
+}
+
+function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string) {
+  const file = row.file as Record<string, unknown> | null;
+  const fileTitle = String(file?.title || file?.original_filename || "Uploaded file");
+  const chunkText = String(row.chunk_text || "");
+  return {
+    id: row.id,
+    fileId: row.file_id,
+    chunkIndex: row.chunk_index,
+    chunkText,
+    pageNo: row.page_no,
+    sectionLabel: row.section_label,
+    fileTitle,
+    reportType: row.report_type || file?.report_type,
+    excerpt: buildChunkExcerpt(chunkText, searchTerms),
+    citation: formatChunkCitation({
+      fileTitle,
+      pageNo: row.page_no as number | null,
+      sectionLabel: row.section_label as string | null,
+    }),
+  };
+}
+
 export async function searchVaultDocuments(
   supabase: SupabaseClient,
   context: Record<string, unknown> = {},
@@ -522,54 +637,117 @@ export async function searchVaultDocuments(
   const searchTerms =
     (context.searchTerms as string) ||
     extractDocumentSearchTerms(String(context.question || ""));
+
   if (!searchTerms || searchTerms.length < 2) {
     return {
       searchTerms,
       matches: [] as Record<string, unknown>[],
+      searchMethod: null,
+      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
+      searchError: null,
+      vaultSources: [],
       sources: [{ name: "ask_nac_document_chunks", detail: "No search terms extracted" }],
       warnings: ["Could not extract search terms from the question."],
     };
   }
 
-  const { data, error } = await supabase
+  const { data: ftsData, error: ftsError } = await supabase
     .from("ask_nac_document_chunks")
-    .select(
-      "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)",
-    )
+    .select(CHUNK_SELECT)
     .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
     .limit(20);
 
-  if (error) throw new Error(error.message);
-
-  const matches = (data || []).map((row: Record<string, unknown>) => {
-    const file = row.file as Record<string, unknown> | null;
-    const fileTitle = String(file?.title || file?.original_filename || "Uploaded file");
-    const chunkText = String(row.chunk_text || "");
+  if (ftsError) {
     return {
-      id: row.id,
-      fileId: row.file_id,
-      chunkIndex: row.chunk_index,
-      chunkText,
-      pageNo: row.page_no,
-      sectionLabel: row.section_label,
-      fileTitle,
-      excerpt: buildChunkExcerpt(chunkText, searchTerms),
-      citation: formatChunkCitation({
-        fileTitle,
-        pageNo: row.page_no as number | null,
-        sectionLabel: row.section_label as string | null,
-      }),
+      searchTerms,
+      matches: [] as Record<string, unknown>[],
+      searchMethod: null,
+      queryStatus: classifyDocumentSearchError(ftsError),
+      searchError: ftsError.message,
+      vaultSources: [],
+      sources: [{ name: "ask_nac_document_chunks", detail: "FTS failed" }],
+      warnings: [],
     };
-  });
+  }
 
+  if ((ftsData || []).length) {
+    const matches = (ftsData || []).map((row) => mapVaultChunkMatchRow(row as Record<string, unknown>, searchTerms));
+    const vaultSources = [...new Map(matches.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
+    return {
+      searchTerms,
+      matches,
+      searchMethod: "fts",
+      queryStatus: DOCUMENT_SEARCH_STATUS.OK,
+      searchError: null,
+      vaultSources,
+      sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
+      warnings: [],
+    };
+  }
+
+  const tokens = tokenizeDocumentSearchQuery(searchTerms);
+  const orClause = tokens
+    .slice(0, 12)
+    .map((token) => `chunk_text.ilike.%${escapeIlikePattern(token)}%`)
+    .join(",");
+
+  if (!orClause) {
+    return {
+      searchTerms,
+      matches: [] as Record<string, unknown>[],
+      searchMethod: "fallback",
+      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
+      searchError: null,
+      vaultSources: [],
+      sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
+      warnings: [],
+    };
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from("ask_nac_document_chunks")
+    .select(CHUNK_SELECT)
+    .or(orClause)
+    .limit(100);
+
+  if (fallbackError) {
+    return {
+      searchTerms,
+      matches: [] as Record<string, unknown>[],
+      searchMethod: null,
+      queryStatus: classifyDocumentSearchError(fallbackError),
+      searchError: fallbackError.message,
+      vaultSources: [],
+      sources: [{ name: "ask_nac_document_chunks", detail: "Fallback search failed" }],
+      warnings: [],
+    };
+  }
+
+  const ranked = rankChunksByTermOverlap((fallbackData || []) as Record<string, unknown>[], tokens);
+  if (!ranked.length) {
+    return {
+      searchTerms,
+      matches: [] as Record<string, unknown>[],
+      searchMethod: "fallback",
+      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
+      searchError: null,
+      vaultSources: [],
+      sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
+      warnings: [],
+    };
+  }
+
+  const matches = ranked.map((row) => mapVaultChunkMatchRow(row, searchTerms));
   const vaultSources = [...new Map(matches.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
-
   return {
     searchTerms,
     matches,
+    searchMethod: "fallback",
+    queryStatus: DOCUMENT_SEARCH_STATUS.OK,
+    searchError: null,
     vaultSources,
-    sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
-    warnings: matches.length ? [] : ["No matching document chunks under your access scope."],
+    sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
+    warnings: [],
   };
 }
 
@@ -947,17 +1125,48 @@ export function buildVaultAnswer(
   if (route.intent === VAULT_INTENTS.DOCUMENT_SEARCH) {
     const matches = (tool?.matches as unknown[]) || [];
     const searchTerms = String(tool?.searchTerms || extractDocumentSearchTerms(String(route.question || "")));
+    const queryStatus = String(tool?.queryStatus || "");
+
+    if (queryStatus === DOCUMENT_SEARCH_STATUS.CONNECTION_ERROR) {
+      return {
+        answerType: "error",
+        title: "Document search",
+        directAnswer: DOCUMENT_SEARCH_MESSAGES.CONNECTION_FAILED,
+        keyMetrics: [],
+        insights: [],
+        confidence: "none",
+        isAiGenerated: false,
+        intent: route.intent,
+        warnings: tool?.searchError ? [String(tool.searchError)] : [],
+      };
+    }
+
+    if (queryStatus === DOCUMENT_SEARCH_STATUS.AUTH_ERROR) {
+      return {
+        answerType: "error",
+        title: "Document search",
+        directAnswer: DOCUMENT_SEARCH_MESSAGES.AUTH_FAILED,
+        keyMetrics: [],
+        insights: [],
+        confidence: "none",
+        isAiGenerated: false,
+        intent: route.intent,
+        warnings: tool?.searchError ? [String(tool.searchError)] : [],
+      };
+    }
+
     if (!matches.length) {
       return {
-        answerType: "missing_data",
+        answerType: "document_no_match",
         title: "Document search",
-        directAnswer: `No uploaded documents mention “${searchTerms}” under your access scope.`,
+        directAnswer: DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
         keyMetrics: [],
         insights: [],
         confidence: "low",
         isAiGenerated: false,
         intent: route.intent,
-        warnings: tool?.warnings || [],
+        warnings: [],
+        searchMethod: tool?.searchMethod || null,
       };
     }
     const fileNames = [...new Set(matches.map((m) => (m as Record<string, unknown>).fileTitle))];
@@ -980,6 +1189,7 @@ export function buildVaultAnswer(
       isAiGenerated: false,
       intent: route.intent,
       vaultSources: tool?.vaultSources || [],
+      searchMethod: tool?.searchMethod || "fts",
     };
   }
 

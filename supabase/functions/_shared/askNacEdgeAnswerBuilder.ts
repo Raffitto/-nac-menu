@@ -4,6 +4,7 @@
 
 import { buildMenuMetricAnswerFields } from "./askNacResponseHelpers.ts";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
+import { buildVaultAnswer, isVaultDataIntent, isVaultDocumentSearchIntent } from "./askNacVaultTools.ts";
 
 const MAX_STAFF_ROWS = 10;
 const MAX_BRANCH_ROWS = 12;
@@ -611,6 +612,9 @@ export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, 
   if (readiness?.status === "blocked") return buildBlockedResponse(route, readiness);
   if (route.intent === "unknown") return buildUnknownResponse(route);
   if (readiness?.status === "missing" && !readiness.canQuery) return buildMissingDataResponse(route, readiness);
+  if (isVaultDataIntent(route.intent) || isVaultDocumentSearchIntent(route.intent)) {
+    return buildVaultAnswer(route, tool, readiness);
+  }
   if (!tool) return buildBlockedResponse(route, { status: "blocked", reasons: ["Query tool returned no data — check Supabase connection."] });
   if (tool.missingBatch || tool.missingPeriod) return buildFoodicsMissingToolResponse(route, tool, readiness);
 

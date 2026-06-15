@@ -18,6 +18,7 @@ import {
   pickMetricValue,
   pickTextFact,
 } from "./vaultQueryTools";
+import { DOCUMENT_SEARCH_MESSAGES, DOCUMENT_SEARCH_STATUS } from "./vaultDocumentSearchRetrieval";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -345,22 +346,60 @@ export function buildVaultMissingToolResponse(route, tool, readiness) {
 export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
   const matches = tool?.matches || [];
   const searchTerms = tool?.searchTerms || extractDocumentSearchTerms(route?.question || "");
+  const queryStatus = tool?.queryStatus;
+
+  if (queryStatus === DOCUMENT_SEARCH_STATUS.CONNECTION_ERROR) {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.ERROR,
+      title: "Document search",
+      directAnswer: DOCUMENT_SEARCH_MESSAGES.CONNECTION_FAILED,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      confidence: CONFIDENCE_LEVELS.NONE,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: [],
+      warnings: tool?.searchError ? [tool.searchError] : [],
+      readiness,
+    });
+  }
+
+  if (queryStatus === DOCUMENT_SEARCH_STATUS.AUTH_ERROR) {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.ERROR,
+      title: "Document search",
+      directAnswer: DOCUMENT_SEARCH_MESSAGES.AUTH_FAILED,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      confidence: CONFIDENCE_LEVELS.NONE,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: [],
+      warnings: tool?.searchError ? [tool.searchError] : [],
+      readiness,
+    });
+  }
 
   if (!matches.length) {
     return createAskNacResponse({
-      answerType: ANSWER_TYPES.MISSING_DATA,
+      answerType: ANSWER_TYPES.DOCUMENT_NO_MATCH,
       title: "Document search",
-      directAnswer: `No uploaded documents mention “${searchTerms}” under your access scope.`,
+      directAnswer: DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
       keyMetrics: [],
       insights: [],
-      recommendations: ["Upload matching files in Company Knowledge to make them searchable."],
+      recommendations: [],
       confidence: CONFIDENCE_LEVELS.LOW,
       isAiGenerated: false,
       intent: route.intent,
       branchLabel: tool?.branchLabel,
       vaultSources: [],
-      warnings: tool?.warnings || [],
+      warnings: [],
       readiness,
+      searchMethod: tool?.searchMethod || null,
     });
   }
 
@@ -391,6 +430,7 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
     isAiGenerated: false,
     intent: route.intent,
     branchLabel: tool?.branchLabel,
+    searchMethod: tool?.searchMethod || "fts",
     vaultSources: (tool?.vaultSources || []).map((f) => ({
       fileId: f.fileId,
       title: f.title,

@@ -6,6 +6,9 @@
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { extractDocumentSearchTerms } from "./vaultDocumentSearchRouting";
+import {
+  searchVaultDocumentChunks,
+} from "./vaultDocumentSearchRetrieval";
 
 export { extractDocumentSearchTerms };
 
@@ -334,44 +337,39 @@ export function mapVaultChunkRow(row, searchTerms) {
 export async function searchVaultDocuments(supabase, context = {}) {
   const searchTerms =
     context.searchTerms || extractDocumentSearchTerms(context.question || context.route?.question || "");
-  if (!searchTerms || searchTerms.length < 2) {
-    return {
-      searchTerms,
-      matches: [],
-      branch: resolveBranch(context),
-      branchLabel: resolveBranch(context) ? branchDisplayName(resolveBranch(context)) : "Network",
-      sources: [{ name: "ask_nac_document_chunks", detail: "No search terms extracted" }],
-      warnings: ["Could not extract search terms from the question."],
-    };
-  }
-
   const scopedBranch = resolveBranch(context);
-  let query = supabase
-    .from("ask_nac_document_chunks")
-    .select(CHUNK_SELECT)
-    .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
-    .limit(20);
 
-  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  const result = await searchVaultDocumentChunks(supabase, {
+    select: CHUNK_SELECT,
+    searchTerms,
+    scopedBranch,
+    mapRow: (row, terms) => mapVaultChunkRow(row, terms),
+  });
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-
-  const matches = (data || []).map((row) => mapVaultChunkRow(row, searchTerms));
-  const vaultSources = [...new Map(matches.map((m) => [m.fileId, {
+  const vaultSources = [...new Map(result.matches.map((m) => [m.fileId, {
     fileId: m.fileId,
     title: m.fileTitle,
     reportType: m.reportType,
   }])).values()];
 
+  const methodDetail =
+    result.searchMethod === "fts"
+      ? "PostgreSQL full-text search (RLS-filtered)"
+      : result.searchMethod === "fallback"
+        ? "ILIKE token overlap fallback (RLS-filtered)"
+        : "No search executed";
+
   return {
-    searchTerms,
-    matches,
+    searchTerms: result.searchTerms,
+    matches: result.matches,
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
     vaultSources,
-    sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
-    warnings: matches.length ? [] : ["No matching document chunks under your access scope."],
+    searchMethod: result.searchMethod,
+    queryStatus: result.queryStatus,
+    searchError: result.searchError,
+    sources: [{ name: "ask_nac_document_chunks", detail: methodDetail }],
+    warnings: result.warnings,
   };
 }
 
