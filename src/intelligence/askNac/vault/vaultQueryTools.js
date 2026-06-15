@@ -9,6 +9,7 @@ import { extractDocumentSearchTerms } from "./vaultDocumentSearchRouting";
 import {
   searchVaultDocumentChunks,
 } from "./vaultDocumentSearchRetrieval";
+import { summarizeVaultDocuments } from "./vaultDocumentSummary";
 
 export { extractDocumentSearchTerms };
 
@@ -377,6 +378,8 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
   switch (intent) {
     case "vault_document_search":
       return searchVaultDocuments(supabase, context);
+    case "vault_document_summary":
+      return summarizeVaultDocuments(supabase, context);
     case "vault_coverage_list":
       return getVaultReportSources(supabase, context);
     case "vault_cash_up_summary":

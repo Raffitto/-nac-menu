@@ -10,6 +10,7 @@ import {
   isMissingDataIntent,
   isVaultDataIntent,
   isVaultDocumentSearchIntent,
+  isVaultDocumentSummaryIntent,
   vaultReportTypesForIntent,
 } from "./intentRouter";
 import { isSupabaseConfigured } from "../../lib/supabase";
@@ -151,6 +152,26 @@ export function assessIntentReadinessSync(
       missingData: [],
       searchTerms,
       note: "Document keyword search — no calendar period required.",
+    };
+  }
+
+  if (isVaultDocumentSummaryIntent(intent)) {
+    const crossBranch = vaultCrossBranchBlocked(branchMention, profile);
+    if (crossBranch) {
+      return {
+        status: READINESS.BLOCKED,
+        canQuery: false,
+        reasons: [crossBranch],
+        missingData: [],
+      };
+    }
+
+    return {
+      status: READINESS.READY,
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+      note: "Document summary from uploaded chunks — no structured facts or metric period required.",
     };
   }
 
@@ -377,7 +398,7 @@ export async function assessIntentReadiness(intent, context = {}) {
     return sync;
   }
 
-  if (isVaultDocumentSearchIntent(intent)) {
+  if (isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent)) {
     return sync;
   }
 

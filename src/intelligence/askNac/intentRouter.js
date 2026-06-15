@@ -17,6 +17,10 @@ import {
   isVaultDocumentSearchQuery,
   scoreVaultDocumentSearchIntent,
 } from "./vault/vaultDocumentSearchRouting";
+import {
+  isVaultDocumentSummaryQuery,
+  scoreVaultDocumentSummaryIntent,
+} from "./vault/vaultDocumentSummaryRouting";
 import { normalizeAskNacQuestion } from "./nlu/normalizeQuestion";
 import { resolveIntentFromScores } from "./nlu/resolveIntentAmbiguity";
 import { applyMetricDefaultsToRoute } from "./nlu/metricDefaults";
@@ -49,6 +53,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_MANAGEMENT_REPORT: "vault_management_report_from_vault",
   VAULT_COVERAGE_LIST: "vault_coverage_list",
   VAULT_DOCUMENT_SEARCH: "vault_document_search",
+  VAULT_DOCUMENT_SUMMARY: "vault_document_summary",
   UNKNOWN: "unknown",
 });
 
@@ -62,6 +67,12 @@ const BRANCH_ALIASES = Object.freeze({
 });
 
 const INTENT_RULES = [
+  {
+    id: ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY,
+    score(q, options = {}) {
+      return scoreVaultDocumentSummaryIntent(q, options.documentContext);
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH,
     score(q) {
@@ -83,6 +94,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY,
     score(q) {
+      if (isVaultDocumentSummaryQuery(q)) return 0;
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
       if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
@@ -289,6 +301,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
     score(q) {
+      if (isVaultDocumentSummaryQuery(q)) return 0;
       if (/\b(which branch is performing|performing best|performing better|best overall|which location is winning|location is winning)\b/.test(q)) {
         return 19;
       }
@@ -428,7 +441,7 @@ export function routeAskNacIntent(question, options = {}) {
 
   const scored = INTENT_RULES.map((rule) => ({
     id: rule.id,
-    score: rule.score(q),
+    score: rule.score(q, options),
   }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
@@ -479,6 +492,14 @@ export function routeAskNacIntent(question, options = {}) {
 
 export function isVaultDocumentSearchIntent(intent) {
   return intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH;
+}
+
+export function isVaultDocumentSummaryIntent(intent) {
+  return intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY;
+}
+
+export function isVaultDocumentIntent(intent) {
+  return isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent);
 }
 
 export function isVaultDataIntent(intent) {

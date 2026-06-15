@@ -36,6 +36,7 @@ export const VAULT_INTENTS = {
   MANAGEMENT_REPORT: "vault_management_report_from_vault",
   COVERAGE_LIST: "vault_coverage_list",
   DOCUMENT_SEARCH: "vault_document_search",
+  DOCUMENT_SUMMARY: "vault_document_summary",
 } as const;
 
 const REPORT_LABELS: Record<string, string> = {
@@ -370,6 +371,8 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
   switch (intent) {
     case VAULT_INTENTS.DOCUMENT_SEARCH:
       return searchVaultDocuments(supabase, context);
+    case VAULT_INTENTS.DOCUMENT_SUMMARY:
+      return summarizeVaultDocuments(supabase, context);
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
     case VAULT_INTENTS.CASH_UP:
@@ -432,16 +435,72 @@ const DOC_SEARCH_ACTION =
   /\b(find|search|look up|summarize|summary|show references? to|mentions? of|contains?)\b/i;
 const DOC_SEARCH_SCOPE =
   /\b(company knowledge|data vault|uploaded documents?|uploaded reports?|uploaded files?|document search|vault)\b/i;
+const SEARCH_PREFIX =
+  /\b(search company knowledge|search uploaded documents|search uploaded reports|find mentions of|look up)\b/i;
+
+export function isDocumentSummaryFollowUp(q = ""): boolean {
+  const text = String(q || "").trim().toLowerCase();
+  if (!text) return false;
+  if (/\b(summarize|summary|executive|takeaways?|management know|brief me|overview)\b/.test(text)) return true;
+  if (/^(provide an? executive summary|key takeaways|what should management know)\b/.test(text)) return true;
+  return false;
+}
+
+export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<string, unknown> | null = null): boolean {
+  const text = String(q || "").trim().toLowerCase();
+  if (!text) return false;
+  const ctx = documentContext as { fileIds?: string[] } | null;
+  if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(text)) return true;
+  if (SEARCH_PREFIX.test(text)) return false;
+  if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
+  if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
+  if (/\bexecutive summary\b/.test(text)) return true;
+  if (/\bkey takeaways?\b/.test(text)) return true;
+  if (/\bwhat should management know\b/.test(text)) return true;
+  if (/\bsummarize the\b/.test(text) && /\b(logbook|document|report|upload)\b/.test(text)) return true;
+  if (/\bsummarize\b/.test(text) && /\b(june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(text)) {
+    if (/\b(branch|operation|operational|cash[\s-]?up|what happened)\b/.test(text)) return false;
+    if (/\b(logbook|document|report|upload|file|khobar|riyadh|jeddah)\b/.test(text)) return true;
+    return false;
+  }
+  if (/\bsummarize\b/.test(text) && /\b(khobar|riyadh|jeddah)\b/.test(text) && /\blogbook\b/.test(text)) return true;
+  return false;
+}
+
+export function scoreVaultDocumentSummaryIntent(q = "", documentContext: Record<string, unknown> | null = null): number {
+  if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
+  const ctx = documentContext as { fileIds?: string[] } | null;
+  if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;
+  if (/\bwhat should management know\b/.test(q)) return 33;
+  if (/\bexecutive summary\b/.test(q)) return 33;
+  if (/\bkey takeaways?\b/.test(q)) return 32;
+  if (/\bsummarize (this|that|the) (document|report|logbook|file)\b/.test(q)) return 32;
+  if (/\bsummarize the\b/.test(q) && /\blogbook\b/.test(q)) return 31;
+  return 30;
+}
+
+export function extractDocumentSummarySubject(question = ""): string {
+  let q = String(question || "").trim();
+  q = q.replace(/^summarize (this|that|the) (document|report|logbook|file|upload)\s*/i, "");
+  q = q.replace(/^(please\s+)?(provide|give me) (an? )?executive summary (of|for|on|about)?\s*/i, "");
+  q = q.replace(/^executive summary (of|for|on|about)?\s*/i, "");
+  q = q.replace(/^key takeaways (from|for|on|about)?\s*/i, "");
+  q = q.replace(/^what should management know (about|from|regarding)?\s*/i, "");
+  q = q.replace(/^summarize (the )?/i, "");
+  q = q.replace(/\b(from (the )?vault|in company knowledge|uploaded documents?)\b/gi, "");
+  return q.replace(/\?$/, "").trim();
+}
 
 export function isVaultDocumentSearchQuery(q = ""): boolean {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
+  if (isVaultDocumentSummaryQuery(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
   if (/\bsearch uploaded reports for\b/.test(text)) return true;
-  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return true;
-  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return true;
+  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return false;
+  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return false;
   if (/\blatest uploaded logbook\b/.test(text)) return true;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return true;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return true;
@@ -462,8 +521,8 @@ export function scoreVaultDocumentSearchIntent(q = ""): number {
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
   if (/\bsearch uploaded reports for\b/.test(text)) return 30;
-  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 29;
-  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 29;
+  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 0;
+  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 0;
   if (/\blatest uploaded logbook\b/.test(text)) return 29;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return 28;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return 27;
@@ -747,6 +806,122 @@ export async function searchVaultDocuments(
     searchError: null,
     vaultSources,
     sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
+    warnings: [],
+  };
+}
+
+async function resolveDocumentSummaryFilesEdge(supabase: SupabaseClient, context: Record<string, unknown>) {
+  const docCtx = (context.documentContext || {}) as { fileIds?: string[]; fileTitles?: string[] };
+  if (docCtx.fileIds?.length) {
+    return { fileIds: docCtx.fileIds, fileTitles: docCtx.fileTitles || [], source: "conversation" };
+  }
+  const subject = extractDocumentSummarySubject(String(context.question || ""));
+  const tokens = tokenizeDocumentSearchQuery(subject);
+  if (!tokens.length) return { fileIds: [] as string[], fileTitles: [] as string[], source: null };
+  const orClause = tokens.slice(0, 8).map((token) => `original_filename.ilike.%${escapeIlikePattern(token)}%`).join(",");
+  const { data, error } = await supabase
+    .from("ask_nac_files")
+    .select("id,title,original_filename")
+    .eq("status", "active")
+    .or(orClause)
+    .limit(20);
+  if (error) throw new Error(error.message);
+  const ranked = (data || [])
+    .map((row) => ({ row, score: scoreChunkTermOverlap(String(row.original_filename || row.title || ""), tokens) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const top = ranked.slice(0, 3).map((entry) => entry.row);
+  return {
+    fileIds: top.map((row) => String(row.id)),
+    fileTitles: top.map((row) => String(row.title || row.original_filename || "Uploaded file")),
+    source: "filename_match",
+  };
+}
+
+function summarizeChunkSentence(chunkText = "") {
+  const text = String(chunkText || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const sentence = text.split(/(?<=[.!?])\s+/)[0] || text;
+  return sentence.length > 220 ? `${sentence.slice(0, 219)}…` : sentence;
+}
+
+function buildDocumentSummaryAnswerContentEdge(
+  chunks: Record<string, unknown>[],
+  fileTitles: string[],
+  branchLabel: string,
+) {
+  const names = [...new Set(fileTitles.length ? fileTitles : chunks.map((c) => String(c.fileTitle || "")))];
+  const titleLabel = names.length ? names.join(" · ") : "uploaded document";
+  const insights = chunks.map((chunk) => {
+    const sentence = summarizeChunkSentence(String(chunk.chunkText || ""));
+    const pageRef = chunk.pageNo != null ? ` (p. ${chunk.pageNo})` : "";
+    const sectionRef = chunk.sectionLabel ? ` · ${chunk.sectionLabel}` : "";
+    return `${chunk.fileTitle}${pageRef}${sectionRef}: ${sentence} [${chunk.citation}]`;
+  });
+  return {
+    directAnswer:
+      `Executive summary of ${titleLabel} from Company Knowledge (${chunks.length} section${chunks.length === 1 ? "" : "s"}, ${branchLabel}). ` +
+      `${insights.slice(0, 2).join(" ")}`,
+    insights,
+    keyMetrics: chunks.slice(0, 8).map((chunk) =>
+      metricEntry(String(chunk.fileTitle), summarizeChunkSentence(String(chunk.chunkText || "")), {
+        unit: chunk.pageNo != null ? `p. ${chunk.pageNo}` : String(chunk.sectionLabel || ""),
+        source: String(chunk.citation || ""),
+      }),
+    ),
+    recommendations: [`Sources: ${[...new Set(chunks.map((c) => String(c.citation || "")))].slice(0, 5).join("; ")}`],
+  };
+}
+
+export async function summarizeVaultDocuments(
+  supabase: SupabaseClient,
+  context: Record<string, unknown> = {},
+) {
+  const resolved = await resolveDocumentSummaryFilesEdge(supabase, context);
+  if (!resolved.fileIds.length) {
+    return {
+      fileIds: [],
+      fileTitles: [],
+      chunks: [] as Record<string, unknown>[],
+      matches: [] as Record<string, unknown>[],
+      vaultSources: [],
+      queryStatus: "no_document",
+      sources: [{ name: "ask_nac_document_chunks", detail: "No uploaded document resolved for summary" }],
+      warnings: [],
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("ask_nac_document_chunks")
+    .select(CHUNK_SELECT)
+    .in("file_id", resolved.fileIds)
+    .order("chunk_index", { ascending: true });
+
+  if (error) {
+    return {
+      fileIds: resolved.fileIds,
+      fileTitles: resolved.fileTitles,
+      chunks: [] as Record<string, unknown>[],
+      matches: [] as Record<string, unknown>[],
+      vaultSources: [],
+      queryStatus: "connection_error",
+      searchError: error.message,
+      sources: [{ name: "ask_nac_document_chunks", detail: "Chunk load failed" }],
+      warnings: [],
+    };
+  }
+
+  const chunks = (data || []).map((row) => mapVaultChunkMatchRow(row as Record<string, unknown>, resolved.fileTitles.join(" ")));
+  const vaultSources = [...new Map(chunks.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
+  return {
+    fileIds: resolved.fileIds,
+    fileTitles: resolved.fileTitles,
+    chunks,
+    matches: chunks,
+    vaultSources,
+    resolveSource: resolved.source,
+    queryStatus: chunks.length ? "ok" : "no_chunks",
+    sources: [{ name: "ask_nac_document_chunks", detail: "Uploaded document chunks (RLS-filtered)" }],
     warnings: [],
   };
 }
@@ -1122,6 +1297,56 @@ export function buildVaultAnswer(
   tool: Record<string, unknown> | null,
   readiness: Record<string, unknown> | null = null,
 ): AskNacAnswer {
+  if (route.intent === VAULT_INTENTS.DOCUMENT_SUMMARY) {
+    const chunks = (tool?.chunks as Record<string, unknown>[]) || (tool?.matches as Record<string, unknown>[]) || [];
+    const queryStatus = String(tool?.queryStatus || "");
+    if (queryStatus === "connection_error") {
+      return {
+        answerType: "error",
+        title: "Document summary",
+        directAnswer: DOCUMENT_SEARCH_MESSAGES.CONNECTION_FAILED,
+        keyMetrics: [],
+        insights: [],
+        confidence: "none",
+        isAiGenerated: false,
+        intent: route.intent,
+        warnings: tool?.searchError ? [String(tool.searchError)] : [],
+      };
+    }
+    if (!chunks.length) {
+      return {
+        answerType: "document_no_match",
+        title: "Document summary",
+        directAnswer: queryStatus === "no_document"
+          ? "No uploaded document was found to summarize under your access scope."
+          : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
+        keyMetrics: [],
+        insights: [],
+        confidence: "low",
+        isAiGenerated: false,
+        intent: route.intent,
+        warnings: [],
+      };
+    }
+    const summary = buildDocumentSummaryAnswerContentEdge(
+      chunks,
+      (tool?.fileTitles as string[]) || [],
+      String(tool?.branchLabel || "Network"),
+    );
+    return {
+      answerType: "executive",
+      title: `Document summary · ${(tool?.fileTitles as string[])?.[0] || chunks[0]?.fileTitle || "Uploaded document"}`,
+      directAnswer: summary.directAnswer,
+      keyMetrics: summary.keyMetrics,
+      insights: summary.insights,
+      recommendations: summary.recommendations,
+      confidence: "high",
+      isAiGenerated: false,
+      intent: route.intent,
+      vaultSources: tool?.vaultSources || [],
+    };
+  }
+
   if (route.intent === VAULT_INTENTS.DOCUMENT_SEARCH) {
     const matches = (tool?.matches as unknown[]) || [];
     const searchTerms = String(tool?.searchTerms || extractDocumentSearchTerms(String(route.question || "")));
@@ -1224,10 +1449,19 @@ export function buildVaultAnswer(
 export function isVaultDataIntent(intent: string) {
   return (
     Object.values(VAULT_INTENTS).includes(intent as typeof VAULT_INTENTS[keyof typeof VAULT_INTENTS]) &&
-    intent !== VAULT_INTENTS.DOCUMENT_SEARCH
+    intent !== VAULT_INTENTS.DOCUMENT_SEARCH &&
+    intent !== VAULT_INTENTS.DOCUMENT_SUMMARY
   );
 }
 
 export function isVaultDocumentSearchIntent(intent: string) {
   return intent === VAULT_INTENTS.DOCUMENT_SEARCH;
+}
+
+export function isVaultDocumentSummaryIntent(intent: string) {
+  return intent === VAULT_INTENTS.DOCUMENT_SUMMARY;
+}
+
+export function isVaultDocumentIntent(intent: string) {
+  return isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent);
 }

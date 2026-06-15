@@ -107,6 +107,34 @@ describe("resolveFollowUpQuestion", () => {
     expect(result.usedContext).toBe(false);
     expect(result.resolvedQuestion).toBe("How many menu QR scans today?");
   });
+
+  test("resolves document summary follow-up using active document context", () => {
+    const ctx = {
+      lastDocumentContext: {
+        fileIds: ["file-1"],
+        fileTitles: ["14 June NAC Khobar Logbook.docx.pdf"],
+      },
+    };
+    for (const question of ["Summarize this document", "Provide an executive summary", "Key takeaways"]) {
+      const result = resolveFollowUpQuestion(question, ctx);
+      expect(result.usedContext).toBe(true);
+      expect(result.resolvedQuestion).toBe("Summarize 14 June NAC Khobar Logbook.docx.pdf");
+    }
+  });
+
+  test("stores lastDocumentContext after document search response", () => {
+    const next = updateConversationContext(createEmptyConversationContext(), {
+      question: "Search company knowledge for Google Review",
+      resolvedQuestion: "Search company knowledge for Google Review",
+      response: {
+        intent: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH,
+        directAnswer: "Found 2 mentions",
+        vaultSources: [{ fileId: "file-1", title: "14 June NAC Khobar Logbook.docx.pdf" }],
+      },
+    });
+    expect(next.lastDocumentContext?.fileIds).toEqual(["file-1"]);
+    expect(next.lastDocumentContext?.fileTitles?.[0]).toContain("Khobar Logbook");
+  });
 });
 
 describe("prepareAskNacQuestion", () => {

@@ -2,6 +2,8 @@
  * Resolve short follow-ups using prior Ask NAC session context.
  */
 
+import { isDocumentSummaryFollowUp } from "../vault/vaultDocumentSummaryRouting";
+
 const PERIOD_FRAGMENTS = [
   { pattern: /\blast month\b/i, text: "last month" },
   { pattern: /\bthis month\b|\bmtd\b|\bmonth to date\b/i, text: "this month" },
@@ -73,6 +75,13 @@ export function isFollowUpFragment(question, context = {}) {
   if (/^top \d+/i.test(q) && !/\bcategory\b/i.test(q)) return true;
 
   return false;
+}
+
+function resolveDocumentSummaryFollowUp(question, context) {
+  if (!context?.lastDocumentContext?.fileIds?.length) return null;
+  if (!isDocumentSummaryFollowUp(question)) return null;
+  const title = context.lastDocumentContext.fileTitles?.[0] || "this document";
+  return `Summarize ${title}`;
 }
 
 function resolvePeriodFollowUp(question, context) {
@@ -177,6 +186,15 @@ export function resolveFollowUpQuestion(question, context = {}) {
   const original = normalizeQuestion(question);
   if (!original) {
     return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] };
+  }
+
+  const documentSummary = resolveDocumentSummaryFollowUp(original, context);
+  if (documentSummary) {
+    return {
+      resolvedQuestion: documentSummary,
+      usedContext: true,
+      resolutionNotes: ["Using the active uploaded document from the previous answer."],
+    };
   }
 
   if (!isFollowUpFragment(original, context)) {

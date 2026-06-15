@@ -9,6 +9,11 @@ import {
   splitTextIntoChunks,
 } from "./vaultChunking";
 import { extractDocumentSearchTerms, formatChunkCitation, buildChunkExcerpt } from "../intelligence/askNac/vault/vaultQueryTools";
+import {
+  extractDocumentSummarySubject,
+  isVaultDocumentSummaryQuery,
+} from "../intelligence/askNac/vault/vaultDocumentSummaryRouting";
+import { buildDocumentSummaryAnswerContent } from "../intelligence/askNac/vault/vaultDocumentSummary";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intelligence/askNac/intentRouter";
 import { assessIntentReadinessSync, READINESS } from "../intelligence/askNac/readinessEngine";
 import { buildVaultAnswer } from "../intelligence/askNac/vault/vaultAnswerBuilder";
@@ -96,7 +101,6 @@ describe("vault_document_search", () => {
     const cases = [
       "Search company knowledge for Google Review",
       "Find mentions of Google Review",
-      "Summarize the June 14 Khobar logbook",
       "Search uploaded documents for dinner operation",
     ];
     for (const question of cases) {
@@ -105,10 +109,9 @@ describe("vault_document_search", () => {
     }
   });
 
-  test("extractDocumentSearchTerms strips company knowledge and logbook phrasing", () => {
+  test("extractDocumentSearchTerms strips company knowledge phrasing", () => {
     expect(extractDocumentSearchTerms("Search company knowledge for Google Review")).toBe("Google Review");
     expect(extractDocumentSearchTerms("Search uploaded documents for dinner operation")).toBe("dinner operation");
-    expect(extractDocumentSearchTerms("Summarize the June 14 Khobar logbook")).toBe("June 14 Khobar logbook");
   });
 
   test("routes find mentions of terrace AC", () => {
@@ -198,6 +201,101 @@ describe("vault_document_search", () => {
     expect(formatChunkCitation({ fileTitle: "SOP.docx", pageNo: 2, sectionLabel: "HVAC" })).toBe(
       "SOP.docx · p. 2 · HVAC",
     );
+  });
+});
+
+describe("vault_document_summary", () => {
+  const docContext = {
+    fileIds: ["file-khobar-june14"],
+    fileTitles: ["14 June NAC Khobar Logbook.docx.pdf"],
+    searchTerms: "Google Review",
+  };
+
+  test("routes direct logbook summary phrases", () => {
+    for (const question of [
+      "Summarize the June 14 Khobar logbook",
+      "Summarize this document",
+      "Provide an executive summary",
+      "Key takeaways",
+      "What should management know?",
+    ]) {
+      const route = routeAskNacIntent(question, { documentContext: docContext });
+      expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY);
+    }
+  });
+
+  test("routes follow-up summary after document search context", () => {
+    const route = routeAskNacIntent("Summarize this document", { documentContext: docContext });
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.UNKNOWN);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS);
+  });
+
+  test("extractDocumentSummarySubject strips summary phrasing", () => {
+    expect(extractDocumentSummarySubject("Summarize the June 14 Khobar logbook")).toBe("June 14 Khobar logbook");
+    expect(extractDocumentSummarySubject("Provide an executive summary of the Khobar logbook")).toContain("Khobar");
+  });
+
+  test("readiness does not require metric period or structured facts", () => {
+    const readiness = assessIntentReadinessSync(ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY, {
+      supabaseConfigured: true,
+      question: "Summarize this document",
+    });
+    expect(readiness.status).toBe(READINESS.READY);
+    expect(readiness.canQuery).toBe(true);
+    expect(readiness.note).toMatch(/no structured facts/i);
+  });
+
+  test("buildVaultDocumentSummaryAnswer includes executive summary with citations", () => {
+    const route = routeAskNacIntent("Summarize the June 14 Khobar logbook");
+    const tool = {
+      fileTitles: ["14 June NAC Khobar Logbook.docx.pdf"],
+      branchLabel: "Khobar",
+      queryStatus: "ok",
+      chunks: [
+        {
+          fileId: "file-khobar-june14",
+          fileTitle: "14 June NAC Khobar Logbook.docx.pdf",
+          chunkText: "Google Review score improved after dinner service recovery.",
+          pageNo: 2,
+          sectionLabel: "Dinner",
+          citation: "14 June NAC Khobar Logbook.docx.pdf · p. 2 · Dinner",
+        },
+        {
+          fileId: "file-khobar-june14",
+          fileTitle: "14 June NAC Khobar Logbook.docx.pdf",
+          chunkText: "MOD noted terrace AC maintenance completed before service.",
+          pageNo: 3,
+          sectionLabel: "Operations",
+          citation: "14 June NAC Khobar Logbook.docx.pdf · p. 3 · Operations",
+        },
+      ],
+      vaultSources: [{ fileId: "file-khobar-june14", title: "14 June NAC Khobar Logbook.docx.pdf" }],
+    };
+    const answer = buildVaultAnswer(route, tool, { status: READINESS.READY, canQuery: true });
+    expect(answer.answerType).toBe("executive");
+    expect(answer.directAnswer).toMatch(/Executive summary/i);
+    expect(answer.directAnswer).toContain("14 June NAC Khobar Logbook");
+    expect(answer.insights?.[0]).toContain("[14 June NAC Khobar Logbook.docx.pdf · p. 2 · Dinner]");
+    expect(answer.recommendations?.[0]).toMatch(/Sources:/);
+  });
+
+  test("buildDocumentSummaryAnswerContent produces citation-backed insights", () => {
+    const summary = buildDocumentSummaryAnswerContent({
+      chunks: [
+        {
+          fileTitle: "Logbook.pdf",
+          chunkText: "Guest complaints were resolved at reception.",
+          pageNo: 1,
+          sectionLabel: "Reception",
+          citation: "Logbook.pdf · p. 1 · Reception",
+        },
+      ],
+      fileTitles: ["Logbook.pdf"],
+      branchLabel: "Khobar",
+    });
+    expect(summary.insights[0]).toContain("[Logbook.pdf · p. 1 · Reception]");
+    expect(summary.recommendations[0]).toContain("Logbook.pdf · p. 1 · Reception");
   });
 });
 

@@ -31,7 +31,10 @@ export async function processAskNacQuestion({
   const effectiveQuestion = prepareResult.effectiveQuestion;
   const effectiveFilters = prepareResult.filters;
   const fallbackHours = effectiveFilters.timeRangeHours ?? 24;
-  let route = routeAskNacIntent(effectiveQuestion, { fallbackHours });
+  let route = routeAskNacIntent(effectiveQuestion, {
+    fallbackHours,
+    documentContext: conversationContext?.lastDocumentContext || null,
+  });
   route = applyReviewPeriodDefaults(route, effectiveFilters);
   const periodFallbackWarnings = [];
 
@@ -91,6 +94,7 @@ export async function processAskNacQuestion({
       question: effectiveQuestion,
       searchTerms: effectiveReadiness.searchTerms,
       readiness: effectiveReadiness,
+      documentContext: conversationContext?.lastDocumentContext || null,
       foodicsPeriod: route.foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,

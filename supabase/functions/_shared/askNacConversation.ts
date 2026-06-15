@@ -2,6 +2,8 @@
  * Edge-side Ask NAC conversation follow-up resolution (mirrors client conversation module).
  */
 
+import { isDocumentSummaryFollowUp } from "./askNacVaultTools.ts";
+
 const PERIOD_FRAGMENTS = [
   { pattern: /\blast month\b/i, text: "last month" },
   { pattern: /\bthis month\b|\bmtd\b|\bmonth to date\b/i, text: "this month" },
@@ -54,7 +56,21 @@ export function isFollowUpFragment(question: string, context: Record<string, unk
 
 export function resolveFollowUpQuestion(question: string, context: Record<string, unknown> = {}) {
   const original = normalizeQuestion(question);
-  if (!original || !isFollowUpFragment(original, context)) {
+  if (!original) {
+    return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] as string[] };
+  }
+
+  const docCtx = context.lastDocumentContext as { fileIds?: string[]; fileTitles?: string[] } | undefined;
+  if (docCtx?.fileIds?.length && isDocumentSummaryFollowUp(original)) {
+    const title = docCtx.fileTitles?.[0] || "this document";
+    return {
+      resolvedQuestion: `Summarize ${title}`,
+      usedContext: true,
+      resolutionNotes: ["Using the active uploaded document from the previous answer."],
+    };
+  }
+
+  if (!isFollowUpFragment(original, context)) {
     return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] as string[] };
   }
 

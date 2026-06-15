@@ -19,6 +19,7 @@ import {
   pickTextFact,
 } from "./vaultQueryTools";
 import { DOCUMENT_SEARCH_MESSAGES, DOCUMENT_SEARCH_STATUS } from "./vaultDocumentSearchRetrieval";
+import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -423,6 +424,7 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
     answerType: ANSWER_TYPES.COMPARISON,
     title: `Document search · “${searchTerms}”`,
     directAnswer: summary,
+    searchTerms,
     keyMetrics,
     insights,
     recommendations: [`Citations: ${matches.slice(0, 5).map((m) => m.citation).join("; ")}`],
@@ -439,7 +441,80 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
   });
 }
 
+export function buildVaultDocumentSummaryAnswer(route, tool, readiness) {
+  const chunks = tool?.chunks || tool?.matches || [];
+  const queryStatus = tool?.queryStatus;
+
+  if (queryStatus === "connection_error") {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.ERROR,
+      title: "Document summary",
+      directAnswer: DOCUMENT_SEARCH_MESSAGES.CONNECTION_FAILED,
+      keyMetrics: [],
+      insights: [],
+      confidence: CONFIDENCE_LEVELS.NONE,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: [],
+      warnings: tool?.searchError ? [tool.searchError] : [],
+      readiness,
+    });
+  }
+
+  if (!chunks.length) {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.DOCUMENT_NO_MATCH,
+      title: "Document summary",
+      directAnswer: queryStatus === "no_document"
+        ? "No uploaded document was found to summarize under your access scope."
+        : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
+      keyMetrics: [],
+      insights: [],
+      confidence: CONFIDENCE_LEVELS.LOW,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: [],
+      readiness,
+    });
+  }
+
+  const summary = buildDocumentSummaryAnswerContent({
+    chunks,
+    fileTitles: tool?.fileTitles || [],
+    branchLabel: tool?.branchLabel || "Network",
+  });
+
+  return createAskNacResponse({
+    ...baseVaultFields(route, tool, readiness),
+    answerType: ANSWER_TYPES.EXECUTIVE,
+    title: `Document summary · ${tool?.fileTitles?.[0] || chunks[0]?.fileTitle || "Uploaded document"}`,
+    directAnswer: summary.directAnswer,
+    keyMetrics: summary.keyMetrics.map((m) => metricEntry(m.label, m.value, {
+      unit: m.unit,
+      source: m.source,
+      note: m.note,
+    })),
+    insights: summary.insights,
+    recommendations: summary.recommendations,
+    confidence: CONFIDENCE_LEVELS.HIGH,
+    isAiGenerated: false,
+    intent: route.intent,
+    branchLabel: tool?.branchLabel,
+    vaultSources: (tool?.vaultSources || []).map((f) => ({
+      fileId: f.fileId,
+      title: f.title,
+      reportType: f.reportType,
+    })),
+  });
+}
+
 export function buildVaultAnswer(route, tool, readiness) {
+  if (route.intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY) {
+    return buildVaultDocumentSummaryAnswer(route, tool, readiness);
+  }
+
   if (route.intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH) {
     if (!tool?.matches?.length && readiness?.status === READINESS.MISSING) {
       return buildVaultMissingToolResponse(route, tool, readiness);

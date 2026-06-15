@@ -28,10 +28,14 @@ import {
   hasVaultDayPeriod,
   isVaultDataIntent,
   isVaultDocumentSearchIntent,
+  isVaultDocumentSummaryIntent,
+  isVaultDocumentIntent,
   isVaultDocumentSearchQuery,
+  isVaultDocumentSummaryQuery,
   parseVaultPeriodFromQuestion,
   runVaultQueryTool,
   scoreVaultDocumentSearchIntent,
+  scoreVaultDocumentSummaryIntent,
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
@@ -77,7 +81,13 @@ const BRANCH_ALIASES: Record<string, string[]> = {
   jeddah: ["jeddah", "jedda"],
 };
 
-const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
+const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext?: Record<string, unknown> | null }) => number }[] = [
+  {
+    id: ASK_NAC_INTENTS.DOCUMENT_SUMMARY,
+    score(q, options = {}) {
+      return scoreVaultDocumentSummaryIntent(q, options.documentContext || null);
+    },
+  },
   {
     id: ASK_NAC_INTENTS.DOCUMENT_SEARCH,
     score(q) {
@@ -97,6 +107,7 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
   {
     id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY,
     score(q) {
+      if (isVaultDocumentSummaryQuery(q)) return 0;
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
@@ -270,6 +281,7 @@ const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
   {
     id: ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS,
     score(q) {
+      if (isVaultDocumentSummaryQuery(q)) return 0;
       if (/\b(which branch is performing|performing best|performing better|best overall|which location is winning)\b/.test(q)) return 19;
       if (/\bgoogle maps\b/.test(q) && /\b(perform|better|overall|compare|winning)\b/.test(q)) return 19;
       if (/\b(which branch improved|improved the most|most improvement)\b/.test(q)) return 18;
@@ -378,7 +390,7 @@ function isMissingDataIntent(intent: string) {
   ].includes(intent as typeof ASK_NAC_INTENTS[keyof typeof ASK_NAC_INTENTS]);
 }
 
-export function routeIntent(question: string, options: { fallbackHours?: number } = {}) {
+export function routeIntent(question: string, options: { fallbackHours?: number; documentContext?: Record<string, unknown> | null } = {}) {
   const normalized = normalizeAskNacQuestionEdge(question);
   const q = normalized.text.trim().toLowerCase();
   const period = parseAskNacPeriod(normalized.text, options.fallbackHours ?? 24);
@@ -395,7 +407,7 @@ export function routeIntent(question: string, options: { fallbackHours?: number 
     };
   }
 
-  const scored = INTENT_RULES.map((rule) => ({ id: rule.id, score: rule.score(q) }))
+  const scored = INTENT_RULES.map((rule) => ({ id: rule.id, score: rule.score(q, options) }))
     .filter((r) => r.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -459,6 +471,9 @@ async function assessReadiness(
   }
   if (route.intent === ASK_NAC_INTENTS.UNKNOWN) {
     return { status: "missing", canQuery: false, reasons: ["Could not map question to a supported intent."], missingData: [] };
+  }
+  if (isVaultDocumentSummaryIntent(route.intent)) {
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
   }
   if (isVaultDocumentSearchIntent(route.intent)) {
     const searchTerms = extractDocumentSearchTerms(String(context.question || ""));
@@ -659,7 +674,7 @@ async function runQueryTool(
   intent: string,
   context: Record<string, unknown>,
 ) {
-  if (isVaultDataIntent(intent) || isVaultDocumentSearchIntent(intent)) {
+  if (isVaultDataIntent(intent) || isVaultDocumentIntent(intent)) {
     return runVaultQueryTool(supabase, intent, context);
   }
 
@@ -736,12 +751,16 @@ export async function processAskNacOnEdge(
 
   const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
-  const route = routeIntent(effectiveQuestion, { fallbackHours });
+  const route = routeIntent(effectiveQuestion, {
+    fallbackHours,
+    documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext as Record<string, unknown> | null,
+  });
   const readiness = await assessReadiness(route, supabase, {
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
     question: effectiveQuestion,
+    documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
   });
 
   let foodicsPeriod = route.foodicsPeriod;
@@ -770,6 +789,7 @@ export async function processAskNacOnEdge(
       branch: mergedFilters.branch,
       question: effectiveQuestion,
       searchTerms: (readiness as Record<string, unknown>).searchTerms,
+      documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
       foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
@@ -783,7 +803,7 @@ export async function processAskNacOnEdge(
     }
   }
 
-  const deterministic = isVaultDataIntent(route.intent) || isVaultDocumentSearchIntent(route.intent)
+  const deterministic = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent)
     ? buildVaultAnswer(route, tool, readiness)
     : buildDeterministicAskNacAnswer(route, tool, readiness);
 

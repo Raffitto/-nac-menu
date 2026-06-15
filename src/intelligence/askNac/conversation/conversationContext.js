@@ -12,6 +12,32 @@ export function createEmptyConversationContext() {
     lastMetric: null,
     lastEntity: null,
     lastAnswerSummary: null,
+    lastDocumentContext: null,
+  };
+}
+
+function pickDocumentContextFromResponse(response) {
+  if (!response) return null;
+  if (response.intent !== "vault_document_search" && response.intent !== "vault_document_summary") {
+    return null;
+  }
+
+  const sources = response.vaultSources || [];
+  const fileIds = sources.map((s) => s.fileId).filter(Boolean);
+  const fileTitles = sources.map((s) => s.title).filter(Boolean);
+
+  if (!fileIds.length && Array.isArray(response.keyMetrics)) {
+    for (const metric of response.keyMetrics) {
+      if (metric?.label) fileTitles.push(metric.label);
+    }
+  }
+
+  if (!fileIds.length && !fileTitles.length) return null;
+
+  return {
+    fileIds,
+    fileTitles,
+    searchTerms: response.searchTerms || null,
   };
 }
 
@@ -46,6 +72,8 @@ export function updateConversationContext(context = {}, payload = {}) {
     lastAnswerSummary: response?.directAnswer
       ? String(response.directAnswer).slice(0, 240)
       : base.lastAnswerSummary,
+    lastDocumentContext:
+      pickDocumentContextFromResponse(response) ?? base.lastDocumentContext,
   };
 }
 

@@ -2,6 +2,10 @@
  * Document search intent detection — must beat vault analytics and Google review metrics.
  */
 
+import {
+  isVaultDocumentSummaryQuery,
+} from "./vaultDocumentSummaryRouting";
+
 const DOC_SEARCH_ACTION =
   /\b(find|search|look up|summarize|summary|show references? to|mentions? of|contains?)\b/i;
 const DOC_SEARCH_SCOPE =
@@ -10,12 +14,13 @@ const DOC_SEARCH_SCOPE =
 export function isVaultDocumentSearchQuery(q = "") {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
+  if (isVaultDocumentSummaryQuery(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
   if (/\bsearch uploaded reports for\b/.test(text)) return true;
-  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return true;
-  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return true;
+  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return false;
+  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return false;
   if (/\blatest uploaded logbook\b/.test(text)) return true;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return true;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return true;
@@ -36,8 +41,8 @@ export function scoreVaultDocumentSearchIntent(q = "") {
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
   if (/\bsearch uploaded reports for\b/.test(text)) return 30;
-  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 29;
-  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 29;
+  if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 0;
+  if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 0;
   if (/\blatest uploaded logbook\b/.test(text)) return 29;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return 28;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return 27;
