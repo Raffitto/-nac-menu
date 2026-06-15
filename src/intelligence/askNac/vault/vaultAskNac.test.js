@@ -106,6 +106,11 @@ describe("vault intentRouter", () => {
     expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_GOOGLE_REVIEW_STAR_SUMMARY);
   });
 
+  test("routes vault document search for mentions", () => {
+    const route = routeAskNacIntent("Find mentions of terrace AC");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);
+  });
+
   test("prefers vault over Foodics for day-specific sales", () => {
     const route = routeAskNacIntent("What were sales on 5 June?");
     expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);

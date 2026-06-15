@@ -7,7 +7,7 @@ import { fetchBranchComparisonSafe } from "../../lib/intelligenceQueryApi";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { periodLabelFromHours } from "../../dashboard/utils/businessDay";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
-import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
+import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentSearchIntent } from "./intentRouter";
 import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
 import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
@@ -160,10 +160,11 @@ export async function queryBranchComparison(supabase, context = {}) {
 export async function runAskNacQueryTool(supabase, intent, context = {}) {
   if (!supabase) return null;
 
-  if (isVaultDataIntent(intent)) {
+  if (isVaultDataIntent(intent) || isVaultDocumentSearchIntent(intent)) {
     return runVaultQueryTool(supabase, intent, {
       ...context,
       vaultPeriod: context.vaultPeriod,
+      searchTerms: context.searchTerms || context.readiness?.searchTerms,
     });
   }
 

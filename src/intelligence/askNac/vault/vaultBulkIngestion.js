@@ -20,6 +20,8 @@ import {
 import {
   runVaultFileIngestionPipeline,
   resolveVaultRegistrationStatus,
+  resolveVaultUploadWarnings,
+  buildVaultChunkingSearchWarning,
 } from "./vaultUploadIngestion";
 
 function normalizeEmail(email) {
@@ -290,6 +292,11 @@ async function registerSingleBulkFile(supabase, {
     autoClassification,
     isNewVersion: duplicateDecision.action === "new_version",
     storedOnly: pipeline.storedOnly,
+    chunking: pipeline.chunking,
+    warning: resolveVaultUploadWarnings({
+      ingestion: pipeline.ingestion,
+      chunking: pipeline.chunking,
+    }),
   };
 }
 
@@ -388,6 +395,10 @@ export async function runBulkImportBatch(supabase, {
     })
     .eq("id", batchId);
 
+  const searchIndexingFailed = results.filter((result) =>
+    Boolean(buildVaultChunkingSearchWarning(result.chunking)),
+  ).length;
+
   return {
     ok: failed < entries.length,
     batchId,
@@ -396,6 +407,7 @@ export async function runBulkImportBatch(supabase, {
     failed,
     skipped,
     legacyDocSkipped,
+    searchIndexingFailed,
     results,
   };
 }

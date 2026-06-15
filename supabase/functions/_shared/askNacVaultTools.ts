@@ -35,6 +35,7 @@ export const VAULT_INTENTS = {
   OPERATIONAL_DAY: "vault_operational_day_summary",
   MANAGEMENT_REPORT: "vault_management_report_from_vault",
   COVERAGE_LIST: "vault_coverage_list",
+  DOCUMENT_SEARCH: "vault_document_search",
 } as const;
 
 const REPORT_LABELS: Record<string, string> = {
@@ -367,6 +368,8 @@ async function getVaultDaySummary(supabase: SupabaseClient, context: Record<stri
 export async function runVaultQueryTool(supabase: SupabaseClient, intent: string, context: Record<string, unknown> = {}) {
   const vaultPeriod = context.vaultPeriod as VaultPeriod | undefined;
   switch (intent) {
+    case VAULT_INTENTS.DOCUMENT_SEARCH:
+      return searchVaultDocuments(supabase, context);
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
     case VAULT_INTENTS.CASH_UP:
@@ -423,6 +426,105 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
     default:
       return null;
   }
+}
+
+export function extractDocumentSearchTerms(question = ""): string {
+  let q = String(question || "").trim();
+  q = q.replace(/^search uploaded reports for\s+/i, "");
+  q = q.replace(/^(please\s+)?(find|search|look up|show references? to)\s+(mentions?\s+of\s+)?/i, "");
+  q = q.replace(
+    /\b(in uploaded (files|documents|reports)|from (the )?vault|in company knowledge)\b/gi,
+    "",
+  );
+  return q.replace(/\?$/, "").trim();
+}
+
+function buildChunkExcerpt(chunkText: string, searchTerms: string, maxLen = 240): string {
+  const text = String(chunkText || "");
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  const terms = String(searchTerms || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  let idx = -1;
+  for (const term of terms) {
+    const hit = lower.indexOf(term);
+    if (hit >= 0 && (idx < 0 || hit < idx)) idx = hit;
+  }
+  if (idx < 0) {
+    return text.length <= maxLen ? text : `${text.slice(0, maxLen - 1)}…`;
+  }
+  const start = Math.max(0, idx - 80);
+  const slice = text.slice(start, start + maxLen);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = start + maxLen < text.length ? "…" : "";
+  return `${prefix}${slice}${suffix}`.trim();
+}
+
+function formatChunkCitation(match: { fileTitle?: string; pageNo?: number | null; sectionLabel?: string | null }) {
+  const parts = [match.fileTitle || "Uploaded file"];
+  if (match.pageNo != null) parts.push(`p. ${match.pageNo}`);
+  if (match.sectionLabel) parts.push(match.sectionLabel);
+  return parts.join(" · ");
+}
+
+export async function searchVaultDocuments(
+  supabase: SupabaseClient,
+  context: Record<string, unknown> = {},
+) {
+  const searchTerms =
+    (context.searchTerms as string) ||
+    extractDocumentSearchTerms(String(context.question || ""));
+  if (!searchTerms || searchTerms.length < 2) {
+    return {
+      searchTerms,
+      matches: [] as Record<string, unknown>[],
+      sources: [{ name: "ask_nac_document_chunks", detail: "No search terms extracted" }],
+      warnings: ["Could not extract search terms from the question."],
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("ask_nac_document_chunks")
+    .select(
+      "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)",
+    )
+    .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
+    .limit(20);
+
+  if (error) throw new Error(error.message);
+
+  const matches = (data || []).map((row: Record<string, unknown>) => {
+    const file = row.file as Record<string, unknown> | null;
+    const fileTitle = String(file?.title || file?.original_filename || "Uploaded file");
+    const chunkText = String(row.chunk_text || "");
+    return {
+      id: row.id,
+      fileId: row.file_id,
+      chunkIndex: row.chunk_index,
+      chunkText,
+      pageNo: row.page_no,
+      sectionLabel: row.section_label,
+      fileTitle,
+      excerpt: buildChunkExcerpt(chunkText, searchTerms),
+      citation: formatChunkCitation({
+        fileTitle,
+        pageNo: row.page_no as number | null,
+        sectionLabel: row.section_label as string | null,
+      }),
+    };
+  });
+
+  const vaultSources = [...new Map(matches.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
+
+  return {
+    searchTerms,
+    matches,
+    vaultSources,
+    sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
+    warnings: matches.length ? [] : ["No matching document chunks under your access scope."],
+  };
 }
 
 // --- Answer builder (ported from vaultAnswerBuilder.js) ---
@@ -796,6 +898,45 @@ export function buildVaultAnswer(
   tool: Record<string, unknown> | null,
   readiness: Record<string, unknown> | null = null,
 ): AskNacAnswer {
+  if (route.intent === VAULT_INTENTS.DOCUMENT_SEARCH) {
+    const matches = (tool?.matches as unknown[]) || [];
+    const searchTerms = String(tool?.searchTerms || extractDocumentSearchTerms(String(route.question || "")));
+    if (!matches.length) {
+      return {
+        answerType: "missing_data",
+        title: "Document search",
+        directAnswer: `No uploaded documents mention “${searchTerms}” under your access scope.`,
+        keyMetrics: [],
+        insights: [],
+        confidence: "low",
+        isAiGenerated: false,
+        intent: route.intent,
+        warnings: tool?.warnings || [],
+      };
+    }
+    const fileNames = [...new Set(matches.map((m) => (m as Record<string, unknown>).fileTitle))];
+    return {
+      answerType: "comparison",
+      title: `Document search · “${searchTerms}”`,
+      directAnswer: `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`,
+      keyMetrics: matches.slice(0, 8).map((m) => {
+        const row = m as Record<string, unknown>;
+        return metricEntry(String(row.fileTitle), row.excerpt, {
+          unit: row.pageNo != null ? `p. ${row.pageNo}` : String(row.sectionLabel || ""),
+          source: String(row.citation || ""),
+        });
+      }),
+      insights: matches.slice(0, 5).map((m) => {
+        const row = m as Record<string, unknown>;
+        return `${row.fileTitle}${row.pageNo != null ? ` (p. ${row.pageNo})` : ""}${row.sectionLabel ? ` · ${row.sectionLabel}` : ""}: “${row.excerpt}” [${row.citation}]`;
+      }),
+      confidence: "high",
+      isAiGenerated: false,
+      intent: route.intent,
+      vaultSources: tool?.vaultSources || [],
+    };
+  }
+
   const facts = tool?.facts as unknown[] | undefined;
   const coverage = tool?.coverage as unknown[] | undefined;
   if (!facts?.length && !coverage?.length && readiness?.status === "missing") {
@@ -825,5 +966,12 @@ export function buildVaultAnswer(
 }
 
 export function isVaultDataIntent(intent: string) {
-  return Object.values(VAULT_INTENTS).includes(intent as typeof VAULT_INTENTS[keyof typeof VAULT_INTENTS]);
+  return (
+    Object.values(VAULT_INTENTS).includes(intent as typeof VAULT_INTENTS[keyof typeof VAULT_INTENTS]) &&
+    intent !== VAULT_INTENTS.DOCUMENT_SEARCH
+  );
+}
+
+export function isVaultDocumentSearchIntent(intent: string) {
+  return intent === VAULT_INTENTS.DOCUMENT_SEARCH;
 }

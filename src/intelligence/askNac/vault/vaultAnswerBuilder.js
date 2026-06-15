@@ -13,6 +13,7 @@ import {
 import { ASK_NAC_INTENTS } from "../intentRouter";
 import {
   collectVaultSources,
+  extractDocumentSearchTerms,
   groupFactsByReportType,
   pickMetricValue,
   pickTextFact,
@@ -341,7 +342,71 @@ export function buildVaultMissingToolResponse(route, tool, readiness) {
   });
 }
 
+export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
+  const matches = tool?.matches || [];
+  const searchTerms = tool?.searchTerms || extractDocumentSearchTerms(route?.question || "");
+
+  if (!matches.length) {
+    return createAskNacResponse({
+      answerType: ANSWER_TYPES.MISSING_DATA,
+      title: "Document search",
+      directAnswer: `No uploaded documents mention “${searchTerms}” under your access scope.`,
+      keyMetrics: [],
+      insights: [],
+      recommendations: ["Upload matching files in Company Knowledge to make them searchable."],
+      confidence: CONFIDENCE_LEVELS.LOW,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: [],
+      warnings: tool?.warnings || [],
+      readiness,
+    });
+  }
+
+  const fileNames = [...new Set(matches.map((m) => m.fileTitle))];
+  const summary = `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`;
+
+  const keyMetrics = matches.slice(0, 8).map((m) =>
+    metricEntry(m.fileTitle, m.excerpt, {
+      unit: m.pageNo != null ? `p. ${m.pageNo}` : m.sectionLabel || "",
+      source: m.citation,
+      note: m.sectionLabel || undefined,
+    }),
+  );
+
+  const insights = matches.slice(0, 5).map(
+    (m) => `${m.fileTitle}${m.pageNo != null ? ` (p. ${m.pageNo})` : ""}${m.sectionLabel ? ` · ${m.sectionLabel}` : ""}: “${m.excerpt}” [${m.citation}]`,
+  );
+
+  return createAskNacResponse({
+    ...baseVaultFields(route, tool, readiness),
+    answerType: ANSWER_TYPES.COMPARISON,
+    title: `Document search · “${searchTerms}”`,
+    directAnswer: summary,
+    keyMetrics,
+    insights,
+    recommendations: [`Citations: ${matches.slice(0, 5).map((m) => m.citation).join("; ")}`],
+    confidence: CONFIDENCE_LEVELS.HIGH,
+    isAiGenerated: false,
+    intent: route.intent,
+    branchLabel: tool?.branchLabel,
+    vaultSources: (tool?.vaultSources || []).map((f) => ({
+      fileId: f.fileId,
+      title: f.title,
+      reportType: f.reportType,
+    })),
+  });
+}
+
 export function buildVaultAnswer(route, tool, readiness) {
+  if (route.intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH) {
+    if (!tool?.matches?.length && readiness?.status === READINESS.MISSING) {
+      return buildVaultMissingToolResponse(route, tool, readiness);
+    }
+    return buildVaultDocumentSearchAnswer(route, tool, readiness);
+  }
+
   if (!tool?.facts?.length && !(tool?.coverage?.length) && readiness?.status === READINESS.MISSING) {
     return buildVaultMissingToolResponse(route, tool, readiness);
   }

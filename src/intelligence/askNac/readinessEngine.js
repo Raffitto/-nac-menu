@@ -9,13 +9,14 @@ import {
   isFoodicsDataIntent,
   isMissingDataIntent,
   isVaultDataIntent,
+  isVaultDocumentSearchIntent,
   vaultReportTypesForIntent,
 } from "./intentRouter";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { probeFoodicsBatchForPeriod } from "./foodics/foodicsQueryTools";
-import { probeVaultCoverage } from "./vault/vaultQueryTools";
+import { extractDocumentSearchTerms, probeVaultCoverage } from "./vault/vaultQueryTools";
 import { probeGoogleReviewSnapshots } from "./googleReviews/googleReviewQueryTools";
 import {
   assessNetworkDataConfidence,
@@ -69,6 +70,7 @@ export function assessIntentReadinessSync(
     foodicsCompare = null,
     vaultPeriod = null,
     branchMention = null,
+    question = "",
   } = {},
 ) {
   if (isMissingDataIntent(intent)) {
@@ -116,6 +118,39 @@ export function assessIntentReadinessSync(
       canQuery: false,
       reasons: ["Could not map this question to a supported metric intent."],
       missingData: [],
+    };
+  }
+
+  if (isVaultDocumentSearchIntent(intent)) {
+    const crossBranch = vaultCrossBranchBlocked(branchMention, profile);
+    if (crossBranch) {
+      return {
+        status: READINESS.BLOCKED,
+        canQuery: false,
+        reasons: [crossBranch],
+        missingData: [],
+      };
+    }
+
+    const searchTerms = extractDocumentSearchTerms(question);
+    if (!searchTerms || searchTerms.length < 2) {
+      return {
+        status: READINESS.MISSING,
+        canQuery: false,
+        reasons: [
+          "Could not extract search terms. Try “Find mentions of terrace AC” or “Search uploaded reports for complaints”.",
+        ],
+        missingData: [{ intent, label: "Document search terms", planned: false }],
+      };
+    }
+
+    return {
+      status: READINESS.READY,
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+      searchTerms,
+      note: "Document keyword search — no calendar period required.",
     };
   }
 
@@ -339,6 +374,10 @@ function buildVaultMissingReadiness(intent, { branch, vaultPeriod, missingTypes,
 export async function assessIntentReadiness(intent, context = {}) {
   const sync = assessIntentReadinessSync(intent, context);
   if (!sync.canQuery && sync.status !== READINESS.READY) {
+    return sync;
+  }
+
+  if (isVaultDocumentSearchIntent(intent)) {
     return sync;
   }
 

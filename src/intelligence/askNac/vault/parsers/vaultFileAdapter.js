@@ -86,15 +86,26 @@ async function readPdfText(file) {
       .join(" ")
       .replace(/\s+/g, " ")
       .trim();
-    if (line) pageTexts.push(line);
+    if (line) pageTexts.push({ pageNo: pageNum, text: line });
   }
 
-  const text = pageTexts.join("\n");
+  const text = pageTexts.map((p) => p.text).join("\n");
   const matrix = textLinesToMatrix(text.split(/\r?\n/));
+  const sections = pageTexts.map((p) => ({
+    id: `page-${p.pageNo}`,
+    label: `Page ${p.pageNo}`,
+    pageNo: p.pageNo,
+    lines: p.text.split(/\r?\n/).filter(Boolean),
+    matrix: textLinesToMatrix(p.text.split(/\r?\n/)),
+    text: p.text,
+  }));
   return {
     matrix,
     text,
-    sections: [{ id: "pdf", label: "PDF text", lines: text.split(/\r?\n/).filter(Boolean), matrix }],
+    pageTexts,
+    sections: sections.length
+      ? sections
+      : [{ id: "pdf", label: "PDF text", lines: text.split(/\r?\n/).filter(Boolean), matrix }],
     adapterWarnings:
       matrix.length < 3
         ? ["PDF table structure weak — using text line heuristics."]

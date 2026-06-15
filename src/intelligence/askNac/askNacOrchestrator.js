@@ -65,6 +65,7 @@ export async function processAskNacQuestion({
     vaultPeriod: route.vaultPeriod,
     executiveKind: route.executiveKind,
     hours: route.period?.hours,
+    question: effectiveQuestion,
   });
 
   const syncBlocked = assessIntentReadinessSync(route.intent, {
@@ -74,6 +75,7 @@ export async function processAskNacQuestion({
     foodicsCompare: route.foodicsCompare,
     vaultPeriod: route.vaultPeriod,
     branchMention: route.branchMention,
+    question: effectiveQuestion,
   });
 
   const effectiveReadiness = syncBlocked.status === "blocked" ? syncBlocked : readiness;
@@ -87,6 +89,8 @@ export async function processAskNacQuestion({
       filters: effectiveFilters,
       profile,
       question: effectiveQuestion,
+      searchTerms: effectiveReadiness.searchTerms,
+      readiness: effectiveReadiness,
       foodicsPeriod: route.foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,

@@ -32,8 +32,9 @@ export function computeVaultKnowledgeTier(row) {
     Number(row?.factsPersisted ?? row?.coverage?.fact_count ?? 0) || 0;
   const readiness =
     row?.readinessStatus || row?.coverage?.readiness_status || "registered";
-  const chunkCount = Number(row?.chunkCount ?? 0) || 0;
-  const searchable = chunkCount > 0;
+  const chunkCount = Number(row?.chunkCount ?? row?.chunk_count ?? 0) || 0;
+  const searchStatus = row?.searchStatus ?? row?.search_status ?? "not_searchable";
+  const searchable = searchStatus === "searchable" || chunkCount > 0;
 
   let tier = VAULT_KNOWLEDGE_TIER.STORED;
   if (facts > 0 && (readiness === "ready" || readiness === "partial")) {

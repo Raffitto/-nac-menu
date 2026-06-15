@@ -493,10 +493,16 @@ export default function AskNacDataVaultPanel({ session }) {
         ? `${result.legacyDocSkipped} legacy .doc file(s) skipped — DOCX required.`
         : "";
 
+    const searchLine =
+      result.searchIndexingFailed > 0
+        ? `${result.searchIndexingFailed} file(s) stored but search indexing failed — re-upload or re-index to enable Ask NAC document search.`
+        : "";
+
     setNotice(
       [
         `Folder import complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
         legacyLine,
+        searchLine,
       ]
         .filter(Boolean)
         .join(" "),
@@ -1269,6 +1275,14 @@ export default function AskNacDataVaultPanel({ session }) {
                         <div>
                           <span className="nac-ask-vault__parse-label">Facts</span>
                           <span>{row.factsPersisted ?? 0} saved</span>
+                        </div>
+                        <div>
+                          <span className="nac-ask-vault__parse-label">Search</span>
+                          <span className={`nac-ask-vault__status ${tier.searchable ? "is-completed" : "is-registered"}`}>
+                            {tier.searchable
+                              ? `Searchable (${row.chunkCount ?? row.chunk_count ?? 0} chunks)`
+                              : tier.searchableLabel}
+                          </span>
                         </div>
                         <div>
                           <span className="nac-ask-vault__parse-label">Confidence</span>

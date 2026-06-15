@@ -12,6 +12,9 @@ const FACT_SELECT =
 const COVERAGE_SELECT =
   "id,branch_id,brand_wide,department,report_type,period_start,period_end,fact_count,readiness_status,last_ingested_at,source_file_id,source_file:ask_nac_files(id,title,original_filename,report_type,classification_confidence,parser_version,sensitivity_level)";
 
+const CHUNK_SELECT =
+  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
+
 function resolveBranch(context) {
   return resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
 }
@@ -271,8 +274,120 @@ function buildVaultWarnings(coverage = [], facts = []) {
   return warnings;
 }
 
+/** Strip intent phrasing to raw keyword query for FTS. */
+export function extractDocumentSearchTerms(question = "") {
+  let q = String(question || "").trim();
+  q = q.replace(/^search uploaded reports for\s+/i, "");
+  q = q.replace(/^(please\s+)?(find|search|look up|show references? to)\s+(mentions?\s+of\s+)?/i, "");
+  q = q.replace(
+    /\b(in uploaded (files|documents|reports)|from (the )?vault|in company knowledge)\b/gi,
+    "",
+  );
+  return q.replace(/\?$/, "").trim();
+}
+
+export function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {
+  const text = String(chunkText || "");
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  const terms = String(searchTerms || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  let idx = -1;
+  for (const term of terms) {
+    const hit = lower.indexOf(term);
+    if (hit >= 0 && (idx < 0 || hit < idx)) idx = hit;
+  }
+  if (idx < 0) {
+    return text.length <= maxLen ? text : `${text.slice(0, maxLen - 1)}…`;
+  }
+  const start = Math.max(0, idx - 80);
+  const slice = text.slice(start, start + maxLen);
+  const prefix = start > 0 ? "…" : "";
+  const suffix = start + maxLen < text.length ? "…" : "";
+  return `${prefix}${slice}${suffix}`.trim();
+}
+
+export function formatChunkCitation(match) {
+  const parts = [match.fileTitle || "Uploaded file"];
+  if (match.pageNo != null) parts.push(`p. ${match.pageNo}`);
+  if (match.sectionLabel) parts.push(match.sectionLabel);
+  return parts.join(" · ");
+}
+
+export function mapVaultChunkRow(row, searchTerms) {
+  const file = row?.file || null;
+  const fileTitle = file?.title || file?.original_filename || "Uploaded file";
+  const chunkText = row.chunk_text || "";
+  return {
+    id: row.id,
+    fileId: row.file_id,
+    chunkIndex: row.chunk_index,
+    chunkText,
+    pageNo: row.page_no,
+    sectionLabel: row.section_label,
+    branchId: row.branch_id,
+    department: row.department,
+    reportType: row.report_type || file?.report_type,
+    fileTitle,
+    excerpt: buildChunkExcerpt(chunkText, searchTerms),
+    citation: formatChunkCitation({
+      fileTitle,
+      pageNo: row.page_no,
+      sectionLabel: row.section_label,
+    }),
+  };
+}
+
+export async function searchVaultDocuments(supabase, context = {}) {
+  const searchTerms =
+    context.searchTerms || extractDocumentSearchTerms(context.question || context.route?.question || "");
+  if (!searchTerms || searchTerms.length < 2) {
+    return {
+      searchTerms,
+      matches: [],
+      branch: resolveBranch(context),
+      branchLabel: resolveBranch(context) ? branchDisplayName(resolveBranch(context)) : "Network",
+      sources: [{ name: "ask_nac_document_chunks", detail: "No search terms extracted" }],
+      warnings: ["Could not extract search terms from the question."],
+    };
+  }
+
+  const scopedBranch = resolveBranch(context);
+  let query = supabase
+    .from("ask_nac_document_chunks")
+    .select(CHUNK_SELECT)
+    .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
+    .limit(20);
+
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const matches = (data || []).map((row) => mapVaultChunkRow(row, searchTerms));
+  const vaultSources = [...new Map(matches.map((m) => [m.fileId, {
+    fileId: m.fileId,
+    title: m.fileTitle,
+    reportType: m.reportType,
+  }])).values()];
+
+  return {
+    searchTerms,
+    matches,
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    vaultSources,
+    sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
+    warnings: matches.length ? [] : ["No matching document chunks under your access scope."],
+  };
+}
+
 export async function runVaultQueryTool(supabase, intent, context = {}) {
   switch (intent) {
+    case "vault_document_search":
+      return searchVaultDocuments(supabase, context);
     case "vault_coverage_list":
       return getVaultReportSources(supabase, context);
     case "vault_cash_up_summary":

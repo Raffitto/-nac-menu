@@ -7,11 +7,14 @@ import {
 } from "./vaultConstants";
 import {
   VAULT_KNOWLEDGE_TIER,
+  VAULT_KNOWLEDGE_TIER_LABELS,
   VAULT_SEARCH_INDEX_COMING_SOON,
   computeVaultKnowledgeTier,
 } from "./vaultKnowledgeTier";
 import {
   resolveVaultRegistrationStatus,
+  buildVaultChunkingSearchWarning,
+  resolveVaultUploadWarnings,
 } from "./vaultUploadIngestion";
 import { partitionVaultUploadFiles, isSupportedFile } from "./vaultBulkIngestion";
 
@@ -51,6 +54,12 @@ describe("computeVaultKnowledgeTier", () => {
     expect(tier.tier).toBe(VAULT_KNOWLEDGE_TIER.ASK_NAC_READY);
     expect(tier.isAskNacReady).toBe(true);
   });
+
+  test("searchable when search_status is searchable", () => {
+    const tier = computeVaultKnowledgeTier({ searchStatus: "searchable", chunkCount: 2 });
+    expect(tier.searchable).toBe(true);
+    expect(tier.searchableLabel).toBe(VAULT_KNOWLEDGE_TIER_LABELS.searchable);
+  });
 });
 
 describe("vaultUploadIngestion registration status", () => {
@@ -62,6 +71,38 @@ describe("vaultUploadIngestion registration status", () => {
     expect(
       resolveVaultRegistrationStatus({ storedOnly: false, ingestion: { ok: false } }),
     ).toBe("failed");
+  });
+});
+
+describe("vault chunking upload warnings", () => {
+  test("no warning when chunking succeeded with chunks", () => {
+    expect(buildVaultChunkingSearchWarning({ ok: true, chunkCount: 3 })).toBeNull();
+  });
+
+  test("warning when chunking failed with reason", () => {
+    const warning = buildVaultChunkingSearchWarning({
+      ok: false,
+      chunkCount: 0,
+      error: 'Unsupported file type ".doc" for chunking.',
+    });
+    expect(warning).toMatch(/search indexing failed/i);
+    expect(warning).toContain('Unsupported file type ".doc" for chunking.');
+  });
+
+  test("warning when chunking returned no searchable chunks", () => {
+    expect(buildVaultChunkingSearchWarning({ ok: true, chunkCount: 0 })).toMatch(
+      /search indexing failed/i,
+    );
+  });
+
+  test("resolveVaultUploadWarnings merges ingestion and chunking warnings", () => {
+    const warning = resolveVaultUploadWarnings({
+      ingestion: { warning: "Low confidence." },
+      chunking: { ok: false, chunkCount: 0, error: "PDF text extraction unavailable." },
+    });
+    expect(warning).toContain("Low confidence.");
+    expect(warning).toContain("search indexing failed");
+    expect(warning).toContain("PDF text extraction unavailable.");
   });
 });
 

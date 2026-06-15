@@ -10,7 +10,7 @@ import {
   metricEntry,
   sourceEntry,
 } from "./askNacContract";
-import { ASK_NAC_INTENTS, isVaultDataIntent } from "./intentRouter";
+import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentSearchIntent } from "./intentRouter";
 import { READINESS } from "./readinessEngine";
 import { CONFIDENCE_LABELS } from "../../platform/contracts/dataConfidence";
 import { buildVaultAnswer } from "./vault/vaultAnswerBuilder";
@@ -611,7 +611,7 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
     return buildMissingDataResponse(route, readiness);
   }
 
-  if (isVaultDataIntent(route.intent)) {
+  if (isVaultDataIntent(route.intent) || isVaultDocumentSearchIntent(route.intent)) {
     return buildVaultAnswer(route, tool, readiness);
   }
 

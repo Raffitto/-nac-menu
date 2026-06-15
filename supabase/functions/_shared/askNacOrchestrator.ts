@@ -24,8 +24,10 @@ import {
 } from "./askNacPeriodFallback.ts";
 import {
   buildVaultAnswer,
+  extractDocumentSearchTerms,
   hasVaultDayPeriod,
   isVaultDataIntent,
+  isVaultDocumentSearchIntent,
   parseVaultPeriodFromQuestion,
   runVaultQueryTool,
   VAULT_INTENTS,
@@ -74,6 +76,22 @@ const BRANCH_ALIASES: Record<string, string[]> = {
 };
 
 const INTENT_RULES: { id: string; score: (q: string) => number }[] = [
+  {
+    id: ASK_NAC_INTENTS.DOCUMENT_SEARCH,
+    score(q) {
+      if (/\bfind mentions of\b/.test(q)) return 22;
+      if (/\bsearch uploaded reports for\b/.test(q)) return 22;
+      if (/\bshow references? to\b/.test(q)) return 21;
+      if (
+        /\b(find|search|look up|mentions? of|contains?)\b/.test(q) &&
+        /\b(uploaded|document|file|report|vault|knowledge|sop)\b/.test(q)
+      ) {
+        return 20;
+      }
+      if (/\b(find|search)\b/.test(q) && /\b(waste|complaint|terrace|ac)\b/.test(q)) return 19;
+      return 0;
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
     score(q) {
@@ -445,6 +463,18 @@ async function assessReadiness(
   if (route.intent === ASK_NAC_INTENTS.UNKNOWN) {
     return { status: "missing", canQuery: false, reasons: ["Could not map question to a supported intent."], missingData: [] };
   }
+  if (isVaultDocumentSearchIntent(route.intent)) {
+    const searchTerms = extractDocumentSearchTerms(String(context.question || ""));
+    if (!searchTerms || searchTerms.length < 2) {
+      return {
+        status: "missing",
+        canQuery: false,
+        reasons: ["Could not extract search terms from the question."],
+        missingData: [{ intent: route.intent, label: "Document search terms" }],
+      };
+    }
+    return { status: "ready", canQuery: true, reasons: [], missingData: [], searchTerms };
+  }
   if (isVaultDataIntent(route.intent) && (!route.vaultPeriod?.startDate || !route.vaultPeriod?.endDate)) {
     return {
       status: "missing",
@@ -632,7 +662,7 @@ async function runQueryTool(
   intent: string,
   context: Record<string, unknown>,
 ) {
-  if (isVaultDataIntent(intent)) {
+  if (isVaultDataIntent(intent) || isVaultDocumentSearchIntent(intent)) {
     return runVaultQueryTool(supabase, intent, context);
   }
 
@@ -741,6 +771,7 @@ export async function processAskNacOnEdge(
       profile: profileHint,
       branch: mergedFilters.branch,
       question: effectiveQuestion,
+      searchTerms: (readiness as Record<string, unknown>).searchTerms,
       foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
@@ -754,7 +785,7 @@ export async function processAskNacOnEdge(
     }
   }
 
-  const deterministic = isVaultDataIntent(route.intent)
+  const deterministic = isVaultDataIntent(route.intent) || isVaultDocumentSearchIntent(route.intent)
     ? buildVaultAnswer(route, tool, readiness)
     : buildDeterministicAskNacAnswer(route, tool, readiness);
 

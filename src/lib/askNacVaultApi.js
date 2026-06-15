@@ -5,7 +5,10 @@
 import { classifyVaultUpload, mergeAutoClassification } from "../intelligence/askNac/vault/vaultAutoClassifier";
 import { VAULT_STORAGE_BUCKET } from "../intelligence/askNac/vault/vaultConstants";
 import { vaultCanUploadBrandWide } from "../intelligence/askNac/vault/vaultAccess";
-import { runVaultFileIngestionPipeline } from "../intelligence/askNac/vault/vaultUploadIngestion";
+import {
+  runVaultFileIngestionPipeline,
+  resolveVaultUploadWarnings,
+} from "../intelligence/askNac/vault/vaultUploadIngestion";
 import { computeVaultKnowledgeTier } from "../intelligence/askNac/vault/vaultKnowledgeTier";
 import {
   findDuplicateByContentHash,
@@ -29,7 +32,7 @@ function driveOAuthRedirectUri() {
 }
 
 const FILE_COLUMNS =
-  "id,title,original_filename,storage_bucket,storage_path,primary_branch_id,brand_wide,department,report_type,data_layer,period_start,period_end,period_label,sensitivity_level,status,uploaded_by,uploader_email,classification_confidence,parser_version,created_at,updated_at";
+  "id,title,original_filename,storage_bucket,storage_path,primary_branch_id,brand_wide,department,report_type,data_layer,period_start,period_end,period_label,sensitivity_level,status,uploaded_by,uploader_email,classification_confidence,parser_version,chunk_count,search_status,searchable_at,created_at,updated_at";
 
 const LIST_SELECT = `
   ${FILE_COLUMNS},
@@ -90,6 +93,9 @@ export function enrichVaultFileRow(row) {
     parseWarning:
       job?.error ||
       (stats.needsMapping || preview?.needsMapping ? "Needs mapping/review." : null),
+    chunkCount: Number(row.chunk_count ?? stats.chunkCount ?? 0) || 0,
+    searchStatus: row.search_status ?? stats.searchStatus ?? "not_searchable",
+    searchableAt: row.searchable_at ?? null,
   };
   return {
     ...enriched,
@@ -298,7 +304,15 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     });
 
     if (coverageError?.message) {
-      return { ok: true, file: inserted, warning: coverageError.message };
+      return {
+        ok: true,
+        file: inserted,
+        warning: resolveVaultUploadWarnings({
+          jobError: coverageError.message,
+          ingestion: pipeline.ingestion,
+          chunking: pipeline.chunking,
+        }),
+      };
     }
   }
 
@@ -320,7 +334,12 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     ingestion: pipeline.ingestion,
     autoClassification,
     storedOnly: pipeline.storedOnly,
-    warning: pipeline.ingestion?.warning || pipeline.jobError || null,
+    chunking: pipeline.chunking,
+    warning: resolveVaultUploadWarnings({
+      jobError: pipeline.jobError,
+      ingestion: pipeline.ingestion,
+      chunking: pipeline.chunking,
+    }),
   };
 }
 

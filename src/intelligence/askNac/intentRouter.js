@@ -44,6 +44,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_OPERATIONAL_DAY_SUMMARY: "vault_operational_day_summary",
   VAULT_MANAGEMENT_REPORT: "vault_management_report_from_vault",
   VAULT_COVERAGE_LIST: "vault_coverage_list",
+  VAULT_DOCUMENT_SEARCH: "vault_document_search",
   UNKNOWN: "unknown",
 });
 
@@ -57,6 +58,22 @@ const BRANCH_ALIASES = Object.freeze({
 });
 
 const INTENT_RULES = [
+  {
+    id: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH,
+    score(q) {
+      if (/\bfind mentions of\b/.test(q)) return 22;
+      if (/\bsearch uploaded reports for\b/.test(q)) return 22;
+      if (/\bshow references? to\b/.test(q)) return 21;
+      if (
+        /\b(find|search|look up|mentions? of|contains?)\b/.test(q) &&
+        /\b(uploaded|document|file|report|vault|knowledge|sop)\b/.test(q)
+      ) {
+        return 20;
+      }
+      if (/\b(find|search)\b/.test(q) && /\b(waste|complaint|terrace|ac)\b/.test(q)) return 19;
+      return 0;
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
     score(q) {
@@ -260,6 +277,8 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.OPERATIONAL_KNOWLEDGE,
     score(q) {
+      if (/\bfind mentions of\b/.test(q)) return 0;
+      if (/\bsearch uploaded reports for\b/.test(q)) return 0;
       if (/\bwhy did sales drop\b/.test(q)) return 18;
       if (/\b(operational issues? repeated|issues? repeated|same problem)\b/.test(q)) return 17;
       if (/\bwhat changed between\b/.test(q)) return 16;
@@ -457,6 +476,10 @@ export function routeAskNacIntent(question, options = {}) {
   route.debug.topLimit = route.topLimit;
 
   return route;
+}
+
+export function isVaultDocumentSearchIntent(intent) {
+  return intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH;
 }
 
 export function isVaultDataIntent(intent) {
