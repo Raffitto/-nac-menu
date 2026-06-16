@@ -39,6 +39,10 @@ describe("vault upload registration", () => {
     );
   });
 
+  test("registerVaultUpload returns duplicate skip payload with re-index option", () => {
+    expect(registerVaultUploadSource).toMatch(/buildVaultDuplicateSkipResult\(/);
+  });
+
   test("createFileVersion does not use INSERT RETURNING on ask_nac_file_versions", () => {
     const fn = duplicateDetectionSource.match(
       /export async function createFileVersion[\s\S]*?(?=export async function hashFileForIngestion)/,

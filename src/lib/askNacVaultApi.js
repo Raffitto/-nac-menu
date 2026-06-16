@@ -23,8 +23,33 @@ import {
 } from "../intelligence/askNac/vault/vaultBulkIngestion";
 import { fetchCoverageDashboardData } from "../intelligence/askNac/vault/vaultCoverageDashboard";
 import { sanitizeDriveApiResponse } from "./vaultDriveSecrets";
+import {
+  archiveVaultDocument,
+  buildVaultDuplicateSkipResult,
+  deleteVaultDocument,
+  formatVaultDocumentManagementRow,
+  rebuildVaultDocumentSearchIndex,
+  rebuildVaultDocumentSearchIndexBulk,
+  reindexExistingVaultDocument,
+  vaultCanDeleteDocuments,
+  vaultCanManageDocuments,
+} from "../intelligence/askNac/vault/vaultDocumentManagement";
 
-export { createBulkImportBatch, runBulkImportBatch, fetchBulkImportBatchStatus, fetchCoverageDashboardData };
+export {
+  createBulkImportBatch,
+  runBulkImportBatch,
+  fetchBulkImportBatchStatus,
+  fetchCoverageDashboardData,
+  archiveVaultDocument,
+  buildVaultDuplicateSkipResult,
+  deleteVaultDocument,
+  formatVaultDocumentManagementRow,
+  rebuildVaultDocumentSearchIndex,
+  rebuildVaultDocumentSearchIndexBulk,
+  reindexExistingVaultDocument,
+  vaultCanDeleteDocuments,
+  vaultCanManageDocuments,
+};
 
 function driveOAuthRedirectUri() {
   if (typeof window === "undefined") return "";
@@ -107,17 +132,20 @@ export function enrichVaultFileRow(row) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ limit?: number }} opts
  */
-export async function listVaultFiles(supabase, { limit = 50 } = {}) {
+export async function listVaultFiles(supabase, { limit = 100, status = "active" } = {}) {
   if (!supabase) {
     return { files: [], error: "Supabase not configured" };
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("ask_nac_files")
     .select(LIST_SELECT)
-    .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (status) query = query.eq("status", status);
+
+  const { data, error } = await query;
 
   if (error) {
     return { files: [], error: error.message };
@@ -178,12 +206,10 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
   const duplicateDecision = resolveDuplicateAction({ existingFile: existingDuplicate, contentHash });
 
   if (duplicateDecision.action === "skip_duplicate") {
-    return {
-      ok: true,
-      skipped: true,
-      reason: duplicateDecision.reason,
-      fileId: duplicateDecision.existingFileId,
-    };
+    return buildVaultDuplicateSkipResult({
+      duplicateDecision,
+      existingFile: existingDuplicate,
+    });
   }
 
   const resolvedFileId =

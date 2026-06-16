@@ -16,6 +16,9 @@ import {
   BarChart3,
   Settings2,
   Unplug,
+  Archive,
+  Trash2,
+  RotateCw,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { useRbacOptional } from "../context/RbacContext";
@@ -31,6 +34,14 @@ import {
   completeDriveOAuth,
   registerDriveSyncFolder,
   triggerDriveSync,
+  rebuildVaultDocumentSearchIndex,
+  rebuildVaultDocumentSearchIndexBulk,
+  archiveVaultDocument,
+  deleteVaultDocument,
+  reindexExistingVaultDocument,
+  formatVaultDocumentManagementRow,
+  vaultCanManageDocuments,
+  vaultCanDeleteDocuments,
 } from "../../lib/askNacVaultApi";
 import {
   VAULT_DEPARTMENTS,
@@ -157,6 +168,13 @@ export default function AskNacDataVaultPanel({ session }) {
   const [uploadPreview, setUploadPreview] = useState(null);
   const [showAdvancedUpload, setShowAdvancedUpload] = useState(false);
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState(() => new Set());
+  const [managementBusy, setManagementBusy] = useState(false);
+  const [bulkReindexProgress, setBulkReindexProgress] = useState(null);
+  const [bulkReindexResults, setBulkReindexResults] = useState([]);
+  const [duplicatePrompt, setDuplicatePrompt] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmArchiveId, setConfirmArchiveId] = useState(null);
 
   const branchOptions = useMemo(
     () => vaultBranchOptionsForProfile(profile),
@@ -174,6 +192,24 @@ export default function AskNacDataVaultPanel({ session }) {
   const uploadBranchOptions = useMemo(
     () => branchOptions.filter((o) => o.value !== "all"),
     [branchOptions],
+  );
+
+  const canManageDocuments = useMemo(
+    () => vaultCanManageDocuments({ vaultRole, rbacRole: profile?.role }),
+    [vaultRole, profile?.role],
+  );
+
+  const canDeleteDocuments = useMemo(
+    () => vaultCanDeleteDocuments({ vaultRole, rbacRole: profile?.role }),
+    [vaultRole, profile?.role],
+  );
+
+  const documentManagementRows = useMemo(
+    () => files.map((row) => ({
+      ...formatVaultDocumentManagementRow(row),
+      title: row.title || row.original_filename,
+    })),
+    [files],
   );
 
   const knowledgeStats = useMemo(() => {
@@ -232,11 +268,6 @@ export default function AskNacDataVaultPanel({ session }) {
     if (status === "failed") return "is-failed";
     if (status === "processing") return "is-processing";
     return "is-registered";
-  };
-
-  const formatPeriod = (start, end) => {
-    if (start && end && start !== end) return `${start} → ${end}`;
-    return start || end || "—";
   };
 
   const formatConfidence = (value) => {
@@ -517,6 +548,159 @@ export default function AskNacDataVaultPanel({ session }) {
     [reportSelectionRejections, runBulkImport],
   );
 
+  const toggleDocSelection = useCallback((fileId) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllDocs = useCallback(() => {
+    setSelectedDocIds((prev) => {
+      if (prev.size === documentManagementRows.length) return new Set();
+      return new Set(documentManagementRows.map((row) => row.id));
+    });
+  }, [documentManagementRows]);
+
+  const onReindexDocument = useCallback(
+    async (fileId) => {
+      if (!fileId || managementBusy) return;
+      setManagementBusy(true);
+      setError("");
+      const result = await rebuildVaultDocumentSearchIndex(supabase, {
+        fileId,
+        session,
+        profile,
+        vaultRole,
+        rbacRole: profile?.role,
+      });
+      setManagementBusy(false);
+      if (!result.ok) {
+        setError(result.error || "Search index rebuild failed.");
+        return;
+      }
+      setNotice(`Search index rebuilt: ${result.chunkCount} chunk(s).`);
+      await refreshKnowledgeStatus();
+    },
+    [managementBusy, session, profile, vaultRole, refreshKnowledgeStatus],
+  );
+
+  const onBulkReindexDocuments = useCallback(async () => {
+    const fileIds = [...selectedDocIds];
+    if (!fileIds.length || managementBusy) return;
+    setManagementBusy(true);
+    setBulkReindexResults([]);
+    setBulkReindexProgress({ current: 0, total: fileIds.length });
+    setError("");
+
+    const result = await rebuildVaultDocumentSearchIndexBulk(supabase, {
+      fileIds,
+      session,
+      profile,
+      vaultRole,
+      rbacRole: profile?.role,
+      onProgress: (progress) => setBulkReindexProgress(progress),
+    });
+
+    setManagementBusy(false);
+    setBulkReindexProgress(null);
+    setBulkReindexResults(result.results || []);
+    setSelectedDocIds(new Set());
+
+    if (!result.ok && !result.results?.length) {
+      setError(result.error || "Bulk re-index failed.");
+      return;
+    }
+
+    setNotice(
+      `Bulk re-index complete: ${result.succeeded ?? 0} succeeded, ${result.failed ?? 0} failed.`,
+    );
+    await refreshKnowledgeStatus();
+  }, [selectedDocIds, managementBusy, session, profile, vaultRole, refreshKnowledgeStatus]);
+
+  const onArchiveDocument = useCallback(
+    async (fileId) => {
+      if (!fileId || managementBusy) return;
+      setManagementBusy(true);
+      setError("");
+      const result = await archiveVaultDocument(supabase, {
+        fileId,
+        session,
+        profile,
+        vaultRole,
+        rbacRole: profile?.role,
+      });
+      setManagementBusy(false);
+      setConfirmArchiveId(null);
+      if (!result.ok) {
+        setError(result.error || "Archive failed.");
+        return;
+      }
+      setSelectedDocIds((prev) => {
+        const next = new Set(prev);
+        next.delete(fileId);
+        return next;
+      });
+      setNotice("Document archived. It will no longer appear in search.");
+      await refreshKnowledgeStatus();
+    },
+    [managementBusy, session, profile, vaultRole, refreshKnowledgeStatus],
+  );
+
+  const onDeleteDocument = useCallback(
+    async (fileId) => {
+      if (!fileId || managementBusy) return;
+      setManagementBusy(true);
+      setError("");
+      const result = await deleteVaultDocument(supabase, {
+        fileId,
+        session,
+        profile,
+        vaultRole,
+        rbacRole: profile?.role,
+      });
+      setManagementBusy(false);
+      setConfirmDeleteId(null);
+      if (!result.ok) {
+        setError(result.error || "Delete failed.");
+        return;
+      }
+      setSelectedDocIds((prev) => {
+        const next = new Set(prev);
+        next.delete(fileId);
+        return next;
+      });
+      setNotice("Document removed from Company Knowledge.");
+      await refreshKnowledgeStatus();
+    },
+    [managementBusy, session, profile, vaultRole, refreshKnowledgeStatus],
+  );
+
+  const onReindexDuplicate = useCallback(async () => {
+    if (!duplicatePrompt?.fileId) return;
+    setManagementBusy(true);
+    setError("");
+    const result = await reindexExistingVaultDocument(supabase, {
+      fileId: duplicatePrompt.fileId,
+      session,
+      profile,
+      vaultRole,
+      rbacRole: profile?.role,
+    });
+    setManagementBusy(false);
+    setDuplicatePrompt(null);
+    if (!result.ok) {
+      setError(result.error || "Re-index failed.");
+      return;
+    }
+    setNotice(`Existing document re-indexed: ${result.chunkCount} chunk(s).`);
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    await refreshKnowledgeStatus();
+  }, [duplicatePrompt, session, profile, vaultRole, refreshKnowledgeStatus]);
+
   const onUpload = async () => {
     if (!selectedFile) {
       setError("Select a file before uploading.");
@@ -555,7 +739,16 @@ export default function AskNacDataVaultPanel({ session }) {
     }
 
     if (result.skipped) {
-      setNotice(result.reason || "Duplicate file skipped.");
+      if (result.canReindex) {
+        setDuplicatePrompt({
+          fileId: result.fileId,
+          reason: result.reason,
+          skipMessage: result.skipMessage,
+          existingFile: result.existingFile,
+        });
+      } else {
+        setNotice(result.reason || "Duplicate file skipped.");
+      }
       await refreshKnowledgeStatus();
       return;
     }
@@ -855,6 +1048,37 @@ export default function AskNacDataVaultPanel({ session }) {
           ) : null}
 
           {notice ? <p className="nac-ask-vault__notice">{notice}</p> : null}
+          {duplicatePrompt ? (
+            <div className="nac-vault-duplicate-prompt" role="status">
+              <p>
+                <strong>{duplicatePrompt.skipMessage || "Skipped: already exists"}</strong>
+                {duplicatePrompt.existingFile?.title
+                  ? ` — ${duplicatePrompt.existingFile.title}`
+                  : ""}
+                {duplicatePrompt.reason ? ` (${duplicatePrompt.reason})` : ""}
+              </p>
+              <div className="nac-vault-duplicate-prompt__actions">
+                {duplicatePrompt.canReindex !== false ? (
+                  <button
+                    type="button"
+                    className="nac-vault-action-btn nac-vault-action-btn--primary"
+                    disabled={managementBusy}
+                    onClick={onReindexDuplicate}
+                  >
+                    <RotateCw size={14} aria-hidden />
+                    Re-index existing document
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="nac-vault-action-btn nac-vault-action-btn--secondary"
+                  onClick={() => setDuplicatePrompt(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Section 1 — Company Knowledge */}
           <section className="nac-vault-knowledge" aria-labelledby="vault-knowledge-heading">
@@ -1347,7 +1571,7 @@ export default function AskNacDataVaultPanel({ session }) {
             <div className="nac-ask-vault__list">
               <h5>
                 <FolderOpen size={16} aria-hidden />
-                Document registry
+                {canManageDocuments ? "Document management" : "Document registry"}
               </h5>
 
               {loading ? (
@@ -1360,10 +1584,181 @@ export default function AskNacDataVaultPanel({ session }) {
                   <FileText size={20} aria-hidden />
                   <p>No documents yet. Upload a report to create the first entry.</p>
                 </div>
+              ) : canManageDocuments ? (
+                <>
+                  <div className="nac-vault-doc-mgmt__toolbar">
+                    <label className="nac-vault-doc-mgmt__select-all">
+                      <input
+                        type="checkbox"
+                        checked={
+                          documentManagementRows.length > 0
+                          && selectedDocIds.size === documentManagementRows.length
+                        }
+                        onChange={toggleSelectAllDocs}
+                      />
+                      Select all
+                    </label>
+                    <button
+                      type="button"
+                      className="nac-vault-action-btn nac-vault-action-btn--secondary"
+                      disabled={managementBusy || selectedDocIds.size === 0}
+                      onClick={onBulkReindexDocuments}
+                    >
+                      <RotateCw size={14} aria-hidden />
+                      Rebuild search index ({selectedDocIds.size || 0})
+                    </button>
+                  </div>
+
+                  {bulkReindexProgress ? (
+                    <div className="nac-ask-vault__bulk-progress" role="status">
+                      <Loader2 size={14} className="nac-bi-spin" />
+                      Re-indexing {bulkReindexProgress.current}/{bulkReindexProgress.total}…
+                    </div>
+                  ) : null}
+
+                  {bulkReindexResults.length ? (
+                    <ul className="nac-vault-doc-mgmt__results">
+                      {bulkReindexResults.map((item) => (
+                        <li key={item.fileId} className={item.ok ? "is-ok" : "is-fail"}>
+                          <span>{item.fileId.slice(0, 8)}…</span>
+                          <span>
+                            {item.ok
+                              ? `${item.chunkCount} chunk(s)`
+                              : item.error || "Failed"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+
+                  <div className="nac-vault-doc-mgmt__table-wrap">
+                    <table className="nac-vault-doc-mgmt__table">
+                      <thead>
+                        <tr>
+                          <th scope="col" aria-label="Select" />
+                          <th scope="col">Filename</th>
+                          <th scope="col">Report type</th>
+                          <th scope="col">Branch</th>
+                          <th scope="col">Uploaded</th>
+                          <th scope="col">Searchable</th>
+                          <th scope="col">Chunks</th>
+                          <th scope="col">Parsed</th>
+                          <th scope="col">Last indexed</th>
+                          <th scope="col">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {documentManagementRows.map((row) => (
+                          <tr key={row.id}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={selectedDocIds.has(row.id)}
+                                onChange={() => toggleDocSelection(row.id)}
+                                aria-label={`Select ${row.filename}`}
+                              />
+                            </td>
+                            <td title={row.filename}>{row.filename}</td>
+                            <td>{row.reportType}</td>
+                            <td>{branchLabel({ primary_branch_id: row.branch === "brand" ? null : row.branch, brand_wide: row.branch === "brand" })}</td>
+                            <td>{formatDate(row.uploadedAt)}</td>
+                            <td>{row.searchable ? "Yes" : "No"}</td>
+                            <td>{row.chunkCount}</td>
+                            <td>{row.parsed ? "Yes" : "No"}</td>
+                            <td>{formatDate(row.lastIndexedAt)}</td>
+                            <td>
+                              <div className="nac-vault-doc-mgmt__row-actions">
+                                <button
+                                  type="button"
+                                  className="nac-vault-doc-mgmt__icon-btn"
+                                  title="Rebuild search index"
+                                  disabled={managementBusy}
+                                  onClick={() => onReindexDocument(row.id)}
+                                >
+                                  <RotateCw size={14} aria-hidden />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="nac-vault-doc-mgmt__icon-btn"
+                                  title="Archive document"
+                                  disabled={managementBusy}
+                                  onClick={() => setConfirmArchiveId(row.id)}
+                                >
+                                  <Archive size={14} aria-hidden />
+                                </button>
+                                {canDeleteDocuments ? (
+                                  <button
+                                    type="button"
+                                    className="nac-vault-doc-mgmt__icon-btn is-danger"
+                                    title="Delete document"
+                                    disabled={managementBusy}
+                                    onClick={() => setConfirmDeleteId(row.id)}
+                                  >
+                                    <Trash2 size={14} aria-hidden />
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {confirmArchiveId ? (
+                    <div className="nac-vault-doc-mgmt__confirm" role="dialog" aria-modal="true">
+                      <p>Archive this document? It will be removed from search but kept for audit.</p>
+                      <div className="nac-vault-duplicate-prompt__actions">
+                        <button
+                          type="button"
+                          className="nac-vault-action-btn nac-vault-action-btn--primary"
+                          disabled={managementBusy}
+                          onClick={() => onArchiveDocument(confirmArchiveId)}
+                        >
+                          Archive
+                        </button>
+                        <button
+                          type="button"
+                          className="nac-vault-action-btn nac-vault-action-btn--secondary"
+                          onClick={() => setConfirmArchiveId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {confirmDeleteId ? (
+                    <div className="nac-vault-doc-mgmt__confirm" role="dialog" aria-modal="true">
+                      <p>
+                        Permanently remove this document from Company Knowledge? Storage and search
+                        chunks will be deleted. This cannot be undone.
+                      </p>
+                      <div className="nac-vault-duplicate-prompt__actions">
+                        <button
+                          type="button"
+                          className="nac-vault-action-btn nac-vault-action-btn--primary"
+                          disabled={managementBusy}
+                          onClick={() => onDeleteDocument(confirmDeleteId)}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          type="button"
+                          className="nac-vault-action-btn nac-vault-action-btn--secondary"
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <ul className="nac-ask-vault__files">
                   {files.map((row) => {
                     const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
+                    const mgmt = formatVaultDocumentManagementRow(row);
                     return (
                     <li key={row.id} className="nac-ask-vault__file-card">
                       <div className="nac-ask-vault__file-title-row">
@@ -1392,24 +1787,28 @@ export default function AskNacDataVaultPanel({ session }) {
                           </span>
                         </div>
                         <div>
-                          <span className="nac-ask-vault__parse-label">Facts</span>
-                          <span>{row.factsPersisted ?? 0} saved</span>
+                          <span className="nac-ask-vault__parse-label">Parsed</span>
+                          <span>{mgmt.parsed ? "Yes" : "No"}</span>
                         </div>
                         <div>
                           <span className="nac-ask-vault__parse-label">Search</span>
                           <span className={`nac-ask-vault__status ${tier.searchable ? "is-completed" : "is-registered"}`}>
-                            {tier.searchable
-                              ? `Searchable (${row.chunkCount ?? row.chunk_count ?? 0} chunks)`
-                              : tier.searchableLabel}
+                            {mgmt.searchable
+                              ? `Yes (${mgmt.chunkCount} chunks)`
+                              : "No"}
                           </span>
+                        </div>
+                        <div>
+                          <span className="nac-ask-vault__parse-label">Last indexed</span>
+                          <span>{formatDate(mgmt.lastIndexedAt)}</span>
+                        </div>
+                        <div>
+                          <span className="nac-ask-vault__parse-label">Uploaded</span>
+                          <span>{formatDate(row.created_at)}</span>
                         </div>
                         <div>
                           <span className="nac-ask-vault__parse-label">Confidence</span>
                           <span>{formatConfidence(row.parserConfidence)}</span>
-                        </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Coverage</span>
-                          <span>{formatPeriod(row.coveragePeriodStart, row.coveragePeriodEnd)}</span>
                         </div>
                       </div>
                       {row.needsMapping ? (
