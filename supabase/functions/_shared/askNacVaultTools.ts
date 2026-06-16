@@ -4,6 +4,21 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
+import {
+  assessSearchMatchConfidence,
+  buildOperationalSearchDirectAnswer,
+  buildSearchQueryContext,
+  rankDocumentSearchChunks,
+  scoreChunkRelevance,
+  tokenizeDocumentSearchQuery,
+} from "./vaultDocumentSearchRanking.ts";
+import {
+  classifyDocumentSearchError,
+  DOCUMENT_SEARCH_MESSAGES,
+  DOCUMENT_SEARCH_STATUS,
+  escapeIlikePattern,
+  searchVaultDocumentChunks,
+} from "./vaultDocumentSearchRetrieval.ts";
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -577,96 +592,6 @@ function formatChunkCitation(match: { fileTitle?: string; pageNo?: number | null
 const CHUNK_SELECT =
   "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
-const DOCUMENT_SEARCH_MESSAGES = {
-  NO_MATCH: "No matching information found in uploaded documents.",
-  AUTH_FAILED: "You do not have access to search uploaded documents.",
-  CONNECTION_FAILED: "Could not search uploaded documents — connection failed.",
-} as const;
-
-const DOCUMENT_SEARCH_STATUS = {
-  OK: "ok",
-  NO_MATCH: "no_match",
-  AUTH_ERROR: "auth_error",
-  CONNECTION_ERROR: "connection_error",
-} as const;
-
-const SEARCH_STOPWORDS = new Set([
-  "a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "from", "with",
-  "is", "are", "was", "were", "be", "been", "it", "this", "that", "these", "those",
-  "what", "which", "who", "how", "when", "where", "about", "any", "all", "our", "their",
-  "mentions", "mention", "find", "search", "show", "summarize", "summary", "uploaded",
-  "document", "documents", "report", "reports", "file", "files", "vault", "knowledge",
-]);
-
-const TOKEN_ALIASES: Record<string, string[]> = {
-  complaint: ["complaint", "complaints", "feedback", "issue", "issues"],
-  complaints: ["complaint", "complaints", "feedback", "issue", "issues"],
-  guest: ["guest", "guests", "table", "cover", "covers", "walkin", "walkins"],
-  service: ["service", "feedback", "slow", "wait", "waiting"],
-  quality: ["quality", "average", "food", "price"],
-  issue: ["issue", "issues", "problem", "feedback", "complaint"],
-  issues: ["issue", "issues", "problem", "feedback", "complaint"],
-  dinner: ["dinner", "lunch", "shift", "operation"],
-  operation: ["operation", "operations", "shift", "service"],
-};
-
-function escapeIlikePattern(value = ""): string {
-  return String(value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-}
-
-function tokenizeDocumentSearchQuery(searchTerms = ""): string[] {
-  const raw = String(searchTerms || "")
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, " ")
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2 && !SEARCH_STOPWORDS.has(t));
-
-  const expanded = new Set<string>();
-  for (const token of raw) {
-    expanded.add(token);
-    for (const alias of TOKEN_ALIASES[token] || []) expanded.add(alias);
-  }
-  return [...expanded];
-}
-
-function scoreChunkTermOverlap(chunkText: string, tokens: string[]): number {
-  const text = String(chunkText || "").toLowerCase();
-  if (!text || !tokens.length) return 0;
-  let matched = 0;
-  for (const token of tokens) {
-    if (text.includes(token.toLowerCase())) matched += 1;
-  }
-  return matched / tokens.length;
-}
-
-function rankChunksByTermOverlap(rows: Record<string, unknown>[], tokens: string[]) {
-  return [...rows]
-    .map((row) => ({ row, score: scoreChunkTermOverlap(String(row.chunk_text || ""), tokens) }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return Number(a.row.chunk_index ?? 0) - Number(b.row.chunk_index ?? 0);
-    })
-    .slice(0, 20)
-    .map((entry) => entry.row);
-}
-
-function classifyDocumentSearchError(error: { message?: string } | null): string {
-  if (!error) return DOCUMENT_SEARCH_STATUS.OK;
-  const msg = String(error.message || error).toLowerCase();
-  if (
-    msg.includes("jwt")
-    || msg.includes("permission denied")
-    || msg.includes("row-level security")
-    || msg.includes("not authorized")
-    || msg.includes("insufficient privilege")
-  ) {
-    return DOCUMENT_SEARCH_STATUS.AUTH_ERROR;
-  }
-  return DOCUMENT_SEARCH_STATUS.CONNECTION_ERROR;
-}
-
 function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string) {
   const file = row.file as Record<string, unknown> | null;
   const fileTitle = String(file?.title || file?.original_filename || "Uploaded file");
@@ -697,116 +622,35 @@ export async function searchVaultDocuments(
     (context.searchTerms as string) ||
     extractDocumentSearchTerms(String(context.question || ""));
 
-  if (!searchTerms || searchTerms.length < 2) {
-    return {
-      searchTerms,
-      matches: [] as Record<string, unknown>[],
-      searchMethod: null,
-      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
-      searchError: null,
-      vaultSources: [],
-      sources: [{ name: "ask_nac_document_chunks", detail: "No search terms extracted" }],
-      warnings: ["Could not extract search terms from the question."],
-    };
-  }
-
-  const { data: ftsData, error: ftsError } = await supabase
-    .from("ask_nac_document_chunks")
-    .select(CHUNK_SELECT)
-    .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
-    .limit(20);
-
-  if (ftsError) {
-    return {
-      searchTerms,
-      matches: [] as Record<string, unknown>[],
-      searchMethod: null,
-      queryStatus: classifyDocumentSearchError(ftsError),
-      searchError: ftsError.message,
-      vaultSources: [],
-      sources: [{ name: "ask_nac_document_chunks", detail: "FTS failed" }],
-      warnings: [],
-    };
-  }
-
-  if ((ftsData || []).length) {
-    const matches = (ftsData || []).map((row) => mapVaultChunkMatchRow(row as Record<string, unknown>, searchTerms));
-    const vaultSources = [...new Map(matches.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
-    return {
-      searchTerms,
-      matches,
-      searchMethod: "fts",
-      queryStatus: DOCUMENT_SEARCH_STATUS.OK,
-      searchError: null,
-      vaultSources,
-      sources: [{ name: "ask_nac_document_chunks", detail: "PostgreSQL full-text search (RLS-filtered)" }],
-      warnings: [],
-    };
-  }
-
-  const tokens = tokenizeDocumentSearchQuery(searchTerms);
-  const orClause = tokens
-    .slice(0, 12)
-    .map((token) => `chunk_text.ilike.%${escapeIlikePattern(token)}%`)
-    .join(",");
-
-  if (!orClause) {
-    return {
-      searchTerms,
-      matches: [] as Record<string, unknown>[],
-      searchMethod: "fallback",
-      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
-      searchError: null,
-      vaultSources: [],
-      sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
-      warnings: [],
-    };
-  }
-
-  const { data: fallbackData, error: fallbackError } = await supabase
-    .from("ask_nac_document_chunks")
-    .select(CHUNK_SELECT)
-    .or(orClause)
-    .limit(100);
-
-  if (fallbackError) {
-    return {
-      searchTerms,
-      matches: [] as Record<string, unknown>[],
-      searchMethod: null,
-      queryStatus: classifyDocumentSearchError(fallbackError),
-      searchError: fallbackError.message,
-      vaultSources: [],
-      sources: [{ name: "ask_nac_document_chunks", detail: "Fallback search failed" }],
-      warnings: [],
-    };
-  }
-
-  const ranked = rankChunksByTermOverlap((fallbackData || []) as Record<string, unknown>[], tokens);
-  if (!ranked.length) {
-    return {
-      searchTerms,
-      matches: [] as Record<string, unknown>[],
-      searchMethod: "fallback",
-      queryStatus: DOCUMENT_SEARCH_STATUS.NO_MATCH,
-      searchError: null,
-      vaultSources: [],
-      sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
-      warnings: [],
-    };
-  }
-
-  const matches = ranked.map((row) => mapVaultChunkMatchRow(row, searchTerms));
-  const vaultSources = [...new Map(matches.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
-  return {
+  const result = await searchVaultDocumentChunks(supabase, {
+    select: CHUNK_SELECT,
     searchTerms,
-    matches,
-    searchMethod: "fallback",
-    queryStatus: DOCUMENT_SEARCH_STATUS.OK,
-    searchError: null,
+    scopedBranch: null,
+    mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
+  });
+
+  const vaultSources = [...new Map(result.matches.map((m) => [m.fileId, {
+    fileId: m.fileId,
+    title: m.fileTitle,
+    reportType: m.reportType,
+  }])).values()];
+
+  const methodDetail =
+    result.searchMethod === "fts"
+      ? "PostgreSQL full-text search (RLS-filtered)"
+      : result.searchMethod === "fallback"
+        ? "ILIKE token overlap fallback (RLS-filtered)"
+        : "No search executed";
+
+  return {
+    searchTerms: result.searchTerms,
+    matches: result.matches,
+    searchMethod: result.searchMethod,
+    queryStatus: result.queryStatus,
+    searchError: result.searchError,
     vaultSources,
-    sources: [{ name: "ask_nac_document_chunks", detail: "ILIKE token overlap fallback (RLS-filtered)" }],
-    warnings: [],
+    sources: [{ name: "ask_nac_document_chunks", detail: methodDetail }],
+    warnings: result.warnings,
   };
 }
 
@@ -817,6 +661,7 @@ async function resolveDocumentSummaryFilesEdge(supabase: SupabaseClient, context
   }
   const subject = extractDocumentSummarySubject(String(context.question || ""));
   const tokens = tokenizeDocumentSearchQuery(subject);
+  const queryContext = buildSearchQueryContext(subject);
   if (!tokens.length) return { fileIds: [] as string[], fileTitles: [] as string[], source: null };
   const orClause = tokens.slice(0, 8).map((token) => `original_filename.ilike.%${escapeIlikePattern(token)}%`).join(",");
   const { data, error } = await supabase
@@ -827,7 +672,13 @@ async function resolveDocumentSummaryFilesEdge(supabase: SupabaseClient, context
     .limit(20);
   if (error) throw new Error(error.message);
   const ranked = (data || [])
-    .map((row) => ({ row, score: scoreChunkTermOverlap(String(row.original_filename || row.title || ""), tokens) }))
+    .map((row) => ({
+      row,
+      score: scoreChunkRelevance(
+        { chunk_text: String(row.original_filename || row.title || "") },
+        queryContext,
+      ),
+    }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score);
   const top = ranked.slice(0, 3).map((entry) => entry.row);
@@ -1395,10 +1246,17 @@ export function buildVaultAnswer(
       };
     }
     const fileNames = [...new Set(matches.map((m) => (m as Record<string, unknown>).fileTitle))];
+    const operationalAnswer = buildOperationalSearchDirectAnswer(
+      searchTerms,
+      matches as Record<string, unknown>[],
+    );
+    const confidenceLevel = assessSearchMatchConfidence(matches as Record<string, unknown>[], searchTerms);
     return {
       answerType: "comparison",
       title: `Document search · “${searchTerms}”`,
-      directAnswer: `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`,
+      directAnswer:
+        operationalAnswer ||
+        `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`,
       keyMetrics: matches.slice(0, 8).map((m) => {
         const row = m as Record<string, unknown>;
         return metricEntry(String(row.fileTitle), row.excerpt, {
@@ -1410,7 +1268,7 @@ export function buildVaultAnswer(
         const row = m as Record<string, unknown>;
         return `${row.fileTitle}${row.pageNo != null ? ` (p. ${row.pageNo})` : ""}${row.sectionLabel ? ` · ${row.sectionLabel}` : ""}: “${row.excerpt}” [${row.citation}]`;
       }),
-      confidence: "high",
+      confidence: confidenceLevel === "high" ? "high" : confidenceLevel === "medium" ? "medium" : "low",
       isAiGenerated: false,
       intent: route.intent,
       vaultSources: tool?.vaultSources || [],

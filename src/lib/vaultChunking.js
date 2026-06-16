@@ -17,10 +17,35 @@ export const CSV_ROWS_PER_CHUNK = 50;
 const HEADING_LINE =
   /^(?:[0-9]+(?:\.[0-9]+)*[.)]?\s+)?[A-Z][A-Za-z0-9\s/&-]{2,80}$/;
 
+/** NAC daily logbook section headings (case-insensitive line match). */
+export const LOGBOOK_SECTION_PATTERNS = [
+  /^breakfast\b/i,
+  /^lunch\b/i,
+  /^dinner\b/i,
+  /^reception\b/i,
+  /^google review/i,
+  /^training\b/i,
+  /^complaints?\b/i,
+  /^operational\b/i,
+  /^staff\b/i,
+  /^bar\b/i,
+  /^kitchen\b/i,
+  /^mod\b/i,
+  /^highlights?\b/i,
+];
+
+const LOGBOOK_CHUNK_MAX_CHARS = 4200;
+const LOGBOOK_CHUNK_TARGET_CHARS = 2800;
+
 /**
  * Split long text into paragraph-aware chunks (~800–1200 words equivalent).
  */
-export function splitTextIntoChunks(text, { pageNo = null, sectionLabel = null } = {}) {
+export function splitTextIntoChunks(text, {
+  pageNo = null,
+  sectionLabel = null,
+  maxChars = CHUNK_MAX_CHARS,
+  targetChars = CHUNK_TARGET_CHARS,
+} = {}) {
   const normalized = String(text || "").trim();
   if (!normalized) return [];
 
@@ -29,7 +54,7 @@ export function splitTextIntoChunks(text, { pageNo = null, sectionLabel = null }
     return [
       {
         chunkIndex: 0,
-        chunkText: normalized.slice(0, CHUNK_MAX_CHARS),
+        chunkText: normalized.slice(0, maxChars),
         pageNo,
         sectionLabel,
       },
@@ -50,14 +75,14 @@ export function splitTextIntoChunks(text, { pageNo = null, sectionLabel = null }
 
   for (const para of paragraphs) {
     const next = buffer ? `${buffer}\n\n${para}` : para;
-    if (next.length > CHUNK_MAX_CHARS && buffer.length >= CHUNK_TARGET_CHARS * 0.4) {
+    if (next.length > maxChars && buffer.length >= targetChars * 0.4) {
       flush();
       buffer = para;
-    } else if (next.length > CHUNK_MAX_CHARS) {
-      for (let i = 0; i < para.length; i += CHUNK_MAX_CHARS) {
+    } else if (next.length > maxChars) {
+      for (let i = 0; i < para.length; i += maxChars) {
         chunks.push({
           chunkIndex,
-          chunkText: para.slice(i, i + CHUNK_MAX_CHARS).trim(),
+          chunkText: para.slice(i, i + maxChars).trim(),
           pageNo,
           sectionLabel,
         });
@@ -101,6 +126,106 @@ export function detectHeadingSections(lines = []) {
   }
 
   return sections.length ? sections : [{ sectionLabel: null, lines: lines.filter(Boolean) }];
+}
+
+/** Detect NAC logbook operational sections (Breakfast, Lunch, Dinner, etc.). */
+export function detectLogbookSections(lines = []) {
+  const sections = [];
+  let current = { sectionLabel: null, lines: [] };
+
+  for (const raw of lines) {
+    const line = String(raw || "").trim();
+    if (!line) continue;
+
+    const isLogbookHeading = LOGBOOK_SECTION_PATTERNS.some((pattern) => pattern.test(line))
+      && line.length < 80
+      && !/[.!?]$/.test(line);
+
+    if (isLogbookHeading && (current.lines.length || current.sectionLabel)) {
+      sections.push(current);
+      current = { sectionLabel: line, lines: [] };
+    } else if (isLogbookHeading && !current.lines.length) {
+      current.sectionLabel = line;
+    } else {
+      current.lines.push(line);
+    }
+  }
+
+  if (current.lines.length || current.sectionLabel) {
+    sections.push(current);
+  }
+
+  return sections.length ? sections : detectHeadingSections(lines);
+}
+
+function extractLogbookDateLabel(metadata = {}, intermediate = null) {
+  const filename = String(metadata.originalFilename || metadata.filename || "").trim();
+  const fromName = filename.match(/\b(\d{1,2}\s+[A-Za-z]+)\b/);
+  if (fromName) return fromName[1];
+  const text = String(intermediate?.text || "").slice(0, 400);
+  const fromText = text.match(/\b(\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december))\b/i);
+  return fromText ? fromText[1] : null;
+}
+
+function formatLogbookBranchLabel(branchId) {
+  if (!branchId) return null;
+  const label = String(branchId).trim();
+  if (!label) return null;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+export function isLogbookContent(intermediate, metadata = {}) {
+  const reportType = String(metadata.reportType || "").toLowerCase();
+  if (reportType === "daily_logbook") return true;
+  const filename = String(metadata.originalFilename || metadata.filename || "").toLowerCase();
+  if (filename.includes("logbook")) return true;
+  const text = String(intermediate?.text || "");
+  return /\b(breakfast|lunch|dinner)\b/i.test(text)
+    && /\b(complaint|google review|mod|chef|reception)\b/i.test(text);
+}
+
+export function buildLogbookChunks(intermediate, metadata = {}) {
+  const lines = intermediate?.text?.split(/\r?\n/) || [];
+  const sections = detectLogbookSections(lines);
+  const dateLabel = extractLogbookDateLabel(metadata, intermediate);
+  const branchLabel = formatLogbookBranchLabel(metadata.branchId || metadata.primary_branch_id);
+  const metaPrefix = [dateLabel, branchLabel].filter(Boolean).join(" · ");
+
+  const chunks = [];
+  let chunkIndex = 0;
+
+  for (const section of sections) {
+    const body = section.lines.join("\n").trim();
+    if (!body && !section.sectionLabel) continue;
+
+    const sectionChunks = splitTextIntoChunks(body, {
+      sectionLabel: section.sectionLabel,
+      maxChars: LOGBOOK_CHUNK_MAX_CHARS,
+      targetChars: LOGBOOK_CHUNK_TARGET_CHARS,
+    });
+
+    if (!sectionChunks.length && section.sectionLabel) {
+      const headerOnly = section.sectionLabel;
+      if (headerOnly.length < 80) continue;
+    }
+
+    for (const piece of sectionChunks) {
+      const prefixParts = [];
+      if (metaPrefix) prefixParts.push(`[${metaPrefix}]`);
+      if (section.sectionLabel) prefixParts.push(section.sectionLabel);
+      const prefix = prefixParts.join(" ");
+      const chunkText = prefix ? `${prefix}\n\n${piece.chunkText}`.trim() : piece.chunkText;
+      chunks.push({
+        ...piece,
+        chunkIndex,
+        chunkText,
+        sectionLabel: section.sectionLabel || piece.sectionLabel,
+      });
+      chunkIndex += 1;
+    }
+  }
+
+  return chunks;
 }
 
 export function buildCsvChunks(matrix = []) {
@@ -164,9 +289,14 @@ export function buildXlsxChunks(sections = []) {
   return chunks;
 }
 
-export function buildPdfChunks(sections = []) {
+export function buildPdfChunks(sections = [], metadata = {}) {
   const chunks = [];
   let chunkIndex = 0;
+
+  const combinedText = sections.map((s) => s.text || (s.lines || []).join("\n")).join("\n");
+  if (isLogbookContent({ text: combinedText }, metadata)) {
+    return buildLogbookChunks({ text: combinedText }, metadata);
+  }
 
   for (const section of sections) {
     const pageNo = section.pageNo ?? null;
@@ -184,7 +314,11 @@ export function buildPdfChunks(sections = []) {
   return chunks;
 }
 
-export function buildDocxChunks(intermediate) {
+export function buildDocxChunks(intermediate, metadata = {}) {
+  if (isLogbookContent(intermediate, metadata)) {
+    return buildLogbookChunks(intermediate, metadata);
+  }
+
   const lines = intermediate?.text?.split(/\r?\n/) || [];
   const sections = detectHeadingSections(lines);
   const chunks = [];
@@ -207,7 +341,7 @@ export function buildDocxChunks(intermediate) {
 /**
  * Build chunk records from parsed intermediate payload.
  */
-export function buildChunksFromIntermediate(intermediate) {
+export function buildChunksFromIntermediate(intermediate, metadata = {}) {
   if (!intermediate) return [];
 
   const fileType = String(intermediate.fileType || intermediate.extension || "").toLowerCase();
@@ -219,11 +353,14 @@ export function buildChunksFromIntermediate(intermediate) {
     case "xls":
       return buildXlsxChunks(intermediate.sections || []);
     case "pdf":
-      return buildPdfChunks(intermediate.sections || []);
+      return buildPdfChunks(intermediate.sections || [], metadata);
     case "docx":
-      return buildDocxChunks(intermediate);
+      return buildDocxChunks(intermediate, metadata);
     case "txt":
     default:
+      if (isLogbookContent(intermediate, metadata)) {
+        return buildLogbookChunks(intermediate, metadata);
+      }
       return splitTextIntoChunks(intermediate.text || "");
   }
 }
@@ -243,7 +380,11 @@ export async function buildChunksFromFile(file, metadata = {}) {
     return { ok: false, chunks: [], error: parsed.error || "File extraction failed." };
   }
 
-  const chunks = buildChunksFromIntermediate(parsed.intermediate);
+  const chunks = buildChunksFromIntermediate(parsed.intermediate, {
+    reportType: metadata.reportType,
+    originalFilename: file?.name,
+    branchId: metadata.branchId || metadata.primary_branch_id,
+  });
   return { ok: chunks.length > 0, chunks, intermediate: parsed.intermediate, error: null };
 }
 

@@ -19,6 +19,10 @@ import {
   pickTextFact,
 } from "./vaultQueryTools";
 import { DOCUMENT_SEARCH_MESSAGES, DOCUMENT_SEARCH_STATUS } from "./vaultDocumentSearchRetrieval";
+import {
+  assessSearchMatchConfidence,
+  buildOperationalSearchDirectAnswer,
+} from "./vaultDocumentSearchRanking";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 
 const REPORT_LABELS = Object.freeze({
@@ -405,7 +409,18 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
   }
 
   const fileNames = [...new Set(matches.map((m) => m.fileTitle))];
-  const summary = `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`;
+  const operationalAnswer = buildOperationalSearchDirectAnswer(searchTerms, matches);
+  const summary =
+    operationalAnswer ||
+    `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`;
+
+  const confidenceLevel = assessSearchMatchConfidence(matches, searchTerms);
+  const confidence =
+    confidenceLevel === "high"
+      ? CONFIDENCE_LEVELS.HIGH
+      : confidenceLevel === "medium"
+        ? CONFIDENCE_LEVELS.MEDIUM
+        : CONFIDENCE_LEVELS.LOW;
 
   const keyMetrics = matches.slice(0, 8).map((m) =>
     metricEntry(m.fileTitle, m.excerpt, {
@@ -428,7 +443,7 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
     keyMetrics,
     insights,
     recommendations: [`Citations: ${matches.slice(0, 5).map((m) => m.citation).join("; ")}`],
-    confidence: CONFIDENCE_LEVELS.HIGH,
+    confidence,
     isAiGenerated: false,
     intent: route.intent,
     branchLabel: tool?.branchLabel,

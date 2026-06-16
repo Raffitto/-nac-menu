@@ -6,7 +6,8 @@ import {
   buildSearchQueryContext,
   expandSearchTokens,
   rankDocumentSearchChunks,
-} from "./vaultDocumentSearchRanking";
+  tokenizeDocumentSearchQuery,
+} from "./vaultDocumentSearchRanking.ts";
 
 export {
   rankChunksByTermOverlap,
@@ -16,7 +17,7 @@ export {
   assessSearchMatchConfidence,
   isHeaderOnlyChunk,
   rankDocumentSearchChunks,
-} from "./vaultDocumentSearchRanking";
+} from "./vaultDocumentSearchRanking.ts";
 
 export const DOCUMENT_SEARCH_MESSAGES = Object.freeze({
   NO_MATCH: "No matching information found in uploaded documents.",

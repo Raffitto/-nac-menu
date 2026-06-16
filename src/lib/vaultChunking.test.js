@@ -2,10 +2,13 @@ import {
   buildCsvChunks,
   buildChunksFromIntermediate,
   buildDocxChunks,
+  buildLogbookChunks,
   buildPdfChunks,
   buildXlsxChunks,
   CHUNK_MAX_CHARS,
   detectHeadingSections,
+  detectLogbookSections,
+  isLogbookContent,
   splitTextIntoChunks,
 } from "./vaultChunking";
 import { extractDocumentSearchTerms, formatChunkCitation, buildChunkExcerpt } from "../intelligence/askNac/vault/vaultQueryTools";
@@ -93,6 +96,42 @@ describe("vaultChunking CK-3", () => {
       matrix: [["H"], ["data"]],
     });
     expect(csvChunks[0].chunkText).toContain("Header:");
+  });
+
+  test("detectLogbookSections splits breakfast lunch dinner sections", () => {
+    const lines = [
+      "Breakfast",
+      "Chicken slider unavailable from kitchen.",
+      "Lunch",
+      "Chicken slider is available at 3 pm.",
+      "Google Review",
+      "5 Star 5",
+    ];
+    const sections = detectLogbookSections(lines);
+    expect(sections.map((s) => s.sectionLabel)).toEqual(
+      expect.arrayContaining(["Breakfast", "Lunch", "Google Review"]),
+    );
+  });
+
+  test("buildLogbookChunks includes date branch metadata and section labels", () => {
+    const intermediate = {
+      text: "Breakfast\nChicken slider unavailable.\n\nLunch\nChicken slider available at 3 pm.",
+    };
+    const chunks = buildLogbookChunks(intermediate, {
+      originalFilename: "13 June NAC Khobar Logbook.docx.pdf",
+      branchId: "khobar",
+      reportType: "daily_logbook",
+    });
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+    expect(chunks[0].chunkText).toMatch(/13 June/i);
+    expect(chunks[0].chunkText).toMatch(/Khobar/i);
+    expect(chunks[0].sectionLabel).toBe("Breakfast");
+    expect(chunks.some((c) => c.sectionLabel === "Lunch")).toBe(true);
+  });
+
+  test("isLogbookContent detects logbook filenames and report type", () => {
+    expect(isLogbookContent({ text: "Breakfast\nLunch" }, { originalFilename: "14 June NAC Khobar Logbook.pdf" })).toBe(true);
+    expect(isLogbookContent({ text: "Breakfast\ncomplaints" }, { reportType: "daily_logbook" })).toBe(true);
   });
 });
 
