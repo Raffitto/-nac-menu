@@ -18,6 +18,11 @@ import {
   scoreVaultDocumentSearchIntent,
 } from "./vault/vaultDocumentSearchRouting";
 import {
+  isVaultOperationalReviewQuery,
+  scoreVaultOperationalReviewIntent,
+} from "./vault/vaultOperationalReviewRouting";
+import { scoreSalesPerformanceQueryFocus } from "./vault/vaultSalesPerformanceIntelligence";
+import {
   isVaultDocumentSummaryQuery,
   scoreVaultDocumentSummaryIntent,
 } from "./vault/vaultDocumentSummaryRouting";
@@ -54,6 +59,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_COVERAGE_LIST: "vault_coverage_list",
   VAULT_DOCUMENT_SEARCH: "vault_document_search",
   VAULT_DOCUMENT_SUMMARY: "vault_document_summary",
+  VAULT_OPERATIONAL_REVIEW: "vault_operational_review",
   UNKNOWN: "unknown",
 });
 
@@ -67,6 +73,12 @@ const BRANCH_ALIASES = Object.freeze({
 });
 
 const INTENT_RULES = [
+  {
+    id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW,
+    score(q) {
+      return scoreVaultOperationalReviewIntent(q);
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY,
     score(q, options = {}) {
@@ -144,12 +156,22 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
     score(q) {
+      if (/\bsearch company knowledge for cash[\s-]?up\b/.test(q)) return 0;
+      if (scoreSalesPerformanceQueryFocus(q)) return 22;
+      if (/\b(latest cash up|summarize.*cash up|cash up summary|what should management know from the cash up)\b/.test(q)) {
+        return 21;
+      }
+      if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
+        return 21;
+      }
+      if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
       const period = parseVaultPeriodFromQuestion(q);
-      if (!period?.isSingleDay) return 0;
-      if (/\b(cash[\s-]?up|cash up summary)\b/.test(q)) return 18;
-      if (/\b(sales|revenue|guests?|guest count|orders?|avg|average spend)\b/.test(q)) {
+      if (/\bcash[\s-]?up\b/.test(q) && period) return 19;
+      if (period?.isSingleDay && /\b(what were sales|how much sales|sales on|net sales|total sales|revenue on)\b/.test(q)) {
         return 16;
       }
+      if (!period?.isSingleDay && !period?.isMonth) return 0;
+      if (/\b(cash[\s-]?up|cash up summary)\b/.test(q)) return 18;
       return 0;
     },
   },
@@ -499,7 +521,11 @@ export function isVaultDocumentSummaryIntent(intent) {
 }
 
 export function isVaultDocumentIntent(intent) {
-  return isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent);
+  return (
+    isVaultDocumentSearchIntent(intent)
+    || isVaultDocumentSummaryIntent(intent)
+    || intent === ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW
+  );
 }
 
 export function isVaultDataIntent(intent) {

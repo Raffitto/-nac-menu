@@ -1658,7 +1658,12 @@ export default function AskNacDataVaultPanel({ session }) {
                                 aria-label={`Select ${row.filename}`}
                               />
                             </td>
-                            <td title={row.filename}>{row.filename}</td>
+                            <td title={row.filename}>
+                              {row.filename}
+                              {row.isJunk ? (
+                                <span className="nac-vault-tier-badge is-search-pending"> test file</span>
+                              ) : null}
+                            </td>
                             <td>{row.reportType}</td>
                             <td>{branchLabel({ primary_branch_id: row.branch === "brand" ? null : row.branch, brand_wide: row.branch === "brand" })}</td>
                             <td>{formatDate(row.uploadedAt)}</td>

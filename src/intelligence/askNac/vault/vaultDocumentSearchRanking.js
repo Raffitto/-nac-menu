@@ -301,6 +301,18 @@ function formatLogbookLabel(fileTitle = "") {
   return title || "uploaded logbook";
 }
 
+export function classifyOperationalIssue(text = "") {
+  const normalized = normalizeSearchText(text);
+  if (/\b(sick leave|absent|illness|on sick)\b/.test(normalized)) return "staff_absence";
+  if (/\b(unavailable|sold out|86|not available)\b/.test(normalized)) return "availability";
+  if (/\b(complain|complaint|feedback|remade|removed from bill)\b/.test(normalized)) return "complaint";
+  if (/\b(average|quality|burning|cold|undercooked|too high|price)\b/.test(normalized)) return "food_quality";
+  if (/\b(training|mod on duty|chef on duty)\b/.test(normalized)) return "operations";
+  return "general";
+}
+
+export { extractRelevantSentences, formatLogbookLabel };
+
 /**
  * Build an operations-assistant style direct answer from ranked evidence.
  */

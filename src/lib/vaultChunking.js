@@ -9,6 +9,7 @@ import {
   detectVaultFileType,
 } from "../intelligence/askNac/vault/parsers/vaultFileAdapter";
 import { computeTextContentHash } from "../intelligence/askNac/vault/vaultContentHash";
+import { buildSalesPerformanceSearchableText } from "../intelligence/askNac/vault/vaultSalesPerformanceIntelligence";
 
 export const CHUNK_TARGET_CHARS = 5000;
 export const CHUNK_MAX_CHARS = 7200;
@@ -289,6 +290,20 @@ export function buildXlsxChunks(sections = []) {
   return chunks;
 }
 
+export function buildSalesPerformanceSearchableChunks(intermediate, metadata = {}) {
+  const matrix = intermediate?.matrix || [];
+  const text = buildSalesPerformanceSearchableText(matrix, metadata);
+  if (!text.trim()) return buildXlsxChunks(intermediate?.sections || []);
+  return splitTextIntoChunks(text, {
+    sectionLabel: "Sales performance",
+  });
+}
+
+/** @deprecated use buildSalesPerformanceSearchableChunks */
+export function buildCashUpSearchableChunks(intermediate, metadata = {}) {
+  return buildSalesPerformanceSearchableChunks(intermediate, metadata);
+}
+
 export function buildPdfChunks(sections = [], metadata = {}) {
   const chunks = [];
   let chunkIndex = 0;
@@ -348,9 +363,15 @@ export function buildChunksFromIntermediate(intermediate, metadata = {}) {
 
   switch (fileType) {
     case "csv":
+      if (metadata.reportType === "cash_up" && intermediate.matrix?.length) {
+        return buildCashUpSearchableChunks(intermediate, metadata);
+      }
       return buildCsvChunks(intermediate.matrix || []);
     case "xlsx":
     case "xls":
+      if (metadata.reportType === "cash_up") {
+        return buildCashUpSearchableChunks(intermediate, metadata);
+      }
       return buildXlsxChunks(intermediate.sections || []);
     case "pdf":
       return buildPdfChunks(intermediate.sections || [], metadata);
@@ -503,6 +524,8 @@ export async function runVaultDocumentChunking(
 
   const built = await buildChunksFromFile(file, {
     reportType: fileRecord?.report_type || fileRecord?.reportType,
+    branchId: fileRecord?.primary_branch_id || fileRecord?.primaryBranchId,
+    primary_branch_id: fileRecord?.primary_branch_id || fileRecord?.primaryBranchId,
   });
 
   if (!built.ok) {

@@ -23,6 +23,15 @@ import {
   assessSearchMatchConfidence,
   buildOperationalSearchDirectAnswer,
 } from "./vaultDocumentSearchRanking";
+import {
+  buildCrossDocumentOperationalSummary,
+  buildOperationalManagerAnswer,
+  formatManagerStyleAnswer,
+} from "./vaultOperationalIntelligence";
+import {
+  buildSalesPerformanceExecutiveSummary,
+  extendedSalesPerformanceMetrics,
+} from "./vaultSalesPerformanceIntelligence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 
 const REPORT_LABELS = Object.freeze({
@@ -190,18 +199,55 @@ export function buildVaultCoverageListAnswer(route, tool, readiness) {
 }
 
 export function buildVaultCashUpAnswer(route, tool, readiness) {
-  const metrics = cashUpMetrics(tool?.facts || []);
-  const net = pickMetricValue(tool?.facts, "net_sales") ?? pickMetricValue(tool?.facts, "total_sales");
-  const directAnswer = net != null
-    ? `Cash-up vault data shows net/total sales of ${formatNumber(net)} SAR for ${tool.branchLabel} on ${tool.periodLabel}.`
-    : `No cash-up structured facts found for ${tool.branchLabel} on ${tool.periodLabel}.`;
+  const facts = tool?.facts || [];
+  const fileTitle = tool?.vaultSources?.[0]?.title || null;
+  const executive = buildSalesPerformanceExecutiveSummary(facts, {
+    branchLabel: tool.branchLabel,
+    periodLabel: tool.periodLabel,
+    fileTitle,
+    question: route.question || "",
+  });
+  const metrics = extendedSalesPerformanceMetrics(facts).map((row) =>
+    metricEntry(row.label, row.value, { unit: row.unit, source: "sales_performance" }),
+  );
+
+  const relatedFindings = [
+    ...executive.performanceBreakdown.map((p) => ({
+      fileTitle: executive.source,
+      excerpt: `${p.label}: ${p.value}${p.unit ? ` ${p.unit}` : ""}`,
+    })),
+    ...(executive.reconciliationNote
+      ? [{ fileTitle: executive.source, excerpt: executive.reconciliationNote }]
+      : []),
+  ];
+
+  const directAnswer = formatManagerStyleAnswer({
+    answer: executive.answer,
+    managementNote: executive.managementNote,
+    source: executive.source,
+    relatedFindings,
+    confidence: metrics.length ? "high" : executive.missingFields.length ? "medium" : "low",
+  });
 
   return createAskNacResponse({
     ...baseVaultFields(route, tool, readiness),
-    answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.MISSING_DATA,
-    title: `Cash-up · ${tool.periodLabel}`,
+    answerType: metrics.length ? ANSWER_TYPES.EXECUTIVE : ANSWER_TYPES.MISSING_DATA,
+    title: `Sales performance · ${tool.periodLabel}`,
     directAnswer,
     keyMetrics: metrics,
+    insights: [
+      ...(executive.risks || []),
+      ...(executive.actions || []).map((a) => `Action: ${a}`),
+      ...(executive.missingFields.length
+        ? [`Missing fields: ${executive.missingFields.join(", ")}`]
+        : []),
+    ],
+    warnings: [
+      ...(tool?.warnings || []),
+      ...(executive.missingFields.length
+        ? [`Sales report missing: ${executive.missingFields.join(", ")}`]
+        : []),
+    ],
   });
 }
 
@@ -291,7 +337,7 @@ export function buildVaultOperationalDayAnswer(route, tool, readiness) {
 
   const notes = logbookNotes(logbookFacts);
   const sections = [];
-  if (cashFacts.length) sections.push("cash-up sales and guest counts");
+  if (cashFacts.length) sections.push("sales performance and guest counts");
   if (receptionFacts.length) sections.push("reception reservations and covers");
   if (logbookFacts.some((f) => String(f.metricKey).startsWith("google_review_"))) {
     sections.push("Google review star counts");
@@ -409,7 +455,16 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
   }
 
   const fileNames = [...new Set(matches.map((m) => m.fileTitle))];
-  const operationalAnswer = buildOperationalSearchDirectAnswer(searchTerms, matches);
+  const manager = buildOperationalManagerAnswer(searchTerms, matches);
+  const operationalAnswer = manager
+    ? formatManagerStyleAnswer({
+        answer: manager.answer,
+        managementNote: manager.managementNote,
+        source: manager.source,
+        relatedFindings: manager.relatedFindings,
+        confidence: assessSearchMatchConfidence(matches, searchTerms),
+      })
+    : buildOperationalSearchDirectAnswer(searchTerms, matches);
   const summary =
     operationalAnswer ||
     `Found ${matches.length} mention${matches.length === 1 ? "" : "s"} of “${searchTerms}” across ${fileNames.length} file${fileNames.length === 1 ? "" : "s"}.`;
@@ -430,9 +485,14 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
     }),
   );
 
-  const insights = matches.slice(0, 5).map(
-    (m) => `${m.fileTitle}${m.pageNo != null ? ` (p. ${m.pageNo})` : ""}${m.sectionLabel ? ` · ${m.sectionLabel}` : ""}: “${m.excerpt}” [${m.citation}]`,
-  );
+  const insights = [
+    ...matches.slice(0, 5).map(
+      (m) => `${m.fileTitle}${m.pageNo != null ? ` (p. ${m.pageNo})` : ""}${m.sectionLabel ? ` · ${m.sectionLabel}` : ""}: “${m.excerpt}” [${m.citation}]`,
+    ),
+    ...(manager?.relatedFindings || []).map(
+      (item) => `Related: ${item.fileTitle}${item.sectionLabel ? ` · ${item.sectionLabel}` : ""} — ${item.excerpt}`,
+    ),
+  ];
 
   return createAskNacResponse({
     ...baseVaultFields(route, tool, readiness),
@@ -453,6 +513,40 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
       title: f.title,
       reportType: f.reportType,
     })),
+  });
+}
+
+export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
+  const grouped = tool?.groupedFindings || [];
+  const theme = tool?.reviewTheme || "general";
+  const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
+
+  const directAnswer = formatManagerStyleAnswer({
+    answer: synthesis.answer,
+    managementNote: synthesis.managementNote,
+    source: synthesis.source || "Uploaded logbooks",
+    relatedFindings: synthesis.relatedFindings,
+    confidence: grouped.length >= 3 ? "high" : grouped.length ? "medium" : "low",
+  });
+
+  return createAskNacResponse({
+    ...baseVaultFields(route, tool, readiness),
+    answerType: grouped.length ? ANSWER_TYPES.EXECUTIVE : ANSWER_TYPES.DOCUMENT_NO_MATCH,
+    title: `Operational review · ${tool.periodLabel || theme}`,
+    directAnswer,
+    keyMetrics: grouped.slice(0, 8).map((item) =>
+      metricEntry(item.date || item.fileTitle, item.excerpt.slice(0, 100), {
+        note: `${item.issueType} · ${item.severity}`,
+        source: item.source,
+      }),
+    ),
+    insights: grouped.slice(0, 8).map(
+      (item) => `${item.date || item.fileTitle} · ${item.issueType}: ${item.excerpt} [${item.source}]`,
+    ),
+    recommendations: grouped.length
+      ? [`Review ${grouped.length} finding(s) across uploaded logbooks.`]
+      : [],
+    searchTerms: tool?.searchTerms,
   });
 }
 
@@ -530,6 +624,10 @@ export function buildVaultAnswer(route, tool, readiness) {
     return buildVaultDocumentSummaryAnswer(route, tool, readiness);
   }
 
+  if (route.intent === ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW) {
+    return buildVaultOperationalReviewAnswer(route, tool, readiness);
+  }
+
   if (route.intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH) {
     if (!tool?.matches?.length && readiness?.status === READINESS.MISSING) {
       return buildVaultMissingToolResponse(route, tool, readiness);
@@ -558,6 +656,8 @@ export function buildVaultAnswer(route, tool, readiness) {
       return buildVaultOperationalDayAnswer(route, tool, readiness);
     case ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT:
       return buildVaultManagementReportAnswer(route, tool, readiness);
+    case ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW:
+      return buildVaultOperationalReviewAnswer(route, tool, readiness);
     default:
       return buildVaultMissingToolResponse(route, tool, readiness);
   }

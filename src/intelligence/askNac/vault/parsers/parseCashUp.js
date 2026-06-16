@@ -28,6 +28,12 @@ const CASH_UP_LABELS = {
   breakfast_sales: ["breakfast sales", "breakfast total"],
   lunch_sales: ["lunch sales", "lunch total"],
   dinner_sales: ["dinner sales", "dinner total"],
+  cash_expected: ["cash expected", "expected cash", "system cash", "pos cash", "cash due"],
+  cash_counted: ["cash counted", "actual cash", "physical cash", "cash in drawer", "counted cash"],
+  cash_variance: ["variance", "cash variance", "difference", "over/short", "over short", "over-short"],
+  cash_shortage: ["shortage", "short", "under", "cash short"],
+  cash_overage: ["overage", "over", "surplus", "cash over"],
+  petty_cash_variance: ["petty cash variance", "petty cash difference"],
 };
 
 const CORE_KEYS = ["total_sales", "net_sales", "guest_count", "order_count"];
@@ -102,6 +108,44 @@ export function parseCashUpReport(intermediate, context) {
         sourceRowRef: extra.source_row_ref,
       }),
     );
+  }
+
+  const expected = values.cash_expected;
+  const counted = values.cash_counted;
+  if (values.cash_variance == null && expected != null && counted != null) {
+    const variance = Number(counted) - Number(expected);
+    if (Number.isFinite(variance)) {
+      facts.push(
+        buildStructuredFact({
+          ...base,
+          metricKey: "cash_variance",
+          metricValue: variance,
+          dimensions: { computed: true },
+          sourceRowRef: "computed:variance",
+        }),
+      );
+      if (variance < 0) {
+        facts.push(
+          buildStructuredFact({
+            ...base,
+            metricKey: "cash_shortage",
+            metricValue: Math.abs(variance),
+            dimensions: { computed: true },
+            sourceRowRef: "computed:shortage",
+          }),
+        );
+      } else if (variance > 0) {
+        facts.push(
+          buildStructuredFact({
+            ...base,
+            metricKey: "cash_overage",
+            metricValue: variance,
+            dimensions: { computed: true },
+            sourceRowRef: "computed:overage",
+          }),
+        );
+      }
+    }
   }
 
   return {

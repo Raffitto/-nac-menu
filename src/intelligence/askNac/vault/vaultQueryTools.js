@@ -10,6 +10,15 @@ import {
   searchVaultDocumentChunks,
 } from "./vaultDocumentSearchRetrieval";
 import { summarizeVaultDocuments } from "./vaultDocumentSummary";
+import {
+  buildSalesPerformanceFactsAsSyntheticMatches,
+  isSalesPerformanceKnowledgeQuery,
+} from "./vaultSalesPerformanceIntelligence";
+import {
+  extractOperationalReviewTheme,
+  groupOperationalMatches,
+  searchTermsForOperationalTheme,
+} from "./vaultOperationalIntelligence";
 
 export { extractDocumentSearchTerms };
 
@@ -281,6 +290,81 @@ function buildVaultWarnings(coverage = [], facts = []) {
   return warnings;
 }
 
+export async function getLatestVaultCashUpFacts(supabase, context = {}) {
+  const scopedBranch = resolveBranch(context);
+  let query = supabase
+    .from("ask_nac_data_coverage")
+    .select(COVERAGE_SELECT)
+    .eq("report_type", "cash_up")
+    .order("period_end", { ascending: false })
+    .limit(1);
+
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const latest = (data || [])[0];
+  if (!latest) {
+    return {
+      branch: scopedBranch,
+      branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+      facts: [],
+      coverage: [],
+      vaultSources: [],
+      periodLabel: "latest cash-up",
+    };
+  }
+
+  const factsResult = await getVaultFacts(supabase, {
+    ...context,
+    branch: latest.branch_id || scopedBranch,
+    startDate: latest.period_start,
+    endDate: latest.period_end,
+    reportType: "cash_up",
+  });
+
+  return {
+    ...factsResult,
+    periodLabel: latest.period_start || "latest cash-up",
+    coverage: [mapVaultCoverageRow(latest)],
+    vaultSources: collectVaultSources(factsResult.facts, [mapVaultCoverageRow(latest)]),
+  };
+}
+
+export async function searchOperationalReviewDocuments(supabase, context = {}) {
+  const theme = context.reviewTheme || extractOperationalReviewTheme(context.question || "");
+  const searchTerms = context.searchTerms || searchTermsForOperationalTheme(theme);
+  const scopedBranch = resolveBranch(context);
+
+  const result = await searchVaultDocumentChunks(supabase, {
+    select: CHUNK_SELECT,
+    searchTerms,
+    scopedBranch,
+    mapRow: (row, terms) => mapVaultChunkRow(row, terms),
+  });
+
+  const grouped = groupOperationalMatches(result.matches);
+
+  return {
+    searchTerms,
+    reviewTheme: theme,
+    matches: result.matches,
+    groupedFindings: grouped,
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    vaultSources: [...new Map(result.matches.map((m) => [m.fileId, {
+      fileId: m.fileId,
+      title: m.fileTitle,
+      reportType: m.reportType,
+    }])).values()],
+    searchMethod: result.searchMethod,
+    queryStatus: result.queryStatus,
+    searchError: result.searchError,
+    sources: [{ name: "ask_nac_document_chunks", detail: "Operational review search (RLS-filtered)" }],
+  };
+}
+
 export function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {
   const text = String(chunkText || "");
   if (!text) return "";
@@ -347,30 +431,46 @@ export async function searchVaultDocuments(supabase, context = {}) {
     mapRow: (row, terms) => mapVaultChunkRow(row, terms),
   });
 
-  const vaultSources = [...new Map(result.matches.map((m) => [m.fileId, {
+  let matches = result.matches;
+  let searchMethod = result.searchMethod;
+  let warnings = result.warnings || [];
+
+  if (!matches.length && isSalesPerformanceKnowledgeQuery(context.question || "")) {
+    const latest = await getLatestVaultCashUpFacts(supabase, context);
+    if (latest.facts?.length) {
+      const fileTitle = latest.vaultSources?.[0]?.title || "Latest sales performance report";
+      matches = buildSalesPerformanceFactsAsSyntheticMatches(latest.facts, fileTitle);
+      searchMethod = "sales_performance_facts_fallback";
+      warnings = [...warnings, "Document chunks unavailable — answered from structured sales performance facts."];
+    }
+  }
+
+  const vaultSources = [...new Map(matches.map((m) => [m.fileId, {
     fileId: m.fileId,
     title: m.fileTitle,
     reportType: m.reportType,
   }])).values()];
 
   const methodDetail =
-    result.searchMethod === "fts"
+    searchMethod === "fts"
       ? "PostgreSQL full-text search (RLS-filtered)"
-      : result.searchMethod === "fallback"
+      : searchMethod === "fallback"
         ? "ILIKE token overlap fallback (RLS-filtered)"
-        : "No search executed";
+        : searchMethod === "sales_performance_facts_fallback"
+          ? "Structured sales performance facts fallback"
+          : "No search executed";
 
   return {
     searchTerms: result.searchTerms,
-    matches: result.matches,
+    matches,
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
     vaultSources,
-    searchMethod: result.searchMethod,
+    searchMethod,
     queryStatus: result.queryStatus,
     searchError: result.searchError,
     sources: [{ name: "ask_nac_document_chunks", detail: methodDetail }],
-    warnings: result.warnings,
+    warnings,
   };
 }
 
@@ -382,13 +482,23 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       return summarizeVaultDocuments(supabase, context);
     case "vault_coverage_list":
       return getVaultReportSources(supabase, context);
-    case "vault_cash_up_summary":
+    case "vault_cash_up_summary": {
+      const question = String(context.question || "").toLowerCase();
+      if (
+        !context.vaultPeriod?.startDate
+        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+      ) {
+        return getLatestVaultCashUpFacts(supabase, context);
+      }
       return getVaultFacts(supabase, {
         ...context,
         startDate: context.vaultPeriod?.startDate,
         endDate: context.vaultPeriod?.endDate,
         reportType: "cash_up",
       });
+    }
+    case "vault_operational_review":
+      return searchOperationalReviewDocuments(supabase, context);
     case "vault_reception_summary":
       return getVaultFacts(supabase, {
         ...context,

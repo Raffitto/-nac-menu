@@ -26,6 +26,7 @@ import {
   buildVaultAnswer,
   extractDocumentSearchTerms,
   hasVaultDayPeriod,
+  isSalesPerformanceExecutiveQuery,
   isVaultDataIntent,
   isVaultDocumentSearchIntent,
   isVaultDocumentSummaryIntent,
@@ -38,6 +39,8 @@ import {
   scoreVaultDocumentSummaryIntent,
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
+import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
+import { scoreSalesPerformanceQueryFocus } from "./vaultSalesPerformanceIntelligence.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
 import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
 import {
@@ -83,6 +86,12 @@ const BRANCH_ALIASES: Record<string, string[]> = {
 
 const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext?: Record<string, unknown> | null }) => number }[] = [
   {
+    id: ASK_NAC_INTENTS.OPERATIONAL_REVIEW,
+    score(q) {
+      return scoreVaultOperationalReviewIntent(q);
+    },
+  },
+  {
     id: ASK_NAC_INTENTS.DOCUMENT_SUMMARY,
     score(q, options = {}) {
       return scoreVaultDocumentSummaryIntent(q, options.documentContext || null);
@@ -110,6 +119,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (isVaultDocumentSummaryQuery(q)) return 0;
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
+      if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
       if (/\b(operation|operational)\b/.test(q) && /\b(on|for)\b/.test(q)) return 17;
       return 0;
@@ -152,9 +162,22 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.VAULT_CASH_UP,
     score(q) {
+      if (/\bsearch company knowledge for cash[\s-]?up\b/.test(q)) return 0;
+      if (scoreSalesPerformanceQueryFocus(q)) return 22;
+      if (/\b(latest cash up|summarize.*cash up|cash up summary|what should management know from the cash up)\b/.test(q)) {
+        return 21;
+      }
+      if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
+        return 21;
+      }
+      if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
       const period = parseVaultPeriodFromQuestion(q);
-      if (!period?.isSingleDay) return 0;
-      if (/\b(sales|revenue|guests?|guest count|orders?|avg|average spend|cash[\s-]?up)\b/.test(q)) return 16;
+      if (/\bcash[\s-]?up\b/.test(q) && period) return 19;
+      if (period?.isSingleDay && /\b(what were sales|how much sales|sales on|net sales|total sales|revenue on)\b/.test(q)) {
+        return 16;
+      }
+      if (!period?.isSingleDay && !period?.isMonth) return 0;
+      if (/\b(cash[\s-]?up|cash up summary)\b/.test(q)) return 18;
       return 0;
     },
   },
@@ -475,6 +498,9 @@ async function assessReadiness(
   if (isVaultDocumentSummaryIntent(route.intent)) {
     return { status: "ready", canQuery: true, reasons: [], missingData: [] };
   }
+  if (route.intent === VAULT_INTENTS.OPERATIONAL_REVIEW) {
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+  }
   if (isVaultDocumentSearchIntent(route.intent)) {
     const searchTerms = extractDocumentSearchTerms(String(context.question || ""));
     if (!searchTerms || searchTerms.length < 2) {
@@ -488,6 +514,9 @@ async function assessReadiness(
     return { status: "ready", canQuery: true, reasons: [], missingData: [], searchTerms };
   }
   if (isVaultDataIntent(route.intent) && (!route.vaultPeriod?.startDate || !route.vaultPeriod?.endDate)) {
+    if (route.intent === VAULT_INTENTS.CASH_UP && isSalesPerformanceExecutiveQuery(String(context.question || ""))) {
+      return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+    }
     return {
       status: "missing",
       canQuery: false,

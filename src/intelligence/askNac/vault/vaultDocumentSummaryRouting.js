@@ -17,7 +17,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
   if (/\bexecutive summary\b/.test(text)) return true;
   if (/\bkey takeaways?\b/.test(text)) return true;
-  if (/\bwhat should management know\b/.test(text)) return true;
+  if (/\bwhat should management know\b/.test(text) && !/\b(logbooks?|uploaded logbooks)\b/.test(text)) return true;
   if (/\bsummarize the\b/.test(text) && /\b(logbook|document|report|upload)\b/.test(text)) return true;
   if (/\bsummarize\b/.test(text) && /\b(june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(text)) {
     if (/\b(branch|operation|operational|cash[\s-]?up|what happened)\b/.test(text)) return false;

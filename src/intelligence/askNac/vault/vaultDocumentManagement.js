@@ -11,6 +11,21 @@ import { computeVaultKnowledgeTier } from "./vaultKnowledgeTier";
 export const VAULT_DOCUMENT_ADMIN_VAULT_ROLES = new Set(["super_admin", "ceo"]);
 export const VAULT_BULK_REINDEX_MAX = 50;
 
+export const VAULT_JUNK_FILE_PATTERNS = [
+  /^verify-.*\.(txt|csv)$/i,
+  /^folder-verify\./i,
+  /^ck1-/i,
+  /^p\.txt$/i,
+  /^test[-_.]/i,
+  /^tmp[-_.]/i,
+];
+
+export function isVaultJunkFilename(filename = "") {
+  const name = String(filename || "").trim();
+  if (!name) return false;
+  return VAULT_JUNK_FILE_PATTERNS.some((re) => re.test(name));
+}
+
 const FILE_SELECT_COLUMNS =
   "id,title,original_filename,storage_bucket,storage_path,primary_branch_id,brand_wide,department,report_type,data_layer,period_start,period_end,period_label,sensitivity_level,status,uploaded_by,uploader_email,classification_confidence,content_hash,chunk_count,search_status,searchable_at,created_at,updated_at";
 
@@ -40,9 +55,12 @@ export function formatVaultDocumentManagementRow(row = {}) {
     || tier.tier === "parsed"
     || tier.tier === "ask_nac_ready";
 
+  const filename = row.original_filename || row.title || "—";
+
   return {
     id: row.id,
-    filename: row.original_filename || row.title || "—",
+    filename,
+    isJunk: isVaultJunkFilename(filename),
     reportType: row.report_type || "—",
     branch: row.primary_branch_id || (row.brand_wide ? "brand" : "—"),
     uploadedAt: row.created_at || null,

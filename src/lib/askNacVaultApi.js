@@ -33,6 +33,7 @@ import {
   reindexExistingVaultDocument,
   vaultCanDeleteDocuments,
   vaultCanManageDocuments,
+  isVaultJunkFilename,
 } from "../intelligence/askNac/vault/vaultDocumentManagement";
 
 export {
@@ -49,6 +50,7 @@ export {
   reindexExistingVaultDocument,
   vaultCanDeleteDocuments,
   vaultCanManageDocuments,
+  isVaultJunkFilename,
 };
 
 function driveOAuthRedirectUri() {

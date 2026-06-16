@@ -55,9 +55,9 @@ describe("askNac intentRouter", () => {
     expect(route.executiveKind).toBe("improved_most");
   });
 
-  test("routes missing-data avg spend", () => {
+  test("routes sales performance avg spend from uploaded reports", () => {
     const route = routeAskNacIntent("What is average spend per guest?");
-    expect(route.intent).toBe(ASK_NAC_INTENTS.AVG_SPEND_PER_GUEST);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
   });
 
   test("parseAskNacPeriod respects month phrases", () => {

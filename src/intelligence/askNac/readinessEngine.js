@@ -13,6 +13,7 @@ import {
   isVaultDocumentSummaryIntent,
   vaultReportTypesForIntent,
 } from "./intentRouter";
+import { isSalesPerformanceExecutiveQuery } from "./vault/vaultSalesPerformanceIntelligence";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
@@ -175,6 +176,26 @@ export function assessIntentReadinessSync(
     };
   }
 
+  if (intent === ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW) {
+    const crossBranch = vaultCrossBranchBlocked(branchMention, profile);
+    if (crossBranch) {
+      return {
+        status: READINESS.BLOCKED,
+        canQuery: false,
+        reasons: [crossBranch],
+        missingData: [],
+      };
+    }
+
+    return {
+      status: READINESS.READY,
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+      note: "Cross-document operational review — no calendar period required.",
+    };
+  }
+
   if (isVaultDataIntent(intent)) {
     const crossBranch = vaultCrossBranchBlocked(branchMention, profile);
     if (crossBranch) {
@@ -187,6 +208,15 @@ export function assessIntentReadinessSync(
     }
 
     if (!vaultPeriod?.startDate || !vaultPeriod?.endDate) {
+      if (intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY && isSalesPerformanceExecutiveQuery(question)) {
+        return {
+          status: READINESS.READY,
+          canQuery: true,
+          reasons: [],
+          missingData: [],
+          note: "Latest sales performance query — period resolved from most recent upload.",
+        };
+      }
       return {
         status: READINESS.MISSING,
         canQuery: false,

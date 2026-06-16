@@ -19,6 +19,22 @@ import {
   escapeIlikePattern,
   searchVaultDocumentChunks,
 } from "./vaultDocumentSearchRetrieval.ts";
+import {
+  buildSalesPerformanceExecutiveSummary,
+  buildSalesPerformanceFactsAsSyntheticMatches,
+  extendedSalesPerformanceMetrics,
+  formatManagerStyleAnswer,
+  isSalesPerformanceExecutiveQuery,
+  isSalesPerformanceKnowledgeQuery,
+} from "./vaultSalesPerformanceIntelligence.ts";
+import {
+  buildCrossDocumentOperationalSummary,
+  buildOperationalManagerAnswer,
+  extractOperationalReviewTheme,
+  groupOperationalMatches,
+  isVaultOperationalReviewQuery,
+  searchTermsForOperationalTheme,
+} from "./vaultOperationalIntelligence.ts";
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -39,6 +55,7 @@ export type VaultPeriod = {
   label: string;
   isSingleDay: boolean;
   isMonth?: boolean;
+  isWeek?: boolean;
 };
 
 export const VAULT_INTENTS = {
@@ -52,7 +69,10 @@ export const VAULT_INTENTS = {
   COVERAGE_LIST: "vault_coverage_list",
   DOCUMENT_SEARCH: "vault_document_search",
   DOCUMENT_SUMMARY: "vault_document_summary",
+  OPERATIONAL_REVIEW: "vault_operational_review",
 } as const;
+
+export { isSalesPerformanceExecutiveQuery, isVaultOperationalReviewQuery };
 
 const REPORT_LABELS: Record<string, string> = {
   cash_up: "Cash Up",
@@ -128,6 +148,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBounds(referenceDate.getFullYear(), referenceDate.getMonth());
   }
 
+  if (/\b(this week|current week|past week)\b/.test(q)) {
+    const end = new Date(referenceDate);
+    const start = new Date(referenceDate);
+    start.setDate(start.getDate() - 6);
+    return {
+      startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
+      endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+      label: "this week",
+      isSingleDay: false,
+      isWeek: true,
+    };
+  }
+
   const monthOnly = q.match(
     /\b(?:for|in|during|cover(?:ing|age)?)\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b(?:\s+(20\d{2}))?/,
   );
@@ -135,6 +168,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     const monthIndex = MONTH_MAP[monthOnly[1]];
     let year = monthOnly[2] ? Number(monthOnly[2]) : referenceDate.getFullYear();
     if (!monthOnly[2] && monthIndex > referenceDate.getMonth()) year -= 1;
+    return monthBounds(year, monthIndex);
+  }
+
+  const contextualMonth = q.match(
+    /\b(cash[\s-]?up|ccm|reconciliation|reconcile|logbook|reception|uploaded|coverage|report|files)\b.*\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b(?:\s+(20\d{2}))?/,
+  );
+  if (contextualMonth) {
+    const monthIndex = MONTH_MAP[contextualMonth[2]];
+    let year = contextualMonth[3] ? Number(contextualMonth[3]) : referenceDate.getFullYear();
+    if (!contextualMonth[3] && monthIndex > referenceDate.getMonth()) year -= 1;
     return monthBounds(year, monthIndex);
   }
 
@@ -390,13 +433,23 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       return summarizeVaultDocuments(supabase, context);
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
-    case VAULT_INTENTS.CASH_UP:
+    case VAULT_INTENTS.CASH_UP: {
+      const question = String(context.question || "").toLowerCase();
+      if (
+        !vaultPeriod?.startDate
+        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+      ) {
+        return getLatestVaultCashUpFacts(supabase, context);
+      }
       return getVaultFacts(supabase, {
         ...context,
         startDate: vaultPeriod?.startDate,
         endDate: vaultPeriod?.endDate,
         reportType: "cash_up",
       });
+    }
+    case VAULT_INTENTS.OPERATIONAL_REVIEW:
+      return searchOperationalReviewDocuments(supabase, context);
     case VAULT_INTENTS.RECEPTION: {
       const reception = await getVaultFacts(supabase, {
         ...context,
@@ -471,7 +524,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
   if (/\bexecutive summary\b/.test(text)) return true;
   if (/\bkey takeaways?\b/.test(text)) return true;
-  if (/\bwhat should management know\b/.test(text)) return true;
+  if (/\bwhat should management know\b/.test(text) && !/\b(logbooks?|uploaded logbooks)\b/.test(text)) return true;
   if (/\bsummarize the\b/.test(text) && /\b(logbook|document|report|upload)\b/.test(text)) return true;
   if (/\bsummarize\b/.test(text) && /\b(june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(text)) {
     if (/\b(branch|operation|operational|cash[\s-]?up|what happened)\b/.test(text)) return false;
@@ -510,6 +563,9 @@ export function isVaultDocumentSearchQuery(q = ""): boolean {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
   if (isVaultDocumentSummaryQuery(text)) return false;
+  if (isVaultOperationalReviewQuery(text)) return false;
+  if (isSalesPerformanceExecutiveQuery(text)) return false;
+  if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
@@ -614,6 +670,82 @@ function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string
   };
 }
 
+export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const scopedBranch = resolveBranch(context);
+  let query = supabase
+    .from("ask_nac_data_coverage")
+    .select(COVERAGE_SELECT)
+    .eq("report_type", "cash_up")
+    .order("period_end", { ascending: false })
+    .limit(1);
+
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const latest = (data || [])[0] as Record<string, unknown> | undefined;
+  if (!latest) {
+    return {
+      branch: scopedBranch,
+      branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+      facts: [],
+      coverage: [],
+      vaultSources: [],
+      periodLabel: "latest cash-up",
+    };
+  }
+
+  const factsResult = await getVaultFacts(supabase, {
+    ...context,
+    branch: latest.branch_id || scopedBranch,
+    startDate: latest.period_start,
+    endDate: latest.period_end,
+    reportType: "cash_up",
+  });
+
+  const coverageRow = mapVaultCoverageRow(latest);
+  return {
+    ...factsResult,
+    periodLabel: String(latest.period_start || "latest cash-up"),
+    coverage: [coverageRow],
+    vaultSources: collectVaultSources(factsResult.facts as Record<string, unknown>[], [coverageRow]),
+  };
+}
+
+export async function searchOperationalReviewDocuments(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const theme = (context.reviewTheme as string) || extractOperationalReviewTheme(String(context.question || ""));
+  const searchTerms = (context.searchTerms as string) || searchTermsForOperationalTheme(theme);
+  const scopedBranch = resolveBranch(context);
+
+  const result = await searchVaultDocumentChunks(supabase, {
+    select: CHUNK_SELECT,
+    searchTerms,
+    scopedBranch,
+    mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
+  });
+
+  const grouped = groupOperationalMatches(result.matches as Record<string, unknown>[]);
+
+  return {
+    searchTerms,
+    reviewTheme: theme,
+    matches: result.matches,
+    groupedFindings: grouped,
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    vaultSources: [...new Map(result.matches.map((m) => [m.fileId, {
+      fileId: m.fileId,
+      title: m.fileTitle,
+      reportType: m.reportType,
+    }])).values()],
+    searchMethod: result.searchMethod,
+    queryStatus: result.queryStatus,
+    searchError: result.searchError,
+    sources: [{ name: "ask_nac_document_chunks", detail: "Operational review search (RLS-filtered)" }],
+  };
+}
+
 export async function searchVaultDocuments(
   supabase: SupabaseClient,
   context: Record<string, unknown> = {},
@@ -622,35 +754,56 @@ export async function searchVaultDocuments(
     (context.searchTerms as string) ||
     extractDocumentSearchTerms(String(context.question || ""));
 
+  const scopedBranch = resolveBranch(context);
+
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
-    scopedBranch: null,
+    scopedBranch,
     mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
   });
 
-  const vaultSources = [...new Map(result.matches.map((m) => [m.fileId, {
+  let matches = result.matches;
+  let searchMethod = result.searchMethod;
+  let warnings = result.warnings || [];
+
+  if (!matches.length && isSalesPerformanceKnowledgeQuery(String(context.question || ""))) {
+    const latest = await getLatestVaultCashUpFacts(supabase, context);
+    const latestFacts = latest.facts as Record<string, unknown>[] | undefined;
+    if (latestFacts?.length) {
+      const fileTitle = String((latest.vaultSources as Record<string, unknown>[])?.[0]?.title || "Latest sales performance report");
+      matches = buildSalesPerformanceFactsAsSyntheticMatches(latestFacts, fileTitle);
+      searchMethod = "sales_performance_facts_fallback";
+      warnings = [...warnings, "Document chunks unavailable — answered from structured sales performance facts."];
+    }
+  }
+
+  const vaultSources = [...new Map(matches.map((m) => [m.fileId, {
     fileId: m.fileId,
     title: m.fileTitle,
     reportType: m.reportType,
   }])).values()];
 
   const methodDetail =
-    result.searchMethod === "fts"
+    searchMethod === "fts"
       ? "PostgreSQL full-text search (RLS-filtered)"
-      : result.searchMethod === "fallback"
+      : searchMethod === "fallback"
         ? "ILIKE token overlap fallback (RLS-filtered)"
-        : "No search executed";
+        : searchMethod === "sales_performance_facts_fallback"
+          ? "Structured sales performance facts fallback"
+          : "No search executed";
 
   return {
     searchTerms: result.searchTerms,
-    matches: result.matches,
-    searchMethod: result.searchMethod,
+    matches,
+    searchMethod,
     queryStatus: result.queryStatus,
     searchError: result.searchError,
     vaultSources,
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
     sources: [{ name: "ask_nac_document_chunks", detail: methodDetail }],
-    warnings: result.warnings,
+    warnings,
   };
 }
 
@@ -958,22 +1111,97 @@ function buildVaultCoverageListAnswer(route: Record<string, unknown>, tool: Reco
 
 function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
-  const metrics = cashUpMetrics(facts);
-  const net = pickMetricValue(facts, "net_sales") ?? pickMetricValue(facts, "total_sales");
-  const directAnswer = net != null
-    ? `Cash-up vault data shows net/total sales of ${formatNumber(net)} SAR for ${tool.branchLabel} on ${tool.periodLabel}.`
-    : `No cash-up structured facts found for ${tool.branchLabel} on ${tool.periodLabel}.`;
+  const fileTitle = String((tool?.vaultSources as Record<string, unknown>[])?.[0]?.title || "") || null;
+  const executive = buildSalesPerformanceExecutiveSummary(facts, {
+    branchLabel: String(tool.branchLabel || "Network"),
+    periodLabel: String(tool.periodLabel || "the period"),
+    fileTitle,
+    question: String(route.question || ""),
+  });
+  const metrics = extendedSalesPerformanceMetrics(facts).map((row) =>
+    metricEntry(row.label, row.value, { unit: row.unit, source: "sales_performance" }),
+  );
+
+  const relatedFindings = [
+    ...executive.performanceBreakdown.map((p) => ({
+      fileTitle: executive.source,
+      excerpt: `${p.label}: ${p.value}${p.unit ? ` ${p.unit}` : ""}`,
+    })),
+    ...(executive.reconciliationNote
+      ? [{ fileTitle: executive.source, excerpt: executive.reconciliationNote }]
+      : []),
+  ];
+
+  const directAnswer = formatManagerStyleAnswer({
+    answer: executive.answer,
+    managementNote: executive.managementNote,
+    source: executive.source,
+    relatedFindings,
+    confidence: metrics.length ? "high" : executive.missingFields.length ? "medium" : "low",
+  });
 
   return {
     ...baseVaultFields(route, tool, readiness),
-    answerType: metrics.length ? "metric" : "missing_data",
-    title: `Cash-up · ${tool.periodLabel}`,
+    answerType: metrics.length ? "executive" : "missing_data",
+    title: `Sales performance · ${tool.periodLabel}`,
     directAnswer,
     keyMetrics: metrics,
-    insights: [],
+    insights: [
+      ...(executive.risks || []),
+      ...(executive.actions || []).map((a: string) => `Action: ${a}`),
+      ...(executive.missingFields.length
+        ? [`Missing fields: ${executive.missingFields.join(", ")}`]
+        : []),
+    ],
     recommendations: [],
     missingData: [],
     exportOptions: [],
+    warnings: [
+      ...((tool?.warnings as string[]) || []),
+      ...(executive.missingFields.length
+        ? [`Sales report missing: ${executive.missingFields.join(", ")}`]
+        : []),
+    ],
+  };
+}
+
+function buildVaultOperationalReviewAnswer(
+  route: Record<string, unknown>,
+  tool: Record<string, unknown>,
+  readiness: Record<string, unknown> | null,
+): AskNacAnswer {
+  const grouped = (tool?.groupedFindings as Record<string, unknown>[]) || [];
+  const theme = String(tool?.reviewTheme || "general");
+  const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
+
+  const directAnswer = formatManagerStyleAnswer({
+    answer: synthesis.answer,
+    managementNote: synthesis.managementNote,
+    source: synthesis.source || "Uploaded logbooks",
+    relatedFindings: synthesis.relatedFindings as { fileTitle?: string; excerpt?: string }[],
+    confidence: grouped.length >= 3 ? "high" : grouped.length ? "medium" : "low",
+  });
+
+  return {
+    ...baseVaultFields(route, tool, readiness),
+    answerType: grouped.length ? "executive" : "document_no_match",
+    title: `Operational review · ${tool.periodLabel || theme}`,
+    directAnswer,
+    keyMetrics: grouped.slice(0, 8).map((item) =>
+      metricEntry(String(item.date || item.fileTitle), String(item.excerpt || "").slice(0, 100), {
+        note: `${item.issueType} · ${item.severity}`,
+        source: String(item.source || ""),
+      }),
+    ),
+    insights: grouped.slice(0, 8).map(
+      (item) => `${item.date || item.fileTitle} · ${item.issueType}: ${item.excerpt} [${item.source}]`,
+    ),
+    recommendations: grouped.length
+      ? [`Review ${grouped.length} finding(s) across uploaded logbooks.`]
+      : [],
+    missingData: [],
+    exportOptions: [],
+    searchTerms: tool?.searchTerms,
   };
 }
 
@@ -1081,7 +1309,7 @@ function buildVaultOperationalDayAnswer(route: Record<string, unknown>, tool: Re
   ];
   const notes = logbookNotes(logbookFacts);
   const sections: string[] = [];
-  if (cashFacts.length) sections.push("cash-up sales and guest counts");
+  if (cashFacts.length) sections.push("sales performance and guest counts");
   if (receptionFacts.length) sections.push("reception reservations and covers");
   if (logbookFacts.some((f) => String(f.metricKey).startsWith("google_review_"))) sections.push("Google review star counts");
   if (notes.length) sections.push("operational logbook notes");
@@ -1246,10 +1474,19 @@ export function buildVaultAnswer(
       };
     }
     const fileNames = [...new Set(matches.map((m) => (m as Record<string, unknown>).fileTitle))];
-    const operationalAnswer = buildOperationalSearchDirectAnswer(
-      searchTerms,
-      matches as Record<string, unknown>[],
-    );
+    const manager = buildOperationalManagerAnswer(searchTerms, matches as Record<string, unknown>[]);
+    const operationalAnswer = manager
+      ? formatManagerStyleAnswer({
+          answer: String(manager.answer || ""),
+          managementNote: manager.managementNote as string | null,
+          source: manager.source as string | null,
+          relatedFindings: (manager.relatedFindings as { fileTitle?: string; excerpt?: string }[]) || [],
+          confidence: assessSearchMatchConfidence(matches as Record<string, unknown>[], searchTerms),
+        })
+      : buildOperationalSearchDirectAnswer(
+          searchTerms,
+          matches as Record<string, unknown>[],
+        );
     const confidenceLevel = assessSearchMatchConfidence(matches as Record<string, unknown>[], searchTerms);
     return {
       answerType: "comparison",
@@ -1264,16 +1501,25 @@ export function buildVaultAnswer(
           source: String(row.citation || ""),
         });
       }),
-      insights: matches.slice(0, 5).map((m) => {
-        const row = m as Record<string, unknown>;
-        return `${row.fileTitle}${row.pageNo != null ? ` (p. ${row.pageNo})` : ""}${row.sectionLabel ? ` · ${row.sectionLabel}` : ""}: “${row.excerpt}” [${row.citation}]`;
-      }),
+      insights: [
+        ...matches.slice(0, 5).map((m) => {
+          const row = m as Record<string, unknown>;
+          return `${row.fileTitle}${row.pageNo != null ? ` (p. ${row.pageNo})` : ""}${row.sectionLabel ? ` · ${row.sectionLabel}` : ""}: “${row.excerpt}” [${row.citation}]`;
+        }),
+        ...((manager?.relatedFindings as Record<string, unknown>[]) || []).map(
+          (item) => `Related: ${item.fileTitle}${item.sectionLabel ? ` · ${item.sectionLabel}` : ""} — ${item.excerpt}`,
+        ),
+      ],
       confidence: confidenceLevel === "high" ? "high" : confidenceLevel === "medium" ? "medium" : "low",
       isAiGenerated: false,
       intent: route.intent,
       vaultSources: tool?.vaultSources || [],
       searchMethod: tool?.searchMethod || "fts",
     };
+  }
+
+  if (route.intent === VAULT_INTENTS.OPERATIONAL_REVIEW) {
+    return buildVaultOperationalReviewAnswer(route, tool || {}, readiness);
   }
 
   const facts = tool?.facts as unknown[] | undefined;
@@ -1308,7 +1554,8 @@ export function isVaultDataIntent(intent: string) {
   return (
     Object.values(VAULT_INTENTS).includes(intent as typeof VAULT_INTENTS[keyof typeof VAULT_INTENTS]) &&
     intent !== VAULT_INTENTS.DOCUMENT_SEARCH &&
-    intent !== VAULT_INTENTS.DOCUMENT_SUMMARY
+    intent !== VAULT_INTENTS.DOCUMENT_SUMMARY &&
+    intent !== VAULT_INTENTS.OPERATIONAL_REVIEW
   );
 }
 
@@ -1321,5 +1568,5 @@ export function isVaultDocumentSummaryIntent(intent: string) {
 }
 
 export function isVaultDocumentIntent(intent: string) {
-  return isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent);
+  return isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent) || intent === VAULT_INTENTS.OPERATIONAL_REVIEW;
 }

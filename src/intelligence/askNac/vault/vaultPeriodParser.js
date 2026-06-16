@@ -107,6 +107,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBounds(y, m);
   }
 
+  if (/\b(this week|current week|past week)\b/.test(q)) {
+    const end = new Date(referenceDate);
+    const start = new Date(referenceDate);
+    start.setDate(start.getDate() - 6);
+    return {
+      startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
+      endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+      label: "this week",
+      isSingleDay: false,
+      isWeek: true,
+    };
+  }
+
   const monthOnly = q.match(
     /\b(?:for|in|during|cover(?:ing|age)?)\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b(?:\s+(20\d{2}))?/,
   );

@@ -5,6 +5,8 @@
 import {
   isVaultDocumentSummaryQuery,
 } from "./vaultDocumentSummaryRouting";
+import { isSalesPerformanceExecutiveQuery } from "./vaultSalesPerformanceIntelligence";
+import { isVaultOperationalReviewQuery } from "./vaultOperationalIntelligence";
 
 const DOC_SEARCH_ACTION =
   /\b(find|search|look up|summarize|summary|show references? to|mentions? of|contains?)\b/i;
@@ -15,6 +17,9 @@ export function isVaultDocumentSearchQuery(q = "") {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
   if (isVaultDocumentSummaryQuery(text)) return false;
+  if (isVaultOperationalReviewQuery(text)) return false;
+  if (isSalesPerformanceExecutiveQuery(text)) return false;
+  if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;

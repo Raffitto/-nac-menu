@@ -129,7 +129,7 @@ const NLU_CASES = [
   { q: "five star google reviews 5 june", intent: I.VAULT_GOOGLE_REVIEW_STAR_SUMMARY },
   { q: "generate management report for june", intent: I.VAULT_MANAGEMENT_REPORT },
   { q: "what data do we have for june", intent: I.VAULT_COVERAGE_LIST },
-  { q: "average spend per guest", intent: I.AVG_SPEND_PER_GUEST },
+  { q: "average spend per guest", intent: I.VAULT_CASH_UP_SUMMARY },
   { q: "delivery sales hungerstation", intent: I.DELIVERY_SALES },
   { q: "foodics data", intent: I.FOODICS_QUERY },
   { q: "how many redirects did staff drive", intent: I.STAFF_REDIRECT_LEADERBOARD },
