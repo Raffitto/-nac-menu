@@ -371,7 +371,70 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  margin-top: 0.75rem;
   color: #4ecdc4;
+}
+
+.nac-ask-vault__upload-queue {
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.nac-ask-vault__upload-queue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--nac-muted, #6b7280);
+  margin-bottom: 0.5rem;
+}
+
+.nac-ask-vault__upload-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.nac-ask-vault__upload-queue-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.nac-ask-vault__upload-queue-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nac-ask-vault__upload-queue-status {
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.nac-ask-vault__upload-queue-list li.is-processing .nac-ask-vault__upload-queue-status {
+  color: #2563eb;
+}
+
+.nac-ask-vault__upload-queue-list li.is-completed .nac-ask-vault__upload-queue-status {
+  color: #059669;
+}
+
+.nac-ask-vault__upload-queue-list li.is-failed .nac-ask-vault__upload-queue-status {
+  color: #dc2626;
+}
+
+.nac-ask-vault__upload-queue-more {
+  color: var(--nac-muted, #6b7280);
+  font-style: italic;
 }
 
 .nac-ask-vault__coverage,

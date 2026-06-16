@@ -51,6 +51,17 @@ import {
   computeVaultSearchIndexStats,
   computeVaultKnowledgeTier,
 } from "../../intelligence/askNac/vault/vaultKnowledgeTier";
+import {
+  collectFilesFromDataTransfer,
+  resolveUploadFileSelection,
+} from "../../intelligence/askNac/vault/vaultUploadFileCollection";
+import {
+  applyBulkResultsToUploadQueue,
+  buildUploadQueueFromFiles,
+  markUploadQueueProcessing,
+  summarizeUploadQueue,
+} from "../../intelligence/askNac/vault/vaultUploadQueue";
+import { partitionVaultUploadFiles } from "../../intelligence/askNac/vault/vaultBulkIngestion";
 import { branchDashboardName } from "../config/branchDisplayConfig";
 import "../styles/ask-nac-data-vault.css";
 
@@ -127,6 +138,7 @@ export default function AskNacDataVaultPanel({ session }) {
   const [uploading, setUploading] = useState(false);
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null);
+  const [uploadQueue, setUploadQueue] = useState([]);
   const [coverageData, setCoverageData] = useState(null);
   const [coverageAttempted, setCoverageAttempted] = useState(false);
   const [registryAttempted, setRegistryAttempted] = useState(false);
@@ -370,26 +382,140 @@ export default function AskNacDataVaultPanel({ session }) {
     });
   };
 
-  const onFileSelected = (file) => {
-    if (!file) {
-      setSelectedFile(null);
-      return;
-    }
-    if (isLegacyDocFile(file)) {
-      setSelectedFile(null);
+  const uploadQueueStats = useMemo(() => summarizeUploadQueue(uploadQueue), [uploadQueue]);
+
+  const reportSelectionRejections = useCallback((legacyRejected, unsupportedRejected) => {
+    if (legacyRejected.length) {
       setError(LEGACY_DOC_MESSAGE);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
+      return true;
     }
-    if (!isSupportedVaultUploadFile(file)) {
-      setSelectedFile(null);
+    if (unsupportedRejected.length) {
       setError("Unsupported file type. Use PDF, XLSX, XLS, CSV, DOCX, or TXT.");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
+      return true;
     }
-    setError("");
-    setSelectedFile(file);
-  };
+    return false;
+  }, []);
+
+  const refreshKnowledgeStatus = useCallback(async () => {
+    await loadRegistry();
+    await loadCoverage();
+  }, [loadRegistry, loadCoverage]);
+
+  const runBulkImport = useCallback(
+    async (fileList, { label = "Bulk import", source = "bulk" } = {}) => {
+      if (!fileList?.length || !session?.user) return;
+
+      const { legacyDocFiles, entries } = partitionVaultUploadFiles(fileList);
+      if (!entries.length) {
+        if (legacyDocFiles.length) setError(LEGACY_DOC_MESSAGE);
+        else setError("No supported files to import. Use PDF, XLSX, XLS, CSV, DOCX, or TXT.");
+        return;
+      }
+
+      setSelectedFile(null);
+      setBulkImporting(true);
+      setUploadQueue(buildUploadQueueFromFiles(fileList));
+      setBulkProgress({
+        processed: 0,
+        total: entries.length,
+        succeeded: 0,
+        failed: 0,
+        skipped: 0,
+      });
+      setError("");
+      setNotice("");
+
+      const result = await startFolderBulkImport(supabase, {
+        fileList,
+        label: `${label} (${entries.length} files)`,
+        defaultBranch: form.branch === "brand" ? "khobar" : form.branch,
+        defaultDepartment: form.department,
+        session,
+        profile,
+        vaultRole,
+        onProgress: (progress) => {
+          setBulkProgress(progress);
+          setUploadQueue((prev) => markUploadQueueProcessing(prev, progress));
+        },
+      });
+
+      setBulkImporting(false);
+      setUploadQueue((prev) => applyBulkResultsToUploadQueue(prev, entries, result.results || []));
+
+      if (source === "folder" && folderInputRef.current) {
+        folderInputRef.current.value = "";
+      }
+      if (source === "file" && fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      if (!result.ok && !result.succeeded) {
+        setError(result.error || "Bulk import failed.");
+        await refreshKnowledgeStatus();
+        return;
+      }
+
+      const legacyLine =
+        result.legacyDocSkipped > 0
+          ? `${result.legacyDocSkipped} legacy .doc file(s) skipped — DOCX required.`
+          : "";
+
+      const searchLine =
+        result.searchIndexingFailed > 0
+          ? `${result.searchIndexingFailed} file(s) stored but search indexing failed — re-upload or re-index to enable Ask NAC document search.`
+          : "";
+
+      setNotice(
+        [
+          `${label} complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
+          legacyLine,
+          searchLine,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      await refreshKnowledgeStatus();
+    },
+    [session, form.branch, form.department, profile, vaultRole, refreshKnowledgeStatus],
+  );
+
+  const onFilesChosen = useCallback(
+    async (fileList) => {
+      const selection = resolveUploadFileSelection(fileList);
+      if (selection.mode === "none") {
+        if (reportSelectionRejections(selection.legacyRejected, selection.unsupportedRejected)) {
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+        return;
+      }
+
+      if (selection.legacyRejected.length || selection.unsupportedRejected.length) {
+        setNotice(
+          [
+            selection.unsupportedRejected.length
+              ? `${selection.unsupportedRejected.length} unsupported file(s) skipped.`
+              : "",
+            selection.legacyRejected.length
+              ? `${selection.legacyRejected.length} legacy .doc file(s) skipped.`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+      }
+
+      if (selection.mode === "single") {
+        setError("");
+        setUploadQueue([]);
+        setSelectedFile(selection.files[0]);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+
+      await runBulkImport(selection.files, { label: "File upload", source: "file" });
+    },
+    [reportSelectionRejections, runBulkImport],
+  );
 
   const onUpload = async () => {
     if (!selectedFile) {
@@ -430,7 +556,7 @@ export default function AskNacDataVaultPanel({ session }) {
 
     if (result.skipped) {
       setNotice(result.reason || "Duplicate file skipped.");
-      await loadRegistry();
+      await refreshKnowledgeStatus();
       return;
     }
 
@@ -445,8 +571,7 @@ export default function AskNacDataVaultPanel({ session }) {
       );
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      await loadRegistry();
-      await loadCoverage();
+      await refreshKnowledgeStatus();
       return;
     }
 
@@ -461,75 +586,31 @@ export default function AskNacDataVaultPanel({ session }) {
     if (ingest?.preview) setUploadPreview(ingest.preview);
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    await loadRegistry();
-    await loadCoverage();
+    await refreshKnowledgeStatus();
   };
 
   const onFolderSelected = async (fileList) => {
     if (!fileList?.length || !session?.user) return;
+    await runBulkImport(fileList, { label: "Folder import", source: "folder" });
+  };
 
-    setBulkImporting(true);
-    setBulkProgress({ processed: 0, total: fileList.length, succeeded: 0, failed: 0, skipped: 0 });
-    setError("");
-    setNotice("");
-
-    const result = await startFolderBulkImport(supabase, {
-      fileList,
-      label: `Folder import (${fileList.length} files)`,
-      defaultBranch: form.branch === "brand" ? "khobar" : form.branch,
-      defaultDepartment: form.department,
-      session,
-      profile,
-      vaultRole,
-      onProgress: setBulkProgress,
-    });
-
-    setBulkImporting(false);
-    if (folderInputRef.current) folderInputRef.current.value = "";
-
-    if (!result.ok && !result.succeeded) {
-      setError(result.error || "Bulk import failed.");
+  const onFolderDrop = async (event) => {
+    event.preventDefault();
+    if (!session?.user) {
+      setError("Sign in to register files in the Data Vault.");
       return;
     }
 
-    const legacyLine =
-      result.legacyDocSkipped > 0
-        ? `${result.legacyDocSkipped} legacy .doc file(s) skipped — DOCX required.`
-        : "";
-
-    const searchLine =
-      result.searchIndexingFailed > 0
-        ? `${result.searchIndexingFailed} file(s) stored but search indexing failed — re-upload or re-index to enable Ask NAC document search.`
-        : "";
-
-    setNotice(
-      [
-        `Folder import complete: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.failed} failed.`,
-        legacyLine,
-        searchLine,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-    await loadRegistry();
-    await loadCoverage();
-  };
-
-  const onFolderDrop = (event) => {
-    event.preventDefault();
-    const items = event.dataTransfer?.items;
-    if (!items?.length) return;
-    const dropped = [];
-    for (const item of items) {
-      if (item.kind === "file") {
-        const entry = item.webkitGetAsEntry?.();
-        if (entry?.isFile) {
-          const file = item.getAsFile();
-          if (file) dropped.push(file);
-        }
+    try {
+      const dropped = await collectFilesFromDataTransfer(event.dataTransfer);
+      if (!dropped.length) {
+        setError("No supported files found in the drop.");
+        return;
       }
+      await runBulkImport(dropped, { label: "Drop import", source: "drop" });
+    } catch (err) {
+      setError(err?.message || "Could not read dropped files.");
     }
-    if (dropped.length) onFolderSelected(dropped);
   };
 
   const onConnectDrive = async () => {
@@ -831,8 +912,9 @@ export default function AskNacDataVaultPanel({ session }) {
                   type="file"
                   className="nac-vault-hidden-input"
                   accept={VAULT_UPLOAD_ACCEPT}
-                  onChange={(e) => onFileSelected(e.target.files?.[0] || null)}
-                  disabled={uploading}
+                  multiple
+                  onChange={(e) => onFilesChosen(e.target.files)}
+                  disabled={uploading || bulkImporting}
                 />
                 <input
                   ref={folderInputRef}
@@ -872,6 +954,35 @@ export default function AskNacDataVaultPanel({ session }) {
                   </div>
                 ) : null}
 
+                {uploadQueue.length > 0 ? (
+                  <div className="nac-ask-vault__upload-queue" role="status" aria-live="polite">
+                    <div className="nac-ask-vault__upload-queue-summary">
+                      <span>Pending: {uploadQueueStats.pending}</span>
+                      <span>Processing: {uploadQueueStats.processing}</span>
+                      <span>Completed: {uploadQueueStats.completed}</span>
+                      <span>Failed: {uploadQueueStats.failed}</span>
+                      {uploadQueueStats.skipped > 0 ? (
+                        <span>Skipped: {uploadQueueStats.skipped}</span>
+                      ) : null}
+                    </div>
+                    <ul className="nac-ask-vault__upload-queue-list">
+                      {uploadQueue.slice(0, 12).map((item) => (
+                        <li key={item.id} className={`is-${item.status}`}>
+                          <span className="nac-ask-vault__upload-queue-name">
+                            {item.relativePath || item.name}
+                          </span>
+                          <span className="nac-ask-vault__upload-queue-status">{item.status}</span>
+                        </li>
+                      ))}
+                      {uploadQueue.length > 12 ? (
+                        <li className="nac-ask-vault__upload-queue-more">
+                          +{uploadQueue.length - 12} more file(s)
+                        </li>
+                      ) : null}
+                    </ul>
+                  </div>
+                ) : null}
+
                 {bulkImporting && bulkProgress ? (
                   <div className="nac-ask-vault__bulk-progress" role="status">
                     <Loader2 size={14} className="nac-bi-spin" />
@@ -883,7 +994,9 @@ export default function AskNacDataVaultPanel({ session }) {
                 <div
                   className="nac-vault-knowledge__drop"
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={onFolderDrop}
+                  onDrop={(e) => {
+                    onFolderDrop(e);
+                  }}
                 >
                   <FolderInput size={16} aria-hidden />
                   <span>Drop files or a folder here to import</span>
