@@ -30,6 +30,8 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(migration).toMatch(/add column if not exists auto_ingest boolean/);
     expect(migration).toMatch(/add column if not exists last_ingest_at timestamptz/);
     expect(migration).toMatch(/discovered_count/);
+    expect(migration).toMatch(/folders_scanned/);
+    expect(migration).toMatch(/max_depth/);
     expect(migration).toMatch(/downloaded_count/);
     expect(migration).toMatch(/indexed_count/);
     expect(migration).toMatch(/current_file text/);
@@ -38,6 +40,9 @@ describe("Google Drive Company Knowledge ingestion", () => {
   test("records per-file Drive failures for System Details and retry", () => {
     expect(migration).toMatch(/create table if not exists public\.ask_nac_drive_sync_run_files/);
     expect(migration).toMatch(/drive_file_id text not null/);
+    expect(migration).toMatch(/folder_path text/);
+    expect(migration).toMatch(/relative_path text/);
+    expect(migration).toMatch(/depth int not null default 0/);
     expect(migration).toMatch(/error text/);
     expect(driveFunction).toMatch(/action === "retry_file"/);
     expect(panel).toMatch(/retryDriveIngestionFile/);
@@ -63,6 +68,33 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/downloadDriveFile/);
     expect(driveHelper).toMatch(/persistChunks/);
     expect(driveHelper).toMatch(/searchable: true/);
+  });
+
+  test("recursively discovers nested Drive folders before indexing files", () => {
+    expect(driveHelper).toMatch(/export async function walkDriveFolderTree/);
+    expect(driveHelper).toMatch(/item\.mimeType === GOOGLE_FOLDER_MIME/);
+    expect(driveHelper).toMatch(/queue\.push\(\{/);
+    expect(driveHelper).toMatch(/folderPath: joinDrivePath\(\[current\.folderPath, item\.name\]\)/);
+    expect(driveHelper).toMatch(/files = traversal\.files/);
+    expect(driveHelper).toMatch(/await processOneDriveFile/);
+  });
+
+  test("nested folder traversal preserves path metadata and indexes nested files", () => {
+    expect(driveHelper).toMatch(/relativePath: joinDrivePath\(\[current\.folderPath, item\.name\]\)/);
+    expect(driveHelper).toMatch(/folder_path: driveFile\.folderPath/);
+    expect(driveHelper).toMatch(/relative_path: driveFile\.relativePath/);
+    expect(driveHelper).toMatch(/current_file: driveFile\.relativePath/);
+    expect(driveHelper).toMatch(/notes: `Imported from Google Drive path/);
+    expect(panel).toMatch(/file\.relative_path \|\| file\.file_name/);
+  });
+
+  test("recursive traversal prevents loops and duplicate file IDs", () => {
+    expect(driveHelper).toMatch(/visitedFolderIds = new Set/);
+    expect(driveHelper).toMatch(/seenFileIds = new Set/);
+    expect(driveHelper).toMatch(/visitedFolderIds\.has\(current\.folderId\)/);
+    expect(driveHelper).toMatch(/seenFileIds\.has\(item\.id\)/);
+    expect(driveHelper).toMatch(/MAX_DRIVE_FOLDER_DEPTH/);
+    expect(driveHelper).toMatch(/MAX_DRIVE_ITEMS_PER_RUN/);
   });
 
   test("Google Docs and Sheets are exported into chunkable formats", () => {

@@ -62,6 +62,12 @@ alter table public.ask_nac_drive_sync_runs
   add column if not exists discovered_count int not null default 0;
 
 alter table public.ask_nac_drive_sync_runs
+  add column if not exists folders_scanned int not null default 0;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists max_depth int not null default 0;
+
+alter table public.ask_nac_drive_sync_runs
   add column if not exists new_count int not null default 0;
 
 alter table public.ask_nac_drive_sync_runs
@@ -107,6 +113,9 @@ create table if not exists public.ask_nac_drive_sync_run_files (
   folder_id uuid not null references public.ask_nac_drive_sync_folders (id) on delete cascade,
   drive_file_id text not null,
   file_name text not null,
+  folder_path text,
+  relative_path text,
+  depth int not null default 0,
   mime_type text,
   modified_time timestamptz,
   source_version text,

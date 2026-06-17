@@ -15,6 +15,9 @@ const PARSEABLE_REPORT_TYPES = new Set([
 const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 const GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet";
 const GOOGLE_PRESENTATION_MIME = "application/vnd.google-apps.presentation";
+const GOOGLE_FOLDER_MIME = "application/vnd.google-apps.folder";
+const MAX_DRIVE_FOLDER_DEPTH = 20;
+const MAX_DRIVE_ITEMS_PER_RUN = 5000;
 
 const SUPPORTED_BINARY_MIME: Record<string, string> = {
   "application/pdf": "pdf",
@@ -55,8 +58,16 @@ type DriveFile = {
   version?: string;
 };
 
+type DriveFileWithPath = DriveFile & {
+  folderPath: string;
+  relativePath: string;
+  depth: number;
+};
+
 type RunCounters = {
   discovered_count: number;
+  folders_scanned: number;
+  max_depth: number;
   new_count: number;
   changed_count: number;
   skipped_count: number;
@@ -89,6 +100,17 @@ function normalizeFolderMetadata(folder: DriveFolder) {
   const reportType = folder.report_type || "other";
   const sensitivity = folder.sensitivity || "internal";
   return { branchId, department, reportType, sensitivity };
+}
+
+function folderRootLabel(folder: DriveFolder) {
+  return String(folder.label || folder.folder_name || folder.drive_folder_id || "Google Drive").trim();
+}
+
+function joinDrivePath(parts: Array<string | null | undefined>) {
+  return parts
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function resolveDriveExport(file: DriveFile) {
@@ -137,6 +159,85 @@ export async function listDriveFiles(accessToken: string, folderId: string, page
   const data = await res.json();
   if (!res.ok) throw new Error(sanitizeErrorMessage(data.error?.message || "Drive list failed"));
   return data;
+}
+
+export async function walkDriveFolderTree(
+  accessToken: string,
+  {
+    rootFolderId,
+    rootLabel,
+    maxDepth = MAX_DRIVE_FOLDER_DEPTH,
+    maxItems = MAX_DRIVE_ITEMS_PER_RUN,
+  }: {
+    rootFolderId: string;
+    rootLabel: string;
+    maxDepth?: number;
+    maxItems?: number;
+  },
+) {
+  const files: DriveFileWithPath[] = [];
+  const visitedFolderIds = new Set<string>();
+  const seenFileIds = new Set<string>();
+  const queue: Array<{ folderId: string; folderPath: string; depth: number }> = [
+    { folderId: rootFolderId, folderPath: rootLabel, depth: 0 },
+  ];
+  let foldersScanned = 0;
+  let maxDepthSeen = 0;
+  let duplicateCount = 0;
+  let truncated = false;
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (visitedFolderIds.has(current.folderId)) continue;
+    visitedFolderIds.add(current.folderId);
+    foldersScanned += 1;
+    maxDepthSeen = Math.max(maxDepthSeen, current.depth);
+
+    let pageToken: string | undefined;
+    do {
+      const listing = await listDriveFiles(accessToken, current.folderId, pageToken);
+      for (const item of listing.files || []) {
+        if (item.mimeType === GOOGLE_FOLDER_MIME) {
+          if (current.depth + 1 <= maxDepth && !visitedFolderIds.has(item.id)) {
+            queue.push({
+              folderId: item.id,
+              folderPath: joinDrivePath([current.folderPath, item.name]),
+              depth: current.depth + 1,
+            });
+          }
+          continue;
+        }
+
+        if (seenFileIds.has(item.id)) {
+          duplicateCount += 1;
+          continue;
+        }
+        seenFileIds.add(item.id);
+        files.push({
+          ...item,
+          folderPath: current.folderPath,
+          relativePath: joinDrivePath([current.folderPath, item.name]),
+          depth: current.depth,
+        });
+
+        if (files.length >= maxItems) {
+          truncated = true;
+          queue.length = 0;
+          break;
+        }
+      }
+      if (truncated) break;
+      pageToken = listing.nextPageToken;
+    } while (pageToken);
+  }
+
+  return {
+    files,
+    foldersScanned,
+    maxDepth: maxDepthSeen,
+    duplicateCount,
+    truncated,
+  };
 }
 
 async function getDriveFile(accessToken: string, driveFileId: string) {
@@ -443,7 +544,12 @@ async function updateRun(admin: SupabaseLike, runId: string, patch: Record<strin
 
 async function createRunFile(
   admin: SupabaseLike,
-  { runId, folderId, driveFile, action }: { runId: string; folderId: string; driveFile: DriveFile; action: string },
+  {
+    runId,
+    folderId,
+    driveFile,
+    action,
+  }: { runId: string; folderId: string; driveFile: DriveFileWithPath; action: string },
 ) {
   const { data, error } = await admin
     .from("ask_nac_drive_sync_run_files")
@@ -452,6 +558,9 @@ async function createRunFile(
       folder_id: folderId,
       drive_file_id: driveFile.id,
       file_name: driveFile.name,
+      folder_path: driveFile.folderPath || null,
+      relative_path: driveFile.relativePath || driveFile.name,
+      depth: driveFile.depth ?? 0,
       mime_type: driveFile.mimeType,
       modified_time: driveFile.modifiedTime || null,
       source_version: driveFile.version || null,
@@ -472,7 +581,7 @@ async function markRunFile(admin: SupabaseLike, id: string, patch: Record<string
     .eq("id", id);
 }
 
-async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFile, email: string) {
+async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFileWithPath, email: string) {
   const { data } = await admin
     .from("ask_nac_files")
     .select("id,content_hash,external_source_modified_at,source_external_version,source_external_checksum")
@@ -504,7 +613,7 @@ async function registerDownloadedDriveFile(
     email,
   }: {
     folder: DriveFolder;
-    driveFile: DriveFile;
+    driveFile: DriveFileWithPath;
     download: { buffer: ArrayBuffer; filename: string; mimeType: string; extension: string; size: number };
     contentHash: string;
     existing: any;
@@ -548,7 +657,7 @@ async function registerDownloadedDriveFile(
     external_source_modified_at: driveFile.modifiedTime || null,
     source_external_version: driveFile.version || null,
     source_external_checksum: driveFile.md5Checksum || null,
-    notes: `Imported from Google Drive folder ${folder.label || folder.folder_name || folder.drive_folder_id}.`,
+    notes: `Imported from Google Drive path ${driveFile.relativePath || driveFile.name}.`,
     search_status: "indexing",
     searchable: false,
     updated_at: nowIso(),
@@ -587,7 +696,12 @@ async function registerDownloadedDriveFile(
     status: "processing",
     stage: "extract",
     started_at: nowIso(),
-    stats: { source: "google_drive", driveFileId: driveFile.id },
+    stats: {
+      source: "google_drive",
+      driveFileId: driveFile.id,
+      folderPath: driveFile.folderPath,
+      relativePath: driveFile.relativePath,
+    },
   });
 
   return { fileId, fileRow, versionRowId: versionRow.id, jobId };
@@ -655,7 +769,7 @@ async function processOneDriveFile(
     accessToken: string;
     folder: DriveFolder;
     runId: string;
-    driveFile: DriveFile;
+    driveFile: DriveFileWithPath;
     email: string;
     counters: RunCounters;
     force?: boolean;
@@ -666,7 +780,12 @@ async function processOneDriveFile(
   if (!force && isUnchanged(existing, driveFile)) {
     counters.skipped_count += 1;
     const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
-    await markRunFile(admin, itemId, { status: "skipped", error: "Unchanged Drive file." });
+    await markRunFile(admin, itemId, {
+      status: "skipped",
+      error: "Unchanged Drive file.",
+      stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
+    });
+    await updateRun(admin, runId, {}, counters);
     return;
   }
 
@@ -677,14 +796,18 @@ async function processOneDriveFile(
   let jobId: string | null = null;
   try {
     await markRunFile(admin, itemId, { status: "running" });
-    await updateRun(admin, runId, { current_file: driveFile.name }, counters);
+    await updateRun(admin, runId, { current_file: driveFile.relativePath || driveFile.name }, counters);
 
     const download = await downloadDriveFile(accessToken, driveFile);
     counters.downloaded_count += 1;
     const contentHash = await sha256Hex(download.buffer);
     if (!force && existing?.content_hash && existing.content_hash === contentHash) {
       counters.skipped_count += 1;
-      await markRunFile(admin, itemId, { status: "skipped", error: "Identical content already indexed." });
+      await markRunFile(admin, itemId, {
+        status: "skipped",
+        error: "Identical content already indexed.",
+        stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
+      });
       return;
     }
 
@@ -727,7 +850,14 @@ async function processOneDriveFile(
     await markRunFile(admin, itemId, {
       status: "completed",
       file_id: registered.fileId,
-      stats: { chunkCount, factCount, size: download.size },
+      stats: {
+        chunkCount,
+        factCount,
+        size: download.size,
+        folderPath: driveFile.folderPath,
+        relativePath: driveFile.relativePath,
+        depth: driveFile.depth,
+      },
     });
   } catch (err) {
     const message = sanitizeErrorMessage(err);
@@ -777,6 +907,8 @@ export async function processDriveIngestionRun(
 ) {
   const counters: RunCounters = {
     discovered_count: 0,
+    folders_scanned: 0,
+    max_depth: 0,
     new_count: 0,
     changed_count: 0,
     skipped_count: 0,
@@ -790,21 +922,34 @@ export async function processDriveIngestionRun(
   await updateRun(admin, runId, { status: "running", started_at: nowIso(), current_file: null }, counters);
 
   try {
-    const files: DriveFile[] = [];
+    let files: DriveFileWithPath[] = [];
+    let traversal = {
+      foldersScanned: 0,
+      maxDepth: 0,
+      duplicateCount: 0,
+      truncated: false,
+    };
     if (onlyDriveFileId) {
-      files.push(await getDriveFile(accessToken, onlyDriveFileId));
+      const driveFile = await getDriveFile(accessToken, onlyDriveFileId);
+      const rootPath = folderRootLabel(folder);
+      files = [{
+        ...driveFile,
+        folderPath: rootPath,
+        relativePath: joinDrivePath([rootPath, driveFile.name]),
+        depth: 0,
+      }];
+      traversal = { foldersScanned: 1, maxDepth: 0, duplicateCount: 0, truncated: false };
     } else {
-      let pageToken: string | undefined;
-      do {
-        const listing = await listDriveFiles(accessToken, folder.drive_folder_id, pageToken);
-        for (const file of listing.files || []) {
-          if (file.mimeType !== "application/vnd.google-apps.folder") files.push(file);
-        }
-        pageToken = listing.nextPageToken;
-      } while (pageToken);
+      traversal = await walkDriveFolderTree(accessToken, {
+        rootFolderId: folder.drive_folder_id,
+        rootLabel: folderRootLabel(folder),
+      });
+      files = traversal.files;
     }
 
     counters.discovered_count = files.length;
+    counters.folders_scanned = traversal.foldersScanned;
+    counters.max_depth = traversal.maxDepth;
     await updateRun(admin, runId, { current_file: null }, counters);
 
     if (!folder.auto_ingest) {
@@ -822,13 +967,19 @@ export async function processDriveIngestionRun(
         await markRunFile(admin, itemId, {
           status: "skipped",
           error: "Folder auto_ingest=false; metadata listed only.",
+          stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
         });
       }
       await updateRun(admin, runId, {
         status: "completed",
         current_file: null,
         finished_at: nowIso(),
-        stats: { metadataOnly: true, autoIngest: false },
+        stats: {
+          metadataOnly: true,
+          autoIngest: false,
+          duplicateFileIdsSkipped: traversal.duplicateCount,
+          truncated: traversal.truncated,
+        },
       }, counters);
       await admin.from("ask_nac_drive_sync_folders").update({
         last_sync_at: nowIso(),
@@ -842,7 +993,11 @@ export async function processDriveIngestionRun(
       if ("unsupported" in exportInfo) {
         counters.skipped_count += 1;
         const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
-        await markRunFile(admin, itemId, { status: "unsupported", error: exportInfo.unsupported });
+        await markRunFile(admin, itemId, {
+          status: "unsupported",
+          error: exportInfo.unsupported,
+          stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
+        });
         await updateRun(admin, runId, {}, counters);
         continue;
       }
@@ -867,14 +1022,19 @@ export async function processDriveIngestionRun(
       status: finalStatus,
       current_file: null,
       finished_at: nowIso(),
-      stats: { autoIngest: true },
+      stats: {
+        autoIngest: true,
+        duplicateFileIdsSkipped: traversal.duplicateCount,
+        truncated: traversal.truncated,
+      },
       error: finalStatus === "failed" ? "All Drive files failed ingestion." : null,
     }, counters);
-    await admin.from("ask_nac_drive_sync_folders").update({
+    const folderUpdate: Record<string, string> = {
       last_sync_at: nowIso(),
-      last_ingest_at: counters.downloaded_count > 0 ? nowIso() : undefined,
       last_sync_status: finalStatus,
-    }).eq("id", folder.id);
+    };
+    if (counters.downloaded_count > 0) folderUpdate.last_ingest_at = nowIso();
+    await admin.from("ask_nac_drive_sync_folders").update(folderUpdate).eq("id", folder.id);
   } catch (err) {
     const message = sanitizeErrorMessage(err);
     await updateRun(admin, runId, {
@@ -909,7 +1069,7 @@ export async function fetchDriveRunStatus(admin: SupabaseLike, runId: string, em
 
   const { data: files } = await admin
     .from("ask_nac_drive_sync_run_files")
-    .select("id,drive_file_id,file_name,status,action,error,file_id,stats,created_at,finished_at")
+    .select("id,drive_file_id,file_name,folder_path,relative_path,depth,status,action,error,file_id,stats,created_at,finished_at")
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
 

@@ -273,6 +273,8 @@ export default function AskNacDataVaultPanel({ session }) {
     const run = driveIngestRun || {};
     return {
       discovered: run.discovered_count ?? run.files_discovered ?? 0,
+      foldersScanned: run.folders_scanned ?? 0,
+      maxDepth: run.max_depth ?? 0,
       newCount: run.new_count ?? run.files_new ?? 0,
       changed: run.changed_count ?? run.files_changed ?? 0,
       skipped: run.skipped_count ?? run.files_skipped ?? 0,
@@ -1456,7 +1458,8 @@ export default function AskNacDataVaultPanel({ session }) {
                         Drive ingestion {driveIngestStats.status}: discovered {driveIngestStats.discovered}, new{" "}
                         {driveIngestStats.newCount}, changed {driveIngestStats.changed}, downloaded{" "}
                         {driveIngestStats.downloaded}, extracted {driveIngestStats.extracted}, indexed{" "}
-                        {driveIngestStats.indexed}, failed {driveIngestStats.failed}
+                        {driveIngestStats.indexed}, failed {driveIngestStats.failed}, folders scanned{" "}
+                        {driveIngestStats.foldersScanned}, max depth {driveIngestStats.maxDepth}
                         {driveIngestStats.currentFile ? ` — ${driveIngestStats.currentFile}` : ""}
                       </div>
                     ) : null}
@@ -1466,7 +1469,7 @@ export default function AskNacDataVaultPanel({ session }) {
                           const retryKey = `retry:${file.id}`;
                           return (
                             <li key={file.id} className="is-fail">
-                              <span>{file.file_name}</span>
+                              <span>{file.relative_path || file.file_name}</span>
                               <span>{file.error || "Drive ingestion failed"}</span>
                               <button
                                 type="button"
