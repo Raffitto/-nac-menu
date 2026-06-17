@@ -472,7 +472,7 @@ async function extractText(download: { buffer: ArrayBuffer; extension: string; f
 
   if (extension === "docx") {
     const mammoth = await import("npm:mammoth@1.12.0");
-    const result = await mammoth.extractRawText({ arrayBuffer: download.buffer });
+    const result = await mammoth.extractRawText({ buffer: download.buffer });
     return {
       text: String(result.value || ""),
       sections: [{ label: "Document text", text: String(result.value || "") }],

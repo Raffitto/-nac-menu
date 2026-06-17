@@ -160,6 +160,12 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/Google Slides ingestion is not supported yet/);
   });
 
+  test("Drive DOCX extraction uses Mammoth Node buffer option", () => {
+    expect(driveHelper).toMatch(/extension === "docx"/);
+    expect(driveHelper).toMatch(/mammoth\.extractRawText\(\{ buffer: download\.buffer \}\)/);
+    expect(driveHelper).not.toMatch(/mammoth\.extractRawText\(\{ arrayBuffer: download\.buffer \}\)/);
+  });
+
   test("unchanged Drive files are skipped and changed files version/reindex", () => {
     expect(driveHelper).toMatch(/isUnchanged/);
     expect(driveHelper).toMatch(/source_external_version/);
