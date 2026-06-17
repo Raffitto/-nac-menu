@@ -70,6 +70,23 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/searchable: true/);
   });
 
+  test("Drive listing supports Shared Drives and logs first response", () => {
+    expect(driveHelper).toMatch(/supportsAllDrives: "true"/);
+    expect(driveHelper).toMatch(/includeItemsFromAllDrives: "true"/);
+    expect(driveFunction).toMatch(/supportsAllDrives: "true"/);
+    expect(driveFunction).toMatch(/includeItemsFromAllDrives: "true"/);
+    expect(driveHelper).toMatch(/firstDriveListResponse/);
+    expect(driveHelper).toMatch(/console\.info\("\[vault-drive-ingest\] first Drive list response"/);
+  });
+
+  test("ingestion run records selected folder IDs and scheduling failures", () => {
+    expect(driveFunction).toMatch(/selectedFolderDebug/);
+    expect(driveFunction).toMatch(/sourceTable: "ask_nac_drive_sync_folders"/);
+    expect(driveFunction).toMatch(/driveFolderId: folder\.drive_folder_id/);
+    expect(driveFunction).toMatch(/EdgeRuntime\.waitUntil is unavailable/);
+    expect(driveFunction).toMatch(/runtimeStage: "schedule_failed"/);
+  });
+
   test("recursively discovers nested Drive folders before indexing files", () => {
     expect(driveHelper).toMatch(/export async function walkDriveFolderTree/);
     expect(driveHelper).toMatch(/item\.mimeType === GOOGLE_FOLDER_MIME/);
@@ -77,6 +94,13 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/folderPath: joinDrivePath\(\[current\.folderPath, item\.name\]\)/);
     expect(driveHelper).toMatch(/files = traversal\.files/);
     expect(driveHelper).toMatch(/await processOneDriveFile/);
+  });
+
+  test("folder scans are persisted before Drive list completes", () => {
+    expect(driveHelper).toMatch(/onFolderScanned/);
+    expect(driveHelper).toMatch(/runtimeStage = "listing_drive_folder"/);
+    expect(driveHelper).toMatch(/currentDriveFolderId = info\.folderId/);
+    expect(driveHelper).toMatch(/current_file: `Scanning \$\{info\.folderPath\}`/);
   });
 
   test("nested folder traversal preserves path metadata and indexes nested files", () => {

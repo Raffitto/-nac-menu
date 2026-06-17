@@ -150,6 +150,8 @@ export async function listDriveFiles(accessToken: string, folderId: string, page
     q: `'${folderId}' in parents and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,md5Checksum,version)",
     pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   });
   if (pageToken) params.set("pageToken", pageToken);
 
@@ -168,11 +170,27 @@ export async function walkDriveFolderTree(
     rootLabel,
     maxDepth = MAX_DRIVE_FOLDER_DEPTH,
     maxItems = MAX_DRIVE_ITEMS_PER_RUN,
+    onFolderScanned,
+    onFirstListResponse,
   }: {
     rootFolderId: string;
     rootLabel: string;
     maxDepth?: number;
     maxItems?: number;
+    onFolderScanned?: (info: {
+      folderId: string;
+      folderPath: string;
+      depth: number;
+      foldersScanned: number;
+      maxDepth: number;
+    }) => Promise<void> | void;
+    onFirstListResponse?: (info: {
+      folderId: string;
+      folderPath: string;
+      fileCount: number;
+      nextPageToken: boolean;
+      sample: Array<{ id: string; name: string; mimeType: string }>;
+    }) => Promise<void> | void;
   },
 ) {
   const files: DriveFileWithPath[] = [];
@@ -185,6 +203,7 @@ export async function walkDriveFolderTree(
   let maxDepthSeen = 0;
   let duplicateCount = 0;
   let truncated = false;
+  let firstListLogged = false;
 
   while (queue.length) {
     const current = queue.shift()!;
@@ -192,10 +211,33 @@ export async function walkDriveFolderTree(
     visitedFolderIds.add(current.folderId);
     foldersScanned += 1;
     maxDepthSeen = Math.max(maxDepthSeen, current.depth);
+    await onFolderScanned?.({
+      folderId: current.folderId,
+      folderPath: current.folderPath,
+      depth: current.depth,
+      foldersScanned,
+      maxDepth: maxDepthSeen,
+    });
 
     let pageToken: string | undefined;
     do {
       const listing = await listDriveFiles(accessToken, current.folderId, pageToken);
+      if (!firstListLogged) {
+        const firstList = {
+          folderId: current.folderId,
+          folderPath: current.folderPath,
+          fileCount: listing.files?.length || 0,
+          nextPageToken: Boolean(listing.nextPageToken),
+          sample: (listing.files || []).slice(0, 5).map((file: DriveFile) => ({
+            id: file.id,
+            name: file.name,
+            mimeType: file.mimeType,
+          })),
+        };
+        console.info("[vault-drive-ingest] first Drive list response", firstList);
+        await onFirstListResponse?.(firstList);
+        firstListLogged = true;
+      }
       for (const item of listing.files || []) {
         if (item.mimeType === GOOGLE_FOLDER_MIME) {
           if (current.depth + 1 <= maxDepth && !visitedFolderIds.has(item.id)) {
@@ -243,6 +285,7 @@ export async function walkDriveFolderTree(
 async function getDriveFile(accessToken: string, driveFileId: string) {
   const params = new URLSearchParams({
     fields: "id,name,mimeType,modifiedTime,size,md5Checksum,version",
+    supportsAllDrives: "true",
   });
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -260,7 +303,7 @@ async function downloadDriveFile(accessToken: string, driveFile: DriveFile) {
 
   const url = exportInfo.exportMime
     ? `https://www.googleapis.com/drive/v3/files/${driveFile.id}/export?mimeType=${encodeURIComponent(exportInfo.exportMime)}`
-    : `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`;
+    : `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media&supportsAllDrives=true`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -871,7 +914,11 @@ async function processOneDriveFile(
 
 export async function createDriveIngestionRun(
   admin: SupabaseLike,
-  { folder, triggerType = "manual" }: { folder: DriveFolder; triggerType?: string },
+  {
+    folder,
+    triggerType = "manual",
+    initialStats = {},
+  }: { folder: DriveFolder; triggerType?: string; initialStats?: Record<string, unknown> },
 ) {
   const { data, error } = await admin
     .from("ask_nac_drive_sync_runs")
@@ -879,7 +926,12 @@ export async function createDriveIngestionRun(
       folder_id: folder.id,
       trigger_type: triggerType === "scheduled" ? "scheduled" : "manual",
       status: "queued",
-      stats: { autoIngest: Boolean(folder.auto_ingest) },
+      stats: {
+        autoIngest: Boolean(folder.auto_ingest),
+        folderRowId: folder.id,
+        driveFolderId: folder.drive_folder_id,
+        ...initialStats,
+      },
     })
     .select("id")
     .single();
@@ -918,10 +970,21 @@ export async function processDriveIngestionRun(
     indexed_count: 0,
     failed_count: 0,
   };
-
-  await updateRun(admin, runId, { status: "running", started_at: nowIso(), current_file: null }, counters);
+  const runStats: Record<string, unknown> = {
+    runtimeStage: "starting",
+    folderRowId: folder.id,
+    driveFolderId: folder.drive_folder_id,
+    autoIngest: Boolean(folder.auto_ingest),
+  };
 
   try {
+    await updateRun(admin, runId, {
+      status: "running",
+      started_at: nowIso(),
+      current_file: null,
+      stats: runStats,
+    }, counters);
+
     let files: DriveFileWithPath[] = [];
     let traversal = {
       foldersScanned: 0,
@@ -943,6 +1006,23 @@ export async function processDriveIngestionRun(
       traversal = await walkDriveFolderTree(accessToken, {
         rootFolderId: folder.drive_folder_id,
         rootLabel: folderRootLabel(folder),
+        onFolderScanned: async (info) => {
+          counters.folders_scanned = info.foldersScanned;
+          counters.max_depth = info.maxDepth;
+          runStats.runtimeStage = "listing_drive_folder";
+          runStats.currentDriveFolderId = info.folderId;
+          runStats.currentDriveFolderPath = info.folderPath;
+          runStats.currentDriveFolderDepth = info.depth;
+          await updateRun(admin, runId, {
+            current_file: `Scanning ${info.folderPath}`,
+            stats: runStats,
+          }, counters);
+        },
+        onFirstListResponse: async (info) => {
+          runStats.runtimeStage = "first_drive_list_response";
+          runStats.firstDriveListResponse = info;
+          await updateRun(admin, runId, { stats: runStats }, counters);
+        },
       });
       files = traversal.files;
     }
@@ -975,6 +1055,7 @@ export async function processDriveIngestionRun(
         current_file: null,
         finished_at: nowIso(),
         stats: {
+          ...runStats,
           metadataOnly: true,
           autoIngest: false,
           duplicateFileIdsSkipped: traversal.duplicateCount,
@@ -1023,6 +1104,7 @@ export async function processDriveIngestionRun(
       current_file: null,
       finished_at: nowIso(),
       stats: {
+        ...runStats,
         autoIngest: true,
         duplicateFileIdsSkipped: traversal.duplicateCount,
         truncated: traversal.truncated,
@@ -1037,11 +1119,14 @@ export async function processDriveIngestionRun(
     await admin.from("ask_nac_drive_sync_folders").update(folderUpdate).eq("id", folder.id);
   } catch (err) {
     const message = sanitizeErrorMessage(err);
+    runStats.runtimeStage = "failed";
+    runStats.exception = message;
     await updateRun(admin, runId, {
       status: "failed",
       current_file: null,
       error: message,
       finished_at: nowIso(),
+      stats: runStats,
     }, counters);
     await admin.from("ask_nac_drive_sync_folders").update({
       last_sync_at: nowIso(),

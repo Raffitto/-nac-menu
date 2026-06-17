@@ -87,6 +87,8 @@ async function listDriveFiles(accessToken: string, folderId: string, pageToken?:
     q: `'${folderId}' in parents and trashed=false`,
     fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,md5Checksum)",
     pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
   });
   if (pageToken) params.set("pageToken", pageToken);
 
@@ -319,9 +321,55 @@ Deno.serve(async (req) => {
       }
 
       const runs = [];
+      const selectedFolderDebug = runnableFolders.map((folder) => ({
+        folderRowId: folder.id,
+        driveFolderId: folder.drive_folder_id,
+        label: folder.label || folder.folder_name || folder.drive_folder_id,
+        autoIngest: Boolean(folder.auto_ingest),
+        branchId: folder.branch_id || folder.default_branch_id || null,
+      }));
+      console.info("[vault-drive-sync] queueing Drive ingestion", {
+        action,
+        selectedFolderCount: selectedFolderDebug.length,
+        selectedFolders: selectedFolderDebug,
+      });
       for (const folder of runnableFolders) {
-        const runId = await createDriveIngestionRun(admin, { folder, triggerType });
+        const runId = await createDriveIngestionRun(admin, {
+          folder,
+          triggerType,
+          initialStats: {
+            runtimeStage: "queued",
+            action,
+            sourceTable: "ask_nac_drive_sync_folders",
+            selectedFolderCount: selectedFolderDebug.length,
+            selectedFolders: selectedFolderDebug,
+          },
+        });
         runs.push({ runId, folder });
+      }
+
+      const edgeRuntime = globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } };
+      const waitUntil = edgeRuntime.EdgeRuntime?.waitUntil;
+      if (!waitUntil) {
+        const message = "Drive ingestion worker was not scheduled because EdgeRuntime.waitUntil is unavailable.";
+        await Promise.all(runs.map(({ runId }) =>
+          admin
+            .from("ask_nac_drive_sync_runs")
+            .update({
+              status: "failed",
+              error: message,
+              finished_at: new Date().toISOString(),
+              stats: {
+                runtimeStage: "schedule_failed",
+                action,
+                sourceTable: "ask_nac_drive_sync_folders",
+                selectedFolderCount: selectedFolderDebug.length,
+                selectedFolders: selectedFolderDebug,
+              },
+            })
+            .eq("id", runId)
+        ));
+        return json(500, { ok: false, error: message, runIds: runs.map((run) => run.runId) });
       }
 
       const work = Promise.all(
@@ -336,12 +384,28 @@ Deno.serve(async (req) => {
           }),
         ),
       );
-      const edgeRuntime = globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } };
-      if (edgeRuntime.EdgeRuntime?.waitUntil) {
-        edgeRuntime.EdgeRuntime.waitUntil(work);
-      } else {
-        work.catch(() => {});
-      }
+
+      waitUntil(work.catch(async (err) => {
+        const message = sanitizeErrorMessage(err);
+        console.error("[vault-drive-sync] Drive ingestion worker failed", { message });
+        await Promise.all(runs.map(({ runId }) =>
+          admin
+            .from("ask_nac_drive_sync_runs")
+            .update({
+              status: "failed",
+              error: message,
+              finished_at: new Date().toISOString(),
+              stats: {
+                runtimeStage: "worker_failed",
+                action,
+                sourceTable: "ask_nac_drive_sync_folders",
+                selectedFolderCount: selectedFolderDebug.length,
+                selectedFolders: selectedFolderDebug,
+              },
+            })
+            .eq("id", runId)
+        ));
+      }));
 
       return json(202, {
         ok: true,
