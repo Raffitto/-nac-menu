@@ -56,7 +56,7 @@ alter table public.ask_nac_drive_sync_runs
 
 alter table public.ask_nac_drive_sync_runs
   add constraint ask_nac_drive_sync_runs_status_check
-  check (status in ('queued', 'running', 'completed', 'failed', 'partial', 'processing'));
+  check (status in ('queued', 'running', 'completed', 'completed_empty', 'failed', 'partial', 'processing'));
 
 alter table public.ask_nac_drive_sync_runs
   add column if not exists discovered_count int not null default 0;
@@ -94,6 +94,33 @@ alter table public.ask_nac_drive_sync_runs
 alter table public.ask_nac_drive_sync_runs
   add column if not exists current_file text;
 
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists runtime_stage text;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists error_code text;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists error_message text;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists selected_folders_count int not null default 0;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists selected_drive_folder_ids text[] not null default '{}';
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists current_folder_path text;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists current_file_path text;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists completed_at timestamptz;
+
+alter table public.ask_nac_drive_sync_runs
+  add column if not exists updated_at timestamptz not null default now();
+
 update public.ask_nac_drive_sync_runs
 set
   discovered_count = greatest(discovered_count, files_discovered),
@@ -124,6 +151,7 @@ create table if not exists public.ask_nac_drive_sync_run_files (
   status text not null default 'queued'
     check (status in ('queued', 'running', 'completed', 'failed', 'skipped', 'unsupported')),
   action text check (action is null or action in ('metadata_only', 'new', 'changed', 'skipped', 'retry')),
+  reason text,
   error text,
   stats jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),

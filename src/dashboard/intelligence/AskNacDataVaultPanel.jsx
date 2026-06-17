@@ -36,6 +36,7 @@ import {
   triggerDriveSync,
   triggerDriveSyncAndIngest,
   fetchDriveIngestionRunStatus,
+  processDriveIngestionRuns,
   retryDriveIngestionFile,
   rebuildVaultDocumentSearchIndex,
   rebuildVaultDocumentSearchIndexBulk,
@@ -163,7 +164,9 @@ export default function AskNacDataVaultPanel({ session }) {
   const [driveAutoIngest, setDriveAutoIngest] = useState(false);
   const [driveActionKey, setDriveActionKey] = useState(null);
   const [driveIngestRun, setDriveIngestRun] = useState(null);
+  const [driveIngestRunIds, setDriveIngestRunIds] = useState([]);
   const [driveRunFiles, setDriveRunFiles] = useState([]);
+  const [driveRunStale, setDriveRunStale] = useState(false);
   const [lastDriveSyncSummary, setLastDriveSyncSummary] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -284,6 +287,10 @@ export default function AskNacDataVaultPanel({ session }) {
       indexed: run.indexed_count ?? 0,
       failed: run.failed_count ?? run.files_failed ?? 0,
       currentFile: run.current_file,
+      runtimeStage: run.runtime_stage || run.stats?.runtimeStage || null,
+      errorMessage: run.error_message || run.error || run.stats?.exception || null,
+      selectedFoldersCount: run.selected_folders_count ?? run.stats?.selectedFoldersCount ?? 0,
+      selectedDriveFolderIds: run.selected_drive_folder_ids || run.stats?.selectedDriveFolderIds || [],
       status: run.status || "idle",
     };
   }, [driveIngestRun]);
@@ -461,6 +468,7 @@ export default function AskNacDataVaultPanel({ session }) {
     if (!driveIngestRun?.id || !session?.access_token) return undefined;
     let cancelled = false;
     let timer = null;
+    let staleTimer = null;
 
     const poll = async () => {
       const result = await fetchDriveIngestionRunStatus(session, driveIngestRun.id);
@@ -468,23 +476,50 @@ export default function AskNacDataVaultPanel({ session }) {
       if (!result.ok) {
         setDriveIngestRun((prev) => (prev ? { ...prev, status: "failed", error: result.error } : prev));
         setDriveActionKey(null);
+        setError(result.error || "Drive run status failed.");
         return;
       }
       setDriveIngestRun(result.run);
       setDriveRunFiles(result.files || []);
+      const updatedAt = result.run?.updated_at || result.run?.created_at;
+      if (updatedAt && Date.now() - new Date(updatedAt).getTime() > 90000) {
+        setDriveRunStale(true);
+        setDriveActionKey(null);
+        setError("Drive ingestion has not updated for over 90 seconds. Check run diagnostics in System Details.");
+      } else {
+        setDriveRunStale(false);
+      }
       if (["queued", "running", "processing"].includes(result.run?.status)) {
         timer = window.setTimeout(poll, 2500);
       } else {
         setDriveActionKey(null);
+        if (result.run?.status === "failed") {
+          setError(result.run.error_message || result.run.error || "Drive ingestion failed.");
+        } else if (result.run?.status === "completed_empty") {
+          setNotice(
+            result.run.error_message ||
+              result.run.error ||
+              "Drive folder scanned successfully but no child files/folders were returned.",
+          );
+        } else if (result.run?.status === "partial") {
+          setNotice("Drive ingestion partially completed. Review skipped/failed files and run again to continue.");
+        }
         await loadDriveStatus();
         await refreshKnowledgeStatus();
       }
     };
 
     timer = window.setTimeout(poll, 1000);
+    staleTimer = window.setTimeout(() => {
+      if (!cancelled) {
+        setDriveRunStale(true);
+        setDriveActionKey(null);
+      }
+    }, 120000);
     return () => {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
+      if (staleTimer) window.clearTimeout(staleTimer);
     };
   }, [driveIngestRun?.id, session, loadDriveStatus, refreshKnowledgeStatus]);
 
@@ -967,9 +1002,18 @@ export default function AskNacDataVaultPanel({ session }) {
       setError(result.error || "Drive ingestion failed.");
       return;
     }
+    const runIds = result.runIds?.length ? result.runIds : [result.runId].filter(Boolean);
+    setDriveIngestRunIds(runIds);
     setDriveIngestRun({ id: result.runId, status: "queued" });
     setDriveRunFiles([]);
+    setDriveRunStale(false);
     setNotice(`Drive ingestion queued. Run ID: ${result.runId}`);
+    processDriveIngestionRuns(session, { runIds }).then((processed) => {
+      if (!processed.ok) {
+        setDriveActionKey(null);
+        setError(processed.error || "Drive ingestion processing failed.");
+      }
+    });
   };
 
   const onRetryDriveFile = async (file) => {
@@ -986,9 +1030,22 @@ export default function AskNacDataVaultPanel({ session }) {
       setError(result.error || "Drive retry failed.");
       return;
     }
+    const runIds = result.runIds?.length ? result.runIds : [result.runId].filter(Boolean);
+    setDriveIngestRunIds(runIds);
     setDriveIngestRun({ id: result.runId, status: "queued" });
     setDriveRunFiles([]);
     setNotice(`Drive retry queued for ${file.file_name}.`);
+    processDriveIngestionRuns(session, {
+      runIds,
+      maxFilesToProcess: 1,
+      driveFileId: file.drive_file_id,
+      force: true,
+    }).then((processed) => {
+      if (!processed.ok) {
+        setDriveActionKey(null);
+        setError(processed.error || "Drive retry processing failed.");
+      }
+    });
   };
 
   const onDisconnectDrive = () => {
@@ -1455,12 +1512,25 @@ export default function AskNacDataVaultPanel({ session }) {
                     {driveIngestRun ? (
                       <div className="nac-ask-vault__bulk-progress" role="status" aria-live="polite">
                         {driveRunActive ? <Loader2 size={14} className="nac-bi-spin" /> : <Cloud size={14} />}
-                        Drive ingestion {driveIngestStats.status}: discovered {driveIngestStats.discovered}, new{" "}
+                        Drive ingestion {driveIngestStats.status}
+                        {driveIngestStats.runtimeStage ? ` (${driveIngestStats.runtimeStage})` : ""}: discovered{" "}
+                        {driveIngestStats.discovered}, new{" "}
                         {driveIngestStats.newCount}, changed {driveIngestStats.changed}, downloaded{" "}
                         {driveIngestStats.downloaded}, extracted {driveIngestStats.extracted}, indexed{" "}
                         {driveIngestStats.indexed}, failed {driveIngestStats.failed}, folders scanned{" "}
                         {driveIngestStats.foldersScanned}, max depth {driveIngestStats.maxDepth}
                         {driveIngestStats.currentFile ? ` — ${driveIngestStats.currentFile}` : ""}
+                        {driveRunStale ? " — no update in 90+ seconds" : ""}
+                        {driveIngestStats.errorMessage ? ` — ${driveIngestStats.errorMessage}` : ""}
+                        {driveIngestRunIds.length > 1 ? ` — ${driveIngestRunIds.length} runs queued` : ""}
+                      </div>
+                    ) : null}
+                    {driveIngestRun && driveIngestStats.discovered === 0 && !driveRunActive ? (
+                      <div className="nac-vault-source-card__hint">
+                        Selected folders: {driveIngestStats.selectedFoldersCount || driveIngestRunIds.length || 0}.{" "}
+                        {driveIngestStats.selectedDriveFolderIds?.length
+                          ? `Drive folder IDs: ${driveIngestStats.selectedDriveFolderIds.join(", ")}.`
+                          : "No selected Drive folder IDs were reported."}
                       </div>
                     ) : null}
                     {driveRunFiles.some((file) => file.status === "failed") ? (

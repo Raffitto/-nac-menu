@@ -18,6 +18,7 @@ const GOOGLE_PRESENTATION_MIME = "application/vnd.google-apps.presentation";
 const GOOGLE_FOLDER_MIME = "application/vnd.google-apps.folder";
 const MAX_DRIVE_FOLDER_DEPTH = 20;
 const MAX_DRIVE_ITEMS_PER_RUN = 5000;
+const DEFAULT_MAX_FILES_TO_PROCESS = 50;
 
 const SUPPORTED_BINARY_MIME: Record<string, string> = {
   "application/pdf": "pdf",
@@ -56,6 +57,14 @@ type DriveFile = {
   size?: string;
   md5Checksum?: string;
   version?: string;
+  webViewLink?: string;
+  parents?: string[];
+  driveId?: string;
+};
+
+type DriveFolderInfo = DriveFile & {
+  trashed?: boolean;
+  capabilities?: Record<string, unknown>;
 };
 
 type DriveFileWithPath = DriveFile & {
@@ -113,6 +122,38 @@ function joinDrivePath(parts: Array<string | null | undefined>) {
     .join(" / ");
 }
 
+class DriveIngestionError extends Error {
+  code: string;
+  httpStatus?: number;
+
+  constructor(code: string, message: string, httpStatus?: number) {
+    super(message);
+    this.name = "DriveIngestionError";
+    this.code = code;
+    this.httpStatus = httpStatus;
+  }
+}
+
+function errorCode(err: unknown) {
+  if (err instanceof DriveIngestionError) return err.code;
+  return "drive_ingestion_error";
+}
+
+async function driveJson(res: Response, fallback: string) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = sanitizeErrorMessage(data?.error?.message || data?.error_description || fallback);
+    const status = res.status;
+    const code =
+      status === 401 ? "drive_token_invalid" :
+      status === 403 ? "drive_permission_denied" :
+      status === 404 ? "drive_folder_not_found" :
+      "drive_api_error";
+    throw new DriveIngestionError(code, message, status);
+  }
+  return data;
+}
+
 function resolveDriveExport(file: DriveFile) {
   if (file.mimeType === GOOGLE_DOC_MIME) {
     return {
@@ -146,10 +187,11 @@ function resolveDriveExport(file: DriveFile) {
 }
 
 export async function listDriveFiles(accessToken: string, folderId: string, pageToken?: string) {
+  const query = `'${folderId}' in parents and trashed = false`;
   const params = new URLSearchParams({
-    q: `'${folderId}' in parents and trashed=false`,
-    fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,md5Checksum,version)",
-    pageSize: "100",
+    q: query,
+    fields: "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum,size,webViewLink,parents,driveId,version)",
+    pageSize: "1000",
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });
@@ -158,8 +200,28 @@ export async function listDriveFiles(accessToken: string, folderId: string, page
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(sanitizeErrorMessage(data.error?.message || "Drive list failed"));
+  const data = await driveJson(res, "Drive list failed");
+  return { ...data, query };
+}
+
+export async function verifyDriveFolderAccess(accessToken: string, folderId: string) {
+  const params = new URLSearchParams({
+    fields: "id,name,mimeType,trashed,driveId,parents,capabilities",
+    supportsAllDrives: "true",
+  });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await driveJson(res, "Drive folder lookup failed") as DriveFolderInfo;
+  if (data.mimeType !== GOOGLE_FOLDER_MIME) {
+    throw new DriveIngestionError(
+      "drive_folder_id_invalid",
+      `Registered Drive ID is not a folder (${data.mimeType || "unknown"}).`,
+    );
+  }
+  if (data.trashed) {
+    throw new DriveIngestionError("drive_folder_trashed", "Registered Drive folder is trashed.");
+  }
   return data;
 }
 
@@ -226,8 +288,11 @@ export async function walkDriveFolderTree(
         const firstList = {
           folderId: current.folderId,
           folderPath: current.folderPath,
+          status: "ok",
           fileCount: listing.files?.length || 0,
+          files_count: listing.files?.length || 0,
           nextPageToken: Boolean(listing.nextPageToken),
+          query: listing.query,
           sample: (listing.files || []).slice(0, 5).map((file: DriveFile) => ({
             id: file.id,
             name: file.name,
@@ -291,7 +356,14 @@ async function getDriveFile(accessToken: string, driveFileId: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(sanitizeErrorMessage(data.error?.message || "Drive file lookup failed"));
+  if (!res.ok) throw new DriveIngestionError(
+    res.status === 401 ? "drive_token_invalid" :
+    res.status === 403 ? "drive_permission_denied" :
+    res.status === 404 ? "drive_file_not_found" :
+    "drive_api_error",
+    sanitizeErrorMessage(data.error?.message || "Drive file lookup failed"),
+    res.status,
+  );
   return data as DriveFile;
 }
 
@@ -572,6 +644,7 @@ async function insertRawFacts(
 }
 
 async function updateRun(admin: SupabaseLike, runId: string, patch: Record<string, any>, counters?: RunCounters) {
+  const stats = patch.stats || {};
   const next = {
     ...patch,
     ...(counters || {}),
@@ -580,6 +653,12 @@ async function updateRun(admin: SupabaseLike, runId: string, patch: Record<strin
     files_changed: counters?.changed_count,
     files_skipped: counters?.skipped_count,
     files_failed: counters?.failed_count,
+    runtime_stage: patch.runtime_stage || stats.runtimeStage,
+    error_message: patch.error_message || patch.error,
+    current_folder_path: patch.current_folder_path || stats.currentDriveFolderPath,
+    current_file_path: patch.current_file_path || patch.current_file,
+    completed_at: patch.completed_at || patch.finished_at,
+    updated_at: nowIso(),
   };
   Object.keys(next).forEach((key) => next[key] === undefined && delete next[key]);
   await admin.from("ask_nac_drive_sync_runs").update(next).eq("id", runId);
@@ -610,6 +689,7 @@ async function createRunFile(
       checksum: driveFile.md5Checksum || null,
       status: "queued",
       action,
+      reason: action === "skipped" ? "skipped" : null,
     })
     .select("id")
     .single();
@@ -839,7 +919,11 @@ async function processOneDriveFile(
   let jobId: string | null = null;
   try {
     await markRunFile(admin, itemId, { status: "running" });
-    await updateRun(admin, runId, { current_file: driveFile.relativePath || driveFile.name }, counters);
+    await updateRun(admin, runId, {
+      runtime_stage: "downloading_started",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+    }, counters);
 
     const download = await downloadDriveFile(accessToken, driveFile);
     counters.downloaded_count += 1;
@@ -854,6 +938,11 @@ async function processOneDriveFile(
       return;
     }
 
+    await updateRun(admin, runId, {
+      runtime_stage: "file_registry_started",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+    }, counters);
     const registered = await registerDownloadedDriveFile(admin, {
       folder,
       driveFile,
@@ -864,9 +953,19 @@ async function processOneDriveFile(
     });
     jobId = registered.jobId;
 
+    await updateRun(admin, runId, {
+      runtime_stage: "extracting_started",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+    }, counters);
     const extracted = await extractText(download);
     counters.extracted_count += 1;
     const chunks = buildChunks(extracted);
+    await updateRun(admin, runId, {
+      runtime_stage: "indexing_started",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+    }, counters);
     const chunkCount = await persistChunks(admin, {
       fileId: registered.fileId,
       versionRowId: registered.versionRowId,
@@ -904,9 +1003,10 @@ async function processOneDriveFile(
     });
   } catch (err) {
     const message = sanitizeErrorMessage(err);
+    const code = errorCode(err);
     counters.failed_count += 1;
     await failJob(admin, jobId, message);
-    await markRunFile(admin, itemId, { status: "failed", error: message });
+    await markRunFile(admin, itemId, { status: "failed", reason: code, error: message });
   } finally {
     await updateRun(admin, runId, {}, counters);
   }
@@ -926,6 +1026,12 @@ export async function createDriveIngestionRun(
       folder_id: folder.id,
       trigger_type: triggerType === "scheduled" ? "scheduled" : "manual",
       status: "queued",
+      runtime_stage: String(initialStats.runtimeStage || "queued"),
+      selected_folders_count: Number(initialStats.selectedFoldersCount || initialStats.selectedFolderCount || 1),
+      selected_drive_folder_ids: Array.isArray(initialStats.selectedDriveFolderIds)
+        ? initialStats.selectedDriveFolderIds
+        : [folder.drive_folder_id],
+      updated_at: nowIso(),
       stats: {
         autoIngest: Boolean(folder.auto_ingest),
         folderRowId: folder.id,
@@ -948,6 +1054,7 @@ export async function processDriveIngestionRun(
     email,
     onlyDriveFileId = null,
     force = false,
+    maxFilesToProcess = DEFAULT_MAX_FILES_TO_PROCESS,
   }: {
     accessToken: string;
     folder: DriveFolder;
@@ -955,6 +1062,7 @@ export async function processDriveIngestionRun(
     email: string;
     onlyDriveFileId?: string | null;
     force?: boolean;
+    maxFilesToProcess?: number;
   },
 ) {
   const counters: RunCounters = {
@@ -980,6 +1088,7 @@ export async function processDriveIngestionRun(
   try {
     await updateRun(admin, runId, {
       status: "running",
+      runtime_stage: "worker_started",
       started_at: nowIso(),
       current_file: null,
       stats: runStats,
@@ -993,6 +1102,8 @@ export async function processDriveIngestionRun(
       truncated: false,
     };
     if (onlyDriveFileId) {
+      runStats.runtimeStage = "loading_drive_file";
+      await updateRun(admin, runId, { stats: runStats }, counters);
       const driveFile = await getDriveFile(accessToken, onlyDriveFileId);
       const rootPath = folderRootLabel(folder);
       files = [{
@@ -1003,18 +1114,35 @@ export async function processDriveIngestionRun(
       }];
       traversal = { foldersScanned: 1, maxDepth: 0, duplicateCount: 0, truncated: false };
     } else {
+      runStats.runtimeStage = "verifying_root_folder";
+      await updateRun(admin, runId, {
+        current_folder_path: folderRootLabel(folder),
+        stats: runStats,
+      }, counters);
+      const rootFolder = await verifyDriveFolderAccess(accessToken, folder.drive_folder_id);
+      runStats.rootFolderAccessVerified = true;
+      runStats.rootFolderName = rootFolder.name;
+      runStats.rootFolderMimeType = rootFolder.mimeType;
+      runStats.rootFolderDriveId = rootFolder.driveId || null;
+      runStats.rootFolderTrashed = Boolean(rootFolder.trashed);
+      runStats.runtimeStage = "traversal_started";
+      await updateRun(admin, runId, {
+        current_folder_path: rootFolder.name || folderRootLabel(folder),
+        stats: runStats,
+      }, counters);
       traversal = await walkDriveFolderTree(accessToken, {
         rootFolderId: folder.drive_folder_id,
-        rootLabel: folderRootLabel(folder),
+        rootLabel: rootFolder.name || folderRootLabel(folder),
         onFolderScanned: async (info) => {
           counters.folders_scanned = info.foldersScanned;
           counters.max_depth = info.maxDepth;
-          runStats.runtimeStage = "listing_drive_folder";
+          runStats.runtimeStage = info.foldersScanned === 1 ? "first_drive_list_call" : "listing_drive_folder";
           runStats.currentDriveFolderId = info.folderId;
           runStats.currentDriveFolderPath = info.folderPath;
           runStats.currentDriveFolderDepth = info.depth;
           await updateRun(admin, runId, {
             current_file: `Scanning ${info.folderPath}`,
+            current_folder_path: info.folderPath,
             stats: runStats,
           }, counters);
         },
@@ -1030,7 +1158,32 @@ export async function processDriveIngestionRun(
     counters.discovered_count = files.length;
     counters.folders_scanned = traversal.foldersScanned;
     counters.max_depth = traversal.maxDepth;
-    await updateRun(admin, runId, { current_file: null }, counters);
+    runStats.runtimeStage = "traversal_completed";
+    runStats.discoveredFiles = files.length;
+    await updateRun(admin, runId, { current_file: null, stats: runStats }, counters);
+
+    if (!files.length) {
+      runStats.runtimeStage = "completed_empty";
+      runStats.emptyReason = "Drive folder scanned successfully but no child files/folders were returned.";
+      runStats.emptyLikelyCauses = [
+        "wrong folder ID",
+        "folder inaccessible to connected account",
+        "folder contains shortcuts only",
+        "Drive API query mismatch",
+      ];
+      await updateRun(admin, runId, {
+        status: "completed_empty",
+        current_file: null,
+        error: "Drive folder scanned successfully but no child files/folders were returned.",
+        finished_at: nowIso(),
+        stats: runStats,
+      }, counters);
+      await admin.from("ask_nac_drive_sync_folders").update({
+        last_sync_at: nowIso(),
+        last_sync_status: "completed_empty",
+      }).eq("id", folder.id);
+      return;
+    }
 
     if (!folder.auto_ingest) {
       for (const driveFile of files) {
@@ -1069,13 +1222,17 @@ export async function processDriveIngestionRun(
       return;
     }
 
-    for (const driveFile of files) {
+    const filesToProcess = files.slice(0, Math.max(1, maxFilesToProcess));
+    const leftForLater = Math.max(0, files.length - filesToProcess.length);
+
+    for (const driveFile of filesToProcess) {
       const exportInfo = resolveDriveExport(driveFile);
       if ("unsupported" in exportInfo) {
         counters.skipped_count += 1;
         const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
         await markRunFile(admin, itemId, {
-          status: "unsupported",
+          status: "skipped",
+          reason: "unsupported_mime_type",
           error: exportInfo.unsupported,
           stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
         });
@@ -1094,11 +1251,14 @@ export async function processDriveIngestionRun(
     }
 
     const finalStatus =
-      counters.failed_count > 0 && (counters.indexed_count > 0 || counters.skipped_count > 0)
+      traversal.truncated || leftForLater > 0
+        ? "partial"
+        : counters.failed_count > 0 && (counters.indexed_count > 0 || counters.skipped_count > 0)
         ? "partial"
         : counters.failed_count > 0
           ? "failed"
           : "completed";
+    runStats.runtimeStage = finalStatus;
     await updateRun(admin, runId, {
       status: finalStatus,
       current_file: null,
@@ -1108,6 +1268,13 @@ export async function processDriveIngestionRun(
         autoIngest: true,
         duplicateFileIdsSkipped: traversal.duplicateCount,
         truncated: traversal.truncated,
+        processedFiles: filesToProcess.length,
+        remainingFiles: leftForLater,
+        truncationReason: traversal.truncated
+          ? `Drive traversal hit max item limit (${MAX_DRIVE_ITEMS_PER_RUN}).`
+          : leftForLater > 0
+            ? `Processed ${filesToProcess.length} file(s); ${leftForLater} remain. Run Sync & Ingest Drive again to continue.`
+            : null,
       },
       error: finalStatus === "failed" ? "All Drive files failed ingestion." : null,
     }, counters);
@@ -1119,10 +1286,13 @@ export async function processDriveIngestionRun(
     await admin.from("ask_nac_drive_sync_folders").update(folderUpdate).eq("id", folder.id);
   } catch (err) {
     const message = sanitizeErrorMessage(err);
+    const code = errorCode(err);
     runStats.runtimeStage = "failed";
     runStats.exception = message;
+    runStats.errorCode = code;
     await updateRun(admin, runId, {
       status: "failed",
+      error_code: code,
       current_file: null,
       error: message,
       finished_at: nowIso(),

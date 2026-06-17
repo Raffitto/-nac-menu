@@ -83,8 +83,9 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveFunction).toMatch(/selectedFolderDebug/);
     expect(driveFunction).toMatch(/sourceTable: "ask_nac_drive_sync_folders"/);
     expect(driveFunction).toMatch(/driveFolderId: folder\.drive_folder_id/);
-    expect(driveFunction).toMatch(/EdgeRuntime\.waitUntil is unavailable/);
-    expect(driveFunction).toMatch(/runtimeStage: "schedule_failed"/);
+    expect(driveFunction).toMatch(/action === "process_run"/);
+    expect(driveFunction).toMatch(/requiresClientProcessing: true/);
+    expect(vaultApi).toMatch(/processDriveIngestionRuns/);
   });
 
   test("recursively discovers nested Drive folders before indexing files", () => {
@@ -98,9 +99,17 @@ describe("Google Drive Company Knowledge ingestion", () => {
 
   test("folder scans are persisted before Drive list completes", () => {
     expect(driveHelper).toMatch(/onFolderScanned/);
-    expect(driveHelper).toMatch(/runtimeStage = "listing_drive_folder"/);
+    expect(driveHelper).toMatch(/first_drive_list_call/);
     expect(driveHelper).toMatch(/currentDriveFolderId = info\.folderId/);
     expect(driveHelper).toMatch(/current_file: `Scanning \$\{info\.folderPath\}`/);
+  });
+
+  test("root folder access is verified and empty folders complete explicitly", () => {
+    expect(driveHelper).toMatch(/export async function verifyDriveFolderAccess/);
+    expect(driveHelper).toMatch(/fields: "id,name,mimeType,trashed,driveId,parents,capabilities"/);
+    expect(driveHelper).toMatch(/drive_folder_id_invalid/);
+    expect(driveHelper).toMatch(/status: "completed_empty"/);
+    expect(driveHelper).toMatch(/Drive folder scanned successfully but no child files\/folders were returned/);
   });
 
   test("nested folder traversal preserves path metadata and indexes nested files", () => {

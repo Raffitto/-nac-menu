@@ -591,6 +591,31 @@ export async function fetchDriveIngestionRunStatus(session, runId) {
   return { ok: true, ...data };
 }
 
+export async function processDriveIngestionRuns(session, {
+  runIds,
+  maxFilesToProcess = 50,
+  driveFileId = null,
+  force = false,
+}) {
+  const base = vaultFunctionsBaseUrl();
+  const ids = Array.isArray(runIds) ? runIds.filter(Boolean) : [runIds].filter(Boolean);
+  if (!base || !session?.access_token || !ids.length) {
+    return { ok: false, error: "Drive run processing unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "process_run", runIds: ids, maxFilesToProcess, driveFileId, force }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive run processing failed" };
+  return { ok: true, ...data };
+}
+
 export async function retryDriveIngestionFile(session, { folderRowId, driveFileId }) {
   const base = vaultFunctionsBaseUrl();
   if (!base || !session?.access_token) {

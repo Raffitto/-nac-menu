@@ -265,15 +265,136 @@ Deno.serve(async (req) => {
       return json(200, { ok: true, ...status });
     }
 
+    if (action === "process_run") {
+      const requestedRunIds = Array.isArray(body?.runIds)
+        ? body.runIds.map((id: unknown) => String(id || "").trim()).filter(Boolean)
+        : [String(body?.runId || "").trim()].filter(Boolean);
+      if (!requestedRunIds.length) return json(400, { error: "runId or runIds required" });
+
+      const processedRuns = [];
+      for (const runId of requestedRunIds) {
+        const status = await fetchDriveRunStatus(admin, runId, userEmail);
+        if (!status?.run?.folder_id && !status?.run?.folder?.id) {
+          return json(404, { error: "Drive ingestion run not found.", runId });
+        }
+
+        const folderId = status.run.folder_id || status.run.folder.id;
+        const { data: folder } = await admin
+          .from("ask_nac_drive_sync_folders")
+          .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,enabled")
+          .eq("id", folderId)
+          .maybeSingle();
+        if (!folder?.connection_id || !folder.drive_folder_id) {
+          await admin.from("ask_nac_drive_sync_runs").update({
+            status: "failed",
+            runtime_stage: "loading_registered_folders",
+            error_code: "drive_folder_missing",
+            error: "Registered Drive folder row is missing.",
+            error_message: "Registered Drive folder row is missing.",
+            finished_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", runId);
+          processedRuns.push({ runId, ok: false });
+          continue;
+        }
+
+        await admin.from("ask_nac_drive_sync_runs").update({
+          status: "running",
+          runtime_stage: "loading_connection",
+          updated_at: new Date().toISOString(),
+        }).eq("id", runId);
+
+        const { data: connection } = await admin
+          .from("ask_nac_drive_connections")
+          .select("id,refresh_token,token_expires_at")
+          .eq("id", folder.connection_id)
+          .eq("user_email", userEmail)
+          .maybeSingle();
+
+        if (!connection?.refresh_token) {
+          const message = "Google Drive token expired or revoked. Reconnect required.";
+          await admin.from("ask_nac_drive_sync_runs").update({
+            status: "failed",
+            runtime_stage: "loading_access_token",
+            error_code: "drive_reconnect_required",
+            error: message,
+            error_message: message,
+            finished_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", runId);
+          processedRuns.push({ runId, ok: false });
+          continue;
+        }
+
+        let accessToken = "";
+        try {
+          await admin.from("ask_nac_drive_sync_runs").update({
+            runtime_stage: "loading_access_token",
+            updated_at: new Date().toISOString(),
+          }).eq("id", runId);
+          const tokens = await refreshAccessToken(connection.refresh_token);
+          accessToken = tokens.access_token;
+          await admin
+            .from("ask_nac_drive_connections")
+            .update({
+              access_token: accessToken,
+              token_expires_at: tokens.expires_in
+                ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+                : connection.token_expires_at,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", connection.id);
+          await admin.from("ask_nac_drive_sync_runs").update({
+            runtime_stage: "token_refreshed",
+            stats: {
+              ...(status.run.stats || {}),
+              tokenRefreshed: true,
+            },
+            updated_at: new Date().toISOString(),
+          }).eq("id", runId);
+        } catch (err) {
+          const message = "Google Drive token expired or revoked. Reconnect required.";
+          await admin.from("ask_nac_drive_sync_runs").update({
+            status: "failed",
+            runtime_stage: "token_refresh_failed",
+            error_code: "drive_reconnect_required",
+            error: message,
+            error_message: sanitizeErrorMessage(err) || message,
+            finished_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", runId);
+          processedRuns.push({ runId, ok: false });
+          continue;
+        }
+
+        await processDriveIngestionRun(admin, {
+          accessToken,
+          folder,
+          runId,
+          email: userEmail,
+          onlyDriveFileId: body?.driveFileId || null,
+          force: Boolean(body?.force),
+          maxFilesToProcess: Number(body?.maxFilesToProcess || 50),
+        });
+        processedRuns.push({ runId, ok: true });
+      }
+
+      return json(200, { ok: true, processedRuns });
+    }
+
     if (action === "sync_ingest" || action === "retry_file") {
       const folderRowId = body?.folderId || null;
       const triggerType = body?.triggerType === "scheduled" ? "scheduled" : "manual";
       const retryDriveFileId = action === "retry_file" ? String(body?.driveFileId || "").trim() : null;
 
-      let folderQuery = supabase
+      let folderQuery = admin
         .from("ask_nac_drive_sync_folders")
         .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,enabled")
-        .eq("enabled", true);
+        .eq("enabled", true)
+        .not("drive_folder_id", "is", null);
       if (folderRowId) folderQuery = folderQuery.eq("id", folderRowId);
       if (action === "sync_ingest" && body?.onlyAutoIngest !== false) folderQuery = folderQuery.eq("auto_ingest", true);
 
@@ -293,7 +414,7 @@ Deno.serve(async (req) => {
       const connectionIds = [...new Set(folders.map((folder) => folder.connection_id))];
       const { data: connections } = await admin
         .from("ask_nac_drive_connections")
-        .select("id,refresh_token,token_expires_at")
+        .select("id,user_email,refresh_token,token_expires_at")
         .in("id", connectionIds)
         .eq("user_email", userEmail);
 
@@ -303,23 +424,6 @@ Deno.serve(async (req) => {
         return json(400, { error: "Drive connection not found or revoked." });
       }
 
-      const tokensByConnectionId = new Map<string, string>();
-      for (const connection of connections || []) {
-        if (!connection.refresh_token) continue;
-        const tokens = await refreshAccessToken(connection.refresh_token);
-        tokensByConnectionId.set(connection.id, tokens.access_token);
-        await admin
-          .from("ask_nac_drive_connections")
-          .update({
-            access_token: tokens.access_token,
-            token_expires_at: tokens.expires_in
-              ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-              : connection.token_expires_at,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", connection.id);
-      }
-
       const runs = [];
       const selectedFolderDebug = runnableFolders.map((folder) => ({
         folderRowId: folder.id,
@@ -327,6 +431,8 @@ Deno.serve(async (req) => {
         label: folder.label || folder.folder_name || folder.drive_folder_id,
         autoIngest: Boolean(folder.auto_ingest),
         branchId: folder.branch_id || folder.default_branch_id || null,
+        department: folder.department || folder.default_department || null,
+        reportType: folder.report_type || null,
       }));
       console.info("[vault-drive-sync] queueing Drive ingestion", {
         action,
@@ -342,70 +448,17 @@ Deno.serve(async (req) => {
             action,
             sourceTable: "ask_nac_drive_sync_folders",
             selectedFolderCount: selectedFolderDebug.length,
+            selectedFoldersCount: selectedFolderDebug.length,
             selectedFolders: selectedFolderDebug,
+            selectedDriveFolderIds: selectedFolderDebug.map((item) => item.driveFolderId),
+            selectedFolderLabels: selectedFolderDebug.map((item) => item.label),
+            selectedAutoIngestFlags: selectedFolderDebug.map((item) => item.autoIngest),
+            selectedBranchIds: selectedFolderDebug.map((item) => item.branchId),
+            selectedReportTypes: selectedFolderDebug.map((item) => item.reportType),
           },
         });
         runs.push({ runId, folder });
       }
-
-      const edgeRuntime = globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } };
-      const waitUntil = edgeRuntime.EdgeRuntime?.waitUntil;
-      if (!waitUntil) {
-        const message = "Drive ingestion worker was not scheduled because EdgeRuntime.waitUntil is unavailable.";
-        await Promise.all(runs.map(({ runId }) =>
-          admin
-            .from("ask_nac_drive_sync_runs")
-            .update({
-              status: "failed",
-              error: message,
-              finished_at: new Date().toISOString(),
-              stats: {
-                runtimeStage: "schedule_failed",
-                action,
-                sourceTable: "ask_nac_drive_sync_folders",
-                selectedFolderCount: selectedFolderDebug.length,
-                selectedFolders: selectedFolderDebug,
-              },
-            })
-            .eq("id", runId)
-        ));
-        return json(500, { ok: false, error: message, runIds: runs.map((run) => run.runId) });
-      }
-
-      const work = Promise.all(
-        runs.map(({ runId, folder }) =>
-          processDriveIngestionRun(admin, {
-            accessToken: tokensByConnectionId.get(folder.connection_id)!,
-            folder,
-            runId,
-            email: userEmail,
-            onlyDriveFileId: retryDriveFileId,
-            force: action === "retry_file",
-          }),
-        ),
-      );
-
-      waitUntil(work.catch(async (err) => {
-        const message = sanitizeErrorMessage(err);
-        console.error("[vault-drive-sync] Drive ingestion worker failed", { message });
-        await Promise.all(runs.map(({ runId }) =>
-          admin
-            .from("ask_nac_drive_sync_runs")
-            .update({
-              status: "failed",
-              error: message,
-              finished_at: new Date().toISOString(),
-              stats: {
-                runtimeStage: "worker_failed",
-                action,
-                sourceTable: "ask_nac_drive_sync_folders",
-                selectedFolderCount: selectedFolderDebug.length,
-                selectedFolders: selectedFolderDebug,
-              },
-            })
-            .eq("id", runId)
-        ));
-      }));
 
       return json(202, {
         ok: true,
@@ -413,6 +466,7 @@ Deno.serve(async (req) => {
         runIds: runs.map((run) => run.runId),
         queued: runs.length,
         status: "queued",
+        requiresClientProcessing: true,
       });
     }
 
