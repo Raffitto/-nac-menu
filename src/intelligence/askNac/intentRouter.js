@@ -17,10 +17,7 @@ import {
   isVaultDocumentSearchQuery,
   scoreVaultDocumentSearchIntent,
 } from "./vault/vaultDocumentSearchRouting";
-import {
-  isVaultOperationalReviewQuery,
-  scoreVaultOperationalReviewIntent,
-} from "./vault/vaultOperationalReviewRouting";
+import { scoreVaultOperationalReviewIntent } from "./vault/vaultOperationalReviewRouting";
 import { scoreSalesPerformanceQueryFocus } from "./vault/vaultSalesPerformanceIntelligence";
 import {
   isVaultDocumentSummaryQuery,

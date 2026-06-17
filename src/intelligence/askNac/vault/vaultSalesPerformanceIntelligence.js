@@ -329,7 +329,6 @@ export function buildSalesPerformanceExecutiveSummary(facts = [], {
   const metrics = extendedSalesPerformanceMetrics(facts);
   const net = pickMetricValue(facts, "net_sales") ?? pickMetricValue(facts, "total_sales");
   const guests = pickMetricValue(facts, "guest_count");
-  const orders = pickMetricValue(facts, "order_count");
   const avgSpend = pickMetricValue(facts, "avg_per_guest");
   const target = pickMetricValue(facts, "target_sales");
   const discounts = pickMetricValue(facts, "discounts");
