@@ -634,6 +634,13 @@
   margin-bottom: 4px;
 }
 
+.mm-linked-sync-note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(249, 249, 247, 0.75);
+}
+
 .mm-linked-sync {
   display: flex;
   align-items: center;

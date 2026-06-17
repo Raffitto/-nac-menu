@@ -617,22 +617,22 @@ export async function getMenuByCategory(categorySlug) {
 
 // ═══════════════ VISIBILITY (Menu Manager) ═══════════════
 
-/** Permanently hide from guest menu. */
+/** Permanently hide from guest menu (syncs linked placements). */
 export async function hideMenuItemPermanently(id) {
-  return updateMenuItem(id, { active: false, hidden_until: null });
+  return patchLinkedPlacementMembers(id, { active: false, hidden_until: null });
 }
 
-/** Show on guest menu and clear any scheduled hide. */
+/** Show on guest menu and clear any scheduled hide (syncs linked placements). */
 export async function restoreMenuItemVisibility(id) {
-  return updateMenuItem(id, { active: true, hidden_until: null });
+  return patchLinkedPlacementMembers(id, { active: true, hidden_until: null });
 }
 
-/** Timed hide — keeps active=true so the item auto-reappears after hidden_until. */
+/** Timed hide — keeps active=true so the item auto-reappears after hidden_until (syncs linked). */
 export async function scheduleMenuItemHide(id, hiddenUntilIso) {
   if (!hiddenUntilIso) {
     return { data: null, error: new Error("hidden_until is required") };
   }
-  return updateMenuItem(id, { active: true, hidden_until: hiddenUntilIso });
+  return patchLinkedPlacementMembers(id, { active: true, hidden_until: hiddenUntilIso });
 }
 
 // ═══════════════ ADMIN CRUD (authenticated) ═══════════════
@@ -740,6 +740,49 @@ export async function fetchPlacementGroupMembers(placementGroupId) {
   return { data: data || [], error };
 }
 
+/** All menu_item ids in the same placement_group_id as itemId (includes itemId). */
+export async function resolveLinkedPlacementTargetIds(itemId) {
+  const { data: item, error: fetchErr } = await selectMenuItemById(itemId);
+  if (fetchErr) return { ids: [], error: fetchErr, placementGroupId: null };
+
+  const ids = [itemId];
+  if (item.placement_group_id) {
+    const { data: members, error: membersErr } = await fetchPlacementGroupMembers(
+      item.placement_group_id,
+    );
+    if (membersErr) {
+      return { ids: [], error: membersErr, placementGroupId: item.placement_group_id };
+    }
+    for (const member of members || []) {
+      if (member?.id) ids.push(member.id);
+    }
+  }
+
+  return {
+    ids: [...new Set(ids)],
+    error: null,
+    placementGroupId: item.placement_group_id || null,
+  };
+}
+
+/** Persist the same content/visibility patch on every row in a placement group. */
+export async function patchLinkedPlacementMembers(itemId, patch, { primaryId = itemId } = {}) {
+  await requireMenuEditorAuth();
+  const payload = sanitizeMenuItemPayload(patch);
+  const { ids, error: resolveErr } = await resolveLinkedPlacementTargetIds(itemId);
+  if (resolveErr) return { data: null, error: resolveErr };
+
+  let primary = null;
+  for (const targetId of ids) {
+    const result = await mutateMenuItemById(targetId, payload, "update");
+    if (result.error) return result;
+    if (targetId === primaryId) primary = result.data;
+  }
+
+  invalidateMenuCache();
+  return { data: primary, error: null };
+}
+
 /** All rows in given placement groups (for admin badges). */
 export async function fetchPlacementGroupIndex(groupIds) {
   const ids = [...new Set((groupIds || []).filter(Boolean))];
@@ -843,7 +886,9 @@ export async function updateMenuItemPlacements({
     await Promise.all(ids.map((id) => setItemAddons(id, addonIds).catch(() => {})));
   };
 
-  if (syncLinked && groupId) {
+  const shouldSyncLinked = Boolean(groupId) || syncLinked;
+
+  if (shouldSyncLinked && groupId) {
     await Promise.all(
       members.map((m) =>
         updateMenuItem(m.id, {
@@ -866,7 +911,7 @@ export async function updateMenuItemPlacements({
   for (const placement of extraPlacements) {
     if (!placement.sectionId) continue;
     if (placement.itemId) {
-      if (!syncLinked || placement.itemId !== itemId) {
+      if (!shouldSyncLinked || placement.itemId !== itemId) {
         await updateMenuItem(placement.itemId, {
           section_id: placement.sectionId,
           placement_group_id: groupId,
@@ -880,7 +925,7 @@ export async function updateMenuItemPlacements({
       placement_group_id: groupId,
     });
     if (error) throw error;
-    if (syncLinked) {
+    if (shouldSyncLinked) {
       await setItemAllergens(created.id, allergenIds).catch(() => {});
       await setItemAddons(created.id, addonIds).catch(() => {});
     } else {
@@ -901,8 +946,7 @@ export async function deleteMenuItem(id) {
 }
 
 export async function toggleSoldOut(id, soldOut) {
-  const result = await updateMenuItem(id, { sold_out: Boolean(soldOut) });
-  return result;
+  return patchLinkedPlacementMembers(id, { sold_out: Boolean(soldOut) });
 }
 
 /** Apply visibility + sold-out in one persisted write (syncs linked placement rows). */
@@ -914,53 +958,36 @@ export async function applyMenuItemVisibility(id, { active, hidden_until, sold_o
     ...(sold_out !== undefined ? { sold_out: Boolean(sold_out) } : {}),
   });
 
-  const { data: item, error: fetchErr } = await selectMenuItemById(id);
-  if (fetchErr) return { data: null, error: fetchErr };
-
-  const targetIds = [id];
-  if (item.placement_group_id) {
-    const { data: members, error: membersErr } = await fetchPlacementGroupMembers(item.placement_group_id);
-    if (membersErr) {
-      logMenuDbError("applyMenuItemVisibility.members", {
-        table: "menu_items",
-        itemId: id,
-        branchId: item.branch_id,
-        payload: patch,
-      }, membersErr);
-      return { data: null, error: membersErr };
-    }
-    for (const member of members || []) {
-      if (member?.id) targetIds.push(member.id);
-    }
+  const { ids: targetIds, error: resolveErr, placementGroupId } =
+    await resolveLinkedPlacementTargetIds(id);
+  if (resolveErr) {
+    logMenuDbError("applyMenuItemVisibility.members", {
+      table: "menu_items",
+      itemId: id,
+      payload: patch,
+    }, resolveErr);
+    return { data: null, error: resolveErr };
   }
 
-  const uniqueIds = [...new Set(targetIds)];
   logMenuMutation("applyMenuItemVisibility request", {
     id,
-    branchId: item.branch_id,
-    placementGroupId: item.placement_group_id,
-    targetIds: uniqueIds,
+    placementGroupId,
+    targetIds,
     patch,
   }, null);
 
-  let primary = null;
-  for (const targetId of uniqueIds) {
-    const result = await mutateMenuItemById(targetId, patch, "update");
-    if (result.error) {
-      logMenuDbError("applyMenuItemVisibility", {
-        table: "menu_items",
-        itemId: targetId,
-        branchId: item.branch_id,
-        payload: patch,
-      }, result.error);
-      return result;
-    }
-    if (targetId === id) primary = result.data;
+  const result = await patchLinkedPlacementMembers(id, patch);
+  if (result.error) {
+    logMenuDbError("applyMenuItemVisibility", {
+      table: "menu_items",
+      itemId: id,
+      payload: patch,
+    }, result.error);
+    return result;
   }
 
-  invalidateMenuCache();
-  logMenuMutation("applyMenuItemVisibility response", { id, patch }, { data: primary });
-  return { data: primary, error: null };
+  logMenuMutation("applyMenuItemVisibility response", { id, patch }, { data: result.data });
+  return result;
 }
 
 export async function toggleItemActive(id, active) {

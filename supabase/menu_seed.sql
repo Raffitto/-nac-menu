@@ -66,6 +66,8 @@ DECLARE
   cat_drinks UUID;
   sec_id UUID;
   item_id UUID;
+  pg_sumac_chicken UUID;
+  pg_smoked_paprika_prawn UUID;
 BEGIN
   SELECT id INTO cat_breakfast FROM categories WHERE slug = 'breakfast';
   SELECT id INTO cat_brunch FROM categories WHERE slug = 'brunch';
@@ -234,12 +236,14 @@ BEGIN
     (sec_id, 'Halloumi', 'حلومي', 'Available as an add-on.', 'متوفر كإضافة.', '300', '19 SAR', '/halloumi.jpg', true, 2) RETURNING id INTO item_id;
   INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('d','se');
 
-  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order) VALUES
-    (sec_id, 'Sumac Chicken', 'دجاج بالسماق', 'Available as an add-on.', 'متوفر كإضافة.', '160', '25 SAR', '/sumac-chicken.jpg', 3) RETURNING id INTO item_id;
+  pg_sumac_chicken := gen_random_uuid();
+  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order, placement_group_id) VALUES
+    (sec_id, 'Sumac Chicken', 'دجاج بالسماق', 'Available as an add-on.', 'متوفر كإضافة.', '160', '25 SAR', '/sumac-chicken.jpg', 3, pg_sumac_chicken) RETURNING id INTO item_id;
   INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('se');
 
-  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order) VALUES
-    (sec_id, 'Smoked Paprika Prawn', 'جمبري بالبابريكا المدخنة', 'Available as an add-on.', 'متوفر كإضافة.', '133', '37 SAR', '/smoked-paprika-prawn.jpg', 4) RETURNING id INTO item_id;
+  pg_smoked_paprika_prawn := gen_random_uuid();
+  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order, placement_group_id) VALUES
+    (sec_id, 'Smoked Paprika Prawn', 'جمبري بالبابريكا المدخنة', 'Available as an add-on.', 'متوفر كإضافة.', '133', '37 SAR', '/smoked-paprika-prawn.jpg', 4, pg_smoked_paprika_prawn) RETURNING id INTO item_id;
   INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('sh');
 
   INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order) VALUES
@@ -585,8 +589,19 @@ BEGIN
   INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('d');
   INSERT INTO item_addons (item_id, addon_id, sort_order) VALUES (item_id, (SELECT id FROM add_ons WHERE slug='asparagus'), 1), (item_id, (SELECT id FROM add_ons WHERE slug='houseSalad'), 2), (item_id, (SELECT id FROM add_ons WHERE slug='frites'), 3), (item_id, (SELECT id FROM add_ons WHERE slug='avocado'), 4);
 
+  -- Add Ons
+  INSERT INTO sections (category_id, name_en, name_ar, sort_order) VALUES (cat_evening, 'Add Ons', 'الإضافات', 5) RETURNING id INTO sec_id;
+
+  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order, placement_group_id) VALUES
+    (sec_id, 'Sumac Chicken', 'دجاج بالسماق', 'Available as an add-on.', 'متوفر كإضافة.', '160', '25 SAR', '/sumac-chicken.jpg', 3, pg_sumac_chicken) RETURNING id INTO item_id;
+  INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('se');
+
+  INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, sort_order, placement_group_id) VALUES
+    (sec_id, 'Smoked Paprika Prawn', 'جمبري بالبابريكا المدخنة', 'Available as an add-on.', 'متوفر كإضافة.', '133', '37 SAR', '/smoked-paprika-prawn.jpg', 4, pg_smoked_paprika_prawn) RETURNING id INTO item_id;
+  INSERT INTO item_allergens (item_id, allergen_id) SELECT item_id, id FROM allergens WHERE code IN ('sh');
+
   -- Sides
-  INSERT INTO sections (category_id, name_en, name_ar, sort_order) VALUES (cat_evening, 'Sides', 'الأطباق الجانبية', 5) RETURNING id INTO sec_id;
+  INSERT INTO sections (category_id, name_en, name_ar, sort_order) VALUES (cat_evening, 'Sides', 'الأطباق الجانبية', 6) RETURNING id INTO sec_id;
 
   INSERT INTO menu_items (section_id, name_en, name_ar, desc_en, desc_ar, calories, price, image, vegetarian, sort_order) VALUES
     (sec_id, 'Truffled Mac & Cheese', 'ترفل ماك أند تشيز', 'Side order.', 'طبق جانبي.', '1113', '79 SAR', '/truffled-mac-cheese.jpg', true, 1) RETURNING id INTO item_id;

@@ -390,6 +390,11 @@ const _fallbackMenuData = {
 item("Black Angus Steak Au Poivre", "بلاك أنجوس ستيك بالفلفل الأسود", "Creamy pepper sauce.", "صلصة الفلفل الكريمية.", 897, "120 SAR", "/black-angus-steak.jpg", [addOns.asparagus, addOns.houseSalad, addOns.frites, addOns.avocado], ["d"], []),
   ]),
 
+  section("Add Ons", "الإضافات", [
+    item("Sumac Chicken", "دجاج بالسماق", "Available as an add-on.", "متوفر كإضافة.", 160, "25 SAR", "/sumac-chicken.jpg", [], ["se"], []),
+    item("Smoked Paprika Prawn", "جمبري بالبابريكا المدخنة", "Available as an add-on.", "متوفر كإضافة.", 133, "37 SAR", "/smoked-paprika-prawn.jpg", [], ["sh"], []),
+  ]),
+
   section("Sides", "الأطباق الجانبية", [
     item("Truffled Mac & Cheese", "ترفل ماك أند تشيز", "Side order.", "طبق جانبي.", 1113, "79 SAR", "/truffled-mac-cheese.jpg", [], ["g", "d"], ["vegetarian"]),
     item("Asparagus & Toasted Hazelnuts", "الهليون والبندق المحمص", "Side order.", "طبق جانبي.", 131, "39 SAR", "/asparagus.jpg", [], ["n"], ["vegan"]),

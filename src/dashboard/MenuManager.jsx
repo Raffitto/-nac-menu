@@ -348,7 +348,6 @@ export default function MenuManager() {
   const [sectionsCatalog, setSectionsCatalog] = useState([]);
   const [placementGroupSummary, setPlacementGroupSummary] = useState({});
   const [extraPlacements, setExtraPlacements] = useState([]);
-  const [applyToAllLinked, setApplyToAllLinked] = useState(false);
   const [placementGroupId, setPlacementGroupId] = useState(null);
   const [removedPlacementIds, setRemovedPlacementIds] = useState([]);
 
@@ -750,7 +749,6 @@ export default function MenuManager() {
 
   const resetPlacementEditor = useCallback(() => {
     setExtraPlacements([]);
-    setApplyToAllLinked(false);
     setPlacementGroupId(null);
     setRemovedPlacementIds([]);
   }, []);
@@ -811,7 +809,6 @@ export default function MenuManager() {
     setItemAddOnIds(linkedAddonIds);
     setImageFile(null);
     setImagePreview(item.image || "");
-    setApplyToAllLinked(false);
     setRemovedPlacementIds([]);
 
     const groupId = item.placement_group_id || null;
@@ -911,6 +908,7 @@ export default function MenuManager() {
           count > 1 ? `Item created in ${count} placements` : "Item created",
         );
       } else {
+        const isLinked = Boolean(placementGroupId || extraPlacements.length > 0);
         await updateMenuItemPlacements({
           itemId: editingItemId,
           contentPayload,
@@ -920,13 +918,13 @@ export default function MenuManager() {
             sectionId: p.section_id,
           })),
           removePlacementItemIds: removedPlacementIds,
-          syncLinked: applyToAllLinked,
+          syncLinked: isLinked,
           placementGroupId,
           allergenIds: itemAllergenIds,
           addonIds: itemAddOnIds,
         });
         showToast(
-          applyToAllLinked && placementGroupId
+          isLinked
             ? "Item updated across all linked placements"
             : "Item updated",
         );
@@ -955,7 +953,6 @@ export default function MenuManager() {
     itemAllergenIds,
     itemAddOnIds,
     extraPlacements,
-    applyToAllLinked,
     placementGroupId,
     removedPlacementIds,
     showToast,
@@ -2114,14 +2111,10 @@ export default function MenuManager() {
                   </button>
 
                   {editorMode === "edit" && (placementGroupId || extraPlacements.length > 0) && (
-                    <label className="mm-linked-sync">
-                      <input
-                        type="checkbox"
-                        checked={applyToAllLinked}
-                        onChange={(e) => setApplyToAllLinked(e.target.checked)}
-                      />
-                      <span>Apply changes to all linked placements</span>
-                    </label>
+                    <p className="mm-linked-sync-note">
+                      Linked item — name, description, price, image, tags, allergens, add-ons,
+                      sold out, and active status stay in sync across all placements.
+                    </p>
                   )}
                 </div>
 
