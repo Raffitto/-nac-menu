@@ -276,8 +276,8 @@ export default function AskNacDataVaultPanel({ session }) {
     const run = driveIngestRun || {};
     return {
       discovered: run.discovered_count ?? run.files_discovered ?? 0,
-      foldersScanned: run.folders_scanned ?? 0,
-      maxDepth: run.max_depth ?? 0,
+      foldersScanned: run.stats?.folders_scanned ?? run.stats?.foldersScanned ?? run.folders_scanned ?? 0,
+      maxDepth: run.stats?.max_depth ?? run.stats?.maxDepth ?? run.max_depth ?? 0,
       newCount: run.new_count ?? run.files_new ?? 0,
       changed: run.changed_count ?? run.files_changed ?? 0,
       skipped: run.skipped_count ?? run.files_skipped ?? 0,

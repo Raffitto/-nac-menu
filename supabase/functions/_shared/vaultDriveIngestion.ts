@@ -77,8 +77,6 @@ type DriveFileWithPath = DriveFile & {
 
 type RunCounters = {
   discovered_count: number;
-  folders_scanned: number;
-  max_depth: number;
   new_count: number;
   changed_count: number;
   skipped_count: number;
@@ -696,6 +694,8 @@ async function updateRun(admin: SupabaseLike, runId: string, patch: Record<strin
     completed_at: patch.completed_at || patch.finished_at,
     updated_at: nowIso(),
   };
+  delete next.folders_scanned;
+  delete next.max_depth;
   Object.keys(next).forEach((key) => next[key] === undefined && delete next[key]);
   const { error } = await withTimeout(
     admin.from("ask_nac_drive_sync_runs").update(next).eq("id", runId),
@@ -1113,8 +1113,6 @@ export async function processDriveIngestionRun(
 ) {
   const counters: RunCounters = {
     discovered_count: 0,
-    folders_scanned: 0,
-    max_depth: 0,
     new_count: 0,
     changed_count: 0,
     skipped_count: 0,
@@ -1180,9 +1178,9 @@ export async function processDriveIngestionRun(
         rootFolderId: folder.drive_folder_id,
         rootLabel: rootFolder.name || folderRootLabel(folder),
         onFolderScanned: async (info) => {
-          counters.folders_scanned = info.foldersScanned;
-          counters.max_depth = info.maxDepth;
           runStats.runtimeStage = info.foldersScanned === 1 ? "first_drive_list_call" : "listing_drive_folder";
+          runStats.folders_scanned = info.foldersScanned;
+          runStats.max_depth = info.maxDepth;
           runStats.currentDriveFolderId = info.folderId;
           runStats.currentDriveFolderPath = info.folderPath;
           runStats.currentDriveFolderDepth = info.depth;
@@ -1202,8 +1200,8 @@ export async function processDriveIngestionRun(
     }
 
     counters.discovered_count = files.length;
-    counters.folders_scanned = traversal.foldersScanned;
-    counters.max_depth = traversal.maxDepth;
+    runStats.folders_scanned = traversal.foldersScanned;
+    runStats.max_depth = traversal.maxDepth;
     runStats.runtimeStage = "traversal_completed";
     runStats.discoveredFiles = files.length;
     await updateRun(admin, runId, { current_file: null, stats: runStats }, counters);
@@ -1374,6 +1372,12 @@ export async function fetchDriveRunStatus(admin: SupabaseLike, runId: string, em
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
 
-  return { run, files: files || [] };
+  const normalizedRun = {
+    ...run,
+    folders_scanned: Number(run.stats?.folders_scanned ?? run.stats?.foldersScanned ?? 0) || 0,
+    max_depth: Number(run.stats?.max_depth ?? run.stats?.maxDepth ?? 0) || 0,
+  };
+
+  return { run: normalizedRun, files: files || [] };
 }
 

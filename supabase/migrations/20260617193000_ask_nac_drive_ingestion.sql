@@ -62,12 +62,6 @@ alter table public.ask_nac_drive_sync_runs
   add column if not exists discovered_count int not null default 0;
 
 alter table public.ask_nac_drive_sync_runs
-  add column if not exists folders_scanned int not null default 0;
-
-alter table public.ask_nac_drive_sync_runs
-  add column if not exists max_depth int not null default 0;
-
-alter table public.ask_nac_drive_sync_runs
   add column if not exists new_count int not null default 0;
 
 alter table public.ask_nac_drive_sync_runs

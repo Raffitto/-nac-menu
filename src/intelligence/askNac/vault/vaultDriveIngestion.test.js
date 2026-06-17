@@ -30,8 +30,8 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(migration).toMatch(/add column if not exists auto_ingest boolean/);
     expect(migration).toMatch(/add column if not exists last_ingest_at timestamptz/);
     expect(migration).toMatch(/discovered_count/);
-    expect(migration).toMatch(/folders_scanned/);
-    expect(migration).toMatch(/max_depth/);
+    expect(migration).not.toMatch(/add column if not exists folders_scanned/);
+    expect(migration).not.toMatch(/add column if not exists max_depth/);
     expect(migration).toMatch(/downloaded_count/);
     expect(migration).toMatch(/indexed_count/);
     expect(migration).toMatch(/current_file text/);
@@ -111,8 +111,19 @@ describe("Google Drive Company Knowledge ingestion", () => {
   test("folder scans are persisted before Drive list completes", () => {
     expect(driveHelper).toMatch(/onFolderScanned/);
     expect(driveHelper).toMatch(/first_drive_list_call/);
+    expect(driveHelper).toMatch(/runStats\.folders_scanned = info\.foldersScanned/);
+    expect(driveHelper).toMatch(/runStats\.max_depth = info\.maxDepth/);
     expect(driveHelper).toMatch(/currentDriveFolderId = info\.folderId/);
     expect(driveHelper).toMatch(/current_file: `Scanning \$\{info\.folderPath\}`/);
+  });
+
+  test("run status normalizes folder counters from stats JSON", () => {
+    expect(driveHelper).toMatch(/folders_scanned: Number\(run\.stats\?\.folders_scanned/);
+    expect(driveHelper).toMatch(/max_depth: Number\(run\.stats\?\.max_depth/);
+    expect(driveHelper).toMatch(/delete next\.folders_scanned/);
+    expect(driveHelper).toMatch(/delete next\.max_depth/);
+    expect(panel).toMatch(/run\.stats\?\.folders_scanned/);
+    expect(panel).toMatch(/run\.stats\?\.max_depth/);
   });
 
   test("root folder access is verified and empty folders complete explicitly", () => {
