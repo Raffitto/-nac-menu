@@ -79,6 +79,17 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/console\.info\("\[vault-drive-ingest\] first Drive list response"/);
   });
 
+  test("Drive and run-status operations have hard timeouts", () => {
+    expect(driveHelper).toMatch(/DRIVE_FETCH_TIMEOUT_MS/);
+    expect(driveHelper).toMatch(/DB_OPERATION_TIMEOUT_MS/);
+    expect(driveHelper).toMatch(/function timeoutSignal/);
+    expect(driveHelper).toMatch(/async function withTimeout/);
+    expect(driveHelper).toMatch(/async function driveFetch/);
+    expect(driveHelper).toMatch(/Drive run update \$\{runId\}/);
+    expect(driveHelper).toMatch(/drive_request_timeout/);
+    expect(driveHelper).toMatch(/operation_timeout/);
+  });
+
   test("ingestion run records selected folder IDs and scheduling failures", () => {
     expect(driveFunction).toMatch(/selectedFolderDebug/);
     expect(driveFunction).toMatch(/sourceTable: "ask_nac_drive_sync_folders"/);

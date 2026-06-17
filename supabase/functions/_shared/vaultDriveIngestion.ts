@@ -19,6 +19,8 @@ const GOOGLE_FOLDER_MIME = "application/vnd.google-apps.folder";
 const MAX_DRIVE_FOLDER_DEPTH = 20;
 const MAX_DRIVE_ITEMS_PER_RUN = 5000;
 const DEFAULT_MAX_FILES_TO_PROCESS = 50;
+const DRIVE_FETCH_TIMEOUT_MS = 15000;
+const DB_OPERATION_TIMEOUT_MS = 10000;
 
 const SUPPORTED_BINARY_MIME: Record<string, string> = {
   "application/pdf": "pdf",
@@ -122,6 +124,40 @@ function joinDrivePath(parts: Array<string | null | undefined>) {
     .join(" / ");
 }
 
+function timeoutSignal(timeoutMs: number) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, clear: () => clearTimeout(timeoutId) };
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new DriveIngestionError("operation_timeout", `${label} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function driveFetch(url: string, init: RequestInit, label: string) {
+  const timeout = timeoutSignal(DRIVE_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: timeout.signal });
+  } catch (err) {
+    if ((err as { name?: string })?.name === "AbortError") {
+      throw new DriveIngestionError("drive_request_timeout", `${label} timed out after ${DRIVE_FETCH_TIMEOUT_MS}ms.`);
+    }
+    throw err;
+  } finally {
+    timeout.clear();
+  }
+}
+
 class DriveIngestionError extends Error {
   code: string;
   httpStatus?: number;
@@ -197,9 +233,9 @@ export async function listDriveFiles(accessToken: string, folderId: string, page
   });
   if (pageToken) params.set("pageToken", pageToken);
 
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  }, `Drive list for folder ${folderId}`);
   const data = await driveJson(res, "Drive list failed");
   return { ...data, query };
 }
@@ -209,9 +245,9 @@ export async function verifyDriveFolderAccess(accessToken: string, folderId: str
     fields: "id,name,mimeType,trashed,driveId,parents,capabilities",
     supportsAllDrives: "true",
   });
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?${params}`, {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${folderId}?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  }, `Drive folder verification for ${folderId}`);
   const data = await driveJson(res, "Drive folder lookup failed") as DriveFolderInfo;
   if (data.mimeType !== GOOGLE_FOLDER_MIME) {
     throw new DriveIngestionError(
@@ -352,9 +388,9 @@ async function getDriveFile(accessToken: string, driveFileId: string) {
     fields: "id,name,mimeType,modifiedTime,size,md5Checksum,version",
     supportsAllDrives: "true",
   });
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?${params}`, {
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  }, `Drive file lookup for ${driveFileId}`);
   const data = await res.json();
   if (!res.ok) throw new DriveIngestionError(
     res.status === 401 ? "drive_token_invalid" :
@@ -376,7 +412,7 @@ async function downloadDriveFile(accessToken: string, driveFile: DriveFile) {
   const url = exportInfo.exportMime
     ? `https://www.googleapis.com/drive/v3/files/${driveFile.id}/export?mimeType=${encodeURIComponent(exportInfo.exportMime)}`
     : `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media&supportsAllDrives=true`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const res = await driveFetch(url, { headers: { Authorization: `Bearer ${accessToken}` } }, `Drive download for ${driveFile.id}`);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(sanitizeErrorMessage(text || `Drive download failed (${res.status})`));
@@ -661,7 +697,12 @@ async function updateRun(admin: SupabaseLike, runId: string, patch: Record<strin
     updated_at: nowIso(),
   };
   Object.keys(next).forEach((key) => next[key] === undefined && delete next[key]);
-  await admin.from("ask_nac_drive_sync_runs").update(next).eq("id", runId);
+  const { error } = await withTimeout(
+    admin.from("ask_nac_drive_sync_runs").update(next).eq("id", runId),
+    DB_OPERATION_TIMEOUT_MS,
+    `Drive run update ${runId}`,
+  );
+  if (error) throw new DriveIngestionError("drive_run_update_failed", error.message);
 }
 
 async function createRunFile(
@@ -698,10 +739,15 @@ async function createRunFile(
 }
 
 async function markRunFile(admin: SupabaseLike, id: string, patch: Record<string, any>) {
-  await admin
-    .from("ask_nac_drive_sync_run_files")
-    .update({ ...patch, finished_at: patch.status && patch.status !== "running" ? nowIso() : patch.finished_at })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    admin
+      .from("ask_nac_drive_sync_run_files")
+      .update({ ...patch, finished_at: patch.status && patch.status !== "running" ? nowIso() : patch.finished_at })
+      .eq("id", id),
+    DB_OPERATION_TIMEOUT_MS,
+    `Drive run file update ${id}`,
+  );
+  if (error) throw new DriveIngestionError("drive_run_file_update_failed", error.message);
 }
 
 async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFileWithPath, email: string) {
