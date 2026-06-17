@@ -40,9 +40,9 @@ describe("Google Drive Company Knowledge ingestion", () => {
   test("records per-file Drive failures for System Details and retry", () => {
     expect(migration).toMatch(/create table if not exists public\.ask_nac_drive_sync_run_files/);
     expect(migration).toMatch(/drive_file_id text not null/);
-    expect(migration).toMatch(/folder_path text/);
-    expect(migration).toMatch(/relative_path text/);
-    expect(migration).toMatch(/depth int not null default 0/);
+    expect(migration).not.toMatch(/^  folder_path text/m);
+    expect(migration).not.toMatch(/^  relative_path text/m);
+    expect(migration).not.toMatch(/^  depth int not null default 0/m);
     expect(migration).toMatch(/error text/);
     expect(driveFunction).toMatch(/action === "retry_file"/);
     expect(panel).toMatch(/retryDriveIngestionFile/);
@@ -136,11 +136,11 @@ describe("Google Drive Company Knowledge ingestion", () => {
 
   test("nested folder traversal preserves path metadata and indexes nested files", () => {
     expect(driveHelper).toMatch(/relativePath: joinDrivePath\(\[current\.folderPath, item\.name\]\)/);
-    expect(driveHelper).toMatch(/folder_path: driveFile\.folderPath/);
-    expect(driveHelper).toMatch(/relative_path: driveFile\.relativePath/);
+    expect(driveHelper).toMatch(/folderPath: driveFile\.folderPath/);
+    expect(driveHelper).toMatch(/relativePath: driveFile\.relativePath/);
     expect(driveHelper).toMatch(/current_file: driveFile\.relativePath/);
     expect(driveHelper).toMatch(/notes: `Imported from Google Drive path/);
-    expect(panel).toMatch(/file\.relative_path \|\| file\.file_name/);
+    expect(panel).toMatch(/file\.stats\?\.relativePath \|\| file\.file_name/);
   });
 
   test("recursive traversal prevents loops and duplicate file IDs", () => {

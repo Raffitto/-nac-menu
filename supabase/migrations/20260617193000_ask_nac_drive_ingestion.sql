@@ -134,9 +134,6 @@ create table if not exists public.ask_nac_drive_sync_run_files (
   folder_id uuid not null references public.ask_nac_drive_sync_folders (id) on delete cascade,
   drive_file_id text not null,
   file_name text not null,
-  folder_path text,
-  relative_path text,
-  depth int not null default 0,
   mime_type text,
   modified_time timestamptz,
   source_version text,
@@ -145,7 +142,6 @@ create table if not exists public.ask_nac_drive_sync_run_files (
   status text not null default 'queued'
     check (status in ('queued', 'running', 'completed', 'failed', 'skipped', 'unsupported')),
   action text check (action is null or action in ('metadata_only', 'new', 'changed', 'skipped', 'retry')),
-  reason text,
   error text,
   stats jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),

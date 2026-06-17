@@ -1539,7 +1539,7 @@ export default function AskNacDataVaultPanel({ session }) {
                           const retryKey = `retry:${file.id}`;
                           return (
                             <li key={file.id} className="is-fail">
-                              <span>{file.relative_path || file.file_name}</span>
+                              <span>{file.stats?.relativePath || file.file_name}</span>
                               <span>{file.error || "Drive ingestion failed"}</span>
                               <button
                                 type="button"

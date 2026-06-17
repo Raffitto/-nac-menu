@@ -36,6 +36,3 @@ alter table public.ask_nac_drive_sync_runs
 alter table public.ask_nac_drive_sync_runs
   add column if not exists updated_at timestamptz not null default now();
 
-alter table public.ask_nac_drive_sync_run_files
-  add column if not exists reason text;
-

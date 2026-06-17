@@ -721,16 +721,18 @@ async function createRunFile(
       folder_id: folderId,
       drive_file_id: driveFile.id,
       file_name: driveFile.name,
-      folder_path: driveFile.folderPath || null,
-      relative_path: driveFile.relativePath || driveFile.name,
-      depth: driveFile.depth ?? 0,
       mime_type: driveFile.mimeType,
       modified_time: driveFile.modifiedTime || null,
       source_version: driveFile.version || null,
       checksum: driveFile.md5Checksum || null,
       status: "queued",
       action,
-      reason: action === "skipped" ? "skipped" : null,
+      stats: {
+        folderPath: driveFile.folderPath || null,
+        relativePath: driveFile.relativePath || driveFile.name,
+        depth: driveFile.depth ?? 0,
+        reason: action === "skipped" ? "skipped" : null,
+      },
     })
     .select("id")
     .single();
@@ -739,10 +741,19 @@ async function createRunFile(
 }
 
 async function markRunFile(admin: SupabaseLike, id: string, patch: Record<string, any>) {
+  const statsPatch = patch.stats || patch.reason
+    ? { ...(patch.stats || {}), ...(patch.reason ? { reason: patch.reason } : {}) }
+    : undefined;
+  const updatePayload = {
+    ...patch,
+    ...(statsPatch ? { stats: statsPatch } : {}),
+    finished_at: patch.status && patch.status !== "running" ? nowIso() : patch.finished_at,
+  };
+  delete updatePayload.reason;
   const { error } = await withTimeout(
     admin
       .from("ask_nac_drive_sync_run_files")
-      .update({ ...patch, finished_at: patch.status && patch.status !== "running" ? nowIso() : patch.finished_at })
+      .update(updatePayload)
       .eq("id", id),
     DB_OPERATION_TIMEOUT_MS,
     `Drive run file update ${id}`,
@@ -1368,7 +1379,7 @@ export async function fetchDriveRunStatus(admin: SupabaseLike, runId: string, em
 
   const { data: files } = await admin
     .from("ask_nac_drive_sync_run_files")
-    .select("id,drive_file_id,file_name,folder_path,relative_path,depth,status,action,error,file_id,stats,created_at,finished_at")
+    .select("id,drive_file_id,file_name,status,action,error,file_id,stats,created_at,finished_at")
     .eq("run_id", runId)
     .order("created_at", { ascending: true });
 
