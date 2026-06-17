@@ -34,6 +34,9 @@ import {
   completeDriveOAuth,
   registerDriveSyncFolder,
   triggerDriveSync,
+  triggerDriveSyncAndIngest,
+  fetchDriveIngestionRunStatus,
+  retryDriveIngestionFile,
   rebuildVaultDocumentSearchIndex,
   rebuildVaultDocumentSearchIndexBulk,
   archiveVaultDocument,
@@ -151,13 +154,16 @@ export default function AskNacDataVaultPanel({ session }) {
   const [bulkProgress, setBulkProgress] = useState(null);
   const [uploadQueue, setUploadQueue] = useState([]);
   const [coverageData, setCoverageData] = useState(null);
-  const [coverageAttempted, setCoverageAttempted] = useState(false);
+  const [, setCoverageAttempted] = useState(false);
   const [registryAttempted, setRegistryAttempted] = useState(false);
   const [statusNotice, setStatusNotice] = useState("");
   const [driveStatus, setDriveStatus] = useState(null);
   const [driveFolderId, setDriveFolderId] = useState("");
   const [driveFolderName, setDriveFolderName] = useState("");
-  const [driveSyncing, setDriveSyncing] = useState(false);
+  const [driveAutoIngest, setDriveAutoIngest] = useState(false);
+  const [driveActionKey, setDriveActionKey] = useState(null);
+  const [driveIngestRun, setDriveIngestRun] = useState(null);
+  const [driveRunFiles, setDriveRunFiles] = useState([]);
   const [lastDriveSyncSummary, setLastDriveSyncSummary] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -262,6 +268,23 @@ export default function AskNacDataVaultPanel({ session }) {
     }),
     [lastDriveSyncSummary],
   );
+
+  const driveIngestStats = useMemo(() => {
+    const run = driveIngestRun || {};
+    return {
+      discovered: run.discovered_count ?? run.files_discovered ?? 0,
+      newCount: run.new_count ?? run.files_new ?? 0,
+      changed: run.changed_count ?? run.files_changed ?? 0,
+      skipped: run.skipped_count ?? run.files_skipped ?? 0,
+      downloaded: run.downloaded_count ?? 0,
+      extracted: run.extracted_count ?? 0,
+      parsed: run.parsed_count ?? 0,
+      indexed: run.indexed_count ?? 0,
+      failed: run.failed_count ?? run.files_failed ?? 0,
+      currentFile: run.current_file,
+      status: run.status || "idle",
+    };
+  }, [driveIngestRun]);
 
   const statusClass = (status) => {
     if (status === "completed") return "is-completed";
@@ -431,6 +454,37 @@ export default function AskNacDataVaultPanel({ session }) {
     await loadRegistry();
     await loadCoverage();
   }, [loadRegistry, loadCoverage]);
+
+  useEffect(() => {
+    if (!driveIngestRun?.id || !session?.access_token) return undefined;
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      const result = await fetchDriveIngestionRunStatus(session, driveIngestRun.id);
+      if (cancelled) return;
+      if (!result.ok) {
+        setDriveIngestRun((prev) => (prev ? { ...prev, status: "failed", error: result.error } : prev));
+        setDriveActionKey(null);
+        return;
+      }
+      setDriveIngestRun(result.run);
+      setDriveRunFiles(result.files || []);
+      if (["queued", "running", "processing"].includes(result.run?.status)) {
+        timer = window.setTimeout(poll, 2500);
+      } else {
+        setDriveActionKey(null);
+        await loadDriveStatus();
+        await refreshKnowledgeStatus();
+      }
+    };
+
+    timer = window.setTimeout(poll, 1000);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [driveIngestRun?.id, session, loadDriveStatus, refreshKnowledgeStatus]);
 
   const runBulkImport = useCallback(
     async (fileList, { label = "Bulk import", source = "bulk" } = {}) => {
@@ -807,8 +861,10 @@ export default function AskNacDataVaultPanel({ session }) {
   };
 
   const onConnectDrive = async () => {
+    setDriveActionKey("connect");
     const result = await startDriveOAuth(session);
     if (!result.ok) {
+      setDriveActionKey(null);
       setError(result.error || "Could not start Google Drive connection.");
       return;
     }
@@ -824,6 +880,11 @@ export default function AskNacDataVaultPanel({ session }) {
       folderId: driveFolderId.trim(),
       folderName: driveFolderName.trim() || driveFolderId.trim(),
       defaultBranchId: form.branch === "brand" ? null : form.branch,
+      branchId: form.branch === "brand" ? null : form.branch,
+      department: form.department,
+      reportType: form.reportType,
+      sensitivity: form.sensitivity,
+      autoIngest: driveAutoIngest,
       schedule: "daily",
     });
     if (!result.ok) {
@@ -833,13 +894,14 @@ export default function AskNacDataVaultPanel({ session }) {
     setNotice("Drive folder registered for sync.");
     setDriveFolderId("");
     setDriveFolderName("");
+    setDriveAutoIngest(false);
     await loadDriveStatus();
   };
 
   const onManualDriveSync = async (folderRowId, { quiet = false } = {}) => {
-    if (!quiet) setDriveSyncing(true);
+    if (!quiet) setDriveActionKey(`metadata:${folderRowId}`);
     const result = await triggerDriveSync(session, { folderRowId });
-    if (!quiet) setDriveSyncing(false);
+    if (!quiet) setDriveActionKey(null);
     if (!result.ok) {
       if (!quiet) setError(result.error || "Drive sync failed.");
       return result;
@@ -869,14 +931,14 @@ export default function AskNacDataVaultPanel({ session }) {
       setError("Register a Google Drive folder in Advanced Tools before syncing.");
       return;
     }
-    setDriveSyncing(true);
+    setDriveActionKey("metadata:all");
     setError("");
     let lastResult = null;
     for (const folder of folders) {
       lastResult = await onManualDriveSync(folder.id, { quiet: true });
       if (!lastResult?.ok) break;
     }
-    setDriveSyncing(false);
+    setDriveActionKey(null);
     if (lastResult?.ok) {
       setNotice(
         [
@@ -886,6 +948,45 @@ export default function AskNacDataVaultPanel({ session }) {
         ].join(" "),
       );
     }
+  };
+
+  const onSyncAndIngestDrive = async () => {
+    const folders = (driveStatus?.folders || []).filter((folder) => folder.auto_ingest);
+    if (!folders.length) {
+      setError("Enable auto-ingest on at least one registered Drive folder before running ingestion.");
+      return;
+    }
+    setDriveActionKey("ingest:all");
+    setError("");
+    setNotice("");
+    const result = await triggerDriveSyncAndIngest(session, { onlyAutoIngest: true });
+    if (!result.ok) {
+      setDriveActionKey(null);
+      setError(result.error || "Drive ingestion failed.");
+      return;
+    }
+    setDriveIngestRun({ id: result.runId, status: "queued" });
+    setDriveRunFiles([]);
+    setNotice(`Drive ingestion queued. Run ID: ${result.runId}`);
+  };
+
+  const onRetryDriveFile = async (file) => {
+    if (!file?.drive_file_id || !driveIngestRun?.folder_id) return;
+    const key = `retry:${file.id}`;
+    setDriveActionKey(key);
+    setError("");
+    const result = await retryDriveIngestionFile(session, {
+      folderRowId: driveIngestRun.folder_id,
+      driveFileId: file.drive_file_id,
+    });
+    if (!result.ok) {
+      setDriveActionKey(null);
+      setError(result.error || "Drive retry failed.");
+      return;
+    }
+    setDriveIngestRun({ id: result.runId, status: "queued" });
+    setDriveRunFiles([]);
+    setNotice(`Drive retry queued for ${file.file_name}.`);
   };
 
   const onDisconnectDrive = () => {
@@ -898,7 +999,8 @@ export default function AskNacDataVaultPanel({ session }) {
   const showUploadControls = Boolean(session?.user) && schemaReady !== false;
   const driveConnected = Boolean(driveStatus?.connected);
   const driveEmail = driveStatus?.connection?.google_account_email;
-  const statusReady = registryAttempted && coverageAttempted;
+  const statusReady = registryAttempted;
+  const driveRunActive = ["queued", "running", "processing"].includes(driveIngestRun?.status);
 
   const metadataFields = (
     <div className="nac-ask-vault__grid">
@@ -1117,7 +1219,7 @@ export default function AskNacDataVaultPanel({ session }) {
                         type="button"
                         className="nac-vault-action-btn nac-vault-action-btn--secondary"
                         onClick={onConnectDrive}
-                        disabled={driveSyncing}
+                        disabled={driveActionKey === "connect"}
                       >
                         <Cloud size={16} aria-hidden />
                         Connect Google Drive
@@ -1270,7 +1372,7 @@ export default function AskNacDataVaultPanel({ session }) {
                 </div>
 
                 <p className="nac-vault-source-card__note">
-                  Metadata-only sync — file names, types, and dates. No automatic download or ingestion.
+                  Drive can sync metadata or ingest files from folders where auto-ingest is enabled.
                 </p>
 
                 {driveConnected ? (
@@ -1301,6 +1403,10 @@ export default function AskNacDataVaultPanel({ session }) {
                         <dd>{driveSyncStats.skipped}</dd>
                       </div>
                       <div>
+                        <dt>Indexed by Drive</dt>
+                        <dd>{driveIngestStats.indexed}</dd>
+                      </div>
+                      <div>
                         <dt>Folders registered</dt>
                         <dd>{knowledgeStats.foldersRegistered}</dd>
                       </div>
@@ -1317,12 +1423,26 @@ export default function AskNacDataVaultPanel({ session }) {
                         type="button"
                         className="nac-ask-vault__upload-btn"
                         onClick={onSyncAllDriveFolders}
-                        disabled={driveSyncing || !knowledgeStats.foldersRegistered}
+                        disabled={driveActionKey === "metadata:all" || !knowledgeStats.foldersRegistered}
                       >
-                        {driveSyncing ? <Loader2 size={16} className="nac-bi-spin" /> : <RefreshCw size={16} />}
-                        {driveSyncing ? "Syncing…" : "Sync Now"}
+                        {driveActionKey === "metadata:all" ? <Loader2 size={16} className="nac-bi-spin" /> : <RefreshCw size={16} />}
+                        {driveActionKey === "metadata:all" ? "Syncing…" : "Sync Metadata"}
                       </button>
-                      <button type="button" className="nac-ask-vault__refresh" onClick={onConnectDrive}>
+                      <button
+                        type="button"
+                        className="nac-ask-vault__upload-btn"
+                        onClick={onSyncAndIngestDrive}
+                        disabled={driveActionKey === "ingest:all" || !(driveStatus?.folders || []).some((folder) => folder.auto_ingest)}
+                      >
+                        {driveActionKey === "ingest:all" || driveRunActive ? <Loader2 size={16} className="nac-bi-spin" /> : <Cloud size={16} />}
+                        {driveActionKey === "ingest:all" || driveRunActive ? "Ingesting…" : "Sync & Ingest Drive"}
+                      </button>
+                      <button
+                        type="button"
+                        className="nac-ask-vault__refresh"
+                        onClick={onConnectDrive}
+                        disabled={driveActionKey === "connect"}
+                      >
                         Reconnect
                       </button>
                       <button type="button" className="nac-ask-vault__refresh" onClick={onDisconnectDrive}>
@@ -1330,6 +1450,37 @@ export default function AskNacDataVaultPanel({ session }) {
                         Disconnect
                       </button>
                     </div>
+                    {driveIngestRun ? (
+                      <div className="nac-ask-vault__bulk-progress" role="status" aria-live="polite">
+                        {driveRunActive ? <Loader2 size={14} className="nac-bi-spin" /> : <Cloud size={14} />}
+                        Drive ingestion {driveIngestStats.status}: discovered {driveIngestStats.discovered}, new{" "}
+                        {driveIngestStats.newCount}, changed {driveIngestStats.changed}, downloaded{" "}
+                        {driveIngestStats.downloaded}, extracted {driveIngestStats.extracted}, indexed{" "}
+                        {driveIngestStats.indexed}, failed {driveIngestStats.failed}
+                        {driveIngestStats.currentFile ? ` — ${driveIngestStats.currentFile}` : ""}
+                      </div>
+                    ) : null}
+                    {driveRunFiles.some((file) => file.status === "failed") ? (
+                      <ul className="nac-ask-vault__qa">
+                        {driveRunFiles.filter((file) => file.status === "failed").slice(0, 6).map((file) => {
+                          const retryKey = `retry:${file.id}`;
+                          return (
+                            <li key={file.id} className="is-fail">
+                              <span>{file.file_name}</span>
+                              <span>{file.error || "Drive ingestion failed"}</span>
+                              <button
+                                type="button"
+                                className="nac-ask-vault__refresh"
+                                onClick={() => onRetryDriveFile(file)}
+                                disabled={driveActionKey === retryKey}
+                              >
+                                {driveActionKey === retryKey ? "Retrying…" : "Retry"}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
                   </>
                 ) : (
                   <>
@@ -1339,7 +1490,12 @@ export default function AskNacDataVaultPanel({ session }) {
                         <dd className="nac-vault-source-card__status is-off">Not connected</dd>
                       </div>
                     </dl>
-                    <button type="button" className="nac-ask-vault__upload-btn" onClick={onConnectDrive}>
+                    <button
+                      type="button"
+                      className="nac-ask-vault__upload-btn"
+                      onClick={onConnectDrive}
+                      disabled={driveActionKey === "connect"}
+                    >
                       <Cloud size={16} aria-hidden />
                       Connect Google Drive
                     </button>
@@ -1464,8 +1620,8 @@ export default function AskNacDataVaultPanel({ session }) {
               <div className="nac-ask-vault__drive">
                 <h5>Google Drive folder setup</h5>
                 <p className="nac-ask-vault__hint">
-                  Register Google Drive folder IDs for metadata-only sync. Folder count and Sync Now appear in
-                  Connected Sources once added.
+                  Register Google Drive folder IDs with branch and document defaults. Auto-ingest folders can be
+                  downloaded and indexed server-side with Sync & Ingest Drive.
                 </p>
                 <div className="nac-ask-vault__drive-row">
                   <input
@@ -1491,20 +1647,31 @@ export default function AskNacDataVaultPanel({ session }) {
                     Add folder
                   </button>
                 </div>
+                <label className="nac-ask-vault__hint">
+                  <input
+                    type="checkbox"
+                    checked={driveAutoIngest}
+                    onChange={(e) => setDriveAutoIngest(e.target.checked)}
+                    disabled={!driveConnected}
+                  />{" "}
+                  Auto-ingest this folder using the current advanced upload metadata.
+                </label>
                 {(driveStatus?.folders || []).length ? (
                   <ul className="nac-ask-vault__drive-folders">
                     {driveStatus.folders.map((folder) => (
                       <li key={folder.id}>
-                        <span>{folder.folder_name || folder.drive_folder_id}</span>
-                        <span>{folder.schedule}</span>
+                        <span>{folder.label || folder.folder_name || folder.drive_folder_id}</span>
+                        <span>{folder.branch_id ? branchDashboardName(folder.branch_id) : "No branch"}</span>
+                        <span>{folder.department || "operations"} / {folder.report_type || "other"}</span>
+                        <span>{folder.auto_ingest ? "Auto-ingest on" : "Metadata only"}</span>
                         <span>{formatLastSync(folder.last_sync_at)}</span>
                         <button
                           type="button"
                           className="nac-ask-vault__refresh"
                           onClick={() => onManualDriveSync(folder.id)}
-                          disabled={driveSyncing}
+                          disabled={driveActionKey === `metadata:${folder.id}`}
                         >
-                          {driveSyncing ? "Syncing…" : "Sync folder"}
+                          {driveActionKey === `metadata:${folder.id}` ? "Syncing…" : "Sync metadata"}
                         </button>
                       </li>
                     ))}

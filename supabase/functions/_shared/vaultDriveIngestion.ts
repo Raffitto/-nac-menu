@@ -1,0 +1,918 @@
+import { sanitizeErrorMessage } from "./vaultDriveSecrets.ts";
+
+const VAULT_STORAGE_BUCKET = "ask-nac-vault-originals";
+const CHUNK_TARGET_CHARS = 5000;
+const CHUNK_MAX_CHARS = 7200;
+const PARSEABLE_REPORT_TYPES = new Set([
+  "cash_up",
+  "reception_daily_report",
+  "daily_logbook",
+  "ccm_reconciliation",
+  "weekly_sales_overview",
+  "pnl",
+]);
+
+const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
+const GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const GOOGLE_PRESENTATION_MIME = "application/vnd.google-apps.presentation";
+
+const SUPPORTED_BINARY_MIME: Record<string, string> = {
+  "application/pdf": "pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-excel": "xls",
+  "text/csv": "csv",
+  "text/plain": "txt",
+};
+
+type SupabaseLike = {
+  from: (table: string) => any;
+  storage: { from: (bucket: string) => any };
+};
+
+type DriveFolder = {
+  id: string;
+  connection_id: string;
+  drive_folder_id: string;
+  folder_name?: string | null;
+  label?: string | null;
+  default_branch_id?: string | null;
+  default_department?: string | null;
+  branch_id?: string | null;
+  department?: string | null;
+  report_type?: string | null;
+  sensitivity?: string | null;
+  auto_ingest?: boolean | null;
+};
+
+type DriveFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  size?: string;
+  md5Checksum?: string;
+  version?: string;
+};
+
+type RunCounters = {
+  discovered_count: number;
+  new_count: number;
+  changed_count: number;
+  skipped_count: number;
+  downloaded_count: number;
+  extracted_count: number;
+  parsed_count: number;
+  indexed_count: number;
+  failed_count: number;
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function safeName(name: string) {
+  return String(name || "drive-file")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 140);
+}
+
+function extensionFromName(name: string) {
+  const lower = String(name || "").toLowerCase();
+  if (!lower.includes(".")) return "";
+  return lower.slice(lower.lastIndexOf(".") + 1);
+}
+
+function normalizeFolderMetadata(folder: DriveFolder) {
+  const branchId = folder.branch_id || folder.default_branch_id || null;
+  const department = folder.department || folder.default_department || "operations";
+  const reportType = folder.report_type || "other";
+  const sensitivity = folder.sensitivity || "internal";
+  return { branchId, department, reportType, sensitivity };
+}
+
+function resolveDriveExport(file: DriveFile) {
+  if (file.mimeType === GOOGLE_DOC_MIME) {
+    return {
+      exportMime: "text/plain",
+      filename: file.name.toLowerCase().endsWith(".txt") ? file.name : `${file.name}.txt`,
+      outputMime: "text/plain",
+      extension: "txt",
+    };
+  }
+  if (file.mimeType === GOOGLE_SHEET_MIME) {
+    return {
+      exportMime: "text/csv",
+      filename: file.name.toLowerCase().endsWith(".csv") ? file.name : `${file.name}.csv`,
+      outputMime: "text/csv",
+      extension: "csv",
+    };
+  }
+  if (file.mimeType === GOOGLE_PRESENTATION_MIME) {
+    return { unsupported: "Google Slides ingestion is not supported yet." };
+  }
+
+  const extension = SUPPORTED_BINARY_MIME[file.mimeType] || extensionFromName(file.name);
+  if (!["pdf", "docx", "xlsx", "xls", "csv", "txt"].includes(extension)) {
+    return { unsupported: `Unsupported Drive file type: ${file.mimeType || extension || "unknown"}.` };
+  }
+  return {
+    filename: file.name,
+    outputMime: file.mimeType || "application/octet-stream",
+    extension,
+  };
+}
+
+export async function listDriveFiles(accessToken: string, folderId: string, pageToken?: string) {
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed=false`,
+    fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,md5Checksum,version)",
+    pageSize: "100",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(sanitizeErrorMessage(data.error?.message || "Drive list failed"));
+  return data;
+}
+
+async function getDriveFile(accessToken: string, driveFileId: string) {
+  const params = new URLSearchParams({
+    fields: "id,name,mimeType,modifiedTime,size,md5Checksum,version",
+  });
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(sanitizeErrorMessage(data.error?.message || "Drive file lookup failed"));
+  return data as DriveFile;
+}
+
+async function downloadDriveFile(accessToken: string, driveFile: DriveFile) {
+  const exportInfo = resolveDriveExport(driveFile);
+  if ("unsupported" in exportInfo) {
+    throw new Error(exportInfo.unsupported);
+  }
+
+  const url = exportInfo.exportMime
+    ? `https://www.googleapis.com/drive/v3/files/${driveFile.id}/export?mimeType=${encodeURIComponent(exportInfo.exportMime)}`
+    : `https://www.googleapis.com/drive/v3/files/${driveFile.id}?alt=media`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(sanitizeErrorMessage(text || `Drive download failed (${res.status})`));
+  }
+  const buffer = await res.arrayBuffer();
+  return {
+    buffer,
+    filename: exportInfo.filename,
+    mimeType: exportInfo.outputMime,
+    extension: exportInfo.extension,
+    size: buffer.byteLength,
+  };
+}
+
+async function sha256Hex(input: ArrayBuffer | string) {
+  const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function textLinesToMatrix(lines: string[]) {
+  const matrix: string[][] = [];
+  for (const line of lines || []) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) continue;
+    if (trimmed.includes("\t")) matrix.push(trimmed.split("\t").map((c) => c.trim()));
+    else if (trimmed.includes("|")) matrix.push(trimmed.split("|").map((c) => c.trim()));
+    else if (trimmed.includes(",")) matrix.push(trimmed.split(",").map((c) => c.trim()));
+    else matrix.push([trimmed]);
+  }
+  return matrix;
+}
+
+async function extractText(download: { buffer: ArrayBuffer; extension: string; filename: string }) {
+  const extension = download.extension.toLowerCase();
+  if (extension === "txt" || extension === "csv") {
+    const text = new TextDecoder().decode(download.buffer);
+    return { text, sections: [{ label: extension.toUpperCase(), text }], warnings: [] as string[] };
+  }
+
+  if (extension === "xlsx" || extension === "xls") {
+    const XLSX = await import("npm:xlsx@0.18.5");
+    const workbook = XLSX.read(download.buffer, { type: "array" });
+    const sections = workbook.SheetNames.map((sheetName: string) => {
+      const sheet = workbook.Sheets[sheetName];
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as unknown[][];
+      const text = matrix
+        .map((row) => (Array.isArray(row) ? row.map(String).filter(Boolean).join(" | ") : ""))
+        .filter(Boolean)
+        .join("\n");
+      return { label: sheetName, text };
+    });
+    return {
+      text: sections.map((section) => `[${section.label}]\n${section.text}`).join("\n\n"),
+      sections,
+      warnings: [] as string[],
+    };
+  }
+
+  if (extension === "docx") {
+    const mammoth = await import("npm:mammoth@1.12.0");
+    const result = await mammoth.extractRawText({ arrayBuffer: download.buffer });
+    return {
+      text: String(result.value || ""),
+      sections: [{ label: "Document text", text: String(result.value || "") }],
+      warnings: (result.messages || []).map((m: { message?: string }) => m.message).filter(Boolean).slice(0, 3),
+    };
+  }
+
+  if (extension === "pdf") {
+    const pdfjs = await import("npm:pdfjs-dist@3.11.174/legacy/build/pdf.js");
+    if (pdfjs.GlobalWorkerOptions) pdfjs.GlobalWorkerOptions.workerSrc = "";
+    const task = pdfjs.getDocument({
+      data: new Uint8Array(download.buffer),
+      disableFontFace: true,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    });
+    const doc = await task.promise;
+    const sections: Array<{ label: string; text: string; pageNo: number }> = [];
+    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+      const page = await doc.getPage(pageNo);
+      const content = await page.getTextContent();
+      const text = content.items
+        .map((item: { str?: string }) => item.str || "")
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) sections.push({ label: `Page ${pageNo}`, pageNo, text });
+    }
+    return { text: sections.map((s) => s.text).join("\n"), sections, warnings: [] as string[] };
+  }
+
+  throw new Error(`Unsupported extracted file extension ".${extension}".`);
+}
+
+function splitTextIntoChunks(text: string, sectionLabel: string | null = null, startIndex = 0) {
+  const normalized = String(text || "").trim();
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n\s*\n|\r\n\r\n/).filter((p) => p.trim());
+  const chunks: Array<{ chunkIndex: number; chunkText: string; sectionLabel: string | null }> = [];
+  let buffer = "";
+  let chunkIndex = startIndex;
+
+  const flush = () => {
+    const trimmed = buffer.trim();
+    if (!trimmed) return;
+    chunks.push({ chunkIndex, chunkText: trimmed, sectionLabel });
+    chunkIndex += 1;
+    buffer = "";
+  };
+
+  for (const para of paragraphs.length ? paragraphs : [normalized]) {
+    const next = buffer ? `${buffer}\n\n${para}` : para;
+    if (next.length > CHUNK_MAX_CHARS && buffer.length >= CHUNK_TARGET_CHARS * 0.4) {
+      flush();
+      buffer = para;
+    } else if (next.length > CHUNK_MAX_CHARS) {
+      for (let i = 0; i < para.length; i += CHUNK_MAX_CHARS) {
+        chunks.push({ chunkIndex, chunkText: para.slice(i, i + CHUNK_MAX_CHARS).trim(), sectionLabel });
+        chunkIndex += 1;
+      }
+      buffer = "";
+    } else {
+      buffer = next;
+    }
+  }
+  flush();
+  return chunks;
+}
+
+function buildChunks(extracted: { text: string; sections: Array<{ label?: string; text?: string }> }) {
+  const chunks: Array<{ chunkIndex: number; chunkText: string; sectionLabel: string | null }> = [];
+  const sections = extracted.sections?.length ? extracted.sections : [{ label: "Document", text: extracted.text }];
+  for (const section of sections) {
+    const sectionChunks = splitTextIntoChunks(section.text || "", section.label || null, chunks.length);
+    chunks.push(...sectionChunks);
+  }
+  return chunks.length ? chunks : splitTextIntoChunks(extracted.text || "", null, 0);
+}
+
+async function persistChunks(
+  admin: SupabaseLike,
+  {
+    fileId,
+    versionRowId,
+    fileRow,
+    chunks,
+  }: {
+    fileId: string;
+    versionRowId: string | null;
+    fileRow: Record<string, any>;
+    chunks: Array<{ chunkIndex: number; chunkText: string; sectionLabel: string | null }>;
+  },
+) {
+  await admin.from("ask_nac_document_chunks").delete().eq("file_id", fileId);
+  if (!chunks.length) {
+    await admin
+      .from("ask_nac_files")
+      .update({ chunk_count: 0, search_status: "not_searchable", searchable: false, searchable_at: null })
+      .eq("id", fileId);
+    return 0;
+  }
+
+  const rows = [];
+  for (const chunk of chunks) {
+    const chunkText = String(chunk.chunkText || "").trim();
+    if (!chunkText) continue;
+    rows.push({
+      file_id: fileId,
+      file_version_id: versionRowId,
+      chunk_index: chunk.chunkIndex,
+      chunk_text: chunkText,
+      section_label: chunk.sectionLabel,
+      branch_id: fileRow.primary_branch_id,
+      department: fileRow.department,
+      report_type: fileRow.report_type,
+      sensitivity_level: fileRow.sensitivity_level,
+      data_layer: fileRow.data_layer,
+      period_start: fileRow.period_start,
+      period_end: fileRow.period_end,
+      content_hash: await sha256Hex(chunkText),
+    });
+  }
+
+  if (!rows.length) return 0;
+  const { error } = await admin.from("ask_nac_document_chunks").insert(rows);
+  if (error) throw new Error(error.message);
+
+  await admin
+    .from("ask_nac_files")
+    .update({
+      chunk_count: rows.length,
+      search_status: "searchable",
+      searchable: true,
+      searchable_at: nowIso(),
+    })
+    .eq("id", fileId);
+  return rows.length;
+}
+
+async function createFileVersion(
+  admin: SupabaseLike,
+  { fileId, storagePath, contentHash, sizeBytes, mimeType }: {
+    fileId: string;
+    storagePath: string;
+    contentHash: string;
+    sizeBytes: number;
+    mimeType: string | null;
+  },
+) {
+  const { data: latest } = await admin
+    .from("ask_nac_file_versions")
+    .select("id,version_no")
+    .eq("file_id", fileId)
+    .order("version_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const versionId = crypto.randomUUID();
+  const versionNo = Number(latest?.version_no || 0) + 1;
+  const { error } = await admin.from("ask_nac_file_versions").insert({
+    id: versionId,
+    file_id: fileId,
+    version_no: versionNo,
+    storage_path: storagePath,
+    size_bytes: sizeBytes,
+    mime_type: mimeType,
+    content_hash: contentHash,
+    supersedes_version_id: latest?.id || null,
+  });
+  if (error) throw new Error(error.message);
+  return { id: versionId, version_no: versionNo };
+}
+
+async function insertRawFacts(
+  admin: SupabaseLike,
+  { fileRow, versionRowId, text, email }: { fileRow: Record<string, any>; versionRowId: string | null; text: string; email: string },
+) {
+  if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) return 0;
+
+  await admin.from("ask_nac_structured_facts").delete().eq("file_id", fileRow.id);
+  const matrix = textLinesToMatrix(String(text || "").split(/\r?\n/));
+  const rows = matrix.slice(0, 250).map((line, index) => ({
+    file_id: fileRow.id,
+    file_version_id: versionRowId,
+    branch_id: fileRow.primary_branch_id,
+    brand_wide: fileRow.brand_wide,
+    department: fileRow.department,
+    report_type: fileRow.report_type,
+    sensitivity_level: fileRow.sensitivity_level,
+    metric_key: "raw_extract_line",
+    metric_value: null,
+    dimensions: { row_index: index, text: line.join(" | ").slice(0, 500) },
+    period_start: fileRow.period_start,
+    period_end: fileRow.period_end,
+    grain: "line",
+    source_row_ref: `drive-row-${index + 1}`,
+    confidence: 0.35,
+    created_by: email,
+  }));
+  if (!rows.length) return 0;
+  const { error } = await admin.from("ask_nac_structured_facts").insert(rows);
+  if (error) throw new Error(error.message);
+  return rows.length;
+}
+
+async function updateRun(admin: SupabaseLike, runId: string, patch: Record<string, any>, counters?: RunCounters) {
+  const next = {
+    ...patch,
+    ...(counters || {}),
+    files_discovered: counters?.discovered_count,
+    files_new: counters?.new_count,
+    files_changed: counters?.changed_count,
+    files_skipped: counters?.skipped_count,
+    files_failed: counters?.failed_count,
+  };
+  Object.keys(next).forEach((key) => next[key] === undefined && delete next[key]);
+  await admin.from("ask_nac_drive_sync_runs").update(next).eq("id", runId);
+}
+
+async function createRunFile(
+  admin: SupabaseLike,
+  { runId, folderId, driveFile, action }: { runId: string; folderId: string; driveFile: DriveFile; action: string },
+) {
+  const { data, error } = await admin
+    .from("ask_nac_drive_sync_run_files")
+    .insert({
+      run_id: runId,
+      folder_id: folderId,
+      drive_file_id: driveFile.id,
+      file_name: driveFile.name,
+      mime_type: driveFile.mimeType,
+      modified_time: driveFile.modifiedTime || null,
+      source_version: driveFile.version || null,
+      checksum: driveFile.md5Checksum || null,
+      status: "queued",
+      action,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+async function markRunFile(admin: SupabaseLike, id: string, patch: Record<string, any>) {
+  await admin
+    .from("ask_nac_drive_sync_run_files")
+    .update({ ...patch, finished_at: patch.status && patch.status !== "running" ? nowIso() : patch.finished_at })
+    .eq("id", id);
+}
+
+async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFile, email: string) {
+  const { data } = await admin
+    .from("ask_nac_files")
+    .select("id,content_hash,external_source_modified_at,source_external_version,source_external_checksum")
+    .eq("external_source_id", driveFile.id)
+    .eq("uploader_email", email)
+    .eq("status", "active")
+    .maybeSingle();
+  return data || null;
+}
+
+function isUnchanged(existing: any, driveFile: DriveFile) {
+  if (!existing) return false;
+  if (driveFile.md5Checksum && existing.source_external_checksum === driveFile.md5Checksum) return true;
+  if (driveFile.version && existing.source_external_version === String(driveFile.version)) return true;
+  if (driveFile.modifiedTime && existing.external_source_modified_at) {
+    return new Date(driveFile.modifiedTime).getTime() <= new Date(existing.external_source_modified_at).getTime();
+  }
+  return false;
+}
+
+async function registerDownloadedDriveFile(
+  admin: SupabaseLike,
+  {
+    folder,
+    driveFile,
+    download,
+    contentHash,
+    existing,
+    email,
+  }: {
+    folder: DriveFolder;
+    driveFile: DriveFile;
+    download: { buffer: ArrayBuffer; filename: string; mimeType: string; extension: string; size: number };
+    contentHash: string;
+    existing: any;
+    email: string;
+  },
+) {
+  const meta = normalizeFolderMetadata(folder);
+  if (!meta.branchId) {
+    throw new Error("Drive folder is missing branch mapping; set branch_id before ingestion.");
+  }
+
+  const fileId = existing?.id || crypto.randomUUID();
+  const storagePath = `drive/${meta.branchId}/${meta.department}/${fileId}/${safeName(download.filename)}`;
+  const { error: storageError } = await admin.storage
+    .from(VAULT_STORAGE_BUCKET)
+    .upload(storagePath, new Blob([download.buffer], { type: download.mimeType }), {
+      upsert: Boolean(existing?.id),
+      contentType: download.mimeType,
+    });
+  if (storageError) throw new Error(storageError.message);
+
+  const fileRow = {
+    id: fileId,
+    title: driveFile.name,
+    original_filename: download.filename,
+    storage_bucket: VAULT_STORAGE_BUCKET,
+    storage_path: storagePath,
+    branch_scope_type: "single_branch",
+    primary_branch_id: meta.branchId,
+    brand_wide: false,
+    department: meta.department,
+    report_type: meta.reportType,
+    data_layer: "operational",
+    sensitivity_level: meta.sensitivity,
+    status: "active",
+    uploaded_by: email.split("@")[0],
+    uploader_email: email,
+    content_hash: contentHash,
+    ingestion_source: "drive_sync",
+    external_source_id: driveFile.id,
+    external_source_modified_at: driveFile.modifiedTime || null,
+    source_external_version: driveFile.version || null,
+    source_external_checksum: driveFile.md5Checksum || null,
+    notes: `Imported from Google Drive folder ${folder.label || folder.folder_name || folder.drive_folder_id}.`,
+    search_status: "indexing",
+    searchable: false,
+    updated_at: nowIso(),
+  };
+
+  if (existing?.id) {
+    const { error } = await admin.from("ask_nac_files").update(fileRow).eq("id", fileId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await admin.from("ask_nac_files").insert(fileRow);
+    if (error) throw new Error(error.message);
+    await admin.from("ask_nac_data_coverage").insert({
+      branch_id: meta.branchId,
+      brand_wide: false,
+      department: meta.department,
+      report_type: meta.reportType,
+      source_file_id: fileId,
+      fact_count: 0,
+      readiness_status: "registered",
+    });
+  }
+
+  const versionRow = await createFileVersion(admin, {
+    fileId,
+    storagePath,
+    contentHash,
+    sizeBytes: download.size,
+    mimeType: download.mimeType,
+  });
+
+  const jobId = crypto.randomUUID();
+  await admin.from("ask_nac_ingestion_jobs").insert({
+    id: jobId,
+    file_id: fileId,
+    file_version_id: versionRow.id,
+    status: "processing",
+    stage: "extract",
+    started_at: nowIso(),
+    stats: { source: "google_drive", driveFileId: driveFile.id },
+  });
+
+  return { fileId, fileRow, versionRowId: versionRow.id, jobId };
+}
+
+async function completeJob(
+  admin: SupabaseLike,
+  {
+    jobId,
+    fileId,
+    chunkCount,
+    factCount,
+    warnings,
+  }: { jobId: string; fileId: string; chunkCount: number; factCount: number; warnings: string[] },
+) {
+  const readiness = factCount > 0 ? "partial" : "registered";
+  await admin.from("ask_nac_ingestion_jobs").update({
+    status: "completed",
+    stage: factCount > 0 ? "raw_extract_only" : "chunks_indexed",
+    finished_at: nowIso(),
+    error: warnings.length ? warnings.join(" ") : null,
+    stats: {
+      source: "google_drive",
+      chunkCount,
+      searchStatus: chunkCount > 0 ? "searchable" : "not_searchable",
+      factsExtracted: factCount,
+      factsPersisted: factCount,
+      confidence: factCount > 0 ? 0.35 : null,
+      confidenceLevel: factCount > 0 ? "low" : null,
+      publish: false,
+      warnings,
+    },
+  }).eq("id", jobId);
+
+  await admin.from("ask_nac_data_coverage").update({
+    fact_count: factCount,
+    readiness_status: readiness,
+    last_ingested_at: nowIso(),
+    updated_at: nowIso(),
+  }).eq("source_file_id", fileId);
+}
+
+async function failJob(admin: SupabaseLike, jobId: string | null, error: string) {
+  if (!jobId) return;
+  await admin.from("ask_nac_ingestion_jobs").update({
+    status: "failed",
+    stage: "drive_ingest",
+    error,
+    finished_at: nowIso(),
+    stats: { source: "google_drive", error },
+  }).eq("id", jobId);
+}
+
+async function processOneDriveFile(
+  admin: SupabaseLike,
+  {
+    accessToken,
+    folder,
+    runId,
+    driveFile,
+    email,
+    counters,
+    force = false,
+  }: {
+    accessToken: string;
+    folder: DriveFolder;
+    runId: string;
+    driveFile: DriveFile;
+    email: string;
+    counters: RunCounters;
+    force?: boolean;
+  },
+) {
+  const existing = await findExistingDriveFile(admin, driveFile, email);
+  const action = existing ? "changed" : "new";
+  if (!force && isUnchanged(existing, driveFile)) {
+    counters.skipped_count += 1;
+    const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
+    await markRunFile(admin, itemId, { status: "skipped", error: "Unchanged Drive file." });
+    return;
+  }
+
+  if (existing) counters.changed_count += 1;
+  else counters.new_count += 1;
+
+  const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action });
+  let jobId: string | null = null;
+  try {
+    await markRunFile(admin, itemId, { status: "running" });
+    await updateRun(admin, runId, { current_file: driveFile.name }, counters);
+
+    const download = await downloadDriveFile(accessToken, driveFile);
+    counters.downloaded_count += 1;
+    const contentHash = await sha256Hex(download.buffer);
+    if (!force && existing?.content_hash && existing.content_hash === contentHash) {
+      counters.skipped_count += 1;
+      await markRunFile(admin, itemId, { status: "skipped", error: "Identical content already indexed." });
+      return;
+    }
+
+    const registered = await registerDownloadedDriveFile(admin, {
+      folder,
+      driveFile,
+      download,
+      contentHash,
+      existing,
+      email,
+    });
+    jobId = registered.jobId;
+
+    const extracted = await extractText(download);
+    counters.extracted_count += 1;
+    const chunks = buildChunks(extracted);
+    const chunkCount = await persistChunks(admin, {
+      fileId: registered.fileId,
+      versionRowId: registered.versionRowId,
+      fileRow: registered.fileRow,
+      chunks,
+    });
+    if (chunkCount > 0) counters.indexed_count += 1;
+
+    const factCount = await insertRawFacts(admin, {
+      fileRow: registered.fileRow,
+      versionRowId: registered.versionRowId,
+      text: extracted.text,
+      email,
+    });
+    if (factCount > 0) counters.parsed_count += 1;
+
+    await completeJob(admin, {
+      jobId,
+      fileId: registered.fileId,
+      chunkCount,
+      factCount,
+      warnings: extracted.warnings || [],
+    });
+    await markRunFile(admin, itemId, {
+      status: "completed",
+      file_id: registered.fileId,
+      stats: { chunkCount, factCount, size: download.size },
+    });
+  } catch (err) {
+    const message = sanitizeErrorMessage(err);
+    counters.failed_count += 1;
+    await failJob(admin, jobId, message);
+    await markRunFile(admin, itemId, { status: "failed", error: message });
+  } finally {
+    await updateRun(admin, runId, {}, counters);
+  }
+}
+
+export async function createDriveIngestionRun(
+  admin: SupabaseLike,
+  { folder, triggerType = "manual" }: { folder: DriveFolder; triggerType?: string },
+) {
+  const { data, error } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .insert({
+      folder_id: folder.id,
+      trigger_type: triggerType === "scheduled" ? "scheduled" : "manual",
+      status: "queued",
+      stats: { autoIngest: Boolean(folder.auto_ingest) },
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function processDriveIngestionRun(
+  admin: SupabaseLike,
+  {
+    accessToken,
+    folder,
+    runId,
+    email,
+    onlyDriveFileId = null,
+    force = false,
+  }: {
+    accessToken: string;
+    folder: DriveFolder;
+    runId: string;
+    email: string;
+    onlyDriveFileId?: string | null;
+    force?: boolean;
+  },
+) {
+  const counters: RunCounters = {
+    discovered_count: 0,
+    new_count: 0,
+    changed_count: 0,
+    skipped_count: 0,
+    downloaded_count: 0,
+    extracted_count: 0,
+    parsed_count: 0,
+    indexed_count: 0,
+    failed_count: 0,
+  };
+
+  await updateRun(admin, runId, { status: "running", started_at: nowIso(), current_file: null }, counters);
+
+  try {
+    const files: DriveFile[] = [];
+    if (onlyDriveFileId) {
+      files.push(await getDriveFile(accessToken, onlyDriveFileId));
+    } else {
+      let pageToken: string | undefined;
+      do {
+        const listing = await listDriveFiles(accessToken, folder.drive_folder_id, pageToken);
+        for (const file of listing.files || []) {
+          if (file.mimeType !== "application/vnd.google-apps.folder") files.push(file);
+        }
+        pageToken = listing.nextPageToken;
+      } while (pageToken);
+    }
+
+    counters.discovered_count = files.length;
+    await updateRun(admin, runId, { current_file: null }, counters);
+
+    if (!folder.auto_ingest) {
+      for (const driveFile of files) {
+        const existing = await findExistingDriveFile(admin, driveFile, email);
+        if (isUnchanged(existing, driveFile)) counters.skipped_count += 1;
+        else if (existing) counters.changed_count += 1;
+        else counters.new_count += 1;
+        const itemId = await createRunFile(admin, {
+          runId,
+          folderId: folder.id,
+          driveFile,
+          action: "metadata_only",
+        });
+        await markRunFile(admin, itemId, {
+          status: "skipped",
+          error: "Folder auto_ingest=false; metadata listed only.",
+        });
+      }
+      await updateRun(admin, runId, {
+        status: "completed",
+        current_file: null,
+        finished_at: nowIso(),
+        stats: { metadataOnly: true, autoIngest: false },
+      }, counters);
+      await admin.from("ask_nac_drive_sync_folders").update({
+        last_sync_at: nowIso(),
+        last_sync_status: "completed",
+      }).eq("id", folder.id);
+      return;
+    }
+
+    for (const driveFile of files) {
+      const exportInfo = resolveDriveExport(driveFile);
+      if ("unsupported" in exportInfo) {
+        counters.skipped_count += 1;
+        const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
+        await markRunFile(admin, itemId, { status: "unsupported", error: exportInfo.unsupported });
+        await updateRun(admin, runId, {}, counters);
+        continue;
+      }
+      await processOneDriveFile(admin, {
+        accessToken,
+        folder,
+        runId,
+        driveFile,
+        email,
+        counters,
+        force,
+      });
+    }
+
+    const finalStatus =
+      counters.failed_count > 0 && (counters.indexed_count > 0 || counters.skipped_count > 0)
+        ? "partial"
+        : counters.failed_count > 0
+          ? "failed"
+          : "completed";
+    await updateRun(admin, runId, {
+      status: finalStatus,
+      current_file: null,
+      finished_at: nowIso(),
+      stats: { autoIngest: true },
+      error: finalStatus === "failed" ? "All Drive files failed ingestion." : null,
+    }, counters);
+    await admin.from("ask_nac_drive_sync_folders").update({
+      last_sync_at: nowIso(),
+      last_ingest_at: counters.downloaded_count > 0 ? nowIso() : undefined,
+      last_sync_status: finalStatus,
+    }).eq("id", folder.id);
+  } catch (err) {
+    const message = sanitizeErrorMessage(err);
+    await updateRun(admin, runId, {
+      status: "failed",
+      current_file: null,
+      error: message,
+      finished_at: nowIso(),
+    }, counters);
+    await admin.from("ask_nac_drive_sync_folders").update({
+      last_sync_at: nowIso(),
+      last_sync_status: "failed",
+    }).eq("id", folder.id);
+  }
+}
+
+export async function fetchDriveRunStatus(admin: SupabaseLike, runId: string, email: string) {
+  const { data: run, error } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .select("*, folder:ask_nac_drive_sync_folders(id,connection_id,drive_folder_id,label,folder_name)")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!run?.folder?.connection_id) return null;
+
+  const { data: connection } = await admin
+    .from("ask_nac_drive_connections")
+    .select("id,user_email")
+    .eq("id", run.folder.connection_id)
+    .eq("user_email", email)
+    .maybeSingle();
+  if (!connection) return null;
+
+  const { data: files } = await admin
+    .from("ask_nac_drive_sync_run_files")
+    .select("id,drive_file_id,file_name,status,action,error,file_id,stats,created_at,finished_at")
+    .eq("run_id", runId)
+    .order("created_at", { ascending: true });
+
+  return { run, files: files || [] };
+}
+

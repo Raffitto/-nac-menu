@@ -9,6 +9,11 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sanitizeErrorMessage } from "../_shared/vaultDriveSecrets.ts";
+import {
+  createDriveIngestionRun,
+  fetchDriveRunStatus,
+  processDriveIngestionRun,
+} from "../_shared/vaultDriveIngestion.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,7 +21,7 @@ const corsHeaders = {
 };
 
 const METADATA_ONLY_NOTE =
-  "Drive sync completed as metadata-only. Download and ingestion require the separate vault bulk pipeline.";
+  "Drive sync completed as metadata-only. Enable folder auto-ingest or use Sync & Ingest Drive to ingest files.";
 
 const DRIVE_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly",
@@ -194,7 +199,7 @@ Deno.serve(async (req) => {
 
       const { data: folders } = await supabase
         .from("ask_nac_drive_sync_folders")
-        .select("id,drive_folder_id,folder_name,schedule,last_sync_at,last_sync_status,enabled")
+        .select("id,drive_folder_id,folder_name,label,branch_id,department,report_type,sensitivity,auto_ingest,schedule,last_sync_at,last_ingest_at,last_sync_status,enabled")
         .order("created_at", { ascending: false });
 
       const safeConnection = data
@@ -230,18 +235,121 @@ Deno.serve(async (req) => {
             connection_id: connection.id,
             drive_folder_id: folderId,
             folder_name: body?.folderName || folderId,
-            default_branch_id: body?.defaultBranchId || null,
-            default_department: body?.defaultDepartment || "operations",
+            label: body?.label || body?.folderName || folderId,
+            default_branch_id: body?.defaultBranchId || body?.branchId || null,
+            default_department: body?.defaultDepartment || body?.department || "operations",
+            branch_id: body?.branchId || body?.defaultBranchId || null,
+            department: body?.department || body?.defaultDepartment || "operations",
+            report_type: body?.reportType || "other",
+            sensitivity: body?.sensitivity || "internal",
+            auto_ingest: Boolean(body?.autoIngest),
             schedule: body?.schedule === "daily" ? "daily" : "manual",
             enabled: true,
           },
           { onConflict: "connection_id,drive_folder_id" },
         )
-        .select("id,drive_folder_id,folder_name,schedule,last_sync_at,last_sync_status,enabled,default_branch_id,default_department")
+        .select("id,drive_folder_id,folder_name,label,branch_id,department,report_type,sensitivity,auto_ingest,schedule,last_sync_at,last_ingest_at,last_sync_status,enabled,default_branch_id,default_department")
         .single();
 
       if (error) return json(500, { error: sanitizeErrorMessage(error.message) });
       return json(200, { folder: data });
+    }
+
+    if (action === "run_status") {
+      const runId = String(body?.runId || new URL(req.url).searchParams.get("runId") || "").trim();
+      if (!runId) return json(400, { error: "runId required" });
+      const status = await fetchDriveRunStatus(admin, runId, userEmail);
+      if (!status) return json(404, { error: "Drive ingestion run not found." });
+      return json(200, { ok: true, ...status });
+    }
+
+    if (action === "sync_ingest" || action === "retry_file") {
+      const folderRowId = body?.folderId || null;
+      const triggerType = body?.triggerType === "scheduled" ? "scheduled" : "manual";
+      const retryDriveFileId = action === "retry_file" ? String(body?.driveFileId || "").trim() : null;
+
+      let folderQuery = supabase
+        .from("ask_nac_drive_sync_folders")
+        .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,enabled")
+        .eq("enabled", true);
+      if (folderRowId) folderQuery = folderQuery.eq("id", folderRowId);
+      if (action === "sync_ingest" && body?.onlyAutoIngest !== false) folderQuery = folderQuery.eq("auto_ingest", true);
+
+      const { data: folders, error: folderError } = await folderQuery;
+      if (folderError) return json(500, { error: sanitizeErrorMessage(folderError.message) });
+      if (!folders?.length) {
+        return json(400, {
+          error: folderRowId
+            ? "Sync folder not found or not enabled."
+            : "No Drive folders are enabled for auto-ingest.",
+        });
+      }
+      if (action === "retry_file" && (!folderRowId || !retryDriveFileId)) {
+        return json(400, { error: "folderId and driveFileId are required for retry." });
+      }
+
+      const connectionIds = [...new Set(folders.map((folder) => folder.connection_id))];
+      const { data: connections } = await admin
+        .from("ask_nac_drive_connections")
+        .select("id,refresh_token,token_expires_at")
+        .in("id", connectionIds)
+        .eq("user_email", userEmail);
+
+      const connectionById = new Map((connections || []).map((connection) => [connection.id, connection]));
+      const runnableFolders = folders.filter((folder) => connectionById.get(folder.connection_id)?.refresh_token);
+      if (!runnableFolders.length) {
+        return json(400, { error: "Drive connection not found or revoked." });
+      }
+
+      const tokensByConnectionId = new Map<string, string>();
+      for (const connection of connections || []) {
+        if (!connection.refresh_token) continue;
+        const tokens = await refreshAccessToken(connection.refresh_token);
+        tokensByConnectionId.set(connection.id, tokens.access_token);
+        await admin
+          .from("ask_nac_drive_connections")
+          .update({
+            access_token: tokens.access_token,
+            token_expires_at: tokens.expires_in
+              ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+              : connection.token_expires_at,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", connection.id);
+      }
+
+      const runs = [];
+      for (const folder of runnableFolders) {
+        const runId = await createDriveIngestionRun(admin, { folder, triggerType });
+        runs.push({ runId, folder });
+      }
+
+      const work = Promise.all(
+        runs.map(({ runId, folder }) =>
+          processDriveIngestionRun(admin, {
+            accessToken: tokensByConnectionId.get(folder.connection_id)!,
+            folder,
+            runId,
+            email: userEmail,
+            onlyDriveFileId: retryDriveFileId,
+            force: action === "retry_file",
+          }),
+        ),
+      );
+      const edgeRuntime = globalThis as unknown as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } };
+      if (edgeRuntime.EdgeRuntime?.waitUntil) {
+        edgeRuntime.EdgeRuntime.waitUntil(work);
+      } else {
+        work.catch(() => {});
+      }
+
+      return json(202, {
+        ok: true,
+        runId: runs[0]?.runId,
+        runIds: runs.map((run) => run.runId),
+        queued: runs.length,
+        status: "queued",
+      });
     }
 
     if (action === "sync") {

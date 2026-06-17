@@ -485,7 +485,17 @@ export async function completeDriveOAuth(session, { code, redirectUri = driveOAu
   return { ok: true, googleAccountEmail: data.googleAccountEmail };
 }
 
-export async function registerDriveSyncFolder(supabase, session, { folderId, folderName, defaultBranchId, schedule }) {
+export async function registerDriveSyncFolder(supabase, session, {
+  folderId,
+  folderName,
+  defaultBranchId,
+  branchId,
+  department,
+  reportType,
+  sensitivity,
+  autoIngest = false,
+  schedule,
+}) {
   const base = vaultFunctionsBaseUrl();
   if (!base || !session?.access_token) {
     return { ok: false, error: "Drive sync unavailable" };
@@ -502,6 +512,11 @@ export async function registerDriveSyncFolder(supabase, session, { folderId, fol
       folderId,
       folderName,
       defaultBranchId,
+      branchId,
+      department,
+      reportType,
+      sensitivity,
+      autoIngest,
       schedule,
     }),
   });
@@ -526,6 +541,72 @@ export async function triggerDriveSync(session, { folderRowId, triggerType = "ma
   });
   const data = sanitizeDriveApiResponse(await res.json());
   if (!res.ok) return { ok: false, error: data.error || "Sync failed" };
+  return { ok: true, ...data };
+}
+
+export async function triggerDriveSyncAndIngest(session, {
+  folderRowId = null,
+  triggerType = "manual",
+  onlyAutoIngest = true,
+} = {}) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive ingestion unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      action: "sync_ingest",
+      folderId: folderRowId,
+      triggerType,
+      onlyAutoIngest,
+    }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive ingestion failed" };
+  return { ok: true, ...data };
+}
+
+export async function fetchDriveIngestionRunStatus(session, runId) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token || !runId) {
+    return { ok: false, error: "Drive run status unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "run_status", runId }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive run status failed" };
+  return { ok: true, ...data };
+}
+
+export async function retryDriveIngestionFile(session, { folderRowId, driveFileId }) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive retry unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "retry_file", folderId: folderRowId, driveFileId }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive retry failed" };
   return { ok: true, ...data };
 }
 
