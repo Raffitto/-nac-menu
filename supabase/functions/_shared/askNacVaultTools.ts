@@ -108,6 +108,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
+  if (/\byesterday\b/.test(q)) {
+    const day = new Date(referenceDate);
+    day.setDate(day.getDate() - 1);
+    const iso = isoDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
+    const label = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), 12)).toLocaleDateString("en-GB", {
+      day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
+    });
+    return { startDate: iso, endDate: iso, label, isSingleDay: true };
+  }
+
   const dmy = q.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
   if (dmy) {
     const iso = isoDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
@@ -489,7 +499,26 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
         reportType: "ccm_reconciliation",
       });
     case VAULT_INTENTS.OPERATIONAL_DAY:
-      return getVaultDaySummary(supabase, context);
+      return getVaultDaySummary(supabase, context).then(async (summary) => {
+        const facts = (summary.facts as Record<string, unknown>[]) || [];
+        if (facts.length) return summary;
+        const question = String(context.question || "");
+        if (!/\bwhat happened|summarize|summary|operational day|day summary\b/i.test(question)) {
+          return summary;
+        }
+        const documentFallback = await searchVaultDocuments(supabase, {
+          ...context,
+          searchTerms: question,
+        });
+        return {
+          ...summary,
+          documentFallback,
+          warnings: [
+            ...((summary.warnings as string[]) || []),
+            "No structured vault facts matched; searched uploaded document chunks instead.",
+          ],
+        };
+      });
     case VAULT_INTENTS.MANAGEMENT_REPORT: {
       const summary = await getVaultDaySummary(supabase, context);
       return { ...summary, reportMode: "management" };
@@ -500,11 +529,15 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
 }
 
 const DOC_SEARCH_ACTION =
-  /\b(find|search|look up|summarize|summary|show references? to|mentions? of|contains?)\b/i;
+  /\b(find|search|look up|show|list|summarize|summary|show references? to|mentions? of|contains?|entries?)\b/i;
 const DOC_SEARCH_SCOPE =
-  /\b(company knowledge|data vault|uploaded documents?|uploaded reports?|uploaded files?|document search|vault)\b/i;
+  /\b(company knowledge|data vault|uploaded documents?|uploaded reports?|uploaded files?|documents?|logbooks?|daily logbooks?|document search|vault)\b/i;
+const EXPLICIT_DOCUMENT_SCOPE =
+  /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|vault|company knowledge)\b/i;
 const SEARCH_PREFIX =
   /\b(search company knowledge|search uploaded documents|search uploaded reports|find mentions of|look up)\b/i;
+const DOCUMENT_SCOPE =
+  /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|files?|vault|company knowledge)\b/i;
 
 export function isDocumentSummaryFollowUp(q = ""): boolean {
   const text = String(q || "").trim().toLowerCase();
@@ -520,6 +553,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
   const ctx = documentContext as { fileIds?: string[] } | null;
   if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(text)) return true;
   if (SEARCH_PREFIX.test(text)) return false;
+  if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
   if (/\bexecutive summary\b/.test(text)) return true;
@@ -539,6 +573,7 @@ export function scoreVaultDocumentSummaryIntent(q = "", documentContext: Record<
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
   const ctx = documentContext as { fileIds?: string[] } | null;
   if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;
+  if (/\bsummarize\b/.test(q) && DOCUMENT_SCOPE.test(q)) return 34;
   if (/\bwhat should management know\b/.test(q)) return 33;
   if (/\bexecutive summary\b/.test(q)) return 33;
   if (/\bkey takeaways?\b/.test(q)) return 32;
@@ -550,6 +585,7 @@ export function scoreVaultDocumentSummaryIntent(q = "", documentContext: Record<
 export function extractDocumentSummarySubject(question = ""): string {
   let q = String(question || "").trim();
   q = q.replace(/^summarize (this|that|the) (document|report|logbook|file|upload)\s*/i, "");
+  q = q.replace(/^summarize\s+(the\s+)?/i, "");
   q = q.replace(/^(please\s+)?(provide|give me) (an? )?executive summary (of|for|on|about)?\s*/i, "");
   q = q.replace(/^executive summary (of|for|on|about)?\s*/i, "");
   q = q.replace(/^key takeaways (from|for|on|about)?\s*/i, "");
@@ -563,9 +599,9 @@ export function isVaultDocumentSearchQuery(q = ""): boolean {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
   if (isVaultDocumentSummaryQuery(text)) return false;
-  if (isVaultOperationalReviewQuery(text)) return false;
   if (isSalesPerformanceExecutiveQuery(text)) return false;
   if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
+  if (!DOC_SEARCH_ACTION.test(text) && isVaultOperationalReviewQuery(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
@@ -574,6 +610,7 @@ export function isVaultDocumentSearchQuery(q = ""): boolean {
   if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return false;
   if (/\blatest uploaded logbook\b/.test(text)) return true;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return true;
+  if (DOC_SEARCH_ACTION.test(text) && EXPLICIT_DOCUMENT_SCOPE.test(text)) return true;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return true;
   if (
     /\b(find|search|look up|mentions? of|contains?)\b/.test(text) &&
@@ -592,6 +629,7 @@ export function scoreVaultDocumentSearchIntent(q = ""): number {
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
   if (/\bsearch uploaded reports for\b/.test(text)) return 30;
+  if (DOC_SEARCH_ACTION.test(text) && EXPLICIT_DOCUMENT_SCOPE.test(text)) return 30;
   if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 0;
   if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 0;
   if (/\blatest uploaded logbook\b/.test(text)) return 29;
@@ -841,7 +879,7 @@ async function resolveDocumentSummaryFilesEdge(supabase: SupabaseClient, context
   const orClause = tokens.slice(0, 8).map((token) => `original_filename.ilike.%${escapeIlikePattern(token)}%`).join(",");
   const { data, error } = await supabase
     .from("ask_nac_files")
-    .select("id,title,original_filename")
+    .select("id,title,original_filename,report_type,search_status,chunk_count")
     .eq("status", "active")
     .or(orClause)
     .limit(20);
@@ -860,6 +898,7 @@ async function resolveDocumentSummaryFilesEdge(supabase: SupabaseClient, context
   return {
     fileIds: top.map((row) => String(row.id)),
     fileTitles: top.map((row) => String(row.title || row.original_filename || "Uploaded file")),
+    files: top,
     source: "filename_match",
   };
 }
@@ -938,7 +977,15 @@ export async function summarizeVaultDocuments(
   }
 
   const chunks = (data || []).map((row) => mapVaultChunkMatchRow(row as Record<string, unknown>, resolved.fileTitles.join(" ")));
-  const vaultSources = [...new Map(chunks.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()];
+  const vaultSources = chunks.length
+    ? [...new Map(chunks.map((m) => [m.fileId, { fileId: m.fileId, title: m.fileTitle }])).values()]
+    : ((resolved.files as Record<string, unknown>[]) || []).map((file) => ({
+      fileId: file.id,
+      title: file.title || file.original_filename || "Uploaded file",
+      reportType: file.report_type,
+      chunkCount: file.chunk_count,
+      searchStatus: file.search_status,
+    }));
   return {
     fileIds: resolved.fileIds,
     fileTitles: resolved.fileTitles,
@@ -1431,6 +1478,15 @@ export function buildVaultAnswer(
   tool: Record<string, unknown> | null,
   readiness: Record<string, unknown> | null = null,
 ): AskNacAnswer {
+  const documentFallback = tool?.documentFallback as Record<string, unknown> | undefined;
+  if ((documentFallback?.matches as unknown[])?.length) {
+    return buildVaultAnswer(
+      { ...route, intent: VAULT_INTENTS.DOCUMENT_SEARCH },
+      documentFallback,
+      readiness,
+    );
+  }
+
   if (route.intent === VAULT_INTENTS.DOCUMENT_SUMMARY) {
     const chunks = (tool?.chunks as Record<string, unknown>[]) || (tool?.matches as Record<string, unknown>[]) || [];
     const queryStatus = String(tool?.queryStatus || "");
@@ -1453,13 +1509,18 @@ export function buildVaultAnswer(
         title: "Document summary",
         directAnswer: queryStatus === "no_document"
           ? "No uploaded document was found to summarize under your access scope."
-          : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
+          : queryStatus === "no_chunks"
+            ? `The document was found (${((tool?.fileTitles as string[]) || []).join(" · ") || "uploaded file"}), but no searchable text chunks are available for Ask NAC to summarize.`
+            : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
         keyMetrics: [],
         insights: [],
         confidence: "low",
         isAiGenerated: false,
         intent: route.intent,
-        warnings: [],
+        vaultSources: tool?.vaultSources || [],
+        warnings: queryStatus === "no_chunks"
+          ? ["Document metadata was found, but searchable chunk text is missing or empty."]
+          : [],
       };
     }
     const summary = buildDocumentSummaryAnswerContentEdge(

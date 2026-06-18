@@ -59,6 +59,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
+  if (/\byesterday\b/.test(q)) {
+    const day = new Date(referenceDate);
+    day.setDate(day.getDate() - 1);
+    const iso = isoDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
+    const label = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), 12)).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    return { startDate: iso, endDate: iso, label, isSingleDay: true };
+  }
+
   const dmy = q.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
   if (dmy) {
     const iso = isoDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));

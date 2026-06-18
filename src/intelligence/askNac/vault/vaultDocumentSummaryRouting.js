@@ -5,6 +5,9 @@
 const SEARCH_PREFIX =
   /\b(search company knowledge|search uploaded documents|search uploaded reports|find mentions of|look up)\b/i;
 
+const DOCUMENT_SCOPE =
+  /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|files?|vault|company knowledge)\b/i;
+
 export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
@@ -13,6 +16,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
 
   if (SEARCH_PREFIX.test(text)) return false;
 
+  if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
   if (/\bexecutive summary\b/.test(text)) return true;
@@ -41,6 +45,7 @@ export function isDocumentSummaryFollowUp(q = "") {
 export function scoreVaultDocumentSummaryIntent(q = "", documentContext = null) {
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
   if (documentContext?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;
+  if (/\bsummarize\b/.test(q) && DOCUMENT_SCOPE.test(q)) return 34;
   if (/\bwhat should management know\b/.test(q)) return 33;
   if (/\bexecutive summary\b/.test(q)) return 33;
   if (/\bkey takeaways?\b/.test(q)) return 32;
@@ -53,6 +58,7 @@ export function scoreVaultDocumentSummaryIntent(q = "", documentContext = null) 
 export function extractDocumentSummarySubject(question = "") {
   let q = String(question || "").trim();
   q = q.replace(/^summarize (this|that|the) (document|report|logbook|file|upload)\s*/i, "");
+  q = q.replace(/^summarize\s+(the\s+)?/i, "");
   q = q.replace(/^(please\s+)?(provide|give me) (an? )?executive summary (of|for|on|about)?\s*/i, "");
   q = q.replace(/^executive summary (of|for|on|about)?\s*/i, "");
   q = q.replace(/^key takeaways (from|for|on|about)?\s*/i, "");

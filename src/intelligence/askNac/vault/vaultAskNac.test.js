@@ -111,6 +111,35 @@ describe("vault intentRouter", () => {
     expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);
   });
 
+  test("routes dated logbook summary to document summary, not sales", () => {
+    const route = routeAskNacIntent("Summarize the 17 June NAC Khobar logbook.");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+  });
+
+  test("routes dated logbook maintenance entries to document search", () => {
+    const route = routeAskNacIntent("Show maintenance entries from the 17 June NAC Khobar logbook.");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+  });
+
+  test("routes dated what-happened branch question to vault, not sales", () => {
+    const route = routeAskNacIntent("What happened on 17 June in Khobar?");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+  });
+
+  test("keeps plain relative sales on analytics route", () => {
+    const route = routeAskNacIntent("Sales yesterday");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+  });
+
+  test("routes relative cash-up to vault cash-up source", () => {
+    const route = routeAskNacIntent("Cash up yesterday");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.vaultPeriod?.isSingleDay).toBe(true);
+  });
+
   test("prefers vault over Foodics for day-specific sales", () => {
     const route = routeAskNacIntent("What were sales on 5 June?");
     expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);

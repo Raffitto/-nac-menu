@@ -99,7 +99,7 @@ const NLU_CASES = [
   { q: "SOP violations", intent: I.VAULT_OPERATIONAL_REVIEW },
   { q: "Operational issues during June", intent: I.VAULT_OPERATIONAL_REVIEW },
   { q: "What happened in June logbooks?", intent: I.VAULT_OPERATIONAL_REVIEW },
-  { q: "Summarize uploaded reports", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "Summarize uploaded reports", intent: I.VAULT_DOCUMENT_SUMMARY },
 
   // More natural manager phrasing (bulk)
   { q: "give me sales for last month", intent: I.SALES_TOTAL },

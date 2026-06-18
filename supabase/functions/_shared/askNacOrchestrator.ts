@@ -77,6 +77,8 @@ export const ASK_NAC_INTENTS = {
 
 const FOODICS_SALES_SIGNAL =
   /\b(sales|revenue|sold|net sales|gross sales|pos sales|foodics|waiter sales|product sales|top items?|best sellers?|category|categories)\b/;
+const DOCUMENT_INTENT_SIGNAL =
+  /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|data vault|vault|company knowledge)\b/;
 
 const BRANCH_ALIASES: Record<string, string[]> = {
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -118,6 +120,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (isVaultDocumentSummaryQuery(q)) return 0;
       if (isVaultDocumentSearchQuery(q)) return 0;
+      if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)?.isSingleDay) return 0;
       if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
@@ -163,6 +166,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     id: ASK_NAC_INTENTS.VAULT_CASH_UP,
     score(q) {
       if (/\bsearch company knowledge for cash[\s-]?up\b/.test(q)) return 0;
+      if (DOCUMENT_INTENT_SIGNAL.test(q) && !/\bcash[\s-]?up\b/.test(q)) return 0;
       if (scoreSalesPerformanceQueryFocus(q)) return 22;
       if (/\b(latest cash up|summarize.*cash up|cash up summary|what should management know from the cash up)\b/.test(q)) {
         return 21;
@@ -185,6 +189,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     id: ASK_NAC_INTENTS.VAULT_LOGBOOK,
     score(q) {
       if (isVaultDocumentSearchQuery(q)) return 0;
+      if (isVaultDocumentSummaryQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(logbook|complaints?|training notes?|mod on duty|chef on duty|operational issues?)\b/.test(q)) return 15;
       return 0;
@@ -262,8 +267,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.SALES_TOTAL,
     score(q) {
-      if (hasVaultDayPeriod(q)) return 0;
+      if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
+      if (hasVaultDayPeriod(q)) return 0;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) return 13;
       if (FOODICS_SALES_SIGNAL.test(q) && /\b(total|how much|what were)\b/.test(q) && !/\btop\b/.test(q)) return 11;
       if (/\bfoodics\b/.test(q) && /\b(sales|revenue)\b/.test(q)) return 12;
@@ -273,6 +279,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.FOODICS_QUERY,
     score(q) {
+      if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (/\bfoodics\b/.test(q)) return 8;
       return 0;
     },

@@ -9,17 +9,19 @@ import { isSalesPerformanceExecutiveQuery } from "./vaultSalesPerformanceIntelli
 import { isVaultOperationalReviewQuery } from "./vaultOperationalIntelligence";
 
 const DOC_SEARCH_ACTION =
-  /\b(find|search|look up|summarize|summary|show references? to|mentions? of|contains?)\b/i;
+  /\b(find|search|look up|show|list|summarize|summary|show references? to|mentions? of|contains?|entries?)\b/i;
 const DOC_SEARCH_SCOPE =
-  /\b(company knowledge|data vault|uploaded documents?|uploaded reports?|uploaded files?|document search|vault)\b/i;
+  /\b(company knowledge|data vault|uploaded documents?|uploaded reports?|uploaded files?|documents?|logbooks?|daily logbooks?|document search|vault)\b/i;
+const EXPLICIT_DOCUMENT_SCOPE =
+  /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|vault|company knowledge)\b/i;
 
 export function isVaultDocumentSearchQuery(q = "") {
   const text = String(q || "").trim().toLowerCase();
   if (!text) return false;
   if (isVaultDocumentSummaryQuery(text)) return false;
-  if (isVaultOperationalReviewQuery(text)) return false;
   if (isSalesPerformanceExecutiveQuery(text)) return false;
   if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
+  if (!DOC_SEARCH_ACTION.test(text) && isVaultOperationalReviewQuery(text)) return false;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
@@ -28,6 +30,7 @@ export function isVaultDocumentSearchQuery(q = "") {
   if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return false;
   if (/\blatest uploaded logbook\b/.test(text)) return true;
   if (DOC_SEARCH_ACTION.test(text) && DOC_SEARCH_SCOPE.test(text)) return true;
+  if (DOC_SEARCH_ACTION.test(text) && EXPLICIT_DOCUMENT_SCOPE.test(text)) return true;
   if (/\b(find|search|summarize)\b/.test(text) && /\blogbook\b/.test(text)) return true;
   if (
     /\b(find|search|look up|mentions? of|contains?)\b/.test(text) &&
@@ -46,6 +49,7 @@ export function scoreVaultDocumentSearchIntent(q = "") {
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
   if (/\bsearch uploaded reports for\b/.test(text)) return 30;
+  if (DOC_SEARCH_ACTION.test(text) && EXPLICIT_DOCUMENT_SCOPE.test(text)) return 30;
   if (/\bsummarize (the )?(uploaded )?(document|report|logbook)\b/.test(text)) return 0;
   if (/\bsummarize the\b/.test(text) && /\blogbook\b/.test(text)) return 0;
   if (/\blatest uploaded logbook\b/.test(text)) return 29;

@@ -575,7 +575,25 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
         reportType: "ccm_reconciliation",
       });
     case "vault_operational_day_summary":
-      return getVaultDaySummary(supabase, context);
+      return getVaultDaySummary(supabase, context).then(async (summary) => {
+        if ((summary.facts || []).length) return summary;
+        const question = String(context.question || "");
+        if (!/\bwhat happened|summarize|summary|operational day|day summary\b/i.test(question)) {
+          return summary;
+        }
+        const documentFallback = await searchVaultDocuments(supabase, {
+          ...context,
+          searchTerms: question,
+        });
+        return {
+          ...summary,
+          documentFallback,
+          warnings: [
+            ...(summary.warnings || []),
+            "No structured vault facts matched; searched uploaded document chunks instead.",
+          ],
+        };
+      });
     case "vault_management_report_from_vault":
       return getVaultManagementReport(supabase, context);
     default:

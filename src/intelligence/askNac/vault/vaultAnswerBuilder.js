@@ -614,17 +614,29 @@ export function buildVaultDocumentSummaryAnswer(route, tool, readiness) {
     return createAskNacResponse({
       answerType: ANSWER_TYPES.DOCUMENT_NO_MATCH,
       title: "Document summary",
-      directAnswer: queryStatus === "no_document"
-        ? "No uploaded document was found to summarize under your access scope."
-        : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
+      directAnswer:
+        queryStatus === "no_document"
+          ? "No uploaded document was found to summarize under your access scope."
+          : queryStatus === "no_chunks"
+            ? `The document was found (${tool?.fileTitles?.join(" · ") || "uploaded file"}), but no searchable text chunks are available for Ask NAC to summarize.`
+            : DOCUMENT_SEARCH_MESSAGES.NO_MATCH,
       keyMetrics: [],
       insights: [],
       confidence: CONFIDENCE_LEVELS.LOW,
       isAiGenerated: false,
       intent: route.intent,
       branchLabel: tool?.branchLabel,
-      vaultSources: [],
+      vaultSources: (tool?.vaultSources || []).map((f) => ({
+        fileId: f.fileId,
+        title: f.title,
+        reportType: f.reportType,
+        periodStart: f.periodStart,
+        periodEnd: f.periodEnd,
+      })),
       readiness,
+      warnings: queryStatus === "no_chunks"
+        ? ["Document metadata was found, but searchable chunk text is missing or empty."]
+        : [],
     });
   }
 
@@ -659,6 +671,14 @@ export function buildVaultDocumentSummaryAnswer(route, tool, readiness) {
 }
 
 export function buildVaultAnswer(route, tool, readiness) {
+  if (tool?.documentFallback?.matches?.length) {
+    return buildVaultDocumentSearchAnswer(
+      { ...route, intent: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH },
+      tool.documentFallback,
+      readiness,
+    );
+  }
+
   if (route.intent === ASK_NAC_INTENTS.VAULT_DOCUMENT_SUMMARY) {
     return buildVaultDocumentSummaryAnswer(route, tool, readiness);
   }

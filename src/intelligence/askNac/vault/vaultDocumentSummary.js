@@ -125,6 +125,7 @@ export async function resolveDocumentSummaryFiles(supabase, context = {}) {
   return {
     fileIds: top.map((row) => row.id),
     fileTitles: top.map((row) => row.title || row.original_filename || "Uploaded file"),
+    files: top,
     source: "filename_match",
   };
 }
@@ -215,13 +216,21 @@ export async function summarizeVaultDocuments(supabase, context = {}) {
   }
 
   const chunks = (data || []).map((row) => mapSummaryChunkRow(row, resolved.fileTitles.join(" ")));
-  const vaultSources = [...new Map(chunks.map((c) => [c.fileId, {
+  const vaultSources = chunks.length
+    ? [...new Map(chunks.map((c) => [c.fileId, {
     fileId: c.fileId,
     title: c.fileTitle,
     reportType: c.reportType,
     periodStart: c.periodStart,
     periodEnd: c.periodEnd,
-  }])).values()];
+  }])).values()]
+    : (resolved.files || []).map((file) => ({
+      fileId: file.id,
+      title: file.title || file.original_filename || "Uploaded file",
+      reportType: file.report_type,
+      chunkCount: file.chunk_count,
+      searchStatus: file.search_status,
+    }));
 
   return {
     branch: scopedBranch,
