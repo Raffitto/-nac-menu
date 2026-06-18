@@ -20,19 +20,31 @@ const OPERATIONAL_REVIEW_PATTERNS = [
   /\bwhat should management know\b/i,
   /\bmanagement know from (the )?(uploaded )?logbooks?\b/i,
   /\bsummarize.*logbooks?\b/i,
+  /\bsummarize (uploaded )?(reports?|documents?|files)\b/i,
+  /\bwhat happened\b.*\b(logbooks?|uploaded reports?|reports?)\b/i,
   /\boperational issues this week\b/i,
   /\bany recurring issues?\b/i,
+  /\b(maintenance|operational|staff|sop|policy|manual).*\b(issues?|concerns?|violations?|repeat|recurring|follow[\s-]?ups?|action items?)\b/i,
+  /\b(issues?|concerns?|violations?|incidents?).*\b(uploaded reports?|reports?|documents?|logbooks?|sop|policy|manual)\b/i,
   /\bfood quality complaints?\b/i,
   /\bstaff absence\b/i,
   /\bany staff absent\b/i,
   /\brecurring (issues?|problems?|complaints?)\b/i,
+  /\broot cause\b.*\b(issues?|incidents?|complaints?|reports?)\b/i,
+  /\boperations report\b/i,
+  /\bdaily report\b/i,
+  /\bweekly report\b/i,
 ];
 
 const THEME_SEARCH_TERMS: Record<string, string> = {
   complaints: "guest complaint feedback table remade removed bill quality taste",
   recurring: "complaint issue feedback recurring repeated again same problem",
+  maintenance: "maintenance repair equipment ac hvac leak broken issue repeated recurring follow up",
+  staff_concerns: "staff concern concerns absence sick leave training performance complaint follow up",
+  sop: "sop policy manual violation non compliance procedure standard follow up action item",
   staff_absence: "sick leave absent illness staff reception",
   food_quality: "food quality average taste burning cold undercooked price high",
+  reports: "operational issue complaint concern maintenance incident follow up action item root cause",
   management: "complaint operational issue unavailable staff training feedback management",
   general: "complaint operational issue unavailable staff feedback guest table",
 };
@@ -45,10 +57,14 @@ export function isVaultOperationalReviewQuery(question = "") {
 
 export function extractOperationalReviewTheme(question = "") {
   const q = String(question || "").toLowerCase();
+  if (/\b(sop|policy|manual|violation|violations)\b/.test(q)) return "sop";
+  if (/\bmaintenance|repair|equipment|ac|hvac|broken|leak\b/.test(q)) return "maintenance";
+  if (/\bstaff\b.*\b(concern|concerns|issue|issues|reports?)\b/.test(q)) return "staff_concerns";
   if (/\b(staff absence|absent|sick leave)\b/.test(q)) return "staff_absence";
   if (/\b(food quality|quality complaint)\b/.test(q)) return "food_quality";
   if (/\b(recurring|repeated|again)\b/.test(q)) return "recurring";
   if (/\b(complaint|complaints)\b/.test(q)) return "complaints";
+  if (/\b(uploaded reports?|reports?|logbooks?|documents?)\b/.test(q)) return "reports";
   if (/\bmanagement know\b/.test(q)) return "management";
   return "general";
 }
@@ -92,7 +108,7 @@ export function groupOperationalMatches(matches: Record<string, unknown>[] = [])
 
     const issueType = classifyOperationalIssue(text);
     groups.push({
-      date: extractDateFromFileTitle(String(match.fileTitle || "")),
+      date: match.periodStart || extractDateFromFileTitle(String(match.fileTitle || "")),
       issueType,
       severity: inferSeverity(text, issueType),
       actionTaken: /\b(remade|removed from bill|guest satisfied|available at|resolved)\b/i.test(text)
@@ -286,6 +302,11 @@ export function scoreVaultOperationalReviewIntent(q = "") {
   if (/\bsearch company knowledge\b/i.test(text)) return 0;
   if (!isVaultOperationalReviewQuery(text)) return 0;
 
+  if (/\b(sop|policy|manual).*\b(violations?|issues?|concerns?)\b/.test(text)) return 29;
+  if (/\b(maintenance|staff).*\b(issues?|concerns?|repeat|recurring)\b/.test(text)) return 29;
+  if (/\bwhat happened\b.*\b(logbooks?|uploaded reports?|reports?)\b/.test(text)) return 28;
+  if (/\bsummarize (uploaded )?(reports?|documents?|files)\b/.test(text)) return 28;
+  if (/\b(recurring|repeat|repeated).*\b(operational )?issues?\b/.test(text)) return 28;
   if (/\bwhat complaints happened\b/.test(text)) return 24;
   if (/\bwhat should management know\b/.test(text) && /\blogbook/.test(text)) return 24;
   if (/\bany recurring issues?\b/.test(text)) return 23;

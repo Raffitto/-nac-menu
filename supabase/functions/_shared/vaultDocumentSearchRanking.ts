@@ -201,10 +201,69 @@ function operationalDetailScore(text) {
   return score;
 }
 
+function inferReportTypesFromQuery(text = "") {
+  const q = normalizeSearchText(text);
+  const types = new Set<string>();
+  if (/\blogbook|daily log\b/.test(q)) types.add("daily_logbook");
+  if (/\bcash up|cashup|sales performance\b/.test(q)) types.add("cash_up");
+  if (/\breception|reservations?|covers|walkins?\b/.test(q)) types.add("reception_daily_report");
+  if (/\bccm|reconciliation\b/.test(q)) types.add("ccm_reconciliation");
+  if (/\boperations report|daily report|weekly report|uploaded report|reports\b/.test(q)) {
+    types.add("daily_logbook");
+    types.add("reception_daily_report");
+  }
+  return [...types];
+}
+
+function parseDateValue(value: unknown) {
+  if (!value) return null;
+  const time = Date.parse(String(value));
+  return Number.isNaN(time) ? null : time;
+}
+
+function dateOverlapScore(row: Record<string, unknown> = {}, vaultPeriod: Record<string, unknown> | null = null) {
+  if (!vaultPeriod?.startDate || !vaultPeriod?.endDate) return 0;
+  const rowStart = parseDateValue(row.period_start || row.periodStart);
+  const rowEnd = parseDateValue(row.period_end || row.periodEnd || row.period_start || row.periodStart);
+  const periodStart = parseDateValue(vaultPeriod.startDate);
+  const periodEnd = parseDateValue(vaultPeriod.endDate);
+  if (!rowStart || !rowEnd || !periodStart || !periodEnd) return 0;
+  if (rowStart <= periodEnd && rowEnd >= periodStart) return 24;
+  return -10;
+}
+
+function recencyScore(row: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
+  if (!options.preferRecent) return 0;
+  const rowEnd = parseDateValue(row.period_end || row.periodEnd || row.period_start || row.periodStart);
+  if (!rowEnd) return 0;
+  const now = parseDateValue(options.referenceDate) || Date.now();
+  const ageDays = Math.max(0, (now - rowEnd) / 86400000);
+  if (ageDays <= 7) return 12;
+  if (ageDays <= 31) return 8;
+  if (ageDays <= 90) return 4;
+  return 0;
+}
+
+function metadataRelevanceScore(row: Record<string, unknown> = {}, queryContext: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
+  let score = 0;
+  const scopedBranch = options.scopedBranch || options.branch;
+  if (scopedBranch && row.branch_id === scopedBranch) score += 18;
+
+  const optionReportTypes = Array.isArray(options.reportTypes) ? options.reportTypes.map(String) : [];
+  const requestedReportTypes = optionReportTypes.length
+    ? optionReportTypes
+    : inferReportTypesFromQuery(String(queryContext.normalized || ""));
+  if (requestedReportTypes.length && requestedReportTypes.includes(String(row.report_type || ""))) score += 16;
+
+  score += dateOverlapScore(row, (options.vaultPeriod as Record<string, unknown>) || null);
+  score += recencyScore(row, options);
+  return score;
+}
+
 /**
- * Score chunk relevance (higher is better). Recency is not used.
+ * Score chunk relevance (higher is better).
  */
-export function scoreChunkRelevance(row = {}, queryContext = {}) {
+export function scoreChunkRelevance(row: Record<string, unknown> = {}, queryContext: Record<string, unknown> = {}, options: Record<string, unknown> = {}) {
   const text = String(row.chunk_text || "");
   const normalized = normalizeSearchText(text);
   if (!normalized) return 0;
@@ -244,22 +303,27 @@ export function scoreChunkRelevance(row = {}, queryContext = {}) {
   const section = String(row.section_label || "").trim();
   if (section && coreTokens.some((token) => textIncludesToken(section, token))) score += 6;
 
+  score += metadataRelevanceScore(row, queryContext, options);
+
   if (isHeaderOnlyChunk(row)) score -= 80;
   if (TEMPLATE_CHUNK_PATTERNS.some((re) => re.test(normalized))) score -= 50;
 
   return Math.max(0, score);
 }
 
-export function rankDocumentSearchChunks(rows = [], searchTerms = "") {
+export function rankDocumentSearchChunks(rows: Record<string, unknown>[] = [], searchTerms = "", options: Record<string, unknown> = {}) {
   const queryContext = buildSearchQueryContext(searchTerms);
   return [...rows]
     .map((row) => ({
       row,
-      relevanceScore: scoreChunkRelevance(row, queryContext),
+      relevanceScore: scoreChunkRelevance(row, queryContext, options),
     }))
     .filter((entry) => entry.relevanceScore > 0)
     .sort((a, b) => {
       if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
+      const bDate = parseDateValue(b.row.period_end || b.row.periodEnd || b.row.period_start || b.row.periodStart) || 0;
+      const aDate = parseDateValue(a.row.period_end || a.row.periodEnd || a.row.period_start || a.row.periodStart) || 0;
+      if (bDate !== aDate) return bDate - aDate;
       return (a.row.chunk_index ?? 0) - (b.row.chunk_index ?? 0);
     })
     .slice(0, 20);

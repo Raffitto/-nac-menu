@@ -263,6 +263,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     id: ASK_NAC_INTENTS.SALES_TOTAL,
     score(q) {
       if (hasVaultDayPeriod(q)) return 0;
+      if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) return 13;
       if (FOODICS_SALES_SIGNAL.test(q) && /\b(total|how much|what were)\b/.test(q) && !/\btop\b/.test(q)) return 11;
       if (/\bfoodics\b/.test(q) && /\b(sales|revenue)\b/.test(q)) return 12;
@@ -347,6 +348,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (/\b(menu qr|menu scan|qr scan).*\b(menu|digital menu)\b/.test(q)) return 14;
       if (/\b(menu qr scans|menu scans|qr scans)\b/.test(q) && !/\breview\b/.test(q)) return 13;
+      if (/\bqr scans?\b/.test(q) && !/\breview\b/.test(q)) return 12;
       return 0;
     },
   },

@@ -92,7 +92,14 @@ const NLU_CASES = [
 
   // Operational knowledge
   { q: "Why did sales drop", intent: I.OPERATIONAL_KNOWLEDGE },
-  { q: "What operational issues repeated", intent: I.OPERATIONAL_KNOWLEDGE },
+  { q: "What operational issues repeated", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "Summarize latest Khobar logbook", intent: I.VAULT_DOCUMENT_SUMMARY },
+  { q: "What maintenance issues repeat?", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "Staff concerns in uploaded reports", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "SOP violations", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "Operational issues during June", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "What happened in June logbooks?", intent: I.VAULT_OPERATIONAL_REVIEW },
+  { q: "Summarize uploaded reports", intent: I.VAULT_OPERATIONAL_REVIEW },
 
   // More natural manager phrasing (bulk)
   { q: "give me sales for last month", intent: I.SALES_TOTAL },
@@ -106,6 +113,10 @@ const NLU_CASES = [
   { q: "did jeddah improve", intent: I.EXECUTIVE_ANALYSIS },
   { q: "improvement at khobar", intent: I.EXECUTIVE_ANALYSIS },
   { q: "top waiter last week", intent: I.STAFF_REDIRECT_LEADERBOARD },
+  { q: "Sales today", intent: I.SALES_TOTAL },
+  { q: "Google reviews this week", intent: I.GOOGLE_REVIEWS },
+  { q: "QR scans today", intent: I.MENU_QR_SCANS },
+  { q: "Top selling items", intent: I.TOP_ITEMS },
   { q: "menu scans today", intent: I.MENU_QR_SCANS },
   { q: "sessions this week", intent: I.MENU_SESSIONS },
   { q: "branch sales comparison may", intent: I.BRANCH_SALES },

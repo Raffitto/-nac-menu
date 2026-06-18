@@ -34,6 +34,10 @@ export const DOCUMENT_SEARCH_STATUS = Object.freeze({
 
 const MIN_RELEVANCE_SCORE = 20;
 
+function hasMetadataFilters({ vaultPeriod, reportTypes } = {}) {
+  return Boolean((vaultPeriod?.startDate && vaultPeriod?.endDate) || reportTypes?.length);
+}
+
 export function escapeIlikePattern(value = "") {
   return String(value).replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
@@ -60,20 +64,44 @@ function mapRankedRows(ranked, searchTerms, mapRow) {
   });
 }
 
-export async function runFtsChunkSearch(supabase, { select, searchTerms, scopedBranch, limit = 60 }) {
+function applyChunkMetadataFilters(query, { scopedBranch, vaultPeriod, reportTypes } = {}) {
+  let next = query;
+  if (scopedBranch) next = next.eq("branch_id", scopedBranch);
+  if (vaultPeriod?.startDate && vaultPeriod?.endDate) {
+    next = next.lte("period_start", vaultPeriod.endDate).gte("period_end", vaultPeriod.startDate);
+  }
+  if (reportTypes?.length) next = next.in("report_type", reportTypes);
+  return next;
+}
+
+export async function runFtsChunkSearch(supabase, {
+  select,
+  searchTerms,
+  scopedBranch,
+  vaultPeriod = null,
+  reportTypes = [],
+  limit = 60,
+}) {
   let query = supabase
     .from("ask_nac_document_chunks")
     .select(select)
     .textSearch("search_vector", searchTerms, { type: "websearch", config: "english" })
     .limit(limit);
 
-  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  query = applyChunkMetadataFilters(query, { scopedBranch, vaultPeriod, reportTypes });
 
   const { data, error } = await query;
   return { data: data || [], error };
 }
 
-export async function runFallbackChunkSearch(supabase, { select, searchTerms, scopedBranch, limit = 120 }) {
+export async function runFallbackChunkSearch(supabase, {
+  select,
+  searchTerms,
+  scopedBranch,
+  vaultPeriod = null,
+  reportTypes = [],
+  limit = 120,
+}) {
   const tokens = expandSearchTokens(searchTerms);
   if (!tokens.length) return { data: [], error: null };
 
@@ -83,14 +111,14 @@ export async function runFallbackChunkSearch(supabase, { select, searchTerms, sc
     .join(",");
 
   let query = supabase.from("ask_nac_document_chunks").select(select).or(orClause).limit(limit);
-  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  query = applyChunkMetadataFilters(query, { scopedBranch, vaultPeriod, reportTypes });
 
   const { data, error } = await query;
   return { data: data || [], error };
 }
 
-function pickRankedMatches(rows, searchTerms, mapRow) {
-  const ranked = rankDocumentSearchChunks(rows, searchTerms);
+function pickRankedMatches(rows, searchTerms, mapRow, rankingOptions = {}) {
+  const ranked = rankDocumentSearchChunks(rows, searchTerms, rankingOptions);
   const strong = ranked.filter((entry) => entry.relevanceScore >= MIN_RELEVANCE_SCORE);
   const chosen = (strong.length ? strong : ranked).slice(0, 20);
   if (!chosen.length) return [];
@@ -101,6 +129,9 @@ export async function searchVaultDocumentChunks(supabase, {
   select,
   searchTerms,
   scopedBranch = null,
+  vaultPeriod = null,
+  reportTypes = [],
+  preferRecent = false,
   mapRow,
 }) {
   if (!searchTerms || searchTerms.length < 2) {
@@ -114,7 +145,15 @@ export async function searchVaultDocumentChunks(supabase, {
     };
   }
 
-  const fts = await runFtsChunkSearch(supabase, { select, searchTerms, scopedBranch });
+  const rankingOptions = { scopedBranch, vaultPeriod, reportTypes, preferRecent };
+
+  const fts = await runFtsChunkSearch(supabase, {
+    select,
+    searchTerms,
+    scopedBranch,
+    vaultPeriod,
+    reportTypes,
+  });
   if (fts.error) {
     return {
       searchTerms,
@@ -129,11 +168,17 @@ export async function searchVaultDocumentChunks(supabase, {
   let candidateRows = [...(fts.data || [])];
   let searchMethod = "fts";
 
-  let rankedMatches = pickRankedMatches(candidateRows, searchTerms, mapRow);
+  let rankedMatches = pickRankedMatches(candidateRows, searchTerms, mapRow, rankingOptions);
   const topScore = rankedMatches[0]?.relevanceScore ?? 0;
 
   if (!rankedMatches.length || topScore < MIN_RELEVANCE_SCORE) {
-    const fallback = await runFallbackChunkSearch(supabase, { select, searchTerms, scopedBranch });
+    const fallback = await runFallbackChunkSearch(supabase, {
+      select,
+      searchTerms,
+      scopedBranch,
+      vaultPeriod,
+      reportTypes,
+    });
     if (fallback.error) {
       return {
         searchTerms,
@@ -150,8 +195,42 @@ export async function searchVaultDocumentChunks(supabase, {
       merged.set(row.id || `${row.file_id}-${row.chunk_index}`, row);
     }
     candidateRows = [...merged.values()];
-    rankedMatches = pickRankedMatches(candidateRows, searchTerms, mapRow);
+    rankedMatches = pickRankedMatches(candidateRows, searchTerms, mapRow, rankingOptions);
     searchMethod = rankedMatches.length ? "fallback" : fts.data?.length ? "fts" : "fallback";
+  }
+
+  if (!rankedMatches.length && hasMetadataFilters({ vaultPeriod, reportTypes })) {
+    const relaxedFts = await runFtsChunkSearch(supabase, { select, searchTerms, scopedBranch });
+    if (relaxedFts.error) {
+      return {
+        searchTerms,
+        matches: [],
+        searchMethod: null,
+        queryStatus: classifyDocumentSearchError(relaxedFts.error),
+        searchError: relaxedFts.error.message,
+        warnings: [],
+      };
+    }
+
+    const relaxedFallback = await runFallbackChunkSearch(supabase, { select, searchTerms, scopedBranch });
+    if (relaxedFallback.error) {
+      return {
+        searchTerms,
+        matches: [],
+        searchMethod: null,
+        queryStatus: classifyDocumentSearchError(relaxedFallback.error),
+        searchError: relaxedFallback.error.message,
+        warnings: [],
+      };
+    }
+
+    const merged = new Map();
+    for (const row of [...(relaxedFts.data || []), ...(relaxedFallback.data || [])]) {
+      merged.set(row.id || `${row.file_id}-${row.chunk_index}`, row);
+    }
+    candidateRows = [...merged.values()];
+    rankedMatches = pickRankedMatches(candidateRows, searchTerms, mapRow, rankingOptions);
+    searchMethod = rankedMatches.length ? "fallback_relaxed_metadata" : searchMethod;
   }
 
   if (!rankedMatches.length) {

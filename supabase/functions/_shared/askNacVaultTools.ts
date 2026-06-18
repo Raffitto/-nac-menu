@@ -638,15 +638,16 @@ function buildChunkExcerpt(chunkText: string, searchTerms: string, maxLen = 240)
   return `${prefix}${slice}${suffix}`.trim();
 }
 
-function formatChunkCitation(match: { fileTitle?: string; pageNo?: number | null; sectionLabel?: string | null }) {
+function formatChunkCitation(match: { fileTitle?: string; pageNo?: number | null; sectionLabel?: string | null; periodStart?: string | null }) {
   const parts = [match.fileTitle || "Uploaded file"];
+  if (match.periodStart) parts.push(match.periodStart);
   if (match.pageNo != null) parts.push(`p. ${match.pageNo}`);
   if (match.sectionLabel) parts.push(match.sectionLabel);
   return parts.join(" · ");
 }
 
 const CHUNK_SELECT =
-  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
+  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
 function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string) {
   const file = row.file as Record<string, unknown> | null;
@@ -661,9 +662,12 @@ function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string
     sectionLabel: row.section_label,
     fileTitle,
     reportType: row.report_type || file?.report_type,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
     excerpt: buildChunkExcerpt(chunkText, searchTerms),
     citation: formatChunkCitation({
       fileTitle,
+      periodStart: row.period_start as string | null,
       pageNo: row.page_no as number | null,
       sectionLabel: row.section_label as string | null,
     }),
@@ -717,11 +721,15 @@ export async function searchOperationalReviewDocuments(supabase: SupabaseClient,
   const theme = (context.reviewTheme as string) || extractOperationalReviewTheme(String(context.question || ""));
   const searchTerms = (context.searchTerms as string) || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
+  const reportTypes = ["daily_logbook", "reception_daily_report"];
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
+    vaultPeriod: context.vaultPeriod || null,
+    reportTypes,
+    preferRecent: /\b(latest|recent|this month|this week)\b/i.test(String(context.question || "")),
     mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
   });
 
@@ -738,6 +746,8 @@ export async function searchOperationalReviewDocuments(supabase: SupabaseClient,
       fileId: m.fileId,
       title: m.fileTitle,
       reportType: m.reportType,
+      periodStart: m.periodStart,
+      periodEnd: m.periodEnd,
     }])).values()],
     searchMethod: result.searchMethod,
     queryStatus: result.queryStatus,
@@ -755,11 +765,21 @@ export async function searchVaultDocuments(
     extractDocumentSearchTerms(String(context.question || ""));
 
   const scopedBranch = resolveBranch(context);
+  const q = String(context.question || "");
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
+    vaultPeriod: context.vaultPeriod || null,
+    reportTypes: /\blogbook|logbooks|daily report\b/i.test(q)
+      ? ["daily_logbook"]
+      : /\breception\b/i.test(q)
+        ? ["reception_daily_report"]
+        : /\bcash[\s-]?up\b/i.test(q)
+          ? ["cash_up"]
+          : [],
+    preferRecent: /\b(latest|recent|newest|this month|this week)\b/i.test(q),
     mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
   });
 
@@ -782,6 +802,8 @@ export async function searchVaultDocuments(
     fileId: m.fileId,
     title: m.fileTitle,
     reportType: m.reportType,
+    periodStart: m.periodStart,
+    periodEnd: m.periodEnd,
   }])).values()];
 
   const methodDetail =
@@ -964,7 +986,11 @@ function vaultSourceEntries(tool: Record<string, unknown>) {
   const files = (tool?.vaultSources as Record<string, unknown>[]) ||
     collectVaultSources(tool?.facts as Record<string, unknown>[] || [], tool?.coverage as Record<string, unknown>[] || []);
   return files.map((f) =>
-    sourceEntry(String(f.title), `${REPORT_LABELS[String(f.reportType)] || f.reportType || "vault"} · uploaded file`),
+    sourceEntry(String(f.title), [
+      REPORT_LABELS[String(f.reportType)] || f.reportType || "vault",
+      f.periodStart || f.periodEnd || null,
+      "uploaded file",
+    ].filter(Boolean).join(" · ")),
   );
 }
 
@@ -975,9 +1001,36 @@ function vaultFileChips(tool: Record<string, unknown>) {
       fileId: f.fileId,
       title: f.title,
       reportType: f.reportType,
+      periodStart: f.periodStart,
+      periodEnd: f.periodEnd,
       confidence: f.confidence,
       parserVersion: f.parserVersion,
     }));
+}
+
+function formatKnowledgeSource(item: Record<string, unknown> = {}) {
+  const title = item.title || item.fileTitle || "Uploaded file";
+  const reportType = item.reportType ? (REPORT_LABELS[String(item.reportType)] || String(item.reportType)) : null;
+  const date = item.periodStart || item.periodEnd || item.date || null;
+  return [title, date, reportType].filter(Boolean).join(" — ");
+}
+
+function buildKnowledgeSourceLines(items: Record<string, unknown>[] = []) {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const item of items) {
+    const line = formatKnowledgeSource(item);
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    lines.push(`• ${line}`);
+    if (lines.length >= 8) break;
+  }
+  return lines;
+}
+
+function buildSourcesRecommendation(items: Record<string, unknown>[] = []) {
+  const lines = buildKnowledgeSourceLines(items);
+  return lines.length ? `Sources:\n${lines.join("\n")}` : null;
 }
 
 function baseVaultFields(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null) {
@@ -1173,6 +1226,7 @@ function buildVaultOperationalReviewAnswer(
   const grouped = (tool?.groupedFindings as Record<string, unknown>[]) || [];
   const theme = String(tool?.reviewTheme || "general");
   const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
+  const sourcesBlock = buildSourcesRecommendation(grouped);
 
   const directAnswer = formatManagerStyleAnswer({
     answer: synthesis.answer,
@@ -1196,9 +1250,10 @@ function buildVaultOperationalReviewAnswer(
     insights: grouped.slice(0, 8).map(
       (item) => `${item.date || item.fileTitle} · ${item.issueType}: ${item.excerpt} [${item.source}]`,
     ),
-    recommendations: grouped.length
-      ? [`Review ${grouped.length} finding(s) across uploaded logbooks.`]
-      : [],
+    recommendations: [
+      grouped.length ? `Review ${grouped.length} finding(s) across uploaded logbooks.` : null,
+      sourcesBlock,
+    ].filter(Boolean),
     missingData: [],
     exportOptions: [],
     searchTerms: tool?.searchTerms,
@@ -1474,6 +1529,7 @@ export function buildVaultAnswer(
       };
     }
     const fileNames = [...new Set(matches.map((m) => (m as Record<string, unknown>).fileTitle))];
+    const sourcesBlock = buildSourcesRecommendation(matches as Record<string, unknown>[]);
     const manager = buildOperationalManagerAnswer(searchTerms, matches as Record<string, unknown>[]);
     const operationalAnswer = manager
       ? formatManagerStyleAnswer({
@@ -1510,6 +1566,10 @@ export function buildVaultAnswer(
           (item) => `Related: ${item.fileTitle}${item.sectionLabel ? ` · ${item.sectionLabel}` : ""} — ${item.excerpt}`,
         ),
       ],
+      recommendations: [
+        sourcesBlock,
+        `Citations: ${matches.slice(0, 5).map((m) => String((m as Record<string, unknown>).citation || "")).join("; ")}`,
+      ].filter(Boolean),
       confidence: confidenceLevel === "high" ? "high" : confidenceLevel === "medium" ? "medium" : "low",
       isAiGenerated: false,
       intent: route.intent,

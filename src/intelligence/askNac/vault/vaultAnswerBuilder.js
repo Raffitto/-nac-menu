@@ -60,7 +60,11 @@ function vaultConfidence(tool) {
 function vaultSourceEntries(tool) {
   const files = tool?.vaultSources || collectVaultSources(tool?.facts || [], tool?.coverage || []);
   return files.map((f) =>
-    sourceEntry(f.title, `${REPORT_LABELS[f.reportType] || f.reportType || "vault"} · uploaded file`),
+    sourceEntry(f.title, [
+      REPORT_LABELS[f.reportType] || f.reportType || "vault",
+      f.periodStart || f.periodEnd || null,
+      "uploaded file",
+    ].filter(Boolean).join(" · ")),
   );
 }
 
@@ -69,9 +73,36 @@ function vaultFileChips(tool) {
     fileId: f.fileId,
     title: f.title,
     reportType: f.reportType,
+    periodStart: f.periodStart,
+    periodEnd: f.periodEnd,
     confidence: f.confidence,
     parserVersion: f.parserVersion,
   }));
+}
+
+function formatKnowledgeSource(item = {}) {
+  const title = item.title || item.fileTitle || "Uploaded file";
+  const reportType = item.reportType ? (REPORT_LABELS[item.reportType] || item.reportType) : null;
+  const date = item.periodStart || item.periodEnd || item.date || null;
+  return [title, date, reportType].filter(Boolean).join(" — ");
+}
+
+function buildKnowledgeSourceLines(items = []) {
+  const seen = new Set();
+  const lines = [];
+  for (const item of items) {
+    const line = formatKnowledgeSource(item);
+    if (!line || seen.has(line)) continue;
+    seen.add(line);
+    lines.push(`• ${line}`);
+    if (lines.length >= 8) break;
+  }
+  return lines;
+}
+
+function buildSourcesRecommendation(items = []) {
+  const lines = buildKnowledgeSourceLines(items);
+  return lines.length ? `Sources:\n${lines.join("\n")}` : null;
 }
 
 function baseVaultFields(route, tool, readiness) {
@@ -455,6 +486,7 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
   }
 
   const fileNames = [...new Set(matches.map((m) => m.fileTitle))];
+  const sourcesBlock = buildSourcesRecommendation(matches);
   const manager = buildOperationalManagerAnswer(searchTerms, matches);
   const operationalAnswer = manager
     ? formatManagerStyleAnswer({
@@ -502,7 +534,10 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
     searchTerms,
     keyMetrics,
     insights,
-    recommendations: [`Citations: ${matches.slice(0, 5).map((m) => m.citation).join("; ")}`],
+    recommendations: [
+      sourcesBlock,
+      `Citations: ${matches.slice(0, 5).map((m) => m.citation).join("; ")}`,
+    ].filter(Boolean),
     confidence,
     isAiGenerated: false,
     intent: route.intent,
@@ -512,6 +547,8 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
       fileId: f.fileId,
       title: f.title,
       reportType: f.reportType,
+      periodStart: f.periodStart,
+      periodEnd: f.periodEnd,
     })),
   });
 }
@@ -520,6 +557,7 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
   const grouped = tool?.groupedFindings || [];
   const theme = tool?.reviewTheme || "general";
   const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
+  const sourcesBlock = buildSourcesRecommendation(grouped);
 
   const directAnswer = formatManagerStyleAnswer({
     answer: synthesis.answer,
@@ -543,9 +581,10 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
     insights: grouped.slice(0, 8).map(
       (item) => `${item.date || item.fileTitle} · ${item.issueType}: ${item.excerpt} [${item.source}]`,
     ),
-    recommendations: grouped.length
-      ? [`Review ${grouped.length} finding(s) across uploaded logbooks.`]
-      : [],
+    recommendations: [
+      grouped.length ? `Review ${grouped.length} finding(s) across uploaded logbooks.` : null,
+      sourcesBlock,
+    ].filter(Boolean),
     searchTerms: tool?.searchTerms,
   });
 }

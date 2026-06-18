@@ -270,6 +270,7 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.SALES_TOTAL,
     score(q) {
       if (hasVaultDayPeriod(q)) return 0;
+      if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) {
         return 13;
       }
@@ -376,6 +377,7 @@ const INTENT_RULES = [
     score(q) {
       if (/\b(menu qr|menu scan|qr scan).*\b(menu|digital menu)\b/.test(q)) return 14;
       if (/\b(menu qr scans|menu scans|qr scans)\b/.test(q) && !/\breview\b/.test(q)) return 13;
+      if (/\bqr scans?\b/.test(q) && !/\breview\b/.test(q)) return 12;
       if (/\bhow many (menu )?(qr|scan)/.test(q) && !/\breview\b/.test(q)) return 11;
       return 0;
     },

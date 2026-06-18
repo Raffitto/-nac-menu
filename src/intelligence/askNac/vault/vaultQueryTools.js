@@ -29,7 +29,7 @@ const COVERAGE_SELECT =
   "id,branch_id,brand_wide,department,report_type,period_start,period_end,fact_count,readiness_status,last_ingested_at,source_file_id,source_file:ask_nac_files(id,title,original_filename,report_type,classification_confidence,parser_version,sensitivity_level)";
 
 const CHUNK_SELECT =
-  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
+  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
 function resolveBranch(context) {
   return resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
@@ -336,11 +336,15 @@ export async function searchOperationalReviewDocuments(supabase, context = {}) {
   const theme = context.reviewTheme || extractOperationalReviewTheme(context.question || "");
   const searchTerms = context.searchTerms || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
+  const reportTypes = ["daily_logbook", "reception_daily_report"];
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
+    vaultPeriod: context.vaultPeriod || null,
+    reportTypes,
+    preferRecent: /\b(latest|recent|this month|this week)\b/i.test(context.question || ""),
     mapRow: (row, terms) => mapVaultChunkRow(row, terms),
   });
 
@@ -390,6 +394,7 @@ export function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {
 
 export function formatChunkCitation(match) {
   const parts = [match.fileTitle || "Uploaded file"];
+  if (match.periodStart) parts.push(match.periodStart);
   if (match.pageNo != null) parts.push(`p. ${match.pageNo}`);
   if (match.sectionLabel) parts.push(match.sectionLabel);
   return parts.join(" · ");
@@ -409,10 +414,13 @@ export function mapVaultChunkRow(row, searchTerms) {
     branchId: row.branch_id,
     department: row.department,
     reportType: row.report_type || file?.report_type,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
     fileTitle,
     excerpt: buildChunkExcerpt(chunkText, searchTerms),
     citation: formatChunkCitation({
       fileTitle,
+      periodStart: row.period_start,
       pageNo: row.page_no,
       sectionLabel: row.section_label,
     }),
@@ -423,11 +431,21 @@ export async function searchVaultDocuments(supabase, context = {}) {
   const searchTerms =
     context.searchTerms || extractDocumentSearchTerms(context.question || context.route?.question || "");
   const scopedBranch = resolveBranch(context);
+  const q = String(context.question || context.route?.question || "");
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
+    vaultPeriod: context.vaultPeriod || null,
+    reportTypes: /\blogbook|logbooks|daily report\b/i.test(q)
+      ? ["daily_logbook"]
+      : /\breception\b/i.test(q)
+        ? ["reception_daily_report"]
+        : /\bcash[\s-]?up\b/i.test(q)
+          ? ["cash_up"]
+          : [],
+    preferRecent: /\b(latest|recent|newest|this month|this week)\b/i.test(q),
     mapRow: (row, terms) => mapVaultChunkRow(row, terms),
   });
 
@@ -449,6 +467,8 @@ export async function searchVaultDocuments(supabase, context = {}) {
     fileId: m.fileId,
     title: m.fileTitle,
     reportType: m.reportType,
+    periodStart: m.periodStart,
+    periodEnd: m.periodEnd,
   }])).values()];
 
   const methodDetail =

@@ -8,7 +8,7 @@ import { tokenizeDocumentSearchQuery } from "./vaultDocumentSearchRetrieval";
 import { extractDocumentSummarySubject } from "./vaultDocumentSummaryRouting";
 
 const CHUNK_SELECT =
-  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
+  "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
 function resolveBranch(context) {
   return resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
@@ -34,6 +34,7 @@ function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {
 
 function formatChunkCitation(match) {
   const parts = [match.fileTitle || "Uploaded file"];
+  if (match.periodStart) parts.push(match.periodStart);
   if (match.pageNo != null) parts.push(`p. ${match.pageNo}`);
   if (match.sectionLabel) parts.push(match.sectionLabel);
   return parts.join(" · ");
@@ -51,10 +52,13 @@ function mapSummaryChunkRow(row, searchTerms = "") {
     pageNo: row.page_no,
     sectionLabel: row.section_label,
     reportType: row.report_type || file?.report_type,
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
     fileTitle,
     excerpt: buildChunkExcerpt(chunkText, searchTerms),
     citation: formatChunkCitation({
       fileTitle,
+      periodStart: row.period_start,
       pageNo: row.page_no,
       sectionLabel: row.section_label,
     }),
@@ -215,6 +219,8 @@ export async function summarizeVaultDocuments(supabase, context = {}) {
     fileId: c.fileId,
     title: c.fileTitle,
     reportType: c.reportType,
+    periodStart: c.periodStart,
+    periodEnd: c.periodEnd,
   }])).values()];
 
   return {
