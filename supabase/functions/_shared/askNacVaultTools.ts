@@ -26,6 +26,8 @@ import {
   formatManagerStyleAnswer,
   isSalesPerformanceExecutiveQuery,
   isSalesPerformanceKnowledgeQuery,
+  CASH_UP_STRUCTURED_METRIC_KEYS,
+  CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
 import {
   buildCrossDocumentOperationalSummary,
@@ -80,6 +82,143 @@ const REPORT_LABELS: Record<string, string> = {
   daily_logbook: "Daily Logbook",
   ccm_reconciliation: "CCM Reconciliation",
 };
+
+/** Temporary production trace — remove after cash-up retrieval is stable. */
+export type CashUpDebugPayload = {
+  intent: string;
+  selectedTool: string;
+  normalizedBranch: string | null;
+  branchLabel: string;
+  vaultPeriod: VaultPeriod | null;
+  selectedCoverageRow: Record<string, unknown> | null;
+  factsQueryFilters: Record<string, unknown>;
+  factsRowCount: number;
+  firstFacts: Record<string, unknown>[];
+  failureReason: string | null;
+  queryStatus?: string | null;
+  searchError?: string | null;
+};
+
+function summarizeCashUpFactForDebug(fact: Record<string, unknown>) {
+  return {
+    metricKey: fact.metricKey ?? fact.metric_key,
+    metricValue: fact.metricValue ?? fact.metric_value,
+    periodStart: fact.periodStart ?? fact.period_start,
+    periodEnd: fact.periodEnd ?? fact.period_end,
+    fileTitle: fact.fileTitle ?? fact.file_title,
+    branchId: fact.branchId ?? fact.branch_id,
+    reportType: fact.reportType ?? fact.report_type,
+  };
+}
+
+function buildCashUpFactsQueryFilters({
+  branch,
+  startDate,
+  endDate,
+  reportType = "cash_up",
+  metricKeys = CASH_UP_STRUCTURED_METRIC_KEYS,
+  limit = CASH_UP_FACTS_QUERY_LIMIT,
+  fileId = null,
+}: {
+  branch: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  reportType?: string;
+  metricKeys?: readonly string[];
+  limit?: number;
+  fileId?: string | null;
+}) {
+  return {
+    branch_id: branch,
+    file_id: fileId,
+    period_start_lte: endDate ?? null,
+    period_end_gte: startDate ?? null,
+    report_type: reportType,
+    metric_keys: metricKeys,
+    metric_key_neq: "raw_extract",
+    limit,
+  };
+}
+
+function inferCashUpFailureReason({
+  facts,
+  tool,
+  readiness,
+  route,
+}: {
+  facts: Record<string, unknown>[];
+  tool: Record<string, unknown> | null;
+  readiness: Record<string, unknown> | null;
+  route: Record<string, unknown>;
+}) {
+  if (tool?.queryStatus === "connection_error") {
+    return String(tool.searchError || "Cash-up facts query failed (connection_error).");
+  }
+  if (readiness && readiness.canQuery === false) {
+    const reasons = readiness.reasons as string[] | undefined;
+    if (reasons?.length) return reasons[0];
+    return "Readiness blocked query (canQuery=false).";
+  }
+  if (!tool) {
+    return "Query tool returned null — no vault tool result was produced.";
+  }
+  if (facts.length) return null;
+
+  const coverage = (tool.coverage as Record<string, unknown>[]) || [];
+  const vaultSources = (tool.vaultSources as unknown[]) || [];
+  const routePeriod = route.vaultPeriod as { startDate?: string; label?: string } | undefined;
+  const askedForDate = Boolean(routePeriod?.startDate || tool.startDate);
+
+  if (tool.warnings && (tool.warnings as string[]).some((w) => /no business date/i.test(w))) {
+    return "Coverage row found but resolveLatestCashUpBusinessDate returned no period_end.";
+  }
+  if (vaultSources.length || coverage.length) {
+    return "Cash-up report exists, but structured facts query returned zero rows for the applied filters.";
+  }
+  if (askedForDate) {
+    return `No cash-up facts matched ${tool.periodLabel || routePeriod?.label || "the requested date"}.`;
+  }
+  return "No cash_up coverage row with non-null period_end under the current branch/access scope.";
+}
+
+export function buildCashUpDebugPayload({
+  intent,
+  selectedTool,
+  context,
+  tool,
+  readiness,
+  route,
+  selectedCoverageRow = null,
+  factsQueryFilters,
+  facts = [],
+}: {
+  intent: string;
+  selectedTool: string;
+  context: Record<string, unknown>;
+  tool: Record<string, unknown> | null;
+  readiness: Record<string, unknown> | null;
+  route: Record<string, unknown>;
+  selectedCoverageRow?: Record<string, unknown> | null;
+  factsQueryFilters: Record<string, unknown>;
+  facts?: Record<string, unknown>[];
+}) {
+  const normalizedBranch = resolveBranch(context);
+  const factRows = facts.length ? facts : ((tool?.facts as Record<string, unknown>[]) || []);
+  return {
+    intent,
+    selectedTool,
+    normalizedBranch,
+    branchLabel: normalizedBranch ? branchDisplayName(normalizedBranch) : "Network",
+    vaultPeriod: (context.vaultPeriod as VaultPeriod | null) || (route.vaultPeriod as VaultPeriod | null) || null,
+    selectedCoverageRow,
+    factsQueryFilters,
+    factsRowCount: factRows.length,
+    firstFacts: factRows.slice(0, 5).map((row) => summarizeCashUpFactForDebug(row)),
+    failureReason: inferCashUpFailureReason({ facts: factRows, tool, readiness, route }),
+    queryStatus: tool?.queryStatus ? String(tool.queryStatus) : null,
+    searchError: tool?.searchError ? String(tool.searchError) : null,
+  } satisfies CashUpDebugPayload;
+}
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -198,12 +337,21 @@ export function hasVaultDayPeriod(question: string) {
   return Boolean(parseVaultPeriodFromQuestion(question)?.isSingleDay);
 }
 
+function normalizeVaultBranch(value: unknown): string | null {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "all" || raw === "brand" || raw === "network") return null;
+  if (raw.includes("khobar")) return "khobar";
+  if (raw.includes("riyadh")) return "riyadh";
+  if (raw.includes("jeddah") || raw.includes("jedda")) return "jeddah";
+  return raw;
+}
+
 function resolveBranch(context: Record<string, unknown> = {}): string | null {
   const branchMention = context.branchMention as string | null;
   const filters = context.filters as { branch?: string } | undefined;
   const profile = context.profile as { branchScope?: string; allBranches?: boolean } | undefined;
-  if (profile?.branchScope && !profile.allBranches) return profile.branchScope;
-  return branchMention || filters?.branch || (context.branch as string | null) || null;
+  if (profile?.branchScope && !profile.allBranches) return normalizeVaultBranch(profile.branchScope);
+  return normalizeVaultBranch(branchMention || filters?.branch || (context.branch as string | null) || null);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -291,6 +439,7 @@ export async function getVaultFacts(
     branchMention,
     filters,
     profile,
+    limit,
   }: Record<string, unknown> = {},
 ) {
   const scopedBranch = (branch as string | null) ?? resolveBranch({ branchMention, filters, profile });
@@ -300,6 +449,7 @@ export async function getVaultFacts(
   if (reportType) query = query.eq("report_type", reportType);
   if (Array.isArray(metricKeys) && metricKeys.length) query = query.in("metric_key", metricKeys);
   query = query.neq("metric_key", "raw_extract").order("metric_key");
+  if (typeof limit === "number" && limit > 0) query = query.limit(limit);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -445,18 +595,74 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       return getVaultReportSources(supabase, context);
     case VAULT_INTENTS.CASH_UP: {
       const question = String(context.question || "").toLowerCase();
-      if (
+      const useLatestPath =
         !vaultPeriod?.startDate
-        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
-      ) {
-        return getLatestVaultCashUpFacts(supabase, context);
+        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question);
+      const selectedTool = useLatestPath ? "getLatestVaultCashUpFacts" : "getVaultFacts";
+      try {
+        if (useLatestPath) {
+          return await getLatestVaultCashUpFacts(supabase, context);
+        }
+        const branch = resolveBranch(context);
+        const factsQueryFilters = buildCashUpFactsQueryFilters({
+          branch,
+          startDate: vaultPeriod?.startDate,
+          endDate: vaultPeriod?.endDate,
+        });
+        const factsResult = await getVaultFacts(supabase, {
+          ...context,
+          startDate: vaultPeriod?.startDate,
+          endDate: vaultPeriod?.endDate,
+          reportType: "cash_up",
+          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+          limit: CASH_UP_FACTS_QUERY_LIMIT,
+        });
+        const toolPayload = {
+          ...factsResult,
+          periodLabel: vaultPeriod?.label || factsResult.startDate,
+        };
+        return {
+          ...toolPayload,
+          cashUpDebug: buildCashUpDebugPayload({
+            intent: VAULT_INTENTS.CASH_UP,
+            selectedTool,
+            context,
+            tool: toolPayload,
+            readiness: null,
+            route: { vaultPeriod },
+            factsQueryFilters,
+            facts: factsResult.facts as Record<string, unknown>[],
+          }),
+        };
+      } catch (err) {
+        const branch = resolveBranch(context);
+        const errorTool = {
+          branch,
+          branchLabel: branch ? branchDisplayName(branch) : "Network",
+          facts: [],
+          coverage: [],
+          vaultSources: [],
+          periodLabel: vaultPeriod?.label || "cash-up",
+          queryStatus: "connection_error",
+          searchError: (err as Error)?.message || "Cash-up facts query failed.",
+        };
+        return {
+          ...errorTool,
+          cashUpDebug: buildCashUpDebugPayload({
+            intent: VAULT_INTENTS.CASH_UP,
+            selectedTool,
+            context,
+            tool: errorTool,
+            readiness: null,
+            route: { vaultPeriod },
+            factsQueryFilters: buildCashUpFactsQueryFilters({
+              branch,
+              startDate: vaultPeriod?.startDate,
+              endDate: vaultPeriod?.endDate,
+            }),
+          }),
+        };
       }
-      return getVaultFacts(supabase, {
-        ...context,
-        startDate: vaultPeriod?.startDate,
-        endDate: vaultPeriod?.endDate,
-        reportType: "cash_up",
-      });
     }
     case VAULT_INTENTS.OPERATIONAL_REVIEW:
       return searchOperationalReviewDocuments(supabase, context);
@@ -538,6 +744,8 @@ const SEARCH_PREFIX =
   /\b(search company knowledge|search uploaded documents|search uploaded reports|find mentions of|look up)\b/i;
 const DOCUMENT_SCOPE =
   /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|files?|vault|company knowledge)\b/i;
+const CASH_UP_INTENT_SIGNAL =
+  /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/i;
 
 export function isDocumentSummaryFollowUp(q = ""): boolean {
   const text = String(q || "").trim().toLowerCase();
@@ -553,6 +761,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
   const ctx = documentContext as { fileIds?: string[] } | null;
   if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(text)) return true;
   if (SEARCH_PREFIX.test(text)) return false;
+  if (CASH_UP_INTENT_SIGNAL.test(text)) return false;
   if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
@@ -571,6 +780,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
 
 export function scoreVaultDocumentSummaryIntent(q = "", documentContext: Record<string, unknown> | null = null): number {
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
+  if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
   const ctx = documentContext as { fileIds?: string[] } | null;
   if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;
   if (/\bsummarize\b/.test(q) && DOCUMENT_SCOPE.test(q)) return 34;
@@ -712,19 +922,78 @@ function mapVaultChunkMatchRow(row: Record<string, unknown>, searchTerms: string
   };
 }
 
-export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
-  const scopedBranch = resolveBranch(context);
+function formatCashUpDayLabel(isoDate: string) {
+  const parts = String(isoDate || "").split("-").map(Number);
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return isoDate || "latest cash-up";
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export async function resolveLatestCashUpBusinessDate(
+  supabase: SupabaseClient,
+  { branch, fileId }: { branch: string | null; fileId: string | null },
+): Promise<string | null> {
   let query = supabase
-    .from("ask_nac_data_coverage")
-    .select(COVERAGE_SELECT)
+    .from("ask_nac_structured_facts")
+    .select("period_end")
     .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .neq("metric_key", "raw_extract")
     .order("period_end", { ascending: false })
     .limit(1);
 
-  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  if (branch) query = query.eq("branch_id", branch);
+  if (fileId) query = query.eq("file_id", fileId);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
+
+  const row = (data || [])[0] as Record<string, unknown> | undefined;
+  return row?.period_end ? String(row.period_end) : null;
+}
+
+export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const scopedBranch = resolveBranch(context);
+  const selectedTool = "getLatestVaultCashUpFacts";
+  let coverageQuery = supabase
+    .from("ask_nac_data_coverage")
+    .select(COVERAGE_SELECT)
+    .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .order("period_end", { ascending: false });
+
+  if (scopedBranch) coverageQuery = coverageQuery.eq("branch_id", scopedBranch);
+
+  const { data, error } = await coverageQuery.limit(1);
+  if (error) {
+    return {
+      branch: scopedBranch,
+      branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+      facts: [],
+      coverage: [],
+      vaultSources: [],
+      periodLabel: "latest cash-up",
+      queryStatus: "connection_error",
+      searchError: error.message,
+      cashUpDebug: buildCashUpDebugPayload({
+        intent: VAULT_INTENTS.CASH_UP,
+        selectedTool,
+        context,
+        tool: { queryStatus: "connection_error", searchError: error.message, facts: [] },
+        readiness: null,
+        route: { vaultPeriod: context.vaultPeriod },
+        factsQueryFilters: buildCashUpFactsQueryFilters({
+          branch: scopedBranch,
+          startDate: null,
+          endDate: null,
+        }),
+      }),
+    };
+  }
 
   const latest = (data || [])[0] as Record<string, unknown> | undefined;
   if (!latest) {
@@ -735,23 +1004,91 @@ export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, contex
       coverage: [],
       vaultSources: [],
       periodLabel: "latest cash-up",
+      cashUpDebug: buildCashUpDebugPayload({
+        intent: VAULT_INTENTS.CASH_UP,
+        selectedTool,
+        context,
+        tool: { facts: [], coverage: [] },
+        readiness: null,
+        route: { vaultPeriod: context.vaultPeriod },
+        factsQueryFilters: buildCashUpFactsQueryFilters({
+          branch: scopedBranch,
+          startDate: null,
+          endDate: null,
+        }),
+      }),
     };
   }
 
-  const factsResult = await getVaultFacts(supabase, {
-    ...context,
-    branch: latest.branch_id || scopedBranch,
-    startDate: latest.period_start,
-    endDate: latest.period_end,
-    reportType: "cash_up",
+  const branch = String(latest.branch_id || scopedBranch || "") || null;
+  const fileId = latest.source_file_id ? String(latest.source_file_id) : null;
+  const coverageRow = mapVaultCoverageRow(latest);
+  const businessDate = await resolveLatestCashUpBusinessDate(supabase, { branch, fileId });
+
+  if (!businessDate) {
+    return {
+      branch,
+      branchLabel: branch ? branchDisplayName(branch) : "Network",
+      facts: [],
+      coverage: [coverageRow],
+      vaultSources: collectVaultSources([], [coverageRow]),
+      periodLabel: "latest cash-up",
+      warnings: ["Cash-up coverage exists, but no business date was found in structured facts."],
+      cashUpDebug: buildCashUpDebugPayload({
+        intent: VAULT_INTENTS.CASH_UP,
+        selectedTool,
+        context,
+        tool: { facts: [], coverage: [coverageRow], warnings: ["no business date"] },
+        readiness: null,
+        route: { vaultPeriod: context.vaultPeriod },
+        selectedCoverageRow: coverageRow,
+        factsQueryFilters: buildCashUpFactsQueryFilters({
+          branch,
+          fileId,
+          startDate: null,
+          endDate: null,
+        }),
+      }),
+    };
+  }
+
+  const factsQueryFilters = buildCashUpFactsQueryFilters({
+    branch,
+    fileId,
+    startDate: businessDate,
+    endDate: businessDate,
   });
 
-  const coverageRow = mapVaultCoverageRow(latest);
-  return {
+  const factsResult = await getVaultFacts(supabase, {
+    ...context,
+    branch,
+    startDate: businessDate,
+    endDate: businessDate,
+    reportType: "cash_up",
+    metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+    limit: CASH_UP_FACTS_QUERY_LIMIT,
+  });
+
+  const toolPayload = {
     ...factsResult,
-    periodLabel: String(latest.period_start || "latest cash-up"),
+    periodLabel: formatCashUpDayLabel(businessDate),
     coverage: [coverageRow],
     vaultSources: collectVaultSources(factsResult.facts as Record<string, unknown>[], [coverageRow]),
+  };
+
+  return {
+    ...toolPayload,
+    cashUpDebug: buildCashUpDebugPayload({
+      intent: VAULT_INTENTS.CASH_UP,
+      selectedTool,
+      context,
+      tool: toolPayload,
+      readiness: null,
+      route: { vaultPeriod: context.vaultPeriod },
+      selectedCoverageRow: coverageRow,
+      factsQueryFilters,
+      facts: factsResult.facts as Record<string, unknown>[],
+    }),
   };
 }
 
@@ -1211,6 +1548,44 @@ function buildVaultCoverageListAnswer(route: Record<string, unknown>, tool: Reco
 
 function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
+  if (tool?.queryStatus === "connection_error") {
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: "missing_data",
+      title: `Cash-up · ${tool?.periodLabel || "query"}`,
+      directAnswer: `I could not query cash-up facts because the vault database returned an error: ${tool.searchError || "connection failed"}.`,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      missingData: [],
+      exportOptions: [],
+      warnings: ["This is a real database/query failure, not a missing cash-up report."],
+    };
+  }
+  if (!facts.length) {
+    const hasReport = Boolean(((tool?.vaultSources as unknown[]) || []).length || ((tool?.coverage as unknown[]) || []).length);
+    const routePeriod = route?.vaultPeriod as { startDate?: string; label?: string } | undefined;
+    const askedForDate = Boolean(routePeriod?.startDate || tool?.startDate);
+    const directAnswer = hasReport
+      ? "Cash-up report exists, but it contains no extracted sales fields for this request."
+      : askedForDate
+        ? `No cash-up report matched ${tool?.periodLabel || routePeriod?.label || "that date"}.`
+        : "No cash-up reports are available in Company Knowledge yet.";
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: "missing_data",
+      title: `Cash-up · ${tool?.periodLabel || "query"}`,
+      directAnswer,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      missingData: [],
+      exportOptions: [],
+      warnings: hasReport
+        ? ["The file is reachable, but structured cash-up fields were not extracted."]
+        : ["No cash_up coverage row was found under the current branch/access scope."],
+    };
+  }
   const fileTitle = String((tool?.vaultSources as Record<string, unknown>[])?.[0]?.title || "") || null;
   const executive = buildSalesPerformanceExecutiveSummary(facts, {
     branchLabel: String(tool.branchLabel || "Network"),

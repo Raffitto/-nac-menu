@@ -618,7 +618,7 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
   if (!tool) {
     return buildBlockedResponse(route, {
       status: READINESS.BLOCKED,
-      reasons: ["Query tool returned no data — check Supabase connection."],
+      reasons: ["Query tool returned no data for this route. The document or report may exist, but no matching structured result was produced."],
     });
   }
 

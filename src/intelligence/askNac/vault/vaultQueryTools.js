@@ -13,6 +13,8 @@ import { summarizeVaultDocuments } from "./vaultDocumentSummary";
 import {
   buildSalesPerformanceFactsAsSyntheticMatches,
   isSalesPerformanceKnowledgeQuery,
+  CASH_UP_STRUCTURED_METRIC_KEYS,
+  CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence";
 import {
   extractOperationalReviewTheme,
@@ -32,7 +34,10 @@ const CHUNK_SELECT =
   "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
 function resolveBranch(context) {
-  return resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
+  const branch = resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
+  const raw = String(branch || "").trim().toLowerCase();
+  if (!raw || raw === "all" || raw === "brand" || raw === "network") return null;
+  return branch;
 }
 
 function periodOverlapFilter(query, startDate, endDate) {
@@ -110,7 +115,17 @@ export function collectVaultSources(facts = [], coverage = []) {
 
 export async function getVaultFacts(
   supabase,
-  { branch, startDate, endDate, reportType, metricKeys, profile, branchMention, filters } = {},
+  {
+    branch,
+    startDate,
+    endDate,
+    reportType,
+    metricKeys,
+    profile,
+    branchMention,
+    filters,
+    limit,
+  } = {},
 ) {
   const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
   let query = supabase.from("ask_nac_structured_facts").select(FACT_SELECT);
@@ -119,6 +134,7 @@ export async function getVaultFacts(
   if (reportType) query = query.eq("report_type", reportType);
   if (metricKeys?.length) query = query.in("metric_key", metricKeys);
   query = query.neq("metric_key", "raw_extract").order("metric_key");
+  if (typeof limit === "number" && limit > 0) query = query.limit(limit);
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
@@ -290,18 +306,49 @@ function buildVaultWarnings(coverage = [], facts = []) {
   return warnings;
 }
 
-export async function getLatestVaultCashUpFacts(supabase, context = {}) {
-  const scopedBranch = resolveBranch(context);
+function formatCashUpDayLabel(isoDate) {
+  const parts = String(isoDate || "").split("-").map(Number);
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return isoDate || "latest cash-up";
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export async function resolveLatestCashUpBusinessDate(supabase, { branch, fileId } = {}) {
   let query = supabase
-    .from("ask_nac_data_coverage")
-    .select(COVERAGE_SELECT)
+    .from("ask_nac_structured_facts")
+    .select("period_end")
     .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .neq("metric_key", "raw_extract")
     .order("period_end", { ascending: false })
     .limit(1);
 
-  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  if (branch) query = query.eq("branch_id", branch);
+  if (fileId) query = query.eq("file_id", fileId);
 
   const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const row = (data || [])[0];
+  return row?.period_end ? String(row.period_end) : null;
+}
+
+export async function getLatestVaultCashUpFacts(supabase, context = {}) {
+  const scopedBranch = resolveBranch(context);
+  let coverageQuery = supabase
+    .from("ask_nac_data_coverage")
+    .select(COVERAGE_SELECT)
+    .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .order("period_end", { ascending: false });
+
+  if (scopedBranch) coverageQuery = coverageQuery.eq("branch_id", scopedBranch);
+
+  const { data, error } = await coverageQuery.limit(1);
   if (error) throw new Error(error.message);
 
   const latest = (data || [])[0];
@@ -316,19 +363,38 @@ export async function getLatestVaultCashUpFacts(supabase, context = {}) {
     };
   }
 
+  const branch = String(latest.branch_id || scopedBranch || "") || null;
+  const fileId = latest.source_file_id ? String(latest.source_file_id) : null;
+  const businessDate = await resolveLatestCashUpBusinessDate(supabase, { branch, fileId });
+  const coverageRow = mapVaultCoverageRow(latest);
+
+  if (!businessDate) {
+    return {
+      branch,
+      branchLabel: branch ? branchDisplayName(branch) : "Network",
+      facts: [],
+      coverage: [coverageRow],
+      vaultSources: collectVaultSources([], [coverageRow]),
+      periodLabel: "latest cash-up",
+      warnings: ["Cash-up coverage exists, but no business date was found in structured facts."],
+    };
+  }
+
   const factsResult = await getVaultFacts(supabase, {
     ...context,
-    branch: latest.branch_id || scopedBranch,
-    startDate: latest.period_start,
-    endDate: latest.period_end,
+    branch,
+    startDate: businessDate,
+    endDate: businessDate,
     reportType: "cash_up",
+    metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+    limit: CASH_UP_FACTS_QUERY_LIMIT,
   });
 
   return {
     ...factsResult,
-    periodLabel: latest.period_start || "latest cash-up",
-    coverage: [mapVaultCoverageRow(latest)],
-    vaultSources: collectVaultSources(factsResult.facts, [mapVaultCoverageRow(latest)]),
+    periodLabel: formatCashUpDayLabel(businessDate),
+    coverage: [coverageRow],
+    vaultSources: collectVaultSources(factsResult.facts, [coverageRow]),
   };
 }
 
@@ -504,18 +570,33 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       return getVaultReportSources(supabase, context);
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();
-      if (
-        !context.vaultPeriod?.startDate
-        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
-      ) {
-        return getLatestVaultCashUpFacts(supabase, context);
+      try {
+        if (
+          !context.vaultPeriod?.startDate
+          || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+        ) {
+          return await getLatestVaultCashUpFacts(supabase, context);
+        }
+        return await getVaultFacts(supabase, {
+          ...context,
+          startDate: context.vaultPeriod?.startDate,
+          endDate: context.vaultPeriod?.endDate,
+          reportType: "cash_up",
+          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+          limit: CASH_UP_FACTS_QUERY_LIMIT,
+        });
+      } catch (err) {
+        return {
+          branch: resolveBranch(context),
+          branchLabel: resolveBranch(context) ? branchDisplayName(resolveBranch(context)) : "Network",
+          facts: [],
+          coverage: [],
+          vaultSources: [],
+          periodLabel: context.vaultPeriod?.label || "cash-up",
+          queryStatus: "connection_error",
+          searchError: err?.message || "Cash-up facts query failed.",
+        };
       }
-      return getVaultFacts(supabase, {
-        ...context,
-        startDate: context.vaultPeriod?.startDate,
-        endDate: context.vaultPeriod?.endDate,
-        reportType: "cash_up",
-      });
     }
     case "vault_operational_review":
       return searchOperationalReviewDocuments(supabase, context);

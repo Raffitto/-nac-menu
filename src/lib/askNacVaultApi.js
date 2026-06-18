@@ -525,6 +525,28 @@ export async function registerDriveSyncFolder(supabase, session, {
   return { ok: true, folder: data.folder };
 }
 
+export async function browseDriveFolder(session, {
+  folderId = "root",
+  recursive = false,
+} = {}) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive browser unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "browse", folderId, recursive }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive browse failed" };
+  return { ok: true, ...data };
+}
+
 export async function triggerDriveSync(session, { folderRowId, triggerType = "manual" }) {
   const base = vaultFunctionsBaseUrl();
   if (!base || !session?.access_token) {

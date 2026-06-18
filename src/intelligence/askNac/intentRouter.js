@@ -64,6 +64,10 @@ const FOODICS_SALES_SIGNAL =
   /\b(sales|revenue|sold|net sales|gross sales|pos sales|foodics|waiter sales|product sales|top items?|best sellers?|category|categories)\b/;
 const DOCUMENT_INTENT_SIGNAL =
   /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|data vault|vault|company knowledge)\b/;
+const CASH_UP_INTENT_SIGNAL =
+  /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/;
+const CASH_UP_DAY_SALES_SIGNAL =
+  /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
 
 const BRANCH_ALIASES = Object.freeze({
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -156,23 +160,19 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
     score(q) {
-      if (/\bsearch company knowledge for cash[\s-]?up\b/.test(q)) return 0;
-      if (DOCUMENT_INTENT_SIGNAL.test(q) && !/\bcash[\s-]?up\b/.test(q)) return 0;
-      if (scoreSalesPerformanceQueryFocus(q)) return 22;
-      if (/\b(latest cash up|summarize.*cash up|cash up summary|what should management know from the cash up)\b/.test(q)) {
-        return 21;
-      }
+      if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
-        return 21;
+        return 35;
       }
       if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
       const period = parseVaultPeriodFromQuestion(q);
-      if (/\bcash[\s-]?up\b/.test(q) && period) return 19;
-      if (period?.isSingleDay && /\b(what were sales|how much sales|sales on|net sales|total sales|revenue on)\b/.test(q)) {
+      if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
+      if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 16;
       }
       if (!period?.isSingleDay && !period?.isMonth) return 0;
-      if (/\b(cash[\s-]?up|cash up summary)\b/.test(q)) return 18;
       return 0;
     },
   },
@@ -199,6 +199,8 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.DELIVERY_SALES,
     score(q) {
+      if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\bdelivery sales\b/.test(q)) return 0;
       if (/\b(delivery|hungerstation|jahez|talabat|keeta|aggregator)\b/.test(q)) return 12;
       if (/\b(platform sales|delivery sales|delivery revenue)\b/.test(q)) return 13;
       return 0;
@@ -275,6 +277,8 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.SALES_TOTAL,
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
+      if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) {
@@ -291,6 +295,7 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.FOODICS_QUERY,
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
+      if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bfoodics\b/.test(q)) return 8;
       if (/\b(pos sales|import batch|waiter sales|product sales)\b/.test(q)) return 7;
       return 0;

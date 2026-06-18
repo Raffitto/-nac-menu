@@ -30,6 +30,7 @@ import {
   startFolderBulkImport,
   fetchCoverageDashboardData,
   fetchDriveSyncStatus,
+  browseDriveFolder,
   startDriveOAuth,
   completeDriveOAuth,
   registerDriveSyncFolder,
@@ -163,6 +164,8 @@ export default function AskNacDataVaultPanel({ session }) {
   const [driveFolderName, setDriveFolderName] = useState("");
   const [driveAutoIngest, setDriveAutoIngest] = useState(false);
   const [driveActionKey, setDriveActionKey] = useState(null);
+  const [driveBrowserFolderId, setDriveBrowserFolderId] = useState("root");
+  const [driveBrowserResult, setDriveBrowserResult] = useState(null);
   const [driveIngestRun, setDriveIngestRun] = useState(null);
   const [driveIngestRunIds, setDriveIngestRunIds] = useState([]);
   const [driveRunFiles, setDriveRunFiles] = useState([]);
@@ -908,18 +911,61 @@ export default function AskNacDataVaultPanel({ session }) {
     window.location.href = result.authorizeUrl;
   };
 
+  const onBrowseDriveFolder = async ({ recursive = false, folderId = null } = {}) => {
+    if (!driveConnected) {
+      setError("Connect Google Drive before browsing folders.");
+      return;
+    }
+    const targetFolderId = String(folderId || driveBrowserFolderId).trim() || "root";
+    const key = recursive ? "browse:recursive" : "browse";
+    setDriveActionKey(key);
+    setError("");
+    const result = await browseDriveFolder(session, {
+      folderId: targetFolderId,
+      recursive,
+    });
+    setDriveActionKey(null);
+    if (!result.ok) {
+      setError(result.error || "Drive browse failed.");
+      return;
+    }
+    setDriveBrowserResult(result);
+    setNotice(
+      recursive
+        ? `Drive scan found ${(result.files || []).length} file(s) across ${result.foldersScanned || 0} folder(s).`
+        : `Drive folder loaded: ${(result.folders || []).length} folder(s), ${(result.files || []).length} file(s).`,
+    );
+  };
+
+  const onUseDriveFolder = (folder) => {
+    if (!folder?.id) return;
+    setDriveFolderId(folder.id);
+    setDriveFolderName(folder.name || folder.id);
+    if (folder.likelyReportType && folder.likelyReportType !== "other") {
+      onFieldChange("reportType", folder.likelyReportType);
+    }
+  };
+
   const onRegisterDriveFolder = async () => {
     if (!driveFolderId.trim()) {
       setError("Enter a Google Drive folder ID.");
       return;
     }
+    if (driveAutoIngest && form.branch === "brand") {
+      setError("Select a branch before enabling Drive auto-ingest for a folder.");
+      return;
+    }
+    const folderLabel = `${driveFolderName} ${driveBrowserResult?.folder?.name || ""}`.toLowerCase();
+    const reportType = /\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(folderLabel)
+      ? "cash_up"
+      : form.reportType;
     const result = await registerDriveSyncFolder(supabase, session, {
       folderId: driveFolderId.trim(),
       folderName: driveFolderName.trim() || driveFolderId.trim(),
       defaultBranchId: form.branch === "brand" ? null : form.branch,
       branchId: form.branch === "brand" ? null : form.branch,
       department: form.department,
-      reportType: form.reportType,
+      reportType,
       sensitivity: form.sensitivity,
       autoIngest: driveAutoIngest,
       schedule: "daily",
@@ -1693,9 +1739,75 @@ export default function AskNacDataVaultPanel({ session }) {
               <div className="nac-ask-vault__drive">
                 <h5>Google Drive folder setup</h5>
                 <p className="nac-ask-vault__hint">
-                  Register Google Drive folder IDs with branch and document defaults. Auto-ingest folders can be
-                  downloaded and indexed server-side with Sync & Ingest Drive.
+                  Browse the connected Drive, then register selected operational folders with branch and document
+                  defaults. Auto-ingest folders can be downloaded and indexed server-side with Sync & Ingest Drive.
                 </p>
+                <div className="nac-ask-vault__drive-row">
+                  <input
+                    type="text"
+                    placeholder="Drive folder ID to browse, or root"
+                    value={driveBrowserFolderId}
+                    onChange={(e) => setDriveBrowserFolderId(e.target.value)}
+                    disabled={!driveConnected}
+                  />
+                  <button
+                    type="button"
+                    className="nac-ask-vault__refresh"
+                    onClick={() => onBrowseDriveFolder({ recursive: false })}
+                    disabled={!driveConnected || driveActionKey === "browse"}
+                  >
+                    {driveActionKey === "browse" ? "Browsing…" : "Browse folder"}
+                  </button>
+                  <button
+                    type="button"
+                    className="nac-ask-vault__refresh"
+                    onClick={() => onBrowseDriveFolder({ recursive: true })}
+                    disabled={!driveConnected || driveActionKey === "browse:recursive"}
+                  >
+                    {driveActionKey === "browse:recursive" ? "Scanning…" : "Scan recursively"}
+                  </button>
+                </div>
+                {driveBrowserResult ? (
+                  <div className="nac-vault-source-card__hint">
+                    <strong>{driveBrowserResult.folder?.name || "Drive folder"}</strong>:{" "}
+                    {driveBrowserResult.recursive
+                      ? `${(driveBrowserResult.files || []).length} file(s), ${driveBrowserResult.foldersScanned || 0} folder(s) scanned.`
+                      : `${(driveBrowserResult.folders || []).length} folder(s), ${(driveBrowserResult.files || []).length} file(s) visible.`}
+                  </div>
+                ) : null}
+                {driveBrowserResult?.folders?.length ? (
+                  <ul className="nac-ask-vault__drive-folders">
+                    {driveBrowserResult.folders.slice(0, 12).map((folder) => (
+                      <li key={folder.id}>
+                        <span>{folder.name}</span>
+                        <span>{folder.likelyReportType !== "other" ? folder.likelyReportType : "folder"}</span>
+                        <button
+                          type="button"
+                          className="nac-ask-vault__refresh"
+                          onClick={() => {
+                            setDriveBrowserFolderId(folder.id);
+                            onBrowseDriveFolder({ recursive: false, folderId: folder.id });
+                          }}
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          className="nac-ask-vault__refresh"
+                          onClick={() => onUseDriveFolder(folder)}
+                        >
+                          Use for sync
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {driveBrowserResult?.files?.length ? (
+                  <p className="nac-ask-vault__hint">
+                    Visible files: {driveBrowserResult.files.slice(0, 8).map((file) => file.name).join(", ")}
+                    {driveBrowserResult.files.length > 8 ? "…" : ""}
+                  </p>
+                ) : null}
                 <div className="nac-ask-vault__drive-row">
                   <input
                     type="text"

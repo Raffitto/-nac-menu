@@ -7,6 +7,8 @@ const SEARCH_PREFIX =
 
 const DOCUMENT_SCOPE =
   /\b(logbooks?|daily logbooks?|uploaded reports?|uploaded documents?|documents?|files?|vault|company knowledge)\b/i;
+const CASH_UP_INTENT_SIGNAL =
+  /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/i;
 
 export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
   const text = String(q || "").trim().toLowerCase();
@@ -15,6 +17,7 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
   if (documentContext?.fileIds?.length && isDocumentSummaryFollowUp(text)) return true;
 
   if (SEARCH_PREFIX.test(text)) return false;
+  if (CASH_UP_INTENT_SIGNAL.test(text)) return false;
 
   if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
@@ -44,6 +47,7 @@ export function isDocumentSummaryFollowUp(q = "") {
 
 export function scoreVaultDocumentSummaryIntent(q = "", documentContext = null) {
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
+  if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
   if (documentContext?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;
   if (/\bsummarize\b/.test(q) && DOCUMENT_SCOPE.test(q)) return 34;
   if (/\bwhat should management know\b/.test(q)) return 33;

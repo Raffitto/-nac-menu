@@ -106,9 +106,18 @@ function extensionFromName(name: string) {
 function normalizeFolderMetadata(folder: DriveFolder) {
   const branchId = folder.branch_id || folder.default_branch_id || null;
   const department = folder.department || folder.default_department || "operations";
-  const reportType = folder.report_type || "other";
+  const folderLabel = `${folder.folder_name || ""} ${folder.label || ""}`;
+  const reportType = /\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(folderLabel)
+    ? "cash_up"
+    : folder.report_type || "other";
   const sensitivity = folder.sensitivity || "internal";
   return { branchId, department, reportType, sensitivity };
+}
+
+function resolveDriveFileReportType(folder: DriveFolder, driveFile: DriveFileWithPath, fallback: string) {
+  const text = `${folder.folder_name || ""} ${folder.label || ""} ${driveFile.folderPath || ""} ${driveFile.relativePath || ""} ${driveFile.name || ""}`;
+  if (/\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(text)) return "cash_up";
+  return fallback || "other";
 }
 
 function folderRootLabel(folder: DriveFolder) {
@@ -444,6 +453,129 @@ function textLinesToMatrix(lines: string[]) {
   return matrix;
 }
 
+const CASH_UP_FACT_LABELS: Record<string, RegExp[]> = {
+  business_date: [/\b(business date|date|trading date)\b/i],
+  total_sales: [/\b(total sales|gross sales|gross revenue|sales total)\b/i],
+  net_sales: [/\b(net sales|net total|net revenue)\b/i],
+  cash_sales: [/\b(cash sales|cash total|cash payment|cash tender|cash collected)\b/i],
+  card_sales: [/\b(card sales|card total|mada|visa|mastercard|credit card|debit card)\b/i],
+  delivery_sales: [/\b(delivery sales|delivery total|aggregator sales|hungerstation|jahez|keeta|talabat)\b/i],
+  discounts: [/\b(discounts?|discount total|total discounts?)\b/i],
+  voids: [/\b(voids?|void total|total voids?)\b/i],
+  refunds: [/\b(refunds?|refund total|total refunds?)\b/i],
+  guest_count: [/\b(guests?|guest count|covers|pax)\b/i],
+  order_count: [/\b(orders?|order count|tickets?)\b/i],
+  cash_variance: [/\b(cash variance|over\/short|over short|variance|difference)\b/i],
+};
+
+function parseNumberValue(raw: unknown) {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  const cleaned = String(raw ?? "")
+    .replace(/[,]/g, "")
+    .replace(/\b(SAR|SR|riyals?|ر\.س)\b/gi, "")
+    .replace(/[^\d.-]/g, "")
+    .trim();
+  if (!cleaned) return null;
+  const value = Number(cleaned);
+  return Number.isFinite(value) ? value : null;
+}
+
+function normalizeIsoDate(year: number, month: number, day: number) {
+  if (!year || !month || !day) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+function parseBusinessDate(text = "") {
+  const value = String(text || "");
+  const iso = value.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
+  if (iso) return normalizeIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const dmy = value.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
+  if (dmy) return normalizeIsoDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
+  const months: Record<string, number> = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+    may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9,
+    september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+  };
+  const named = value.match(/\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(20\d{2}))?\b/i);
+  if (named) {
+    const year = Number(named[3] || new Date().getUTCFullYear());
+    return normalizeIsoDate(year, months[named[2].toLowerCase()], Number(named[1]));
+  }
+  return null;
+}
+
+function rowContainsLabel(row: string[], patterns: RegExp[]) {
+  return row.some((cell) => patterns.some((pattern) => pattern.test(String(cell || ""))));
+}
+
+function numberFromRow(row: string[], labelIndex: number) {
+  const ordered = [
+    ...row.slice(labelIndex + 1),
+    ...row.slice(0, labelIndex),
+  ];
+  for (const cell of ordered) {
+    const value = parseNumberValue(cell);
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function extractCashUpStructuredFacts(matrix: string[][], fileRow: Record<string, any>, versionRowId: string | null, email: string) {
+  const rows: Record<string, any>[] = [];
+  const joinedText = matrix.map((row) => row.join(" | ")).join("\n");
+  const businessDate = parseBusinessDate(joinedText) || parseBusinessDate(fileRow.title || fileRow.original_filename || "");
+  const periodStart = businessDate || fileRow.period_start || null;
+  const periodEnd = businessDate || fileRow.period_end || null;
+  const seen = new Set<string>();
+
+  const addFact = (metricKey: string, metricValue: number | null, dimensions: Record<string, unknown> = {}, rowIndex: number | null = null) => {
+    const signature = `${metricKey}:${JSON.stringify(dimensions)}`;
+    if (seen.has(signature)) return;
+    seen.add(signature);
+    rows.push({
+      file_id: fileRow.id,
+      file_version_id: versionRowId,
+      branch_id: fileRow.primary_branch_id,
+      brand_wide: fileRow.brand_wide,
+      department: fileRow.department,
+      report_type: fileRow.report_type,
+      sensitivity_level: fileRow.sensitivity_level,
+      metric_key: metricKey,
+      metric_value: metricValue,
+      dimensions,
+      period_start: periodStart,
+      period_end: periodEnd,
+      grain: "daily",
+      source_row_ref: rowIndex != null ? `drive-row-${rowIndex + 1}` : "drive-cash-up-parser",
+      confidence: 0.72,
+      created_by: email,
+    });
+  };
+
+  if (businessDate) addFact("business_date", null, { text_value: businessDate });
+
+  matrix.forEach((row, rowIndex) => {
+    for (const [metricKey, patterns] of Object.entries(CASH_UP_FACT_LABELS)) {
+      const labelIndex = row.findIndex((cell) => patterns.some((pattern) => pattern.test(String(cell || ""))));
+      if (labelIndex < 0 || metricKey === "business_date") continue;
+      const value = numberFromRow(row, labelIndex);
+      if (value == null) continue;
+      addFact(metricKey, value, {}, rowIndex);
+      if (metricKey === "cash_sales") addFact("payment_method", value, { method: "cash" }, rowIndex);
+      if (metricKey === "card_sales") addFact("payment_method", value, { method: "card" }, rowIndex);
+      if (metricKey === "delivery_sales" && rowContainsLabel(row, CASH_UP_FACT_LABELS.delivery_sales)) {
+        const label = String(row[labelIndex] || "").toLowerCase();
+        const platform = label.match(/\b(hungerstation|jahez|keeta|talabat)\b/)?.[1] || "delivery";
+        addFact("delivery_sales", value, { platform }, rowIndex);
+      }
+    }
+  });
+
+  return rows;
+}
+
 async function extractText(download: { buffer: ArrayBuffer; extension: string; filename: string }) {
   const extension = download.extension.toLowerCase();
   if (extension === "txt" || extension === "csv") {
@@ -653,6 +785,29 @@ async function insertRawFacts(
 
   await admin.from("ask_nac_structured_facts").delete().eq("file_id", fileRow.id);
   const matrix = textLinesToMatrix(String(text || "").split(/\r?\n/));
+  const cashUpFacts = fileRow.report_type === "cash_up"
+    ? extractCashUpStructuredFacts(matrix, fileRow, versionRowId, email)
+    : [];
+  if (cashUpFacts.length) {
+    const { error } = await admin.from("ask_nac_structured_facts").insert(cashUpFacts);
+    if (error) throw new Error(error.message);
+    const periodStart = cashUpFacts.find((fact) => fact.period_start)?.period_start || null;
+    const periodEnd = cashUpFacts.find((fact) => fact.period_end)?.period_end || periodStart;
+    if (periodStart && periodEnd) {
+      await admin.from("ask_nac_files").update({
+        period_start: periodStart,
+        period_end: periodEnd,
+        updated_at: nowIso(),
+      }).eq("id", fileRow.id);
+      await admin.from("ask_nac_data_coverage").update({
+        period_start: periodStart,
+        period_end: periodEnd,
+        updated_at: nowIso(),
+      }).eq("source_file_id", fileRow.id);
+    }
+    return cashUpFacts.length;
+  }
+
   const rows = matrix.slice(0, 250).map((line, index) => ({
     file_id: fileRow.id,
     file_version_id: versionRowId,
@@ -804,6 +959,7 @@ async function registerDownloadedDriveFile(
   if (!meta.branchId) {
     throw new Error("Drive folder is missing branch mapping; set branch_id before ingestion.");
   }
+  const reportType = resolveDriveFileReportType(folder, driveFile, meta.reportType);
 
   const fileId = existing?.id || crypto.randomUUID();
   const storagePath = `drive/${meta.branchId}/${meta.department}/${fileId}/${safeName(download.filename)}`;
@@ -825,7 +981,7 @@ async function registerDownloadedDriveFile(
     primary_branch_id: meta.branchId,
     brand_wide: false,
     department: meta.department,
-    report_type: meta.reportType,
+    report_type: reportType,
     data_layer: "operational",
     sensitivity_level: meta.sensitivity,
     status: "active",
@@ -853,7 +1009,7 @@ async function registerDownloadedDriveFile(
       branch_id: meta.branchId,
       brand_wide: false,
       department: meta.department,
-      report_type: meta.reportType,
+      report_type: reportType,
       source_file_id: fileId,
       fact_count: 0,
       readiness_status: "registered",

@@ -17,6 +17,9 @@ export const SALES_PERFORMANCE_METRICS = Object.freeze([
   ["order_count", "Order count", ""],
   ["avg_per_guest", "Average spend per guest", "SAR"],
   ["target_sales", "Sales target / budget", "SAR"],
+  ["cash_sales", "Cash sales", "SAR"],
+  ["card_sales", "Card sales", "SAR"],
+  ["delivery_sales", "Delivery sales", "SAR"],
   ["discounts", "Discounts", "SAR"],
   ["voids", "Voids", "SAR"],
   ["tips", "Tips", "SAR"],
@@ -34,6 +37,16 @@ export const RECONCILIATION_METRICS = Object.freeze([
   ["cash_overage", "Cash overage", "SAR"],
   ["petty_cash_variance", "Petty cash variance", "SAR"],
 ]);
+
+/** Metric keys allowed when querying cash-up structured facts (avoids full-workbook scans). */
+export const CASH_UP_STRUCTURED_METRIC_KEYS = Object.freeze([
+  "gross_sales",
+  "business_date",
+  ...SALES_PERFORMANCE_METRICS.map(([key]) => key),
+  ...RECONCILIATION_METRICS.map(([key]) => key),
+]);
+
+export const CASH_UP_FACTS_QUERY_LIMIT = 64;
 
 function formatNumber(value) {
   if (value == null || value === "") return null;
@@ -65,6 +78,7 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
   return (
     /\b(summarize|summary|latest|what should management know)\b.*\b(cash[\s-]?up|sales|performance|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)
     || /\bwhat should management know from\b.*\b(performance|sales)\b/.test(q)
+    || /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation)\b/.test(q)
     || /\bsearch company knowledge for cash[\s-]?up\b/.test(q)
     || scoreSalesPerformanceQueryFocus(q) != null
   );

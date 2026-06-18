@@ -13,6 +13,8 @@ import {
   createDriveIngestionRun,
   fetchDriveRunStatus,
   processDriveIngestionRun,
+  verifyDriveFolderAccess,
+  walkDriveFolderTree,
 } from "../_shared/vaultDriveIngestion.ts";
 
 const corsHeaders = {
@@ -28,11 +30,44 @@ const DRIVE_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
 
+const OPERATIONAL_FOLDER_REPORT_TYPES: Array<[RegExp, string]> = [
+  [/\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i, "cash_up"],
+  [/\blog ?book|daily reception|daily briefing\b/i, "daily_logbook"],
+  [/\bguest feedback|google review|reviews?\b/i, "google_review_stars"],
+  [/\bccm|foodics|reconciliation\b/i, "ccm_reconciliation"],
+  [/\bdiscount|comp|voids?\b/i, "discount_comp"],
+  [/\bbreakage\b/i, "breakage"],
+];
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function inferOperationalReportType(name = "", fallback = "other") {
+  const text = String(name || "");
+  const hit = OPERATIONAL_FOLDER_REPORT_TYPES.find(([pattern]) => pattern.test(text));
+  return hit?.[1] || fallback || "other";
+}
+
+function resolveRegisteredReportType(folderName = "", requestedReportType = "other") {
+  const inferred = inferOperationalReportType(folderName, "other");
+  if (inferred === "cash_up") return "cash_up";
+  return requestedReportType || inferred || "other";
+}
+
+function summarizeDriveItem(file: any) {
+  return {
+    id: file.id,
+    name: file.name,
+    mimeType: file.mimeType,
+    modifiedTime: file.modifiedTime || null,
+    size: file.size || null,
+    isFolder: file.mimeType === "application/vnd.google-apps.folder",
+    likelyReportType: inferOperationalReportType(file.name, "other"),
+  };
 }
 
 /** Exchange OAuth code — tokens stay server-side only. */
@@ -218,17 +253,103 @@ Deno.serve(async (req) => {
       return json(200, { connected: Boolean(data), connection: safeConnection, folders: folders || [] });
     }
 
-    if (action === "register_folder") {
+    if (action === "browse") {
       const { data: connection } = await admin
         .from("ask_nac_drive_connections")
-        .select("id")
+        .select("id,refresh_token,token_expires_at")
         .eq("user_email", userEmail)
         .maybeSingle();
 
-      if (!connection?.id) return json(400, { error: "Connect Google Drive first." });
+      if (!connection?.refresh_token) {
+        return json(400, { error: "Drive connection not found or revoked." });
+      }
+
+      const folderId = String(body?.folderId || "root").trim();
+      const recursive = Boolean(body?.recursive);
+      const tokens = await refreshAccessToken(connection.refresh_token);
+      const accessToken = tokens.access_token;
+      await admin
+        .from("ask_nac_drive_connections")
+        .update({
+          access_token: accessToken,
+          token_expires_at: tokens.expires_in
+            ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+            : connection.token_expires_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", connection.id);
+
+      const folderInfo = folderId === "root"
+        ? { id: "root", name: "My Drive", mimeType: "application/vnd.google-apps.folder" }
+        : await verifyDriveFolderAccess(accessToken, folderId);
+
+      if (recursive) {
+        const traversal = await walkDriveFolderTree(accessToken, {
+          rootFolderId: folderId,
+          rootLabel: folderInfo.name || folderId,
+          maxDepth: 6,
+          maxItems: 500,
+        });
+        return json(200, {
+          ok: true,
+          folder: summarizeDriveItem(folderInfo),
+          recursive: true,
+          foldersScanned: traversal.foldersScanned,
+          maxDepth: traversal.maxDepth,
+          truncated: traversal.truncated,
+          files: traversal.files.map(summarizeDriveItem),
+        });
+      }
+
+      let pageToken: string | undefined;
+      const items = [];
+      do {
+        const listing = await listDriveFiles(accessToken, folderId, pageToken);
+        items.push(...(listing.files || []).map(summarizeDriveItem));
+        pageToken = listing.nextPageToken;
+      } while (pageToken);
+
+      return json(200, {
+        ok: true,
+        folder: summarizeDriveItem(folderInfo),
+        recursive: false,
+        folders: items.filter((item) => item.isFolder),
+        files: items.filter((item) => !item.isFolder),
+      });
+    }
+
+    if (action === "register_folder") {
+      const { data: connection } = await admin
+        .from("ask_nac_drive_connections")
+        .select("id,refresh_token,token_expires_at")
+        .eq("user_email", userEmail)
+        .maybeSingle();
+
+      if (!connection?.id || !connection.refresh_token) return json(400, { error: "Connect Google Drive first." });
 
       const folderId = String(body?.folderId || "").trim();
       if (!folderId) return json(400, { error: "folderId required" });
+      if (Boolean(body?.autoIngest) && !(body?.branchId || body?.defaultBranchId)) {
+        return json(400, { error: "Select a branch before enabling Drive auto-ingest." });
+      }
+
+      const tokens = await refreshAccessToken(connection.refresh_token);
+      const accessToken = tokens.access_token;
+      await admin
+        .from("ask_nac_drive_connections")
+        .update({
+          access_token: accessToken,
+          token_expires_at: tokens.expires_in
+            ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+            : connection.token_expires_at,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", connection.id);
+
+      const verifiedFolder = await verifyDriveFolderAccess(accessToken, folderId);
+      const folderName = body?.folderName || verifiedFolder.name || folderId;
+      const requestedReportType = body?.reportType || "other";
+      const reportType = resolveRegisteredReportType(folderName, requestedReportType);
 
       const { data, error } = await supabase
         .from("ask_nac_drive_sync_folders")
@@ -236,13 +357,13 @@ Deno.serve(async (req) => {
           {
             connection_id: connection.id,
             drive_folder_id: folderId,
-            folder_name: body?.folderName || folderId,
-            label: body?.label || body?.folderName || folderId,
+            folder_name: folderName,
+            label: body?.label || folderName,
             default_branch_id: body?.defaultBranchId || body?.branchId || null,
             default_department: body?.defaultDepartment || body?.department || "operations",
             branch_id: body?.branchId || body?.defaultBranchId || null,
             department: body?.department || body?.defaultDepartment || "operations",
-            report_type: body?.reportType || "other",
+            report_type: reportType,
             sensitivity: body?.sensitivity || "internal",
             auto_ingest: Boolean(body?.autoIngest),
             schedule: body?.schedule === "daily" ? "daily" : "manual",
@@ -521,7 +642,6 @@ Deno.serve(async (req) => {
         .select("id")
         .single();
 
-      let pageToken: string | undefined;
       let discovered = 0;
       let skipped = 0;
       let changed = 0;
@@ -529,21 +649,24 @@ Deno.serve(async (req) => {
         id: string;
         name: string;
         mimeType: string;
-        modifiedTime: string;
+        modifiedTime?: string;
         size?: string;
         md5Checksum?: string;
+        version?: string;
+        relativePath?: string;
+        folderPath?: string;
       }> = [];
 
-      // Metadata-only listing — no downloads, no storage uploads, no vault ingestion.
-      do {
-        const listing = await listDriveFiles(accessToken, folder.drive_folder_id, pageToken);
-        for (const file of listing.files || []) {
-          if (file.mimeType === "application/vnd.google-apps.folder") continue;
-          discovered += 1;
-          fileManifest.push(file);
-        }
-        pageToken = listing.nextPageToken;
-      } while (pageToken);
+      // Metadata-only recursive discovery — no downloads, no storage uploads, no vault ingestion.
+      const rootFolder = await verifyDriveFolderAccess(accessToken, folder.drive_folder_id);
+      const traversal = await walkDriveFolderTree(accessToken, {
+        rootFolderId: folder.drive_folder_id,
+        rootLabel: rootFolder.name || folder.folder_name || folder.drive_folder_id,
+      });
+      for (const file of traversal.files || []) {
+        discovered += 1;
+        fileManifest.push(file);
+      }
 
       for (const driveFile of fileManifest) {
         const { data: existing } = await admin
@@ -571,6 +694,7 @@ Deno.serve(async (req) => {
         .from("ask_nac_drive_sync_runs")
         .update({
           status: "completed",
+          runtime_stage: "metadata_completed",
           files_discovered: discovered,
           files_new: changed,
           files_changed: changed,
@@ -579,6 +703,12 @@ Deno.serve(async (req) => {
           stats: {
             manifestCount: fileManifest.length,
             metadataOnly: true,
+            recursive: true,
+            foldersScanned: traversal.foldersScanned,
+            maxDepth: traversal.maxDepth,
+            duplicateFileIdsSkipped: traversal.duplicateCount,
+            truncated: traversal.truncated,
+            rootFolderName: rootFolder.name || null,
             note: METADATA_ONLY_NOTE,
           },
         })
@@ -599,6 +729,10 @@ Deno.serve(async (req) => {
         changed,
         skipped,
         metadataOnly: true,
+        recursive: true,
+        foldersScanned: traversal.foldersScanned,
+        maxDepth: traversal.maxDepth,
+        truncated: traversal.truncated,
         manifest: fileManifest.slice(0, 200),
         note: METADATA_ONLY_NOTE,
       });

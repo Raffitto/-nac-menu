@@ -72,6 +72,18 @@ export function getTechnicalTrustDetails(response) {
     rows.push({ label: "Confidence", value: `${response.confidence} confidence` });
   }
 
+  if (response.intent) {
+    rows.push({ label: "Intent", value: response.intent });
+  }
+
+  if (response.cashUpDebug?.selectedTool) {
+    rows.push({ label: "Cash-up tool", value: response.cashUpDebug.selectedTool });
+  }
+
+  if (response.cashUpDebug?.failureReason) {
+    rows.push({ label: "Cash-up failure", value: response.cashUpDebug.failureReason });
+  }
+
   return rows;
 }
 

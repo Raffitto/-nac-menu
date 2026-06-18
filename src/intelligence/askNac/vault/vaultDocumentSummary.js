@@ -11,7 +11,10 @@ const CHUNK_SELECT =
   "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
 
 function resolveBranch(context) {
-  return resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
+  const branch = resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
+  const raw = String(branch || "").trim().toLowerCase();
+  if (!raw || raw === "all" || raw === "brand" || raw === "network") return null;
+  return branch;
 }
 
 function buildChunkExcerpt(chunkText, searchTerms, maxLen = 240) {

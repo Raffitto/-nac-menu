@@ -615,7 +615,12 @@ export function buildDeterministicAskNacAnswer(route: Route, tool: Tool | null, 
   if (isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent)) {
     return buildVaultAnswer(route, tool, readiness);
   }
-  if (!tool) return buildBlockedResponse(route, { status: "blocked", reasons: ["Query tool returned no data — check Supabase connection."] });
+  if (!tool) {
+    return buildBlockedResponse(route, {
+      status: "blocked",
+      reasons: ["Query tool returned no data for this route. The document or report may exist, but no matching structured result was produced."],
+    });
+  }
   if (tool.missingBatch || tool.missingPeriod) return buildFoodicsMissingToolResponse(route, tool, readiness);
 
   switch (route.intent) {

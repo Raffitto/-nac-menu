@@ -46,6 +46,49 @@ function MiniMetricsTable({ metrics }) {
   );
 }
 
+function CashUpDebugPanel({ debug }) {
+  if (!debug) return null;
+
+  const coverage = debug.selectedCoverageRow;
+  const coverageSummary = coverage
+    ? `${coverage.fileTitle || "—"} · ${coverage.reportType || "—"} · ${coverage.periodStart || "—"} – ${coverage.periodEnd || "—"} · facts=${coverage.factCount ?? "—"}`
+    : "—";
+
+  return (
+    <div className="nac-ask-nac-cashup-debug" role="region" aria-label="Cash-up debug trace">
+      <h4>Cash-up debug (temporary)</h4>
+      <dl className="nac-ask-nac-details__meta">
+        <dt>Intent</dt>
+        <dd>{debug.intent || "—"}</dd>
+        <dt>Selected tool</dt>
+        <dd>{debug.selectedTool || "—"}</dd>
+        <dt>Normalized branch</dt>
+        <dd>{debug.normalizedBranch ?? "null (network)"}</dd>
+        <dt>Selected coverage row</dt>
+        <dd>{coverageSummary}</dd>
+        <dt>Facts query filters</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(debug.factsQueryFilters || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Facts row count</dt>
+        <dd>{debug.factsRowCount ?? 0}</dd>
+        <dt>Failure reason</dt>
+        <dd className="nac-ask-nac-cashup-debug__failure">{debug.failureReason || "—"}</dd>
+      </dl>
+      {debug.firstFacts?.length ? (
+        <div className="nac-ask-nac-cashup-debug__facts">
+          <h5>First facts</h5>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(debug.firstFacts, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AskNacAnswerDetails({ response, isMissing, isError }) {
   const technical = getTechnicalTrustDetails(response);
 
@@ -148,6 +191,8 @@ function AskNacAnswerDetails({ response, isMissing, isError }) {
         </div>
       ) : null}
 
+      <CashUpDebugPanel debug={response.cashUpDebug} />
+
       {response.warnings?.length ? (
         <div className={`nac-ask-nac-warnings nac-ask-nac-warnings--compact ${isMissing || isError ? "nac-ask-nac-warnings--alert" : ""}`}>
           <AlertTriangle size={14} aria-hidden />
@@ -195,6 +240,8 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
       </div>
 
       <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>
+
+      <CashUpDebugPanel debug={response.cashUpDebug} />
 
       {showMiniTable ? (
         <MiniMetricsTable metrics={metrics} />
@@ -287,6 +334,8 @@ export default function AskNacAnswerCard({
       </header>
 
       <p className="nac-ask-nac-response__answer">{response.directAnswer}</p>
+
+      <CashUpDebugPanel debug={response.cashUpDebug} />
 
       <MetricList metrics={response.keyMetrics} />
 

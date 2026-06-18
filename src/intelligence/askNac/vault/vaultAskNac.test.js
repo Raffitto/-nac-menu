@@ -140,6 +140,34 @@ describe("vault intentRouter", () => {
     expect(route.vaultPeriod?.isSingleDay).toBe(true);
   });
 
+  test.each([
+    "show latest cash up",
+    "latest cash-up report",
+    "summarize latest cash up report",
+    "net sales from cash up",
+    "gross sales from cash up",
+    "show cash up for 17 June",
+    "compare cash up vs foodics",
+    "search company knowledge for cash up",
+  ])("routes explicit cash-up prompt to vault cash-up: %s", (question) => {
+    const route = routeAskNacIntent(question);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.FOODICS_QUERY);
+  });
+
+  test.each([
+    "cash sales yesterday",
+    "card sales yesterday",
+    "delivery sales yesterday",
+    "net sales yesterday",
+    "gross sales yesterday",
+  ])("routes day-specific cash-up sales metric to vault facts: %s", (question) => {
+    const route = routeAskNacIntent(question);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.vaultPeriod?.isSingleDay).toBe(true);
+  });
+
   test("prefers vault over Foodics for day-specific sales", () => {
     const route = routeAskNacIntent("What were sales on 5 June?");
     expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);

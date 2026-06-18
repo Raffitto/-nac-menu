@@ -231,6 +231,33 @@ export function buildVaultCoverageListAnswer(route, tool, readiness) {
 
 export function buildVaultCashUpAnswer(route, tool, readiness) {
   const facts = tool?.facts || [];
+  if (tool?.queryStatus === "connection_error") {
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: ANSWER_TYPES.MISSING_DATA,
+      title: `Cash-up · ${tool?.periodLabel || "query"}`,
+      directAnswer: `I could not query cash-up facts because the vault database returned an error: ${tool.searchError || "connection failed"}.`,
+      warnings: ["This is a real database/query failure, not a missing cash-up report."],
+    });
+  }
+  if (!facts.length) {
+    const hasReport = (tool?.vaultSources || []).length || (tool?.coverage || []).length;
+    const askedForDate = Boolean(route?.vaultPeriod?.startDate || tool?.startDate);
+    const directAnswer = hasReport
+      ? "Cash-up report exists, but it contains no extracted sales fields for this request."
+      : askedForDate
+        ? `No cash-up report matched ${tool?.periodLabel || route?.vaultPeriod?.label || "that date"}.`
+        : "No cash-up reports are available in Company Knowledge yet.";
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: ANSWER_TYPES.MISSING_DATA,
+      title: `Cash-up · ${tool?.periodLabel || "query"}`,
+      directAnswer,
+      warnings: hasReport
+        ? ["The file is reachable, but structured cash-up fields were not extracted."]
+        : ["No cash_up coverage row was found under the current branch/access scope."],
+    });
+  }
   const fileTitle = tool?.vaultSources?.[0]?.title || null;
   const executive = buildSalesPerformanceExecutiveSummary(facts, {
     branchLabel: tool.branchLabel,
