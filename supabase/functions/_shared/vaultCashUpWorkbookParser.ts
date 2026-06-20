@@ -61,6 +61,102 @@ function optionalNumericCell(raw: unknown): number | null {
   return parseNumericCell(raw);
 }
 
+type CashUpColumnMap = {
+  visa: number;
+  cash: number;
+  mastercard: number;
+  mada: number;
+  amex: number;
+  ccm: number;
+  jahez: number;
+  chefz: number;
+  keeta: number;
+  hunger: number;
+  breakfast: number;
+  lunch: number;
+  dinner: number;
+  discounts: number;
+  voidCount: number;
+  voids: number;
+};
+
+/** Pipe/chunk layout (no spacer columns between avg per guest and Visa). */
+const LEGACY_CASH_UP_COLUMN_MAP: CashUpColumnMap = {
+  visa: 7,
+  cash: 8,
+  mastercard: 9,
+  mada: 10,
+  amex: 11,
+  ccm: 13,
+  jahez: 14,
+  chefz: 15,
+  keeta: 16,
+  hunger: 17,
+  breakfast: 19,
+  lunch: 20,
+  dinner: 21,
+  discounts: 23,
+  voidCount: 24,
+  voids: 25,
+};
+
+function normalizeHeaderLabel(raw: unknown): string {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function findHeaderIndex(labels: string[], predicate: (label: string) => boolean): number {
+  const index = labels.findIndex(predicate);
+  return index >= 0 ? index : -1;
+}
+
+export function resolveCashUpColumnMap(matrix: unknown[][]): CashUpColumnMap {
+  for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 40); rowIndex += 1) {
+    const row = matrix[rowIndex];
+    if (!Array.isArray(row)) continue;
+
+    const labels = row.map(normalizeHeaderLabel);
+    const visa = findHeaderIndex(labels, (label) => label === "visa");
+    const cash = findHeaderIndex(labels, (label) => label === "cash");
+    const totalSales = findHeaderIndex(
+      labels,
+      (label) => label.includes("total sales") && !label.includes("net"),
+    );
+    if (visa < 0 || cash < 0 || totalSales < 0) continue;
+
+    return {
+      visa,
+      cash,
+      mastercard: findHeaderIndex(labels, (label) => label === "mastercard"),
+      mada: findHeaderIndex(labels, (label) => label === "mada"),
+      amex: findHeaderIndex(labels, (label) => label === "amex"),
+      ccm: findHeaderIndex(labels, (label) => label.includes("ccm")),
+      jahez: findHeaderIndex(labels, (label) => label.includes("jahez")),
+      chefz: findHeaderIndex(labels, (label) => label === "chefz"),
+      keeta: findHeaderIndex(labels, (label) => label === "keeta"),
+      hunger: findHeaderIndex(labels, (label) => label === "hunger"),
+      breakfast: findHeaderIndex(labels, (label) => label === "breakfast"),
+      lunch: findHeaderIndex(labels, (label) => label === "lunch"),
+      dinner: findHeaderIndex(labels, (label) => label === "dinner"),
+      discounts: findHeaderIndex(labels, (label) => label.includes("discount")),
+      voidCount: findHeaderIndex(labels, (label) => label.includes("void count")),
+      voids: findHeaderIndex(
+        labels,
+        (label) => label.includes("void waste") || label === "void as no waste",
+      ),
+    };
+  }
+
+  return LEGACY_CASH_UP_COLUMN_MAP;
+}
+
+function columnIndex(columnMap: CashUpColumnMap, key: keyof CashUpColumnMap): number {
+  const index = columnMap[key];
+  return index >= 0 ? index : LEGACY_CASH_UP_COLUMN_MAP[key];
+}
+
 type ParsedDailyRow = {
   businessDate: string;
   sourceRowRef: string;
@@ -87,7 +183,11 @@ type ParsedDailyRow = {
   voids: number | null;
 };
 
-function parseDailyRow(row: unknown[], sourceRowRef: string): ParsedDailyRow | null {
+function parseDailyRow(
+  row: unknown[],
+  sourceRowRef: string,
+  columnMap: CashUpColumnMap,
+): ParsedDailyRow | null {
   if (!Array.isArray(row) || row.length < 4) return null;
   const day = String(row[0] ?? "").trim().toLowerCase();
   if (!WEEKDAYS.has(day)) return null;
@@ -110,22 +210,22 @@ function parseDailyRow(row: unknown[], sourceRowRef: string): ParsedDailyRow | n
     guestCount: optionalNumericCell(row[4]),
     orderCount: optionalNumericCell(row[5]),
     avgPerGuest: optionalNumericCell(row[6]),
-    visaSales: optionalNumericCell(row[7]),
-    cashSales: optionalNumericCell(row[8]),
-    mastercardSales: optionalNumericCell(row[9]),
-    madaSales: optionalNumericCell(row[10]),
-    amexSales: optionalNumericCell(row[11]),
-    ccmSales: optionalNumericCell(row[13]),
-    jahezSales: optionalNumericCell(row[14]),
-    chefzSales: optionalNumericCell(row[15]),
-    keetaSales: optionalNumericCell(row[16]),
-    hungerSales: optionalNumericCell(row[17]),
-    breakfastSales: optionalNumericCell(row[19]),
-    lunchSales: optionalNumericCell(row[20]),
-    dinnerSales: optionalNumericCell(row[21]),
-    discounts: optionalNumericCell(row[23]),
-    voidCount: optionalNumericCell(row[24]),
-    voids: optionalNumericCell(row[25]),
+    visaSales: optionalNumericCell(row[columnIndex(columnMap, "visa")]),
+    cashSales: optionalNumericCell(row[columnIndex(columnMap, "cash")]),
+    mastercardSales: optionalNumericCell(row[columnIndex(columnMap, "mastercard")]),
+    madaSales: optionalNumericCell(row[columnIndex(columnMap, "mada")]),
+    amexSales: optionalNumericCell(row[columnIndex(columnMap, "amex")]),
+    ccmSales: optionalNumericCell(row[columnIndex(columnMap, "ccm")]),
+    jahezSales: optionalNumericCell(row[columnIndex(columnMap, "jahez")]),
+    chefzSales: optionalNumericCell(row[columnIndex(columnMap, "chefz")]),
+    keetaSales: optionalNumericCell(row[columnIndex(columnMap, "keeta")]),
+    hungerSales: optionalNumericCell(row[columnIndex(columnMap, "hunger")]),
+    breakfastSales: optionalNumericCell(row[columnIndex(columnMap, "breakfast")]),
+    lunchSales: optionalNumericCell(row[columnIndex(columnMap, "lunch")]),
+    dinnerSales: optionalNumericCell(row[columnIndex(columnMap, "dinner")]),
+    discounts: optionalNumericCell(row[columnIndex(columnMap, "discounts")]),
+    voidCount: optionalNumericCell(row[columnIndex(columnMap, "voidCount")]),
+    voids: optionalNumericCell(row[columnIndex(columnMap, "voids")]),
   };
 }
 
@@ -190,8 +290,13 @@ export function parseCashUpWorkbookMatrices(matrices: unknown[][][]): CashUpWork
   const dailyRows: ParsedDailyRow[] = [];
 
   matrices.forEach((matrix, sheetIndex) => {
+    const columnMap = resolveCashUpColumnMap(matrix || []);
     (matrix || []).forEach((row, rowIndex) => {
-      const parsed = parseDailyRow(row as unknown[], `sheet-${sheetIndex + 1}-row-${rowIndex + 1}`);
+      const parsed = parseDailyRow(
+        row as unknown[],
+        `sheet-${sheetIndex + 1}-row-${rowIndex + 1}`,
+        columnMap,
+      );
       if (parsed) dailyRows.push(parsed);
     });
   });
