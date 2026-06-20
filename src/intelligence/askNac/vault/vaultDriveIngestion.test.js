@@ -14,6 +14,10 @@ const driveHelper = fs.readFileSync(
   path.join(root, "supabase/functions/_shared/vaultDriveIngestion.ts"),
   "utf8",
 );
+const scheduledIngest = fs.readFileSync(
+  path.join(root, "supabase/functions/_shared/vaultDriveScheduledIngest.ts"),
+  "utf8",
+);
 const vaultApi = fs.readFileSync(path.join(root, "src/lib/askNacVaultApi.js"), "utf8");
 const panel = fs.readFileSync(
   path.join(root, "src/dashboard/intelligence/AskNacDataVaultPanel.jsx"),
@@ -185,6 +189,58 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(panel).toMatch(/fetchDriveSyncStatus/);
     expect(panel).toMatch(/Drive status unavailable/);
     expect(panel).toMatch(/Drive ingestion \{driveIngestStats\.status\}/);
+  });
+});
+
+describe("scheduled Drive ingestion (Phase 1)", () => {
+  test("scheduled_ingest action requires DRIVE_SCHEDULED_INGEST_SECRET", () => {
+    expect(driveFunction).toMatch(/action === "scheduled_ingest"/);
+    expect(driveFunction).toMatch(/DRIVE_SCHEDULED_INGEST_SECRET/);
+    expect(driveFunction).toMatch(/validateScheduledIngestSecret/);
+    expect(driveFunction).toMatch(/Invalid scheduled ingest secret/);
+    expect(driveFunction).toMatch(/Scheduled ingest not configured/);
+    expect(scheduledIngest).toMatch(/validateScheduledIngestSecret/);
+    expect(scheduledIngest).toMatch(/DRIVE_SCHEDULED_INGEST_SECRET/);
+  });
+
+  test("scheduled ingest loads only enabled daily auto-ingest folders", () => {
+    expect(scheduledIngest).toMatch(/\.eq\("enabled", true\)/);
+    expect(scheduledIngest).toMatch(/\.eq\("auto_ingest", true\)/);
+    expect(scheduledIngest).toMatch(/\.eq\("schedule", "daily"\)/);
+    expect(scheduledIngest).toMatch(/ask_nac_drive_sync_folders/);
+  });
+
+  test("scheduled ingest processes runs inline via processDriveIngestionRun", () => {
+    expect(scheduledIngest).toMatch(/createDriveIngestionRun/);
+    expect(scheduledIngest).toMatch(/triggerType: "scheduled"/);
+    expect(scheduledIngest).toMatch(/await processDriveIngestionRun/);
+    expect(scheduledIngest).not.toMatch(/requiresClientProcessing/);
+    expect(driveFunction).toMatch(/runScheduledDriveIngestion/);
+  });
+
+  test("scheduled ingest returns structured summary counters", () => {
+    expect(scheduledIngest).toMatch(/foldersChecked/);
+    expect(scheduledIngest).toMatch(/runsCreated/);
+    expect(scheduledIngest).toMatch(/filesDiscovered/);
+    expect(scheduledIngest).toMatch(/newFiles/);
+    expect(scheduledIngest).toMatch(/changedFiles/);
+    expect(scheduledIngest).toMatch(/skippedFiles/);
+    expect(scheduledIngest).toMatch(/ingestedFiles/);
+    expect(scheduledIngest).toMatch(/failedFiles/);
+    expect(scheduledIngest).toMatch(/durationMs/);
+  });
+
+  test("scheduled ingest handles partial folders within timeout budget", () => {
+    expect(scheduledIngest).toMatch(/remainingFiles/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_INGEST_TIMEOUT_MS/);
+  });
+
+  test("scheduled ingest reuses unchanged-file idempotency in existing pipeline", () => {
+    expect(scheduledIngest).toMatch(/processDriveIngestionRun/);
+    expect(driveHelper).toMatch(/isUnchanged/);
+    expect(driveHelper).toMatch(/Identical content already indexed/);
+    expect(driveHelper).toMatch(/Unchanged Drive file/);
   });
 });
 

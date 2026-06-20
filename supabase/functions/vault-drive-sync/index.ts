@@ -1,7 +1,8 @@
 /**
  * Google Drive sync Edge Function for Data Vault bulk ingestion.
  * Deploy: supabase functions deploy vault-drive-sync
- * Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUPABASE_SERVICE_ROLE_KEY
+ * Secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, SUPABASE_SERVICE_ROLE_KEY,
+ *           DRIVE_SCHEDULED_INGEST_SECRET (scheduled_ingest action only)
  *
  * SECURITY: OAuth tokens live only in ask_nac_drive_connections (service-role writes).
  * Never return, log, or forward access_token / refresh_token in responses or errors.
@@ -16,6 +17,11 @@ import {
   verifyDriveFolderAccess,
   walkDriveFolderTree,
 } from "../_shared/vaultDriveIngestion.ts";
+import {
+  isScheduledIngestSecretConfigured,
+  runScheduledDriveIngestion,
+  validateScheduledIngestSecret,
+} from "../_shared/vaultDriveScheduledIngest.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -141,13 +147,34 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json(401, { error: "Missing Authorization header" });
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseAnonKey) return json(500, { error: "Supabase env not configured" });
+
+    const body = req.method === "GET" ? {} : await req.json().catch(() => ({}));
+    const action = String(body?.action || new URL(req.url).searchParams.get("action") || "status");
+
+    if (action === "scheduled_ingest") {
+      if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+      if (!serviceRoleKey) return json(500, { error: "Service role not configured" });
+      if (!isScheduledIngestSecretConfigured()) {
+        return json(503, { error: "Scheduled ingest not configured (DRIVE_SCHEDULED_INGEST_SECRET)." });
+      }
+      if (!validateScheduledIngestSecret(req)) {
+        return json(401, { error: "Invalid scheduled ingest secret" });
+      }
+
+      const admin = createClient(supabaseUrl, serviceRoleKey);
+      const summary = await runScheduledDriveIngestion(admin, {
+        maxFilesToProcess: body?.maxFilesToProcess,
+      });
+      console.info("[vault-drive-sync] scheduled_ingest complete", summary);
+      return json(200, { ok: true, ...summary });
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return json(401, { error: "Missing Authorization header" });
 
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -161,8 +188,6 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user?.email) return json(401, { error: "Invalid session" });
 
     const userEmail = userData.user.email.toLowerCase();
-    const body = req.method === "GET" ? {} : await req.json().catch(() => ({}));
-    const action = String(body?.action || new URL(req.url).searchParams.get("action") || "status");
 
     const redirectUri =
       body?.redirectUri ||
