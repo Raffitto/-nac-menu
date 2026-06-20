@@ -20,6 +20,15 @@ export const CONFIDENCE_LEVELS = Object.freeze({
   NONE: "none",
 });
 
+/**
+ * @typedef {Object} AskNacExecutiveBrief
+ * @property {string} executiveSummary
+ * @property {string[]} keyFindings
+ * @property {string[]} operationalRisks
+ * @property {string[]} recommendedActions
+ * @property {string[]} dataSources
+ */
+
 /** @typedef {import('./askNacContract').AskNacResponse} AskNacResponse */
 
 /**
@@ -49,6 +58,7 @@ export function createAskNacResponse(fields = {}) {
     vaultSources: Array.isArray(fields.vaultSources) ? fields.vaultSources : [],
     conversationResolution: fields.conversationResolution || null,
     executiveSummary: fields.executiveSummary || null,
+    executiveBrief: fields.executiveBrief || null,
     dataConfidence: fields.dataConfidence || null,
   };
 }

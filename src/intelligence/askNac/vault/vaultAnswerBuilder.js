@@ -33,6 +33,7 @@ import {
   extendedSalesPerformanceMetrics,
 } from "./vaultSalesPerformanceIntelligence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
+import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -287,11 +288,23 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     confidence: metrics.length ? "high" : executive.missingFields.length ? "medium" : "low",
   });
 
+  const executiveBrief = buildCashUpExecutiveBrief({
+    facts,
+    branchLabel: tool.branchLabel,
+    periodLabel: tool.periodLabel,
+    businessDate: tool.startDate || tool.periodEnd || facts[0]?.period_end || facts[0]?.periodEnd,
+    fileTitle,
+    vaultSources: tool.vaultSources,
+    coverage: tool.coverage,
+    question: route.question || "",
+  });
+
   return createAskNacResponse({
     ...baseVaultFields(route, tool, readiness),
     answerType: metrics.length ? ANSWER_TYPES.EXECUTIVE : ANSWER_TYPES.MISSING_DATA,
     title: `Sales performance · ${tool.periodLabel}`,
     directAnswer,
+    executiveBrief,
     keyMetrics: metrics,
     insights: [
       ...(executive.risks || []),

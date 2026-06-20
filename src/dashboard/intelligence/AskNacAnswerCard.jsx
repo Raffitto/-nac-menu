@@ -6,6 +6,52 @@ import AskNacExportButton from "../../intelligence/askNac/export/AskNacExportBut
 import AskNacMobileExportSheet from "./AskNacMobileExportSheet";
 import { formatMobileAnswerLead } from "./askNacAnswerPresentation";
 import { getMobileTrustSummary, getTechnicalTrustDetails } from "./askNacTrustLabels";
+import { shouldRenderCashUpExecutiveBrief } from "./askNacExecutiveBriefUi";
+
+function ExecutiveBriefBulletSection({ title, items = [] }) {
+  if (!items.length) return null;
+  return (
+    <div className="nac-ask-nac-block nac-ask-nac-executive-brief__section">
+      <h4>{title}</h4>
+      <ul>
+        {items.map((line) => (
+          <li key={`${title}-${line}`}>{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CashUpExecutiveBriefView({ brief }) {
+  if (!brief) return null;
+  return (
+    <div className="nac-ask-nac-executive-brief" data-testid="cash-up-executive-brief">
+      <div className="nac-ask-nac-block">
+        <h4>Executive Summary</h4>
+        <p className="nac-ask-nac-executive-brief__summary">{brief.executiveSummary}</p>
+      </div>
+      <ExecutiveBriefBulletSection title="Key Findings" items={brief.keyFindings} />
+      <ExecutiveBriefBulletSection title="Operational Risks" items={brief.operationalRisks} />
+      <ExecutiveBriefBulletSection title="Recommended Actions" items={brief.recommendedActions} />
+      <ExecutiveBriefBulletSection title="Data Sources" items={brief.dataSources} />
+    </div>
+  );
+}
+
+function PrimaryAnswerContent({ response }) {
+  if (shouldRenderCashUpExecutiveBrief(response)) {
+    return <CashUpExecutiveBriefView brief={response.executiveBrief} />;
+  }
+  return <p className="nac-ask-nac-response__answer">{response.directAnswer}</p>;
+}
+
+function MobilePrimaryAnswerContent({ response }) {
+  if (shouldRenderCashUpExecutiveBrief(response)) {
+    return <CashUpExecutiveBriefView brief={response.executiveBrief} />;
+  }
+  const answerLead = formatMobileAnswerLead(response);
+  return <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>;
+}
 
 function MetricList({ metrics, compact = false }) {
   if (!metrics?.length) return null;
@@ -226,7 +272,6 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
   const showExport =
     hasExportableContent(response) && response.answerType !== ANSWER_TYPES.UNKNOWN;
   const trust = getMobileTrustSummary(response);
-  const answerLead = formatMobileAnswerLead(response);
   const metrics = response.keyMetrics || [];
   const showMiniTable = metrics.length > 3;
 
@@ -239,7 +284,7 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
         <span className={`nac-ask-nac-trust-pill nac-ask-nac-trust-pill--${trust.tone}`}>{trust.label}</span>
       </div>
 
-      <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>
+      <MobilePrimaryAnswerContent response={response} />
 
       <CashUpDebugPanel debug={response.cashUpDebug} />
 
@@ -333,7 +378,7 @@ export default function AskNacAnswerCard({
         </div>
       </header>
 
-      <p className="nac-ask-nac-response__answer">{response.directAnswer}</p>
+      <PrimaryAnswerContent response={response} />
 
       <CashUpDebugPanel debug={response.cashUpDebug} />
 

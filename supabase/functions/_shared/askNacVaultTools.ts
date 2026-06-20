@@ -29,6 +29,7 @@ import {
   CASH_UP_STRUCTURED_METRIC_KEYS,
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
+import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
 import {
   buildCrossDocumentOperationalSummary,
   buildOperationalManagerAnswer,
@@ -1615,11 +1616,29 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     confidence: metrics.length ? "high" : executive.missingFields.length ? "medium" : "low",
   });
 
+  const executiveBrief = buildCashUpExecutiveBrief({
+    facts,
+    branchLabel: String(tool.branchLabel || "Network"),
+    periodLabel: String(tool.periodLabel || "the period"),
+    businessDate: String(
+      tool.startDate
+      || tool.periodEnd
+      || (facts[0]?.period_end as string)
+      || (facts[0]?.periodEnd as string)
+      || "",
+    ) || null,
+    fileTitle,
+    vaultSources: (tool?.vaultSources as Record<string, unknown>[]) || [],
+    coverage: (tool?.coverage as Record<string, unknown>[]) || [],
+    question: String(route.question || ""),
+  });
+
   return {
     ...baseVaultFields(route, tool, readiness),
     answerType: metrics.length ? "executive" : "missing_data",
     title: `Sales performance · ${tool.periodLabel}`,
     directAnswer,
+    executiveBrief,
     keyMetrics: metrics,
     insights: [
       ...(executive.risks || []),
