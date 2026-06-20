@@ -11,13 +11,21 @@ import {
   setExportFont,
   sanitizeExportText,
   buildExportTableStyles,
+  NAC_TEAL,
+  drawContentPanel,
 } from "../../../dashboard/engines/pdfVisualTheme";
 import { buildAskNacExportFilename, EXPORT_FORMATS } from "./askNacExportPayload";
+import {
+  extractExecutiveKpiMetrics,
+  formatExportAnswerText,
+  hasExecutiveBriefPayload,
+} from "./executiveBriefExport";
 
 const BRAND = "NAC Hospitality OS · Ask NAC";
 const MARGIN = 44;
 const PAGE_W = 595;
 const CONTENT_W = PAGE_W - MARGIN * 2;
+const PAGE_H = 842;
 
 function formatMetricValue(m) {
   const v = m.value;
@@ -25,32 +33,125 @@ function formatMetricValue(m) {
   return `${v}${m.unit ? ` ${m.unit}` : ""}`;
 }
 
+function ensurePageSpace(doc, y, needed = 72) {
+  if (y + needed <= PAGE_H - 56) return y;
+  doc.addPage();
+  fillPage(doc);
+  return 48;
+}
+
+function drawAccentRule(doc, y, width = CONTENT_W) {
+  doc.setDrawColor(...NAC_TEAL);
+  doc.setLineWidth(1.2);
+  doc.line(MARGIN, y, MARGIN + width, y);
+  return y + 10;
+}
+
 function drawSectionHeading(doc, y, title) {
-  setExportFont(doc, "bold", 10);
+  y = ensurePageSpace(doc, y, 40);
+  y = drawAccentRule(doc, y, 72);
+  setExportFont(doc, "bold", 11);
   paintExportText(doc, title, MARGIN, y, { tier: "gold", shadow: true });
-  return y + 16;
+  return y + 18;
+}
+
+function drawParagraph(doc, y, text, tier = "primary") {
+  setExportFont(doc, "normal", 9);
+  const lines = doc.splitTextToSize(sanitizeExportText(text), CONTENT_W);
+  lines.forEach((line, index) => {
+    y = ensurePageSpace(doc, y, 14);
+    paintExportText(doc, line, MARGIN, y + index * 12, { tier, lineHeight: 12 });
+  });
+  return y + Math.max(1, lines.length) * 12 + 8;
 }
 
 function drawBulletList(doc, y, items, maxItems = 8) {
-  setExportFont(doc, "normal", 8);
-  let cy = y;
+  setExportFont(doc, "normal", 8.5);
   (items || []).slice(0, maxItems).forEach((line) => {
+    y = ensurePageSpace(doc, y, 18);
     const wrapped = doc.splitTextToSize(sanitizeExportText(`• ${line}`), CONTENT_W - 8);
     wrapped.forEach((ln) => {
-      paintExportText(doc, ln, MARGIN + 4, cy, { tier: "secondary", lineHeight: 10 });
-      cy += 10;
+      paintExportText(doc, ln, MARGIN + 4, y, { tier: "secondary", lineHeight: 11 });
+      y += 11;
     });
+    y += 2;
   });
-  return cy + 4;
+  return y + 4;
+}
+
+function drawExecutiveKpiCards(doc, y, payload) {
+  const metrics = extractExecutiveKpiMetrics(payload.keyMetrics);
+  if (!metrics.length) return y;
+
+  y = drawSectionHeading(doc, y, "Executive KPIs");
+  const cardW = (CONTENT_W - 12) / 2;
+  const cardH = 42;
+  let column = 0;
+  let rowY = y;
+
+  metrics.forEach((metric, index) => {
+    if (column === 0) rowY = ensurePageSpace(doc, rowY, cardH + 12);
+    const x = MARGIN + column * (cardW + 12);
+    drawContentPanel(doc, x, rowY, cardW, cardH);
+    doc.setDrawColor(...NAC_TEAL);
+    doc.setLineWidth(1);
+    doc.line(x + 8, rowY + 8, x + 28, rowY + 8);
+
+    setExportFont(doc, "bold", 7.5);
+    paintExportText(doc, metric.label, x + 10, rowY + 18, { tier: "gold", maxWidth: cardW - 16 });
+    setExportFont(doc, "bold", 11);
+    paintExportText(doc, formatMetricValue(metric), x + 10, rowY + 32, { tier: "primary", maxWidth: cardW - 16 });
+
+    column += 1;
+    if (column > 1) {
+      column = 0;
+      rowY += cardH + 10;
+    } else if (index === metrics.length - 1) {
+      rowY += cardH + 10;
+    }
+  });
+
+  return rowY + 6;
+}
+
+function drawExecutiveBriefSections(doc, y, payload) {
+  const brief = payload.executiveBrief;
+  if (!brief) return y;
+
+  y = drawSectionHeading(doc, y, "Executive Summary");
+  y = drawParagraph(doc, y, brief.executiveSummary, "primary");
+  y = drawExecutiveKpiCards(doc, y, payload);
+
+  if (brief.keyFindings?.length) {
+    y = drawSectionHeading(doc, y, "Key Findings");
+    y = drawBulletList(doc, y, brief.keyFindings, 8);
+  }
+  if (brief.operationalRisks?.length) {
+    y = drawSectionHeading(doc, y, "Operational Risks");
+    y = drawBulletList(doc, y, brief.operationalRisks, 6);
+  }
+  if (brief.recommendedActions?.length) {
+    y = drawSectionHeading(doc, y, "Recommended Actions");
+    y = drawBulletList(doc, y, brief.recommendedActions, 6);
+  }
+  if (brief.dataSources?.length) {
+    y = drawSectionHeading(doc, y, "Data Sources");
+    y = drawBulletList(doc, y, brief.dataSources, 6);
+  }
+
+  return y;
+}
+
+function drawMetricsAppendix(doc, y, payload) {
+  const metrics = payload.keyMetrics || [];
+  if (!metrics.length) return y;
+  y = drawSectionHeading(doc, y, "Metrics Appendix");
+  return drawMetricsTable(doc, y, payload);
 }
 
 function drawProvenanceFooter(doc, payload, y) {
+  y = ensurePageSpace(doc, y, 40);
   const pageH = doc.internal.pageSize.getHeight();
-  if (y > pageH - 48) {
-    doc.addPage();
-    fillPage(doc);
-    y = 48;
-  }
   setExportFont(doc, "normal", 7);
   paintExportText(
     doc,
@@ -69,12 +170,18 @@ function drawMetricsTable(doc, y, payload) {
   autoTable(doc, {
     startY: y,
     head: [["Metric", "Value", "Source"]],
-    body: metrics.slice(0, 12).map((m) => [
+    body: metrics.slice(0, 16).map((m) => [
       sanitizeExportText(m.label),
       sanitizeExportText(formatMetricValue(m)),
       sanitizeExportText(m.source || m.note || "—"),
     ]),
-    ...buildExportTableStyles(),
+    ...buildExportTableStyles({
+      headStyles: {
+        fillColor: NAC_TEAL,
+        textColor: [12, 14, 16],
+        fontStyle: "bold",
+      },
+    }),
     margin: { left: MARGIN, right: MARGIN },
   });
   return doc.lastAutoTable.finalY + 12;
@@ -111,9 +218,16 @@ function createBaseDoc(payload, subtitle) {
     `Generated ${payload.meta.generatedAtLabel} · ${payload.context.filterSummary}`,
     MARGIN,
     y,
-    { tier: "muted", maxWidth: CONTENT_W },
+    { tier: "secondary", maxWidth: CONTENT_W },
   );
   return { doc, y: y + 18 };
+}
+
+function resolveLegacyAnswerText(payload) {
+  const text = formatExportAnswerText(payload.answer?.directAnswer);
+  if (text) return text;
+  if (hasExecutiveBriefPayload(payload)) return payload.executiveBrief.executiveSummary;
+  return "No narrative answer available.";
 }
 
 /** Clean one-page answer report */
@@ -122,22 +236,16 @@ export function exportAskNacPdf(payload) {
   let y = startY;
 
   y = drawSectionHeading(doc, y, "Question");
-  setExportFont(doc, "normal", 9);
-  doc.splitTextToSize(sanitizeExportText(payload.question), CONTENT_W).forEach((ln, i) => {
-    paintExportText(doc, ln, MARGIN, y + i * 11, { tier: "primary" });
-  });
-  y += Math.max(1, doc.splitTextToSize(sanitizeExportText(payload.question), CONTENT_W).length) * 11 + 10;
+  y = drawParagraph(doc, y, payload.question, "primary");
 
-  y = drawSectionHeading(doc, y, "Answer");
-  doc.splitTextToSize(sanitizeExportText(payload.answer.directAnswer), CONTENT_W).forEach((ln, i) => {
-    paintExportText(doc, ln, MARGIN, y + i * 11, { tier: "primary" });
-  });
-  y +=
-    Math.max(1, doc.splitTextToSize(sanitizeExportText(payload.answer.directAnswer), CONTENT_W).length) *
-      11 +
-    8;
-
-  y = drawMetricsTable(doc, y, payload);
+  if (hasExecutiveBriefPayload(payload)) {
+    y = drawExecutiveBriefSections(doc, y, payload);
+    y = drawMetricsAppendix(doc, y, payload);
+  } else {
+    y = drawSectionHeading(doc, y, "Answer");
+    y = drawParagraph(doc, y, resolveLegacyAnswerText(payload), "primary");
+    y = drawMetricsTable(doc, y, payload);
+  }
 
   if (payload.warnings?.length) {
     y = drawSectionHeading(doc, y, "Warnings");
@@ -153,11 +261,15 @@ export function exportAskNacExecutiveReport(payload) {
   const { doc, y: startY } = createBaseDoc(payload, "Executive intelligence brief");
   let y = startY;
 
-  y = drawSectionHeading(doc, y, "Executive summary");
-  y = drawBulletList(doc, y, [payload.answer.directAnswer], 1);
-
-  y = drawSectionHeading(doc, y, "KPI snapshot");
-  y = drawMetricsTable(doc, y, payload);
+  if (hasExecutiveBriefPayload(payload)) {
+    y = drawExecutiveBriefSections(doc, y, payload);
+    y = drawMetricsAppendix(doc, y, payload);
+  } else {
+    y = drawSectionHeading(doc, y, "Executive summary");
+    y = drawBulletList(doc, y, [resolveLegacyAnswerText(payload)], 1);
+    y = drawSectionHeading(doc, y, "KPI snapshot");
+    y = drawMetricsTable(doc, y, payload);
+  }
 
   const riskNotes = [
     ...(payload.warnings || []),
@@ -170,7 +282,7 @@ export function exportAskNacExecutiveReport(payload) {
     y = drawBulletList(doc, y, riskNotes, 6);
   }
 
-  if (payload.recommendations?.length) {
+  if (!hasExecutiveBriefPayload(payload) && payload.recommendations?.length) {
     y = drawSectionHeading(doc, y, "Recommendations");
     y = drawBulletList(doc, y, payload.recommendations, 6);
   }
@@ -188,11 +300,15 @@ export function exportAskNacDetailedAnalysis(payload) {
   y = drawSectionHeading(doc, y, "Question");
   y = drawBulletList(doc, y, [payload.question], 1);
 
-  y = drawSectionHeading(doc, y, "Full answer");
-  y = drawBulletList(doc, y, [payload.answer.directAnswer], 1);
-
-  y = drawSectionHeading(doc, y, "Supporting metrics");
-  y = drawMetricsTable(doc, y, payload);
+  if (hasExecutiveBriefPayload(payload)) {
+    y = drawExecutiveBriefSections(doc, y, payload);
+    y = drawMetricsAppendix(doc, y, payload);
+  } else {
+    y = drawSectionHeading(doc, y, "Full answer");
+    y = drawBulletList(doc, y, [resolveLegacyAnswerText(payload)], 1);
+    y = drawSectionHeading(doc, y, "Supporting metrics");
+    y = drawMetricsTable(doc, y, payload);
+  }
 
   if (payload.insights?.length) {
     y = drawSectionHeading(doc, y, "Insights");
@@ -260,3 +376,5 @@ export function runAskNacExport(format, payload) {
       throw new Error(`Unsupported PDF export format: ${format}`);
   }
 }
+
+export { hasExecutiveBriefPayload, formatExportAnswerText };

@@ -24,8 +24,10 @@ function buildCashUpResponse(overrides = {}) {
     directAnswer: "Answer:\nNet sales 17,941.739 SAR\n\nManagement note:\nReview partial coverage.",
     executiveBrief: SAMPLE_BRIEF,
     keyMetrics: [
-      { label: "Net sales", value: 17941.739, unit: "SAR" },
-      { label: "Gross sales", value: 20633, unit: "SAR" },
+      { key: "net_sales", label: "Net sales", value: 17941.739, unit: "SAR" },
+      { key: "gross_sales", label: "Gross sales", value: 20633, unit: "SAR" },
+      { key: "card_sales", label: "Card sales", value: 19046, unit: "SAR" },
+      { key: "cash_sales", label: "Cash sales", value: 629, unit: "SAR" },
     ],
     insights: ["Card-heavy day with low cash share."],
     recommendations: ["Validate delivery totals against POS export."],
@@ -69,7 +71,33 @@ describe("AskNacAnswerCard cash-up executive brief", () => {
     expect(screen.queryByText(/Management note:/)).not.toBeInTheDocument();
     expect(screen.getByText("Card-heavy day with low cash share.")).toBeInTheDocument();
     expect(screen.getByText("Validate delivery totals against POS export.")).toBeInTheDocument();
-    expect(screen.getByText("Net sales")).toBeInTheDocument();
+    expect(screen.getAllByText("Net Sales").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("cash-up-executive-kpis")).toBeInTheDocument();
+    expect(screen.getAllByText("Electronic Payments").length).toBeGreaterThan(0);
+  });
+
+  test("hides cash-up debug panel unless developer flag is enabled", () => {
+    delete process.env.REACT_APP_ASK_NAC_CASHUP_DEBUG;
+    renderCard(
+      buildCashUpResponse({
+        cashUpDebug: { intent: "vault_cash_up_summary", factsRowCount: 20 },
+        cashUpProductionTrace: { failurePoint: null },
+      }),
+    );
+
+    expect(screen.queryByTestId("cash-up-debug-panel")).not.toBeInTheDocument();
+  });
+
+  test("shows expandable cash-up debug panel for developer flag", () => {
+    process.env.REACT_APP_ASK_NAC_CASHUP_DEBUG = "true";
+    renderCard(
+      buildCashUpResponse({
+        cashUpDebug: { intent: "vault_cash_up_summary", factsRowCount: 20 },
+      }),
+    );
+
+    expect(screen.getByTestId("cash-up-debug-panel")).toBeInTheDocument();
+    expect(screen.getByText("Cash-up debug (developer)")).toBeInTheDocument();
   });
 
   test("mobile renders executiveBrief sections", () => {

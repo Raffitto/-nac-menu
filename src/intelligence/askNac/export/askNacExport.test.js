@@ -98,4 +98,29 @@ describe("askNac export", () => {
     expect(summary).toMatch(/Riyadh/);
     expect(summary).toMatch(/Month-to-date/);
   });
+
+  test("buildAskNacExportPayload carries executiveBrief sections", () => {
+    const payload = buildAskNacExportPayload({
+      question: "show latest cash up",
+      response: {
+        answerType: "executive",
+        title: "Sales performance · 19 June 2026",
+        directAnswer: { broken: true },
+        executiveBrief: {
+          executiveSummary: "Khobar cash-up summary",
+          keyFindings: ["Dinner generated 17,178 SAR and contributed 66% of gross sales."],
+          operationalRisks: [],
+          recommendedActions: [],
+          dataSources: ["Cash up 2026.xlsx · 2026-06-19 · cash_up"],
+        },
+        keyMetrics: [{ key: "card_sales", label: "Card sales", value: "24,293", unit: "SAR" }],
+        confidence: "high",
+      },
+      filters: { branch: "khobar", selectedRange: "today" },
+    });
+
+    expect(payload.executiveBrief.executiveSummary).toBe("Khobar cash-up summary");
+    expect(payload.answer.directAnswer).toBe("");
+    expect(payload.keyMetrics[0].label).toBe("Electronic Payments");
+  });
 });

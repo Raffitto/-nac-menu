@@ -41,9 +41,36 @@ function formatCardCashSettlementShare(card, cash) {
   return {
     cardShare,
     settlementTotal,
-    keyFinding: `Card sales ${formatCurrency(card)} and cash ${formatCurrency(cash)} — card represented ${cardShare}% of recorded card/cash settlement.`,
-    summaryNote: ` Card sales represented ${cardShare}% of recorded card/cash settlement.`,
+    keyFinding: `Electronic payments ${formatCurrency(card)} and cash ${formatCurrency(cash)} — electronic payments represented ${cardShare}% of recorded card/cash settlement.`,
+    summaryNote: ` Electronic payments represented ${cardShare}% of recorded card/cash settlement.`,
   };
+}
+
+const KEY_FINDING_PRIORITY = Object.freeze({
+  revenue_concentration: 10,
+  payment_mix: 20,
+  budget: 30,
+  delivery: 40,
+  guest_count: 50,
+  net_sales: 60,
+  gross_net: 70,
+  performance_breakdown: 80,
+});
+
+function rankKeyFindings(entries = []) {
+  return entries
+    .filter((entry) => String(entry.text || "").trim())
+    .sort((a, b) => a.priority - b.priority || String(a.text).localeCompare(String(b.text)))
+    .map((entry) => entry.text)
+    .slice(0, 8);
+}
+
+function buildRevenueConcentrationFinding(gross, dayparts = []) {
+  if (gross == null || !dayparts.length) return null;
+  const top = [...dayparts].sort((a, b) => Number(b.value) - Number(a.value))[0];
+  if (!top?.value) return null;
+  const pct = ((Number(top.value) / Number(gross)) * 100).toFixed(0);
+  return `${top.label} generated ${formatCurrency(top.value)} and contributed ${pct}% of gross sales.`;
 }
 
 function buildGrossNetKeyFinding(gross, net, facts) {
@@ -161,34 +188,69 @@ export function buildCashUpExecutiveBrief({
   const guests = pickMetricValue(facts, "guest_count");
   const settlementShare = card != null && cash != null ? formatCardCashSettlementShare(card, cash) : null;
 
-  const keyFindings = [];
+  const rankedFindings = [];
 
-  if (net != null) {
-    keyFindings.push(`Net sales ${formatCurrency(net)} for ${branchLabel} on ${periodLabel}.`);
+  const revenueConcentration = buildRevenueConcentrationFinding(gross, executive.dayparts);
+  if (revenueConcentration) {
+    rankedFindings.push({ priority: KEY_FINDING_PRIORITY.revenue_concentration, text: revenueConcentration });
   }
-  if (gross != null && net != null && Number(gross) !== Number(net)) {
-    keyFindings.push(buildGrossNetKeyFinding(gross, net, facts));
-  }
+
   if (settlementShare) {
-    keyFindings.push(settlementShare.keyFinding);
+    rankedFindings.push({ priority: KEY_FINDING_PRIORITY.payment_mix, text: settlementShare.keyFinding });
   } else if (executive.paymentMix.length) {
-    keyFindings.push(
-      `Payment mix lead: ${executive.paymentMix[0].method} (${formatCurrency(executive.paymentMix[0].value)}).`,
-    );
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.payment_mix,
+      text: `Payment mix lead: ${executive.paymentMix[0].method} (${formatCurrency(executive.paymentMix[0].value)}).`,
+    });
   }
-  if (guests != null) {
-    keyFindings.push(`Guest count ${formatNumber(guests)}.`);
-  }
+
   if (executive.budget) {
-    keyFindings.push(
-      executive.budget.met
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.budget,
+      text: executive.budget.met
         ? `Budget achievement ${executive.budget.pct.toFixed(1)}% of target.`
         : `Budget gap ${formatCurrency(Math.abs(executive.budget.gap))} below target (${executive.budget.pct.toFixed(1)}%).`,
-    );
+    });
   }
-  for (const row of executive.performanceBreakdown.slice(0, 2)) {
-    keyFindings.push(`${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ""}.`);
+
+  for (const row of executive.performanceBreakdown.filter((item) => item.section === "delivery").slice(0, 1)) {
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.delivery,
+      text: `${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ""}.`,
+    });
   }
+
+  if (net != null) {
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.net_sales,
+      text: `Net sales ${formatCurrency(net)} for ${branchLabel} on ${periodLabel}.`,
+    });
+  }
+
+  if (gross != null && net != null && Number(gross) !== Number(net)) {
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.gross_net,
+      text: buildGrossNetKeyFinding(gross, net, facts),
+    });
+  }
+
+  if (guests != null) {
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.guest_count,
+      text: `Guest count ${formatNumber(guests)}.`,
+    });
+  }
+
+  for (const row of executive.performanceBreakdown
+    .filter((item) => item.section !== "delivery")
+    .slice(0, 1)) {
+    rankedFindings.push({
+      priority: KEY_FINDING_PRIORITY.performance_breakdown,
+      text: `${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ""}.`,
+    });
+  }
+
+  const keyFindings = rankKeyFindings(rankedFindings);
 
   const operationalRisks = [...(executive.risks || [])];
   const partialCoverage = (coverage || []).some(
@@ -226,7 +288,7 @@ export function buildCashUpExecutiveBrief({
 
   return {
     executiveSummary: executiveSummary.trim(),
-    keyFindings: keyFindings.slice(0, 8),
+    keyFindings,
     operationalRisks: operationalRisks.slice(0, 6),
     recommendedActions: recommendedActions.slice(0, 6),
     dataSources,

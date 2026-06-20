@@ -7,6 +7,11 @@ import AskNacMobileExportSheet from "./AskNacMobileExportSheet";
 import { formatMobileAnswerLead } from "./askNacAnswerPresentation";
 import { getMobileTrustSummary, getTechnicalTrustDetails } from "./askNacTrustLabels";
 import { shouldRenderCashUpExecutiveBrief } from "./askNacExecutiveBriefUi";
+import { shouldShowCashUpDebugPanel } from "./askNacCashUpDebugUi";
+import {
+  applyExecutiveMetricDisplayLabels,
+  extractExecutiveKpiMetrics,
+} from "../../intelligence/askNac/export/executiveBriefExport";
 
 function ExecutiveBriefBulletSection({ title, items = [] }) {
   if (!items.length) return null;
@@ -22,7 +27,25 @@ function ExecutiveBriefBulletSection({ title, items = [] }) {
   );
 }
 
-function CashUpExecutiveBriefView({ brief }) {
+function ExecutiveKpiGrid({ metrics = [] }) {
+  const kpis = extractExecutiveKpiMetrics(metrics);
+  if (!kpis.length) return null;
+  return (
+    <div className="nac-ask-nac-executive-kpis" data-testid="cash-up-executive-kpis">
+      {kpis.map((metric) => (
+        <div key={metric.key} className="nac-ask-nac-executive-kpis__card">
+          <span className="nac-ask-nac-executive-kpis__label">{metric.label}</span>
+          <strong className="nac-ask-nac-executive-kpis__value">
+            {typeof metric.value === "number" ? metric.value.toLocaleString() : metric.value}
+            {metric.unit ? ` ${metric.unit}` : ""}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CashUpExecutiveBriefView({ brief, keyMetrics = [] }) {
   if (!brief) return null;
   return (
     <div className="nac-ask-nac-executive-brief" data-testid="cash-up-executive-brief">
@@ -30,6 +53,7 @@ function CashUpExecutiveBriefView({ brief }) {
         <h4>Executive Summary</h4>
         <p className="nac-ask-nac-executive-brief__summary">{brief.executiveSummary}</p>
       </div>
+      <ExecutiveKpiGrid metrics={keyMetrics} />
       <ExecutiveBriefBulletSection title="Key Findings" items={brief.keyFindings} />
       <ExecutiveBriefBulletSection title="Operational Risks" items={brief.operationalRisks} />
       <ExecutiveBriefBulletSection title="Recommended Actions" items={brief.recommendedActions} />
@@ -40,14 +64,24 @@ function CashUpExecutiveBriefView({ brief }) {
 
 function PrimaryAnswerContent({ response }) {
   if (shouldRenderCashUpExecutiveBrief(response)) {
-    return <CashUpExecutiveBriefView brief={response.executiveBrief} />;
+    return (
+      <CashUpExecutiveBriefView
+        brief={response.executiveBrief}
+        keyMetrics={response.keyMetrics}
+      />
+    );
   }
   return <p className="nac-ask-nac-response__answer">{response.directAnswer}</p>;
 }
 
 function MobilePrimaryAnswerContent({ response }) {
   if (shouldRenderCashUpExecutiveBrief(response)) {
-    return <CashUpExecutiveBriefView brief={response.executiveBrief} />;
+    return (
+      <CashUpExecutiveBriefView
+        brief={response.executiveBrief}
+        keyMetrics={response.keyMetrics}
+      />
+    );
   }
   const answerLead = formatMobileAnswerLead(response);
   return <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>;
@@ -92,17 +126,76 @@ function MiniMetricsTable({ metrics }) {
   );
 }
 
-function CashUpDebugPanel({ debug }) {
-  if (!debug) return null;
-
-  const coverage = debug.selectedCoverageRow;
-  const coverageSummary = coverage
-    ? `${coverage.fileTitle || "—"} · ${coverage.reportType || "—"} · ${coverage.periodStart || "—"} – ${coverage.periodEnd || "—"} · facts=${coverage.factCount ?? "—"}`
-    : "—";
+function CashUpProductionTracePanel({ trace }) {
+  if (!trace) return null;
 
   return (
-    <div className="nac-ask-nac-cashup-debug" role="region" aria-label="Cash-up debug trace">
-      <h4>Cash-up debug (temporary)</h4>
+    <div className="nac-ask-nac-cashup-debug nac-ask-nac-cashup-debug--trace" role="region" aria-label="Cash-up production trace">
+      <h4>Cash-up production trace (temporary)</h4>
+      <dl className="nac-ask-nac-details__meta">
+        <dt>Routed intent</dt>
+        <dd>{trace.routedIntent || "—"}</dd>
+        <dt>Selected tool</dt>
+        <dd>{trace.selectedTool || "—"}</dd>
+        <dt>Branch filter</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.branchFilter || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Readiness</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.readiness || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Pipeline</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.pipeline || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Coverage query</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.coverageQuery || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Business date query</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.businessDateQuery || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Facts query</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.factsQuery || {}, null, 2)}
+          </pre>
+        </dd>
+        <dt>Facts row count</dt>
+        <dd>{trace.factsRowCount ?? 0}</dd>
+        <dt>Failure point</dt>
+        <dd className="nac-ask-nac-cashup-debug__failure">{trace.failurePoint || "—"}</dd>
+        <dt>Generic fallback</dt>
+        <dd>
+          <pre className="nac-ask-nac-cashup-debug__json">
+            {JSON.stringify(trace.genericFallback || {}, null, 2)}
+          </pre>
+        </dd>
+      </dl>
+    </div>
+  );
+}
+
+function CashUpDebugPanel({ debug, productionTrace }) {
+  if (!shouldShowCashUpDebugPanel()) return null;
+  if (!debug && !productionTrace) return null;
+
+  const panelBody = !debug ? (
+    <CashUpProductionTracePanel trace={productionTrace} />
+  ) : (
+    <>
       <dl className="nac-ask-nac-details__meta">
         <dt>Intent</dt>
         <dd>{debug.intent || "—"}</dd>
@@ -111,7 +204,11 @@ function CashUpDebugPanel({ debug }) {
         <dt>Normalized branch</dt>
         <dd>{debug.normalizedBranch ?? "null (network)"}</dd>
         <dt>Selected coverage row</dt>
-        <dd>{coverageSummary}</dd>
+        <dd>
+          {debug.selectedCoverageRow
+            ? `${debug.selectedCoverageRow.fileTitle || "—"} · ${debug.selectedCoverageRow.reportType || "—"} · ${debug.selectedCoverageRow.periodStart || "—"} – ${debug.selectedCoverageRow.periodEnd || "—"} · facts=${debug.selectedCoverageRow.factCount ?? "—"}`
+            : "—"}
+        </dd>
         <dt>Facts query filters</dt>
         <dd>
           <pre className="nac-ask-nac-cashup-debug__json">
@@ -131,7 +228,17 @@ function CashUpDebugPanel({ debug }) {
           </pre>
         </div>
       ) : null}
-    </div>
+      <CashUpProductionTracePanel trace={productionTrace} />
+    </>
+  );
+
+  return (
+    <details className="nac-ask-nac-cashup-debug" data-testid="cash-up-debug-panel">
+      <summary>Cash-up debug (developer)</summary>
+      <div role="region" aria-label="Cash-up debug trace">
+        {panelBody}
+      </div>
+    </details>
   );
 }
 
@@ -237,7 +344,7 @@ function AskNacAnswerDetails({ response, isMissing, isError }) {
         </div>
       ) : null}
 
-      <CashUpDebugPanel debug={response.cashUpDebug} />
+      <CashUpDebugPanel debug={response.cashUpDebug} productionTrace={response.cashUpProductionTrace} />
 
       {response.warnings?.length ? (
         <div className={`nac-ask-nac-warnings nac-ask-nac-warnings--compact ${isMissing || isError ? "nac-ask-nac-warnings--alert" : ""}`}>
@@ -272,7 +379,7 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
   const showExport =
     hasExportableContent(response) && response.answerType !== ANSWER_TYPES.UNKNOWN;
   const trust = getMobileTrustSummary(response);
-  const metrics = response.keyMetrics || [];
+  const metrics = applyExecutiveMetricDisplayLabels(response.keyMetrics || []);
   const showMiniTable = metrics.length > 3;
 
   return (
@@ -286,7 +393,7 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
 
       <MobilePrimaryAnswerContent response={response} />
 
-      <CashUpDebugPanel debug={response.cashUpDebug} />
+      <CashUpDebugPanel debug={response.cashUpDebug} productionTrace={response.cashUpProductionTrace} />
 
       {showMiniTable ? (
         <MiniMetricsTable metrics={metrics} />
@@ -380,9 +487,9 @@ export default function AskNacAnswerCard({
 
       <PrimaryAnswerContent response={response} />
 
-      <CashUpDebugPanel debug={response.cashUpDebug} />
+      <CashUpDebugPanel debug={response.cashUpDebug} productionTrace={response.cashUpProductionTrace} />
 
-      <MetricList metrics={response.keyMetrics} />
+      <MetricList metrics={applyExecutiveMetricDisplayLabels(response.keyMetrics)} />
 
       {response.insights?.length ? (
         <div className="nac-ask-nac-block">

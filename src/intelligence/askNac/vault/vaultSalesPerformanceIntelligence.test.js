@@ -110,4 +110,22 @@ describe("vaultSalesPerformanceIntelligence", () => {
     expect(metrics.some((m) => m.key === "cash_variance")).toBe(false);
     expect(metrics.some((m) => m.key === "payment_Mada")).toBe(true);
   });
+
+  test("headline delivery sales sums platform rows when aggregate row is absent", () => {
+    const metrics = extendedSalesPerformanceMetrics([
+      { metricKey: "delivery_sales", metricValue: 0, dimensions: { platform: "jahez" } },
+      { metricKey: "delivery_sales", metricValue: 328, dimensions: { platform: "chefz" } },
+      { metricKey: "delivery_sales", metricValue: 124, dimensions: { platform: "keeta" } },
+      { metricKey: "delivery_sales", metricValue: 307, dimensions: { platform: "hunger" } },
+    ]);
+
+    expect(metrics.find((row) => row.key === "delivery_sales")?.value).toBe("759");
+  });
+
+  test("uses Electronic payments label for card_sales headline metric", () => {
+    const metrics = extendedSalesPerformanceMetrics([
+      { metricKey: "card_sales", metricValue: 19046 },
+    ]);
+    expect(metrics.find((row) => row.key === "card_sales")?.label).toBe("Electronic payments");
+  });
 });

@@ -48,7 +48,7 @@ describe("buildCashUpExecutiveBrief", () => {
     expect(brief.executiveSummary).toMatch(/17,941\.739 SAR/);
     expect(brief.keyFindings.some((line) => /Net sales.*17,941\.739 SAR/.test(line))).toBe(true);
     expect(brief.keyFindings.some((line) => /Gross sales.*20,633 SAR/.test(line))).toBe(true);
-    expect(brief.keyFindings.some((line) => /Card sales.*19,046 SAR/.test(line) && /629 SAR/.test(line))).toBe(
+    expect(brief.keyFindings.some((line) => /Electronic payments.*19,046 SAR/.test(line) && /629 SAR/.test(line))).toBe(
       true,
     );
     expect(brief.operationalRisks.some((line) => /partial/i.test(line))).toBe(true);
@@ -72,6 +72,27 @@ describe("buildCashUpExecutiveBrief", () => {
     expect(joined).not.toMatch(/Guest count \d/i);
     expect(joined).not.toMatch(/Budget achievement/i);
     expect(joined).not.toMatch(/below target/i);
+  });
+
+  test("ranks revenue concentration ahead of delivery detail", () => {
+    const brief = buildCashUpExecutiveBrief({
+      facts: [
+        ...JUNE_17_FACT_ROWS,
+        { metric_key: "dinner_sales", metric_value: 17178.259, period_end: "2026-06-17" },
+        { metric_key: "delivery_sales", metric_value: 328, dimensions: { platform: "chefz" }, period_end: "2026-06-17" },
+      ],
+      branchLabel: "Khobar",
+      periodLabel: "19 June 2026",
+      businessDate: "2026-06-19",
+      fileTitle: "Cash up 2026.xlsx",
+      coverage: [JUNE_17_COVERAGE],
+    });
+
+    const dinnerIndex = brief.keyFindings.findIndex((line) => /contributed \d+% of gross sales/.test(line));
+    const deliveryIndex = brief.keyFindings.findIndex((line) => /Delivery · chefz/i.test(line));
+    expect(dinnerIndex).toBeGreaterThanOrEqual(0);
+    expect(deliveryIndex).toBeGreaterThanOrEqual(0);
+    expect(dinnerIndex).toBeLessThan(deliveryIndex);
   });
 });
 

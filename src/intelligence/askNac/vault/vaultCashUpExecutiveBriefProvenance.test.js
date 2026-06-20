@@ -78,7 +78,7 @@ export function findExecutiveBriefProvenanceViolations(brief, facts = []) {
     violations.push("marketing copy in dataSources");
   }
 
-  if (/card\/cash settlement|cash\+card settlement/i.test(text) && (hasCard || hasCash)) {
+  if (/card\/cash settlement|cash\+card settlement|electronic payments.*settlement/i.test(text) && (hasCard || hasCash)) {
     if (!/\d+\.?\d*%/.test(text)) {
       violations.push("settlement narrative without computed percentage");
     }
@@ -144,14 +144,14 @@ describe("buildCashUpExecutiveBrief provenance hardening", () => {
     ])).toEqual([]);
   });
 
-  test("uses computed card/cash settlement percentage", () => {
+  test("uses computed electronic payment settlement percentage", () => {
     const brief = buildCashUpExecutiveBrief(JUNE_17_INPUT);
 
     expect(brief.executiveSummary).toMatch(
-      /Card sales represented 96\.8% of recorded card\/cash settlement\./,
+      /Electronic payments represented 96\.8% of recorded card\/cash settlement\./,
     );
     expect(brief.keyFindings.some((line) =>
-      /card represented 96\.8% of recorded card\/cash settlement/.test(line),
+      /electronic payments represented 96\.8% of recorded card\/cash settlement/i.test(line),
     )).toBe(true);
     expect(brief.executiveSummary).not.toMatch(/majority|small share/i);
   });
@@ -168,21 +168,20 @@ describe("buildCashUpExecutiveBrief provenance hardening", () => {
   test("June 17 hardened sample matches expected provenance-safe output", () => {
     const brief = buildCashUpExecutiveBrief(JUNE_17_INPUT);
 
-    expect(brief).toEqual({
-      executiveSummary:
-        "Khobar cash-up for 2026-06-17 shows net sales of 17,941.739 SAR (gross 20,633 SAR). Card sales represented 96.8% of recorded card/cash settlement.",
-      keyFindings: [
-        "Net sales 17,941.739 SAR for Khobar on 17 June 2026.",
-        "Gross sales were 20,633 SAR and net sales were 17,941.739 SAR.",
-        "Card sales 19,046 SAR and cash 629 SAR — card represented 96.8% of recorded card/cash settlement.",
-      ],
-      operationalRisks: [
-        "Coverage marked partial — treat as uploaded-file snapshot, not final close.",
-        "Missing parsed fields: guest count, average spend per guest.",
-      ],
-      recommendedActions: [],
-      dataSources: ["Cash up 2026.xlsx · 2026-06-17 · cash_up"],
-    });
+    expect(brief.executiveSummary).toBe(
+      "Khobar cash-up for 2026-06-17 shows net sales of 17,941.739 SAR (gross 20,633 SAR). Electronic payments represented 96.8% of recorded card/cash settlement.",
+    );
+    expect(brief.keyFindings).toEqual([
+      "Electronic payments 19,046 SAR and cash 629 SAR — electronic payments represented 96.8% of recorded card/cash settlement.",
+      "Net sales 17,941.739 SAR for Khobar on 17 June 2026.",
+      "Gross sales were 20,633 SAR and net sales were 17,941.739 SAR.",
+    ]);
+    expect(brief.operationalRisks).toEqual([
+      "Coverage marked partial — treat as uploaded-file snapshot, not final close.",
+      "Missing parsed fields: guest count, average spend per guest.",
+    ]);
+    expect(brief.recommendedActions).toEqual([]);
+    expect(brief.dataSources).toEqual(["Cash up 2026.xlsx · 2026-06-17 · cash_up"]);
   });
 });
 

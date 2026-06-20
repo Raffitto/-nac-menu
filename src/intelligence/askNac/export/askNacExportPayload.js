@@ -6,6 +6,11 @@
 import { ANSWER_TYPES } from "../askNacContract";
 import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { hoursToRange } from "../../../dashboard/utils/rangeState";
+import {
+  applyExecutiveMetricDisplayLabels,
+  formatExportAnswerText,
+  normalizeExecutiveBriefForExport,
+} from "./executiveBriefExport";
 
 export const EXPORT_FORMATS = Object.freeze({
   PDF: "pdf",
@@ -115,8 +120,16 @@ export function resolveAnswerProvenance(response = {}) {
 
 export function hasExportableContent(response) {
   if (!response || typeof response !== "object") return false;
+  const brief = response.executiveBrief;
+  const hasBrief = Boolean(
+    brief &&
+      (String(brief.executiveSummary || "").trim() ||
+        brief.keyFindings?.length ||
+        brief.operationalRisks?.length),
+  );
   return Boolean(
-    String(response.directAnswer || "").trim() ||
+    hasBrief ||
+      formatExportAnswerText(response.directAnswer) ||
       (response.keyMetrics && response.keyMetrics.length > 0) ||
       (response.missingData && response.missingData.length > 0) ||
       response.answerType === ANSWER_TYPES.MISSING_DATA,
@@ -181,9 +194,13 @@ export function buildAskNacExportPayload({ question = "", response = {}, filters
     },
     answer: {
       title: response.title || "",
-      directAnswer: response.directAnswer || "",
+      directAnswer: formatExportAnswerText(response.directAnswer),
     },
-    keyMetrics: (response.keyMetrics || []).map((m) => ({
+    executiveBrief: response.executiveBrief
+      ? normalizeExecutiveBriefForExport(response.executiveBrief)
+      : null,
+    keyMetrics: applyExecutiveMetricDisplayLabels(response.keyMetrics || []).map((m) => ({
+      key: m.key || null,
       label: m.label,
       value: m.value,
       unit: m.unit || "",
