@@ -220,6 +220,7 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
 
   test("scheduled ingest returns structured summary counters", () => {
     expect(scheduledIngest).toMatch(/foldersChecked/);
+    expect(scheduledIngest).toMatch(/foldersProcessed/);
     expect(scheduledIngest).toMatch(/runsCreated/);
     expect(scheduledIngest).toMatch(/filesDiscovered/);
     expect(scheduledIngest).toMatch(/newFiles/);
@@ -228,12 +229,8 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(scheduledIngest).toMatch(/ingestedFiles/);
     expect(scheduledIngest).toMatch(/failedFiles/);
     expect(scheduledIngest).toMatch(/durationMs/);
-  });
-
-  test("scheduled ingest handles partial folders within timeout budget", () => {
-    expect(scheduledIngest).toMatch(/remainingFiles/);
-    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS/);
-    expect(scheduledIngest).toMatch(/SCHEDULED_INGEST_TIMEOUT_MS/);
+    expect(scheduledIngest).toMatch(/reason/);
+    expect(driveFunction).toMatch(/ok: true, \.\.\.summary/);
   });
 
   test("scheduled ingest reuses unchanged-file idempotency in existing pipeline", () => {
@@ -241,6 +238,48 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(driveHelper).toMatch(/isUnchanged/);
     expect(driveHelper).toMatch(/Identical content already indexed/);
     expect(driveHelper).toMatch(/Unchanged Drive file/);
+  });
+});
+
+describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
+  test("cash_up folders are processed before daily_logbook", () => {
+    expect(scheduledIngest).toMatch(/sortScheduledFolders/);
+    expect(scheduledIngest).toMatch(/cash_up: 0/);
+    expect(scheduledIngest).toMatch(/daily_logbook: 1/);
+    expect(scheduledIngest).toMatch(/scheduledFolderPriority/);
+  });
+
+  test("scheduled ingest supports reportType, maxFolders, and maxFilesPerRun limits", () => {
+    expect(driveFunction).toMatch(/reportType: body\?\.reportType/);
+    expect(driveFunction).toMatch(/maxFolders: body\?\.maxFolders/);
+    expect(driveFunction).toMatch(/maxFilesPerRun: body\?\.maxFilesPerRun/);
+    expect(scheduledIngest).toMatch(/filterScheduledFolders/);
+    expect(scheduledIngest).toMatch(/maxFolders \? eligible\.slice\(0, maxFolders\)/);
+    expect(scheduledIngest).toMatch(/maxFilesToProcess: maxFilesPerRun/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_FILES_DEFAULT = 10/);
+  });
+
+  test("scheduled ingest returns partial 200 within strict time budget", () => {
+    expect(scheduledIngest).toMatch(/SCHEDULED_INGEST_BUDGET_MS = 50_000/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_BUDGET_RESERVE_MS/);
+    expect(scheduledIngest).toMatch(/budgetExhausted/);
+    expect(scheduledIngest).toMatch(/time_budget_exhausted/);
+    expect(scheduledIngest).toMatch(/remaining_files/);
+    expect(scheduledIngest).toMatch(/finalizeScheduledRunStop/);
+    expect(scheduledIngest).toMatch(/partial: true/);
+  });
+
+  test("stuck scheduled runs in running are cleaned up before processing", () => {
+    expect(scheduledIngest).toMatch(/cleanupStuckScheduledRuns/);
+    expect(scheduledIngest).toMatch(/scheduled_worker_aborted/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_STUCK_RUN_MINUTES = 15/);
+    expect(scheduledIngest).toMatch(/stuckRunsCleaned/);
+  });
+
+  test("scheduled ingest avoids worker-kill style long loops", () => {
+    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS = 1/);
+    expect(scheduledIngest).not.toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS = 5/);
+    expect(scheduledIngest).not.toMatch(/SCHEDULED_INGEST_TIMEOUT_MS = 110_000/);
   });
 });
 

@@ -167,7 +167,11 @@ Deno.serve(async (req) => {
 
       const admin = createClient(supabaseUrl, serviceRoleKey);
       const summary = await runScheduledDriveIngestion(admin, {
+        reportType: body?.reportType,
+        maxFolders: body?.maxFolders,
+        maxFilesPerRun: body?.maxFilesPerRun,
         maxFilesToProcess: body?.maxFilesToProcess,
+        budgetMs: body?.budgetMs,
       });
       console.info("[vault-drive-sync] scheduled_ingest complete", summary);
       return json(200, { ok: true, ...summary });

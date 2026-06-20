@@ -1,6 +1,6 @@
 /**
  * Scheduled Google Drive folder ingestion — backend-only, no UI.
- * Invoked by vault-drive-sync action scheduled_ingest (Phase 1).
+ * Invoked by vault-drive-sync action scheduled_ingest (Phase 1 / 2b).
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -10,20 +10,30 @@ import {
   type DriveFolder,
 } from "./vaultDriveIngestion.ts";
 
-const SCHEDULED_INGEST_TIMEOUT_MS = 110_000;
-const SCHEDULED_MAX_LOOP_ATTEMPTS = 5;
-const SCHEDULED_MAX_FILES_DEFAULT = 200;
+/** Stop before Supabase worker kill (~80s). Leave headroom for JSON response. */
+export const SCHEDULED_INGEST_BUDGET_MS = 50_000;
+export const SCHEDULED_BUDGET_RESERVE_MS = 3_000;
+export const SCHEDULED_MAX_LOOP_ATTEMPTS = 1;
+export const SCHEDULED_MAX_FILES_DEFAULT = 10;
+export const SCHEDULED_STUCK_RUN_MINUTES = 15;
+
+const REPORT_TYPE_PRIORITY: Record<string, number> = {
+  cash_up: 0,
+  daily_logbook: 1,
+};
 
 export type ScheduledIngestFolderResult = {
   folderId: string;
   driveFolderId: string;
   label: string;
+  reportType: string;
   runId: string | null;
   status: string;
   partial: boolean;
   remainingFiles: number;
   loopAttempts: number;
   error: string | null;
+  reason: string | null;
   discovered: number;
   newFiles: number;
   changedFiles: number;
@@ -34,6 +44,7 @@ export type ScheduledIngestFolderResult = {
 
 export type ScheduledIngestSummary = {
   foldersChecked: number;
+  foldersProcessed: number;
   runsCreated: number;
   filesDiscovered: number;
   newFiles: number;
@@ -43,7 +54,19 @@ export type ScheduledIngestSummary = {
   failedFiles: number;
   durationMs: number;
   partial: boolean;
+  reason: string | null;
+  stuckRunsCleaned: number;
   folderResults: ScheduledIngestFolderResult[];
+};
+
+export type ScheduledIngestOptions = {
+  reportType?: string;
+  maxFolders?: number;
+  maxFilesPerRun?: number;
+  /** @deprecated use maxFilesPerRun */
+  maxFilesToProcess?: number;
+  budgetMs?: number;
+  refreshAccessToken?: (refreshToken: string) => Promise<{ access_token: string; expires_in?: number }>;
 };
 
 type SupabaseAdmin = SupabaseClient;
@@ -52,6 +75,43 @@ function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader) return null;
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
+}
+
+export function scheduledFolderPriority(reportType: string): number {
+  return REPORT_TYPE_PRIORITY[reportType] ?? 99;
+}
+
+export function sortScheduledFolders<T extends { report_type?: string | null; label?: string | null; folder_name?: string | null }>(
+  folders: T[],
+): T[] {
+  return [...folders].sort((a, b) => {
+    const pa = scheduledFolderPriority(String(a.report_type || ""));
+    const pb = scheduledFolderPriority(String(b.report_type || ""));
+    if (pa !== pb) return pa - pb;
+    const la = String(a.label || a.folder_name || "");
+    const lb = String(b.label || b.folder_name || "");
+    return la.localeCompare(lb);
+  });
+}
+
+export function filterScheduledFolders<T extends { report_type?: string | null }>(
+  folders: T[],
+  reportType?: string,
+): T[] {
+  const filter = String(reportType || "").trim();
+  if (!filter) return folders;
+  return folders.filter((row) => String(row.report_type || "") === filter);
+}
+
+export function resolveScheduledIngestLimits(options: ScheduledIngestOptions = {}) {
+  const budgetMs = Number(options.budgetMs)
+    || Number(Deno.env.get("DRIVE_SCHEDULED_BUDGET_MS"))
+    || SCHEDULED_INGEST_BUDGET_MS;
+  const maxFilesPerRun = Number(options.maxFilesPerRun ?? options.maxFilesToProcess)
+    || Number(Deno.env.get("DRIVE_SCHEDULED_MAX_FILES_TO_PROCESS"))
+    || SCHEDULED_MAX_FILES_DEFAULT;
+  const maxFolders = Number(options.maxFolders) > 0 ? Number(options.maxFolders) : null;
+  return { budgetMs, maxFilesPerRun, maxFolders, reportType: options.reportType };
 }
 
 export function isScheduledIngestSecretConfigured(): boolean {
@@ -63,6 +123,14 @@ export function validateScheduledIngestSecret(req: Request): boolean {
   if (!expected) return false;
   const token = extractBearerToken(req.headers.get("Authorization"));
   return Boolean(token && token === expected);
+}
+
+function budgetRemainingMs(startedAt: number, budgetMs: number): number {
+  return budgetMs - (Date.now() - startedAt);
+}
+
+function budgetExhausted(startedAt: number, budgetMs: number): boolean {
+  return budgetRemainingMs(startedAt, budgetMs) <= SCHEDULED_BUDGET_RESERVE_MS;
 }
 
 async function refreshGoogleAccessToken(refreshToken: string) {
@@ -89,7 +157,7 @@ async function refreshGoogleAccessToken(refreshToken: string) {
   return data as { access_token: string; expires_in?: number };
 }
 
-async function loadRunCounters(admin: SupabaseAdmin, runId: string) {
+async function loadRunRow(admin: SupabaseAdmin, runId: string) {
   const { data: run, error } = await admin
     .from("ask_nac_drive_sync_runs")
     .select(
@@ -112,7 +180,77 @@ function countersFromRun(run: Record<string, unknown> | null) {
     failedFiles: Number(run?.failed_count ?? 0) || 0,
     remainingFiles: Number(stats.remainingFiles ?? 0) || 0,
     status: String(run?.status || "unknown"),
+    stats,
   };
+}
+
+export async function cleanupStuckScheduledRuns(
+  admin: SupabaseAdmin,
+  {
+    stuckMinutes = SCHEDULED_STUCK_RUN_MINUTES,
+    now = Date.now(),
+  }: { stuckMinutes?: number; now?: number } = {},
+): Promise<number> {
+  const cutoff = new Date(now - stuckMinutes * 60 * 1000).toISOString();
+  const { data: stuck, error } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .select("id, stats")
+    .eq("trigger_type", "scheduled")
+    .eq("status", "running")
+    .lt("created_at", cutoff);
+
+  if (error) throw new Error(error.message);
+  if (!stuck?.length) return 0;
+
+  const finishedAt = new Date(now).toISOString();
+  for (const row of stuck) {
+    const stats = (row.stats as Record<string, unknown>) || {};
+    const { error: updateError } = await admin
+      .from("ask_nac_drive_sync_runs")
+      .update({
+        status: "partial",
+        finished_at: finishedAt,
+        updated_at: finishedAt,
+        stats: {
+          ...stats,
+          scheduledIngest: true,
+          scheduledStopReason: "scheduled_worker_aborted",
+          runtimeStage: "partial",
+        },
+      })
+      .eq("id", row.id);
+    if (updateError) throw new Error(updateError.message);
+  }
+
+  return stuck.length;
+}
+
+async function finalizeScheduledRunStop(
+  admin: SupabaseAdmin,
+  runId: string,
+  reason: string,
+  counters: ReturnType<typeof countersFromRun>,
+) {
+  const finishedAt = new Date().toISOString();
+  const status = counters.status === "failed" ? "failed" : "partial";
+  const { error } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .update({
+      status,
+      finished_at: finishedAt,
+      updated_at: finishedAt,
+      current_file: null,
+      stats: {
+        ...counters.stats,
+        scheduledIngest: true,
+        scheduledStopReason: reason,
+        remainingFiles: counters.remainingFiles,
+        runtimeStage: status,
+      },
+    })
+    .eq("id", runId);
+  if (error) throw new Error(error.message);
+  return status;
 }
 
 function emptyFolderResult(
@@ -123,12 +261,14 @@ function emptyFolderResult(
     folderId: String(folder.id),
     driveFolderId: String(folder.drive_folder_id || ""),
     label: String(folder.label || folder.folder_name || folder.drive_folder_id || ""),
+    reportType: String(folder.report_type || ""),
     runId: null,
     status: "skipped",
     partial: false,
     remainingFiles: 0,
     loopAttempts: 0,
     error: null,
+    reason: null,
     discovered: 0,
     newFiles: 0,
     changedFiles: 0,
@@ -139,25 +279,34 @@ function emptyFolderResult(
   };
 }
 
+function appendFolderCounters(
+  summary: ScheduledIngestSummary,
+  folderResult: ScheduledIngestFolderResult,
+) {
+  summary.filesDiscovered += folderResult.discovered;
+  summary.newFiles += folderResult.newFiles;
+  summary.changedFiles += folderResult.changedFiles;
+  summary.skippedFiles += folderResult.skippedFiles;
+  summary.ingestedFiles += folderResult.ingestedFiles;
+  summary.failedFiles += folderResult.failedFiles;
+}
+
 export async function runScheduledDriveIngestion(
   admin: SupabaseAdmin,
-  {
-    refreshAccessToken = refreshGoogleAccessToken,
-    maxFilesToProcess,
-    timeoutMs = SCHEDULED_INGEST_TIMEOUT_MS,
-  }: {
-    refreshAccessToken?: (refreshToken: string) => Promise<{ access_token: string; expires_in?: number }>;
-    maxFilesToProcess?: number;
-    timeoutMs?: number;
-  } = {},
+  options: ScheduledIngestOptions = {},
 ): Promise<ScheduledIngestSummary> {
   const startedAt = Date.now();
-  const initialMaxFiles = Number(maxFilesToProcess)
-    || Number(Deno.env.get("DRIVE_SCHEDULED_MAX_FILES_TO_PROCESS"))
-    || SCHEDULED_MAX_FILES_DEFAULT;
+  const {
+    refreshAccessToken = refreshGoogleAccessToken,
+    reportType,
+    maxFolders,
+    maxFilesPerRun,
+    budgetMs,
+  } = resolveScheduledIngestLimits(options);
 
   const summary: ScheduledIngestSummary = {
     foldersChecked: 0,
+    foldersProcessed: 0,
     runsCreated: 0,
     filesDiscovered: 0,
     newFiles: 0,
@@ -167,8 +316,12 @@ export async function runScheduledDriveIngestion(
     failedFiles: 0,
     durationMs: 0,
     partial: false,
+    reason: null,
+    stuckRunsCleaned: 0,
     folderResults: [],
   };
+
+  summary.stuckRunsCleaned = await cleanupStuckScheduledRuns(admin);
 
   const { data: folders, error: folderError } = await admin
     .from("ask_nac_drive_sync_folders")
@@ -182,20 +335,28 @@ export async function runScheduledDriveIngestion(
 
   if (folderError) throw new Error(folderError.message);
 
-  summary.foldersChecked = folders?.length || 0;
+  const eligible = sortScheduledFolders(filterScheduledFolders(folders || [], reportType));
+  summary.foldersChecked = eligible.length;
 
-  for (const folderRow of folders || []) {
-    if (Date.now() - startedAt >= timeoutMs) {
+  const foldersToProcess = maxFolders ? eligible.slice(0, maxFolders) : eligible;
+  let foldersProcessed = 0;
+
+  for (const folderRow of foldersToProcess) {
+    if (budgetExhausted(startedAt, budgetMs)) {
       summary.partial = true;
+      summary.reason = summary.reason || "time_budget_exhausted";
       summary.folderResults.push(emptyFolderResult(folderRow, {
-        status: "timeout",
-        error: "Scheduled ingest timeout budget exhausted before this folder could run.",
+        status: "skipped",
+        partial: true,
+        reason: "time_budget_exhausted",
+        error: "Scheduled ingest time budget exhausted before this folder could run.",
       }));
       continue;
     }
 
     const folder = folderRow as DriveFolder & Record<string, unknown>;
     let folderResult = emptyFolderResult(folderRow);
+    foldersProcessed += 1;
 
     const { data: connection } = await admin
       .from("ask_nac_drive_connections")
@@ -224,6 +385,19 @@ export async function runScheduledDriveIngestion(
 
     try {
       const tokens = await refreshAccessToken(String(connection.refresh_token));
+      if (budgetExhausted(startedAt, budgetMs)) {
+        summary.partial = true;
+        summary.reason = summary.reason || "time_budget_exhausted";
+        folderResult = emptyFolderResult(folderRow, {
+          status: "skipped",
+          partial: true,
+          reason: "time_budget_exhausted",
+          error: "Scheduled ingest time budget exhausted after token refresh.",
+        });
+        summary.folderResults.push(folderResult);
+        continue;
+      }
+
       await admin
         .from("ask_nac_drive_connections")
         .update({
@@ -247,21 +421,21 @@ export async function runScheduledDriveIngestion(
       summary.runsCreated += 1;
       folderResult.runId = runId;
 
-      let maxFiles = initialMaxFiles;
       let loopAttempts = 0;
       let latestCounters = countersFromRun(null);
+      let stopReason: string | null = null;
 
-      while (loopAttempts < SCHEDULED_MAX_LOOP_ATTEMPTS && Date.now() - startedAt < timeoutMs) {
+      while (loopAttempts < SCHEDULED_MAX_LOOP_ATTEMPTS && !budgetExhausted(startedAt, budgetMs)) {
         loopAttempts += 1;
         await processDriveIngestionRun(admin, {
           accessToken: tokens.access_token,
           folder,
           runId,
           email,
-          maxFilesToProcess: maxFiles,
+          maxFilesToProcess: maxFilesPerRun,
         });
 
-        const run = await loadRunCounters(admin, runId);
+        const run = await loadRunRow(admin, runId);
         latestCounters = countersFromRun(run);
         folderResult.status = latestCounters.status;
 
@@ -273,17 +447,26 @@ export async function runScheduledDriveIngestion(
           break;
         }
 
-        folderResult.partial = true;
-        summary.partial = true;
-        maxFiles = latestCounters.discovered > 0
-          ? latestCounters.discovered
-          : maxFiles + latestCounters.remainingFiles;
+        stopReason = "remaining_files";
+        break;
       }
 
-      if (latestCounters.remainingFiles > 0 && latestCounters.status === "partial") {
+      if (budgetExhausted(startedAt, budgetMs) && latestCounters.status === "running") {
+        stopReason = stopReason || "time_budget_exhausted";
+      }
+
+      if (
+        latestCounters.status === "running"
+        || (latestCounters.remainingFiles > 0 && latestCounters.status === "partial")
+        || stopReason === "time_budget_exhausted"
+      ) {
+        const finalizeReason = stopReason
+          || (latestCounters.remainingFiles > 0 ? "remaining_files" : "time_budget_exhausted");
         folderResult.partial = true;
+        folderResult.reason = finalizeReason;
         summary.partial = true;
-        folderResult.remainingFiles = latestCounters.remainingFiles;
+        summary.reason = summary.reason || finalizeReason;
+        folderResult.status = await finalizeScheduledRunStop(admin, runId, finalizeReason, latestCounters);
       }
 
       folderResult.loopAttempts = loopAttempts;
@@ -295,20 +478,34 @@ export async function runScheduledDriveIngestion(
       folderResult.failedFiles = latestCounters.failedFiles;
       folderResult.remainingFiles = latestCounters.remainingFiles;
 
-      summary.filesDiscovered += folderResult.discovered;
-      summary.newFiles += folderResult.newFiles;
-      summary.changedFiles += folderResult.changedFiles;
-      summary.skippedFiles += folderResult.skippedFiles;
-      summary.ingestedFiles += folderResult.ingestedFiles;
-      summary.failedFiles += folderResult.failedFiles;
+      appendFolderCounters(summary, folderResult);
     } catch (err) {
       folderResult.status = "failed";
       folderResult.error = (err as Error)?.message || String(err);
+      if (folderResult.runId) {
+        const run = await loadRunRow(admin, folderResult.runId);
+        const counters = countersFromRun(run);
+        if (counters.status === "running") {
+          await finalizeScheduledRunStop(admin, folderResult.runId, "scheduled_processing_error", counters);
+        }
+      }
     }
 
     summary.folderResults.push(folderResult);
+
+    if (budgetExhausted(startedAt, budgetMs)) {
+      summary.partial = true;
+      summary.reason = summary.reason || "time_budget_exhausted";
+      break;
+    }
   }
 
+  if (maxFolders && eligible.length > maxFolders) {
+    summary.partial = true;
+    summary.reason = summary.reason || "max_folders_limit";
+  }
+
+  summary.foldersProcessed = foldersProcessed;
   summary.durationMs = Date.now() - startedAt;
   return summary;
 }
