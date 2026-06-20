@@ -245,7 +245,8 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(driveHelper).toMatch(/if \(!validateCashUpWorkbookParse\(parsed\)\)/);
     expect(driveHelper).toMatch(/cash_up_workbook_parsed/);
     expect(driveHelper).toMatch(/existing facts preserved/);
-    expect(driveHelper).toMatch(/async function persistParsedFacts/);
+    expect(driveHelper).toMatch(/replaceStructuredFactsForFile/);
+    expect(driveHelper).not.toMatch(/await admin\.from\("ask_nac_structured_facts"\)\.delete\(\)\.eq\("file_id"/);
   });
 });
 

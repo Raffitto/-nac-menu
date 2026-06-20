@@ -5,6 +5,7 @@ import {
   validateCashUpWorkbookParse,
   type CashUpWorkbookParseResult,
 } from "./vaultCashUpWorkbookParser.ts";
+import { replaceStructuredFactsForFile } from "./vaultStructuredFactsReplace.ts";
 
 const VAULT_STORAGE_BUCKET = "ask-nac-vault-originals";
 const CHUNK_TARGET_CHARS = 5000;
@@ -809,6 +810,7 @@ async function persistParsedFacts(
     rows,
     periodStart,
     periodEnd,
+    minInserted,
   }: {
     fileRow: Record<string, any>;
     versionRowId: string | null;
@@ -816,24 +818,16 @@ async function persistParsedFacts(
     rows: Record<string, unknown>[];
     periodStart: string | null;
     periodEnd: string | null;
+    minInserted?: number;
   },
 ) {
-  await admin.from("ask_nac_structured_facts").delete().eq("file_id", fileRow.id);
-  const { error } = await admin.from("ask_nac_structured_facts").insert(rows);
-  if (error) throw new Error(error.message);
-
-  if (periodStart && periodEnd) {
-    await admin.from("ask_nac_files").update({
-      period_start: periodStart,
-      period_end: periodEnd,
-      updated_at: nowIso(),
-    }).eq("id", fileRow.id);
-    await admin.from("ask_nac_data_coverage").update({
-      period_start: periodStart,
-      period_end: periodEnd,
-      updated_at: nowIso(),
-    }).eq("source_file_id", fileRow.id);
-  }
+  await replaceStructuredFactsForFile(admin, {
+    fileId: fileRow.id,
+    rows,
+    periodStart,
+    periodEnd,
+    minInserted: minInserted ?? rows.length,
+  });
 }
 
 async function insertStructuredFacts(
@@ -882,6 +876,7 @@ async function insertStructuredFacts(
       rows,
       periodStart: parsed.periodStart,
       periodEnd: parsed.periodEnd,
+      minInserted: rows.length,
     });
     return {
       factCount: rows.length,

@@ -121,12 +121,12 @@ describe("Drive cash-up ingestion wiring", () => {
     "utf8",
   );
 
-  test("cash_up XLSX uses workbook parser before deleting facts", () => {
+  test("cash_up XLSX uses workbook parser before atomic RPC replace", () => {
     expect(driveHelper).toMatch(/parseCashUpWorkbookFromXlsxBuffer/);
     expect(driveHelper).toMatch(/if \(!validateCashUpWorkbookParse\(parsed\)\)/);
     expect(driveHelper).toMatch(/existing facts preserved/);
-    expect(driveHelper).toMatch(/async function persistParsedFacts/);
-    expect(driveHelper).toMatch(/await persistParsedFacts\(admin, \{\s*fileRow,\s*versionRowId,\s*email,\s*rows,/);
+    expect(driveHelper).toMatch(/replaceStructuredFactsForFile/);
+    expect(driveHelper).not.toMatch(/await admin\.from\("ask_nac_structured_facts"\)\.delete\(\)\.eq\("file_id"/);
   });
 
   test("cash_up XLSX does not use flattened extractCashUpStructuredFacts path", () => {
