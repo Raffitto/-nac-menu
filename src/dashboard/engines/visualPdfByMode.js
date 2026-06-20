@@ -17,7 +17,7 @@ import {
   NAC_TEAL,
   NAC_GOLD,
   NAC_WHITE,
-  CARD_BG,
+  buildExportTableStyles,
 } from "./pdfVisualTheme";
 import {
   drawExecutiveSummaryPage,
@@ -187,8 +187,7 @@ function exportManagerReviewPDF(payload) {
       startY: y,
       head: [["Opportunity", "Proxy attach", "Target", "Est. upside SAR"]],
       body: attachment.missedUpsells.slice(0, 10).map((m) => formatAttachmentOpportunityTableRow(m)),
-      styles: { fontSize: 8, textColor: NAC_WHITE, fillColor: CARD_BG },
-      headStyles: { fillColor: [120, 50, 40] },
+      ...buildExportTableStyles({ styles: { fontSize: 8 } }),
       margin: { left: margin, right: margin },
     });
     y = doc.lastAutoTable.finalY + 10;
@@ -499,8 +498,10 @@ function exportMenuEngineeringPDF(payload) {
         String(p.views ?? "—"),
         p.tag || "—",
       ]),
-      styles: { fontSize: 9, textColor: NAC_WHITE, fillColor: CARD_BG },
-      headStyles: { fillColor: NAC_TEAL },
+      ...buildExportTableStyles({
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: NAC_TEAL },
+      }),
       margin: { left: margin, right: margin },
     });
     y = doc.lastAutoTable.finalY + 12;

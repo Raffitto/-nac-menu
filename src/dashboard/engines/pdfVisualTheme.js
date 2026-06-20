@@ -22,6 +22,7 @@ import {
   formatMomentumDelta,
   sanitizeExportText,
   sanitizeTableForPdf,
+  resolveExportTableTextColor,
 } from "../utils/exportExecutiveVisual";
 
 export const NAC_TEAL = COLOR_PERFORMANCE;
@@ -109,7 +110,21 @@ export function drawMicroSparkline(doc, x, y, w, h, values, color = NAC_TEAL) {
   });
 }
 
+export function applyExportTableTextContrast(data) {
+  if (data.section !== "body" && data.section !== "head") return;
+  const fill = data.cell.styles.fillColor;
+  data.cell.styles.textColor = resolveExportTableTextColor(fill);
+}
+
 export function buildExportTableStyles(extra = {}) {
+  const {
+    didParseCell: userDidParseCell,
+    styles: extraStyles,
+    headStyles: extraHeadStyles,
+    alternateRowStyles: extraAlternateRowStyles,
+    ...restExtra
+  } = extra;
+
   return {
     styles: {
       fontSize: 7.5,
@@ -117,11 +132,12 @@ export function buildExportTableStyles(extra = {}) {
       minCellHeight: 16,
       lineHeight: 1.4,
       textColor: EXPORT_PRIMARY,
+      fillColor: TABLE_ROW_A,
       lineColor: [50, 54, 62],
       lineWidth: 0.2,
       font: "helvetica",
       overflow: "linebreak",
-      ...extra.styles,
+      ...extraStyles,
     },
     headStyles: {
       fillColor: TABLE_HEAD_BG,
@@ -131,10 +147,18 @@ export function buildExportTableStyles(extra = {}) {
       cellPadding: 6,
       lineColor: [62, 66, 76],
       lineWidth: 0.35,
-      ...extra.headStyles,
+      ...extraHeadStyles,
     },
-    alternateRowStyles: { fillColor: TABLE_ROW_B },
-    ...extra,
+    alternateRowStyles: {
+      fillColor: TABLE_ROW_B,
+      textColor: EXPORT_PRIMARY,
+      ...extraAlternateRowStyles,
+    },
+    didParseCell: (data) => {
+      applyExportTableTextContrast(data);
+      userDidParseCell?.(data);
+    },
+    ...restExtra,
   };
 }
 
@@ -180,6 +204,7 @@ export function applyExportTableHeadCellStyles(data) {
 export function applyExportTableRowStriping(data, rowIndex) {
   if (data.section !== "body") return;
   data.cell.styles.fillColor = rowIndex % 2 === 0 ? TABLE_ROW_A : TABLE_ROW_B;
+  applyExportTableTextContrast(data);
 }
 
 export function applyConvPctHighlight(data, pct, highlightCols = []) {

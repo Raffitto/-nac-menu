@@ -257,7 +257,7 @@ export function exportAskNacPdf(payload) {
 }
 
 /** CEO-ready executive report */
-export function exportAskNacExecutiveReport(payload) {
+function buildExecutiveReportPdf(payload) {
   const { doc, y: startY } = createBaseDoc(payload, "Executive intelligence brief");
   let y = startY;
 
@@ -289,7 +289,15 @@ export function exportAskNacExecutiveReport(payload) {
 
   y = drawSourcesTable(doc, y, payload);
   drawProvenanceFooter(doc, payload, y);
-  doc.save(buildAskNacExportFilename(EXPORT_FORMATS.EXECUTIVE));
+  return doc;
+}
+
+export function exportAskNacExecutiveReportToBuffer(payload) {
+  return buildExecutiveReportPdf(payload).output("arraybuffer");
+}
+
+export function exportAskNacExecutiveReport(payload) {
+  buildExecutiveReportPdf(payload).save(buildAskNacExportFilename(EXPORT_FORMATS.EXECUTIVE));
 }
 
 /** Detailed analysis report (multi-section, may span pages) */

@@ -15,7 +15,17 @@ export const EXPORT_RISK = COLOR_RISK;
 export const TABLE_HEAD_BG = [36, 40, 48];
 export const TABLE_ROW_A = [14, 16, 20];
 export const TABLE_ROW_B = [22, 25, 30];
+export const TABLE_TEXT_DARK = [17, 17, 17];
 export const CONTENT_PANEL_BG = [14, 15, 17];
+
+/** Pick light or dark table text based on row/header fill luminance. */
+export function resolveExportTableTextColor(fillColor) {
+  if (!Array.isArray(fillColor) || fillColor.length < 3) return EXPORT_PRIMARY;
+  const luminance =
+    (0.299 * Number(fillColor[0]) + 0.587 * Number(fillColor[1]) + 0.114 * Number(fillColor[2])) /
+    255;
+  return luminance > 0.55 ? TABLE_TEXT_DARK : EXPORT_PRIMARY;
+}
 
 /** Conversion % accent: ≥70 teal, 40–70 gold, <40 soft red */
 export function convPctAccent(pct) {

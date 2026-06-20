@@ -7,6 +7,7 @@ import {
   drawCallout,
   drawLegendRow,
   drawInsightCard,
+  buildExportTableStyles,
   NAC_GOLD,
   NAC_TEAL,
   COLOR_RISK,
@@ -53,8 +54,7 @@ export function drawMenuVisibilitySignalsPage(doc, margin, contentW, menuVisibil
       r.showZeroMenuOrders ? "—" : String(r.menuOrders ?? "—"),
       r.foodicsQty != null ? String(r.foodicsQty) : "—",
     ]),
-    styles: { fontSize: 8, textColor: [230, 230, 230], fillColor: [22, 24, 28] },
-    headStyles: { fillColor: [78, 205, 196] },
+    ...buildExportTableStyles({ styles: { fontSize: 8 } }),
     margin: { left: margin, right: margin },
   });
 
