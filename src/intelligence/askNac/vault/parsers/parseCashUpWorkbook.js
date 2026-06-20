@@ -47,9 +47,13 @@ const LEGACY_CASH_UP_COLUMN_MAP = {
   amex: 11,
   ccm: 13,
   jahez: 14,
+  jahezOrders: -1,
   chefz: 15,
+  chefzOrders: -1,
   keeta: 16,
+  keetaOrders: -1,
   hunger: 17,
+  hungerOrders: -1,
   breakfast: 19,
   lunch: 20,
   dinner: 21,
@@ -70,6 +74,21 @@ function findHeaderIndex(labels, predicate) {
   return index >= 0 ? index : -1;
 }
 
+function isDeliveryPlatformHeader(label) {
+  return label.includes("jahez") || label === "chefz" || label === "keeta" || label === "hunger";
+}
+
+function resolveAdjacentOrderColumn(labels, platformIndex) {
+  if (platformIndex < 0) return -1;
+  for (let i = platformIndex + 1; i < Math.min(platformIndex + 4, labels.length); i += 1) {
+    const label = labels[i];
+    if (label.includes("no of order") || label === "order count") return i;
+    if (isDeliveryPlatformHeader(label)) break;
+    if (label.includes("owners") || label.includes("on account")) break;
+  }
+  return -1;
+}
+
 export function resolveCashUpColumnMap(matrix) {
   for (let rowIndex = 0; rowIndex < Math.min(matrix.length, 40); rowIndex += 1) {
     const row = matrix[rowIndex];
@@ -84,6 +103,11 @@ export function resolveCashUpColumnMap(matrix) {
     );
     if (visa < 0 || cash < 0 || totalSales < 0) continue;
 
+    const jahez = findHeaderIndex(labels, (label) => label.includes("jahez"));
+    const chefz = findHeaderIndex(labels, (label) => label === "chefz");
+    const keeta = findHeaderIndex(labels, (label) => label === "keeta");
+    const hunger = findHeaderIndex(labels, (label) => label === "hunger");
+
     return {
       visa,
       cash,
@@ -91,10 +115,14 @@ export function resolveCashUpColumnMap(matrix) {
       mada: findHeaderIndex(labels, (label) => label === "mada"),
       amex: findHeaderIndex(labels, (label) => label === "amex"),
       ccm: findHeaderIndex(labels, (label) => label.includes("ccm")),
-      jahez: findHeaderIndex(labels, (label) => label.includes("jahez")),
-      chefz: findHeaderIndex(labels, (label) => label === "chefz"),
-      keeta: findHeaderIndex(labels, (label) => label === "keeta"),
-      hunger: findHeaderIndex(labels, (label) => label === "hunger"),
+      jahez,
+      jahezOrders: resolveAdjacentOrderColumn(labels, jahez),
+      chefz,
+      chefzOrders: resolveAdjacentOrderColumn(labels, chefz),
+      keeta,
+      keetaOrders: resolveAdjacentOrderColumn(labels, keeta),
+      hunger,
+      hungerOrders: resolveAdjacentOrderColumn(labels, hunger),
       breakfast: findHeaderIndex(labels, (label) => label === "breakfast"),
       lunch: findHeaderIndex(labels, (label) => label === "lunch"),
       dinner: findHeaderIndex(labels, (label) => label === "dinner"),
@@ -112,7 +140,15 @@ export function resolveCashUpColumnMap(matrix) {
 
 function columnIndex(columnMap, key) {
   const index = columnMap[key];
-  return index >= 0 ? index : LEGACY_CASH_UP_COLUMN_MAP[key];
+  if (index >= 0) return index;
+  const legacy = LEGACY_CASH_UP_COLUMN_MAP[key];
+  return legacy >= 0 ? legacy : -1;
+}
+
+function optionalOrderCell(row, columnMap, key) {
+  const index = columnIndex(columnMap, key);
+  if (index < 0) return null;
+  return optionalNumericCell(row[index]);
 }
 
 function parseDailyRow(row, sourceRowRef, columnMap) {
@@ -145,9 +181,13 @@ function parseDailyRow(row, sourceRowRef, columnMap) {
     amexSales: optionalNumericCell(row[columnIndex(columnMap, "amex")]),
     ccmSales: optionalNumericCell(row[columnIndex(columnMap, "ccm")]),
     jahezSales: optionalNumericCell(row[columnIndex(columnMap, "jahez")]),
+    jahezOrders: optionalOrderCell(row, columnMap, "jahezOrders"),
     chefzSales: optionalNumericCell(row[columnIndex(columnMap, "chefz")]),
+    chefzOrders: optionalOrderCell(row, columnMap, "chefzOrders"),
     keetaSales: optionalNumericCell(row[columnIndex(columnMap, "keeta")]),
+    keetaOrders: optionalOrderCell(row, columnMap, "keetaOrders"),
     hungerSales: optionalNumericCell(row[columnIndex(columnMap, "hunger")]),
+    hungerOrders: optionalOrderCell(row, columnMap, "hungerOrders"),
     breakfastSales: optionalNumericCell(row[columnIndex(columnMap, "breakfast")]),
     lunchSales: optionalNumericCell(row[columnIndex(columnMap, "lunch")]),
     dinnerSales: optionalNumericCell(row[columnIndex(columnMap, "dinner")]),
@@ -203,6 +243,14 @@ function buildFactsForDailyRow(row) {
   add("delivery_sales", row.chefzSales, { platform: "chefz" });
   add("delivery_sales", row.keetaSales, { platform: "keeta" });
   add("delivery_sales", row.hungerSales, { platform: "hunger" });
+  add(
+    "delivery_orders",
+    (row.jahezOrders ?? 0) + (row.chefzOrders ?? 0) + (row.keetaOrders ?? 0) + (row.hungerOrders ?? 0),
+  );
+  add("delivery_orders", row.jahezOrders, { platform: "jahez" });
+  add("delivery_orders", row.chefzOrders, { platform: "chefz" });
+  add("delivery_orders", row.keetaOrders, { platform: "keeta" });
+  add("delivery_orders", row.hungerOrders, { platform: "hunger" });
   add("ccm_sales", row.ccmSales);
   add("breakfast_sales", row.breakfastSales);
   add("lunch_sales", row.lunchSales);

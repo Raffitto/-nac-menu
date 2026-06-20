@@ -20,7 +20,7 @@ export function pickAggregateMetricValue(facts, metricKey) {
   const aggregate = rows.find((f) => !f.dimensions || Object.keys(f.dimensions).length === 0);
   if (aggregate) return aggregate.metricValue ?? aggregate.metric_value;
 
-  if (metricKey === "delivery_sales") {
+  if (metricKey === "delivery_sales" || metricKey === "delivery_orders") {
     const platformRows = rows.filter((f) => f.dimensions?.platform);
     if (platformRows.length) {
       return platformRows.reduce(
@@ -65,6 +65,7 @@ export const RECONCILIATION_METRICS = Object.freeze([
 export const CASH_UP_STRUCTURED_METRIC_KEYS = Object.freeze([
   "gross_sales",
   "business_date",
+  "delivery_orders",
   ...SALES_PERFORMANCE_METRICS.map(([key]) => key),
   ...RECONCILIATION_METRICS.map(([key]) => key),
 ]);

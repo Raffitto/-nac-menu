@@ -10,6 +10,29 @@ function pickMetricValue(facts, metricKey) {
   return hit ? (hit.metricValue ?? hit.metric_value) : null;
 }
 
+/** Prefer aggregate workbook rows (no dimensions) for headline metrics. */
+export function pickAggregateMetricValue(facts, metricKey) {
+  const rows = (facts || []).filter(
+    (f) => (f.metricKey || f.metric_key) === metricKey && (f.metricValue ?? f.metric_value) != null,
+  );
+  if (!rows.length) return null;
+
+  const aggregate = rows.find((f) => !f.dimensions || Object.keys(f.dimensions).length === 0);
+  if (aggregate) return aggregate.metricValue ?? aggregate.metric_value;
+
+  if (metricKey === "delivery_sales" || metricKey === "delivery_orders") {
+    const platformRows = rows.filter((f) => f.dimensions?.platform);
+    if (platformRows.length) {
+      return platformRows.reduce(
+        (sum, row) => sum + Number(row.metricValue ?? row.metric_value),
+        0,
+      );
+    }
+  }
+
+  return rows[0].metricValue ?? rows[0].metric_value;
+}
+
 export const SALES_PERFORMANCE_METRICS = Object.freeze([
   ["total_sales", "Total sales", "SAR"],
   ["net_sales", "Net sales", "SAR"],
@@ -18,7 +41,7 @@ export const SALES_PERFORMANCE_METRICS = Object.freeze([
   ["avg_per_guest", "Average spend per guest", "SAR"],
   ["target_sales", "Sales target / budget", "SAR"],
   ["cash_sales", "Cash sales", "SAR"],
-  ["card_sales", "Card sales", "SAR"],
+  ["card_sales", "Electronic payments", "SAR"],
   ["delivery_sales", "Delivery sales", "SAR"],
   ["discounts", "Discounts", "SAR"],
   ["voids", "Voids", "SAR"],
@@ -42,6 +65,7 @@ export const RECONCILIATION_METRICS = Object.freeze([
 export const CASH_UP_STRUCTURED_METRIC_KEYS = Object.freeze([
   "gross_sales",
   "business_date",
+  "delivery_orders",
   ...SALES_PERFORMANCE_METRICS.map(([key]) => key),
   ...RECONCILIATION_METRICS.map(([key]) => key),
 ]);
@@ -191,7 +215,7 @@ export function extendedSalesPerformanceMetrics(facts = []) {
   const rows = [];
 
   for (const [key, label, unit] of SALES_PERFORMANCE_METRICS) {
-    const value = pickMetricValue(facts, key);
+    const value = pickAggregateMetricValue(facts, key);
     if (value != null) {
       rows.push({ key, label, value: formatNumber(value), unit });
     }
