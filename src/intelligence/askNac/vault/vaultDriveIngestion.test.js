@@ -239,6 +239,14 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(driveHelper).toMatch(/Identical content already indexed/);
     expect(driveHelper).toMatch(/Unchanged Drive file/);
   });
+
+  test("cash_up XLSX Drive ingest uses workbook parser and parse-before-delete", () => {
+    expect(driveHelper).toMatch(/parseCashUpWorkbookFromXlsxBuffer/);
+    expect(driveHelper).toMatch(/if \(!validateCashUpWorkbookParse\(parsed\)\)/);
+    expect(driveHelper).toMatch(/cash_up_workbook_parsed/);
+    expect(driveHelper).toMatch(/existing facts preserved/);
+    expect(driveHelper).toMatch(/async function persistParsedFacts/);
+  });
 });
 
 describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {

@@ -1,4 +1,10 @@
 import { sanitizeErrorMessage } from "./vaultDriveSecrets.ts";
+import {
+  attachCashUpWorkbookFactContext,
+  parseCashUpWorkbookFromXlsxBuffer,
+  validateCashUpWorkbookParse,
+  type CashUpWorkbookParseResult,
+} from "./vaultCashUpWorkbookParser.ts";
 
 const VAULT_STORAGE_BUCKET = "ask-nac-vault-originals";
 const CHUNK_TARGET_CHARS = 5000;
@@ -777,35 +783,148 @@ async function createFileVersion(
   return { id: versionId, version_no: versionNo };
 }
 
-async function insertRawFacts(
-  admin: SupabaseLike,
-  { fileRow, versionRowId, text, email }: { fileRow: Record<string, any>; versionRowId: string | null; text: string; email: string },
-) {
-  if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) return 0;
+type StructuredFactsResult = {
+  factCount: number;
+  stage: string;
+  confidence: number | null;
+  confidenceLevel: string | null;
+  publish: boolean;
+  parser: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  warnings: string[];
+};
 
+function isCashUpSpreadsheet(reportType: string, extension: string) {
+  const ext = String(extension || "").toLowerCase();
+  return reportType === "cash_up" && (ext === "xlsx" || ext === "xls");
+}
+
+async function persistParsedFacts(
+  admin: SupabaseLike,
+  {
+    fileRow,
+    versionRowId,
+    email,
+    rows,
+    periodStart,
+    periodEnd,
+  }: {
+    fileRow: Record<string, any>;
+    versionRowId: string | null;
+    email: string;
+    rows: Record<string, unknown>[];
+    periodStart: string | null;
+    periodEnd: string | null;
+  },
+) {
   await admin.from("ask_nac_structured_facts").delete().eq("file_id", fileRow.id);
+  const { error } = await admin.from("ask_nac_structured_facts").insert(rows);
+  if (error) throw new Error(error.message);
+
+  if (periodStart && periodEnd) {
+    await admin.from("ask_nac_files").update({
+      period_start: periodStart,
+      period_end: periodEnd,
+      updated_at: nowIso(),
+    }).eq("id", fileRow.id);
+    await admin.from("ask_nac_data_coverage").update({
+      period_start: periodStart,
+      period_end: periodEnd,
+      updated_at: nowIso(),
+    }).eq("source_file_id", fileRow.id);
+  }
+}
+
+async function insertStructuredFacts(
+  admin: SupabaseLike,
+  {
+    fileRow,
+    versionRowId,
+    text,
+    email,
+    download,
+  }: {
+    fileRow: Record<string, any>;
+    versionRowId: string | null;
+    text: string;
+    email: string;
+    download?: { buffer: ArrayBuffer; extension: string; filename: string };
+  },
+): Promise<StructuredFactsResult> {
+  if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) {
+    return {
+      factCount: 0,
+      stage: "chunks_indexed",
+      confidence: null,
+      confidenceLevel: null,
+      publish: false,
+      parser: null,
+      periodStart: null,
+      periodEnd: null,
+      warnings: [],
+    };
+  }
+
+  if (isCashUpSpreadsheet(fileRow.report_type, download?.extension || "")) {
+    if (!download?.buffer) {
+      throw new Error("Cash-up spreadsheet parse failed — workbook buffer missing.");
+    }
+    const parsed: CashUpWorkbookParseResult = await parseCashUpWorkbookFromXlsxBuffer(download.buffer);
+    if (!validateCashUpWorkbookParse(parsed)) {
+      throw new Error(parsed.error || "Cash-up workbook parse failed — existing facts preserved.");
+    }
+    const rows = attachCashUpWorkbookFactContext(parsed.facts, fileRow, versionRowId, email);
+    await persistParsedFacts(admin, {
+      fileRow,
+      versionRowId,
+      email,
+      rows,
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
+    });
+    return {
+      factCount: rows.length,
+      stage: "cash_up_workbook_parsed",
+      confidence: 0.78,
+      confidenceLevel: "medium",
+      publish: true,
+      parser: parsed.parser,
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
+      warnings: [],
+    };
+  }
+
   const matrix = textLinesToMatrix(String(text || "").split(/\r?\n/));
   const cashUpFacts = fileRow.report_type === "cash_up"
     ? extractCashUpStructuredFacts(matrix, fileRow, versionRowId, email)
     : [];
   if (cashUpFacts.length) {
-    const { error } = await admin.from("ask_nac_structured_facts").insert(cashUpFacts);
-    if (error) throw new Error(error.message);
     const periodStart = cashUpFacts.find((fact) => fact.period_start)?.period_start || null;
     const periodEnd = cashUpFacts.find((fact) => fact.period_end)?.period_end || periodStart;
-    if (periodStart && periodEnd) {
-      await admin.from("ask_nac_files").update({
-        period_start: periodStart,
-        period_end: periodEnd,
-        updated_at: nowIso(),
-      }).eq("id", fileRow.id);
-      await admin.from("ask_nac_data_coverage").update({
-        period_start: periodStart,
-        period_end: periodEnd,
-        updated_at: nowIso(),
-      }).eq("source_file_id", fileRow.id);
+    if (!periodStart || !periodEnd) {
+      throw new Error("Cash-up text parse produced facts without period_end — existing facts preserved.");
     }
-    return cashUpFacts.length;
+    await persistParsedFacts(admin, {
+      fileRow,
+      versionRowId,
+      email,
+      rows: cashUpFacts,
+      periodStart,
+      periodEnd,
+    });
+    return {
+      factCount: cashUpFacts.length,
+      stage: "raw_extract_only",
+      confidence: 0.35,
+      confidenceLevel: "low",
+      publish: false,
+      parser: "extractCashUpStructuredFacts",
+      periodStart,
+      periodEnd,
+      warnings: ["Cash-up parsed from flattened text — review recommended."],
+    };
   }
 
   const rows = matrix.slice(0, 250).map((line, index) => ({
@@ -826,10 +945,38 @@ async function insertRawFacts(
     confidence: 0.35,
     created_by: email,
   }));
-  if (!rows.length) return 0;
-  const { error } = await admin.from("ask_nac_structured_facts").insert(rows);
-  if (error) throw new Error(error.message);
-  return rows.length;
+  if (!rows.length) {
+    return {
+      factCount: 0,
+      stage: "chunks_indexed",
+      confidence: null,
+      confidenceLevel: null,
+      publish: false,
+      parser: null,
+      periodStart: null,
+      periodEnd: null,
+      warnings: [],
+    };
+  }
+  await persistParsedFacts(admin, {
+    fileRow,
+    versionRowId,
+    email,
+    rows,
+    periodStart: fileRow.period_start,
+    periodEnd: fileRow.period_end,
+  });
+  return {
+    factCount: rows.length,
+    stage: "raw_extract_only",
+    confidence: 0.35,
+    confidenceLevel: "low",
+    publish: false,
+    parser: "raw_extract_line",
+    periodStart: fileRow.period_start || null,
+    periodEnd: fileRow.period_end || null,
+    warnings: [],
+  };
 }
 
 async function updateRun(admin: SupabaseLike, runId: string, patch: Record<string, any>, counters?: RunCounters) {
@@ -1049,26 +1196,37 @@ async function completeJob(
     jobId,
     fileId,
     chunkCount,
-    factCount,
+    parseResult,
     warnings,
-  }: { jobId: string; fileId: string; chunkCount: number; factCount: number; warnings: string[] },
+  }: {
+    jobId: string;
+    fileId: string;
+    chunkCount: number;
+    parseResult: StructuredFactsResult;
+    warnings: string[];
+  },
 ) {
-  const readiness = factCount > 0 ? "partial" : "registered";
+  const factCount = parseResult.factCount;
+  const readiness = factCount > 0 ? (parseResult.publish ? "ready" : "partial") : "registered";
+  const mergedWarnings = [...(parseResult.warnings || []), ...(warnings || [])];
   await admin.from("ask_nac_ingestion_jobs").update({
     status: "completed",
-    stage: factCount > 0 ? "raw_extract_only" : "chunks_indexed",
+    stage: parseResult.stage || (factCount > 0 ? "raw_extract_only" : "chunks_indexed"),
     finished_at: nowIso(),
-    error: warnings.length ? warnings.join(" ") : null,
+    error: mergedWarnings.length ? mergedWarnings.join(" ") : null,
     stats: {
       source: "google_drive",
       chunkCount,
       searchStatus: chunkCount > 0 ? "searchable" : "not_searchable",
       factsExtracted: factCount,
       factsPersisted: factCount,
-      confidence: factCount > 0 ? 0.35 : null,
-      confidenceLevel: factCount > 0 ? "low" : null,
-      publish: false,
-      warnings,
+      confidence: parseResult.confidence,
+      confidenceLevel: parseResult.confidenceLevel,
+      publish: parseResult.publish,
+      parser: parseResult.parser,
+      periodStart: parseResult.periodStart,
+      periodEnd: parseResult.periodEnd,
+      warnings: mergedWarnings,
     },
   }).eq("id", jobId);
 
@@ -1187,19 +1345,20 @@ async function processOneDriveFile(
     });
     if (chunkCount > 0) counters.indexed_count += 1;
 
-    const factCount = await insertRawFacts(admin, {
+    const parseResult = await insertStructuredFacts(admin, {
       fileRow: registered.fileRow,
       versionRowId: registered.versionRowId,
       text: extracted.text,
       email,
+      download,
     });
-    if (factCount > 0) counters.parsed_count += 1;
+    if (parseResult.factCount > 0) counters.parsed_count += 1;
 
     await completeJob(admin, {
       jobId,
       fileId: registered.fileId,
       chunkCount,
-      factCount,
+      parseResult,
       warnings: extracted.warnings || [],
     });
     await markRunFile(admin, itemId, {
@@ -1207,7 +1366,8 @@ async function processOneDriveFile(
       file_id: registered.fileId,
       stats: {
         chunkCount,
-        factCount,
+        factCount: parseResult.factCount,
+        parser: parseResult.parser,
         size: download.size,
         folderPath: driveFile.folderPath,
         relativePath: driveFile.relativePath,
