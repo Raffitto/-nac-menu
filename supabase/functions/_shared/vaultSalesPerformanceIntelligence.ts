@@ -3,6 +3,8 @@
  * These files track revenue, guests, payment mix, delivery, and dayparts — not cash reconciliation.
  */
 
+import { parseVaultComparePeriodsFromQuestion } from "./vaultPeriodParser.ts";
+
 export const DELIVERY_PLATFORM_KEYS = Object.freeze(["jahez", "chefz", "keeta", "hunger"]);
 
 const DELIVERY_PLATFORM_LABELS: Record<string, string> = Object.freeze({
@@ -147,6 +149,7 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
   if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
+  if (parseVaultComparePeriodsFromQuestion(question)) return "period_compare";
   if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";
   if (/\b(sales|revenue)\b.*\b(last|past)\s+\d+\s+days?\b/.test(q)) return "period_sales";
   if (/\b(guests?|guest count)\b.*\b(this month|current month|last|past)\b/.test(q)) return "guest_count";
@@ -773,6 +776,97 @@ export function buildCashUpDeliveryPlatformMetrics(aggregation: DeliveryPlatform
   return metrics;
 }
 
+function formatSignedDelta(value: number | null | undefined, unit = "SAR") {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const n = Number(value);
+  const sign = n >= 0 ? "+" : "-";
+  const formatted = Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return unit ? `${sign}${formatted} ${unit}` : `${sign}${formatted}`;
+}
+
+function formatSignedPct(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const n = Number(value);
+  const sign = n >= 0 ? "+" : "-";
+  return `${sign}${Math.abs(n).toFixed(1)}%`;
+}
+
+type CompareAggregation = {
+  totalSales?: number | null;
+  totalGuests?: number | null;
+  averageSpend?: number | null;
+  totalDeliverySales?: number | null;
+  totalDeliveryOrders?: number | null;
+  dayCount?: number;
+};
+
+export function buildCashUpPeriodCompareAnswer(
+  aggregation: CompareAggregation,
+  previousAggregation: CompareAggregation,
+  {
+    branchLabel = "Network",
+    periodLabel = "the period",
+    previousPeriodLabel = "the previous period",
+  }: { branchLabel?: string; periodLabel?: string; previousPeriodLabel?: string } = {},
+) {
+  const currentSales = aggregation.totalSales;
+  const previousSales = previousAggregation.totalSales;
+  if (currentSales == null || previousSales == null) {
+    return `${branchLabel}: insufficient cash-up data to compare ${periodLabel}.`;
+  }
+  const salesDelta = Number(currentSales) - Number(previousSales);
+  const salesPct = previousSales ? ((salesDelta / Number(previousSales)) * 100) : null;
+  const lines = [
+    `${branchLabel} sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`,
+    `Current: ${formatCurrency(currentSales)} (${aggregation.dayCount || 0} cash-up day(s)).`,
+    `Previous: ${formatCurrency(previousSales)} (${previousAggregation.dayCount || 0} cash-up day(s)).`,
+    `Sales delta: ${formatSignedDelta(salesDelta)}${salesPct != null ? ` (${formatSignedPct(salesPct)})` : ""}.`,
+  ];
+  if (aggregation.totalGuests != null && previousAggregation.totalGuests != null) {
+    lines.push(`Guest delta: ${formatSignedDelta(Number(aggregation.totalGuests) - Number(previousAggregation.totalGuests), "")}.`);
+  }
+  if (aggregation.averageSpend != null && previousAggregation.averageSpend != null) {
+    lines.push(`Average spend delta: ${formatSignedDelta(Number(aggregation.averageSpend) - Number(previousAggregation.averageSpend))}.`);
+  }
+  if (aggregation.totalDeliverySales != null && previousAggregation.totalDeliverySales != null) {
+    lines.push(`Delivery sales delta: ${formatSignedDelta(Number(aggregation.totalDeliverySales) - Number(previousAggregation.totalDeliverySales))}.`);
+  }
+  if (aggregation.totalDeliveryOrders != null && previousAggregation.totalDeliveryOrders != null) {
+    lines.push(`Delivery orders delta: ${formatSignedDelta(Number(aggregation.totalDeliveryOrders) - Number(previousAggregation.totalDeliveryOrders), "")}.`);
+  }
+  if (aggregation.dayCount !== previousAggregation.dayCount) {
+    lines.push(`Coverage note: current period includes ${aggregation.dayCount || 0} cash-up day(s) vs ${previousAggregation.dayCount || 0} in the comparison period.`);
+  }
+  return lines.join("\n");
+}
+
+export function buildCashUpPeriodCompareMetrics(aggregation: CompareAggregation, previousAggregation: CompareAggregation) {
+  const metrics: ReturnType<typeof metricEntry>[] = [];
+  if (aggregation.totalSales != null) metrics.push(metricEntry("Current period sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
+  if (previousAggregation.totalSales != null) metrics.push(metricEntry("Comparison period sales", formatNumber(previousAggregation.totalSales), { unit: "SAR", source: "cash_up" }));
+  if (aggregation.totalSales != null && previousAggregation.totalSales != null) {
+    const delta = Number(aggregation.totalSales) - Number(previousAggregation.totalSales);
+    const pct = previousAggregation.totalSales ? ((delta / Number(previousAggregation.totalSales)) * 100) : null;
+    metrics.push(metricEntry("Sales delta", formatSignedDelta(delta), { source: "cash_up" }));
+    if (pct != null) metrics.push(metricEntry("Sales change", formatSignedPct(pct), { source: "cash_up" }));
+  }
+  if (aggregation.totalGuests != null && previousAggregation.totalGuests != null) {
+    metrics.push(metricEntry("Guest delta", formatSignedDelta(Number(aggregation.totalGuests) - Number(previousAggregation.totalGuests), ""), { source: "cash_up" }));
+  }
+  if (aggregation.averageSpend != null && previousAggregation.averageSpend != null) {
+    metrics.push(metricEntry("Average spend delta", formatSignedDelta(Number(aggregation.averageSpend) - Number(previousAggregation.averageSpend)), { unit: "SAR", source: "cash_up" }));
+  }
+  if (aggregation.totalDeliverySales != null && previousAggregation.totalDeliverySales != null) {
+    metrics.push(metricEntry("Delivery sales delta", formatSignedDelta(Number(aggregation.totalDeliverySales) - Number(previousAggregation.totalDeliverySales)), { unit: "SAR", source: "cash_up" }));
+  }
+  if (aggregation.totalDeliveryOrders != null && previousAggregation.totalDeliveryOrders != null) {
+    metrics.push(metricEntry("Delivery orders delta", formatSignedDelta(Number(aggregation.totalDeliveryOrders) - Number(previousAggregation.totalDeliveryOrders), ""), { source: "cash_up" }));
+  }
+  metrics.push(metricEntry("Current period days", formatNumber(aggregation.dayCount ?? null), { source: "cash_up" }));
+  metrics.push(metricEntry("Comparison period days", formatNumber(previousAggregation.dayCount ?? null), { source: "cash_up" }));
+  return metrics;
+}
+
 export function buildCashUpPeriodAggregateAnswer(
   question = "",
   aggregation: {
@@ -791,16 +885,24 @@ export function buildCashUpPeriodAggregateAnswer(
     branchLabel = "Network",
     periodLabel = "the period",
     previousAggregation = null,
+    previousPeriodLabel = null,
   }: {
     branchLabel?: string;
     periodLabel?: string;
-    previousAggregation?: {
-      totalSales?: number | null;
-      dayCount?: number;
-    } | null;
+    previousAggregation?: CompareAggregation | null;
+    previousPeriodLabel?: string | null;
   } = {},
 ) {
   if (!aggregation) return null;
+
+  if (previousAggregation) {
+    const compareAnswer = buildCashUpPeriodCompareAnswer(aggregation, previousAggregation, {
+      branchLabel,
+      periodLabel,
+      previousPeriodLabel: previousPeriodLabel || "the previous period",
+    });
+    if (compareAnswer) return compareAnswer;
+  }
 
   const focus = scoreSalesPerformanceQueryFocus(question);
   const {
@@ -812,19 +914,6 @@ export function buildCashUpPeriodAggregateAnswer(
     totalDeliveryOrders,
     dayCount = 0,
   } = aggregation;
-
-  if (focus === "period_compare" && previousAggregation) {
-    const currentSales = totalSales;
-    const previousSales = previousAggregation.totalSales;
-    if (currentSales == null || previousSales == null) {
-      return `${branchLabel}: insufficient cash-up data to compare ${periodLabel}.`;
-    }
-    const delta = Number(currentSales) - Number(previousSales);
-    const pct = previousSales ? ((delta / Number(previousSales)) * 100) : null;
-    const direction = delta >= 0 ? "up" : "down";
-    const pctText = pct != null ? ` (${Math.abs(pct).toFixed(1)}%)` : "";
-    return `${branchLabel} total sales ${periodLabel}: ${formatCurrency(currentSales)} across ${dayCount} day(s) vs ${formatCurrency(previousSales)} across ${previousAggregation.dayCount || 0} day(s) — ${direction} ${formatCurrency(Math.abs(delta))}${pctText}.`;
-  }
 
   if (focus === "delivery_platform") {
     const platformAnswer = buildCashUpDeliveryPlatformAnswer(question, aggregation, { branchLabel, periodLabel });

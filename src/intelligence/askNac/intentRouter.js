@@ -17,6 +17,7 @@ import {
   parseVaultComparePeriodsFromQuestion,
   hasVaultDayPeriod,
   isVaultCashUpAnalyticsPeriod,
+  isVaultFlexibleRangePeriod,
 } from "./vault/vaultPeriodParser";
 import {
   isVaultDocumentSearchQuery,
@@ -175,16 +176,21 @@ const INTENT_RULES = [
       }
       if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
       const period = parseVaultPeriodFromQuestion(q);
+      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 16;
       }
-      if ((isVaultCashUpAnalyticsPeriod(period) || parseVaultComparePeriodsFromQuestion(q))
+      if ((isVaultCashUpAnalyticsPeriod(period) || isVaultFlexibleRangePeriod(period) || vaultCompare)
         && (scoreSalesPerformanceQueryFocus(q)
           || isDeliveryPlatformPeriodQuery(q)
+          || vaultCompare
+          || isVaultFlexibleRangePeriod(period)
           || (/\b(last|past)\s+\d+\s+days?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
           || (/\b(last|past)\s+two\s+weeks?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
-          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q)))) {
+          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q))
+          || (period?.periodType === "custom_range" && /\b(sales|guests?|delivery|average spend|orders?)\b/.test(q))
+          || (period?.periodType === "first_half" || period?.periodType === "second_half"))) {
         return 34;
       }
       return 0;
@@ -528,6 +534,10 @@ export function routeAskNacIntent(question, options = {}) {
   };
 
   route = applyMetricDefaultsToRoute(route, normalized.text, normalized.hints);
+
+  const vaultCompare = parseVaultComparePeriodsFromQuestion(normalized.text);
+  route.vaultPeriod = vaultCompare?.current || route.vaultPeriod;
+  route.vaultCompare = vaultCompare || null;
 
   route.debug.foodicsPeriod = route.foodicsPeriod;
   route.debug.vaultPeriod = route.vaultPeriod;

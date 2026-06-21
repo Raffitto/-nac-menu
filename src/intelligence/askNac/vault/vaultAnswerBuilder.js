@@ -32,6 +32,7 @@ import {
   buildSalesPerformanceExecutiveSummary,
   buildCashUpPeriodAggregateAnswer,
   buildCashUpDeliveryPlatformMetrics,
+  buildCashUpPeriodCompareMetrics,
   isDeliveryPlatformPeriodQuery,
   extendedSalesPerformanceMetrics,
 } from "./vaultSalesPerformanceIntelligence";
@@ -255,17 +256,23 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     }
 
     const question = resolveRouteQuestion(route);
+    const previousAggregation = tool.previousAggregation || null;
+    const previousPeriodLabel = tool.vaultCompare?.previous?.label || null;
+
     const directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
       periodLabel: tool.periodLabel,
-      previousAggregation: tool.previousAggregation || null,
+      previousAggregation,
+      previousPeriodLabel,
     });
 
-    const isPlatformQuery = isDeliveryPlatformPeriodQuery(question);
-    const metrics = isPlatformQuery
-      ? buildCashUpDeliveryPlatformMetrics(aggregation, question)
-      : [];
-    if (!isPlatformQuery) {
+    const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
+    const metrics = previousAggregation
+      ? buildCashUpPeriodCompareMetrics(aggregation, previousAggregation)
+      : isPlatformQuery
+        ? buildCashUpDeliveryPlatformMetrics(aggregation, question)
+        : [];
+    if (!isPlatformQuery && !previousAggregation) {
     if (aggregation.totalSales != null) {
       metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
       if (aggregation.dayCount > 0) {
@@ -296,14 +303,6 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       metrics.push(metricEntry("Average spend", formatNumber(aggregation.averageSpend), { unit: "SAR", source: "cash_up" }));
     }
     metrics.push(metricEntry("Days included", formatNumber(aggregation.dayCount), { source: "cash_up" }));
-
-    if (tool.previousAggregation) {
-      const prev = tool.previousAggregation;
-      if (prev.totalSales != null) {
-        metrics.push(metricEntry("Previous period sales", formatNumber(prev.totalSales), { unit: "SAR", source: "cash_up" }));
-      }
-      metrics.push(metricEntry("Previous period days", formatNumber(prev.dayCount), { source: "cash_up" }));
-    }
     }
 
     const platformInsights = isPlatformQuery && aggregation.deliveryPlatformBreakdown
@@ -320,7 +319,9 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
       title: isPlatformQuery
         ? `Delivery platform breakdown · ${tool.periodLabel}`
-        : `Sales performance · ${tool.periodLabel}`,
+        : previousAggregation
+          ? `Period comparison · ${tool.periodLabel}`
+          : `Sales performance · ${tool.periodLabel}`,
       directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
       insights: isPlatformQuery

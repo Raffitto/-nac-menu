@@ -755,10 +755,10 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();
       const vaultPeriod = context.vaultPeriod || {};
-      const vaultCompare = parseVaultComparePeriodsFromQuestion(context.question || "");
+      const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
       try {
         if (
-          !vaultPeriod?.startDate
+          (!vaultPeriod?.startDate && !vaultCompare?.current?.startDate)
           || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
         ) {
           return await getLatestVaultCashUpFacts(supabase, context);
@@ -766,6 +766,7 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
         if (vaultCompare || isVaultCashUpAnalyticsPeriod(vaultPeriod)) {
           return await getVaultCashUpFactsOverRange(supabase, {
             ...context,
+            vaultPeriod: vaultPeriod?.startDate ? vaultPeriod : vaultCompare?.current,
             vaultCompare,
           });
         }

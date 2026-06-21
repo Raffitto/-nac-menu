@@ -98,6 +98,7 @@ export async function processAskNacQuestion({
       foodicsPeriod: route.foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
+      vaultCompare: route.vaultCompare,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,

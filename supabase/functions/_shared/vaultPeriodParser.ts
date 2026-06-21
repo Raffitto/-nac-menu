@@ -2,6 +2,17 @@
  * Parse calendar day / month ranges for Data Vault queries (uploaded facts).
  */
 
+export type VaultPeriod = {
+  startDate: string;
+  endDate: string;
+  label: string;
+  periodType?: string;
+  isSingleDay: boolean;
+  isMonth?: boolean;
+  isWeek?: boolean;
+  isRange?: boolean;
+};
+
 const MONTH_MAP = Object.freeze({
   january: 0,
   jan: 0,

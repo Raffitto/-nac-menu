@@ -41,6 +41,7 @@ import {
   scoreVaultDocumentSummaryIntent,
   isVaultRangePeriod,
   isVaultCashUpAnalyticsPeriod,
+  isVaultFlexibleRangePeriod,
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
@@ -188,16 +189,21 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       }
       if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
       const period = parseVaultPeriodFromQuestion(q);
+      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 16;
       }
-      if ((isVaultCashUpAnalyticsPeriod(period) || parseVaultComparePeriodsFromQuestion(q))
+      if ((isVaultCashUpAnalyticsPeriod(period) || isVaultFlexibleRangePeriod(period) || vaultCompare)
         && (scoreSalesPerformanceQueryFocus(q)
           || isDeliveryPlatformPeriodQuery(q)
+          || vaultCompare
+          || isVaultFlexibleRangePeriod(period)
           || (/\b(last|past)\s+\d+\s+days?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
           || (/\b(last|past)\s+two\s+weeks?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
-          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q)))) {
+          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q))
+          || (period?.periodType === "custom_range" && /\b(sales|guests?|delivery|average spend|orders?)\b/.test(q))
+          || (period?.periodType === "first_half" || period?.periodType === "second_half"))) {
         return 34;
       }
       return 0;
@@ -477,7 +483,8 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
   const rankChangeDirection = intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE
     ? detectRankChangeDirection(normalized.text)
     : null;
-  const vaultPeriod = parseVaultPeriodFromQuestion(normalized.text);
+  const vaultCompare = parseVaultComparePeriodsFromQuestion(normalized.text);
+  const vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
 
   return {
     intent,
@@ -491,6 +498,7 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     topLimit,
     rankChangeDirection,
     vaultPeriod,
+    vaultCompare: vaultCompare || null,
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
@@ -854,6 +862,7 @@ export async function processAskNacOnEdge(
       foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
+      vaultCompare: route.vaultCompare,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,
