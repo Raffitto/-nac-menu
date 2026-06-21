@@ -2,7 +2,11 @@
  * Multi-day cash-up fact grouping and aggregation (structured facts only).
  */
 
-import { pickAggregateMetricValue } from "./vaultSalesPerformanceIntelligence";
+import {
+  pickAggregateMetricValue,
+  normalizeDeliveryPlatform,
+  DELIVERY_PLATFORM_KEYS,
+} from "./vaultSalesPerformanceIntelligence";
 
 function resolveBusinessDate(fact) {
   const raw = fact?.periodEnd ?? fact?.period_end ?? fact?.periodStart ?? fact?.period_start;
@@ -20,6 +24,68 @@ function pickDaySales(facts = []) {
 
 function sumNumbers(values = []) {
   return values.reduce((sum, value) => sum + Number(value), 0);
+}
+
+function initPlatformTotals() {
+  return DELIVERY_PLATFORM_KEYS.reduce((acc, key) => {
+    acc[key] = { sales: 0, orders: 0 };
+    return acc;
+  }, {});
+}
+
+/**
+ * Sum delivery_sales / delivery_orders by dimensions.platform across a date range.
+ */
+export function aggregateDeliveryPlatformBreakdown(factsByDate = {}, startDate, endDate) {
+  const totals = initPlatformTotals();
+  const dates = Object.keys(factsByDate)
+    .filter((date) => (!startDate || date >= startDate) && (!endDate || date <= endDate))
+    .sort();
+
+  for (const date of dates) {
+    for (const fact of factsByDate[date] || []) {
+      const metricKey = fact.metricKey || fact.metric_key;
+      if (metricKey !== "delivery_sales" && metricKey !== "delivery_orders") continue;
+      const platform = normalizeDeliveryPlatform(fact.dimensions?.platform);
+      if (!platform) continue;
+      const value = Number(fact.metricValue ?? fact.metric_value);
+      if (!Number.isFinite(value)) continue;
+      if (metricKey === "delivery_sales") totals[platform].sales += value;
+      if (metricKey === "delivery_orders") totals[platform].orders += value;
+    }
+  }
+
+  let totalDeliverySales = 0;
+  let totalDeliveryOrders = 0;
+  for (const key of DELIVERY_PLATFORM_KEYS) {
+    totalDeliverySales += totals[key].sales;
+    totalDeliveryOrders += totals[key].orders;
+  }
+
+  const deliveryPlatformBreakdown = {};
+  for (const key of DELIVERY_PLATFORM_KEYS) {
+    const sales = totals[key].sales;
+    const orders = totals[key].orders;
+    if (sales === 0 && orders === 0) continue;
+    deliveryPlatformBreakdown[key] = {
+      sales,
+      orders,
+      averageOrderValue: orders > 0 ? sales / orders : null,
+      salesShare: totalDeliverySales > 0 ? (sales / totalDeliverySales) * 100 : null,
+      orderShare: totalDeliveryOrders > 0 ? (orders / totalDeliveryOrders) * 100 : null,
+    };
+  }
+
+  const rankedBySales = Object.entries(deliveryPlatformBreakdown)
+    .sort((a, b) => b[1].sales - a[1].sales);
+  const rankedByOrders = Object.entries(deliveryPlatformBreakdown)
+    .sort((a, b) => b[1].orders - a[1].orders);
+
+  return {
+    deliveryPlatformBreakdown,
+    topPlatformBySales: rankedBySales[0]?.[0] || null,
+    topPlatformByOrders: rankedByOrders[0]?.[0] || null,
+  };
 }
 
 /**
@@ -105,6 +171,8 @@ export function aggregateCashUpFactsOverRange({
     averageSpend = totalSales / totalGuests;
   }
 
+  const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
+
   return {
     totalSales,
     totalGuests,
@@ -114,6 +182,9 @@ export function aggregateCashUpFactsOverRange({
     totalDeliveryOrders,
     dayCount: dates.length,
     dailyBreakdown,
+    deliveryPlatformBreakdown: platformAgg.deliveryPlatformBreakdown,
+    topPlatformBySales: platformAgg.topPlatformBySales,
+    topPlatformByOrders: platformAgg.topPlatformByOrders,
   };
 }
 

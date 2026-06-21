@@ -31,6 +31,8 @@ import {
 import {
   buildSalesPerformanceExecutiveSummary,
   buildCashUpPeriodAggregateAnswer,
+  buildCashUpDeliveryPlatformMetrics,
+  isDeliveryPlatformPeriodQuery,
   extendedSalesPerformanceMetrics,
 } from "./vaultSalesPerformanceIntelligence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
@@ -42,6 +44,12 @@ const REPORT_LABELS = Object.freeze({
   daily_logbook: "Daily Logbook",
   ccm_reconciliation: "CCM Reconciliation",
 });
+
+function resolveRouteQuestion(route) {
+  return route?.question
+    || route?.debug?.nlu?.normalizedQuestion
+    || "";
+}
 
 function formatNumber(value) {
   if (value == null || value === "") return null;
@@ -246,13 +254,18 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       });
     }
 
-    const directAnswer = buildCashUpPeriodAggregateAnswer(route.question || "", aggregation, {
+    const question = resolveRouteQuestion(route);
+    const directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
       periodLabel: tool.periodLabel,
       previousAggregation: tool.previousAggregation || null,
     });
 
-    const metrics = [];
+    const isPlatformQuery = isDeliveryPlatformPeriodQuery(question);
+    const metrics = isPlatformQuery
+      ? buildCashUpDeliveryPlatformMetrics(aggregation, question)
+      : [];
+    if (!isPlatformQuery) {
     if (aggregation.totalSales != null) {
       metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
       if (aggregation.dayCount > 0) {
@@ -291,16 +304,30 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       }
       metrics.push(metricEntry("Previous period days", formatNumber(prev.dayCount), { source: "cash_up" }));
     }
+    }
+
+    const platformInsights = isPlatformQuery && aggregation.deliveryPlatformBreakdown
+      ? Object.keys(aggregation.deliveryPlatformBreakdown)
+        .sort((a, b) => (aggregation.deliveryPlatformBreakdown[b]?.sales || 0) - (aggregation.deliveryPlatformBreakdown[a]?.sales || 0))
+        .map((key) => {
+          const row = aggregation.deliveryPlatformBreakdown[key];
+          return `${key}: ${formatNumber(row.sales)} SAR sales, ${formatNumber(row.orders)} orders`;
+        })
+      : [];
 
     return createAskNacResponse({
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
-      title: `Sales performance · ${tool.periodLabel}`,
+      title: isPlatformQuery
+        ? `Delivery platform breakdown · ${tool.periodLabel}`
+        : `Sales performance · ${tool.periodLabel}`,
       directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
-      insights: (aggregation.dailyBreakdown || []).slice(0, 7).map(
-        (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
-      ),
+      insights: isPlatformQuery
+        ? platformInsights
+        : (aggregation.dailyBreakdown || []).slice(0, 7).map(
+          (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+        ),
       warnings: tool?.warnings || [],
     });
   }

@@ -3,6 +3,29 @@
  * These files track revenue, guests, payment mix, delivery, and dayparts — not cash reconciliation.
  */
 
+export const DELIVERY_PLATFORM_KEYS = Object.freeze(["jahez", "chefz", "keeta", "hunger"]);
+
+const DELIVERY_PLATFORM_LABELS: Record<string, string> = Object.freeze({
+  jahez: "Jahez",
+  chefz: "Chefz",
+  keeta: "Keeta",
+  hunger: "Hunger",
+});
+
+export function normalizeDeliveryPlatform(raw: unknown) {
+  const text = String(raw || "").trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes("jahez")) return "jahez";
+  if (text.includes("chefz") || text.includes("the chefz")) return "chefz";
+  if (text.includes("keeta")) return "keeta";
+  if (text.includes("hunger")) return "hunger";
+  return null;
+}
+
+export function formatDeliveryPlatformLabel(platformKey: string) {
+  return DELIVERY_PLATFORM_LABELS[platformKey] || String(platformKey || "");
+}
+
 function pickMetricValue(facts, metricKey) {
   const hit = (facts || []).find(
     (f) => (f.metricKey || f.metric_key) === metricKey && (f.metricValue ?? f.metric_value) != null,
@@ -123,6 +146,7 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
 
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
+  if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
   if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";
   if (/\b(sales|revenue)\b.*\b(last|past)\s+\d+\s+days?\b/.test(q)) return "period_sales";
   if (/\b(guests?|guest count)\b.*\b(this month|current month|last|past)\b/.test(q)) return "guest_count";
@@ -137,6 +161,38 @@ export function scoreSalesPerformanceQueryFocus(question = "") {
   if (/\b(daily average|average daily)\b.*\bsales\b/.test(q)) return "daily_avg";
   if (/\b(delivery orders?|hunger|jahez|keeta|talabat)\b/.test(q)) return "delivery";
   if (/\b(cash variance|shortage|overage)\b/.test(q)) return "reconciliation";
+  return null;
+}
+
+export function scoreDeliveryPlatformQueryFocus(question = "") {
+  const q = String(question || "").toLowerCase();
+  if (/\bcompare\b.*\bdelivery platform/.test(q)) return "platform_compare";
+  if (/\b(delivery mix|platform breakdown|delivery platform breakdown)\b/.test(q)) return "platform_breakdown";
+  if (/\btop delivery platform\b/.test(q)) return "platform_top";
+  if (/\bwhich delivery platform\b.*\b(most|top|highest|biggest)\b.*\border/.test(q)) return "platform_top_orders";
+  if (/\bwhich delivery platform\b.*\b(most|top|highest|biggest|generated)\b.*\bsales/.test(q)) return "platform_top_sales";
+  if (/\baverage order value\b.*\b(delivery )?platform/.test(q)) return "platform_aov";
+  if (/\bdelivery platform\b/.test(q) && /\b(most|top|highest|breakdown|mix|compare)\b/.test(q)) return "platform_breakdown";
+  if (/\b(how much|how many)\b.*\b(hungerstation|hunger|chefz|jahez|keeta)\b/.test(q)) return "platform_specific";
+  if (/\b(hungerstation|hunger|chefz|jahez|keeta)\b.*\b(sales|orders|delivery|made)\b/.test(q)) return "platform_specific";
+  if (/\b(hunger|chefz|jahez|keeta)\b.*\b(this month|last|past)\b/.test(q)) return "platform_specific";
+  if (/\bjahez delivery\b|\bkeeta delivery\b|\bchefz orders\b/.test(q)) return "platform_specific";
+  return null;
+}
+
+export function isDeliveryPlatformPeriodQuery(question = "") {
+  return scoreDeliveryPlatformQueryFocus(question) != null;
+}
+
+export function extractDeliveryPlatformFromQuestion(question = "") {
+  const q = String(question || "").toLowerCase();
+  const match = q.match(/\b(hungerstation|hunger|chefz|jahez|keeta)\b/);
+  if (!match) return null;
+  const normalized = match[1].replace("station", "");
+  if (normalized.includes("hunger")) return "hunger";
+  if (normalized.includes("chefz")) return "chefz";
+  if (normalized.includes("jahez")) return "jahez";
+  if (normalized.includes("keeta")) return "keeta";
   return null;
 }
 
@@ -550,6 +606,173 @@ function formatAveragePerDay(total: number | null, dayCount: number, unit = "SAR
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+function formatSharePct(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function formatPlatformBreakdownLine(platformKey: string, row: {
+  sales?: number;
+  orders?: number;
+  averageOrderValue?: number | null;
+  salesShare?: number | null;
+  orderShare?: number | null;
+}) {
+  const label = formatDeliveryPlatformLabel(platformKey);
+  const parts: string[] = [];
+  if (row.sales != null) parts.push(`${formatCurrency(row.sales)} sales`);
+  if (row.orders != null) parts.push(`${formatNumber(row.orders)} orders`);
+  if (row.averageOrderValue != null) parts.push(`${formatCurrency(row.averageOrderValue)} avg order value`);
+  const shareParts: string[] = [];
+  if (row.salesShare != null) shareParts.push(`${formatSharePct(row.salesShare)} sales share`);
+  if (row.orderShare != null) shareParts.push(`${formatSharePct(row.orderShare)} order share`);
+  if (shareParts.length) parts.push(shareParts.join(", "));
+  return `${label}: ${parts.join(" · ")}.`;
+}
+
+type DeliveryPlatformRow = {
+  sales: number;
+  orders: number;
+  averageOrderValue: number | null;
+  salesShare: number | null;
+  orderShare: number | null;
+};
+
+type DeliveryPlatformAggregation = {
+  totalDeliverySales?: number | null;
+  totalDeliveryOrders?: number | null;
+  dayCount?: number;
+  deliveryPlatformBreakdown?: Record<string, DeliveryPlatformRow>;
+  topPlatformBySales?: string | null;
+  topPlatformByOrders?: string | null;
+};
+
+export function buildCashUpDeliveryPlatformAnswer(
+  question = "",
+  aggregation: DeliveryPlatformAggregation | null,
+  {
+    branchLabel = "Network",
+    periodLabel = "the period",
+  }: { branchLabel?: string; periodLabel?: string } = {},
+) {
+  if (!aggregation?.deliveryPlatformBreakdown) return null;
+
+  const focus = scoreDeliveryPlatformQueryFocus(question);
+  if (!focus) return null;
+
+  const breakdown = aggregation.deliveryPlatformBreakdown || {};
+  const platformKeys = Object.keys(breakdown).sort();
+  if (!platformKeys.length) {
+    return `No delivery platform breakdown is available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  const specificPlatform = extractDeliveryPlatformFromQuestion(question);
+  const dayCount = aggregation.dayCount || 0;
+
+  if (focus === "platform_specific" && specificPlatform) {
+    const row = breakdown[specificPlatform];
+    if (!row) {
+      return `${formatDeliveryPlatformLabel(specificPlatform)} delivery data is not available for ${branchLabel} over ${periodLabel}.`;
+    }
+    const wantsOrders = /\borders?\b/.test(String(question).toLowerCase()) && !/\bsales\b/.test(String(question).toLowerCase());
+    const wantsSales = /\b(sales|made|revenue)\b/.test(String(question).toLowerCase());
+    if (wantsOrders && !wantsSales) {
+      return `${formatDeliveryPlatformLabel(specificPlatform)} recorded ${formatNumber(row.orders)} delivery orders for ${branchLabel} over ${periodLabel} (${dayCount} cash-up day(s)${row.orderShare != null ? `, ${formatSharePct(row.orderShare)} of delivery orders` : ""}).`;
+    }
+    const shareText = row.salesShare != null ? ` (${formatSharePct(row.salesShare)} of delivery sales)` : "";
+    const ordersText = row.orders != null ? `, ${formatNumber(row.orders)} orders` : "";
+    const aovText = row.averageOrderValue != null ? `, ${formatCurrency(row.averageOrderValue)} average order value` : "";
+    return `${formatDeliveryPlatformLabel(specificPlatform)} delivery for ${branchLabel} over ${periodLabel}: ${formatCurrency(row.sales)} sales${ordersText}${aovText}${shareText} across ${dayCount} cash-up day(s).`;
+  }
+
+  const lines = [`Delivery platform breakdown for ${branchLabel} — ${periodLabel} (${dayCount} cash-up day(s)):`];
+  const ranked = [...platformKeys].sort((a, b) => (breakdown[b]?.sales || 0) - (breakdown[a]?.sales || 0));
+  for (const key of ranked) {
+    lines.push(formatPlatformBreakdownLine(key, breakdown[key]));
+  }
+
+  if (aggregation.totalDeliverySales != null) {
+    lines.push(`Total delivery sales: ${formatCurrency(aggregation.totalDeliverySales)}.`);
+  }
+  if (aggregation.totalDeliveryOrders != null) {
+    lines.push(`Total delivery orders: ${formatNumber(aggregation.totalDeliveryOrders)}.`);
+  }
+
+  if (focus === "platform_top_orders" || focus === "platform_top" || focus === "platform_breakdown") {
+    if (aggregation.topPlatformByOrders) {
+      lines.push(`Top platform by orders: ${formatDeliveryPlatformLabel(aggregation.topPlatformByOrders)}.`);
+    }
+  }
+  if (focus === "platform_top_sales" || focus === "platform_top" || focus === "platform_breakdown" || focus === "platform_compare") {
+    if (aggregation.topPlatformBySales) {
+      lines.push(`Top platform by sales: ${formatDeliveryPlatformLabel(aggregation.topPlatformBySales)}.`);
+    }
+  }
+
+  if (focus === "platform_aov") {
+    const aovLines = ranked
+      .filter((key) => breakdown[key]?.averageOrderValue != null)
+      .map((key) => `${formatDeliveryPlatformLabel(key)} avg order value: ${formatCurrency(breakdown[key].averageOrderValue)}`);
+    if (aovLines.length) lines.push(...aovLines);
+  }
+
+  return lines.join("\n");
+}
+
+function metricEntry(label: string, value: string | null, extras: { unit?: string; source?: string; note?: string } = {}) {
+  return { label, value: value || "—", unit: extras.unit || "", source: extras.source || "", note: extras.note || "" };
+}
+
+export function buildCashUpDeliveryPlatformMetrics(aggregation: DeliveryPlatformAggregation | null, question = "") {
+  const breakdown = aggregation?.deliveryPlatformBreakdown || {};
+  const focus = scoreDeliveryPlatformQueryFocus(question);
+  const specificPlatform = extractDeliveryPlatformFromQuestion(question);
+  const metrics: ReturnType<typeof metricEntry>[] = [];
+
+  if (focus === "platform_specific" && specificPlatform && breakdown[specificPlatform]) {
+    const row = breakdown[specificPlatform];
+    metrics.push(metricEntry(`${formatDeliveryPlatformLabel(specificPlatform)} sales`, formatNumber(row.sales), { unit: "SAR", source: "cash_up" }));
+    metrics.push(metricEntry(`${formatDeliveryPlatformLabel(specificPlatform)} orders`, formatNumber(row.orders), { source: "cash_up" }));
+    if (row.averageOrderValue != null) {
+      metrics.push(metricEntry(`${formatDeliveryPlatformLabel(specificPlatform)} avg order value`, formatNumber(row.averageOrderValue), { unit: "SAR", source: "cash_up" }));
+    }
+    if (row.salesShare != null) {
+      metrics.push(metricEntry(`${formatDeliveryPlatformLabel(specificPlatform)} sales share`, formatSharePct(row.salesShare), { source: "cash_up" }));
+    }
+    if (row.orderShare != null) {
+      metrics.push(metricEntry(`${formatDeliveryPlatformLabel(specificPlatform)} order share`, formatSharePct(row.orderShare), { source: "cash_up" }));
+    }
+  } else {
+    for (const key of Object.keys(breakdown).sort()) {
+      const row = breakdown[key];
+      const label = formatDeliveryPlatformLabel(key);
+      metrics.push(metricEntry(`${label} sales`, formatNumber(row.sales), { unit: "SAR", source: "cash_up" }));
+      metrics.push(metricEntry(`${label} orders`, formatNumber(row.orders), { source: "cash_up" }));
+      if (row.averageOrderValue != null) {
+        metrics.push(metricEntry(`${label} avg order value`, formatNumber(row.averageOrderValue), { unit: "SAR", source: "cash_up" }));
+      }
+      if (row.salesShare != null) {
+        metrics.push(metricEntry(`${label} sales share`, formatSharePct(row.salesShare), { source: "cash_up" }));
+      }
+    }
+    if (aggregation?.topPlatformBySales) {
+      metrics.push(metricEntry("Top platform by sales", formatDeliveryPlatformLabel(aggregation.topPlatformBySales), { source: "cash_up" }));
+    }
+    if (aggregation?.topPlatformByOrders) {
+      metrics.push(metricEntry("Top platform by orders", formatDeliveryPlatformLabel(aggregation.topPlatformByOrders), { source: "cash_up" }));
+    }
+  }
+
+  if (aggregation?.totalDeliverySales != null) {
+    metrics.push(metricEntry("Total delivery sales", formatNumber(aggregation.totalDeliverySales), { unit: "SAR", source: "cash_up" }));
+  }
+  if (aggregation?.totalDeliveryOrders != null) {
+    metrics.push(metricEntry("Total delivery orders", formatNumber(aggregation.totalDeliveryOrders), { source: "cash_up" }));
+  }
+  metrics.push(metricEntry("Days included", formatNumber(aggregation?.dayCount ?? null), { source: "cash_up" }));
+  return metrics;
+}
+
 export function buildCashUpPeriodAggregateAnswer(
   question = "",
   aggregation: {
@@ -560,6 +783,9 @@ export function buildCashUpPeriodAggregateAnswer(
     totalDeliverySales?: number | null;
     totalDeliveryOrders?: number | null;
     dayCount?: number;
+    deliveryPlatformBreakdown?: Record<string, DeliveryPlatformRow>;
+    topPlatformBySales?: string | null;
+    topPlatformByOrders?: string | null;
   } | null,
   {
     branchLabel = "Network",
@@ -600,7 +826,12 @@ export function buildCashUpPeriodAggregateAnswer(
     return `${branchLabel} total sales ${periodLabel}: ${formatCurrency(currentSales)} across ${dayCount} day(s) vs ${formatCurrency(previousSales)} across ${previousAggregation.dayCount || 0} day(s) — ${direction} ${formatCurrency(Math.abs(delta))}${pctText}.`;
   }
 
-  if (focus === "guest_count" || /\bguests?\b/.test(String(question).toLowerCase())) {
+  if (focus === "delivery_platform") {
+    const platformAnswer = buildCashUpDeliveryPlatformAnswer(question, aggregation, { branchLabel, periodLabel });
+    if (platformAnswer) return platformAnswer;
+  }
+
+  if (focus === "guest_count" || (/\bguests?\b/.test(String(question).toLowerCase()) && focus !== "delivery_platform")) {
     return totalGuests != null
       ? `${branchLabel} recorded ${formatNumber(totalGuests)} guests for ${periodLabel} (${dayCount} cash-up day(s) included).`
       : `Guest count is not available for ${branchLabel} over ${periodLabel}.`;
@@ -613,14 +844,14 @@ export function buildCashUpPeriodAggregateAnswer(
     return `Average spend is not available for ${branchLabel} over ${periodLabel}.`;
   }
 
-  if (/\bdelivery orders?\b/.test(String(question).toLowerCase())) {
+  if (/\bdelivery orders?\b/.test(String(question).toLowerCase()) && focus !== "delivery_platform") {
     const avgOrders = formatAveragePerDay(totalDeliveryOrders ?? null, dayCount, "");
     return totalDeliveryOrders != null
       ? `${branchLabel} delivery orders for ${periodLabel}: ${formatNumber(totalDeliveryOrders)} total${avgOrders ? ` (${avgOrders} avg/day)` : ""} across ${dayCount} day(s).`
       : `Delivery order count is not available for ${branchLabel} over ${periodLabel}.`;
   }
 
-  if (/\bdelivery sales\b/.test(String(question).toLowerCase()) || focus === "delivery") {
+  if ((/\bdelivery sales\b/.test(String(question).toLowerCase()) || focus === "delivery") && focus !== "delivery_platform") {
     const avgDelivery = formatAveragePerDay(totalDeliverySales ?? null, dayCount);
     return totalDeliverySales != null
       ? `${branchLabel} delivery sales for ${periodLabel}: ${formatCurrency(totalDeliverySales)} total${avgDelivery ? ` (${avgDelivery} avg/day)` : ""} across ${dayCount} day(s).`

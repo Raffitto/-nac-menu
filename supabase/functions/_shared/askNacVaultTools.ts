@@ -23,6 +23,8 @@ import {
   buildSalesPerformanceExecutiveSummary,
   buildSalesPerformanceFactsAsSyntheticMatches,
   buildCashUpPeriodAggregateAnswer,
+  buildCashUpDeliveryPlatformMetrics,
+  isDeliveryPlatformPeriodQuery,
   extendedSalesPerformanceMetrics,
   formatManagerStyleAnswer,
   isSalesPerformanceExecutiveQuery,
@@ -2054,6 +2056,11 @@ function buildVaultCoverageListAnswer(route: Record<string, unknown>, tool: Reco
   };
 }
 
+function resolveRouteQuestion(route: Record<string, unknown>) {
+  const debug = route.debug as { nlu?: { normalizedQuestion?: string } } | undefined;
+  return String(route.question || debug?.nlu?.normalizedQuestion || "");
+}
+
 function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
   const aggregation = tool?.aggregation as Record<string, unknown> | null | undefined;
@@ -2074,13 +2081,18 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       };
     }
 
-    const directAnswer = buildCashUpPeriodAggregateAnswer(String(route.question || ""), aggregation as never, {
+    const question = resolveRouteQuestion(route);
+    const directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation as never, {
       branchLabel: String(tool.branchLabel || "Network"),
       periodLabel: String(tool.periodLabel || "the period"),
       previousAggregation: (tool.previousAggregation as never) || null,
     });
 
-    const metrics: MetricEntry[] = [];
+    const isPlatformQuery = isDeliveryPlatformPeriodQuery(question);
+    const metrics: MetricEntry[] = isPlatformQuery
+      ? buildCashUpDeliveryPlatformMetrics(aggregation as never, question)
+      : [];
+    if (!isPlatformQuery) {
     if (aggregation.totalSales != null) {
       metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
       if ((aggregation.dayCount as number) > 0) {
@@ -2119,18 +2131,33 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       }
       metrics.push(metricEntry("Previous period days", formatNumber(previousAggregation.dayCount), { source: "cash_up" }));
     }
+    }
+
+    const platformBreakdown = aggregation.deliveryPlatformBreakdown as Record<string, { sales?: number; orders?: number }> | undefined;
+    const platformInsights = isPlatformQuery && platformBreakdown
+      ? Object.keys(platformBreakdown)
+        .sort((a, b) => (platformBreakdown[b]?.sales || 0) - (platformBreakdown[a]?.sales || 0))
+        .map((key) => {
+          const row = platformBreakdown[key];
+          return `${key}: ${formatNumber(row.sales ?? null)} SAR sales, ${formatNumber(row.orders ?? null)} orders`;
+        })
+      : [];
 
     const dailyBreakdown = (aggregation.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
 
     return {
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? "metric" : "executive",
-      title: `Sales performance · ${tool.periodLabel}`,
+      title: isPlatformQuery
+        ? `Delivery platform breakdown · ${tool.periodLabel}`
+        : `Sales performance · ${tool.periodLabel}`,
       directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
-      insights: dailyBreakdown.slice(0, 7).map(
-        (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
-      ),
+      insights: isPlatformQuery
+        ? platformInsights
+        : dailyBreakdown.slice(0, 7).map(
+          (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+        ),
       recommendations: [],
       missingData: [],
       exportOptions: [],

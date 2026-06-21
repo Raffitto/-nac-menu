@@ -44,7 +44,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
-import { scoreSalesPerformanceQueryFocus } from "./vaultSalesPerformanceIntelligence.ts";
+import { scoreSalesPerformanceQueryFocus, isDeliveryPlatformPeriodQuery } from "./vaultSalesPerformanceIntelligence.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
 import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
 import {
@@ -194,6 +194,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       }
       if ((isVaultCashUpAnalyticsPeriod(period) || parseVaultComparePeriodsFromQuestion(q))
         && (scoreSalesPerformanceQueryFocus(q)
+          || isDeliveryPlatformPeriodQuery(q)
           || (/\b(last|past)\s+\d+\s+days?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
           || (/\b(last|past)\s+two\s+weeks?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
           || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q)))) {

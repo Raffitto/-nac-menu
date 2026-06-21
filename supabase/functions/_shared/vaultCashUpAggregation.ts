@@ -1,4 +1,8 @@
-import { pickAggregateMetricValue } from "./vaultSalesPerformanceIntelligence.ts";
+import {
+  pickAggregateMetricValue,
+  normalizeDeliveryPlatform,
+  DELIVERY_PLATFORM_KEYS,
+} from "./vaultSalesPerformanceIntelligence.ts";
 
 type FactRow = Record<string, unknown>;
 
@@ -18,6 +22,76 @@ function pickDaySales(facts: FactRow[] = []) {
 
 function sumNumbers(values: number[] = []) {
   return values.reduce((sum, value) => sum + Number(value), 0);
+}
+
+function initPlatformTotals() {
+  return DELIVERY_PLATFORM_KEYS.reduce((acc: Record<string, { sales: number; orders: number }>, key) => {
+    acc[key] = { sales: 0, orders: 0 };
+    return acc;
+  }, {});
+}
+
+export function aggregateDeliveryPlatformBreakdown(
+  factsByDate: Record<string, FactRow[]> = {},
+  startDate?: string | null,
+  endDate?: string | null,
+) {
+  const totals = initPlatformTotals();
+  const dates = Object.keys(factsByDate)
+    .filter((date) => (!startDate || date >= startDate) && (!endDate || date <= endDate))
+    .sort();
+
+  for (const date of dates) {
+    for (const fact of factsByDate[date] || []) {
+      const metricKey = String(fact.metricKey || fact.metric_key || "");
+      if (metricKey !== "delivery_sales" && metricKey !== "delivery_orders") continue;
+      const platform = normalizeDeliveryPlatform((fact.dimensions as { platform?: string })?.platform);
+      if (!platform) continue;
+      const value = Number(fact.metricValue ?? fact.metric_value);
+      if (!Number.isFinite(value)) continue;
+      if (metricKey === "delivery_sales") totals[platform].sales += value;
+      if (metricKey === "delivery_orders") totals[platform].orders += value;
+    }
+  }
+
+  let totalDeliverySales = 0;
+  let totalDeliveryOrders = 0;
+  for (const key of DELIVERY_PLATFORM_KEYS) {
+    totalDeliverySales += totals[key].sales;
+    totalDeliveryOrders += totals[key].orders;
+  }
+
+  const deliveryPlatformBreakdown: Record<string, {
+    sales: number;
+    orders: number;
+    averageOrderValue: number | null;
+    salesShare: number | null;
+    orderShare: number | null;
+  }> = {};
+
+  for (const key of DELIVERY_PLATFORM_KEYS) {
+    const sales = totals[key].sales;
+    const orders = totals[key].orders;
+    if (sales === 0 && orders === 0) continue;
+    deliveryPlatformBreakdown[key] = {
+      sales,
+      orders,
+      averageOrderValue: orders > 0 ? sales / orders : null,
+      salesShare: totalDeliverySales > 0 ? (sales / totalDeliverySales) * 100 : null,
+      orderShare: totalDeliveryOrders > 0 ? (orders / totalDeliveryOrders) * 100 : null,
+    };
+  }
+
+  const rankedBySales = Object.entries(deliveryPlatformBreakdown)
+    .sort((a, b) => b[1].sales - a[1].sales);
+  const rankedByOrders = Object.entries(deliveryPlatformBreakdown)
+    .sort((a, b) => b[1].orders - a[1].orders);
+
+  return {
+    deliveryPlatformBreakdown,
+    topPlatformBySales: rankedBySales[0]?.[0] || null,
+    topPlatformByOrders: rankedByOrders[0]?.[0] || null,
+  };
 }
 
 export function groupCashUpFactsByBusinessDate(facts: FactRow[] = []) {
@@ -47,6 +121,15 @@ export type CashUpRangeAggregation = {
     totalDeliverySales: number | null;
     totalDeliveryOrders: number | null;
   }>;
+  deliveryPlatformBreakdown: Record<string, {
+    sales: number;
+    orders: number;
+    averageOrderValue: number | null;
+    salesShare: number | null;
+    orderShare: number | null;
+  }>;
+  topPlatformBySales: string | null;
+  topPlatformByOrders: string | null;
 };
 
 export function aggregateCashUpFactsOverRange({
@@ -111,6 +194,8 @@ export function aggregateCashUpFactsOverRange({
     averageSpend = totalSales / totalGuests;
   }
 
+  const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
+
   return {
     totalSales,
     totalGuests,
@@ -120,6 +205,9 @@ export function aggregateCashUpFactsOverRange({
     totalDeliveryOrders,
     dayCount: dates.length,
     dailyBreakdown,
+    deliveryPlatformBreakdown: platformAgg.deliveryPlatformBreakdown,
+    topPlatformBySales: platformAgg.topPlatformBySales,
+    topPlatformByOrders: platformAgg.topPlatformByOrders,
   };
 }
 
