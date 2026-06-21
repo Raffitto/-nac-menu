@@ -91,7 +91,7 @@ const NLU_CASES = [
   { q: "Summarize uploaded files for June", intent: I.VAULT_COVERAGE_LIST },
 
   // Operational knowledge
-  { q: "Why did sales drop", intent: I.OPERATIONAL_KNOWLEDGE },
+  { q: "Why did sales drop", intent: I.VAULT_BUSINESS_REASONING },
   { q: "What operational issues repeated", intent: I.VAULT_OPERATIONAL_REVIEW },
   { q: "Summarize latest Khobar logbook", intent: I.VAULT_DOCUMENT_SUMMARY },
   { q: "What maintenance issues repeat?", intent: I.VAULT_OPERATIONAL_REVIEW },
@@ -183,7 +183,7 @@ const NLU_CASES = [
   { q: "which category sold most", intent: I.CATEGORY_SALES },
   { q: "sales by branch may", intent: I.BRANCH_SALES },
   { q: "branch revenue comparison", intent: I.BRANCH_SALES },
-  { q: "why did sales drop in june", intent: I.OPERATIONAL_KNOWLEDGE },
+  { q: "why did sales drop in june", intent: I.VAULT_BUSINESS_REASONING },
   { q: "what changed between may and june", intent: I.OPERATIONAL_KNOWLEDGE },
   { q: "same problem across reports", intent: I.OPERATIONAL_KNOWLEDGE },
 ];

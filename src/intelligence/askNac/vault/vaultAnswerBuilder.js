@@ -38,6 +38,7 @@ import {
 } from "./vaultSalesPerformanceIntelligence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief";
+import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -835,7 +836,11 @@ export function buildVaultAnswer(route, tool, readiness) {
     return buildVaultDocumentSearchAnswer(route, tool, readiness);
   }
 
-  if (!tool?.facts?.length && !(tool?.coverage?.length) && readiness?.status === READINESS.MISSING) {
+  if (route.intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING) {
+    return buildVaultBusinessReasoningAnswer(route, tool, readiness);
+  }
+
+  if (!tool?.facts?.length && !(tool?.coverage?.length) && !(tool?.aggregation?.dayCount) && readiness?.status === READINESS.MISSING) {
     return buildVaultMissingToolResponse(route, tool, readiness);
   }
 

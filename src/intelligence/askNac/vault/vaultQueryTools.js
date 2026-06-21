@@ -752,6 +752,15 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       return summarizeVaultDocuments(supabase, context);
     case "vault_coverage_list":
       return getVaultReportSources(supabase, context);
+    case "vault_business_reasoning": {
+      const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
+      const vaultPeriod = context.vaultPeriod?.startDate ? context.vaultPeriod : vaultCompare?.current;
+      return getVaultCashUpFactsOverRange(supabase, {
+        ...context,
+        vaultPeriod,
+        vaultCompare,
+      });
+    }
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();
       const vaultPeriod = context.vaultPeriod || {};

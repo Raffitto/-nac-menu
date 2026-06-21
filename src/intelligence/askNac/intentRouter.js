@@ -26,6 +26,11 @@ import {
 import { scoreVaultOperationalReviewIntent } from "./vault/vaultOperationalReviewRouting";
 import { scoreSalesPerformanceQueryFocus, isDeliveryPlatformPeriodQuery } from "./vault/vaultSalesPerformanceIntelligence";
 import {
+  scoreVaultBusinessReasoningIntent,
+  resolveWhyVaultCompare,
+  detectWhyMetricFocus,
+} from "./vault/vaultBusinessReasoningRouting";
+import {
   isVaultDocumentSummaryQuery,
   scoreVaultDocumentSummaryIntent,
 } from "./vault/vaultDocumentSummaryRouting";
@@ -63,6 +68,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_DOCUMENT_SEARCH: "vault_document_search",
   VAULT_DOCUMENT_SUMMARY: "vault_document_summary",
   VAULT_OPERATIONAL_REVIEW: "vault_operational_review",
+  VAULT_BUSINESS_REASONING: "vault_business_reasoning",
   UNKNOWN: "unknown",
 });
 
@@ -163,6 +169,12 @@ const INTENT_RULES = [
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(ccm|reconciliation|reconcile)\b/.test(q)) return 16;
       return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING,
+    score(q) {
+      return scoreVaultBusinessReasoningIntent(q);
     },
   },
   {
@@ -535,9 +547,14 @@ export function routeAskNacIntent(question, options = {}) {
 
   route = applyMetricDefaultsToRoute(route, normalized.text, normalized.hints);
 
-  const vaultCompare = parseVaultComparePeriodsFromQuestion(normalized.text);
+  const vaultCompare = intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING
+    ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
+    : parseVaultComparePeriodsFromQuestion(normalized.text);
   route.vaultPeriod = vaultCompare?.current || route.vaultPeriod;
   route.vaultCompare = vaultCompare || null;
+  if (intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING) {
+    route.whyMetricFocus = detectWhyMetricFocus(normalized.text);
+  }
 
   route.debug.foodicsPeriod = route.foodicsPeriod;
   route.debug.vaultPeriod = route.vaultPeriod;
@@ -573,6 +590,7 @@ export function isVaultDataIntent(intent) {
     ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY,
     ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
     ASK_NAC_INTENTS.VAULT_COVERAGE_LIST,
+    ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING,
   ].includes(intent);
 }
 
