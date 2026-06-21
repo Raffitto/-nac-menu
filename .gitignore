@@ -39,3 +39,6 @@ tmp-vault-verify/intelligence/
 tmp-vault-verify/dashboard/
 tmp-vault-verify/pdf-contrast-compare/
 tmp-vault-verify/prod-executive-after-contrast.*
+
+# Local menu exports (not part of repo source)
+menu-selling-prices.csv
