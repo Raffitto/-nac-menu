@@ -865,9 +865,10 @@ export async function processAskNacOnEdge(
   }
 
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
+  const routeWithQuestion = { ...route, question: effectiveQuestion };
   const deterministic = usedVaultAnswerBuilder
-    ? buildVaultAnswer(route, tool, readiness)
-    : buildDeterministicAskNacAnswer(route, tool, readiness);
+    ? buildVaultAnswer(routeWithQuestion, tool, readiness)
+    : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);
 
   deterministic.intent = route.intent;
   deterministic.readiness = readiness;

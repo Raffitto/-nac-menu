@@ -104,7 +104,7 @@ export async function processAskNacQuestion({
     });
   }
 
-  const deterministic = buildDeterministicAskNacAnswer(route, tool, effectiveReadiness);
+  const deterministic = buildDeterministicAskNacAnswer({ ...route, question: effectiveQuestion }, tool, effectiveReadiness);
   deterministic.readiness = effectiveReadiness;
   if (periodFallbackWarnings.length) {
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
