@@ -30,3 +30,12 @@ supabase/functions/.env
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Ask NAC local verification — generated artifacts (keep *.mjs verifier scripts)
+ask-nac-executive-*.pdf
+test.pdf
+tmp-vault-verify/*.bundle.cjs
+tmp-vault-verify/intelligence/
+tmp-vault-verify/dashboard/
+tmp-vault-verify/pdf-contrast-compare/
+tmp-vault-verify/prod-executive-after-contrast.*
