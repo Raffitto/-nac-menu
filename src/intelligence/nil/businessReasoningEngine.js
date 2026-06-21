@@ -112,7 +112,9 @@ function buildHypotheses(facts = [], correlations = [], signals = []) {
   const salesDown = findFact(facts, /sales/i, "down");
   const guestsDown = findFact(facts, /guest/i, "down");
   const spendStable = findFact(facts, /average spend|avg spend/i, "stable");
+  const spendDown = findFact(facts, /average spend|avg spend/i, "down");
   const deliveryStable = findFact(facts, /delivery performance/i, "stable");
+  const deliveryDown = findFact(facts, /delivery sales|delivery orders/i, "down");
   const humidity = correlations.find((c) => /humidity/i.test(c.text));
   const competitorBusy = correlations.find((c) => /competitor|agapi|urth|san carlo|busier/i.test(c.text));
   const locationEvent = correlations.find((c) => /football|mall event|activation|patio/i.test(c.text));
@@ -123,6 +125,47 @@ function buildHypotheses(facts = [], correlations = [], signals = []) {
       [salesDown, guestsDown, spendStable],
       [NIL_DOMAINS.INTERNAL_OPERATIONAL],
       { agreementCount: 3, historicalConsistency: 0.6 },
+    ));
+  } else if (salesDown && guestsDown && spendDown) {
+    derived.push(hypothesisStatement(
+      "Lower guest traffic may indicate a possible contributor to the sales decline; average spend also declined during the period.",
+      [salesDown, guestsDown, spendDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 3, historicalConsistency: 0.55 },
+    ));
+  } else if (salesDown && guestsDown) {
+    derived.push(hypothesisStatement(
+      "Lower guest traffic may indicate a possible contributor to the sales decline.",
+      [salesDown, guestsDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 2, historicalConsistency: 0.55 },
+    ));
+  }
+
+  if (spendDown && guestsDown && !derived.some((h) => /guest traffic|average spend/i.test(h.text))) {
+    derived.push(hypothesisStatement(
+      "Lower average spend per guest may indicate ticket-size softening alongside fewer guests.",
+      [spendDown, guestsDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 2, historicalConsistency: 0.5 },
+    ));
+  }
+
+  if (guestsDown && !salesDown) {
+    derived.push(hypothesisStatement(
+      "Fewer guests may indicate reduced walk-in or reservation traffic during the period.",
+      [guestsDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 1, historicalConsistency: 0.5 },
+    ));
+  }
+
+  if (deliveryDown) {
+    derived.push(hypothesisStatement(
+      "Delivery channel softness may point toward a possible contributor to the performance change.",
+      salesDown ? [deliveryDown, salesDown] : [deliveryDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: salesDown ? 2 : 1, historicalConsistency: 0.5 },
     ));
   }
 
@@ -159,6 +202,15 @@ function buildHypotheses(facts = [], correlations = [], signals = []) {
       [salesDown, deliveryStable],
       [NIL_DOMAINS.INTERNAL_OPERATIONAL],
       { agreementCount: 2, historicalConsistency: 0.65 },
+    ));
+  }
+
+  if (!derived.length && facts.length) {
+    derived.push(hypothesisStatement(
+      "Observed cash-up metric changes may indicate multiple internal contributors; additional same-period operational notes would help narrow the driver.",
+      facts.slice(0, Math.min(2, facts.length)),
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 1, historicalConsistency: 0.4 },
     ));
   }
 
