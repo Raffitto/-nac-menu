@@ -35,6 +35,7 @@ import {
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
+import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer.ts";
 import {
   buildPostgrestEquivalent,
   createEmptyCashUpProductionTrace,
@@ -103,6 +104,7 @@ export {
 
 export const VAULT_INTENTS = {
   CASH_UP: "vault_cash_up_summary",
+  BUSINESS_REASONING: "vault_business_reasoning",
   RECEPTION: "vault_reception_summary",
   LOGBOOK: "vault_logbook_summary",
   GOOGLE_STARS: "vault_google_review_star_summary",
@@ -574,6 +576,18 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       return summarizeVaultDocuments(supabase, context);
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
+    case VAULT_INTENTS.BUSINESS_REASONING: {
+      const vaultCompare = (context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
+        || parseVaultComparePeriodsFromQuestion(String(context.question || ""));
+      const vaultPeriod = (context.vaultPeriod as VaultPeriod | undefined)?.startDate
+        ? (context.vaultPeriod as VaultPeriod)
+        : vaultCompare?.current;
+      return getVaultCashUpFactsOverRange(supabase, {
+        ...context,
+        vaultPeriod,
+        vaultCompare,
+      });
+    }
     case VAULT_INTENTS.CASH_UP: {
       const question = String(context.question || "").toLowerCase();
       const vaultCompare = (context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
@@ -2450,9 +2464,14 @@ export function buildVaultAnswer(
     return buildVaultOperationalReviewAnswer(route, tool || {}, readiness);
   }
 
+  if (route.intent === VAULT_INTENTS.BUSINESS_REASONING) {
+    return buildVaultBusinessReasoningAnswer(route, tool || {}, readiness);
+  }
+
   const facts = tool?.facts as unknown[] | undefined;
   const coverage = tool?.coverage as unknown[] | undefined;
-  if (!facts?.length && !coverage?.length && readiness?.status === "missing") {
+  const aggregationDayCount = (tool?.aggregation as { dayCount?: number } | undefined)?.dayCount;
+  if (!facts?.length && !coverage?.length && !aggregationDayCount && readiness?.status === "missing") {
     return buildVaultMissingToolResponse(route, tool || {}, readiness);
   }
 

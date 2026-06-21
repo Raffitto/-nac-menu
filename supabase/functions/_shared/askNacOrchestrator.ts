@@ -46,6 +46,11 @@ import {
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
 import { scoreSalesPerformanceQueryFocus, isDeliveryPlatformPeriodQuery } from "./vaultSalesPerformanceIntelligence.ts";
+import {
+  scoreVaultBusinessReasoningIntent,
+  resolveWhyVaultCompare,
+  detectWhyMetricFocus,
+} from "./vaultBusinessReasoningRouting.ts";
 import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
 import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
 import {
@@ -176,6 +181,12 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(ccm|reconciliation|reconcile)\b/.test(q)) return 16;
       return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.BUSINESS_REASONING,
+    score(q) {
+      return scoreVaultBusinessReasoningIntent(q);
     },
   },
   {
@@ -483,8 +494,13 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
   const rankChangeDirection = intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE
     ? detectRankChangeDirection(normalized.text)
     : null;
-  const vaultCompare = parseVaultComparePeriodsFromQuestion(normalized.text);
+  const vaultCompare = intent === VAULT_INTENTS.BUSINESS_REASONING
+    ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
+    : parseVaultComparePeriodsFromQuestion(normalized.text);
   const vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
+  const whyMetricFocus = intent === VAULT_INTENTS.BUSINESS_REASONING
+    ? detectWhyMetricFocus(normalized.text)
+    : null;
 
   return {
     intent,
@@ -499,6 +515,7 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     rankChangeDirection,
     vaultPeriod,
     vaultCompare: vaultCompare || null,
+    whyMetricFocus,
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
