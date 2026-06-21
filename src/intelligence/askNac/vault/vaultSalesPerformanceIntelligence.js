@@ -70,6 +70,19 @@ export const CASH_UP_STRUCTURED_METRIC_KEYS = Object.freeze([
   ...RECONCILIATION_METRICS.map(([key]) => key),
 ]);
 
+/** Headline keys only — used for multi-day range aggregation (no payment mix / reconciliation). */
+export const CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS = Object.freeze([
+  "gross_sales",
+  "net_sales",
+  "total_sales",
+  "guest_count",
+  "order_count",
+  "avg_per_guest",
+  "delivery_sales",
+  "delivery_orders",
+  "business_date",
+]);
+
 export const CASH_UP_FACTS_QUERY_LIMIT = 64;
 
 function formatNumber(value) {

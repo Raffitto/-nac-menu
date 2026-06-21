@@ -131,6 +131,7 @@ function createCashUpSupabaseMock({
   businessDate = "2026-06-17",
   factsRows = JUNE_17_FACT_ROWS,
   factsQueryLog = null,
+  businessDateProbeLog = null,
 } = {}) {
   return {
     from(table) {
@@ -221,6 +222,7 @@ function createCashUpSupabaseMock({
             && state.limitN === 1;
 
           if (isBusinessDateProbe) {
+            if (businessDateProbeLog) businessDateProbeLog.push({ ...state });
             return Promise.resolve({ data: [{ period_end: businessDate }], error: null }).then(onFulfilled, onRejected);
           }
 
@@ -256,7 +258,8 @@ describe("getLatestVaultCashUpFacts", () => {
 
   test("show latest cash up returns 17 June metrics", async () => {
     const factsQueryLog = [];
-    const supabase = createCashUpSupabaseMock({ factsQueryLog });
+    const businessDateProbeLog = [];
+    const supabase = createCashUpSupabaseMock({ factsQueryLog, businessDateProbeLog });
     const result = await getLatestVaultCashUpFacts(supabase, {
       question: "show latest cash up",
       filters: { branch: "khobar", selectedRange: "today" },
@@ -268,12 +271,46 @@ describe("getLatestVaultCashUpFacts", () => {
     const grossSales = result.facts.find((f) => f.metricKey === "gross_sales");
     expect(grossSales?.metricValue).toBe(20633);
 
+    expect(businessDateProbeLog.length).toBe(0);
     expect(factsQueryLog.length).toBe(1);
+    expect(factsQueryLog[0].filters.file_id).toBe("good-file");
     expect(factsQueryLog[0].lte.period_start).toBe("2026-06-17");
     expect(factsQueryLog[0].gte.period_end).toBe("2026-06-17");
     expect(factsQueryLog[0].inFilter.col).toBe("metric_key");
     expect(factsQueryLog[0].inFilter.vals).toEqual(CASH_UP_STRUCTURED_METRIC_KEYS);
     expect(factsQueryLog[0].limitN).toBe(CASH_UP_FACTS_QUERY_LIMIT);
+  });
+
+  test("uses coverage period_end without structured_facts business-date scan", async () => {
+    const businessDateProbeLog = [];
+    const supabase = createCashUpSupabaseMock({ businessDateProbeLog });
+    const result = await getLatestVaultCashUpFacts(supabase, {
+      question: "show latest cash up",
+      filters: { branch: "khobar" },
+    });
+
+    expect(businessDateProbeLog.length).toBe(0);
+    expect(result.periodLabel).toMatch(/17 June 2026/);
+    expect(result.coverage[0].periodEnd).toBe("2026-06-17");
+  });
+
+  test("falls back to structured_facts scan when coverage period_end is missing", async () => {
+    const businessDateProbeLog = [];
+    const coverageWithoutPeriodEnd = {
+      ...GOOD_COVERAGE,
+      period_end: "",
+    };
+    const supabase = createCashUpSupabaseMock({
+      coverageRows: [coverageWithoutPeriodEnd],
+      businessDateProbeLog,
+    });
+    const result = await getLatestVaultCashUpFacts(supabase, {
+      filters: { branch: "khobar" },
+    });
+
+    expect(businessDateProbeLog.length).toBe(1);
+    expect(businessDateProbeLog[0].filters.file_id).toBe("good-file");
+    expect(result.periodLabel).toMatch(/17 June 2026/);
   });
 });
 

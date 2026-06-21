@@ -6,7 +6,9 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   groupCashUpFactsByBusinessDate,
+  buildCashUpRangeQueryLimit,
 } from "./vaultCashUpAggregation";
+import { CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS } from "./vaultSalesPerformanceIntelligence";
 import { buildCashUpPeriodAggregateAnswer } from "./vaultSalesPerformanceIntelligence";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
 import { buildVaultAnswer } from "./vaultAnswerBuilder";
@@ -96,6 +98,47 @@ describe("aggregateCashUpFactsOverRange", () => {
     expect(agg.totalDeliverySales).toBeGreaterThan(0);
     expect(agg.totalDeliveryOrders).toBeGreaterThan(0);
     expect(agg.dailyBreakdown).toHaveLength(14);
+  });
+
+  test("ignores unrelated facts such as payment_method", () => {
+    const facts = [
+      ...buildRangeFacts().slice(0, 4),
+      dayFact("2026-06-20", "payment_method", 9999, { dimensions: { method: "mada" } }),
+    ];
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-20",
+      endDate: "2026-06-20",
+      branchId: "khobar",
+      factsByDate: groupCashUpFactsByBusinessDate(facts),
+    });
+    expect(agg.totalSales).toBe(10000);
+    expect(agg.dayCount).toBe(1);
+  });
+
+  test("compare mode skips daily breakdown but keeps totals", () => {
+    const facts = buildRangeFacts();
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-14",
+      endDate: "2026-06-20",
+      branchId: "khobar",
+      factsByDate: groupCashUpFactsByBusinessDate(facts),
+      includeDailyBreakdown: false,
+    });
+    expect(agg.dailyBreakdown).toHaveLength(0);
+    expect(agg.dayCount).toBe(7);
+    expect(agg.totalSales).toBeGreaterThan(0);
+  });
+
+  test("range query limit scales modestly with span", () => {
+    expect(buildCashUpRangeQueryLimit("2026-06-14", "2026-06-20")).toBe(140);
+    expect(buildCashUpRangeQueryLimit("2026-06-01", "2026-06-20")).toBeLessThanOrEqual(800);
+  });
+
+  test("aggregation metric keys exclude reconciliation and payment mix", () => {
+    expect(CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS).toContain("net_sales");
+    expect(CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS).toContain("delivery_sales");
+    expect(CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS).not.toContain("cash_variance");
+    expect(CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS).not.toContain("payment_method");
   });
 });
 
@@ -193,13 +236,13 @@ describe("period cash-up answers", () => {
 });
 
 describe("runVaultQueryTool range path", () => {
-  test("uses range retrieval for last 14 days", async () => {
+  test("uses slim range retrieval for last 14 days", async () => {
     const factsQueryLog = [];
     const supabase = {
       from(table) {
-        const state = { filters: {}, lte: {}, gte: {}, inFilter: null, limitN: null, neqs: {} };
+        const state = { filters: {}, lte: {}, gte: {}, inFilter: null, limitN: null, neqs: {}, selectCols: null };
         const chain = {
-          select() { return chain; },
+          select(cols) { state.selectCols = cols; return chain; },
           eq(col, val) { state.filters[col] = val; return chain; },
           neq(col, val) { state.neqs[col] = val; return chain; },
           in(col, vals) { state.inFilter = { col, vals }; return chain; },
@@ -231,10 +274,54 @@ describe("runVaultQueryTool range path", () => {
     });
 
     expect(factsQueryLog.length).toBe(1);
+    expect(String(factsQueryLog[0].selectCols)).not.toMatch(/ask_nac_files/);
+    expect(factsQueryLog[0].inFilter.vals).toEqual(CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS);
     expect(factsQueryLog[0].lte.period_start).toBe("2026-06-20");
     expect(factsQueryLog[0].gte.period_end).toBe("2026-06-07");
-    expect(factsQueryLog[0].limitN).toBeGreaterThan(64);
+    expect(factsQueryLog[0].limitN).toBeLessThanOrEqual(800);
     expect(result.aggregation?.dayCount).toBe(14);
     expect(result.aggregation?.totalSales).toBeGreaterThan(0);
+  });
+
+  test("compare mode fetches ranges sequentially without merging facts", async () => {
+    const callLog = [];
+    const supabase = {
+      from(table) {
+        const state = { filters: {}, lte: {}, gte: {}, inFilter: null, limitN: null, neqs: {} };
+        const chain = {
+          select() { return chain; },
+          eq(col, val) { state.filters[col] = val; return chain; },
+          neq(col, val) { state.neqs[col] = val; return chain; },
+          in(col, vals) { state.inFilter = { col, vals }; return chain; },
+          lte(col, val) { state.lte[col] = val; return chain; },
+          gte(col, val) { state.gte[col] = val; return chain; },
+          order() { return chain; },
+          limit(n) { state.limitN = n; return chain; },
+          not() { return chain; },
+        };
+        chain.then = (onFulfilled, onRejected) => {
+          if (table === "ask_nac_structured_facts") {
+            callLog.push({ table, gte: state.gte.period_end, lte: state.lte.period_start });
+            const start = state.gte.period_end;
+            const facts = buildRangeFacts().filter((row) => row.period_end >= start);
+            return Promise.resolve({ data: facts, error: null }).then(onFulfilled, onRejected);
+          }
+          return Promise.resolve({ data: [], error: null }).then(onFulfilled, onRejected);
+        };
+        return chain;
+      },
+    };
+
+    const result = await runVaultQueryTool(supabase, "vault_cash_up_summary", {
+      question: "compare last 7 days vs previous 7 days",
+      vaultPeriod: parseVaultPeriodFromQuestion("compare last 7 days vs previous 7 days", REF),
+      filters: { branch: "khobar" },
+    });
+
+    expect(callLog.filter((entry) => entry.table === "ask_nac_structured_facts")).toHaveLength(2);
+    expect(result.facts).toEqual([]);
+    expect(result.aggregation?.totalSales).toBeGreaterThan(0);
+    expect(result.previousAggregation?.totalSales).toBeGreaterThan(0);
+    expect(result.aggregation?.dailyBreakdown).toEqual([]);
   });
 });

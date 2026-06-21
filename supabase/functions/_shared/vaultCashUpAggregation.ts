@@ -54,18 +54,20 @@ export function aggregateCashUpFactsOverRange({
   endDate,
   branchId,
   factsByDate = {},
+  includeDailyBreakdown = true,
 }: {
   startDate?: string | null;
   endDate?: string | null;
   branchId?: string | null;
   factsByDate?: Record<string, FactRow[]>;
+  includeDailyBreakdown?: boolean;
 }): CashUpRangeAggregation {
   void branchId;
   const dates = Object.keys(factsByDate)
     .filter((date) => (!startDate || date >= startDate) && (!endDate || date <= endDate))
     .sort();
 
-  const dailyBreakdown = dates.map((date) => {
+  const dailyBreakdown = includeDailyBreakdown ? dates.map((date) => {
     const dayFacts = factsByDate[date] || [];
     const totalSales = pickDaySales(dayFacts);
     const totalGuests = pickAggregateMetricValue(dayFacts, "guest_count");
@@ -80,13 +82,23 @@ export function aggregateCashUpFactsOverRange({
       totalDeliverySales: totalDeliverySales != null ? Number(totalDeliverySales) : null,
       totalDeliveryOrders: totalDeliveryOrders != null ? Number(totalDeliveryOrders) : null,
     };
-  });
+  }) : [];
 
-  const salesValues = dailyBreakdown.map((row) => row.totalSales).filter((v): v is number => v != null);
-  const guestValues = dailyBreakdown.map((row) => row.totalGuests).filter((v): v is number => v != null);
-  const orderValues = dailyBreakdown.map((row) => row.totalOrders).filter((v): v is number => v != null);
-  const deliverySalesValues = dailyBreakdown.map((row) => row.totalDeliverySales).filter((v): v is number => v != null);
-  const deliveryOrderValues = dailyBreakdown.map((row) => row.totalDeliveryOrders).filter((v): v is number => v != null);
+  const salesValues = includeDailyBreakdown
+    ? dailyBreakdown.map((row) => row.totalSales).filter((v): v is number => v != null)
+    : dates.map((date) => pickDaySales(factsByDate[date] || [])).filter((v): v is number => v != null);
+  const guestValues = includeDailyBreakdown
+    ? dailyBreakdown.map((row) => row.totalGuests).filter((v): v is number => v != null)
+    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "guest_count")).filter((v): v is number => v != null);
+  const orderValues = includeDailyBreakdown
+    ? dailyBreakdown.map((row) => row.totalOrders).filter((v): v is number => v != null)
+    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "order_count")).filter((v): v is number => v != null);
+  const deliverySalesValues = includeDailyBreakdown
+    ? dailyBreakdown.map((row) => row.totalDeliverySales).filter((v): v is number => v != null)
+    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_sales")).filter((v): v is number => v != null);
+  const deliveryOrderValues = includeDailyBreakdown
+    ? dailyBreakdown.map((row) => row.totalDeliveryOrders).filter((v): v is number => v != null)
+    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders")).filter((v): v is number => v != null);
 
   const totalSales = salesValues.length ? sumNumbers(salesValues) : null;
   const totalGuests = guestValues.length ? sumNumbers(guestValues) : null;
@@ -106,15 +118,15 @@ export function aggregateCashUpFactsOverRange({
     averageSpend,
     totalDeliverySales,
     totalDeliveryOrders,
-    dayCount: dailyBreakdown.length,
+    dayCount: dates.length,
     dailyBreakdown,
   };
 }
 
 export function buildCashUpRangeQueryLimit(startDate?: string | null, endDate?: string | null) {
-  if (!startDate || !endDate) return 512;
+  if (!startDate || !endDate) return 256;
   const start = new Date(`${startDate}T12:00:00Z`);
   const end = new Date(`${endDate}T12:00:00Z`);
   const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
-  return Math.min(4000, spanDays * 48);
+  return Math.min(800, spanDays * 20);
 }
