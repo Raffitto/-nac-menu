@@ -29,3 +29,15 @@ export {
   mergeNilSignalBundles,
   hasExternalContextSignals,
 } from "./adapters/externalContextSignalAdapter";
+
+export {
+  canReadExternalContextSignal,
+  canWriteExternalContextSignal,
+  canReadCompetitor,
+  canReadCompetitorObservation,
+  mapObservationSensitivityToVault,
+  validateExternalContextSignalScope,
+  validateWhatsAppAllowedBranchIds,
+  KNOWN_BRANCH_IDS,
+  COMPETITOR_OBSERVATION_SENSITIVITY,
+} from "./externalContextRlsContract";

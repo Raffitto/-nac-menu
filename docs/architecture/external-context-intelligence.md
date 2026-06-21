@@ -60,7 +60,26 @@ erDiagram
 
 **Migration:** `supabase/migrations/20260621180000_external_context_and_whatsapp_foundation.sql`
 
-**RLS:** Reuses `ask_nac_vault_branch_allowed`, `ask_nac_vault_has_all_branches`, `ask_nac_vault_is_admin`.
+**RLS (hardened):** See §2.1. `authenticated` has **SELECT only**; writes are service-role / Edge until explicitly re-audited.
+
+### 2.1 RLS rules (staging/production)
+
+| Resource | Read | Write (defense-in-depth) |
+|----------|------|---------------------------|
+| `competitors` | Cross-branch roles: all. Branch users: own `branch_id` only. **`branch_id IS NULL` = admin/cross-branch only** | Admin only (`ask_nac_vault_is_admin`) |
+| `external_context_signals` | Cross-branch: all. **`applies_to_all_branches=true`**: any user with branch access. Branch rows: `ask_nac_vault_branch_allowed(branch_id)` | `ask_nac_external_context_can_write()` — branch users cannot create network rows |
+| `competitor_observations` | Branch + `sensitivity_level` via `ask_nac_vault_can_read_sensitivity` (`confidential` → `management`) | Branch-scoped write; confidential limited for branch-only roles |
+
+**Signal scope CHECK (no silent invisible holidays):**
+
+- **Network signal:** `applies_to_all_branches = true` AND `branch_id IS NULL` (use for macro, public_holiday, national events).
+- **Branch signal:** `branch_id` set AND `applies_to_all_branches = false`.
+
+**SQL helpers:** `ask_nac_has_any_branch_access`, `ask_nac_external_context_branch_allowed`, `ask_nac_external_context_can_write`, `ask_nac_competitors_can_read`, `ask_nac_competitor_observation_can_read/write`.
+
+**JS mirror (tests):** `src/intelligence/externalContext/externalContextRlsContract.js`
+
+**Writes today:** No `GRANT INSERT/UPDATE/DELETE` to `authenticated`. Collectors must use service role with explicit branch scoping in application code.
 
 ---
 
@@ -227,6 +246,7 @@ Overall reasoning confidence still computed by `scoreOverallReasoningConfidence(
 | `externalContextContract.js` | Types, validation, domain mapping |
 | `competitorRegistry.js` | Normalization, seed name constants |
 | `adapters/externalContextSignalAdapter.js` | DB rows → NIL bundles |
+| `externalContextRlsContract.js` | RLS semantics mirror for tests |
 | `index.js` | Public exports |
 
 ---
@@ -253,10 +273,22 @@ Overall reasoning confidence still computed by `scoreOverallReasoningConfidence(
 - Signal row validation
 - Adapter → NIL bundle shape
 - Confidence / overlap mapping
+- RLS policy contract (Khobar/Riyadh manager, CEO scopes)
 - Forbidden causality language guard
 - Branch filter helpers
 
 Run: `npm test -- --watchAll=false`
+
+---
+
+## 15. Production apply checklist
+
+1. Apply migration on **staging** only first.
+2. Run JWT role matrix against live RLS (Khobar GM, Riyadh GM, staff, CEO) — see `externalContextFoundation.test.js` contract scopes.
+3. Confirm `\dp` / grants: **no authenticated INSERT** on external context tables.
+4. Ingest test rows: branch-scoped weather + one `applies_to_all_branches` holiday; verify read isolation.
+5. Do **not** wire Ask NAC fetch until step 4 passes.
+6. Plan `whatsapp_message_logs` retention before webhook (PII).
 
 ---
 

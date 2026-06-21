@@ -75,7 +75,21 @@ flowchart TB
 
 **E.164 normalization:** strip spaces/dashes, ensure leading `+`, reject invalid lengths. Implemented in `src/intelligence/whatsapp/whatsappContract.js` → `normalizePhoneE164()`.
 
-**Multi-branch executives:** `vault_role` with `cross_branch = true` in `ask_nac_roles` (ceo, super_admin, marketing per existing matrix) + `allowed_branch_ids` empty or explicit list.
+**Schema constraints (migration):**
+
+- `allowed_branch_ids` must be subset of `{khobar, riyadh, jeddah}` (SQL CHECK).
+- `linked_user_id` → `auth.users(id)` optional FK; **does not grant access by itself**.
+- `linked_email` stored lower-case.
+- `is_admin` on `whatsapp_users` is **not** used for RLS; webhook must call vault RBAC helpers.
+
+**RBAC derivation (required at webhook):**
+
+1. Load `whatsapp_users` by E.164 (allowlist).
+2. Resolve `linked_email` → `ask_nac_staff` + `ask_nac_user_branch_access`.
+3. Enforce `ask_nac_vault_branch_allowed(resolved_branch)` before `processAskNacOnEdge`.
+4. Treat `whatsapp_users.vault_role` as hint only — authoritative source is vault staff matrix.
+
+**Multi-branch executives:** `vault_role` with `cross_branch = true` in `ask_nac_roles` (ceo, super_admin, ops_manager) + `allowed_branch_ids` empty or explicit list.
 
 **Branch managers:** `primary_branch_id` set; `allowed_branch_ids` typically `[primary_branch_id]`.
 
@@ -250,6 +264,8 @@ Implementation: `formatAskNacAnswerForWhatsApp()` in `whatsappResponseFormatter.
 | No service role to client | Webhook Edge function only |
 | Export gate | `can_request_exports` |
 | Cross-branch leakage | Deny + log if branch not in allowed set |
+| Webhook RBAC | **Must re-resolve `ask_nac_staff` / `ask_nac_vault_branch_allowed` — do not trust `whatsapp_users.vault_role` or `is_admin` alone** |
+| Message log PII | `inbound_message` + phone retained indefinitely until retention policy added |
 
 ---
 

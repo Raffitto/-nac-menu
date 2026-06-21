@@ -12,6 +12,13 @@ import {
   mergeNilSignalBundles,
   normalizeCompetitorRecord,
   filterActiveCompetitorsForBranch,
+  canReadExternalContextSignal,
+  canWriteExternalContextSignal,
+  canReadCompetitor,
+  canReadCompetitorObservation,
+  validateExternalContextSignalScope,
+  validateWhatsAppAllowedBranchIds,
+  mapObservationSensitivityToVault,
 } from "./index";
 
 import {
@@ -52,16 +59,35 @@ describe("competitor normalization", () => {
 });
 
 describe("external signal validation", () => {
-  test("validateExternalContextSignalRow accepts weather signal", () => {
+  test("validateExternalContextSignalRow accepts branch-scoped weather signal", () => {
     const result = validateExternalContextSignalRow({
       signal_type: EXTERNAL_SIGNAL_TYPES.WEATHER,
       branch_id: "khobar",
+      applies_to_all_branches: false,
       title: "High humidity",
       source_reliability: 0.8,
       confidence: "high",
     });
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  test("validateExternalContextSignalRow rejects invalid scope combinations", () => {
+    const result = validateExternalContextSignalRow({
+      signal_type: EXTERNAL_SIGNAL_TYPES.PUBLIC_HOLIDAY,
+      branch_id: null,
+      applies_to_all_branches: false,
+      title: "Eid",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /Invalid scope/i.test(e))).toBe(true);
+  });
+
+  test("validateExternalContextSignalScope accepts network macro/holiday pattern", () => {
+    expect(validateExternalContextSignalScope({
+      applies_to_all_branches: true,
+      branch_id: null,
+    }).valid).toBe(true);
   });
 
   test("validateExternalContextSignalRow rejects unknown type", () => {
@@ -164,6 +190,88 @@ describe("externalContextSignalAdapter", () => {
     const text = bundle.weatherSignals[0].value;
     expect(containsForbiddenCausalityLanguage(text)).toBe(false);
     expect(text).toMatch(/may have/i);
+  });
+});
+
+describe("RLS policy contract (mirrors SQL helpers)", () => {
+  const khobarManager = {
+    hasAllBranches: false,
+    hasAnyBranchAccess: true,
+    branchAllowed: (b) => b === "khobar",
+    canReadSensitivity: (l) => l === "public" || l === "internal",
+  };
+
+  const riyadhManager = {
+    hasAllBranches: false,
+    hasAnyBranchAccess: true,
+    branchAllowed: (b) => b === "riyadh",
+    canReadSensitivity: (l) => l === "public" || l === "internal",
+  };
+
+  const ceo = {
+    hasAllBranches: true,
+    hasAnyBranchAccess: true,
+    branchAllowed: () => true,
+    canReadSensitivity: () => true,
+  };
+
+  test("branch users do not read network competitors (branch_id null)", () => {
+    expect(canReadCompetitor(khobarManager, { branch_id: null })).toBe(false);
+    expect(canReadCompetitor(ceo, { branch_id: null })).toBe(true);
+  });
+
+  test("Khobar manager reads Khobar competitors only", () => {
+    expect(canReadCompetitor(khobarManager, { branch_id: "khobar" })).toBe(true);
+    expect(canReadCompetitor(khobarManager, { branch_id: "riyadh" })).toBe(false);
+  });
+
+  test("all-branch signals readable by any branch user with access", () => {
+    const networkSignal = { branch_id: null, applies_to_all_branches: true };
+    expect(canReadExternalContextSignal(khobarManager, networkSignal)).toBe(true);
+    expect(canReadExternalContextSignal(riyadhManager, networkSignal)).toBe(true);
+  });
+
+  test("branch-scoped external signals respect branch isolation", () => {
+    expect(canReadExternalContextSignal(khobarManager, {
+      branch_id: "khobar",
+      applies_to_all_branches: false,
+    })).toBe(true);
+    expect(canReadExternalContextSignal(riyadhManager, {
+      branch_id: "khobar",
+      applies_to_all_branches: false,
+    })).toBe(false);
+  });
+
+  test("branch users cannot write all-branch or null-branch signals", () => {
+    expect(canWriteExternalContextSignal(khobarManager, {
+      branch_id: null,
+      applies_to_all_branches: true,
+    })).toBe(false);
+    expect(canWriteExternalContextSignal(khobarManager, {
+      branch_id: "khobar",
+      applies_to_all_branches: false,
+    })).toBe(true);
+    expect(canWriteExternalContextSignal(ceo, {
+      branch_id: null,
+      applies_to_all_branches: true,
+    })).toBe(true);
+  });
+
+  test("competitor observation sensitivity gates confidential reads for branch staff scope", () => {
+    expect(canReadCompetitorObservation(khobarManager, {
+      branch_id: "khobar",
+      sensitivity_level: "internal",
+    })).toBe(true);
+    expect(canReadCompetitorObservation(khobarManager, {
+      branch_id: "khobar",
+      sensitivity_level: "confidential",
+    })).toBe(false);
+    expect(mapObservationSensitivityToVault("confidential")).toBe("management");
+  });
+
+  test("validateWhatsAppAllowedBranchIds rejects unknown branch ids", () => {
+    expect(validateWhatsAppAllowedBranchIds(["khobar"]).valid).toBe(true);
+    expect(validateWhatsAppAllowedBranchIds(["dubai"]).valid).toBe(false);
   });
 });
 

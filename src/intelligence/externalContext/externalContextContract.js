@@ -4,6 +4,7 @@
  */
 
 import { NIL_DOMAINS } from "../nil/nilContract";
+import { validateExternalContextSignalScope } from "./externalContextRlsContract";
 
 /** @enum {string} */
 export const EXTERNAL_SIGNAL_TYPES = Object.freeze({
@@ -85,6 +86,9 @@ export function normalizeCompetitorName(name = "") {
  */
 export function validateExternalContextSignalRow(row = {}) {
   const errors = [];
+  const scope = validateExternalContextSignalScope(row);
+  if (!scope.valid) errors.push(...scope.errors);
+
   if (!row.signal_type || !Object.values(EXTERNAL_SIGNAL_TYPES).includes(row.signal_type)) {
     errors.push("signal_type must be a known EXTERNAL_SIGNAL_TYPES value");
   }
