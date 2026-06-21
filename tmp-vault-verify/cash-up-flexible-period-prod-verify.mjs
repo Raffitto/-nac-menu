@@ -13,7 +13,7 @@
  *   ASK_NAC_VERIFY_EMAIL         Magic-link user email (required when token unset)
  *   ASK_NAC_VERIFY_BRANCH        Branch scope (default: khobar)
  *   SUPABASE_PROJECT_REF         Project ref for `supabase projects api-keys` (when token unset)
- *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (default: https://nac-os.netlify.app/)
+ *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (required when token unset)
  */
 import fs from "fs";
 import { execSync } from "child_process";
@@ -35,27 +35,41 @@ const QUERIES = [
   { label: "delivery mix last 14 days", question: "delivery mix last 14 days", expect: "range" },
 ];
 
-function readEnvLocalAnonKey() {
+function readEnvLocalValue(key) {
   const envPath = path.join(REPO_ROOT, ".env.local");
   if (!fs.existsSync(envPath)) return null;
-  return fs.readFileSync(envPath, "utf8").match(/^REACT_APP_SUPABASE_ANON_KEY=(.+)$/m)?.[1]?.trim() || null;
+  return fs.readFileSync(envPath, "utf8").match(new RegExp(`^${key}=(.+)$`, "m"))?.[1]?.trim() || null;
 }
 
 function loadConfig() {
   const supabaseUrl = process.env.SUPABASE_URL
     || process.env.REACT_APP_SUPABASE_URL
-    || "https://zeyhvjuraqnlbdycgrme.supabase.co";
+    || readEnvLocalValue("REACT_APP_SUPABASE_URL");
   const anonKey = process.env.SUPABASE_ANON_KEY
     || process.env.REACT_APP_SUPABASE_ANON_KEY
-    || readEnvLocalAnonKey();
+    || readEnvLocalValue("REACT_APP_SUPABASE_ANON_KEY");
   const branch = process.env.ASK_NAC_VERIFY_BRANCH || "khobar";
-  const email = process.env.ASK_NAC_VERIFY_EMAIL || "raffiazarian@gmail.com";
-  const projectRef = process.env.SUPABASE_PROJECT_REF || "zeyhvjuraqnlbdycgrme";
-  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT || "https://nac-os.netlify.app/";
   const accessToken = process.env.ASK_NAC_ACCESS_TOKEN?.trim() || null;
+  const email = process.env.ASK_NAC_VERIFY_EMAIL?.trim() || null;
+  const projectRef = process.env.SUPABASE_PROJECT_REF
+    || (supabaseUrl && supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1])
+    || null;
+  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT?.trim() || null;
 
+  if (!supabaseUrl) {
+    throw new Error("Missing Supabase URL. Set SUPABASE_URL or REACT_APP_SUPABASE_URL.");
+  }
   if (!anonKey) {
     throw new Error("Missing anon key. Set SUPABASE_ANON_KEY or REACT_APP_SUPABASE_ANON_KEY in .env.local.");
+  }
+  if (!accessToken && !email) {
+    throw new Error("Set ASK_NAC_ACCESS_TOKEN or ASK_NAC_VERIFY_EMAIL for scoped auth.");
+  }
+  if (!accessToken && !projectRef) {
+    throw new Error("Set SUPABASE_PROJECT_REF or SUPABASE_URL with a valid project ref.");
+  }
+  if (!accessToken && !redirectTo) {
+    throw new Error("Set ASK_NAC_VERIFY_REDIRECT for magic-link auth.");
   }
 
   return { supabaseUrl, anonKey, branch, email, projectRef, redirectTo, accessToken };

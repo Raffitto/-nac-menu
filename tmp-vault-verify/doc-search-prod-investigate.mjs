@@ -1,42 +1,99 @@
 /**
- * Production document-search investigation for raffiazarian2@gmail.com
- * Run: node tmp-vault-verify/doc-search-prod-investigate.mjs
+ * Production document-search investigation (read-only diagnostics).
+ *
+ * Compares admin vs scoped-user visibility for vault document search / FTS.
+ * No uploads, mutations, deletes, or sync.
+ *
+ * Run:
+ *   node tmp-vault-verify/doc-search-prod-investigate.mjs
+ *
+ * Environment:
+ *   SUPABASE_URL                 Supabase project URL
+ *   SUPABASE_ANON_KEY            Anon key (falls back to REACT_APP_* in .env.local)
+ *   ASK_NAC_ACCESS_TOKEN         Bearer token — skips magic-link auth when set
+ *   ASK_NAC_VERIFY_EMAIL         Scoped user email (required when token unset)
+ *   SUPABASE_PROJECT_REF         Project ref for `supabase projects api-keys` (when token unset)
+ *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (required when token unset)
  */
 import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 import { execSync } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const URL = "https://zeyhvjuraqnlbdycgrme.supabase.co";
-const USER_EMAIL = "raffiazarian2@gmail.com";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.join(__dirname, "..");
 
-const ANON = fs
-  .readFileSync(".env.local", "utf8")
-  .match(/^REACT_APP_SUPABASE_ANON_KEY=(.+)$/m)?.[1]
-  ?.trim();
+function readEnvLocalValue(key) {
+  const envPath = path.join(REPO_ROOT, ".env.local");
+  if (!fs.existsSync(envPath)) return null;
+  return fs.readFileSync(envPath, "utf8").match(new RegExp(`^${key}=(.+)$`, "m"))?.[1]?.trim() || null;
+}
 
-function getServiceRole() {
-  const out = execSync(
-    "supabase projects api-keys --project-ref zeyhvjuraqnlbdycgrme -o json",
-    { encoding: "utf8", cwd: process.cwd() },
-  );
+function loadConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL
+    || process.env.REACT_APP_SUPABASE_URL
+    || readEnvLocalValue("REACT_APP_SUPABASE_URL");
+  const anonKey = process.env.SUPABASE_ANON_KEY
+    || process.env.REACT_APP_SUPABASE_ANON_KEY
+    || readEnvLocalValue("REACT_APP_SUPABASE_ANON_KEY");
+  const accessToken = process.env.ASK_NAC_ACCESS_TOKEN?.trim() || null;
+  const email = process.env.ASK_NAC_VERIFY_EMAIL?.trim() || null;
+  const projectRef = process.env.SUPABASE_PROJECT_REF
+    || (supabaseUrl && supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1])
+    || null;
+  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT?.trim() || null;
+
+  if (!supabaseUrl) {
+    throw new Error("Missing Supabase URL. Set SUPABASE_URL or REACT_APP_SUPABASE_URL.");
+  }
+  if (!anonKey) {
+    throw new Error("Missing anon key. Set SUPABASE_ANON_KEY or REACT_APP_SUPABASE_ANON_KEY in .env.local.");
+  }
+  if (!accessToken && !email) {
+    throw new Error("Set ASK_NAC_ACCESS_TOKEN or ASK_NAC_VERIFY_EMAIL for scoped auth.");
+  }
+  if (!accessToken && !projectRef) {
+    throw new Error("Set SUPABASE_PROJECT_REF or SUPABASE_URL with a valid project ref.");
+  }
+  if (!accessToken && !redirectTo) {
+    throw new Error("Set ASK_NAC_VERIFY_REDIRECT for magic-link auth.");
+  }
+
+  return { supabaseUrl, anonKey, email, projectRef, redirectTo, accessToken };
+}
+
+function getServiceRole(projectRef) {
+  const out = execSync(`supabase projects api-keys --project-ref ${projectRef} -o json`, {
+    encoding: "utf8",
+    cwd: REPO_ROOT,
+  });
   const keys = JSON.parse(out);
   const service = keys.find((k) => k.name === "service_role" || k.id === "service_role");
-  if (!service?.api_key) throw new Error("service_role key not found");
+  if (!service?.api_key) throw new Error("service_role key not found via Supabase CLI");
   return service.api_key;
 }
 
-async function userClient(email) {
-  const serviceRole = getServiceRole();
-  const admin = createClient(URL, serviceRole, {
+async function resolveScopedUserClient(config) {
+  if (config.accessToken) {
+    return createClient(config.supabaseUrl, config.anonKey, {
+      global: { headers: { Authorization: `Bearer ${config.accessToken}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+
+  const serviceRole = getServiceRole(config.projectRef);
+  const admin = createClient(config.supabaseUrl, serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data, error } = await admin.auth.admin.generateLink({
     type: "magiclink",
-    email,
-    options: { redirectTo: "https://nac-os.netlify.app/" },
+    email: config.email,
+    options: { redirectTo: config.redirectTo },
   });
   if (error) throw error;
-  const bootstrap = createClient(URL, ANON, {
+
+  const bootstrap = createClient(config.supabaseUrl, config.anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data: sessionData, error: verifyError } = await bootstrap.auth.verifyOtp({
@@ -44,7 +101,8 @@ async function userClient(email) {
     type: "magiclink",
   });
   if (verifyError) throw verifyError;
-  return createClient(URL, ANON, {
+
+  return createClient(config.supabaseUrl, config.anonKey, {
     global: { headers: { Authorization: `Bearer ${sessionData.session.access_token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -73,10 +131,13 @@ const TEST_QUERIES = [
 ];
 
 async function main() {
-  const admin = createClient(URL, getServiceRole(), {
+  const config = loadConfig();
+  const verifyEmail = config.email || "(token auth)";
+
+  const admin = createClient(config.supabaseUrl, getServiceRole(config.projectRef), {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const user = await userClient(USER_EMAIL);
+  const user = await resolveScopedUserClient(config);
 
   const { data: authUser } = await user.auth.getUser();
   const jwtEmail = authUser?.user?.email;
@@ -84,11 +145,11 @@ async function main() {
   const { data: staffRows } = await admin
     .from("ask_nac_staff")
     .select("email, role, branch_scope, department_scope")
-    .ilike("email", USER_EMAIL);
+    .ilike("email", verifyEmail);
   const { data: menuStaff } = await admin
     .from("menu_staff_scope")
     .select("email, role, branch_id")
-    .ilike("email", USER_EMAIL);
+    .ilike("email", verifyEmail);
 
   const { data: allFilesAdmin } = await admin
     .from("ask_nac_files")
@@ -196,7 +257,7 @@ async function main() {
   console.log(
     JSON.stringify(
       {
-        user: { email: USER_EMAIL, jwtEmail, vaultRole, authEmailRpc: authEmail },
+        user: { email: verifyEmail, jwtEmail, vaultRole, authEmailRpc: authEmail },
         staff: staffRows,
         menuStaff,
         ask_nac_files_admin: (allFilesAdmin || []).map((f) => ({

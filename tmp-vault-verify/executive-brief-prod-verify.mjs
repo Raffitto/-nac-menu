@@ -14,8 +14,8 @@
  *   ASK_NAC_VERIFY_EMAIL         Magic-link user email (required when token unset)
  *   ASK_NAC_VERIFY_BRANCH        Branch scope (default: khobar)
  *   SUPABASE_PROJECT_REF         Project ref for `supabase projects api-keys` (when token unset)
- *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (default: https://nac-os.netlify.app/)
- *   ASK_NAC_NETLIFY_ORIGIN       Netlify app origin for bundle checks (default: redirect origin)
+ *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (required when token unset)
+ *   ASK_NAC_NETLIFY_ORIGIN       Netlify app origin for bundle checks (optional; falls back to redirect origin)
  */
 import fs from "fs";
 import { execSync } from "child_process";
@@ -47,8 +47,8 @@ function loadConfig() {
   const projectRef = process.env.SUPABASE_PROJECT_REF
     || (supabaseUrl && supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1])
     || null;
-  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT || "https://nac-os.netlify.app/";
-  const netlifyOrigin = (process.env.ASK_NAC_NETLIFY_ORIGIN || redirectTo).replace(/\/$/, "");
+  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT?.trim() || null;
+  const netlifyOrigin = (process.env.ASK_NAC_NETLIFY_ORIGIN || redirectTo)?.replace(/\/$/, "") || null;
 
   if (!supabaseUrl) {
     throw new Error("Missing Supabase URL. Set SUPABASE_URL or REACT_APP_SUPABASE_URL.");
@@ -61,6 +61,9 @@ function loadConfig() {
   }
   if (!accessToken && !projectRef) {
     throw new Error("Set SUPABASE_PROJECT_REF or SUPABASE_URL with a valid project ref.");
+  }
+  if (!accessToken && !redirectTo) {
+    throw new Error("Set ASK_NAC_VERIFY_REDIRECT for magic-link auth.");
   }
 
   return { supabaseUrl, anonKey, branch, email, projectRef, redirectTo, accessToken, netlifyOrigin };
@@ -122,7 +125,11 @@ async function main() {
   const report = { netlify: null, api: null, export: null, ui: null, errors: [] };
 
   try {
-    report.netlify = await checkNetlifyBundle(config.netlifyOrigin);
+    if (config.netlifyOrigin) {
+      report.netlify = await checkNetlifyBundle(config.netlifyOrigin);
+    } else {
+      report.errors.push("Netlify check skipped: set ASK_NAC_NETLIFY_ORIGIN or ASK_NAC_VERIFY_REDIRECT.");
+    }
   } catch (e) {
     report.errors.push(`Netlify check: ${e.message}`);
   }

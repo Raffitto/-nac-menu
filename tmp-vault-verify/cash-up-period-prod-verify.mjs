@@ -13,7 +13,7 @@
  *   ASK_NAC_VERIFY_EMAIL         Magic-link user email (required when token unset)
  *   ASK_NAC_VERIFY_BRANCH        Branch scope (default: khobar)
  *   SUPABASE_PROJECT_REF         Project ref for `supabase projects api-keys` (when token unset)
- *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (default: https://nac-os.netlify.app/)
+ *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (required when token unset)
  */
 import fs from "fs";
 import { execSync } from "child_process";
@@ -54,7 +54,8 @@ function loadConfig() {
   const projectRef = process.env.SUPABASE_PROJECT_REF
     || (supabaseUrl && supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1])
     || null;
-  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT || "https://nac-os.netlify.app/";
+  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT?.trim() || null;
+  const netlifyOrigin = (process.env.ASK_NAC_NETLIFY_ORIGIN || redirectTo)?.replace(/\/$/, "") || null;
 
   if (!supabaseUrl) {
     throw new Error("Missing Supabase URL. Set SUPABASE_URL or REACT_APP_SUPABASE_URL.");
@@ -67,6 +68,9 @@ function loadConfig() {
   }
   if (!accessToken && !projectRef) {
     throw new Error("Set SUPABASE_PROJECT_REF or SUPABASE_URL with a valid project ref.");
+  }
+  if (!accessToken && !redirectTo) {
+    throw new Error("Set ASK_NAC_VERIFY_REDIRECT for magic-link auth.");
   }
 
   return { supabaseUrl, anonKey, branch, email, projectRef, redirectTo, accessToken };

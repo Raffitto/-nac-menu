@@ -1,6 +1,20 @@
 /**
  * CK-1 production verification — scoped user JWT, no Drive.
+ *
+ * WARNING: This script performs test uploads and ingestion probes against the
+ * configured Supabase project. Run only in environments where that is intended.
+ *
  * Run: node tmp-vault-verify/ck1-prod-verify.mjs
+ *
+ * Environment:
+ *   SUPABASE_URL                 Supabase project URL
+ *   SUPABASE_ANON_KEY            Anon key (falls back to REACT_APP_* in .env.local)
+ *   ASK_NAC_ACCESS_TOKEN         Bearer token — skips magic-link auth when set
+ *   ASK_NAC_VERIFY_EMAIL         Scoped user email (required when token unset)
+ *   SUPABASE_PROJECT_REF         Project ref for `supabase projects api-keys` (when token unset)
+ *   ASK_NAC_VERIFY_REDIRECT      Magic-link redirect URL (required when token unset)
+ *   ASK_NAC_NETLIFY_ORIGIN       Netlify app origin for bundle checks (optional)
+ *   CK1_EXPECTED_BUILD_PREFIX    Expected Netlify build-id prefix (optional)
  */
 import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
@@ -11,14 +25,49 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
+const REPO_ROOT = path.join(__dirname, "..");
 
-const SCOPED_EMAIL = "raffiazarian@gmail.com";
-const URL = "https://zeyhvjuraqnlbdycgrme.supabase.co";
-const ANON = fs
-  .readFileSync(".env.local", "utf8")
-  .match(/^REACT_APP_SUPABASE_ANON_KEY=(.+)$/m)?.[1]
-  ?.trim();
-const EXPECTED_BUILD_PREFIX = "02d2c0f";
+const EXPECTED_BUILD_PREFIX = process.env.CK1_EXPECTED_BUILD_PREFIX || "";
+
+function readEnvLocalValue(key) {
+  const envPath = path.join(REPO_ROOT, ".env.local");
+  if (!fs.existsSync(envPath)) return null;
+  return fs.readFileSync(envPath, "utf8").match(new RegExp(`^${key}=(.+)$`, "m"))?.[1]?.trim() || null;
+}
+
+function loadConfig() {
+  const supabaseUrl = process.env.SUPABASE_URL
+    || process.env.REACT_APP_SUPABASE_URL
+    || readEnvLocalValue("REACT_APP_SUPABASE_URL");
+  const anonKey = process.env.SUPABASE_ANON_KEY
+    || process.env.REACT_APP_SUPABASE_ANON_KEY
+    || readEnvLocalValue("REACT_APP_SUPABASE_ANON_KEY");
+  const accessToken = process.env.ASK_NAC_ACCESS_TOKEN?.trim() || null;
+  const email = process.env.ASK_NAC_VERIFY_EMAIL?.trim() || null;
+  const projectRef = process.env.SUPABASE_PROJECT_REF
+    || (supabaseUrl && supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1])
+    || null;
+  const redirectTo = process.env.ASK_NAC_VERIFY_REDIRECT?.trim() || null;
+  const netlifyOrigin = (process.env.ASK_NAC_NETLIFY_ORIGIN || redirectTo)?.replace(/\/$/, "") || null;
+
+  if (!supabaseUrl) {
+    throw new Error("Missing Supabase URL. Set SUPABASE_URL or REACT_APP_SUPABASE_URL.");
+  }
+  if (!anonKey) {
+    throw new Error("Missing anon key. Set SUPABASE_ANON_KEY or REACT_APP_SUPABASE_ANON_KEY in .env.local.");
+  }
+  if (!accessToken && !email) {
+    throw new Error("Set ASK_NAC_ACCESS_TOKEN or ASK_NAC_VERIFY_EMAIL for scoped auth.");
+  }
+  if (!accessToken && !projectRef) {
+    throw new Error("Set SUPABASE_PROJECT_REF or SUPABASE_URL with a valid project ref.");
+  }
+  if (!accessToken && !redirectTo) {
+    throw new Error("Set ASK_NAC_VERIFY_REDIRECT for magic-link auth.");
+  }
+
+  return { supabaseUrl, anonKey, email, projectRef, redirectTo, accessToken, netlifyOrigin };
+}
 
 const LEGACY_DOC_MESSAGE =
   "Legacy Word .doc files are not supported. Save as DOCX and upload again.";
@@ -99,29 +148,36 @@ function partitionFiles(files) {
   return { legacyDocFiles, supported };
 }
 
-function getServiceRole() {
-  const out = execSync(
-    "supabase projects api-keys --project-ref zeyhvjuraqnlbdycgrme -o json",
-    { encoding: "utf8", cwd: process.cwd() },
-  );
+function getServiceRole(projectRef) {
+  const out = execSync(`supabase projects api-keys --project-ref ${projectRef} -o json`, {
+    encoding: "utf8",
+    cwd: REPO_ROOT,
+  });
   const keys = JSON.parse(out);
   const service = keys.find((k) => k.name === "service_role" || k.id === "service_role");
-  if (!service?.api_key) throw new Error("service_role key not found");
+  if (!service?.api_key) throw new Error("service_role key not found via Supabase CLI");
   return service.api_key;
 }
 
-async function scopedClient() {
-  const serviceRole = getServiceRole();
-  const admin = createClient(URL, serviceRole, {
+async function scopedClient(config) {
+  if (config.accessToken) {
+    return createClient(config.supabaseUrl, config.anonKey, {
+      global: { headers: { Authorization: `Bearer ${config.accessToken}` } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+
+  const serviceRole = getServiceRole(config.projectRef);
+  const admin = createClient(config.supabaseUrl, serviceRole, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data, error } = await admin.auth.admin.generateLink({
     type: "magiclink",
-    email: SCOPED_EMAIL,
-    options: { redirectTo: "https://nac-os.netlify.app/" },
+    email: config.email,
+    options: { redirectTo: config.redirectTo },
   });
   if (error) throw error;
-  const userClient = createClient(URL, ANON, {
+  const userClient = createClient(config.supabaseUrl, config.anonKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data: sessionData, error: verifyError } = await userClient.auth.verifyOtp({
@@ -129,7 +185,7 @@ async function scopedClient() {
     type: "magiclink",
   });
   if (verifyError) throw verifyError;
-  return createClient(URL, ANON, {
+  return createClient(config.supabaseUrl, config.anonKey, {
     global: { headers: { Authorization: `Bearer ${sessionData.session.access_token}` } },
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -271,19 +327,22 @@ async function uploadParseableProbe(supabase, { filename, content, mimeType, rep
   };
 }
 
-async function fetchBundleChecks() {
-  const html = await (await fetch("https://nac-os.netlify.app")).text();
-  const manifest = await (await fetch("https://nac-os.netlify.app/asset-manifest.json")).json();
+async function fetchBundleChecks(netlifyOrigin) {
+  if (!netlifyOrigin) {
+    return { html: "", js: "", vaultChunk: null, skipped: true };
+  }
+  const html = await (await fetch(netlifyOrigin)).text();
+  const manifest = await (await fetch(`${netlifyOrigin}/asset-manifest.json`)).json();
   const vaultChunk =
     Object.entries(manifest.files || {}).find(
       ([key, path]) => key.startsWith("static/js/") && key.endsWith(".js") && key.includes("54."),
     )?.[1] || "/static/js/54.b336f595.chunk.js";
-  const js = await (await fetch(`https://nac-os.netlify.app${vaultChunk}`)).text();
-  return { html, js, vaultChunk };
+  const js = await (await fetch(`${netlifyOrigin}${vaultChunk}`)).text();
+  return { html, js, vaultChunk, skipped: false };
 }
 
-async function uploadProbe(supabase, { filename, content, mimeType, reportType, title }) {
-  const email = SCOPED_EMAIL;
+async function uploadProbe(supabase, config, { filename, content, mimeType, reportType, title }) {
+  const email = config.email || "ck1-verify";
   const fileId = crypto.randomUUID();
   const storagePath = `khobar/operations/${fileId}/${filename}`;
   const blob = new Blob([content], { type: mimeType });
@@ -357,8 +416,8 @@ async function uploadProbe(supabase, { filename, content, mimeType, reportType, 
   };
 }
 
-async function bulkImportProbe(supabase, files) {
-  const email = SCOPED_EMAIL;
+async function bulkImportProbe(supabase, config, files) {
+  const email = config.email || "ck1-verify";
   const { legacyDocFiles, supported } = partitionFiles(files);
   if (!supported.length) {
     return {
@@ -431,10 +490,12 @@ async function bulkImportProbe(supabase, files) {
 }
 
 async function main() {
-  const { html, js, vaultChunk } = await fetchBundleChecks();
+  const config = loadConfig();
+  const { html, js, vaultChunk, skipped } = await fetchBundleChecks(config.netlifyOrigin);
   const buildId = html.match(/name="build-id" content="([^"]+)"/)?.[1] || "";
 
   const clientChecks = {
+    bundleCheckSkipped: skipped,
     docRejected: isLegacyDoc("report.doc") && !isSupported("report.doc"),
     txt: isSupported("a.txt"),
     pdf: isSupported("a.pdf"),
@@ -449,10 +510,10 @@ async function main() {
     vaultChunk,
   };
 
-  const supabase = await scopedClient();
+  const supabase = await scopedClient(config);
   const { data: canUpload } = await supabase.rpc("ask_nac_vault_can_upload");
 
-  const storedOnly = await uploadProbe(supabase, {
+  const storedOnly = await uploadProbe(supabase, config, {
     filename: `ck1-budget-${Date.now()}.txt`,
     content: "Budget stored-only verify\n",
     mimeType: "text/plain",
@@ -467,20 +528,20 @@ async function main() {
     title: "CK-1 logbook parseable",
   });
 
-  const txtOther = await uploadProbe(supabase, {
+  const txtOther = await uploadProbe(supabase, config, {
     filename: `ck1-other-${Date.now()}.txt`,
     content: "Other stored-only\n",
     mimeType: "text/plain",
     reportType: "other",
   });
 
-  const bulk = await bulkImportProbe(supabase, [
+  const bulk = await bulkImportProbe(supabase, config, [
     { name: "folder-legacy.doc", content: "legacy", mimeType: "application/msword" },
     { name: "folder-budget.txt", content: "folder budget\n", mimeType: "text/plain" },
   ]);
 
   const pass = {
-    buildId: buildId.startsWith(EXPECTED_BUILD_PREFIX),
+    buildId: !EXPECTED_BUILD_PREFIX || buildId.startsWith(EXPECTED_BUILD_PREFIX) || skipped,
     docRejected: clientChecks.docRejected,
     formatsSupported:
       clientChecks.txt &&
@@ -488,10 +549,11 @@ async function main() {
       clientChecks.csv &&
       clientChecks.docx &&
       clientChecks.xlsx,
-    bundleStrings:
+    bundleStrings: skipped || (
       clientChecks.bundleHasLegacyMsg &&
       clientChecks.bundleHasKnowledgeStatus &&
-      clientChecks.bundleHasComingSoon,
+      clientChecks.bundleHasComingSoon
+    ),
     storedOnlyNotFailed:
       storedOnly.regStatus === "registered" &&
       storedOnly.jobStatus === "registered" &&
