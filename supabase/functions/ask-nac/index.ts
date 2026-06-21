@@ -65,6 +65,14 @@ Deno.serve(async (req) => {
       filters: body?.filters ?? {},
     });
 
+    const includeCashUpTrace = Deno.env.get("ASK_NAC_CASHUP_TRACE") === "true";
+    const responsePayload: Record<string, unknown> = { ...answered };
+    if (!includeCashUpTrace) {
+      delete responsePayload.cashUpProductionTrace;
+      delete responsePayload.cashUpDebug;
+    }
+
+    const trace = answered.cashUpProductionTrace as { failurePoint?: string | null } | undefined;
     console.info(
       JSON.stringify({
         fn: "ask-nac",
@@ -73,10 +81,11 @@ Deno.serve(async (req) => {
         branch: body?.branch || "network",
         ai: answered.isAiGenerated,
         aiConnected: answered.aiConnected,
+        cashUpFailurePoint: trace?.failurePoint ?? null,
       }),
     );
 
-    return json(200, answered);
+    return json(200, responsePayload);
   } catch (err) {
     console.error("[ask-nac]", (err as Error)?.message || err);
     return json(500, { error: (err as Error)?.message || "Internal error" });
