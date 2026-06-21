@@ -36,6 +36,7 @@ import {
 } from "./vaultSalesPerformanceIntelligence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer.ts";
+import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval.ts";
 import {
   buildPostgrestEquivalent,
   createEmptyCashUpProductionTrace,
@@ -582,11 +583,20 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       const vaultPeriod = (context.vaultPeriod as VaultPeriod | undefined)?.startDate
         ? (context.vaultPeriod as VaultPeriod)
         : vaultCompare?.current;
-      return getVaultCashUpFactsOverRange(supabase, {
+      const cashUp = await getVaultCashUpFactsOverRange(supabase, {
         ...context,
         vaultPeriod,
         vaultCompare,
       });
+      const externalContext = await fetchExternalContextForNilPeriod(supabase, {
+        ...context,
+        branch: cashUp.branch,
+        branchLabel: cashUp.branchLabel,
+        periodLabel: cashUp.periodLabel,
+        vaultCompare: cashUp.vaultCompare || vaultCompare,
+        vaultPeriod,
+      });
+      return { ...cashUp, externalContext };
     }
     case VAULT_INTENTS.CASH_UP: {
       const question = String(context.question || "").toLowerCase();

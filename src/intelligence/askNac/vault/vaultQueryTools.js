@@ -28,6 +28,7 @@ import {
   groupOperationalMatches,
   searchTermsForOperationalTheme,
 } from "./vaultOperationalIntelligence";
+import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval";
 
 export { extractDocumentSearchTerms };
 
@@ -755,11 +756,20 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
     case "vault_business_reasoning": {
       const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
       const vaultPeriod = context.vaultPeriod?.startDate ? context.vaultPeriod : vaultCompare?.current;
-      return getVaultCashUpFactsOverRange(supabase, {
+      const cashUp = await getVaultCashUpFactsOverRange(supabase, {
         ...context,
         vaultPeriod,
         vaultCompare,
       });
+      const externalContext = await fetchExternalContextForNilPeriod(supabase, {
+        ...context,
+        branch: cashUp.branch,
+        branchLabel: cashUp.branchLabel,
+        periodLabel: cashUp.periodLabel,
+        vaultCompare: cashUp.vaultCompare || vaultCompare,
+        vaultPeriod,
+      });
+      return { ...cashUp, externalContext };
     }
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();

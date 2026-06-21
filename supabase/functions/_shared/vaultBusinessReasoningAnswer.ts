@@ -10,8 +10,15 @@ import {
   buildInternalSignalsFromAggregations,
   buildPlatformDeliveryChangeSignals,
 } from "./vaultNilSignalCollector.ts";
+import { mergeNilSignalBundles } from "./externalContextSignalAdapter.ts";
+import { EXTERNAL_CONTEXT_UNAVAILABLE_NOTE } from "./externalContextContract.ts";
+import {
+  appendExternalContextSection,
+  buildExternalContextNilPayload,
+  resolveNilCombinedPeriodBounds,
+} from "./vaultExternalContextRetrieval.ts";
 
-const EXTERNAL_CONTEXT_NOTE = "No external context sources are connected yet.";
+const EXTERNAL_CONTEXT_NOTE = EXTERNAL_CONTEXT_UNAVAILABLE_NOTE;
 
 type AskNacAnswer = Record<string, unknown>;
 
@@ -33,10 +40,6 @@ function buildCoverageWarnings(current: Record<string, unknown> = {}, previous: 
     );
   }
   return warnings;
-}
-
-function appendExternalContextSection(text: string) {
-  return `${text}\n\nExternal Context\n\n* ${EXTERNAL_CONTEXT_NOTE}`;
 }
 
 export function buildVaultBusinessReasoningAnswer(
@@ -97,23 +100,39 @@ export function buildVaultBusinessReasoningAnswer(
     ...buildPlatformDeliveryChangeSignals(current, previous, { periodLabel, branchLabel }),
   ];
 
+  const periodBounds = resolveNilCombinedPeriodBounds({
+    vaultCompare: tool?.vaultCompare,
+    startDate: tool?.startDate,
+    endDate: tool?.endDate,
+    vaultPeriod,
+  });
+  const externalRows = (tool?.externalContext as Record<string, unknown>) || {};
+  const externalPayload = buildExternalContextNilPayload({
+    externalSignals: (externalRows.externalSignals as unknown[]) || [],
+    competitorObservations: (externalRows.competitorObservations as unknown[]) || [],
+    competitors: (externalRows.competitors as unknown[]) || [],
+    branchLabel,
+    periodLabel,
+    period: periodBounds,
+  });
+  const externalConnected = externalPayload.connected;
+
+  const nilInput = mergeNilSignalBundles({ internalSignals }, externalPayload.nilBundle);
   const nilResult = businessReasoningEngine({
     question,
     branchLabel,
     periodLabel,
-    internalSignals,
-    competitorSignals: [],
-    weatherSignals: [],
-    calendarSignals: [],
-    locationSignals: [],
-    macroSignals: [],
-    brandSignals: [],
-    productSignals: [],
-    laborSignals: [],
+    ...nilInput,
+    brandSignals: (nilInput.brandSignals as unknown[]) || [],
+    productSignals: (nilInput.productSignals as unknown[]) || [],
+    laborSignals: (nilInput.laborSignals as unknown[]) || [],
   });
 
   const nilFields = nilReasoningToAskNacFields(nilResult);
-  const directAnswer = appendExternalContextSection(formatNilReasoningText(nilResult));
+  const directAnswer = appendExternalContextSection(formatNilReasoningText(nilResult), {
+    connected: externalConnected,
+    sourceLabels: externalPayload.sourceLabels,
+  });
   const keyMetrics = buildCashUpPeriodCompareMetrics(current, previous);
   const coverageWarnings = buildCoverageWarnings(current, previous);
   const toolSources = (tool?.sources as { name?: string; detail?: string }[]) || [];
@@ -126,8 +145,12 @@ export function buildVaultBusinessReasoningAnswer(
     insights: nilFields.insights,
     recommendations: [
       ...nilFields.recommendations,
-      "Review competitor/mall activity manually until competitive intelligence sources are connected.",
-      "Review weather/local context manually until weather intelligence sources are connected.",
+      ...(externalConnected
+        ? []
+        : [
+          "Review competitor/mall activity manually until competitive intelligence sources are connected.",
+          "Review weather/local context manually until weather intelligence sources are connected.",
+        ]),
     ],
     sources: [
       ...nilFields.sources.map((s) => ({ name: s.name, detail: s.detail })),
@@ -137,7 +160,7 @@ export function buildVaultBusinessReasoningAnswer(
       ...coverageWarnings,
       ...((tool?.warnings as string[]) || []),
       ...nilFields.warnings,
-      EXTERNAL_CONTEXT_NOTE,
+      ...(externalConnected ? [] : [EXTERNAL_CONTEXT_NOTE]),
     ],
     confidence: mapNilConfidenceToAskNac(nilResult.confidence),
     exportOptions: [],
@@ -151,7 +174,8 @@ export function buildVaultBusinessReasoningAnswer(
       nilConfidenceLabel: CONFIDENCE_LABELS[nilResult.confidence],
       whyMetricFocus: route.whyMetricFocus || null,
       domainsPresent: nilResult.meta?.domainsPresent || ["internal_operational"],
-      externalContextConnected: false,
+      externalContextConnected: externalConnected,
+      externalContextSourceLabels: externalPayload.sourceLabels,
     },
   };
 }
