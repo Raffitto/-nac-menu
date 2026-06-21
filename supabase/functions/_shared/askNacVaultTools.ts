@@ -75,7 +75,20 @@ const MONTH_MAP: Record<string, number> = {
   december: 11, dec: 11,
 };
 
-export type { VaultPeriod } from "./vaultPeriodParser.ts";
+import {
+  parseVaultPeriodFromQuestion,
+  parseVaultComparePeriodsFromQuestion,
+  parseVaultCustomCompareFromQuestion,
+  parseExplicitDateRangeFromText,
+  parseHalfMonthPhrase,
+  hasVaultDayPeriod,
+  isVaultRangePeriod,
+  isVaultCashUpAnalyticsPeriod,
+  isVaultFlexibleRangePeriod,
+  type VaultPeriod,
+} from "./vaultPeriodParser.ts";
+
+export type { VaultPeriod };
 export {
   parseVaultPeriodFromQuestion,
   parseVaultComparePeriodsFromQuestion,
@@ -86,7 +99,7 @@ export {
   isVaultRangePeriod,
   isVaultCashUpAnalyticsPeriod,
   isVaultFlexibleRangePeriod,
-} from "./vaultPeriodParser.ts";
+};
 
 export const VAULT_INTENTS = {
   CASH_UP: "vault_cash_up_summary",
