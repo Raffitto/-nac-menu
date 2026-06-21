@@ -957,12 +957,15 @@ export async function processAskNacOnEdge(
     deterministic.cashUpProductionTrace = cashUpProductionTrace;
   }
 
-  const { answer, aiConnected } = await narrateWithOpenAi(deterministic, {
-    question: effectiveQuestion,
-    intent: route.intent,
-    tool,
-    diagnostics: (tool?.mtdHybrid as Record<string, unknown>) || null,
-  });
+  const skipAiNarration = route.intent === VAULT_INTENTS.BUSINESS_REASONING;
+  const { answer, aiConnected } = skipAiNarration
+    ? { answer: deterministic, aiConnected: false }
+    : await narrateWithOpenAi(deterministic, {
+      question: effectiveQuestion,
+      intent: route.intent,
+      tool,
+      diagnostics: (tool?.mtdHybrid as Record<string, unknown>) || null,
+    });
 
   return {
     ...answer,
