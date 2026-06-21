@@ -37,6 +37,12 @@ function isoDate(y, m, d) {
   return `${y}-${pad2(m)}-${pad2(d)}`;
 }
 
+function shiftLocalDate(referenceDate, dayDelta) {
+  const day = new Date(referenceDate);
+  day.setDate(day.getDate() + dayDelta);
+  return day;
+}
+
 function monthBounds(year, monthIndex) {
   const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
   return {
@@ -47,21 +53,88 @@ function monthBounds(year, monthIndex) {
       year: "numeric",
       timeZone: "UTC",
     }),
+    periodType: "named_month",
     isSingleDay: false,
     isMonth: true,
+    isRange: true,
+  };
+}
+
+function monthToDateBounds(referenceDate) {
+  const y = referenceDate.getFullYear();
+  const m = referenceDate.getMonth();
+  const label = new Date(Date.UTC(y, m, 1, 12)).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return {
+    startDate: isoDate(y, m + 1, 1),
+    endDate: isoDate(y, m + 1, referenceDate.getDate()),
+    label: `${label} (to date)`,
+    periodType: "this_month",
+    isSingleDay: false,
+    isMonth: true,
+    isRange: true,
+  };
+}
+
+function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }) {
+  const end = shiftLocalDate(referenceDate, endOffset);
+  const start = shiftLocalDate(end, -(days - 1));
+  return {
+    startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
+    endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+    label,
+    periodType,
+    isSingleDay: false,
+    isRange: true,
+  };
+}
+
+function previousCalendarWeekBounds(referenceDate) {
+  const end = shiftLocalDate(referenceDate, -referenceDate.getDay());
+  const start = shiftLocalDate(end, -6);
+  return {
+    startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
+    endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+    label: "previous week",
+    periodType: "previous_week",
+    isSingleDay: false,
+    isWeek: true,
+    isRange: true,
   };
 }
 
 /**
- * @returns {{ startDate: string, endDate: string, label: string, isSingleDay: boolean, isMonth?: boolean }|null}
+ * @returns {{ periodType: string, startDate: string, endDate: string, label: string, isSingleDay: boolean, isMonth?: boolean, isWeek?: boolean, isRange?: boolean }|null}
  */
 export function parseVaultPeriodFromQuestion(question = "", referenceDate = new Date()) {
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
+  if (/\b(last|past)\s+30\s+days?\b/.test(q)) {
+    return rollingRange(referenceDate, 30, { label: "last 30 days", periodType: "last_30_days" });
+  }
+
+  if (/\b(last|past)\s+14\s+days?\b/.test(q) || /\b(last|past)\s+two\s+weeks?\b/.test(q)) {
+    return rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
+  }
+
+  if (/\b(last|past)\s+7\s+days?\b/.test(q)) {
+    return rollingRange(referenceDate, 7, { label: "last 7 days", periodType: "last_7_days" });
+  }
+
+  if (/\bprevious\s+week\b/.test(q)) {
+    return previousCalendarWeekBounds(referenceDate);
+  }
+
+  if (/\blast\s+week\b/.test(q)) {
+    return rollingRange(referenceDate, 7, { endOffset: -1, label: "last week", periodType: "last_week" });
+  }
+
   if (/\byesterday\b/.test(q)) {
-    const day = new Date(referenceDate);
-    day.setDate(day.getDate() - 1);
+    const day = shiftLocalDate(referenceDate, -1);
     const iso = isoDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
     const label = new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), 12)).toLocaleDateString("en-GB", {
       day: "numeric",
@@ -69,13 +142,13 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
       year: "numeric",
       timeZone: "UTC",
     });
-    return { startDate: iso, endDate: iso, label, isSingleDay: true };
+    return { startDate: iso, endDate: iso, label, periodType: "single_day", isSingleDay: true };
   }
 
   const dmy = q.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
   if (dmy) {
     const iso = isoDate(Number(dmy[3]), Number(dmy[2]), Number(dmy[1]));
-    return { startDate: iso, endDate: iso, label: iso, isSingleDay: true };
+    return { startDate: iso, endDate: iso, label: iso, periodType: "single_day", isSingleDay: true };
   }
 
   const dayMonthYear = q.match(
@@ -93,7 +166,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
       year: "numeric",
       timeZone: "UTC",
     });
-    return { startDate: iso, endDate: iso, label, isSingleDay: true };
+    return { startDate: iso, endDate: iso, label, periodType: "single_day", isSingleDay: true };
   }
 
   const monthDay = q.match(
@@ -111,24 +184,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
       year: "numeric",
       timeZone: "UTC",
     });
-    return { startDate: iso, endDate: iso, label, isSingleDay: true };
+    return { startDate: iso, endDate: iso, label, periodType: "single_day", isSingleDay: true };
   }
 
-  if (/\b(this month|month to date|mtd)\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const m = referenceDate.getMonth();
-    return monthBounds(y, m);
+  if (/\b(this month|current month|month to date|mtd)\b/.test(q)) {
+    return monthToDateBounds(referenceDate);
   }
 
   if (/\b(this week|current week|past week)\b/.test(q)) {
-    const end = new Date(referenceDate);
-    const start = new Date(referenceDate);
-    start.setDate(start.getDate() - 6);
     return {
-      startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
-      endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
-      label: "this week",
-      isSingleDay: false,
+      ...rollingRange(referenceDate, 7, { label: "this week", periodType: "this_week" }),
       isWeek: true,
     };
   }
@@ -156,7 +221,54 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   return null;
 }
 
+/**
+ * Current + previous rolling periods for cash-up compare questions.
+ */
+export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
+  const q = String(question || "").toLowerCase().trim();
+  if (!q) return null;
+
+  const compare7 = /\b(last|past)\s+7\s+days?\b.*\b(vs|versus|compared to|against|compare)\b.*\b(previous|prior|preceding)\s+7\s+days?\b/.test(q)
+    || /\bcompare\b.*\b(last|past)\s+7\s+days?\b.*\b(previous|prior|preceding)\s+7\s+days?\b/.test(q);
+  if (compare7) {
+    const current = rollingRange(referenceDate, 7, { label: "last 7 days", periodType: "last_7_days" });
+    const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
+    const previous = rollingRange(previousEnd, 7, { label: "previous 7 days", periodType: "previous_7_days" });
+    return { current, previous };
+  }
+
+  const compare14 = /\b(last|past)\s+14\s+days?\b.*\b(vs|versus|compared to|against|compare)\b/.test(q);
+  if (compare14) {
+    const current = rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
+    const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
+    const previous = rollingRange(previousEnd, 14, { label: "previous 14 days", periodType: "previous_14_days" });
+    return { current, previous };
+  }
+
+  return null;
+}
+
 export function hasVaultDayPeriod(question) {
   const period = parseVaultPeriodFromQuestion(question);
   return Boolean(period?.isSingleDay);
+}
+
+export function isVaultRangePeriod(period) {
+  return Boolean(period?.isRange && !period?.isSingleDay);
+}
+
+const CASH_UP_ANALYTICS_PERIOD_TYPES = new Set([
+  "last_7_days",
+  "last_14_days",
+  "last_30_days",
+  "last_week",
+  "previous_week",
+  "this_week",
+  "this_month",
+  "previous_7_days",
+  "previous_14_days",
+]);
+
+export function isVaultCashUpAnalyticsPeriod(period) {
+  return Boolean(period?.periodType && CASH_UP_ANALYTICS_PERIOD_TYPES.has(period.periodType));
 }

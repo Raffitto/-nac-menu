@@ -110,7 +110,10 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
 
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
-  if (/\b(average guest spend|avg spend|spend per guest|average spend per guest)\b/.test(q)) return "avg_spend";
+  if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";
+  if (/\b(sales|revenue)\b.*\b(last|past)\s+\d+\s+days?\b/.test(q)) return "period_sales";
+  if (/\b(guests?|guest count)\b.*\b(this month|current month|last|past)\b/.test(q)) return "guest_count";
+  if (/\b(average guest spend|avg spend|spend per guest|average spend per guest|average spend)\b/.test(q)) return "avg_spend";
   if (/\bhow many guests\b/.test(q)) return "guest_count";
   if (/\b(which payment method|most used payment|payment mix)\b/.test(q)) return "payment_mix";
   if (/\bhow much came from\b.*\bmada\b/.test(q)) return "payment_mada";
@@ -497,4 +500,86 @@ export function buildSalesPerformanceFactsAsSyntheticMatches(facts = [], fileTit
     reportType: "cash_up",
     relevanceScore: 90,
   }];
+}
+
+function formatAveragePerDay(total, dayCount, unit = "SAR") {
+  if (total == null || !dayCount) return null;
+  const avg = Number(total) / dayCount;
+  const formatted = avg.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+/**
+ * Deterministic multi-day cash-up answer from aggregated structured facts.
+ */
+export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
+  branchLabel = "Network",
+  periodLabel = "the period",
+  previousAggregation = null,
+} = {}) {
+  if (!aggregation) return null;
+
+  const focus = scoreSalesPerformanceQueryFocus(question);
+  const {
+    totalSales,
+    totalGuests,
+    totalOrders,
+    averageSpend,
+    totalDeliverySales,
+    totalDeliveryOrders,
+    dayCount,
+  } = aggregation;
+
+  if (focus === "period_compare" && previousAggregation) {
+    const currentSales = totalSales;
+    const previousSales = previousAggregation.totalSales;
+    if (currentSales == null || previousSales == null) {
+      return `${branchLabel}: insufficient cash-up data to compare ${periodLabel}.`;
+    }
+    const delta = Number(currentSales) - Number(previousSales);
+    const pct = previousSales ? ((delta / Number(previousSales)) * 100) : null;
+    const direction = delta >= 0 ? "up" : "down";
+    const pctText = pct != null ? ` (${Math.abs(pct).toFixed(1)}%)` : "";
+    return `${branchLabel} total sales ${periodLabel}: ${formatCurrency(currentSales)} across ${dayCount} day(s) vs ${formatCurrency(previousSales)} across ${previousAggregation.dayCount} day(s) — ${direction} ${formatCurrency(Math.abs(delta))}${pctText}.`;
+  }
+
+  if (focus === "guest_count" || /\bguests?\b/.test(String(question).toLowerCase())) {
+    return totalGuests != null
+      ? `${branchLabel} recorded ${formatNumber(totalGuests)} guests for ${periodLabel} (${dayCount} cash-up day(s) included).`
+      : `Guest count is not available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  if (focus === "avg_spend" || /\baverage spend\b/.test(String(question).toLowerCase())) {
+    if (averageSpend != null) {
+      return `${branchLabel} average spend for ${periodLabel} was ${formatCurrency(averageSpend)} (${formatNumber(totalGuests) || "?"} guests, ${formatCurrency(totalSales) || "sales n/a"}, ${dayCount} day(s)).`;
+    }
+    return `Average spend is not available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  if (/\bdelivery orders?\b/.test(String(question).toLowerCase())) {
+    const avgOrders = formatAveragePerDay(totalDeliveryOrders, dayCount, "");
+    return totalDeliveryOrders != null
+      ? `${branchLabel} delivery orders for ${periodLabel}: ${formatNumber(totalDeliveryOrders)} total${avgOrders ? ` (${avgOrders} avg/day)` : ""} across ${dayCount} day(s).`
+      : `Delivery order count is not available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  if (/\bdelivery sales\b/.test(String(question).toLowerCase()) || focus === "delivery") {
+    const avgDelivery = formatAveragePerDay(totalDeliverySales, dayCount);
+    return totalDeliverySales != null
+      ? `${branchLabel} delivery sales for ${periodLabel}: ${formatCurrency(totalDeliverySales)} total${avgDelivery ? ` (${avgDelivery} avg/day)` : ""} across ${dayCount} day(s).`
+      : `Delivery sales are not available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  const avgSales = formatAveragePerDay(totalSales, dayCount);
+  if (totalSales != null) {
+    return `${branchLabel} total sales for ${periodLabel}: ${formatCurrency(totalSales)}${avgSales ? ` (${avgSales} avg/day)` : ""} across ${dayCount} cash-up day(s).`;
+  }
+
+  if (totalOrders != null) {
+    return `${branchLabel} recorded ${formatNumber(totalOrders)} orders for ${periodLabel} (${dayCount} day(s)).`;
+  }
+
+  return dayCount
+    ? `${branchLabel} has ${dayCount} cash-up day(s) for ${periodLabel}, but sales totals were not extracted.`
+    : `No cash-up sales data found for ${branchLabel} over ${periodLabel}.`;
 }

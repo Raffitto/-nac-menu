@@ -12,7 +12,12 @@ import {
   parseFoodicsComparePeriods,
   parseFoodicsPeriodFromQuestion,
 } from "./foodics/foodicsPeriodParser";
-import { parseVaultPeriodFromQuestion, hasVaultDayPeriod } from "./vault/vaultPeriodParser";
+import {
+  parseVaultPeriodFromQuestion,
+  parseVaultComparePeriodsFromQuestion,
+  hasVaultDayPeriod,
+  isVaultCashUpAnalyticsPeriod,
+} from "./vault/vaultPeriodParser";
 import {
   isVaultDocumentSearchQuery,
   scoreVaultDocumentSearchIntent,
@@ -68,6 +73,8 @@ const CASH_UP_INTENT_SIGNAL =
   /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/;
 const CASH_UP_DAY_SALES_SIGNAL =
   /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
+const CASH_UP_PERIOD_SALES_SIGNAL =
+  /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
 const BRANCH_ALIASES = Object.freeze({
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -172,7 +179,13 @@ const INTENT_RULES = [
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 16;
       }
-      if (!period?.isSingleDay && !period?.isMonth) return 0;
+      if ((isVaultCashUpAnalyticsPeriod(period) || parseVaultComparePeriodsFromQuestion(q))
+        && (scoreSalesPerformanceQueryFocus(q)
+          || (/\b(last|past)\s+\d+\s+days?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
+          || (/\b(last|past)\s+two\s+weeks?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
+          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q)))) {
+        return 34;
+      }
       return 0;
     },
   },

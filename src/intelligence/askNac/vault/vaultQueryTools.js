@@ -17,6 +17,12 @@ import {
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence";
 import {
+  aggregateCashUpFactsOverRange,
+  buildCashUpRangeQueryLimit,
+  groupCashUpFactsByBusinessDate,
+} from "./vaultCashUpAggregation";
+import { isVaultCashUpAnalyticsPeriod, parseVaultComparePeriodsFromQuestion } from "./vaultPeriodParser";
+import {
   extractOperationalReviewTheme,
   groupOperationalMatches,
   searchTermsForOperationalTheme,
@@ -117,6 +123,7 @@ export async function getVaultFacts(
   supabase,
   {
     branch,
+    fileId,
     startDate,
     endDate,
     reportType,
@@ -131,6 +138,7 @@ export async function getVaultFacts(
   let query = supabase.from("ask_nac_structured_facts").select(FACT_SELECT);
   query = periodOverlapFilter(query, startDate, endDate);
   if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  if (fileId) query = query.eq("file_id", String(fileId));
   if (reportType) query = query.eq("report_type", reportType);
   if (metricKeys?.length) query = query.in("metric_key", metricKeys);
   query = query.neq("metric_key", "raw_extract").order("metric_key");
@@ -317,6 +325,11 @@ function formatCashUpDayLabel(isoDate) {
   });
 }
 
+function resolveCashUpBusinessDateFromCoverageRow(row) {
+  const text = String(row?.period_end ?? row?.periodEnd ?? "").trim();
+  return text || null;
+}
+
 export async function resolveLatestCashUpBusinessDate(supabase, { branch, fileId } = {}) {
   let query = supabase
     .from("ask_nac_structured_facts")
@@ -335,6 +348,94 @@ export async function resolveLatestCashUpBusinessDate(supabase, { branch, fileId
 
   const row = (data || [])[0];
   return row?.period_end ? String(row.period_end) : null;
+}
+
+export async function getVaultCashUpFactsOverRange(supabase, context = {}) {
+  const vaultPeriod = context.vaultPeriod || {};
+  const { startDate, endDate } = vaultPeriod;
+  const scopedBranch = resolveBranch(context);
+  const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
+
+  if (vaultCompare?.current && vaultCompare?.previous) {
+    const [currentResult, previousResult] = await Promise.all([
+      getVaultCashUpFactsOverRange(supabase, {
+        ...context,
+        vaultPeriod: vaultCompare.current,
+        vaultCompare: null,
+      }),
+      getVaultCashUpFactsOverRange(supabase, {
+        ...context,
+        vaultPeriod: vaultCompare.previous,
+        vaultCompare: null,
+      }),
+    ]);
+
+    return {
+      branch: scopedBranch,
+      branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+      startDate: vaultCompare.current.startDate,
+      endDate: vaultCompare.current.endDate,
+      periodLabel: `${vaultCompare.current.label} vs ${vaultCompare.previous.label}`,
+      facts: [...(currentResult.facts || []), ...(previousResult.facts || [])],
+      coverage: [...(currentResult.coverage || []), ...(previousResult.coverage || [])],
+      vaultSources: collectVaultSources(
+        [...(currentResult.facts || []), ...(previousResult.facts || [])],
+        [...(currentResult.coverage || []), ...(previousResult.coverage || [])],
+      ),
+      aggregation: currentResult.aggregation,
+      previousAggregation: previousResult.aggregation,
+      vaultCompare,
+      warnings: [
+        ...(currentResult.warnings || []),
+        ...(previousResult.warnings || []),
+      ],
+      sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
+    };
+  }
+
+  const factsResult = await getVaultFacts(supabase, {
+    ...context,
+    branch: scopedBranch,
+    startDate,
+    endDate,
+    reportType: "cash_up",
+    metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+    limit: buildCashUpRangeQueryLimit(startDate, endDate),
+  });
+
+  const factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
+  const aggregation = aggregateCashUpFactsOverRange({
+    startDate,
+    endDate,
+    branchId: scopedBranch,
+    factsByDate,
+  });
+
+  const coverageResult = await getVaultCoverage(supabase, {
+    ...context,
+    branch: scopedBranch,
+    startDate,
+    endDate,
+    reportType: "cash_up",
+  });
+
+  const warnings = buildVaultWarnings(coverageResult.coverage, factsResult.facts || []);
+  if (aggregation.dayCount === 0) {
+    warnings.push("No structured cash-up facts matched this date range under your access scope.");
+  } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(vaultPeriod)) {
+    warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
+  }
+
+  return {
+    ...factsResult,
+    periodLabel: vaultPeriod.label || `${startDate} – ${endDate}`,
+    coverage: coverageResult.coverage,
+    vaultSources: collectVaultSources(factsResult.facts, coverageResult.coverage),
+    factsByDate,
+    aggregation,
+    warnings,
+    sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
+  };
 }
 
 export async function getLatestVaultCashUpFacts(supabase, context = {}) {
@@ -365,8 +466,10 @@ export async function getLatestVaultCashUpFacts(supabase, context = {}) {
 
   const branch = String(latest.branch_id || scopedBranch || "") || null;
   const fileId = latest.source_file_id ? String(latest.source_file_id) : null;
-  const businessDate = await resolveLatestCashUpBusinessDate(supabase, { branch, fileId });
   const coverageRow = mapVaultCoverageRow(latest);
+  const coveragePeriodEnd = resolveCashUpBusinessDateFromCoverageRow(latest);
+  const businessDate = coveragePeriodEnd
+    || await resolveLatestCashUpBusinessDate(supabase, { branch, fileId });
 
   if (!businessDate) {
     return {
@@ -383,6 +486,7 @@ export async function getLatestVaultCashUpFacts(supabase, context = {}) {
   const factsResult = await getVaultFacts(supabase, {
     ...context,
     branch,
+    fileId,
     startDate: businessDate,
     endDate: businessDate,
     reportType: "cash_up",
@@ -570,21 +674,32 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       return getVaultReportSources(supabase, context);
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();
+      const vaultPeriod = context.vaultPeriod || {};
+      const vaultCompare = parseVaultComparePeriodsFromQuestion(context.question || "");
       try {
         if (
-          !context.vaultPeriod?.startDate
+          !vaultPeriod?.startDate
           || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
         ) {
           return await getLatestVaultCashUpFacts(supabase, context);
         }
-        return await getVaultFacts(supabase, {
-          ...context,
-          startDate: context.vaultPeriod?.startDate,
-          endDate: context.vaultPeriod?.endDate,
-          reportType: "cash_up",
-          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
-          limit: CASH_UP_FACTS_QUERY_LIMIT,
-        });
+        if (vaultCompare || isVaultCashUpAnalyticsPeriod(vaultPeriod)) {
+          return await getVaultCashUpFactsOverRange(supabase, {
+            ...context,
+            vaultCompare,
+          });
+        }
+        if (vaultPeriod.isSingleDay) {
+          return await getVaultFacts(supabase, {
+            ...context,
+            startDate: vaultPeriod.startDate,
+            endDate: vaultPeriod.endDate,
+            reportType: "cash_up",
+            metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+            limit: CASH_UP_FACTS_QUERY_LIMIT,
+          });
+        }
+        return await getVaultCashUpFactsOverRange(supabase, context);
       } catch (err) {
         return {
           branch: resolveBranch(context),

@@ -35,9 +35,12 @@ import {
   isVaultDocumentSearchQuery,
   isVaultDocumentSummaryQuery,
   parseVaultPeriodFromQuestion,
+  parseVaultComparePeriodsFromQuestion,
   runVaultQueryTool,
   scoreVaultDocumentSearchIntent,
   scoreVaultDocumentSummaryIntent,
+  isVaultRangePeriod,
+  isVaultCashUpAnalyticsPeriod,
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
@@ -52,6 +55,11 @@ import {
 import { queryOperationalKnowledgeEdge } from "./askNacKnowledgeTools.ts";
 import { normalizeAskNacQuestionEdge, resolveIntentFromScoresEdge } from "./askNacNlu.ts";
 import { probeGoogleReviewSnapshotsEdge, queryGoogleReviewCountEdge } from "./askNacGoogleReviewTools.ts";
+import {
+  createEmptyCashUpProductionTrace,
+  finalizeCashUpProductionTrace,
+  type CashUpProductionTrace,
+} from "./cashUpProductionTrace.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -84,6 +92,8 @@ const CASH_UP_INTENT_SIGNAL =
   /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/;
 const CASH_UP_DAY_SALES_SIGNAL =
   /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
+const CASH_UP_PERIOD_SALES_SIGNAL =
+  /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
 const BRANCH_ALIASES: Record<string, string[]> = {
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -111,7 +121,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
+    id: ASK_NAC_INTENTS.MANAGEMENT_REPORT,
     score(q) {
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
@@ -121,7 +131,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY,
+    id: ASK_NAC_INTENTS.OPERATIONAL_DAY,
     score(q) {
       if (isVaultDocumentSummaryQuery(q)) return 0;
       if (isVaultDocumentSearchQuery(q)) return 0;
@@ -134,7 +144,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_COVERAGE_LIST,
+    id: ASK_NAC_INTENTS.COVERAGE_LIST,
     score(q) {
       if (/\b(which uploaded files|uploaded files cover|files cover|data coverage|what data do we have)\b/.test(q)) return 18;
       if (/\b(coverage|uploaded data)\b/.test(q) && parseVaultPeriodFromQuestion(q)) return 16;
@@ -142,7 +152,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_GOOGLE_STARS,
+    id: ASK_NAC_INTENTS.GOOGLE_STARS,
     score(q) {
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
@@ -152,7 +162,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_RECEPTION,
+    id: ASK_NAC_INTENTS.RECEPTION,
     score(q) {
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(reservations?|covers|walk[\s-]?ins?|no[\s-]?shows?|cancellations?|reception)\b/.test(q)) return 16;
@@ -160,7 +170,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_CCM,
+    id: ASK_NAC_INTENTS.CCM,
     score(q) {
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(ccm|reconciliation|reconcile)\b/.test(q)) return 16;
@@ -168,7 +178,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_CASH_UP,
+    id: ASK_NAC_INTENTS.CASH_UP,
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
@@ -182,12 +192,18 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 16;
       }
-      if (!period?.isSingleDay && !period?.isMonth) return 0;
+      if ((isVaultCashUpAnalyticsPeriod(period) || parseVaultComparePeriodsFromQuestion(q))
+        && (scoreSalesPerformanceQueryFocus(q)
+          || (/\b(last|past)\s+\d+\s+days?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
+          || (/\b(last|past)\s+two\s+weeks?\b/.test(q) && CASH_UP_PERIOD_SALES_SIGNAL.test(q))
+          || (period?.periodType === "this_month" && /\b(guests?|average spend|avg spend|delivery)\b/.test(q)))) {
+        return 34;
+      }
       return 0;
     },
   },
   {
-    id: ASK_NAC_INTENTS.VAULT_LOGBOOK,
+    id: ASK_NAC_INTENTS.LOGBOOK,
     score(q) {
       if (isVaultDocumentSearchQuery(q)) return 0;
       if (isVaultDocumentSummaryQuery(q)) return 0;
@@ -847,12 +863,38 @@ export async function processAskNacOnEdge(
     }
   }
 
-  const deterministic = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent)
+  const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
+  const deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(route, tool, readiness)
     : buildDeterministicAskNacAnswer(route, tool, readiness);
 
   deterministic.intent = route.intent;
   deterministic.readiness = readiness;
+
+  const isCashUpQuestion = /\bcash\s*up\b/i.test(effectiveQuestion);
+  let cashUpProductionTrace: CashUpProductionTrace | undefined;
+  if (route.intent === VAULT_INTENTS.CASH_UP || isCashUpQuestion) {
+    const base =
+      (tool?.cashUpProductionTrace as CashUpProductionTrace | undefined)
+      || createEmptyCashUpProductionTrace();
+    base.branchFilter = {
+      rawBranchFromFilters: mergedFilters.branch ?? null,
+      rawBranchFromRequest: branch ?? null,
+      branchMention: route.branchMention ?? null,
+      normalizedBranch: (base.branchFilter?.normalizedBranch as string | null) ?? (mergedFilters.branch as string | null) ?? null,
+      profileHint: profileHint ?? null,
+    };
+    cashUpProductionTrace = finalizeCashUpProductionTrace(base, {
+      routedIntent: route.intent,
+      effectiveQuestion,
+      readiness,
+      tool,
+      answerBuilderUsed: usedVaultAnswerBuilder ? "buildVaultAnswer" : "buildDeterministicAskNacAnswer",
+      isVaultDataIntent: isVaultDataIntent(route.intent),
+      isVaultDocumentIntent: isVaultDocumentIntent(route.intent),
+      directAnswer: String(deterministic.directAnswer || ""),
+    });
+  }
 
   const cashUpDebug = route.intent === VAULT_INTENTS.CASH_UP
     ? buildCashUpDebugPayload({
@@ -883,6 +925,9 @@ export async function processAskNacOnEdge(
   if (cashUpDebug) {
     deterministic.cashUpDebug = cashUpDebug;
   }
+  if (cashUpProductionTrace) {
+    deterministic.cashUpProductionTrace = cashUpProductionTrace;
+  }
 
   const { answer, aiConnected } = await narrateWithOpenAi(deterministic, {
     question: effectiveQuestion,
@@ -895,6 +940,7 @@ export async function processAskNacOnEdge(
     ...answer,
     intent: route.intent,
     cashUpDebug,
+    cashUpProductionTrace,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
     conversationResolution: {
