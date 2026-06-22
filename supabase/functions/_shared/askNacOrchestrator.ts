@@ -202,8 +202,11 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       const period = parseVaultPeriodFromQuestion(q);
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
-      if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
-        return 16;
+      if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on|net sales)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
+        return 34;
+      }
+      if (period?.periodType === "year_to_date" && (scoreSalesPerformanceQueryFocus(q) || isDeliveryPlatformPeriodQuery(q) || CASH_UP_PERIOD_SALES_SIGNAL.test(q))) {
+        return 36;
       }
       if ((isVaultCashUpAnalyticsPeriod(period) || isVaultFlexibleRangePeriod(period) || vaultCompare)
         && (scoreSalesPerformanceQueryFocus(q)
@@ -243,6 +246,8 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\bdelivery sales\b/.test(q)) return 0;
+      const period = parseVaultPeriodFromQuestion(q);
+      if (period && (isVaultCashUpAnalyticsPeriod(period) || period.periodType === "year_to_date") && /\b(delivery|platform|apps?)\b/.test(q)) return 0;
       if (/\b(delivery|hungerstation|jahez|talabat|keeta|aggregator)\b/.test(q)) return 12;
       if (/\b(platform sales|delivery sales|delivery revenue)\b/.test(q)) return 13;
       return 0;
@@ -307,6 +312,8 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
+      if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;
+      if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 0;
       if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) return 13;

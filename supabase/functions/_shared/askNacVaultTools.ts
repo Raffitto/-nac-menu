@@ -26,6 +26,7 @@ import {
   buildCashUpDeliveryPlatformMetrics,
   buildCashUpPeriodCompareMetrics,
   isDeliveryPlatformPeriodQuery,
+  appendCoverageToAggregateAnswer,
   extendedSalesPerformanceMetrics,
   formatManagerStyleAnswer,
   isSalesPerformanceExecutiveQuery,
@@ -34,6 +35,8 @@ import {
   CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS,
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
+import { assessPeriodCoverage, buildCoverageAnswerLines } from "./coverageAwareness.ts";
+import { resolveAnalyticalConfidence } from "./analyticalConfidence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer.ts";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval.ts";
@@ -1906,12 +1909,29 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     const previousAggregation = tool.previousAggregation as Record<string, unknown> | null | undefined;
     const previousPeriodLabel = (tool.vaultCompare as { previous?: { label?: string } } | null)?.previous?.label || null;
 
-    const directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation as never, {
+    const coverageAssessment = assessPeriodCoverage({
+      requestedPeriod: (route?.vaultPeriod as { startDate?: string; endDate?: string; label?: string; periodType?: string }) || {
+        startDate: tool?.startDate as string | undefined,
+        endDate: tool?.endDate as string | undefined,
+        label: tool?.periodLabel as string | undefined,
+        periodType: (route?.vaultPeriod as { periodType?: string })?.periodType,
+      },
+      aggregation: aggregation as never,
+    });
+    const confidenceResult = resolveAnalyticalConfidence({ route, tool, coverageAssessment });
+
+    let directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation as never, {
       branchLabel: String(tool.branchLabel || "Network"),
       periodLabel: String(tool.periodLabel || "the period"),
       previousAggregation: (previousAggregation as never) || null,
       previousPeriodLabel,
     });
+    directAnswer = appendCoverageToAggregateAnswer(
+      directAnswer,
+      question,
+      aggregation as never,
+      (route?.vaultPeriod as { label?: string; periodType?: string }) || { label: String(tool.periodLabel || ""), periodType: (route?.vaultPeriod as { periodType?: string })?.periodType },
+    ) || directAnswer;
 
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
     const metrics: MetricEntry[] = previousAggregation
@@ -1964,6 +1984,13 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
 
     const dailyBreakdown = (aggregation.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
 
+    const coverageWarnings = [
+      ...((tool?.warnings as string[]) || []),
+      ...coverageAssessment.coverageNotes.filter(
+        (note) => !((tool?.warnings as string[]) || []).some((w) => String(w).includes(note.slice(0, 24))),
+      ),
+    ];
+
     return {
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? "metric" : "executive",
@@ -1974,15 +2001,22 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
           : `Sales performance · ${tool.periodLabel}`,
       directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
-      insights: isPlatformQuery
-        ? platformInsights
-        : dailyBreakdown.slice(0, 7).map(
-          (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+      insights: [
+        ...(isPlatformQuery
+          ? platformInsights
+          : dailyBreakdown.slice(0, 7).map(
+            (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+          )),
+        ...buildCoverageAnswerLines(coverageAssessment).filter(
+          (line) => !String(directAnswer || "").includes(line.slice(0, 20)),
         ),
+      ],
       recommendations: [],
       missingData: [],
       exportOptions: [],
-      warnings: (tool?.warnings as string[]) || [],
+      warnings: coverageWarnings,
+      confidence: confidenceResult.level,
+      dataConfidence: confidenceResult.dataConfidence,
     };
   }
 

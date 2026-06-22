@@ -3,6 +3,7 @@
  */
 
 import { isVaultDocumentSearchQuery } from "./askNacVaultTools.ts";
+import { applyBusinessSemantics } from "./businessSemantics.ts";
 
 const PHRASE_REPLACEMENTS: [RegExp, string][] = [
   [/how many reviews were (?:done|posted|received|written)/gi, "how many google reviews"],
@@ -27,19 +28,31 @@ const PHRASE_REPLACEMENTS: [RegExp, string][] = [
 export function normalizeAskNacQuestionEdge(question = "") {
   const original = String(question || "").trim();
   let text = original;
-  for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
-    if (pattern.test(text)) text = text.replace(pattern, replacement);
+  const appliedRules: string[] = [];
+
+  const semantics = applyBusinessSemantics(text);
+  if (semantics.appliedRules.length) {
+    text = semantics.text;
+    appliedRules.push(...semantics.appliedRules);
   }
+
+  for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
+    if (pattern.test(text)) {
+      text = text.replace(pattern, replacement);
+      appliedRules.push(String(pattern));
+    }
+  }
+
   const hints = {
     reviews: /\b(review|reviews|google review)\b/i.test(text) && !/\bredirect/i.test(text),
-    sales: /\b(sales|revenue)\b/i.test(text),
+    sales: /\b(sales|revenue|net sales)\b/i.test(text),
     topItems: /\b(top item|top selling|best sell|sells most|most popular)\b/i.test(text),
     staff: /\b(waiter|waitress|server|staff|employee)\b/i.test(text),
     improve: /\b(improve|improved|improvement)\b/i.test(text),
     redirects: /\bredirect/i.test(text),
     quantityRanking: /\b(by quantity|sells most|best selling)\b/i.test(text),
   };
-  return { original, text: text.trim().replace(/\s+/g, " "), hints };
+  return { original, text: text.trim().replace(/\s+/g, " "), hints, appliedRules };
 }
 
 const MIN_SCORE = 8;

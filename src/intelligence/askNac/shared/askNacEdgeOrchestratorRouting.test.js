@@ -77,9 +77,23 @@ describe("Ask NAC Edge orchestrator intent routing", () => {
     "gross sales yesterday",
     "cash sales yesterday",
     "card sales yesterday",
+    "sales yesterday",
   ])("routes day-metric cash-up prompt to vault_cash_up_summary: %s", (question) => {
     const route = routeQuestionViaEdgeOrchestrator(question);
     expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
     expect(route.intent).not.toBeUndefined();
+    expect(route.intent).not.toBe("sales_total");
+  });
+
+  test('routes "delivery apps this year" to vault_cash_up_summary, not delivery_sales stub', () => {
+    const route = routeQuestionViaEdgeOrchestrator("delivery apps this year");
+    expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
+    expect(route.intent).not.toBe("delivery_sales");
+  });
+
+  test('routes "why were sales down yesterday" to vault_business_reasoning', () => {
+    const route = routeQuestionViaEdgeOrchestrator("why were sales down yesterday");
+    expect(route.intent).toBe("vault_business_reasoning");
+    expect(route.intent).not.toBe("sales_total");
   });
 });
