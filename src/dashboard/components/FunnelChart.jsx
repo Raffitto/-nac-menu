@@ -15,7 +15,7 @@ const MENU_STAGE_DEFS = [
 
 const REVIEW_STAGE_DEFS = [
   { key: "review_redirect", label: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT), icon: "⭐" },
-  { key: "google_review_open", label: "Google review page open", icon: "🔗" },
+  { key: "google_review_open", label: "Review page opens", icon: "🔗" },
 ];
 
 /** Legacy menu-only funnel (time spent / exit) — not used on unified operational dashboard. */

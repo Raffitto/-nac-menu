@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchUnifiedOperationalTruth } from "../../lib/unifiedOperationalTruth";
 import {
@@ -80,6 +80,8 @@ export function useMenuBiDashboard(options = {}) {
     [filters],
   );
   const hours = hoursFromPlatformFilters(filters || {});
+  const rangeKey = `${hours}|${filters?.selectedRange || "today"}|${filters?.branch || "all"}`;
+  const prevRangeKeyRef = useRef(rangeKey);
 
   const load = useCallback(async () => {
     if (!enabled) {
@@ -94,6 +96,15 @@ export function useMenuBiDashboard(options = {}) {
       setMenuDataEmpty(true);
       setError("Supabase not configured");
       return;
+    }
+
+    const currentRangeKey = `${hours}|${filters?.selectedRange || "today"}|${filters?.branch || "all"}`;
+    if (prevRangeKeyRef.current !== currentRangeKey) {
+      setData(null);
+      setTruth(null);
+      setOperationalTrust(null);
+      setTruthValidation(null);
+      prevRangeKeyRef.current = currentRangeKey;
     }
 
     setLoading(true);

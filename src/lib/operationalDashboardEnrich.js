@@ -16,8 +16,10 @@ export const OPERATIONAL_FUNNEL_KEYS = [
 export function reviewCountsFromSummary(summary) {
   const kpis = kpisFromReviewSummary(summary) || {};
   return {
-    review_redirect: Number(kpis.review_page_opens) || 0,
-    google_review_open: Number(kpis.google_redirects) || 0,
+    // review_redirect funnel key = Google Redirects (clicks to Google review URL)
+    review_redirect: Number(kpis.google_redirects) || 0,
+    // google_review_open funnel key = review portal page opens (pre-redirect step)
+    google_review_open: Number(kpis.review_page_opens) || 0,
     review_qr_scans: Number(kpis.qr_scans) || 0,
     reviews_generated: Number(kpis.reviews_generated) || 0,
     review_conversion_pct: Number(kpis.conversion_pct) || 0,

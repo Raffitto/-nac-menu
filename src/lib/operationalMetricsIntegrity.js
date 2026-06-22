@@ -215,7 +215,7 @@ export function buildReviewFunnelStageMetrics(funnel = {}) {
     },
     {
       key: "google_review_open",
-      label: "Google review page open",
+      label: "Review page opens",
       value: Number(funnel.google_review_open) || 0,
     },
   ];

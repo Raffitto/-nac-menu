@@ -47,6 +47,7 @@ import {
   readCachedSevenDayMenuQr,
 } from "../../lib/operationalRangeHelpers";
 import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
+import { canonicalAddonInteractionCount } from "../../lib/menuEventTypes";
 import "../styles/operational-dashboard.css";
 
 const TOOLTIP_STYLE = {
@@ -87,6 +88,7 @@ export default function OperationalDashboard({ session }) {
     operationalTrust,
     partial,
     note,
+    reviewPartialNote,
     activityFeed,
     activeGuestsNow,
     reload,
@@ -102,7 +104,10 @@ export default function OperationalDashboard({ session }) {
   const byType = data?.by_event_type || {};
   const itemOpenCount = Number(funnel.item_opens) || ev(byType, "item_open");
   const reviewQrScans = Number(data?.review_qr_scans) || 0;
-  const addOnClickCount = ev(byType, "add_on_click") || ev(byType, "addon_interaction");
+  const addOnClickCount = Number(funnel.addon_clicks)
+    || canonicalAddonInteractionCount(byType)
+    || ev(byType, "add_on_click")
+    || ev(byType, "addon_interaction");
   const reviewRedirect = Number(funnel.review_redirect) || 0;
   const googleReviewOpen = Number(funnel.google_review_open) || 0;
 
@@ -176,7 +181,7 @@ export default function OperationalDashboard({ session }) {
     ],
   );
 
-  if (!data && loading) {
+  if (loading && !data) {
     return (
       <section className="nac-ops-dash">
         <div className="stats-grid" style={{ marginTop: 28 }}>
@@ -225,6 +230,11 @@ export default function OperationalDashboard({ session }) {
 
       <PlatformStatusBanner platformStatus={platformStatus} />
       {partial && note ? <p className="nac-ops-user-note">{note}</p> : null}
+      {reviewPartialNote ? (
+        <p className="nac-ops-user-note nac-ops-range-note--warn" role="note">
+          {reviewPartialNote}
+        </p>
+      ) : null}
       {rangeContextNote ? (
         <p className="nac-ops-range-note" role="note">
           {rangeContextNote}
@@ -278,7 +288,7 @@ export default function OperationalDashboard({ session }) {
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }}>
           <p className="nac-bi-exec-label">
-            <TrendingUp size={13} /> Google review page open
+            <TrendingUp size={13} /> Review page opens
           </p>
           <p className="nac-bi-exec-value">{googleReviewOpen.toLocaleString()}</p>
           <p className="nac-bi-exec-sub">

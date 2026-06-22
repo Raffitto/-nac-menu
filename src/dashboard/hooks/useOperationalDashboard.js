@@ -42,6 +42,13 @@ export function useOperationalDashboard(options = {}) {
   const [activityFeed, setActivityFeed] = useState([]);
   const [activeGuestsNow, setActiveGuestsNow] = useState(0);
   const [enrichLoading, setEnrichLoading] = useState(false);
+  const [reviewPartialNote, setReviewPartialNote] = useState(null);
+
+  useEffect(() => {
+    setReviewSummary(null);
+    setActivityFeed([]);
+    setReviewPartialNote(null);
+  }, [hours, filters?.branch]);
 
   const loadEnrichment = useCallback(async () => {
     if (!enabled || !supabase || menuBi.needsAuth) {
@@ -61,11 +68,17 @@ export function useOperationalDashboard(options = {}) {
         supabase.rpc("get_live_activity"),
       ]);
       setReviewSummary(review);
+      setReviewPartialNote(
+        review?._partial
+          ? review._note || "Review metrics reflect today only — wider range timed out."
+          : null,
+      );
       setActivityFeed(feed);
       const live = liveRes?.data;
       setActiveGuestsNow(Number(live?.active_sessions) || 0);
     } catch {
       setReviewSummary(null);
+      setReviewPartialNote(null);
       setActivityFeed([]);
       setActiveGuestsNow(0);
     } finally {
@@ -111,6 +124,7 @@ export function useOperationalDashboard(options = {}) {
     data,
     truth: data?._truth || menuBi.truth,
     reviewSummary,
+    reviewPartialNote,
     activityFeed,
     activeGuestsNow,
     enrichLoading,
