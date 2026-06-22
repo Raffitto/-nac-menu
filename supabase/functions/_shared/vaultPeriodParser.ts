@@ -402,6 +402,18 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthToDateBounds(referenceDate);
   }
 
+  if (/\b(this year|year to date|year-to-date|ytd)\b/.test(q)) {
+    const y = referenceDate.getFullYear();
+    return {
+      startDate: isoDate(y, 1, 1),
+      endDate: isoDate(y, referenceDate.getMonth() + 1, referenceDate.getDate()),
+      label: `${y} year-to-date`,
+      periodType: "year_to_date",
+      isSingleDay: false,
+      isRange: true,
+    };
+  }
+
   if (/\b(this week|current week|past week)\b/.test(q)) {
     return {
       ...rollingRange(referenceDate, 7, { label: "this week", periodType: "this_week" }),
@@ -503,6 +515,7 @@ const CASH_UP_ANALYTICS_PERIOD_TYPES = new Set([
   "previous_week",
   "this_week",
   "this_month",
+  "year_to_date",
   "previous_7_days",
   "previous_14_days",
   "custom_range",

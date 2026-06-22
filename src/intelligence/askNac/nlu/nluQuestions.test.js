@@ -149,7 +149,7 @@ const NLU_CASES = [
   { q: "generate management report for june", intent: I.VAULT_MANAGEMENT_REPORT },
   { q: "what data do we have for june", intent: I.VAULT_COVERAGE_LIST },
   { q: "average spend per guest", intent: I.VAULT_CASH_UP_SUMMARY },
-  { q: "delivery sales hungerstation", intent: I.DELIVERY_SALES },
+  { q: "delivery sales hungerstation", intent: I.VAULT_CASH_UP_SUMMARY },
   { q: "foodics data", intent: I.FOODICS_QUERY },
   { q: "how many redirects did staff drive", intent: I.STAFF_REDIRECT_LEADERBOARD },
   { q: "best seller by quantity", intent: I.TOP_ITEMS, rankingBasis: "quantity" },

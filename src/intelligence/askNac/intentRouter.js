@@ -190,8 +190,11 @@ const INTENT_RULES = [
       const period = parseVaultPeriodFromQuestion(q);
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
-      if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
-        return 16;
+      if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on|net sales)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
+        return 34;
+      }
+      if (period?.periodType === "year_to_date" && (scoreSalesPerformanceQueryFocus(q) || isDeliveryPlatformPeriodQuery(q) || CASH_UP_PERIOD_SALES_SIGNAL.test(q))) {
+        return 36;
       }
       if ((isVaultCashUpAnalyticsPeriod(period) || isVaultFlexibleRangePeriod(period) || vaultCompare)
         && (scoreSalesPerformanceQueryFocus(q)
@@ -298,8 +301,8 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.BRANCH_SALES,
     score(q) {
       if (!FOODICS_SALES_SIGNAL.test(q)) return 0;
-      if (/\b(branch sales|sales by branch|branch revenue|revenue by branch|branch revenue comparison)\b/.test(q)) return 16;
-      if (/\b(sales|revenue).*\b(by branch|each branch|per branch|all branches)\b/.test(q)) return 14;
+      if (/\b(branch sales|branch net sales|sales by branch|branch revenue|net sales by branch|branch net sales comparison)\b/.test(q)) return 16;
+      if (/\b(net sales|sales|revenue).*\b(by branch|each branch|per branch|all branches)\b/.test(q)) return 14;
       if (/\b(which branch).*(sales|revenue|sold most)\b/.test(q)) return 14;
       if (/\bbranch sales\b/.test(q)) return 13;
       return 0;

@@ -171,4 +171,18 @@ describe("routing and preserved behavior", () => {
     const period = parseVaultPeriodFromQuestion("delivery mix last 14 days", REF);
     expect(period?.periodType).toBe("last_14_days");
   });
+
+  test("this year resolves to year-to-date", () => {
+    const period = parseVaultPeriodFromQuestion("delivery apps this year", REF);
+    expect(period?.periodType).toBe("year_to_date");
+    expect(period?.startDate).toBe("2026-01-01");
+    expect(period?.endDate).toBe("2026-06-21");
+    expect(isVaultCashUpAnalyticsPeriod(period)).toBe(true);
+  });
+
+  test("sales yesterday routes to vault with single day", () => {
+    const route = routeAskNacIntent("sales yesterday");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.vaultPeriod?.isSingleDay).toBe(true);
+  });
 });

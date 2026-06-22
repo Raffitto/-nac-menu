@@ -2,6 +2,8 @@
  * Natural-language normalization — synonym expansion before deterministic routing.
  */
 
+import { applyBusinessSemantics } from "./businessSemantics";
+
 const PHRASE_REPLACEMENTS = [
   [/how many reviews were (?:done|posted|received|written)/gi, "how many google reviews"],
   [/how many reviews\b/gi, "how many google reviews"],
@@ -77,6 +79,12 @@ export function normalizeAskNacQuestion(question = "") {
   const original = String(question || "").trim();
   let text = original;
   const appliedRules = [];
+
+  const semantics = applyBusinessSemantics(text);
+  if (semantics.appliedRules.length) {
+    text = semantics.text;
+    appliedRules.push(...semantics.appliedRules);
+  }
 
   for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
     if (pattern.test(text)) {
