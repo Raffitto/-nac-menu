@@ -121,14 +121,21 @@ function buildHypotheses(facts = [], correlations = [], signals = []) {
 
   if (salesDown && guestsDown && spendStable) {
     derived.push(hypothesisStatement(
-      "Lower walk-in traffic was likely the primary driver; spend behavior did not materially change.",
+      "The issue appears traffic-driven — guest count fell while average spend held steady.",
       [salesDown, guestsDown, spendStable],
       [NIL_DOMAINS.INTERNAL_OPERATIONAL],
-      { agreementCount: 3, historicalConsistency: 0.6 },
+      { agreementCount: 3, historicalConsistency: 0.62 },
+    ));
+  } else if (salesDown && spendDown && !guestsDown) {
+    derived.push(hypothesisStatement(
+      "The issue appears spend-driven, not traffic-driven — guest count held but average spend fell.",
+      [salesDown, spendDown],
+      [NIL_DOMAINS.INTERNAL_OPERATIONAL],
+      { agreementCount: 2, historicalConsistency: 0.6 },
     ));
   } else if (salesDown && guestsDown && spendDown) {
     derived.push(hypothesisStatement(
-      "Lower guest traffic may indicate a possible contributor to the sales decline; average spend also declined during the period.",
+      "Both traffic and ticket size softened — fewer guests and lower average spend.",
       [salesDown, guestsDown, spendDown],
       [NIL_DOMAINS.INTERNAL_OPERATIONAL],
       { agreementCount: 3, historicalConsistency: 0.55 },
