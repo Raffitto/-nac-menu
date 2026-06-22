@@ -173,6 +173,9 @@ export function aggregateCashUpFactsOverRange({
 
   const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
 
+  const salesDates = dailyBreakdown.filter((row) => row.totalSales != null).map((row) => row.date);
+  const deliveryOrderDates = dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date);
+
   return {
     totalSales,
     totalGuests,
@@ -182,6 +185,9 @@ export function aggregateCashUpFactsOverRange({
     totalDeliveryOrders,
     dayCount: dates.length,
     dailyBreakdown,
+    salesCoverageStart: salesDates[0] || null,
+    salesCoverageEnd: salesDates[salesDates.length - 1] || null,
+    deliveryOrderCoverageStart: deliveryOrderDates[0] || null,
     deliveryPlatformBreakdown: platformAgg.deliveryPlatformBreakdown,
     topPlatformBySales: platformAgg.topPlatformBySales,
     topPlatformByOrders: platformAgg.topPlatformByOrders,

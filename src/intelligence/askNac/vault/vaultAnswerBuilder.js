@@ -35,7 +35,10 @@ import {
   buildCashUpPeriodCompareMetrics,
   isDeliveryPlatformPeriodQuery,
   extendedSalesPerformanceMetrics,
+  appendCoverageToAggregateAnswer,
 } from "./vaultSalesPerformanceIntelligence";
+import { assessPeriodCoverage, buildCoverageAnswerLines } from "../coverage/coverageAwareness";
+import { resolveAnalyticalConfidence } from "../confidence/analyticalConfidence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer";
@@ -260,12 +263,29 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     const previousAggregation = tool.previousAggregation || null;
     const previousPeriodLabel = tool.vaultCompare?.previous?.label || null;
 
-    const directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
+    const coverageAssessment = assessPeriodCoverage({
+      requestedPeriod: route?.vaultPeriod || {
+        startDate: tool?.startDate,
+        endDate: tool?.endDate,
+        label: tool?.periodLabel,
+        periodType: route?.vaultPeriod?.periodType,
+      },
+      aggregation,
+    });
+    const confidenceResult = resolveAnalyticalConfidence({ route, tool, coverageAssessment });
+
+    let resolvedAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
       periodLabel: tool.periodLabel,
       previousAggregation,
       previousPeriodLabel,
     });
+    resolvedAnswer = appendCoverageToAggregateAnswer(
+      resolvedAnswer,
+      question,
+      aggregation,
+      route?.vaultPeriod || { label: tool.periodLabel, periodType: route?.vaultPeriod?.periodType },
+    );
 
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
     const metrics = previousAggregation
@@ -315,6 +335,13 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
         })
       : [];
 
+    const coverageWarnings = [
+      ...(tool?.warnings || []),
+      ...coverageAssessment.coverageNotes.filter(
+        (note) => !(tool?.warnings || []).some((w) => String(w).includes(note.slice(0, 24))),
+      ),
+    ];
+
     return createAskNacResponse({
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
@@ -323,14 +350,21 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
         : previousAggregation
           ? `Period comparison · ${tool.periodLabel}`
           : `Sales performance · ${tool.periodLabel}`,
-      directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
+      directAnswer: resolvedAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
-      insights: isPlatformQuery
-        ? platformInsights
-        : (aggregation.dailyBreakdown || []).slice(0, 7).map(
-          (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+      insights: [
+        ...(isPlatformQuery
+          ? platformInsights
+          : (aggregation.dailyBreakdown || []).slice(0, 7).map(
+            (row) => `${row.date}: ${row.totalSales != null ? `${formatNumber(row.totalSales)} SAR` : "sales n/a"}`,
+          )),
+        ...buildCoverageAnswerLines(coverageAssessment).filter(
+          (line) => !String(resolvedAnswer || "").includes(line.slice(0, 20)),
         ),
-      warnings: tool?.warnings || [],
+      ],
+      warnings: coverageWarnings,
+      confidence: confidenceResult.level,
+      dataConfidence: confidenceResult.dataConfidence,
     });
   }
 

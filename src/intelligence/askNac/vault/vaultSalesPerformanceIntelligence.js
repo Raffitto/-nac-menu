@@ -1,4 +1,12 @@
 import { parseVaultComparePeriodsFromQuestion } from "./vaultPeriodParser";
+import {
+  assessPeriodCoverage,
+  buildCoverageAnswerLines,
+} from "../coverage/coverageAwareness";
+import {
+  deriveTrafficSpendInterpretation,
+  deriveRecommendedAction,
+} from "../interpretation/operationalInterpretation";
 
 export const DELIVERY_PLATFORM_KEYS = Object.freeze(["jahez", "chefz", "keeta", "hunger"]);
 
@@ -146,6 +154,10 @@ export function scoreSalesPerformanceQueryFocus(question = "") {
   if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
   if (parseVaultComparePeriodsFromQuestion(question)) return "period_compare";
   if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";
+  if (/\b(net sales|sales|revenue)\b.*\byesterday\b/.test(q)) return "period_sales";
+  if (/\b(guest count|guests?|covers)\b.*\byesterday\b/.test(q)) return "guest_count";
+  if (/\b(average spend|avg spend|average check)\b.*\b(this month|this year|ytd|year)\b/.test(q)) return "avg_spend";
+  if (/\b(delivery platforms?|delivery apps?)\b.*\b(this year|ytd|year)\b/.test(q)) return "delivery_platform";
   if (/\b(sales|revenue)\b.*\b(last|past)\s+\d+\s+days?\b/.test(q)) return "period_sales";
   if (/\b(guests?|guest count)\b.*\b(this month|current month|last|past)\b/.test(q)) return "guest_count";
   if (/\b(average guest spend|avg spend|spend per guest|average spend per guest|average spend)\b/.test(q)) return "avg_spend";
@@ -780,7 +792,33 @@ export function buildCashUpPeriodCompareAnswer(aggregation, previousAggregation,
     lines.push(`Coverage note: current period includes ${aggregation.dayCount} cash-up day(s) vs ${previousAggregation.dayCount} in the comparison period.`);
   }
 
+  const interpretation = deriveTrafficSpendInterpretation(aggregation, previousAggregation);
+  if (interpretation) {
+    lines.push(`Interpretation: ${interpretation}`);
+    const action = deriveRecommendedAction(interpretation);
+    if (action) lines.push(`Recommended action: ${action}`);
+  }
+
   return lines.join("\n");
+}
+
+export function appendCoverageToAggregateAnswer(baseAnswer, question, aggregation, requestedPeriod) {
+  if (!baseAnswer || !aggregation) return baseAnswer;
+  const coverage = assessPeriodCoverage({ requestedPeriod, aggregation });
+  const coverageLines = buildCoverageAnswerLines(coverage);
+  if (!coverageLines.length) return baseAnswer;
+
+  const forbiddenSilentJune = /\bthis year\b|\bytd\b|\byear.to.date\b/i.test(String(question));
+  if (forbiddenSilentJune && requestedPeriod?.periodType === "year_to_date" && aggregation.dayCount > 0) {
+    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
+  }
+  if (coverage.completeness === "partial" || coverage.completeness === "unavailable") {
+    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
+  }
+  if (coverage.confidenceExplanation) {
+    return `${baseAnswer}\n\n${coverageLines[coverageLines.length - 1]}`;
+  }
+  return baseAnswer;
 }
 
 export function buildCashUpPeriodCompareMetrics(aggregation, previousAggregation) {
