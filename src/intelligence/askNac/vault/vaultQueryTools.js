@@ -33,6 +33,7 @@ import {
 } from "./vaultOperationalIntelligence";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval";
 import { fetchExecutiveMemory } from "../executive/executiveMemory";
+import { runKnowledgeHealthQuery } from "../knowledge/knowledgeHealthQueryTools";
 import { getCachedVaultCoverage, setCachedVaultCoverage } from "./vaultCoverageCache";
 import {
   fetchCashUpRangeAggregationViaRpc,
@@ -1063,6 +1064,8 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
           ],
         };
       });
+    case "vault_knowledge_health":
+      return runKnowledgeHealthQuery(supabase, context);
     case "vault_management_report_from_vault":
       return getVaultManagementReport(supabase, context);
     default:

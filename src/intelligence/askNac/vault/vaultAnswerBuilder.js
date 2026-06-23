@@ -46,6 +46,7 @@ import {
   buildTeachOperatorAnswer,
   buildWeeklyDashboardAnswer,
 } from "../executive/humanInLoopAnswerBuilder";
+import { buildKnowledgeHealthAnswer } from "../knowledge/knowledgeHealthAnswerBuilder";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -965,6 +966,10 @@ export function buildVaultAnswer(route, tool, readiness) {
 
   if (route.intent === ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY) {
     return buildVaultDailyBriefingAnswer(route, tool, readiness);
+  }
+
+  if (route.intent === ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH) {
+    return buildKnowledgeHealthAnswer(route, tool, readiness);
   }
 
   if (route.intent === ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD

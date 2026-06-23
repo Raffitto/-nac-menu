@@ -80,6 +80,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_DRIVE_APPROVE_RULES: "vault_drive_approve_rules",
   VAULT_DAILY_BRIEFING_SUMMARY: "vault_daily_briefing_summary",
   VAULT_BREAKAGE_SUMMARY: "vault_breakage_summary",
+  VAULT_KNOWLEDGE_HEALTH: "vault_knowledge_health",
   UNKNOWN: "unknown",
 });
 
@@ -166,6 +167,16 @@ const INTENT_RULES = [
     id: ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES,
     score(q) {
       if (isDriveDiscoveryApprovalCommand(q)) return 46;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH,
+    score(q) {
+      if (/\b(health check|knowledge health)\b/i.test(q)) return 46;
+      if (/\bwhat am i missing\b/i.test(q)) return 44;
+      if (/\bdashboard readiness\b/i.test(q)) return 43;
+      if (/\bwhy is confidence low\b|\bwhy.*confidence.*low\b/i.test(q)) return 42;
       return 0;
     },
   },
@@ -666,6 +677,7 @@ export function isVaultDataIntent(intent) {
     ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT,
     ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER,
     ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES,
+    ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH,
   ].includes(intent);
 }
 
@@ -691,6 +703,7 @@ export function vaultReportTypesForIntent(intent) {
       "ccm_reconciliation",
     ],
     [ASK_NAC_INTENTS.VAULT_COVERAGE_LIST]: [],
+    [ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH]: [],
   };
   return map[intent] || [];
 }

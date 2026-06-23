@@ -114,6 +114,7 @@ function shouldSkipAiNarration(
     || intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT
     || intent === VAULT_INTENTS.DRIVE_DISCOVER
     || intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
+    || intent === VAULT_INTENTS.KNOWLEDGE_HEALTH
   ) {
     return true;
   }
@@ -150,6 +151,16 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (/\bgenerate\b.*\b(weekly dashboard|khobar dashboard|dashboard for week)\b/i.test(q)) return 38;
       if (/\bweekly dashboard\b/i.test(q) && /\bgenerate\b/i.test(q)) return 36;
       if (/\bdashboard for week ending\b/i.test(q)) return 36;
+      return 0;
+    },
+  },
+  {
+    id: VAULT_INTENTS.KNOWLEDGE_HEALTH,
+    score(q) {
+      if (/\b(health check|knowledge health)\b/i.test(q)) return 46;
+      if (/\bwhat am i missing\b/i.test(q)) return 44;
+      if (/\bdashboard readiness\b/i.test(q)) return 43;
+      if (/\bwhy is confidence low\b|\bwhy.*confidence.*low\b/i.test(q)) return 42;
       return 0;
     },
   },
@@ -646,6 +657,9 @@ async function assessReadiness(
     route.intent === VAULT_INTENTS.DRIVE_DISCOVER
     || route.intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
   ) {
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+  }
+  if (route.intent === VAULT_INTENTS.KNOWLEDGE_HEALTH) {
     return { status: "ready", canQuery: true, reasons: [], missingData: [] };
   }
   if (

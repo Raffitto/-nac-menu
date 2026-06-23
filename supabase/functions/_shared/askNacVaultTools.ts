@@ -80,6 +80,7 @@ import {
   fetchCashUpRangeAggregationViaRpc,
   shouldUseCashUpRangeRpc,
 } from "./askNacCashUpRangeRpc.ts";
+import { runKnowledgeHealthQuery, buildKnowledgeHealthAnswer } from "./askNacKnowledgeHealth.ts";
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -146,6 +147,7 @@ export const VAULT_INTENTS = {
   DRIVE_APPROVE_RULES: "vault_drive_approve_rules",
   DAILY_BRIEFING: "vault_daily_briefing_summary",
   BREAKAGE: "vault_breakage_summary",
+  KNOWLEDGE_HEALTH: "vault_knowledge_health",
 } as const;
 
 export { isSalesPerformanceExecutiveQuery, isVaultOperationalReviewQuery };
@@ -628,6 +630,8 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       return searchVaultDocuments(supabase, context);
     case VAULT_INTENTS.DOCUMENT_SUMMARY:
       return summarizeVaultDocuments(supabase, context);
+    case VAULT_INTENTS.KNOWLEDGE_HEALTH:
+      return runKnowledgeHealthQuery(supabase, context);
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
     case VAULT_INTENTS.BUSINESS_REASONING: {
@@ -2796,6 +2800,10 @@ export function buildVaultAnswer(
 
   if (route.intent === VAULT_INTENTS.TEACH_OPERATOR) {
     return buildTeachOperatorAnswer(route, tool || {}, readiness);
+  }
+
+  if (route.intent === VAULT_INTENTS.KNOWLEDGE_HEALTH) {
+    return buildKnowledgeHealthAnswer(route, tool || {}, readiness);
   }
 
   if (route.intent === VAULT_INTENTS.WEEKLY_DASHBOARD || route.intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT) {

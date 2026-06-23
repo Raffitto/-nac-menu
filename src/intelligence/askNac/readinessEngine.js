@@ -196,6 +196,16 @@ export function assessIntentReadinessSync(
     };
   }
 
+  if (intent === ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH) {
+    return {
+      status: READINESS.READY,
+      canQuery: supabaseConfigured,
+      reasons: [],
+      missingData: [],
+      note: "Knowledge health — scored from coverage registry, ingestion jobs, and pending sessions.",
+    };
+  }
+
   if (
     intent === ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR
     || intent === ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD
@@ -475,6 +485,10 @@ export async function assessIntentReadiness(intent, context = {}) {
   }
 
   if (isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent)) {
+    return sync;
+  }
+
+  if (intent === ASK_NAC_INTENTS.VAULT_KNOWLEDGE_HEALTH) {
     return sync;
   }
 
