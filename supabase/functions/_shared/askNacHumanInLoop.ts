@@ -142,7 +142,7 @@ export async function fetchActivePendingSession(
   return mapSessionRow(data as Record<string, unknown>);
 }
 
-async function createPendingSession(
+export async function createPendingSession(
   supabase: SupabaseClient,
   { branch, sessionType = "weekly_dashboard", missingFields, context = {}, createdBy }: {
     branch: string;
@@ -518,6 +518,18 @@ export async function provideManualInputForSession(supabase: SupabaseClient, con
   const pendingSession = context.pendingSession as { id?: string; context?: { vaultPeriod?: ReturnType<typeof resolveWeekEndingPeriod> } } | undefined;
   const vaultPeriod = pendingSession?.context?.vaultPeriod || resolveWeekEndingPeriod(String(context.question || ""));
   if (!branch || !userEmail || !manualInput) throw new Error("Manual input requires branch, user, and parsed value.");
+  const sessionType = (pendingSession as { sessionType?: string } | undefined)?.sessionType;
+  if (sessionType === "executive_evidence") {
+    const { storeExecutiveEvidenceManualInput } = await import("./askNacExecutiveEvidenceInput.ts");
+    return storeExecutiveEvidenceManualInput(supabase, {
+      branch,
+      branchLabel: branchDisplayName(branch),
+      userEmail,
+      manualInput,
+      pendingSession,
+      vaultPeriod,
+    });
+  }
   return runWeeklyDashboardSession(supabase, {
     branch,
     branchLabel: branchDisplayName(branch),
@@ -575,12 +587,14 @@ export async function resolveHumanInTheLoopTurn({
   let pendingSession = null;
   const sessionId = conversationContext?.pendingSessionId as string | undefined;
   if (sessionId) pendingSession = await fetchPendingSession(supabase, sessionId);
-  if (!pendingSession || pendingSession.status !== "pending") {
+  for (const sessionType of ["weekly_dashboard", "executive_evidence"]) {
+    if (pendingSession?.status === "pending") break;
     pendingSession = await fetchActivePendingSession(supabase, {
       branch,
       createdBy: userEmail,
-      sessionType: "weekly_dashboard",
+      sessionType,
     });
+    if (pendingSession?.status === "pending") break;
   }
   if (!pendingSession || pendingSession.status !== "pending") return null;
 

@@ -30,12 +30,14 @@ export async function resolveHumanInTheLoopTurn({
   if (sessionId) {
     pendingSession = await fetchPendingSession(supabase, sessionId);
   }
-  if (!pendingSession || pendingSession.status !== "pending") {
+  for (const sessionType of ["weekly_dashboard", "executive_evidence"]) {
+    if (pendingSession?.status === "pending") break;
     pendingSession = await fetchActivePendingSession(supabase, {
       branch,
       createdBy: userEmail,
-      sessionType: "weekly_dashboard",
+      sessionType,
     });
+    if (pendingSession?.status === "pending") break;
   }
 
   if (!pendingSession || pendingSession.status !== "pending") return null;

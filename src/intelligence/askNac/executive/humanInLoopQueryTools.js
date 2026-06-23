@@ -7,6 +7,7 @@ import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { parseTeachNacCommand } from "./teachNacParser";
 import { storeOperatorMemory } from "./operatorMemory";
 import { runWeeklyDashboardSession, resolveWeekEndingPeriod } from "./weeklyDashboardSession";
+import { storeExecutiveEvidenceManualInput } from "./executiveEvidenceInput";
 
 function resolveBranch(context) {
   const branch = resolveRbacQueryBranch(context.profile, context.branchMention || context.filters?.branch);
@@ -54,6 +55,17 @@ export async function provideManualInputForSession(supabase, context = {}) {
 
   if (!branch || !userEmail || !manualInput) {
     throw new Error("Manual input requires branch, user, and parsed value.");
+  }
+
+  if (pendingSession?.sessionType === "executive_evidence") {
+    return storeExecutiveEvidenceManualInput(supabase, {
+      branch,
+      branchLabel: branchDisplayName(branch),
+      userEmail,
+      manualInput,
+      pendingSession,
+      vaultPeriod: pendingSession?.context?.vaultPeriod || context.vaultPeriod,
+    });
   }
 
   return runWeeklyDashboardSession(supabase, {

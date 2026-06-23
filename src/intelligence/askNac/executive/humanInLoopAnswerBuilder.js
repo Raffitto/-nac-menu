@@ -123,7 +123,42 @@ export function buildWeeklyDashboardCompleteAnswer(route, tool, readiness) {
   });
 }
 
+export function buildExecutiveEvidenceStoredAnswer(route, tool, readiness) {
+  const branchLabel = tool?.branchLabel || "Branch";
+  const input = tool?.storedInput;
+  const remaining = tool?.missingFields || [];
+
+  return createAskNacResponse({
+    answerType: ANSWER_TYPES.EXECUTIVE,
+    title: "Executive input recorded",
+    directAnswer: input
+      ? `Recorded ${input.metricLabel}: ${input.metricValue ?? input.metricText ?? "—"} for ${branchLabel}. ${tool?.learnNote || ""}`
+      : "Could not store executive input.",
+    keyMetrics: input
+      ? [{ label: input.metricLabel, value: String(input.metricValue ?? input.metricText ?? ""), source: "manual_input" }]
+      : [],
+    insights: tool?.operatorMemory
+      ? [`Also saved to operator memory: "${tool.operatorMemory.fact}"`]
+      : [tool?.learnNote || "Period-specific manual input stored."],
+    recommendations: remaining.length
+      ? [`Still needed: ${remaining.map((f) => f.label || f.key).join(", ")}.`]
+      : ["You can re-ask your executive question — evidence will include this input."],
+    sources: (tool?.sources || []).map((s) => sourceEntry(s.name, s.detail)),
+    confidence: CONFIDENCE_LEVELS.HIGH,
+    isAiGenerated: false,
+    intent: route.intent,
+    branchLabel,
+    readiness,
+    awaitingInput: remaining.length > 0,
+    pendingSession: tool?.pendingSession || null,
+    pendingSessionId: remaining.length ? tool?.pendingSession?.id : null,
+  });
+}
+
 export function buildWeeklyDashboardAnswer(route, tool, readiness) {
+  if (tool?.storedInput && tool?.learnNote) {
+    return buildExecutiveEvidenceStoredAnswer(route, tool, readiness);
+  }
   if (tool?.status === "pending") {
     return buildManualInputPendingAnswer(route, tool, readiness);
   }

@@ -67,6 +67,7 @@ import {
   type CashUpProductionTrace,
 } from "./cashUpProductionTrace.ts";
 import { resolveHumanInTheLoopTurn } from "./askNacHumanInLoop.ts";
+import { applyExecutiveIntelligenceV2 } from "./askNacExecutiveEvidenceV2.ts";
 import { scoreDriveDiscoveryIntent } from "./askNacDriveDiscovery.ts";
 
 export const ASK_NAC_INTENTS = {
@@ -1034,12 +1035,22 @@ export async function processAskNacOnEdge(
 
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
   const routeWithQuestion = { ...route, question: effectiveQuestion };
-  const deterministic = usedVaultAnswerBuilder
+  let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
     : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);
 
   deterministic.intent = route.intent;
   deterministic.readiness = readiness;
+
+  deterministic = await applyExecutiveIntelligenceV2({
+    supabase,
+    route: routeWithQuestion,
+    tool,
+    response: deterministic,
+    userEmail: effectiveUserEmail,
+    profile: profileHint as Record<string, unknown> | null,
+    filters: mergedFilters as Record<string, unknown>,
+  }) as typeof deterministic;
 
   const isCashUpQuestion = /\bcash\s*up\b/i.test(effectiveQuestion);
   let cashUpProductionTrace: CashUpProductionTrace | undefined;

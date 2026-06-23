@@ -11,6 +11,23 @@ export const WEEKLY_DASHBOARD_FIELD_DEFS = Object.freeze([
   },
 ]);
 
+/** Fields commonly missing for executive / weekly dashboard estimates. */
+export const EXECUTIVE_EVIDENCE_FIELD_DEFS = Object.freeze([
+  ...WEEKLY_DASHBOARD_FIELD_DEFS,
+  {
+    key: "reservation_count",
+    label: "Reservation count",
+    prompt: "What was the reservation count for this period?",
+    aliases: ["reservation count", "reservations", "total reservations"],
+  },
+  {
+    key: "vip_events",
+    label: "VIP events",
+    prompt: "Were there any VIP or private events this period?",
+    aliases: ["vip", "vip event", "private event", "vip events"],
+  },
+]);
+
 export function parseManualInputAnswer(question = "", missingFields = []) {
   const text = String(question || "").trim();
   if (!text) return null;
@@ -20,23 +37,41 @@ export function parseManualInputAnswer(question = "", missingFields = []) {
 
   for (const field of fields) {
     const key = field.key || field.metric_key;
-    if (key === "seven_rooms_covers") {
-      const patterns = [
-        /(\d+)\s*covers?\b/i,
-        /\bcovers?\s*(?:were|was|:)?\s*(\d+)/i,
-        /7\s*rooms?\s*(?:covers?)?\s*(?:were|was|:)?\s*(\d+)/i,
-      ];
+    if (key === "seven_rooms_covers" || key === "reservation_count") {
+      const patterns = key === "seven_rooms_covers"
+        ? [
+          /(\d+)\s*covers?\b/i,
+          /\bcovers?\s*(?:were|was|:)?\s*(\d+)/i,
+          /7\s*rooms?\s*(?:covers?)?\s*(?:were|was|:)?\s*(\d+)/i,
+        ]
+        : [
+          /(\d+)\s*reservations?\b/i,
+          /\breservations?\s*(?:were|was|:)?\s*(\d+)/i,
+          /reservation count\s*(?:was|:)?\s*(\d+)/i,
+        ];
       for (const pattern of patterns) {
         const match = text.match(pattern);
         const value = Number(match?.[1] || match?.[2]);
         if (Number.isFinite(value) && value >= 0) {
           return {
-            metricKey: "seven_rooms_covers",
-            metricLabel: "7Rooms covers",
+            metricKey: key,
+            metricLabel: field.label || key,
             metricValue: value,
             rawText: text,
           };
         }
+      }
+    }
+
+    if (key === "vip_events") {
+      if (field.aliases?.some((a) => lower.includes(a)) || /\b(vip|private event|aramco|corporate dinner)\b/i.test(text)) {
+        return {
+          metricKey: key,
+          metricLabel: field.label || key,
+          metricValue: null,
+          metricText: text,
+          rawText: text,
+        };
       }
     }
 

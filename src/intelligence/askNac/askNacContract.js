@@ -64,6 +64,7 @@ export function createAskNacResponse(fields = {}) {
     awaitingInput: Boolean(fields.awaitingInput),
     pendingSessionId: fields.pendingSessionId ?? null,
     pendingSession: fields.pendingSession ?? null,
+    executiveEvidence: fields.executiveEvidence || null,
   };
 }
 

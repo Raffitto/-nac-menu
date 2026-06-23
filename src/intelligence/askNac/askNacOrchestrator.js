@@ -9,6 +9,7 @@ import { buildDeterministicAskNacAnswer } from "./answerBuilder";
 import { resolveFoodicsPeriodWithFallback } from "./shared/periodFallback";
 import { prepareAskNacQuestion, applyReviewPeriodDefaults } from "./conversation/prepareAskNacQuestion";
 import { resolveHumanInTheLoopTurn } from "./executive/humanInLoopResolver";
+import { applyExecutiveIntelligenceV2 } from "./executive/executiveEvidenceV2";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -137,11 +138,21 @@ export async function processAskNacQuestion({
     });
   }
 
-  const deterministic = buildDeterministicAskNacAnswer({ ...route, question: effectiveQuestion }, tool, effectiveReadiness);
+  let deterministic = buildDeterministicAskNacAnswer({ ...route, question: effectiveQuestion }, tool, effectiveReadiness);
   deterministic.readiness = effectiveReadiness;
   if (periodFallbackWarnings.length) {
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
   }
+
+  deterministic = await applyExecutiveIntelligenceV2({
+    supabase,
+    route: { ...route, question: effectiveQuestion },
+    tool,
+    response: deterministic,
+    userEmail,
+    profile,
+    filters: effectiveFilters,
+  });
 
   const conversationResolution = {
     originalQuestion: prepareResult.originalQuestion,
