@@ -5,6 +5,7 @@
  *   node tmp-vault-verify/trust-integrity-verify.mjs
  *
  * Optional production probes: use cash-up-period-prod-verify.mjs with ASK_NAC_ACCESS_TOKEN.
+ * Dashboard funnel sanity: operationalMetricsIntegrity.test.js (included below).
  */
 import { execSync } from "child_process";
 import path from "path";

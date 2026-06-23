@@ -96,6 +96,62 @@ const LOCAL_CASES = [
     },
   },
   {
+    label: "show latest cash up routes to vault",
+    run() {
+      const route = routeQuestion("show latest cash up");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+    },
+  },
+  {
+    label: "compare June 1-15 vs June 16-20 routes to vault compare",
+    run() {
+      const route = routeQuestion("compare June 1-15 vs June 16-20");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+      if (!/june/i.test(route.vaultPeriod?.label || "")) throw new Error("missing June period");
+    },
+  },
+  {
+    label: "why were sales down yesterday routes to NIL",
+    run() {
+      const route = routeQuestion("why were sales down yesterday");
+      if (route.intent !== "vault_business_reasoning") throw new Error(`intent ${route.intent}`);
+    },
+  },
+  {
+    label: "guests yesterday routes to vault single-day",
+    run() {
+      const route = routeQuestion("guests yesterday");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+      if (route.intent === "guest_count") throw new Error("wrong intent");
+    },
+  },
+  {
+    label: "average check this month routes to vault MTD",
+    run() {
+      const route = routeQuestion("average check this month");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+      if (!/june|month/i.test(route.vaultPeriod?.label || route.vaultPeriod?.periodType || "")) {
+        throw new Error("missing month period");
+      }
+    },
+  },
+  {
+    label: "top delivery platform this year routes to vault YTD",
+    run() {
+      const route = routeQuestion("top delivery platform this year");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+      if (route.vaultPeriod?.periodType !== "year_to_date") throw new Error("missing YTD");
+    },
+  },
+  {
+    label: "delivery orders and money this year routes to vault YTD",
+    run() {
+      const route = routeQuestion("how many delivery orders this year and how much money");
+      if (route.intent !== "vault_cash_up_summary") throw new Error(`intent ${route.intent}`);
+      if (route.vaultPeriod?.periodType !== "year_to_date") throw new Error("missing YTD");
+    },
+  },
+  {
     label: "YTD uses monthly chunking helpers",
     run() {
       const agg = loadAggregationModule();
