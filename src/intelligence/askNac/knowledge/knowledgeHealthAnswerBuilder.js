@@ -22,6 +22,7 @@ function formatRegistrySection(registry = {}) {
   pushList("Missing manual inputs", registry.missingManualInputs, (i) => i.label);
   pushList("Pending sessions", registry.pendingSessions, (i) => `${i.sessionType}: ${(i.missingFields || []).join(", ")}`);
   pushList("Unapproved Drive folders", registry.unapprovedFolders, (i) => `${i.folderPath} (${i.detectedReportType})`);
+  pushList("Informational gaps (optional)", registry.informationalGaps, (i) => `${i.label} — ${i.reason}`);
 
   return lines.length ? lines.join("\n") : "No gaps flagged in the missing-information registry for this scope.";
 }
@@ -58,10 +59,12 @@ export function buildKnowledgeHealthAnswer(route, tool, readiness) {
 
   if (focus === "dashboard") {
     const dr = health.componentDetail?.dashboardReadiness || {};
+    const history = dr.dashboardHistoryDepth;
     title = `Dashboard Readiness · ${branchLabel}`;
     directAnswer = [
       `Weekly Dashboard Readiness: ${dr.score ?? health.components?.dashboardReadiness ?? 0}%`,
-      dr.missing?.length ? `\nMissing:\n${dr.missing.map((m) => `• ${m}`).join("\n")}` : "\nAll dashboard checklist items satisfied for the assessed period.",
+      dr.missing?.length ? `\nMissing:\n${dr.missing.map((m) => `• ${m}`).join("\n")}` : "\nAll scored dashboard checklist items satisfied for the assessed period.",
+      history ? `\nDashboard history depth: ${history.depthLabel}` : "",
       dr.checks?.length
         ? `\nChecklist:\n${dr.checks.map((c) => `• ${c.label}: ${c.satisfied ? "✓" : "✗"} (${c.detail})`).join("\n")}`
         : "",
@@ -73,8 +76,10 @@ export function buildKnowledgeHealthAnswer(route, tool, readiness) {
       `Executive intelligence readiness: ${er.score ?? health.components?.executiveIntelligenceReadiness ?? 0}%`,
       er.confidenceReductionReasons?.length
         ? `\nWhy-analysis confidence is reduced because:\n${er.confidenceReductionReasons.map((r) => `• ${r}`).join("\n")}`
-        : "\nCore executive sources are indexed for this period.",
-      er.present?.length ? `\nIndexed: ${er.present.join("; ")}` : "",
+        : "\nCore executive sources (cash-up + logbook) are indexed for this period.",
+      er.present?.length ? `\nIndexed (core): ${er.present.join("; ")}` : "",
+      er.optionalAvailable?.length ? `\nOptional sources available: ${er.optionalAvailable.join("; ")}` : "",
+      er.optionalInactive?.length ? `\nOptional / inactive: ${er.optionalInactive.join("; ")}` : "",
     ].filter(Boolean).join("");
   } else if (focus === "missing") {
     title = `Missing Information · ${branchLabel}`;
@@ -96,6 +101,9 @@ export function buildKnowledgeHealthAnswer(route, tool, readiness) {
       `Dashboard readiness: ${health.components?.dashboardReadiness ?? 0}%`,
       health.componentDetail?.dashboardReadiness?.missing?.length
         ? `Missing for dashboard: ${health.componentDetail.dashboardReadiness.missing.join("; ")}`
+        : "",
+      health.componentDetail?.dashboardReadiness?.dashboardHistoryDepth
+        ? `Dashboard history: ${health.componentDetail.dashboardReadiness.dashboardHistoryDepth.depthLabel}`
         : "",
       "",
       `Executive intelligence readiness: ${health.components?.executiveIntelligenceReadiness ?? 0}%`,

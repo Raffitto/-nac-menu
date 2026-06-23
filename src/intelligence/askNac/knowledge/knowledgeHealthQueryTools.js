@@ -7,7 +7,6 @@ import { getVaultCoverage, getVaultFacts } from "../vault/vaultQueryTools";
 import { fetchManualInputsForPeriod } from "../executive/manualInputs";
 import { fetchCashUpRangeAggregationViaRpc } from "../vault/vaultCashUpRangeRpc";
 import { computeKnowledgeHealth } from "./knowledgeHealthEngine";
-import { OPERATIONAL_COVERAGE_REPORT_TYPES } from "./knowledgeHealthConstants";
 
 const INGESTION_SELECT = "id, status, error, finished_at, file_id, ask_nac_files!inner(id, title, primary_branch_id, report_type)";
 const PENDING_SESSION_SELECT = "id, branch_id, session_type, status, missing_fields, provided_inputs, context, created_by, expires_at";
@@ -42,6 +41,22 @@ function resolvePeriod(context = {}) {
   return defaultPeriod();
 }
 
+async function fetchBranchFileInventory(supabase, branch) {
+  if (!branch) return {};
+  const { data, error } = await supabase
+    .from("ask_nac_files")
+    .select("report_type")
+    .eq("primary_branch_id", branch)
+    .eq("status", "active");
+  if (error) throw new Error(error.message);
+  const counts = {};
+  for (const row of data || []) {
+    const type = row.report_type;
+    counts[type] = (counts[type] || 0) + 1;
+  }
+  return counts;
+}
+
 export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
   if (!supabase) {
     return computeKnowledgeHealth({ branch: null, branchLabel: "Network", disclosures: ["Supabase client unavailable."] });
@@ -63,6 +78,7 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
     pendingSessionsResult,
     discoveryCandidatesResult,
     historicalDashboardCoverage,
+    fileInventoryResult,
   ] = await Promise.all([
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate }).catch(() => ({ coverage: [] })),
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate, reportType: "guest_feedback" }).catch(() => ({ coverage: [] })),
@@ -81,6 +97,7 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
     fetchPendingSessions(supabase, { branch }).catch(() => ({ sessions: [] })),
     fetchUnapprovedDiscoveryCandidates(supabase, { branch }).catch(() => ({ candidates: [] })),
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate, reportType: "weekly_dashboard" }).catch(() => ({ coverage: [] })),
+    branch ? fetchBranchFileInventory(supabase, branch).catch(() => ({})) : Promise.resolve({}),
   ]);
 
   const snapshot = {
@@ -91,7 +108,6 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
     endDate: period.endDate,
     coverage: coverageResult.coverage || [],
     guestFeedbackCoverage: guestFeedbackCoverage.coverage || [],
-    expectedTypes: OPERATIONAL_COVERAGE_REPORT_TYPES,
     weekAggregation,
     logbookFacts: logbookFactsResult.facts || [],
     googleReviewFacts: googleFactsResult.facts || [],
@@ -100,6 +116,7 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
     pendingSessions: pendingSessionsResult.sessions || [],
     discoveryCandidates: discoveryCandidatesResult.candidates || [],
     historicalDashboardCoverage: historicalDashboardCoverage.coverage || [],
+    fileInventory: fileInventoryResult || {},
     sources: [
       { name: "ask_nac_data_coverage", detail: "coverage registry" },
       { name: "ask_nac_ingestion_jobs", detail: "ingestion status (last 30 days)" },
@@ -107,6 +124,7 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
       { name: "ask_nac_pending_sessions", detail: "open HITL sessions" },
       { name: "ask_nac_drive_discovery_candidates", detail: "unapproved Drive folders" },
       { name: "ask_nac_structured_facts", detail: "cash-up + logbook facts" },
+      { name: "ask_nac_files", detail: "branch file inventory for period-gap credit" },
     ],
   };
 

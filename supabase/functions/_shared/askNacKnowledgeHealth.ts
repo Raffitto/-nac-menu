@@ -6,8 +6,17 @@ import { branchDisplayName } from "./askNacEdgeAnswerBuilder.ts";
 import { getVaultCoverage, getVaultFacts } from "./askNacVaultTools.ts";
 import { fetchCashUpRangeAggregationViaRpc } from "./askNacCashUpRangeRpc.ts";
 
-const OPERATIONAL_COVERAGE_REPORT_TYPES = ["cash_up", "daily_briefing", "daily_logbook", "reception_daily_report"];
-const EXECUTIVE_INTELLIGENCE_REPORT_TYPES = ["cash_up", "daily_briefing", "daily_logbook", "guest_feedback", "weekly_dashboard"];
+const COVERAGE_TYPE_WEIGHTS: Record<string, number> = {
+  cash_up: 0.45,
+  daily_logbook: 0.35,
+  reception_daily_report: 0.1,
+  daily_briefing: 0.1,
+};
+const REQUIRED_COVERAGE_REPORT_TYPES = ["cash_up", "daily_logbook"];
+const OPTIONAL_COVERAGE_REPORT_TYPES = ["reception_daily_report", "daily_briefing"];
+const EXECUTIVE_CORE_WEIGHTS: Record<string, number> = { cash_up: 0.55, daily_logbook: 0.45 };
+const EXECUTIVE_OPTIONAL_SOURCES = ["daily_briefing", "guest_feedback", "weekly_dashboard"];
+const FILE_INVENTORY_PERIOD_GAP_CREDIT = 0.5;
 const REPORT_TYPE_LABELS: Record<string, string> = {
   cash_up: "Cash Up",
   daily_briefing: "Daily Briefing",
@@ -18,11 +27,10 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
 };
 
 const DASHBOARD_READINESS_CHECKS = [
-  { key: "cash_up_week", label: "Cash-up sales for the week", weight: 0.35 },
-  { key: "seven_rooms_covers", label: "7Rooms covers", weight: 0.25 },
+  { key: "cash_up_week", label: "Cash-up sales for the week", weight: 0.4 },
+  { key: "seven_rooms_covers", label: "7Rooms covers", weight: 0.3 },
   { key: "logbook_google_reviews", label: "Google review counts (logbook)", weight: 0.2 },
   { key: "logbook_commentary", label: "Daily logbook commentary", weight: 0.1 },
-  { key: "historical_weekly_dashboard", label: "Historical weekly dashboard", weight: 0.1 },
 ];
 
 const MANUAL_INPUT_REQUIREMENTS = [{ key: "seven_rooms_covers", label: "7Rooms covers", prompt: "What were 7Rooms covers for this week?" }];
@@ -69,7 +77,7 @@ function defaultPeriod() {
   };
 }
 
-function scoreCoverageCompleteness(coverage: Record<string, unknown>[]) {
+function scoreCoverageCompleteness(coverage: Record<string, unknown>[], fileInventory: Record<string, number> = {}) {
   const byType = new Map<string, number>();
   for (const row of coverage) {
     const type = String(row.reportType || row.report_type || "");
@@ -77,13 +85,20 @@ function scoreCoverageCompleteness(coverage: Record<string, unknown>[]) {
     byType.set(type, Math.max(byType.get(type) || 0, credit));
   }
   let creditSum = 0;
+  let weightSum = 0;
   const missingTypes: string[] = [];
-  for (const type of OPERATIONAL_COVERAGE_REPORT_TYPES) {
-    const credit = byType.get(type);
-    if (credit != null) creditSum += credit;
-    else missingTypes.push(type);
+  const periodGapTypes: Array<Record<string, unknown>> = [];
+  for (const [type, weight] of Object.entries(COVERAGE_TYPE_WEIGHTS)) {
+    weightSum += weight;
+    let credit = byType.get(type) || 0;
+    if (!credit && (fileInventory[type] || 0) > 0) {
+      credit = FILE_INVENTORY_PERIOD_GAP_CREDIT;
+      periodGapTypes.push({ reportType: type, label: reportLabel(type), fileCount: fileInventory[type], reason: "Files registered but period not indexed for this window." });
+    }
+    creditSum += credit * weight;
+    if (credit < 0.5) missingTypes.push(type);
   }
-  return { score: clampScore((creditSum / OPERATIONAL_COVERAGE_REPORT_TYPES.length) * 100), missingTypes };
+  return { score: clampScore(weightSum > 0 ? (creditSum / weightSum) * 100 : 0), missingTypes, periodGapTypes };
 }
 
 function scoreIngestionSuccess(jobs: Record<string, unknown>[]) {
@@ -137,53 +152,88 @@ function assessDashboardReadiness(snapshot: Record<string, unknown>) {
         satisfied = logbookFacts.some((f) => String((f.dimensions as Record<string, unknown>)?.text_value || "").trim().length > 8);
         detail = satisfied ? "Commentary indexed" : "No logbook commentary";
         break;
-      case "historical_weekly_dashboard":
-        satisfied = historicalDashboardCoverage.length > 0;
-        detail = satisfied ? `${historicalDashboardCoverage.length} file(s)` : "No historical dashboard";
-        break;
       default:
         detail = "";
     }
     return { ...check, satisfied, detail };
   });
 
+  const historyCount = historicalDashboardCoverage.length;
+  const dashboardHistoryDepth = {
+    fileCount: historyCount,
+    depthLabel: historyCount === 0
+      ? "No weekly dashboard files indexed yet (folder recently created)."
+      : historyCount < 4
+        ? `Shallow history (${historyCount} file${historyCount === 1 ? "" : "s"}) — expected while the weekly folder is new.`
+        : `Moderate history (${historyCount} files).`,
+    informational: true,
+  };
+
   const weighted = checks.reduce((sum, c) => sum + (c.satisfied ? c.weight : 0), 0);
-  return { score: clampScore(weighted * 100), checks, missing: checks.filter((c) => !c.satisfied).map((c) => c.label) };
+  return { score: clampScore(weighted * 100), checks, missing: checks.filter((c) => !c.satisfied).map((c) => c.label), dashboardHistoryDepth };
 }
 
-function assessExecutiveReadiness(coverage: Record<string, unknown>[], guestFeedbackCoverage: Record<string, unknown>[]) {
-  const byType = new Map<string, Record<string, unknown>>();
+function assessExecutiveReadiness(
+  coverage: Record<string, unknown>[],
+  guestFeedbackCoverage: Record<string, unknown>[],
+  fileInventory: Record<string, number> = {},
+) {
+  const byType = new Map<string, number>();
   for (const row of [...coverage, ...guestFeedbackCoverage]) {
-    byType.set(String(row.reportType || row.report_type), row);
+    const type = String(row.reportType || row.report_type);
+    const credit = readinessCredit(String(row.readinessStatus || row.readiness_status || ""), Number(row.factCount ?? row.fact_count ?? 0));
+    byType.set(type, Math.max(byType.get(type) || 0, credit));
   }
-  const weights: Record<string, number> = { cash_up: 0.25, daily_briefing: 0.25, daily_logbook: 0.2, guest_feedback: 0.15, weekly_dashboard: 0.15 };
   let creditSum = 0;
+  let weightSum = 0;
   const missing: string[] = [];
   const present: string[] = [];
-  for (const type of EXECUTIVE_INTELLIGENCE_REPORT_TYPES) {
-    const row = byType.get(type);
-    const credit = row ? readinessCredit(String(row.readinessStatus || row.readiness_status || ""), Number(row.factCount ?? row.fact_count ?? 0)) : 0;
-    creditSum += credit * (weights[type] || 0);
+  for (const [type, weight] of Object.entries(EXECUTIVE_CORE_WEIGHTS)) {
+    weightSum += weight;
+    const credit = byType.get(type) || 0;
+    creditSum += credit * weight;
     if (credit >= 0.5) present.push(reportLabel(type));
     else missing.push(reportLabel(type));
   }
+  const optionalAvailable: string[] = [];
+  const optionalInactive: string[] = [];
+  for (const type of EXECUTIVE_OPTIONAL_SOURCES) {
+    const credit = byType.get(type) || 0;
+    const hasFiles = (fileInventory[type] || 0) > 0;
+    if (credit >= 0.5) optionalAvailable.push(reportLabel(type));
+    else if (hasFiles) optionalInactive.push(`${reportLabel(type)} (files present, not indexed for period)`);
+    else optionalInactive.push(`${reportLabel(type)} (optional — not in active use)`);
+  }
   return {
-    score: clampScore((creditSum / Object.values(weights).reduce((a, b) => a + b, 0)) * 100),
+    score: clampScore(weightSum > 0 ? (creditSum / weightSum) * 100 : 0),
     missing,
     present,
-    confidenceReductionReasons: missing.map((label) => `${label} missing or not indexed`),
+    optionalAvailable,
+    optionalInactive,
+    confidenceReductionReasons: missing.map((label) => `${label} missing or not indexed for executive analysis`),
   };
 }
 
-function buildRegistry(snapshot: Record<string, unknown>) {
+function buildRegistry(snapshot: Record<string, unknown>, periodGapTypes: Array<Record<string, unknown>> = []) {
   const coverage = (snapshot.coverage as Record<string, unknown>[]) || [];
+  const fileInventory = (snapshot.fileInventory as Record<string, number>) || {};
   const coveredTypes = new Set(coverage.map((r) => String(r.reportType || r.report_type)));
   const periodLabel = String(snapshot.periodLabel || "");
-  const missingReports = OPERATIONAL_COVERAGE_REPORT_TYPES.filter((t) => !coveredTypes.has(t)).map((reportType) => ({
-    label: reportLabel(reportType),
-    reason: `No coverage row for ${periodLabel || "assessed period"}.`,
-    howToFix: `Upload or sync ${reportLabel(reportType)} via Company Knowledge.`,
-  }));
+  const missingReports = REQUIRED_COVERAGE_REPORT_TYPES
+    .filter((t) => !coveredTypes.has(t) || coverage.filter((r) => String(r.reportType || r.report_type) === t)
+      .every((r) => readinessCredit(String(r.readinessStatus || r.readiness_status), Number(r.factCount ?? r.fact_count)) < 0.5))
+    .map((reportType) => ({
+      label: reportLabel(reportType),
+      reason: `No usable coverage for ${periodLabel || "assessed period"}.`,
+      howToFix: `Upload or sync ${reportLabel(reportType)} via Company Knowledge.`,
+    }));
+  const informationalGaps = [
+    ...periodGapTypes.map((gap) => ({
+      label: String(gap.label),
+      reason: String(gap.reason),
+      howToFix: "Optional for health score — index period dates when parser supports it.",
+    })),
+  ];
   const failedExtractions = ((snapshot.ingestionJobs as Record<string, unknown>[]) || [])
     .filter((j) => j.status === "failed")
     .map((j) => ({
@@ -207,7 +257,7 @@ function buildRegistry(snapshot: Record<string, unknown>) {
     reason: c.reason || "Awaiting approval",
     howToFix: "Approve Drive discovery rules for this folder.",
   }));
-  return { missingReports, failedExtractions, missingManualInputs, pendingSessions, unapprovedFolders, missingDates: [] };
+  return { missingReports, informationalGaps, failedExtractions: failedExtractions.slice(0, 12), missingManualInputs, pendingSessions, unapprovedFolders, missingDates: [] };
 }
 
 function buildRecommendations(health: Record<string, unknown>) {
@@ -227,11 +277,16 @@ function buildRecommendations(health: Record<string, unknown>) {
 
 function computeHealth(snapshot: Record<string, unknown>) {
   const coverage = (snapshot.coverage as Record<string, unknown>[]) || [];
-  const coverageScore = scoreCoverageCompleteness(coverage);
+  const fileInventory = (snapshot.fileInventory as Record<string, number>) || {};
+  const coverageScore = scoreCoverageCompleteness(coverage, fileInventory);
   const ingestionScore = scoreIngestionSuccess((snapshot.ingestionJobs as Record<string, unknown>[]) || []);
   const parserScore = scoreParserSuccess(coverage);
   const dashboardReadiness = assessDashboardReadiness(snapshot);
-  const executiveReadiness = assessExecutiveReadiness(coverage, (snapshot.guestFeedbackCoverage as Record<string, unknown>[]) || []);
+  const executiveReadiness = assessExecutiveReadiness(
+    coverage,
+    (snapshot.guestFeedbackCoverage as Record<string, unknown>[]) || [],
+    fileInventory,
+  );
 
   const components = {
     coverageCompleteness: coverageScore.score,
@@ -262,7 +317,7 @@ function computeHealth(snapshot: Record<string, unknown>) {
     );
   }
 
-  const missingRegistry = buildRegistry(snapshot);
+  const missingRegistry = buildRegistry(snapshot, coverageScore.periodGapTypes as Array<Record<string, unknown>>);
   const health = {
     branch: snapshot.branch,
     branchLabel: snapshot.branchLabel,
@@ -289,6 +344,14 @@ async function fetchManualInputs(supabase: SupabaseClient, branch: string, start
   return data || [];
 }
 
+async function fetchBranchFileInventory(supabase: SupabaseClient, branch: string) {
+  const { data, error } = await supabase.from("ask_nac_files").select("report_type").eq("primary_branch_id", branch).eq("status", "active");
+  if (error) return {};
+  const counts: Record<string, number> = {};
+  for (const row of data || []) counts[row.report_type] = (counts[row.report_type] || 0) + 1;
+  return counts;
+}
+
 export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
   const branch = (context.branch || context.branchMention || (context.filters as { branch?: string })?.branch) as string | null;
   const branchLabel = branch ? branchDisplayName(branch) : "Network";
@@ -309,6 +372,7 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
     pendingSessions,
     discoveryCandidates,
     historicalDashboardCoverage,
+    fileInventory,
   ] = await Promise.all([
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate }).catch(() => ({ coverage: [] })),
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate, reportType: "guest_feedback" }).catch(() => ({ coverage: [] })),
@@ -336,6 +400,7 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
       return rows;
     }).catch(() => []),
     getVaultCoverage(supabase, { branch, startDate: period.startDate, endDate: period.endDate, reportType: "weekly_dashboard" }).catch(() => ({ coverage: [] })),
+    branch ? fetchBranchFileInventory(supabase, branch) : Promise.resolve({}),
   ]);
 
   const snapshot = {
@@ -352,12 +417,14 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
     pendingSessions,
     discoveryCandidates,
     historicalDashboardCoverage: (historicalDashboardCoverage as { coverage?: unknown[] }).coverage || [],
+    fileInventory,
     sources: [
       { name: "ask_nac_data_coverage", detail: "coverage registry" },
       { name: "ask_nac_ingestion_jobs", detail: "ingestion status" },
       { name: "ask_nac_manual_inputs", detail: "manual inputs" },
       { name: "ask_nac_pending_sessions", detail: "pending sessions" },
       { name: "ask_nac_drive_discovery_candidates", detail: "discovery candidates" },
+      { name: "ask_nac_files", detail: "branch file inventory" },
     ],
   };
 
@@ -381,6 +448,7 @@ function formatRegistry(registry: Record<string, unknown[]>) {
   section("Missing manual inputs", registry.missingManualInputs || [], (i) => String(i.label));
   section("Pending sessions", registry.pendingSessions || [], (i) => `${i.sessionType}: ${((i.missingFields as string[]) || []).join(", ")}`);
   section("Unapproved folders", registry.unapprovedFolders || [], (i) => `${i.folderPath} (${i.detectedReportType})`);
+  section("Informational gaps (optional)", registry.informationalGaps || [], (i) => `${i.label} — ${i.reason}`);
   return lines.length ? lines.join("\n") : "No gaps flagged in the missing-information registry.";
 }
 
@@ -403,19 +471,33 @@ export function buildKnowledgeHealthAnswer(
   let title = `Knowledge Health · ${branchLabel}`;
 
   if (focus === "dashboard") {
-    const dr = componentDetail.dashboardReadiness as { score?: number; missing?: string[]; checks?: { label: string; satisfied: boolean; detail: string }[] };
+    const dr = componentDetail.dashboardReadiness as {
+      score?: number;
+      missing?: string[];
+      checks?: { label: string; satisfied: boolean; detail: string }[];
+      dashboardHistoryDepth?: { depthLabel?: string };
+    };
     title = `Dashboard Readiness · ${branchLabel}`;
     directAnswer = `Weekly Dashboard Readiness: ${dr?.score ?? components.dashboardReadiness ?? 0}%`;
     if (dr?.missing?.length) directAnswer += `\n\nMissing:\n${dr.missing.map((m) => `• ${m}`).join("\n")}`;
+    if (dr?.dashboardHistoryDepth?.depthLabel) directAnswer += `\n\nDashboard history depth: ${dr.dashboardHistoryDepth.depthLabel}`;
     if (dr?.checks?.length) directAnswer += `\n\nChecklist:\n${dr.checks.map((c) => `• ${c.label}: ${c.satisfied ? "✓" : "✗"} (${c.detail})`).join("\n")}`;
   } else if (focus === "confidence") {
-    const er = componentDetail.executiveReadiness as { score?: number; confidenceReductionReasons?: string[]; present?: string[] };
+    const er = componentDetail.executiveReadiness as {
+      score?: number;
+      confidenceReductionReasons?: string[];
+      present?: string[];
+      optionalAvailable?: string[];
+      optionalInactive?: string[];
+    };
     title = `Executive Intelligence Readiness · ${branchLabel}`;
     directAnswer = `Executive intelligence readiness: ${er?.score ?? components.executiveIntelligenceReadiness ?? 0}%`;
     if (er?.confidenceReductionReasons?.length) {
       directAnswer += `\n\nWhy-analysis confidence is reduced because:\n${er.confidenceReductionReasons.map((r) => `• ${r}`).join("\n")}`;
-    }
-    if (er?.present?.length) directAnswer += `\n\nIndexed: ${er.present.join("; ")}`;
+    } else directAnswer += "\n\nCore executive sources (cash-up + logbook) are indexed for this period.";
+    if (er?.present?.length) directAnswer += `\n\nIndexed (core): ${er.present.join("; ")}`;
+    if (er?.optionalAvailable?.length) directAnswer += `\n\nOptional sources available: ${er.optionalAvailable.join("; ")}`;
+    if (er?.optionalInactive?.length) directAnswer += `\n\nOptional / inactive: ${er.optionalInactive.join("; ")}`;
   } else if (focus === "missing") {
     title = `Missing Information · ${branchLabel}`;
     directAnswer = `Missing information registry for ${periodLabel}:\n\n${formatRegistry(missingRegistry)}\n\nRecommendations:\n${recommendations.map((r, i) => `${i + 1}. ${r.what} — ${r.how}`).join("\n")}`;
