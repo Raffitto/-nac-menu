@@ -40,6 +40,18 @@ import { resolveAnalyticalConfidence } from "./analyticalConfidence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer.ts";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval.ts";
+import { fetchExecutiveMemory } from "./askNacExecutiveMemory.ts";
+import {
+  buildTeachOperatorAnswer,
+  buildWeeklyDashboardAnswer,
+  generateWeeklyDashboard,
+  provideManualInputForSession,
+  teachOperatorMemory,
+} from "./askNacHumanInLoop.ts";
+import {
+  approveDriveDiscoveryRules,
+  discoverDriveFolders,
+} from "./askNacDriveDiscovery.ts";
 import {
   buildPostgrestEquivalent,
   createEmptyCashUpProductionTrace,
@@ -63,6 +75,11 @@ import {
   shouldUseChunkedCashUpFetch,
   splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation.ts";
+import { getCachedVaultCoverage, setCachedVaultCoverage } from "./askNacVaultCoverageCache.ts";
+import {
+  fetchCashUpRangeAggregationViaRpc,
+  shouldUseCashUpRangeRpc,
+} from "./askNacCashUpRangeRpc.ts";
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -122,6 +139,13 @@ export const VAULT_INTENTS = {
   DOCUMENT_SEARCH: "vault_document_search",
   DOCUMENT_SUMMARY: "vault_document_summary",
   OPERATIONAL_REVIEW: "vault_operational_review",
+  WEEKLY_DASHBOARD: "vault_weekly_dashboard",
+  TEACH_OPERATOR: "vault_teach_operator",
+  PROVIDE_MANUAL_INPUT: "vault_provide_manual_input",
+  DRIVE_DISCOVER: "vault_drive_discover",
+  DRIVE_APPROVE_RULES: "vault_drive_approve_rules",
+  DAILY_BRIEFING: "vault_daily_briefing_summary",
+  BREAKAGE: "vault_breakage_summary",
 } as const;
 
 export { isSalesPerformanceExecutiveQuery, isVaultOperationalReviewQuery };
@@ -432,6 +456,16 @@ export async function getVaultCoverage(
   }: Record<string, unknown> = {},
 ) {
   const scopedBranch = (branch as string | null) ?? resolveBranch({ branchMention, filters, profile });
+  const cacheKey = {
+    branch: scopedBranch,
+    startDate,
+    endDate,
+    reportType,
+    slim,
+  };
+  const cached = getCachedVaultCoverage(cacheKey);
+  if (cached) return cached as Record<string, unknown>;
+
   let query = supabase.from("ask_nac_data_coverage").select(slim ? COVERAGE_SLIM_SELECT : COVERAGE_SELECT);
   query = periodOverlapFilter(query, startDate as string, endDate as string);
   if (scopedBranch) query = query.eq("branch_id", scopedBranch);
@@ -441,7 +475,7 @@ export async function getVaultCoverage(
   if (error) throw new Error(error.message);
 
   const rows = (data || []).map((row) => mapVaultCoverageRow(row as Record<string, unknown>));
-  return {
+  const result = {
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
     startDate,
@@ -449,6 +483,8 @@ export async function getVaultCoverage(
     coverage: rows,
     sources: [{ name: "ask_nac_data_coverage", detail: "RLS-filtered coverage registry" }],
   };
+  setCachedVaultCoverage(cacheKey, result);
+  return result;
 }
 
 export async function getVaultCashUpAggregationFacts(
@@ -578,6 +614,16 @@ async function getVaultDaySummary(supabase: SupabaseClient, context: Record<stri
 export async function runVaultQueryTool(supabase: SupabaseClient, intent: string, context: Record<string, unknown> = {}) {
   const vaultPeriod = context.vaultPeriod as VaultPeriod | undefined;
   switch (intent) {
+    case VAULT_INTENTS.TEACH_OPERATOR:
+      return teachOperatorMemory(supabase, context);
+    case VAULT_INTENTS.WEEKLY_DASHBOARD:
+      return generateWeeklyDashboard(supabase, context);
+    case VAULT_INTENTS.PROVIDE_MANUAL_INPUT:
+      return provideManualInputForSession(supabase, context);
+    case VAULT_INTENTS.DRIVE_DISCOVER:
+      return discoverDriveFolders(supabase, context);
+    case VAULT_INTENTS.DRIVE_APPROVE_RULES:
+      return approveDriveDiscoveryRules(supabase, context);
     case VAULT_INTENTS.DOCUMENT_SEARCH:
       return searchVaultDocuments(supabase, context);
     case VAULT_INTENTS.DOCUMENT_SUMMARY:
@@ -595,15 +641,24 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
         vaultPeriod,
         vaultCompare,
       });
-      const externalContext = await fetchExternalContextForNilPeriod(supabase, {
-        ...context,
-        branch: cashUp.branch,
-        branchLabel: cashUp.branchLabel,
-        periodLabel: cashUp.periodLabel,
-        vaultCompare: cashUp.vaultCompare || vaultCompare,
-        vaultPeriod,
-      });
-      return { ...cashUp, externalContext };
+      const [externalContext, executiveMemoryResult] = await Promise.all([
+        fetchExternalContextForNilPeriod(supabase, {
+          ...context,
+          branch: cashUp.branch,
+          branchLabel: cashUp.branchLabel,
+          periodLabel: cashUp.periodLabel,
+          vaultCompare: cashUp.vaultCompare || vaultCompare,
+          vaultPeriod,
+        }),
+        fetchExecutiveMemory(supabase, { branch: cashUp.branch as string | null }),
+      ]);
+      return {
+        ...cashUp,
+        externalContext,
+        executiveMemory: executiveMemoryResult.memories || [],
+        branchMemory: executiveMemoryResult.branchMemories || [],
+        operatorMemory: executiveMemoryResult.operatorMemories || [],
+      };
     }
     case VAULT_INTENTS.CASH_UP: {
       const question = String(context.question || "").toLowerCase();
@@ -717,6 +772,19 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
         startDate: vaultPeriod?.startDate,
         endDate: vaultPeriod?.endDate,
         reportType: "daily_logbook",
+      });
+    case VAULT_INTENTS.DAILY_BRIEFING:
+      return getVaultFacts(supabase, {
+        ...context,
+        startDate: vaultPeriod?.startDate,
+        endDate: vaultPeriod?.endDate,
+        reportType: "daily_briefing",
+      });
+    case VAULT_INTENTS.BREAKAGE:
+      return searchVaultDocuments(supabase, {
+        ...context,
+        searchTerms: "breakage issues",
+        reportTypes: ["breakage_report"],
       });
     case VAULT_INTENTS.GOOGLE_STARS:
       return getVaultFacts(supabase, {
@@ -840,6 +908,8 @@ export function isVaultDocumentSearchQuery(q = ""): boolean {
   if (isSalesPerformanceExecutiveQuery(text)) return false;
   if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
   if (!DOC_SEARCH_ACTION.test(text) && isVaultOperationalReviewQuery(text)) return false;
+  if (/\b(historical weekly dashboards?|weekly dashboards?|executive reports?)\b/.test(text)) return true;
+  if (/\b(show|list|summarize|everything learned from|learned from)\b/.test(text) && /\bweekly dashboard\b/.test(text)) return true;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
@@ -863,6 +933,8 @@ export function isVaultDocumentSearchQuery(q = ""): boolean {
 export function scoreVaultDocumentSearchIntent(q = ""): number {
   const text = String(q || "").trim().toLowerCase();
   if (!isVaultDocumentSearchQuery(text)) return 0;
+  if (/\b(historical weekly dashboards?|everything learned from)\b/.test(text)) return 32;
+  if (/\b(show|list|summarize|learned from)\b/.test(text) && /\bweekly dashboard\b/.test(text)) return 31;
   if (/\bfind mentions of\b/.test(text)) return 30;
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
@@ -878,6 +950,9 @@ export function scoreVaultDocumentSearchIntent(q = ""): number {
 
 export function extractDocumentSearchTerms(question = ""): string {
   let q = String(question || "").trim();
+  q = q.replace(/^show me everything learned from historical weekly dashboards\.?\s*/i, "");
+  q = q.replace(/^everything learned from historical weekly dashboards\.?\s*/i, "");
+  q = q.replace(/^show me everything learned from\s+/i, "");
   q = q.replace(/^search company knowledge for\s+/i, "");
   q = q.replace(/^search uploaded documents for\s+/i, "");
   q = q.replace(/^search uploaded reports for\s+/i, "");
@@ -1074,21 +1149,31 @@ async function fetchCashUpAggregationFactsResilient(
   let branchLabel = "Network";
   let loadedChunks = 0;
 
-  for (const chunk of chunks) {
-    try {
-      const result = await getVaultCashUpAggregationFacts(supabase, {
-        ...params,
-        startDate: chunk.startDate,
-        endDate: chunk.endDate,
-        limit: buildCashUpRangeQueryLimit(chunk.startDate, chunk.endDate),
-      });
-      branch = (result.branch as string | null) ?? branch;
-      branchLabel = String(result.branchLabel || branchLabel);
-      allFacts.push(...((result.facts as Record<string, unknown>[]) || []));
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const result = await getVaultCashUpAggregationFacts(supabase, {
+          ...params,
+          startDate: chunk.startDate,
+          endDate: chunk.endDate,
+          limit: buildCashUpRangeQueryLimit(chunk.startDate, chunk.endDate),
+        });
+        return { ok: true as const, chunk, result };
+      } catch (err) {
+        return { ok: false as const, chunk, error: err as Error };
+      }
+    }),
+  );
+
+  for (const entry of chunkResults) {
+    if (entry.ok) {
+      branch = (entry.result.branch as string | null) ?? branch;
+      branchLabel = String(entry.result.branchLabel || branchLabel);
+      allFacts.push(...((entry.result.facts as Record<string, unknown>[]) || []));
       loadedChunks += 1;
-    } catch (err) {
+    } else {
       chunkWarnings.push(
-        `Cash-up facts for ${chunk.label} (${chunk.startDate} – ${chunk.endDate}) could not be loaded: ${(err as Error).message}`,
+        `Cash-up facts for ${entry.chunk.label} (${entry.chunk.startDate} – ${entry.chunk.endDate}) could not be loaded: ${entry.error.message}`,
       );
     }
   }
@@ -1137,22 +1222,73 @@ async function fetchCashUpRangeBundle(
   const resolvedDailyBreakdown = includeDailyBreakdown
     ?? !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType);
 
-  const factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
-    ...context,
-    branch: scopedBranch,
+  const useRpc = shouldUseCashUpRangeRpc({
     startDate,
     endDate,
-    limit: buildCashUpRangeQueryLimit(startDate, endDate),
-  }, vaultPeriod);
-
-  const factsByDate = groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || []);
-  const aggregation = aggregateCashUpFactsOverRange({
-    startDate,
-    endDate,
-    branchId: scopedBranch,
-    factsByDate,
+    periodType: vaultPeriod?.periodType,
     includeDailyBreakdown: resolvedDailyBreakdown,
   });
+
+  let factsResult: Record<string, unknown>;
+  let aggregation: Record<string, unknown>;
+  let factsByDate: Record<string, Record<string, unknown>[]> | undefined;
+
+  if (useRpc) {
+    try {
+      aggregation = await fetchCashUpRangeAggregationViaRpc(supabase, {
+        branch: scopedBranch,
+        startDate,
+        endDate,
+        includeDailyBreakdown: false,
+      });
+      factsResult = {
+        branch: scopedBranch,
+        branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+        startDate,
+        endDate,
+        facts: [],
+        chunkWarnings: [],
+        sources: [{ name: "get_vault_cash_up_range_aggregate", detail: "server-side cash-up range aggregation" }],
+      };
+    } catch {
+      factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
+        ...context,
+        branch: scopedBranch,
+        startDate,
+        endDate,
+        limit: buildCashUpRangeQueryLimit(startDate, endDate),
+      }, vaultPeriod);
+      factsByDate = groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || []);
+      aggregation = aggregateCashUpFactsOverRange({
+        startDate,
+        endDate,
+        branchId: scopedBranch,
+        factsByDate,
+        includeDailyBreakdown: resolvedDailyBreakdown,
+      });
+    }
+  } else {
+    factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
+      ...context,
+      branch: scopedBranch,
+      startDate,
+      endDate,
+      limit: buildCashUpRangeQueryLimit(startDate, endDate),
+    }, vaultPeriod);
+    factsByDate = groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || []);
+    aggregation = aggregateCashUpFactsOverRange({
+      startDate,
+      endDate,
+      branchId: scopedBranch,
+      factsByDate,
+      includeDailyBreakdown: resolvedDailyBreakdown,
+    });
+  }
+
+  const resolvedFactsByDate = factsByDate
+    ?? (resolvedDailyBreakdown
+      ? groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || [])
+      : undefined);
 
   let coverage: Record<string, unknown>[] = [];
   let warnings: string[] = [...((factsResult.chunkWarnings as string[]) || [])];
@@ -1180,10 +1316,11 @@ async function fetchCashUpRangeBundle(
     periodLabel: vaultPeriod?.label || `${startDate} – ${endDate}`,
     coverage,
     vaultSources: collectVaultSources((factsResult.facts as Record<string, unknown>[]) || [], coverage),
-    factsByDate: resolvedDailyBreakdown ? factsByDate : undefined,
+    factsByDate: resolvedDailyBreakdown ? resolvedFactsByDate : undefined,
     aggregation,
     warnings,
-    sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
+    sources: (factsResult.sources as Record<string, unknown>[])
+      || [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
   };
 }
 
@@ -1550,7 +1687,9 @@ export async function searchVaultDocuments(
     searchTerms,
     scopedBranch,
     vaultPeriod: context.vaultPeriod || null,
-    reportTypes: /\blogbook|logbooks|daily report\b/i.test(q)
+    reportTypes: /\b(historical weekly dashboards?|weekly dashboards?|learned from weekly dashboard)\b/i.test(q)
+      ? ["weekly_dashboard"]
+      : /\blogbook|logbooks|daily report\b/i.test(q)
       ? ["daily_logbook"]
       : /\breception\b/i.test(q)
         ? ["reception_daily_report"]
@@ -2262,6 +2401,51 @@ function buildVaultReceptionAnswer(route: Record<string, unknown>, tool: Record<
   };
 }
 
+function buildVaultDailyBriefingAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
+  const facts = (tool?.facts as Record<string, unknown>[]) || [];
+  const metrics = briefingMetrics(facts);
+  const notes = briefingNotes(facts);
+  const directAnswer = notes.length
+    ? `Daily briefing for ${tool.branchLabel} · ${tool.periodLabel}: ${notes[0]}`
+    : metrics.length
+      ? `Daily briefing metrics for ${tool.branchLabel} · ${tool.periodLabel} are listed below.`
+      : `No daily briefing structured facts found for ${tool.branchLabel} on ${tool.periodLabel}.`;
+
+  return {
+    ...baseVaultFields(route, tool, readiness),
+    answerType: metrics.length || notes.length ? "metric" : "missing_data",
+    title: `Daily briefing · ${tool.periodLabel}`,
+    directAnswer,
+    keyMetrics: metrics,
+    insights: notes,
+    recommendations: [],
+    missingData: [],
+    exportOptions: [],
+  };
+}
+
+function briefingMetrics(facts: Record<string, unknown>[] = []) {
+  const keys = ["breakfast_reservations", "lunch_reservations", "dinner_reservations", "mod_breakfast", "mod_lunch", "mod_dinner"];
+  return keys
+    .map((key) => {
+      const value = pickMetricValue(facts, key);
+      if (value == null) return null;
+      return { label: key.replace(/_/g, " "), value: String(value) };
+    })
+    .filter(Boolean) as Array<{ label: string; value: string }>;
+}
+
+function briefingNotes(facts: Record<string, unknown>[] = []) {
+  return facts
+    .filter((fact) => String(fact.metric_key || "").includes("_line"))
+    .map((fact) => {
+      const dims = fact.dimensions as Record<string, unknown> | undefined;
+      return dims?.text_value ? String(dims.text_value) : null;
+    })
+    .filter(Boolean)
+    .slice(0, 8) as string[];
+}
+
 function buildVaultLogbookAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
   const metrics = receptionMetrics(facts);
@@ -2380,6 +2564,35 @@ function buildVaultManagementReportAnswer(route: Record<string, unknown>, tool: 
       ...((dayAnswer.insights as string[]) || []),
       "Figures are deterministic from ask_nac_structured_facts; missing sections were omitted rather than estimated.",
     ],
+  };
+}
+
+function buildVaultDriveDiscoveryAnswer(
+  route: Record<string, unknown>,
+  tool: Record<string, unknown>,
+  readiness: Record<string, unknown> | null,
+): AskNacAnswer {
+  const lines = (tool?.answerLines as string[]) || ["Drive discovery completed."];
+  const summary = (tool?.summary as Record<string, unknown>) || {};
+  return {
+    ...baseVaultFields(route, tool, readiness),
+    answerType: "executive",
+    title: route.intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
+      ? "Drive ingestion rules updated"
+      : "Drive folder discovery",
+    directAnswer: lines.join("\n"),
+    keyMetrics: [
+      { label: "Discovered folders", value: String(summary.discoveredFolders ?? 0) },
+      { label: "Needs approval", value: String(summary.needsApprovalCount ?? 0) },
+      { label: "Approved ingest", value: String(summary.approvedIngestCount ?? 0) },
+      { label: "Ignored", value: String(summary.ignoredCount ?? 0) },
+    ],
+    insights: lines.slice(2),
+    confidence: "high",
+    isAiGenerated: false,
+    intent: route.intent,
+    branchLabel: tool?.branchLabel as string | undefined,
+    vaultSources: [],
   };
 }
 
@@ -2581,10 +2794,45 @@ export function buildVaultAnswer(
     return buildVaultBusinessReasoningAnswer(route, tool || {}, readiness);
   }
 
+  if (route.intent === VAULT_INTENTS.TEACH_OPERATOR) {
+    return buildTeachOperatorAnswer(route, tool || {}, readiness);
+  }
+
+  if (route.intent === VAULT_INTENTS.WEEKLY_DASHBOARD || route.intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT) {
+    return buildWeeklyDashboardAnswer(route, tool || {}, readiness);
+  }
+
+  if (route.intent === VAULT_INTENTS.DRIVE_DISCOVER || route.intent === VAULT_INTENTS.DRIVE_APPROVE_RULES) {
+    return buildVaultDriveDiscoveryAnswer(route, tool || {}, readiness);
+  }
+
+  if (route.intent === VAULT_INTENTS.BREAKAGE) {
+    const matches = (tool?.matches as unknown[]) || [];
+    if (matches.length) {
+      return buildVaultAnswer(
+        { ...route, intent: VAULT_INTENTS.DOCUMENT_SEARCH },
+        tool || {},
+        readiness,
+      );
+    }
+    return buildVaultMissingToolResponse(route, tool || {}, readiness);
+  }
+
+  if (route.intent === VAULT_INTENTS.DAILY_BRIEFING) {
+    return buildVaultDailyBriefingAnswer(route, tool || {}, readiness);
+  }
+
   const facts = tool?.facts as unknown[] | undefined;
   const coverage = tool?.coverage as unknown[] | undefined;
   const aggregationDayCount = (tool?.aggregation as { dayCount?: number } | undefined)?.dayCount;
-  if (!facts?.length && !coverage?.length && !aggregationDayCount && readiness?.status === "missing") {
+  if (
+    !facts?.length
+    && !coverage?.length
+    && !aggregationDayCount
+    && tool?.status !== "pending"
+    && tool?.status !== "complete"
+    && readiness?.status === "missing"
+  ) {
     return buildVaultMissingToolResponse(route, tool || {}, readiness);
   }
 
@@ -2597,6 +2845,8 @@ export function buildVaultAnswer(
       return buildVaultReceptionAnswer(route, tool || {}, readiness);
     case VAULT_INTENTS.LOGBOOK:
       return buildVaultLogbookAnswer(route, tool || {}, readiness);
+    case VAULT_INTENTS.DAILY_BRIEFING:
+      return buildVaultDailyBriefingAnswer(route, tool || {}, readiness);
     case VAULT_INTENTS.GOOGLE_STARS:
       return buildVaultGoogleStarsAnswer(route, tool || {}, readiness);
     case VAULT_INTENTS.CCM:

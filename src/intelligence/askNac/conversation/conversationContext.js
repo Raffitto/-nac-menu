@@ -13,6 +13,8 @@ export function createEmptyConversationContext() {
     lastEntity: null,
     lastAnswerSummary: null,
     lastDocumentContext: null,
+    pendingSessionId: null,
+    awaitingInput: false,
   };
 }
 
@@ -74,6 +76,10 @@ export function updateConversationContext(context = {}, payload = {}) {
       : base.lastAnswerSummary,
     lastDocumentContext:
       pickDocumentContextFromResponse(response) ?? base.lastDocumentContext,
+    pendingSessionId: response?.awaitingInput
+      ? (response?.pendingSessionId || response?.pendingSession?.id || base.pendingSessionId)
+      : (response?.pendingSession?.status === "complete" ? null : (response?.pendingSessionId ?? base.pendingSessionId)),
+    awaitingInput: Boolean(response?.awaitingInput),
   };
 }
 

@@ -6,6 +6,10 @@ const migration = fs.readFileSync(
   path.join(root, "supabase/migrations/20260617193000_ask_nac_drive_ingestion.sql"),
   "utf8",
 );
+const discoveryMigration = fs.readFileSync(
+  path.join(root, "supabase/migrations/20260623210000_ask_nac_drive_discovery_rules.sql"),
+  "utf8",
+);
 const driveFunction = fs.readFileSync(
   path.join(root, "supabase/functions/vault-drive-sync/index.ts"),
   "utf8",
@@ -189,6 +193,24 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(panel).toMatch(/fetchDriveSyncStatus/);
     expect(panel).toMatch(/Drive status unavailable/);
     expect(panel).toMatch(/Drive ingestion \{driveIngestStats\.status\}/);
+  });
+
+  test("Executive Reports / Weekly Dashboards folder maps to weekly_dashboard report type", () => {
+    expect(driveHelper).toMatch(/weekly_dashboard/);
+    expect(driveHelper).toMatch(/vaultWeeklyDashboardParser/);
+    expect(driveFunction).toMatch(/weekly dashboards\?\\b/);
+    expect(panel).toMatch(/weekly_dashboard/);
+    expect(panel).toMatch(/executive reports\?/);
+  });
+
+  test("smart Drive discovery uses approval rules and discovery roots", () => {
+    expect(discoveryMigration).toMatch(/ask_nac_drive_discovery_rules/);
+    expect(discoveryMigration).toMatch(/ask_nac_drive_discovery_candidates/);
+    expect(discoveryMigration).toMatch(/is_discovery_root/);
+    expect(driveHelper).toMatch(/driveDiscoveryClassifier/);
+    expect(driveHelper).toMatch(/shouldIngestDiscoveryDecision/);
+    expect(driveFunction).toMatch(/discover_folders/);
+    expect(driveFunction).toMatch(/is_discovery_root/);
   });
 });
 

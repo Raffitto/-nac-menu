@@ -22,6 +22,8 @@ export function isVaultDocumentSearchQuery(q = "") {
   if (isSalesPerformanceExecutiveQuery(text)) return false;
   if (/\bsearch company knowledge for cash[\s-]?up\b/.test(text)) return false;
   if (!DOC_SEARCH_ACTION.test(text) && isVaultOperationalReviewQuery(text)) return false;
+  if (/\b(historical weekly dashboards?|weekly dashboards?|executive reports?)\b/.test(text)) return true;
+  if (/\b(show|list|summarize|everything learned from|learned from)\b/.test(text) && /\bweekly dashboard\b/.test(text)) return true;
   if (/\bfind mentions of\b/.test(text)) return true;
   if (/\bsearch company knowledge\b/.test(text)) return true;
   if (/\bsearch uploaded documents\b/.test(text)) return true;
@@ -45,6 +47,8 @@ export function isVaultDocumentSearchQuery(q = "") {
 export function scoreVaultDocumentSearchIntent(q = "") {
   const text = String(q || "").trim().toLowerCase();
   if (!isVaultDocumentSearchQuery(text)) return 0;
+  if (/\b(historical weekly dashboards?|everything learned from)\b/.test(text)) return 32;
+  if (/\b(show|list|summarize|learned from)\b/.test(text) && /\bweekly dashboard\b/.test(text)) return 31;
   if (/\bfind mentions of\b/.test(text)) return 30;
   if (/\bsearch company knowledge\b/.test(text)) return 30;
   if (/\bsearch uploaded documents\b/.test(text)) return 30;
@@ -61,6 +65,9 @@ export function scoreVaultDocumentSearchIntent(q = "") {
 /** Strip intent phrasing to raw keyword query for FTS. */
 export function extractDocumentSearchTerms(question = "") {
   let q = String(question || "").trim();
+  q = q.replace(/^show me everything learned from historical weekly dashboards\.?\s*/i, "");
+  q = q.replace(/^everything learned from historical weekly dashboards\.?\s*/i, "");
+  q = q.replace(/^show me everything learned from\s+/i, "");
   q = q.replace(/^search company knowledge for\s+/i, "");
   q = q.replace(/^search uploaded documents for\s+/i, "");
   q = q.replace(/^search uploaded reports for\s+/i, "");

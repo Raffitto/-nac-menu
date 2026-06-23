@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
       range: body?.range,
       profileHint: body?.profileHint ?? body?.profile ?? null,
       filters: body?.filters ?? {},
+      userEmail: userData.user.email ?? null,
     });
 
     const includeCashUpTrace = Deno.env.get("ASK_NAC_CASHUP_TRACE") === "true";

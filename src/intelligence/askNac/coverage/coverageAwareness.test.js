@@ -25,7 +25,7 @@ describe("coverageAwareness", () => {
     });
 
     expect(assessment.completeness).toBe("partial");
-    expect(assessment.coverageNotes.some((n) => /delivery order tracking begins/i.test(n))).toBe(true);
+    expect(assessment.coverageNotes.some((n) => /delivery tracking began/i.test(n))).toBe(true);
     const lines = buildCoverageAnswerLines(assessment);
     expect(lines.some((l) => /Confidence:/i.test(l))).toBe(true);
     expect(lines.some((l) => /Requested period/i.test(l))).toBe(true);

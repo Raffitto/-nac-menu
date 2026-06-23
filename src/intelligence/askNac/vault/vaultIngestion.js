@@ -10,6 +10,8 @@ import { parseReceptionDailyReport } from "./parsers/parseReceptionDaily";
 import { parseDailyLogbookReport } from "./parsers/parseDailyLogbook";
 import { parseCcmReconciliationReport } from "./parsers/parseCcmReconciliation";
 import { parseWeeklySalesReport } from "./parsers/parseWeeklySales";
+import { parseWeeklyDashboardReport } from "./parsers/parseWeeklyDashboard";
+import { parseDailyBriefingReport } from "./parsers/parseDailyBriefing";
 import { parsePnlReport } from "./parsers/parsePnl";
 import { rebuildKnowledgeGraphForBranch } from "./knowledgeGraph";
 import { rebuildTimelineForFile } from "./vaultOperationalTimeline";
@@ -29,6 +31,10 @@ export function routeVaultParser(reportType) {
       return parseCcmReconciliationReport;
     case "weekly_sales_overview":
       return parseWeeklySalesReport;
+    case "weekly_dashboard":
+      return parseWeeklyDashboardReport;
+    case "daily_briefing":
+      return parseDailyBriefingReport;
     case "pnl":
       return parsePnlReport;
     default:

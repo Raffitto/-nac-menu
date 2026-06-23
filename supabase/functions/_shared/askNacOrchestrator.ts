@@ -66,6 +66,8 @@ import {
   finalizeCashUpProductionTrace,
   type CashUpProductionTrace,
 } from "./cashUpProductionTrace.ts";
+import { resolveHumanInTheLoopTurn } from "./askNacHumanInLoop.ts";
+import { scoreDriveDiscoveryIntent } from "./askNacDriveDiscovery.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -98,6 +100,30 @@ const CASH_UP_INTENT_SIGNAL =
   /\b(cash[\s-]?up|cashup|cash report|daily cash report|cash reconciliation|cash[\s-]?up sales)\b/;
 const CASH_UP_DAY_SALES_SIGNAL =
   /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
+
+function shouldSkipAiNarration(
+  intent: string,
+  tool: Record<string, unknown> | null,
+  vaultPeriod?: { periodType?: string },
+): boolean {
+  if (intent === VAULT_INTENTS.BUSINESS_REASONING) return true;
+  if (
+    intent === VAULT_INTENTS.TEACH_OPERATOR
+    || intent === VAULT_INTENTS.WEEKLY_DASHBOARD
+    || intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT
+    || intent === VAULT_INTENTS.DRIVE_DISCOVER
+    || intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
+  ) {
+    return true;
+  }
+  if (intent !== VAULT_INTENTS.CASH_UP) return false;
+  if (vaultPeriod?.periodType === "year_to_date") return true;
+  const aggregation = tool?.aggregation as Record<string, unknown> | undefined;
+  const dayCount = Number(aggregation?.dayCount) || 0;
+  if (dayCount > 31) return true;
+  const sources = (tool?.sources as { name?: string }[]) || [];
+  return sources.some((s) => s.name === "get_vault_cash_up_range_aggregate");
+}
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
@@ -108,6 +134,38 @@ const BRANCH_ALIASES: Record<string, string[]> = {
 };
 
 const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext?: Record<string, unknown> | null }) => number }[] = [
+  {
+    id: ASK_NAC_INTENTS.TEACH_OPERATOR,
+    score(q) {
+      if (/^teach nac:\s*.+/i.test(q)) return 50;
+      if (/^remember this:\s*.+/i.test(q)) return 50;
+      if (/^save as operator knowledge:\s*.+/i.test(q)) return 50;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.WEEKLY_DASHBOARD,
+    score(q) {
+      if (/\bgenerate\b.*\b(weekly dashboard|khobar dashboard|dashboard for week)\b/i.test(q)) return 38;
+      if (/\bweekly dashboard\b/i.test(q) && /\bgenerate\b/i.test(q)) return 36;
+      if (/\bdashboard for week ending\b/i.test(q)) return 36;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.DRIVE_APPROVE_RULES,
+    score(q) {
+      const score = scoreDriveDiscoveryIntent(q);
+      return score >= 46 ? score : 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.DRIVE_DISCOVER,
+    score(q) {
+      const score = scoreDriveDiscoveryIntent(q);
+      return score === 44 ? score : 0;
+    },
+  },
   {
     id: ASK_NAC_INTENTS.OPERATIONAL_REVIEW,
     score(q) {
@@ -230,6 +288,24 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (isVaultDocumentSummaryQuery(q)) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(logbook|complaints?|training notes?|mod on duty|chef on duty|operational issues?)\b/.test(q)) return 15;
+      return 0;
+    },
+  },
+  {
+    id: VAULT_INTENTS.DAILY_BRIEFING,
+    score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
+      if (!parseVaultPeriodFromQuestion(q)) return 0;
+      if (/\b(daily briefing|briefing)\b/.test(q) && /\b(summarize|summary|reservations?|mod|staffing|focus)\b/.test(q)) return 16;
+      if (/\bsummarize\b.*\bdaily briefing\b/.test(q)) return 17;
+      return 0;
+    },
+  },
+  {
+    id: VAULT_INTENTS.BREAKAGE,
+    score(q) {
+      if (!parseVaultPeriodFromQuestion(q)) return 0;
+      if (/\b(breakage|broken glass|asset loss|spillage|wastage)\b/.test(q)) return 16;
       return 0;
     },
   },
@@ -565,6 +641,31 @@ async function assessReadiness(
   if (route.intent === VAULT_INTENTS.OPERATIONAL_REVIEW) {
     return { status: "ready", canQuery: true, reasons: [], missingData: [] };
   }
+  if (
+    route.intent === VAULT_INTENTS.DRIVE_DISCOVER
+    || route.intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
+  ) {
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+  }
+  if (
+    route.intent === VAULT_INTENTS.TEACH_OPERATOR
+    || route.intent === VAULT_INTENTS.WEEKLY_DASHBOARD
+    || route.intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT
+  ) {
+    if (route.intent === VAULT_INTENTS.TEACH_OPERATOR) {
+      return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+    }
+    const branch = route.branchMention || (context.profile as { branchScope?: string } | undefined)?.branchScope;
+    if (!branch) {
+      return {
+        status: "missing",
+        canQuery: false,
+        reasons: ["Branch scope required for weekly dashboard."],
+        missingData: [{ intent: route.intent, label: "Branch" }],
+      };
+    }
+    return { status: "ready", canQuery: true, reasons: [], missingData: [] };
+  }
   if (isVaultDocumentSearchIntent(route.intent)) {
     const searchTerms = extractDocumentSearchTerms(String(context.question || ""));
     if (!searchTerms || searchTerms.length < 2) {
@@ -818,6 +919,7 @@ export async function processAskNacOnEdge(
     profileHint = null,
     filters = {},
     conversationContext = null,
+    userEmail = null,
   }: {
     question: string;
     branch?: string | null;
@@ -826,6 +928,7 @@ export async function processAskNacOnEdge(
     profileHint?: Record<string, unknown> | null;
     filters?: Record<string, unknown>;
     conversationContext?: Record<string, unknown> | null;
+    userEmail?: string | null;
   },
 ) {
   const baseFilters = {
@@ -844,10 +947,37 @@ export async function processAskNacOnEdge(
 
   const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
-  const route = routeIntent(effectiveQuestion, {
+  const resolvedBranch = branch ?? (mergedFilters.branch as string | null) ?? null;
+  const effectiveUserEmail = String(
+    userEmail
+    || (profileHint as { email?: string } | null)?.email
+    || "",
+  ).trim().toLowerCase() || null;
+
+  const humanLoop = await resolveHumanInTheLoopTurn({
+    question,
+    conversationContext: conversationContext as Record<string, unknown> | null,
+    supabase,
+    branch: resolvedBranch,
+    userEmail: effectiveUserEmail,
+  });
+
+  let route = routeIntent(effectiveQuestion, {
     fallbackHours,
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext as Record<string, unknown> | null,
   });
+
+  if (humanLoop?.overrideIntent) {
+    route = {
+      ...route,
+      intent: humanLoop.overrideIntent,
+      debug: {
+        ...(route.debug as Record<string, unknown> | undefined),
+        humanInLoop: true,
+        resolutionNotes: humanLoop.resolutionNotes,
+      },
+    };
+  }
   const readiness = await assessReadiness(route, supabase, {
     profile: profileHint,
     executiveKind: route.executiveKind,
@@ -890,6 +1020,11 @@ export async function processAskNacOnEdge(
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,
+      userEmail: effectiveUserEmail,
+      conversationContext,
+      teachPayload: humanLoop?.teachPayload,
+      manualInputPayload: humanLoop?.manualInputPayload,
+      pendingSession: humanLoop?.pendingSession,
     }) as Record<string, unknown> | null;
 
     if (periodWarnings.length && tool) {
@@ -964,7 +1099,7 @@ export async function processAskNacOnEdge(
     deterministic.cashUpProductionTrace = cashUpProductionTrace;
   }
 
-  const skipAiNarration = route.intent === VAULT_INTENTS.BUSINESS_REASONING;
+  const skipAiNarration = shouldSkipAiNarration(route.intent, tool, route.vaultPeriod as { periodType?: string } | undefined);
   const { answer, aiConnected } = skipAiNarration
     ? { answer: deterministic, aiConnected: false }
     : await narrateWithOpenAi(deterministic, {
@@ -985,7 +1120,10 @@ export async function processAskNacOnEdge(
       originalQuestion: prepareResult.originalQuestion,
       resolvedQuestion: effectiveQuestion,
       usedContext: Boolean(prepareResult.conversationResolution?.usedContext),
-      resolutionNotes: prepareResult.conversationResolution?.resolutionNotes || [],
+      resolutionNotes: [
+        ...(prepareResult.conversationResolution?.resolutionNotes || []),
+        ...(humanLoop?.resolutionNotes || []),
+      ],
     },
     serverConnected: true,
     aiConnected,

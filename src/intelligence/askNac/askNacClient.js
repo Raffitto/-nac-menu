@@ -90,6 +90,7 @@ export async function askNac({
         profile,
         filters,
         conversationContext,
+        session,
       });
       return {
         ...local,
@@ -108,6 +109,7 @@ export async function askNac({
         profile,
         filters,
         conversationContext,
+        session,
       });
       return {
         ...local,
@@ -143,6 +145,7 @@ export async function askNac({
     profile,
     filters,
     conversationContext,
+    session,
   });
   return {
     ...local,

@@ -4,7 +4,7 @@
 
 export const COVERAGE_CATEGORIES = [
   { key: "daily_logbook", label: "Daily Reports", reportTypes: ["daily_logbook"], weight: 1.2 },
-  { key: "weekly", label: "Weekly Reports", reportTypes: ["weekly_sales_overview", "gm_report"], weight: 1 },
+  { key: "weekly", label: "Weekly Reports", reportTypes: ["weekly_sales_overview", "weekly_dashboard", "gm_report"], weight: 1 },
   { key: "monthly", label: "Monthly Reports", reportTypes: ["pnl", "budget", "forecast"], weight: 1 },
   { key: "foodics", label: "Foodics", reportTypes: ["foodics_export"], weight: 0.8 },
   { key: "reviews", label: "Reviews", reportTypes: ["daily_logbook"], metricKeys: ["google_review_1", "google_review_2", "google_review_3", "google_review_4", "google_review_5"], weight: 0.9 },

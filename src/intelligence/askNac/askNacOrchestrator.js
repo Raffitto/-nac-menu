@@ -8,6 +8,7 @@ import { runAskNacQueryTool } from "./queryTools";
 import { buildDeterministicAskNacAnswer } from "./answerBuilder";
 import { resolveFoodicsPeriodWithFallback } from "./shared/periodFallback";
 import { prepareAskNacQuestion, applyReviewPeriodDefaults } from "./conversation/prepareAskNacQuestion";
+import { resolveHumanInTheLoopTurn } from "./executive/humanInLoopResolver";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -25,16 +26,41 @@ export async function processAskNacQuestion({
   profile = null,
   filters = {},
   conversationContext = null,
+  session = null,
   options = {},
 }) {
   const prepareResult = prepareAskNacQuestion({ question, conversationContext, filters });
   const effectiveQuestion = prepareResult.effectiveQuestion;
   const effectiveFilters = prepareResult.filters;
-  const fallbackHours = effectiveFilters.timeRangeHours ?? 24;
+  const branch = effectiveFilters.branch || null;
+  const userEmail = String(session?.user?.email || profile?.email || "").trim().toLowerCase() || null;
+
+  const humanLoop = supabase
+    ? await resolveHumanInTheLoopTurn({
+      question,
+      conversationContext,
+      supabase,
+      branch,
+      userEmail,
+    })
+    : null;
+
   let route = routeAskNacIntent(effectiveQuestion, {
-    fallbackHours,
+    fallbackHours: effectiveFilters.timeRangeHours ?? 24,
     documentContext: conversationContext?.lastDocumentContext || null,
   });
+
+  if (humanLoop?.overrideIntent) {
+    route = {
+      ...route,
+      intent: humanLoop.overrideIntent,
+      debug: {
+        ...route.debug,
+        humanInLoop: true,
+        resolutionNotes: humanLoop.resolutionNotes,
+      },
+    };
+  }
   route = applyReviewPeriodDefaults(route, effectiveFilters);
   const periodFallbackWarnings = [];
 
@@ -91,10 +117,13 @@ export async function processAskNacQuestion({
       branchMention: route.branchMention,
       filters: effectiveFilters,
       profile,
+      session,
+      userEmail,
       question: effectiveQuestion,
       searchTerms: effectiveReadiness.searchTerms,
       readiness: effectiveReadiness,
       documentContext: conversationContext?.lastDocumentContext || null,
+      conversationContext,
       foodicsPeriod: route.foodicsPeriod,
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
@@ -102,6 +131,9 @@ export async function processAskNacQuestion({
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,
+      teachPayload: humanLoop?.teachPayload,
+      manualInputPayload: humanLoop?.manualInputPayload,
+      pendingSession: humanLoop?.pendingSession,
     });
   }
 
@@ -115,7 +147,10 @@ export async function processAskNacQuestion({
     originalQuestion: prepareResult.originalQuestion,
     resolvedQuestion: effectiveQuestion,
     usedContext: Boolean(prepareResult.conversationResolution?.usedContext),
-    resolutionNotes: prepareResult.conversationResolution?.resolutionNotes || [],
+    resolutionNotes: [
+      ...(prepareResult.conversationResolution?.resolutionNotes || []),
+      ...(humanLoop?.resolutionNotes || []),
+    ],
   };
 
   return {

@@ -24,6 +24,16 @@ import {
   buildExternalContextNilPayload,
   resolveNilCombinedPeriodBounds,
 } from "./vaultExternalContextRetrieval";
+import {
+  applyRestaurantHeuristics,
+  buildEvidenceMap,
+  buildRankedHypotheses,
+} from "../executive/executiveIntelligence";
+import { formatBranchMemoryLines } from "../executive/branchMemory";
+import {
+  matchMemoryToGuestQuestion,
+  buildMemoryHypotheses,
+} from "../executive/executiveMemory";
 
 const EXTERNAL_CONTEXT_NOTE = EXTERNAL_CONTEXT_UNAVAILABLE_NOTE;
 
@@ -123,28 +133,60 @@ export function buildVaultBusinessReasoningAnswer(route, tool, readiness) {
   });
 
   const nilFields = nilReasoningToAskNacFields(nilResult);
+  const executiveMemory = tool?.executiveMemory || tool?.branchMemory || [];
+  const operatorMemory = tool?.operatorMemory || executiveMemory.filter((m) => m.source === "operator_memory");
+  const branchMemory = tool?.branchMemory || executiveMemory.filter((m) => m.source === "branch_memory");
+  const heuristicResult = applyRestaurantHeuristics(current, previous, executiveMemory);
+  const memoryMatches = matchMemoryToGuestQuestion(question, executiveMemory);
+  const memoryHypotheses = buildMemoryHypotheses(memoryMatches);
+  const rankedHypotheses = buildRankedHypotheses({
+    heuristics: [...heuristicResult.heuristics, ...memoryHypotheses],
+    nilHypotheses: nilResult.hypotheses || [],
+    metrics: buildCashUpPeriodCompareMetrics(current, previous),
+  });
+  const evidenceMap = buildEvidenceMap({
+    conclusion: heuristicResult.interpretation || rankedHypotheses[0]?.hypothesis || "",
+    metrics: buildCashUpPeriodCompareMetrics(current, previous),
+    facts: nilResult.facts?.map((f) => f.text) || [],
+    branchMemory,
+    assumptions: rankedHypotheses.filter((h) => h.confidence === "low").map((h) => h.hypothesis),
+  });
+  const memoryLines = [
+    ...formatBranchMemoryLines(branchMemory, { max: 2 }),
+    ...operatorMemory.slice(0, 2).map((m) => `[operator · ${m.category}] ${m.fact}`),
+  ];
+  const memoryAttribution = memoryHypotheses[0]?.attribution;
   const directAnswer = appendExternalContextSection(formatNilReasoningText(nilResult), {
     connected: externalConnected,
     sourceLabels: externalPayload.sourceLabels,
   });
   const keyMetrics = buildCashUpPeriodCompareMetrics(current, previous);
   const coverageWarnings = buildCoverageWarnings(current, previous);
+  const insights = [
+    ...(heuristicResult.interpretation ? [heuristicResult.interpretation] : []),
+    ...(memoryAttribution ? [memoryAttribution] : []),
+    ...memoryHypotheses.map((h) => h.hypothesis),
+    ...nilFields.insights,
+    ...memoryLines.map((line) => `Branch context: ${line}`),
+  ];
+  const recommendations = [
+    ...(heuristicResult.recommendedAction ? [heuristicResult.recommendedAction] : []),
+    ...nilFields.recommendations,
+    ...(externalConnected
+      ? []
+      : [
+        "Review competitor/mall activity manually until competitive intelligence sources are connected.",
+        "Review weather/local context manually until weather intelligence sources are connected.",
+      ]),
+  ];
 
   return createAskNacResponse({
     answerType: ANSWER_TYPES.EXECUTIVE,
     title: `Business reasoning · ${periodLabel}`,
     directAnswer,
     keyMetrics,
-    insights: nilFields.insights,
-    recommendations: [
-      ...nilFields.recommendations,
-      ...(externalConnected
-        ? []
-        : [
-          "Review competitor/mall activity manually until competitive intelligence sources are connected.",
-          "Review weather/local context manually until weather intelligence sources are connected.",
-        ]),
-    ],
+    insights,
+    recommendations,
     sources: [
       ...nilFields.sources.map((s) => sourceEntry(s.name, s.detail)),
       ...(tool?.sources || []).map((s) => sourceEntry(s.name, s.detail)),
@@ -169,6 +211,11 @@ export function buildVaultBusinessReasoningAnswer(route, tool, readiness) {
       domainsPresent: nilResult.meta?.domainsPresent || ["internal_operational"],
       externalContextConnected: externalConnected,
       externalContextSourceLabels: externalPayload.sourceLabels,
+      rankedHypotheses,
+      evidenceMap,
+      branchMemoryCount: branchMemory.length,
+      operatorMemoryCount: operatorMemory.length,
+      memoryHypotheses,
     },
   });
 }

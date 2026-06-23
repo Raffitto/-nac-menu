@@ -10,6 +10,11 @@ import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent } from "./intentRouter";
 import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
+import {
+  teachOperatorMemory,
+  provideManualInputForSession,
+  generateWeeklyDashboard,
+} from "./executive/humanInLoopQueryTools";
 import { queryExecutiveAnalysis } from "./executive/executiveQueryTools";
 import { queryGoogleReviewCount } from "./googleReviews/googleReviewQueryTools";
 import { fetchAskNacMenuMetrics } from "./shared/askNacMenuMetrics";
@@ -159,6 +164,17 @@ export async function queryBranchComparison(supabase, context = {}) {
  */
 export async function runAskNacQueryTool(supabase, intent, context = {}) {
   if (!supabase) return null;
+
+  switch (intent) {
+    case ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR:
+      return teachOperatorMemory(supabase, context);
+    case ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD:
+      return generateWeeklyDashboard(supabase, context);
+    case ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT:
+      return provideManualInputForSession(supabase, context);
+    default:
+      break;
+  }
 
   if (isVaultDataIntent(intent) || isVaultDocumentIntent(intent)) {
     return runVaultQueryTool(supabase, intent, {

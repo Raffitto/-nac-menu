@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
-import { FileText, Briefcase, List, FileJson, Table2 } from "lucide-react";
+import { FileText, Briefcase, List, FileJson, Table2, Sheet } from "lucide-react";
 import { ASK_NAC_EXPORT_ACTIONS, useAskNacExport } from "./useAskNacExport";
+import { EXPORT_FORMATS } from "./askNacExportPayload";
 
 const EXPORT_ICONS = {
   pdf: FileText,
@@ -8,13 +9,14 @@ const EXPORT_ICONS = {
   detailed: List,
   json: FileJson,
   csv: Table2,
+  weekly_dashboard_xlsx: Sheet,
 };
 
 /**
  * @param {{ question: string, response: object, filters?: object, onStatus?: (msg: string) => void }} props
  */
 export default function AskNacExportButton({ question, response, filters = {}, onStatus }) {
-  const { busy, canExport, runExport, isDisabled } = useAskNacExport({
+  const { busy, canExport, runExport, isDisabled, visibleActions } = useAskNacExport({
     question,
     response,
     filters,
@@ -23,11 +25,12 @@ export default function AskNacExportButton({ question, response, filters = {}, o
 
   const actions = useMemo(
     () =>
-      ASK_NAC_EXPORT_ACTIONS.map((action) => ({
+      (visibleActions || ASK_NAC_EXPORT_ACTIONS).map((action) => ({
         ...action,
         icon: EXPORT_ICONS[action.id] || FileText,
+        label: action.id === EXPORT_FORMATS.WEEKLY_DASHBOARD_XLSX ? "Download XLSX" : action.label,
       })),
-    [],
+    [visibleActions],
   );
 
   if (!canExport) return null;

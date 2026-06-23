@@ -18,6 +18,12 @@ import {
   walkDriveFolderTree,
 } from "../_shared/vaultDriveIngestion.ts";
 import {
+  buildDiscoverySummary,
+  classifyDrivePath,
+  fetchActiveDiscoveryRules,
+  groupFilesByOperationalFolder,
+} from "../_shared/driveDiscoveryClassifier.ts";
+import {
   isScheduledIngestSecretConfigured,
   runScheduledDriveIngestion,
   validateScheduledIngestSecret,
@@ -37,12 +43,17 @@ const DRIVE_SCOPES = [
 ].join(" ");
 
 const OPERATIONAL_FOLDER_REPORT_TYPES: Array<[RegExp, string]> = [
-  [/\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i, "cash_up"],
-  [/\blog ?book|daily reception|daily briefing\b/i, "daily_logbook"],
-  [/\bguest feedback|google review|reviews?\b/i, "google_review_stars"],
+  [/\bcash[\s-]?up|cashup|daily cash report\b/i, "cash_up"],
+  [/\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b/i, "weekly_dashboard"],
+  [/\blog ?book\b/i, "daily_logbook"],
+  [/\bdaily reception\b/i, "daily_reception"],
+  [/\bdaily briefing\b|\bbriefing\b/i, "daily_briefing"],
+  [/\bguest feedback\b/i, "guest_feedback"],
   [/\bccm|foodics|reconciliation\b/i, "ccm_reconciliation"],
-  [/\bdiscount|comp|voids?\b/i, "discount_comp"],
-  [/\bbreakage\b/i, "breakage"],
+  [/\bdiscount|comp|voids?\b/i, "discount_void_comp"],
+  [/\bbreakage\b/i, "breakage_report"],
+  [/\bdaily napkins count\b|\bnapkins count\b/i, "ignore"],
+  [/\bmonthly cash safe\b/i, "ignore"],
 ];
 
 function json(status: number, body: unknown) {
@@ -61,6 +72,9 @@ function inferOperationalReportType(name = "", fallback = "other") {
 function resolveRegisteredReportType(folderName = "", requestedReportType = "other") {
   const inferred = inferOperationalReportType(folderName, "other");
   if (inferred === "cash_up") return "cash_up";
+  if (inferred === "weekly_dashboard") return "weekly_dashboard";
+  if (inferred === "ignore") return "discovery_root";
+  if (/^(daily|weekly)$/i.test(String(folderName || "").trim())) return "discovery_root";
   return requestedReportType || inferred || "other";
 }
 
@@ -378,7 +392,8 @@ Deno.serve(async (req) => {
       const verifiedFolder = await verifyDriveFolderAccess(accessToken, folderId);
       const folderName = body?.folderName || verifiedFolder.name || folderId;
       const requestedReportType = body?.reportType || "other";
-      const reportType = resolveRegisteredReportType(folderName, requestedReportType);
+      const isDiscoveryRoot = Boolean(body?.isDiscoveryRoot) || /^(daily|weekly)$/i.test(String(folderName || "").trim());
+      const reportType = isDiscoveryRoot ? "discovery_root" : resolveRegisteredReportType(folderName, requestedReportType);
 
       const { data, error } = await supabase
         .from("ask_nac_drive_sync_folders")
@@ -395,16 +410,82 @@ Deno.serve(async (req) => {
             report_type: reportType,
             sensitivity: body?.sensitivity || "internal",
             auto_ingest: Boolean(body?.autoIngest),
+            is_discovery_root: isDiscoveryRoot,
             schedule: body?.schedule === "daily" ? "daily" : "manual",
             enabled: true,
           },
           { onConflict: "connection_id,drive_folder_id" },
         )
-        .select("id,drive_folder_id,folder_name,label,branch_id,department,report_type,sensitivity,auto_ingest,schedule,last_sync_at,last_ingest_at,last_sync_status,enabled,default_branch_id,default_department")
+        .select("id,drive_folder_id,folder_name,label,branch_id,department,report_type,sensitivity,auto_ingest,is_discovery_root,schedule,last_sync_at,last_ingest_at,last_sync_status,enabled,default_branch_id,default_department")
         .single();
 
       if (error) return json(500, { error: sanitizeErrorMessage(error.message) });
       return json(200, { folder: data });
+    }
+
+    if (action === "discover_folders") {
+      const { data: connection } = await admin
+        .from("ask_nac_drive_connections")
+        .select("id,refresh_token,token_expires_at")
+        .eq("user_email", userEmail)
+        .maybeSingle();
+      if (!connection?.id || !connection.refresh_token) return json(400, { error: "Connect Google Drive first." });
+
+      const tokens = await refreshAccessToken(connection.refresh_token);
+      const accessToken = tokens.access_token;
+      let folderQuery = admin
+        .from("ask_nac_drive_sync_folders")
+        .select("*")
+        .eq("connection_id", connection.id)
+        .eq("enabled", true)
+        .eq("is_discovery_root", true);
+      const folderRowId = String(body?.folderRowId || "").trim();
+      if (folderRowId) folderQuery = folderQuery.eq("id", folderRowId);
+      const { data: roots, error: rootsError } = await folderQuery;
+      if (rootsError) return json(500, { error: sanitizeErrorMessage(rootsError.message) });
+      if (!roots?.length) return json(400, { error: "Register a Daily or Weekly discovery root first." });
+
+      const allClassifications: Record<string, unknown>[] = [];
+      for (const root of roots) {
+        const branchId = root.branch_id || root.default_branch_id || null;
+        const rules = await fetchActiveDiscoveryRules(admin, branchId);
+        const rootFolder = await verifyDriveFolderAccess(accessToken, root.drive_folder_id);
+        const traversal = await walkDriveFolderTree(accessToken, {
+          rootFolderId: root.drive_folder_id,
+          rootLabel: rootFolder.name || root.folder_name || "Drive",
+        });
+        const groups = groupFilesByOperationalFolder(traversal.files);
+        for (const group of groups) {
+          const sampleFilenames = group.files.slice(0, 5).map((file) => file.name).filter(Boolean);
+          const decision = classifyDrivePath(group.folderPath, sampleFilenames[0] || "", rules, branchId);
+          allClassifications.push({
+            ...decision,
+            discoveryRoot: root.folder_name || root.label,
+            sampleFilenames,
+            fileCount: group.files.length,
+          });
+          await admin.from("ask_nac_drive_discovery_candidates").upsert(
+            {
+              connection_id: connection.id,
+              discovery_root_folder_id: root.id,
+              folder_path: group.folderPath,
+              detected_report_type: decision.detectedReportType,
+              recommended_action: decision.recommendedAction,
+              confidence: decision.confidence,
+              reason: decision.reason,
+              sample_filenames: sampleFilenames,
+              file_count: group.files.length,
+              branch_id: branchId,
+              status: decision.needsApproval ? "pending" : decision.recommendedAction === "ignore" ? "ignored" : "approved",
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "discovery_root_folder_id,folder_path" },
+          );
+        }
+      }
+
+      const summary = buildDiscoverySummary(allClassifications);
+      return json(200, { ok: true, summary, items: allClassifications });
     }
 
     if (action === "run_status") {
@@ -431,7 +512,7 @@ Deno.serve(async (req) => {
         const folderId = status.run.folder_id || status.run.folder.id;
         const { data: folder } = await admin
           .from("ask_nac_drive_sync_folders")
-          .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,enabled")
+          .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,is_discovery_root,enabled")
           .eq("id", folderId)
           .maybeSingle();
         if (!folder?.connection_id || !folder.drive_folder_id) {

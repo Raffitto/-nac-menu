@@ -11,6 +11,7 @@ const REPORT_PATTERNS = [
   { type: "daily_logbook", score: 16, patterns: [/logbook/i, /\bdaily log\b/i, /\bshift log\b/i] },
   { type: "ccm_reconciliation", score: 15, patterns: [/\bccm\b/i, /\breconcil/i, /\baudit\b/i] },
   { type: "weekly_sales_overview", score: 14, patterns: [/\bweekly sales\b/i, /\bsales overview\b/i] },
+  { type: "weekly_dashboard", score: 16, patterns: [/\bweekly dashboard\b/i, /\bexecutive reports?\b/i, /\bnac[\s-]?weekly[\s-]?dashboard\b/i] },
   { type: "foodics_export", score: 14, patterns: [/\bfoodics\b/i, /\bwaiter sales\b/i, /\bproduct sales\b/i] },
   { type: "pnl", score: 14, patterns: [/\bp&?l\b/i, /\bprofit and loss\b/i] },
   { type: "budget", score: 13, patterns: [/\bbudget\b/i] },
@@ -82,7 +83,7 @@ function detectDepartment(text, reportType) {
   if (reportType === "daily_logbook") return "operations";
   if (reportType === "cash_up") return "operations";
   if (reportType === "ccm_reconciliation" || reportType === "audit_report") return "cost_control";
-  if (reportType === "foodics_export" || reportType === "weekly_sales_overview" || reportType === "pnl") {
+  if (reportType === "foodics_export" || reportType === "weekly_sales_overview" || reportType === "weekly_dashboard" || reportType === "pnl") {
     return "sales";
   }
   if (reportType === "brand_brain_sop") return "brand";

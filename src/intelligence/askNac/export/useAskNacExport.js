@@ -11,8 +11,10 @@ import {
   exportAskNacExecutiveReport,
   exportAskNacDetailedAnalysis,
 } from "./askNacPdfExport";
+import { exportWeeklyDashboardXlsx } from "./weeklyDashboardXlsxExport";
 
 export const ASK_NAC_EXPORT_ACTIONS = [
+  { id: EXPORT_FORMATS.WEEKLY_DASHBOARD_XLSX, label: "XLSX", title: "Weekly management dashboard workbook" },
   { id: EXPORT_FORMATS.PDF, label: "PDF", title: "One-page answer report" },
   { id: EXPORT_FORMATS.EXECUTIVE, label: "Executive", title: "CEO-ready brief" },
   { id: EXPORT_FORMATS.DETAILED, label: "Detailed", title: "Full analysis with diagnostics" },
@@ -24,6 +26,10 @@ export function useAskNacExport({ question, response, filters = {}, onStatus }) 
   const [busy, setBusy] = useState(null);
 
   const canExport = useMemo(() => hasExportableContent(response), [response]);
+  const weeklyDashboardAvailable = useMemo(
+    () => Boolean(response?.weeklyDashboardPackage?.meta),
+    [response],
+  );
   const payload = useMemo(
     () => (canExport ? buildAskNacExportPayload({ question, response, filters }) : null),
     [canExport, question, response, filters],
@@ -43,6 +49,14 @@ export function useAskNacExport({ question, response, filters = {}, onStatus }) 
       setBusy(formatId);
       try {
         switch (formatId) {
+          case EXPORT_FORMATS.WEEKLY_DASHBOARD_XLSX:
+            if (!response?.weeklyDashboardPackage) {
+              notify("Weekly dashboard XLSX unavailable.");
+              return;
+            }
+            exportWeeklyDashboardXlsx(response.weeklyDashboardPackage);
+            notify("Weekly dashboard XLSX downloaded.");
+            break;
           case EXPORT_FORMATS.PDF:
             exportAskNacPdf(payload);
             notify("PDF downloaded.");
@@ -76,18 +90,33 @@ export function useAskNacExport({ question, response, filters = {}, onStatus }) 
         setBusy(null);
       }
     },
-    [payload, busy, csvAvailable, notify],
+    [payload, busy, csvAvailable, notify, response],
   );
 
   const isDisabled = useCallback(
-    (formatId) => !canExport || Boolean(busy) || (formatId === EXPORT_FORMATS.CSV && !csvAvailable),
-    [busy, canExport, csvAvailable],
+    (formatId) => {
+      if (!canExport || Boolean(busy)) return true;
+      if (formatId === EXPORT_FORMATS.WEEKLY_DASHBOARD_XLSX) return !weeklyDashboardAvailable;
+      if (formatId === EXPORT_FORMATS.CSV) return !csvAvailable;
+      return false;
+    },
+    [busy, canExport, csvAvailable, weeklyDashboardAvailable],
+  );
+
+  const visibleActions = useMemo(
+    () => ASK_NAC_EXPORT_ACTIONS.filter((action) => {
+      if (action.id === EXPORT_FORMATS.WEEKLY_DASHBOARD_XLSX) return weeklyDashboardAvailable;
+      return true;
+    }),
+    [weeklyDashboardAvailable],
   );
 
   return {
     busy,
     canExport,
     csvAvailable,
+    weeklyDashboardAvailable,
+    visibleActions,
     runExport,
     isDisabled,
   };

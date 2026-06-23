@@ -42,6 +42,10 @@ import { resolveAnalyticalConfidence } from "../confidence/analyticalConfidence"
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer";
+import {
+  buildTeachOperatorAnswer,
+  buildWeeklyDashboardAnswer,
+} from "../executive/humanInLoopAnswerBuilder";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -474,6 +478,45 @@ export function buildVaultReceptionAnswer(route, tool, readiness) {
   });
 }
 
+function briefingMetrics(facts = []) {
+  const keys = ["breakfast_reservations", "lunch_reservations", "dinner_reservations", "mod_breakfast", "mod_lunch", "mod_dinner"];
+  return keys
+    .map((key) => {
+      const value = pickMetricValue(facts, key);
+      if (value == null) return null;
+      return metricEntry(key.replace(/_/g, " "), value);
+    })
+    .filter(Boolean);
+}
+
+function briefingNotes(facts = []) {
+  return facts
+    .filter((fact) => String(fact.metric_key || "").includes("_line"))
+    .map((fact) => fact.dimensions?.text_value)
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+export function buildVaultDailyBriefingAnswer(route, tool, readiness) {
+  const facts = tool?.facts || [];
+  const metrics = briefingMetrics(facts);
+  const notes = briefingNotes(facts);
+  const directAnswer = notes.length
+    ? `Daily briefing for ${tool.branchLabel} · ${tool.periodLabel}: ${notes[0]}`
+    : metrics.length
+      ? `Daily briefing metrics for ${tool.branchLabel} · ${tool.periodLabel} are listed below.`
+      : `No daily briefing structured facts found for ${tool.branchLabel} on ${tool.periodLabel}.`;
+
+  return createAskNacResponse({
+    ...baseVaultFields(route, tool, readiness),
+    answerType: metrics.length || notes.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.MISSING_DATA,
+    title: `Daily briefing · ${tool.periodLabel}`,
+    directAnswer,
+    keyMetrics: metrics,
+    insights: notes,
+  });
+}
+
 export function buildVaultLogbookAnswer(route, tool, readiness) {
   const facts = tool?.facts || [];
   const metrics = receptionMetrics(facts);
@@ -846,6 +889,30 @@ export function buildVaultDocumentSummaryAnswer(route, tool, readiness) {
   });
 }
 
+function buildVaultDriveDiscoveryAnswer(route, tool, readiness) {
+  const lines = tool?.answerLines || ["Drive discovery completed."];
+  return createAskNacResponse({
+    ...baseVaultFields(route, tool, readiness),
+    answerType: ANSWER_TYPES.EXECUTIVE,
+    title: route.intent === ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES
+      ? "Drive ingestion rules updated"
+      : "Drive folder discovery",
+    directAnswer: lines.join("\n"),
+    keyMetrics: [
+      metricEntry("Discovered folders", tool?.summary?.discoveredFolders ?? 0),
+      metricEntry("Needs approval", tool?.summary?.needsApprovalCount ?? 0),
+      metricEntry("Approved ingest", tool?.summary?.approvedIngestCount ?? 0),
+      metricEntry("Ignored", tool?.summary?.ignoredCount ?? 0),
+    ],
+    insights: lines.slice(2),
+    confidence: CONFIDENCE_LEVELS.HIGH,
+    isAiGenerated: false,
+    intent: route.intent,
+    branchLabel: tool?.branchLabel,
+    vaultSources: [],
+  });
+}
+
 export function buildVaultAnswer(route, tool, readiness) {
   if (tool?.documentFallback?.matches?.length) {
     return buildVaultDocumentSearchAnswer(
@@ -874,7 +941,38 @@ export function buildVaultAnswer(route, tool, readiness) {
     return buildVaultBusinessReasoningAnswer(route, tool, readiness);
   }
 
-  if (!tool?.facts?.length && !(tool?.coverage?.length) && !(tool?.aggregation?.dayCount) && readiness?.status === READINESS.MISSING) {
+  if (route.intent === ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR) {
+    return buildTeachOperatorAnswer(route, tool, readiness);
+  }
+
+  if (
+    route.intent === ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER
+    || route.intent === ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES
+  ) {
+    return buildVaultDriveDiscoveryAnswer(route, tool, readiness);
+  }
+
+  if (route.intent === ASK_NAC_INTENTS.VAULT_BREAKAGE_SUMMARY) {
+    if (tool?.matches?.length) {
+      return buildVaultDocumentSearchAnswer(
+        { ...route, intent: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH },
+        tool,
+        readiness,
+      );
+    }
+    return buildVaultMissingToolResponse(route, tool, readiness);
+  }
+
+  if (route.intent === ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY) {
+    return buildVaultDailyBriefingAnswer(route, tool, readiness);
+  }
+
+  if (route.intent === ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD
+    || route.intent === ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT) {
+    return buildWeeklyDashboardAnswer(route, tool, readiness);
+  }
+
+  if (!tool?.facts?.length && !(tool?.coverage?.length) && !(tool?.aggregation?.dayCount) && tool?.status !== "pending" && tool?.status !== "complete" && readiness?.status === READINESS.MISSING) {
     return buildVaultMissingToolResponse(route, tool, readiness);
   }
 
@@ -887,6 +985,8 @@ export function buildVaultAnswer(route, tool, readiness) {
       return buildVaultReceptionAnswer(route, tool, readiness);
     case ASK_NAC_INTENTS.VAULT_LOGBOOK_SUMMARY:
       return buildVaultLogbookAnswer(route, tool, readiness);
+    case ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY:
+      return buildVaultDailyBriefingAnswer(route, tool, readiness);
     case ASK_NAC_INTENTS.VAULT_GOOGLE_REVIEW_STAR_SUMMARY:
       return buildVaultGoogleStarsAnswer(route, tool, readiness);
     case ASK_NAC_INTENTS.VAULT_CCM_RECONCILIATION_SUMMARY:

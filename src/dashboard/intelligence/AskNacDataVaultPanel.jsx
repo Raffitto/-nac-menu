@@ -943,6 +943,8 @@ export default function AskNacDataVaultPanel({ session }) {
     setDriveFolderName(folder.name || folder.id);
     if (folder.likelyReportType && folder.likelyReportType !== "other") {
       onFieldChange("reportType", folder.likelyReportType);
+    } else if (/\bweekly dashboards?\b|\bexecutive reports?\b/i.test(String(folder.name || ""))) {
+      onFieldChange("reportType", "weekly_dashboard");
     }
   };
 
@@ -956,9 +958,16 @@ export default function AskNacDataVaultPanel({ session }) {
       return;
     }
     const folderLabel = `${driveFolderName} ${driveBrowserResult?.folder?.name || ""}`.toLowerCase();
-    const reportType = /\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(folderLabel)
+    const isDiscoveryRoot =
+      /^(daily|weekly)$/.test(folderLabel.trim())
+      || (/\bdaily\b|\bweekly\b/.test(folderLabel) && !/\bcash|\blogbook|\bbriefing\b/.test(folderLabel));
+    const reportType = isDiscoveryRoot
+      ? "discovery_root"
+      : /\bcash[\s-]?up|cashup|daily cash report\b/i.test(folderLabel)
       ? "cash_up"
-      : form.reportType;
+      : /\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b/i.test(folderLabel)
+        ? "weekly_dashboard"
+        : form.reportType;
     const result = await registerDriveSyncFolder(supabase, session, {
       folderId: driveFolderId.trim(),
       folderName: driveFolderName.trim() || driveFolderId.trim(),
@@ -968,6 +977,7 @@ export default function AskNacDataVaultPanel({ session }) {
       reportType,
       sensitivity: form.sensitivity,
       autoIngest: driveAutoIngest,
+      isDiscoveryRoot,
       schedule: "daily",
     });
     if (!result.ok) {

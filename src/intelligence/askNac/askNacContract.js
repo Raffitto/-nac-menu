@@ -60,6 +60,10 @@ export function createAskNacResponse(fields = {}) {
     executiveSummary: fields.executiveSummary || null,
     executiveBrief: fields.executiveBrief || null,
     dataConfidence: fields.dataConfidence || null,
+    weeklyDashboardPackage: fields.weeklyDashboardPackage || null,
+    awaitingInput: Boolean(fields.awaitingInput),
+    pendingSessionId: fields.pendingSessionId ?? null,
+    pendingSession: fields.pendingSession ?? null,
   };
 }
 

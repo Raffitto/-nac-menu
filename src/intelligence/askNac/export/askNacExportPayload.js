@@ -18,6 +18,7 @@ export const EXPORT_FORMATS = Object.freeze({
   DETAILED: "detailed",
   JSON: "json",
   CSV: "csv",
+  WEEKLY_DASHBOARD_XLSX: "weekly_dashboard_xlsx",
 });
 
 export const PROVENANCE_IDS = Object.freeze({
@@ -129,6 +130,7 @@ export function hasExportableContent(response) {
   );
   return Boolean(
     hasBrief ||
+      response.weeklyDashboardPackage ||
       formatExportAnswerText(response.directAnswer) ||
       (response.keyMetrics && response.keyMetrics.length > 0) ||
       (response.missingData && response.missingData.length > 0) ||

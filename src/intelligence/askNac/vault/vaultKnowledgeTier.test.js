@@ -21,7 +21,7 @@ import { partitionVaultUploadFiles, isSupportedFile } from "./vaultBulkIngestion
 
 describe("vaultConstants CK-1", () => {
   test("PARSEABLE and STORED_ONLY partition all report types", () => {
-    expect(PARSEABLE_REPORT_TYPES).toHaveLength(6);
+    expect(PARSEABLE_REPORT_TYPES).toHaveLength(11);
     expect(STORED_ONLY_REPORT_TYPES).toContain("brand_brain_sop");
     expect(STORED_ONLY_REPORT_TYPES).not.toContain("daily_logbook");
   });

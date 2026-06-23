@@ -204,6 +204,8 @@ function operationalDetailScore(text) {
 function inferReportTypesFromQuery(text = "") {
   const q = normalizeSearchText(text);
   const types = new Set();
+  if (/\b(historical weekly dashboards?|weekly dashboards?)\b/.test(q)) types.add("weekly_dashboard");
+  if (/\bweekly dashboard\b/.test(q)) types.add("weekly_dashboard");
   if (/\blogbook|daily log\b/.test(q)) types.add("daily_logbook");
   if (/\bcash up|cashup|sales performance\b/.test(q)) types.add("cash_up");
   if (/\breception|reservations?|covers|walkins?\b/.test(q)) types.add("reception_daily_report");

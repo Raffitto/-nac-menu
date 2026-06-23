@@ -32,6 +32,16 @@ import {
   searchTermsForOperationalTheme,
 } from "./vaultOperationalIntelligence";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval";
+import { fetchExecutiveMemory } from "../executive/executiveMemory";
+import { getCachedVaultCoverage, setCachedVaultCoverage } from "./vaultCoverageCache";
+import {
+  fetchCashUpRangeAggregationViaRpc,
+  shouldUseCashUpRangeRpc,
+} from "./vaultCashUpRangeRpc";
+import {
+  approveDriveDiscoveryRules,
+  discoverDriveFoldersFromRules,
+} from "./driveDiscoveryQueryTools";
 
 export { extractDocumentSearchTerms };
 
@@ -192,6 +202,10 @@ export async function getVaultCoverage(
   { branch, startDate, endDate, reportType, profile, branchMention, filters, slim = false } = {},
 ) {
   const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
+  const cacheKey = { branch: scopedBranch, startDate, endDate, reportType, slim };
+  const cached = getCachedVaultCoverage(cacheKey);
+  if (cached) return cached;
+
   let query = supabase.from("ask_nac_data_coverage").select(slim ? COVERAGE_SLIM_SELECT : COVERAGE_SELECT);
   query = periodOverlapFilter(query, startDate, endDate);
   if (scopedBranch) query = query.eq("branch_id", scopedBranch);
@@ -201,7 +215,7 @@ export async function getVaultCoverage(
   if (error) throw new Error(error.message);
 
   const rows = (data || []).map(mapVaultCoverageRow);
-  return {
+  const result = {
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
     startDate,
@@ -209,6 +223,8 @@ export async function getVaultCoverage(
     coverage: rows,
     sources: [{ name: "ask_nac_data_coverage", detail: "RLS-filtered coverage registry" }],
   };
+  setCachedVaultCoverage(cacheKey, result);
+  return result;
 }
 
 export async function getVaultCashUpAggregationFacts(
@@ -482,21 +498,35 @@ async function fetchCashUpAggregationFactsResilient(supabase, params, vaultPerio
   let branchLabel = "Network";
   let loadedChunks = 0;
 
-  for (const chunk of chunks) {
-    try {
-      const result = await getVaultCashUpAggregationFacts(supabase, {
-        ...params,
-        startDate: chunk.startDate,
-        endDate: chunk.endDate,
-        limit: buildCashUpRangeQueryLimit(chunk.startDate, chunk.endDate),
-      });
-      branch = result.branch ?? branch;
-      branchLabel = result.branchLabel || branchLabel;
-      allFacts.push(...(result.facts || []));
+  const chunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const result = await getVaultCashUpAggregationFacts(supabase, {
+          ...params,
+          startDate: chunk.startDate,
+          endDate: chunk.endDate,
+          limit: buildCashUpRangeQueryLimit(chunk.startDate, chunk.endDate),
+        });
+        return { ok: true, chunk, result };
+      } catch (err) {
+        return {
+          ok: false,
+          chunk,
+          error: err,
+        };
+      }
+    }),
+  );
+
+  for (const entry of chunkResults) {
+    if (entry.ok) {
+      branch = entry.result.branch ?? branch;
+      branchLabel = entry.result.branchLabel || branchLabel;
+      allFacts.push(...(entry.result.facts || []));
       loadedChunks += 1;
-    } catch (err) {
+    } else {
       chunkWarnings.push(
-        `Cash-up facts for ${chunk.label} (${chunk.startDate} – ${chunk.endDate}) could not be loaded: ${err.message}`,
+        `Cash-up facts for ${entry.chunk.label} (${entry.chunk.startDate} – ${entry.chunk.endDate}) could not be loaded: ${entry.error.message}`,
       );
     }
   }
@@ -533,22 +563,73 @@ async function fetchCashUpRangeBundle(
   const resolvedDailyBreakdown = includeDailyBreakdown
     ?? !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType);
 
-  const factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
-    ...context,
-    branch: scopedBranch,
+  const useRpc = shouldUseCashUpRangeRpc({
     startDate,
     endDate,
-    limit: buildCashUpRangeQueryLimit(startDate, endDate),
-  }, vaultPeriod);
-
-  const factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
-  const aggregation = aggregateCashUpFactsOverRange({
-    startDate,
-    endDate,
-    branchId: scopedBranch,
-    factsByDate,
+    periodType: vaultPeriod?.periodType,
     includeDailyBreakdown: resolvedDailyBreakdown,
   });
+
+  let factsResult;
+  let aggregation;
+  let factsByDate;
+
+  if (useRpc) {
+    try {
+      aggregation = await fetchCashUpRangeAggregationViaRpc(supabase, {
+        branch: scopedBranch,
+        startDate,
+        endDate,
+        includeDailyBreakdown: false,
+      });
+      factsResult = {
+        branch: scopedBranch,
+        branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+        startDate,
+        endDate,
+        facts: [],
+        chunkWarnings: [],
+        sources: [{ name: "get_vault_cash_up_range_aggregate", detail: "server-side cash-up range aggregation" }],
+      };
+    } catch {
+      factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
+        ...context,
+        branch: scopedBranch,
+        startDate,
+        endDate,
+        limit: buildCashUpRangeQueryLimit(startDate, endDate),
+      }, vaultPeriod);
+      factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
+      aggregation = aggregateCashUpFactsOverRange({
+        startDate,
+        endDate,
+        branchId: scopedBranch,
+        factsByDate,
+        includeDailyBreakdown: resolvedDailyBreakdown,
+      });
+    }
+  } else {
+    factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
+      ...context,
+      branch: scopedBranch,
+      startDate,
+      endDate,
+      limit: buildCashUpRangeQueryLimit(startDate, endDate),
+    }, vaultPeriod);
+    factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
+    aggregation = aggregateCashUpFactsOverRange({
+      startDate,
+      endDate,
+      branchId: scopedBranch,
+      factsByDate,
+      includeDailyBreakdown: resolvedDailyBreakdown,
+    });
+  }
+
+  const resolvedFactsByDate = factsByDate
+    ?? (resolvedDailyBreakdown
+      ? groupCashUpFactsByBusinessDate(factsResult.facts || [])
+      : undefined);
 
   let coverage = [];
   let warnings = [...(factsResult.chunkWarnings || [])];
@@ -576,10 +657,10 @@ async function fetchCashUpRangeBundle(
     periodLabel: vaultPeriod?.label || `${startDate} – ${endDate}`,
     coverage,
     vaultSources: collectVaultSources(factsResult.facts, coverage),
-    factsByDate: resolvedDailyBreakdown ? factsByDate : undefined,
+    factsByDate: resolvedDailyBreakdown ? resolvedFactsByDate : undefined,
     aggregation,
     warnings,
-    sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
+    sources: factsResult.sources || [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],
   };
 }
 
@@ -753,7 +834,9 @@ export async function searchVaultDocuments(supabase, context = {}) {
     searchTerms,
     scopedBranch,
     vaultPeriod: context.vaultPeriod || null,
-    reportTypes: /\blogbook|logbooks|daily report\b/i.test(q)
+    reportTypes: /\b(historical weekly dashboards?|weekly dashboards?|learned from weekly dashboard)\b/i.test(q)
+      ? ["weekly_dashboard"]
+      : /\blogbook|logbooks|daily report\b/i.test(q)
       ? ["daily_logbook"]
       : /\breception\b/i.test(q)
         ? ["reception_daily_report"]
@@ -811,6 +894,10 @@ export async function searchVaultDocuments(supabase, context = {}) {
 
 export async function runVaultQueryTool(supabase, intent, context = {}) {
   switch (intent) {
+    case "vault_drive_discover":
+      return discoverDriveFoldersFromRules(supabase, context);
+    case "vault_drive_approve_rules":
+      return approveDriveDiscoveryRules(supabase, context);
     case "vault_document_search":
       return searchVaultDocuments(supabase, context);
     case "vault_document_summary":
@@ -825,15 +912,24 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
         vaultPeriod,
         vaultCompare,
       });
-      const externalContext = await fetchExternalContextForNilPeriod(supabase, {
-        ...context,
-        branch: cashUp.branch,
-        branchLabel: cashUp.branchLabel,
-        periodLabel: cashUp.periodLabel,
-        vaultCompare: cashUp.vaultCompare || vaultCompare,
-        vaultPeriod,
-      });
-      return { ...cashUp, externalContext };
+      const [externalContext, executiveMemoryResult] = await Promise.all([
+        fetchExternalContextForNilPeriod(supabase, {
+          ...context,
+          branch: cashUp.branch,
+          branchLabel: cashUp.branchLabel,
+          periodLabel: cashUp.periodLabel,
+          vaultCompare: cashUp.vaultCompare || vaultCompare,
+          vaultPeriod,
+        }),
+        fetchExecutiveMemory(supabase, { branch: cashUp.branch }),
+      ]);
+      return {
+        ...cashUp,
+        externalContext,
+        branchMemory: executiveMemoryResult.branchMemories || [],
+        operatorMemory: executiveMemoryResult.operatorMemories || [],
+        executiveMemory: executiveMemoryResult.memories || [],
+      };
     }
     case "vault_cash_up_summary": {
       const question = String(context.question || "").toLowerCase();
@@ -913,6 +1009,19 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
         startDate: context.vaultPeriod?.startDate,
         endDate: context.vaultPeriod?.endDate,
         reportType: "daily_logbook",
+      });
+    case "vault_daily_briefing_summary":
+      return getVaultFacts(supabase, {
+        ...context,
+        startDate: context.vaultPeriod?.startDate,
+        endDate: context.vaultPeriod?.endDate,
+        reportType: "daily_briefing",
+      });
+    case "vault_breakage_summary":
+      return searchVaultDocuments(supabase, {
+        ...context,
+        searchTerms: "breakage issues",
+        reportTypes: ["breakage_report"],
       });
     case "vault_google_review_star_summary":
       return getVaultFacts(supabase, {

@@ -494,6 +494,7 @@ export async function registerDriveSyncFolder(supabase, session, {
   reportType,
   sensitivity,
   autoIngest = false,
+  isDiscoveryRoot = false,
   schedule,
 }) {
   const base = vaultFunctionsBaseUrl();
@@ -517,12 +518,32 @@ export async function registerDriveSyncFolder(supabase, session, {
       reportType,
       sensitivity,
       autoIngest,
+      isDiscoveryRoot,
       schedule,
     }),
   });
   const data = sanitizeDriveApiResponse(await res.json());
   if (!res.ok) return { ok: false, error: data.error || "Register folder failed" };
   return { ok: true, folder: data.folder };
+}
+
+export async function discoverDriveFolders(session, { folderRowId = null } = {}) {
+  const base = vaultFunctionsBaseUrl();
+  if (!base || !session?.access_token) {
+    return { ok: false, error: "Drive discovery unavailable" };
+  }
+
+  const res = await fetch(`${base}/vault-drive-sync`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "discover_folders", folderRowId }),
+  });
+  const data = sanitizeDriveApiResponse(await res.json());
+  if (!res.ok) return { ok: false, error: data.error || "Drive discovery failed" };
+  return { ok: true, ...data };
 }
 
 export async function browseDriveFolder(session, {

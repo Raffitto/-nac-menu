@@ -34,6 +34,10 @@ import {
   isVaultDocumentSummaryQuery,
   scoreVaultDocumentSummaryIntent,
 } from "./vault/vaultDocumentSummaryRouting";
+import {
+  isDriveDiscoveryApprovalCommand,
+  isDriveDiscoveryCommand,
+} from "./vault/driveDiscoveryQueryTools";
 import { normalizeAskNacQuestion } from "./nlu/normalizeQuestion";
 import { resolveIntentFromScores } from "./nlu/resolveIntentAmbiguity";
 import { applyMetricDefaultsToRoute } from "./nlu/metricDefaults";
@@ -69,6 +73,13 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_DOCUMENT_SUMMARY: "vault_document_summary",
   VAULT_OPERATIONAL_REVIEW: "vault_operational_review",
   VAULT_BUSINESS_REASONING: "vault_business_reasoning",
+  VAULT_WEEKLY_DASHBOARD: "vault_weekly_dashboard",
+  VAULT_TEACH_OPERATOR: "vault_teach_operator",
+  VAULT_PROVIDE_MANUAL_INPUT: "vault_provide_manual_input",
+  VAULT_DRIVE_DISCOVER: "vault_drive_discover",
+  VAULT_DRIVE_APPROVE_RULES: "vault_drive_approve_rules",
+  VAULT_DAILY_BRIEFING_SUMMARY: "vault_daily_briefing_summary",
+  VAULT_BREAKAGE_SUMMARY: "vault_breakage_summary",
   UNKNOWN: "unknown",
 });
 
@@ -90,6 +101,24 @@ const BRANCH_ALIASES = Object.freeze({
 });
 
 const INTENT_RULES = [
+  {
+    id: ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR,
+    score(q) {
+      if (/^teach nac:\s*.+/i.test(q)) return 50;
+      if (/^remember this:\s*.+/i.test(q)) return 50;
+      if (/^save as operator knowledge:\s*.+/i.test(q)) return 50;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD,
+    score(q) {
+      if (/\bgenerate\b.*\b(weekly dashboard|khobar dashboard|dashboard for week)\b/i.test(q)) return 38;
+      if (/\bweekly dashboard\b/i.test(q) && /\bgenerate\b/i.test(q)) return 36;
+      if (/\bdashboard for week ending\b/i.test(q)) return 36;
+      return 0;
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW,
     score(q) {
@@ -130,6 +159,20 @@ const INTENT_RULES = [
       if (/\b(cash[\s-]?up)\b/.test(q)) return 0;
       if (/\b(what happened|summarize|summary|operational day|day summary)\b/.test(q)) return 19;
       if (/\b(operation|operational)\b/.test(q) && /\b(on|for)\b/.test(q)) return 17;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES,
+    score(q) {
+      if (isDriveDiscoveryApprovalCommand(q)) return 46;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER,
+    score(q) {
+      if (isDriveDiscoveryCommand(q)) return 44;
       return 0;
     },
   },
@@ -219,6 +262,28 @@ const INTENT_RULES = [
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(logbook|complaints?|training notes?|mod on duty|chef on duty|operational issues?)\b/.test(q)) {
         return 15;
+      }
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY,
+    score(q) {
+      if (isVaultDocumentSearchQuery(q)) return 0;
+      if (!parseVaultPeriodFromQuestion(q)) return 0;
+      if (/\b(daily briefing|briefing)\b/.test(q) && /\b(summarize|summary|reservations?|mod|staffing|focus)\b/.test(q)) {
+        return 16;
+      }
+      if (/\bsummarize\b.*\bdaily briefing\b/.test(q)) return 17;
+      return 0;
+    },
+  },
+  {
+    id: ASK_NAC_INTENTS.VAULT_BREAKAGE_SUMMARY,
+    score(q) {
+      if (!parseVaultPeriodFromQuestion(q)) return 0;
+      if (/\b(breakage|broken glass|asset loss|spillage|wastage)\b/.test(q)) {
+        return 16;
       }
       return 0;
     },
@@ -588,12 +653,19 @@ export function isVaultDataIntent(intent) {
     ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
     ASK_NAC_INTENTS.VAULT_RECEPTION_SUMMARY,
     ASK_NAC_INTENTS.VAULT_LOGBOOK_SUMMARY,
+    ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY,
+    ASK_NAC_INTENTS.VAULT_BREAKAGE_SUMMARY,
     ASK_NAC_INTENTS.VAULT_GOOGLE_REVIEW_STAR_SUMMARY,
     ASK_NAC_INTENTS.VAULT_CCM_RECONCILIATION_SUMMARY,
     ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY,
     ASK_NAC_INTENTS.VAULT_MANAGEMENT_REPORT,
     ASK_NAC_INTENTS.VAULT_COVERAGE_LIST,
     ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING,
+    ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD,
+    ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR,
+    ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT,
+    ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER,
+    ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES,
   ].includes(intent);
 }
 
@@ -602,6 +674,8 @@ export function vaultReportTypesForIntent(intent) {
     [ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY]: ["cash_up"],
     [ASK_NAC_INTENTS.VAULT_RECEPTION_SUMMARY]: ["reception_daily_report", "daily_logbook"],
     [ASK_NAC_INTENTS.VAULT_LOGBOOK_SUMMARY]: ["daily_logbook"],
+    [ASK_NAC_INTENTS.VAULT_DAILY_BRIEFING_SUMMARY]: ["daily_briefing"],
+    [ASK_NAC_INTENTS.VAULT_BREAKAGE_SUMMARY]: ["breakage_report"],
     [ASK_NAC_INTENTS.VAULT_GOOGLE_REVIEW_STAR_SUMMARY]: ["daily_logbook", "reception_daily_report"],
     [ASK_NAC_INTENTS.VAULT_CCM_RECONCILIATION_SUMMARY]: ["ccm_reconciliation"],
     [ASK_NAC_INTENTS.VAULT_OPERATIONAL_DAY_SUMMARY]: [

@@ -5,7 +5,18 @@ import {
   validateCashUpWorkbookParse,
   type CashUpWorkbookParseResult,
 } from "./vaultCashUpWorkbookParser.ts";
+import {
+  attachWeeklyDashboardFactContext,
+  parseWeeklyDashboardFromText,
+  parseWeeklyDashboardFromXlsxBuffer,
+  validateWeeklyDashboardParse,
+} from "./vaultWeeklyDashboardParser.ts";
 import { replaceStructuredFactsForFile } from "./vaultStructuredFactsReplace.ts";
+import {
+  classifyDrivePath,
+  fetchActiveDiscoveryRules,
+  shouldIngestDiscoveryDecision,
+} from "./driveDiscoveryClassifier.ts";
 
 const VAULT_STORAGE_BUCKET = "ask-nac-vault-originals";
 const CHUNK_TARGET_CHARS = 5000;
@@ -14,8 +25,13 @@ const PARSEABLE_REPORT_TYPES = new Set([
   "cash_up",
   "reception_daily_report",
   "daily_logbook",
+  "daily_briefing",
   "ccm_reconciliation",
+  "breakage_report",
+  "discount_void_comp",
+  "guest_feedback",
   "weekly_sales_overview",
+  "weekly_dashboard",
   "pnl",
 ]);
 
@@ -56,6 +72,7 @@ type DriveFolder = {
   report_type?: string | null;
   sensitivity?: string | null;
   auto_ingest?: boolean | null;
+  is_discovery_root?: boolean | null;
 };
 
 type DriveFile = {
@@ -116,14 +133,30 @@ function normalizeFolderMetadata(folder: DriveFolder) {
   const folderLabel = `${folder.folder_name || ""} ${folder.label || ""}`;
   const reportType = /\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(folderLabel)
     ? "cash_up"
-    : folder.report_type || "other";
+    : /\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b/i.test(folderLabel)
+      ? "weekly_dashboard"
+      : folder.report_type || "other";
   const sensitivity = folder.sensitivity || "internal";
   return { branchId, department, reportType, sensitivity };
 }
 
-function resolveDriveFileReportType(folder: DriveFolder, driveFile: DriveFileWithPath, fallback: string) {
+function resolveDriveFileReportType(
+  folder: DriveFolder,
+  driveFile: DriveFileWithPath,
+  fallback: string,
+  discoveryDecision?: { vaultReportType?: string | null } | null,
+) {
+  if (discoveryDecision?.vaultReportType) return discoveryDecision.vaultReportType;
   const text = `${folder.folder_name || ""} ${folder.label || ""} ${driveFile.folderPath || ""} ${driveFile.relativePath || ""} ${driveFile.name || ""}`;
-  if (/\bcash[\s-]?up|cashup|daily cash report|monthly cash safe\b/i.test(text)) return "cash_up";
+  if (/\bcash[\s-]?up|cashup|daily cash report\b/i.test(text)) return "cash_up";
+  if (/\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b|\bweekly\b.*\bexecutive reports?\b/i.test(text)) {
+    return "weekly_dashboard";
+  }
+  if (/\bdaily briefing\b|\bbriefing\b/i.test(text)) return "daily_briefing";
+  if (/\bdaily reception\b/i.test(text)) return "reception_daily_report";
+  if (/\bbreakage\b/i.test(text)) return "breakage_report";
+  if (/\bdiscount\b|\bcomp\b|\bvoids?\b/i.test(text)) return "discount_void_comp";
+  if (/\bguest feedback\b/i.test(text)) return "guest_feedback";
   return fallback || "other";
 }
 
@@ -796,6 +829,11 @@ type StructuredFactsResult = {
   warnings: string[];
 };
 
+function isWeeklyDashboardSpreadsheet(reportType: string, extension: string) {
+  const ext = String(extension || "").toLowerCase();
+  return reportType === "weekly_dashboard" && (ext === "xlsx" || ext === "xls");
+}
+
 function isCashUpSpreadsheet(reportType: string, extension: string) {
   const ext = String(extension || "").toLowerCase();
   return reportType === "cash_up" && (ext === "xlsx" || ext === "xls");
@@ -858,6 +896,88 @@ async function insertStructuredFacts(
       periodEnd: null,
       warnings: [],
     };
+  }
+
+  if (isWeeklyDashboardSpreadsheet(fileRow.report_type, download?.extension || "")) {
+    if (!download?.buffer) {
+      throw new Error("Weekly dashboard spreadsheet parse failed — workbook buffer missing.");
+    }
+    const parsed = await parseWeeklyDashboardFromXlsxBuffer(download.buffer);
+    if (!validateWeeklyDashboardParse(parsed)) {
+      const textParsed = parseWeeklyDashboardFromText(text);
+      if (!validateWeeklyDashboardParse(textParsed)) {
+        throw new Error(parsed.error || textParsed.error || "Weekly dashboard parse failed — existing facts preserved.");
+      }
+      const rows = attachWeeklyDashboardFactContext(textParsed.facts, fileRow, versionRowId, email);
+      await persistParsedFacts(admin, {
+        fileRow,
+        versionRowId,
+        email,
+        rows,
+        periodStart: textParsed.periodStart,
+        periodEnd: textParsed.periodEnd,
+        minInserted: rows.length,
+      });
+      return {
+        factCount: rows.length,
+        stage: "weekly_dashboard_text_parsed",
+        confidence: 0.72,
+        confidenceLevel: "medium",
+        publish: true,
+        parser: textParsed.parser,
+        periodStart: textParsed.periodStart,
+        periodEnd: textParsed.periodEnd,
+        warnings: [],
+      };
+    }
+    const rows = attachWeeklyDashboardFactContext(parsed.facts, fileRow, versionRowId, email);
+    await persistParsedFacts(admin, {
+      fileRow,
+      versionRowId,
+      email,
+      rows,
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
+      minInserted: rows.length,
+    });
+    return {
+      factCount: rows.length,
+      stage: "weekly_dashboard_workbook_parsed",
+      confidence: 0.82,
+      confidenceLevel: "medium",
+      publish: true,
+      parser: parsed.parser,
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
+      warnings: [],
+    };
+  }
+
+  if (fileRow.report_type === "weekly_dashboard") {
+    const parsed = parseWeeklyDashboardFromText(text);
+    if (validateWeeklyDashboardParse(parsed)) {
+      const rows = attachWeeklyDashboardFactContext(parsed.facts, fileRow, versionRowId, email);
+      await persistParsedFacts(admin, {
+        fileRow,
+        versionRowId,
+        email,
+        rows,
+        periodStart: parsed.periodStart,
+        periodEnd: parsed.periodEnd,
+        minInserted: rows.length,
+      });
+      return {
+        factCount: rows.length,
+        stage: "weekly_dashboard_text_parsed",
+        confidence: 0.72,
+        confidenceLevel: "medium",
+        publish: true,
+        parser: parsed.parser,
+        periodStart: parsed.periodStart,
+        periodEnd: parsed.periodEnd,
+        warnings: [],
+      };
+    }
   }
 
   if (isCashUpSpreadsheet(fileRow.report_type, download?.extension || "")) {
@@ -1088,6 +1208,7 @@ async function registerDownloadedDriveFile(
     contentHash,
     existing,
     email,
+    discoveryDecision,
   }: {
     folder: DriveFolder;
     driveFile: DriveFileWithPath;
@@ -1095,13 +1216,14 @@ async function registerDownloadedDriveFile(
     contentHash: string;
     existing: any;
     email: string;
+    discoveryDecision?: { vaultReportType?: string | null } | null;
   },
 ) {
   const meta = normalizeFolderMetadata(folder);
   if (!meta.branchId) {
     throw new Error("Drive folder is missing branch mapping; set branch_id before ingestion.");
   }
-  const reportType = resolveDriveFileReportType(folder, driveFile, meta.reportType);
+  const reportType = resolveDriveFileReportType(folder, driveFile, meta.reportType, discoveryDecision);
 
   const fileId = existing?.id || crypto.randomUUID();
   const storagePath = `drive/${meta.branchId}/${meta.department}/${fileId}/${safeName(download.filename)}`;
@@ -1254,6 +1376,7 @@ async function processOneDriveFile(
     email,
     counters,
     force = false,
+    discoveryRules = null as Record<string, unknown>[] | null,
   }: {
     accessToken: string;
     folder: DriveFolder;
@@ -1262,8 +1385,36 @@ async function processOneDriveFile(
     email: string;
     counters: RunCounters;
     force?: boolean;
+    discoveryRules?: Record<string, unknown>[] | null;
   },
 ) {
+  const meta = normalizeFolderMetadata(folder);
+  const rules = discoveryRules || [];
+  const discoveryDecision = folder.is_discovery_root
+    ? classifyDrivePath(driveFile.folderPath || driveFile.relativePath || "", driveFile.name || "", rules, meta.branchId)
+    : null;
+
+  if (discoveryDecision && !shouldIngestDiscoveryDecision(discoveryDecision)) {
+    counters.skipped_count += 1;
+    const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
+    await markRunFile(admin, itemId, {
+      status: "skipped",
+      reason: discoveryDecision.action === "ignore" ? "discovery_ignored" : "discovery_needs_approval",
+      error:
+        discoveryDecision.action === "ignore"
+          ? `Discovery rule: ignore (${discoveryDecision.reason}).`
+          : `Discovery gate: ${discoveryDecision.detectedReportType} needs approval (${discoveryDecision.reason}).`,
+      stats: {
+        folderPath: driveFile.folderPath,
+        relativePath: driveFile.relativePath,
+        depth: driveFile.depth,
+        discovery: discoveryDecision,
+      },
+    });
+    await updateRun(admin, runId, {}, counters);
+    return;
+  }
+
   const existing = await findExistingDriveFile(admin, driveFile, email);
   const action = existing ? "changed" : "new";
   if (!force && isUnchanged(existing, driveFile)) {
@@ -1316,6 +1467,7 @@ async function processOneDriveFile(
       contentHash,
       existing,
       email,
+      discoveryDecision,
     });
     jobId = registered.jobId;
 
@@ -1413,6 +1565,30 @@ export async function createDriveIngestionRun(
   return data.id as string;
 }
 
+async function resolveDriveIngestOffset(
+  admin: SupabaseLike,
+  folderId: string,
+  runStats: Record<string, unknown>,
+) {
+  if (Number.isFinite(Number(runStats.startOffset))) {
+    return Math.max(0, Number(runStats.startOffset));
+  }
+  const { data: prevRun } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .select("stats,status")
+    .eq("folder_id", folderId)
+    .in("status", ["partial", "completed"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextOffset = Number((prevRun?.stats as Record<string, unknown> | undefined)?.nextFileOffset);
+  if (Number.isFinite(nextOffset) && nextOffset > 0) {
+    const remaining = Number((prevRun?.stats as Record<string, unknown> | undefined)?.remainingFiles);
+    if (prevRun?.status === "partial" || remaining > 0) return nextOffset;
+  }
+  return 0;
+}
+
 export async function processDriveIngestionRun(
   admin: SupabaseLike,
   {
@@ -1449,7 +1625,14 @@ export async function processDriveIngestionRun(
     folderRowId: folder.id,
     driveFolderId: folder.drive_folder_id,
     autoIngest: Boolean(folder.auto_ingest),
+    isDiscoveryRoot: Boolean(folder.is_discovery_root),
   };
+  let discoveryRules: Record<string, unknown>[] = [];
+  if (folder.is_discovery_root) {
+    const meta = normalizeFolderMetadata(folder);
+    discoveryRules = await fetchActiveDiscoveryRules(admin, meta.branchId || null);
+    runStats.discoveryRulesLoaded = discoveryRules.length;
+  }
 
   try {
     await updateRun(admin, runId, {
@@ -1588,8 +1771,12 @@ export async function processDriveIngestionRun(
       return;
     }
 
-    const filesToProcess = files.slice(0, Math.max(1, maxFilesToProcess));
-    const leftForLater = Math.max(0, files.length - filesToProcess.length);
+    const startOffset = await resolveDriveIngestOffset(admin, folder.id, runStats);
+    const filesToProcess = files.slice(startOffset, startOffset + Math.max(1, maxFilesToProcess));
+    const nextFileOffset = startOffset + filesToProcess.length;
+    const leftForLater = Math.max(0, files.length - nextFileOffset);
+    runStats.startOffset = startOffset;
+    runStats.nextFileOffset = nextFileOffset;
 
     for (const driveFile of filesToProcess) {
       const exportInfo = resolveDriveExport(driveFile);
@@ -1613,6 +1800,7 @@ export async function processDriveIngestionRun(
         email,
         counters,
         force,
+        discoveryRules,
       });
     }
 
@@ -1624,6 +1812,10 @@ export async function processDriveIngestionRun(
         : counters.failed_count > 0
           ? "failed"
           : "completed";
+    if (finalStatus === "completed" && leftForLater === 0) {
+      runStats.nextFileOffset = 0;
+    }
+    runStats.remainingFiles = leftForLater;
     runStats.runtimeStage = finalStatus;
     await updateRun(admin, runId, {
       status: finalStatus,

@@ -98,11 +98,10 @@ export function assessPeriodCoverage({
     }
 
     if (deliveryOrderStart && requestedPeriod?.startDate && deliveryOrderStart > requestedPeriod.startDate) {
-      coverageNotes.push(
-        `Delivery order tracking begins on ${formatMonthLabel(deliveryOrderStart)} — order totals are partial for the full requested window.`,
-      );
+      const reason = `Delivery tracking began ${formatMonthLabel(deliveryOrderStart)} — order totals are partial for the full requested window.`;
+      coverageNotes.push(reason);
       if (confidence === CONFIDENCE_LEVELS.HIGH) confidence = CONFIDENCE_LEVELS.MEDIUM;
-      confidenceExplanation = `${confidenceExplanation} Delivery order tracking starts later, so order totals are partial.`;
+      confidenceExplanation = `${confidenceExplanation} ${reason}`;
     }
 
     const deliverySalesDates = breakdown.filter((row) => row.totalDeliverySales != null).map((row) => row.date);

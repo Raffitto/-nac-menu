@@ -17,6 +17,13 @@ import {
   buildExternalContextNilPayload,
   resolveNilCombinedPeriodBounds,
 } from "./vaultExternalContextRetrieval.ts";
+import {
+  applyRestaurantHeuristics,
+  buildEvidenceMap,
+  buildRankedHypotheses,
+} from "./executiveIntelligence.ts";
+import { formatBranchMemoryLines } from "./askNacBranchMemory.ts";
+import { buildMemoryHypotheses, matchMemoryToGuestQuestion } from "./askNacExecutiveMemory.ts";
 
 const EXTERNAL_CONTEXT_NOTE = EXTERNAL_CONTEXT_UNAVAILABLE_NOTE;
 
@@ -129,29 +136,63 @@ export function buildVaultBusinessReasoningAnswer(
   });
 
   const nilFields = nilReasoningToAskNacFields(nilResult);
+  const executiveMemory = (tool?.executiveMemory as { fact?: string; source?: string; category?: string }[]) || (tool?.branchMemory as { fact?: string; source?: string; category?: string }[]) || [];
+  const operatorMemory = (tool?.operatorMemory as { fact?: string; source?: string; category?: string }[])
+    || executiveMemory.filter((m) => m.source === "operator_memory");
+  const branchMemory = (tool?.branchMemory as { fact?: string; source?: string; category?: string }[])
+    || executiveMemory.filter((m) => m.source === "branch_memory");
+  const heuristicResult = applyRestaurantHeuristics(current, previous, executiveMemory);
+  const memoryMatches = matchMemoryToGuestQuestion(question, executiveMemory);
+  const memoryHypotheses = buildMemoryHypotheses(memoryMatches);
+  const keyMetrics = buildCashUpPeriodCompareMetrics(current, previous);
+  const rankedHypotheses = buildRankedHypotheses({
+    heuristics: [...heuristicResult.heuristics, ...memoryHypotheses],
+    nilHypotheses: nilResult.hypotheses || [],
+    metrics: keyMetrics,
+  });
+  const evidenceMap = buildEvidenceMap({
+    conclusion: String(heuristicResult.interpretation || rankedHypotheses[0]?.hypothesis || ""),
+    metrics: keyMetrics,
+    facts: (nilResult.facts || []).map((f: { text?: string }) => f.text),
+    branchMemory,
+    assumptions: rankedHypotheses.filter((h) => h.confidence === "low").map((h) => h.hypothesis),
+  });
+  const memoryLines = [
+    ...formatBranchMemoryLines(branchMemory as { fact: string; category?: string }[], { max: 2 }),
+    ...operatorMemory.slice(0, 2).map((m) => `[operator · ${m.category}] ${m.fact}`),
+  ];
+  const memoryAttribution = memoryHypotheses[0]?.attribution;
   const directAnswer = appendExternalContextSection(formatNilReasoningText(nilResult), {
     connected: externalConnected,
     sourceLabels: externalPayload.sourceLabels,
   });
-  const keyMetrics = buildCashUpPeriodCompareMetrics(current, previous);
   const coverageWarnings = buildCoverageWarnings(current, previous);
   const toolSources = (tool?.sources as { name?: string; detail?: string }[]) || [];
+  const insights = [
+    ...(heuristicResult.interpretation ? [heuristicResult.interpretation] : []),
+    ...(memoryAttribution ? [memoryAttribution] : []),
+    ...memoryHypotheses.map((h) => h.hypothesis),
+    ...nilFields.insights,
+    ...memoryLines.map((line) => `Branch context: ${line}`),
+  ];
+  const recommendations = [
+    ...(heuristicResult.recommendedAction ? [heuristicResult.recommendedAction] : []),
+    ...nilFields.recommendations,
+    ...(externalConnected
+      ? []
+      : [
+        "Review competitor/mall activity manually until competitive intelligence sources are connected.",
+        "Review weather/local context manually until weather intelligence sources are connected.",
+      ]),
+  ];
 
   return {
     answerType: "executive",
     title: `Business reasoning · ${periodLabel}`,
     directAnswer,
     keyMetrics,
-    insights: nilFields.insights,
-    recommendations: [
-      ...nilFields.recommendations,
-      ...(externalConnected
-        ? []
-        : [
-          "Review competitor/mall activity manually until competitive intelligence sources are connected.",
-          "Review weather/local context manually until weather intelligence sources are connected.",
-        ]),
-    ],
+    insights,
+    recommendations,
     sources: [
       ...nilFields.sources.map((s) => ({ name: s.name, detail: s.detail })),
       ...toolSources.map((s) => ({ name: s.name || "", detail: s.detail || "" })),
@@ -176,6 +217,11 @@ export function buildVaultBusinessReasoningAnswer(
       domainsPresent: nilResult.meta?.domainsPresent || ["internal_operational"],
       externalContextConnected: externalConnected,
       externalContextSourceLabels: externalPayload.sourceLabels,
+      rankedHypotheses,
+      evidenceMap,
+      branchMemoryCount: branchMemory.length,
+      operatorMemoryCount: operatorMemory.length,
+      memoryHypotheses,
     },
   };
 }

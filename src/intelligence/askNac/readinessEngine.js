@@ -196,6 +196,52 @@ export function assessIntentReadinessSync(
     };
   }
 
+  if (
+    intent === ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR
+    || intent === ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD
+    || intent === ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT
+    || intent === ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER
+    || intent === ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES
+  ) {
+    if (
+      intent === ASK_NAC_INTENTS.VAULT_DRIVE_DISCOVER
+      || intent === ASK_NAC_INTENTS.VAULT_DRIVE_APPROVE_RULES
+    ) {
+      return {
+        status: READINESS.READY,
+        canQuery: supabaseConfigured,
+        reasons: [],
+        missingData: [],
+        note: "Drive discovery — no vault period required.",
+      };
+    }
+    if (intent === ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR) {
+      return {
+        status: READINESS.READY,
+        canQuery: supabaseConfigured,
+        reasons: [],
+        missingData: [],
+        note: "Operator knowledge — stored permanently via Teach NAC.",
+      };
+    }
+    const scopedBranch = branchMention || profile?.branchScope;
+    if (!scopedBranch || scopedBranch === "all") {
+      return {
+        status: READINESS.MISSING,
+        canQuery: false,
+        reasons: ["Branch scope required for weekly dashboard."],
+        missingData: [{ intent, label: "Branch", planned: false }],
+      };
+    }
+    return {
+      status: READINESS.READY,
+      canQuery: supabaseConfigured,
+      reasons: [],
+      missingData: [],
+      note: "Weekly dashboard — may request period-specific manual inputs.",
+    };
+  }
+
   if (isVaultDataIntent(intent)) {
     const crossBranch = vaultCrossBranchBlocked(branchMention, profile);
     if (crossBranch) {
@@ -429,6 +475,14 @@ export async function assessIntentReadiness(intent, context = {}) {
   }
 
   if (isVaultDocumentSearchIntent(intent) || isVaultDocumentSummaryIntent(intent)) {
+    return sync;
+  }
+
+  if (
+    intent === ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR
+    || intent === ASK_NAC_INTENTS.VAULT_WEEKLY_DASHBOARD
+    || intent === ASK_NAC_INTENTS.VAULT_PROVIDE_MANUAL_INPUT
+  ) {
     return sync;
   }
 
