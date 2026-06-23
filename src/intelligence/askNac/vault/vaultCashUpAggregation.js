@@ -173,8 +173,12 @@ export function aggregateCashUpFactsOverRange({
 
   const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
 
-  const salesDates = dailyBreakdown.filter((row) => row.totalSales != null).map((row) => row.date);
-  const deliveryOrderDates = dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date);
+  const salesDates = includeDailyBreakdown
+    ? dailyBreakdown.filter((row) => row.totalSales != null).map((row) => row.date)
+    : dates.filter((date) => pickDaySales(factsByDate[date] || []) != null);
+  const deliveryOrderDates = includeDailyBreakdown
+    ? dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date)
+    : dates.filter((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders") != null);
 
   return {
     totalSales,
@@ -200,4 +204,55 @@ export function buildCashUpRangeQueryLimit(startDate, endDate) {
   const end = new Date(`${endDate}T12:00:00Z`);
   const spanDays = Math.max(1, Math.round((end - start) / 86400000) + 1);
   return Math.min(800, spanDays * 20);
+}
+
+export function countCalendarDaysInRange(startDate, endDate) {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  if (end < start) return 0;
+  return Math.round((end - start) / 86400000) + 1;
+}
+
+export function splitRangeIntoMonthChunks(startDate, endDate) {
+  const chunks = [];
+  if (!startDate || !endDate || startDate > endDate) return chunks;
+
+  let y = Number(startDate.slice(0, 4));
+  let m = Number(startDate.slice(5, 7)) - 1;
+  const endY = Number(endDate.slice(0, 4));
+  const endM = Number(endDate.slice(5, 7)) - 1;
+
+  while (y < endY || (y === endY && m <= endM)) {
+    const monthStart = chunks.length === 0
+      ? startDate
+      : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const isLastMonth = y === endY && m === endM;
+    const monthEnd = isLastMonth
+      ? endDate
+      : `${y}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const monthLabel = new Date(Date.UTC(y, m, 1, 12)).toLocaleDateString("en-GB", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    chunks.push({ startDate: monthStart, endDate: monthEnd, label: monthLabel });
+    m += 1;
+    if (m > 11) {
+      m = 0;
+      y += 1;
+    }
+  }
+  return chunks;
+}
+
+export function shouldUseChunkedCashUpFetch(startDate, endDate, periodType) {
+  if (periodType === "year_to_date") return true;
+  return countCalendarDaysInRange(startDate, endDate) > 35;
+}
+
+export function shouldSkipDailyBreakdownForRange(startDate, endDate, periodType) {
+  if (periodType === "year_to_date") return true;
+  return countCalendarDaysInRange(startDate, endDate) > 31;
 }

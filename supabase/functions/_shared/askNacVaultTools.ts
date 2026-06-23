@@ -59,6 +59,9 @@ import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
   groupCashUpFactsByBusinessDate,
+  shouldSkipDailyBreakdownForRange,
+  shouldUseChunkedCashUpFetch,
+  splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation.ts";
 
 const FACT_SELECT =
@@ -467,7 +470,8 @@ export async function getVaultCashUpAggregationFacts(
   query = query
     .eq("report_type", "cash_up")
     .in("metric_key", [...CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS])
-    .neq("metric_key", "raw_extract");
+    .neq("metric_key", "raw_extract")
+    .order("period_end", { ascending: true });
   if (typeof limit === "number" && limit > 0) query = query.limit(limit);
 
   const { data, error } = await query;
@@ -1045,9 +1049,71 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
     startDate,
     endDate,
     vaultPeriod,
-    includeDailyBreakdown: true,
+    includeDailyBreakdown: !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType),
     includeCoverage: true,
   });
+}
+
+async function fetchCashUpAggregationFactsResilient(
+  supabase: SupabaseClient,
+  params: Record<string, unknown> & { startDate?: string; endDate?: string },
+  vaultPeriod?: VaultPeriod,
+) {
+  const startDate = params.startDate as string | undefined;
+  const endDate = params.endDate as string | undefined;
+  const useChunks = shouldUseChunkedCashUpFetch(startDate, endDate, vaultPeriod?.periodType);
+
+  if (!useChunks || !startDate || !endDate) {
+    return getVaultCashUpAggregationFacts(supabase, params);
+  }
+
+  const chunks = splitRangeIntoMonthChunks(startDate, endDate);
+  const allFacts: Record<string, unknown>[] = [];
+  const chunkWarnings: string[] = [];
+  let branch: string | null = null;
+  let branchLabel = "Network";
+  let loadedChunks = 0;
+
+  for (const chunk of chunks) {
+    try {
+      const result = await getVaultCashUpAggregationFacts(supabase, {
+        ...params,
+        startDate: chunk.startDate,
+        endDate: chunk.endDate,
+        limit: buildCashUpRangeQueryLimit(chunk.startDate, chunk.endDate),
+      });
+      branch = (result.branch as string | null) ?? branch;
+      branchLabel = String(result.branchLabel || branchLabel);
+      allFacts.push(...((result.facts as Record<string, unknown>[]) || []));
+      loadedChunks += 1;
+    } catch (err) {
+      chunkWarnings.push(
+        `Cash-up facts for ${chunk.label} (${chunk.startDate} – ${chunk.endDate}) could not be loaded: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  if (!allFacts.length) {
+    throw new Error(chunkWarnings[0] || "Cash-up range facts query returned no rows.");
+  }
+
+  if (chunkWarnings.length > 0) {
+    chunkWarnings.push(
+      loadedChunks < chunks.length
+        ? "YTD aggregation used partial monthly chunks — totals reflect loaded months only."
+        : "Some monthly cash-up chunks reported errors but partial facts were merged.",
+    );
+  }
+
+  return {
+    branch,
+    branchLabel,
+    startDate,
+    endDate,
+    facts: allFacts,
+    chunkWarnings,
+    sources: [{ name: "ask_nac_structured_facts", detail: "RLS-filtered cash-up range facts (monthly chunks)" }],
+  };
 }
 
 async function fetchCashUpRangeBundle(
@@ -1068,13 +1134,16 @@ async function fetchCashUpRangeBundle(
   },
 ) {
   const scopedBranch = resolveBranch(context);
-  const factsResult = await getVaultCashUpAggregationFacts(supabase, {
+  const resolvedDailyBreakdown = includeDailyBreakdown
+    ?? !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType);
+
+  const factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
     ...context,
     branch: scopedBranch,
     startDate,
     endDate,
     limit: buildCashUpRangeQueryLimit(startDate, endDate),
-  });
+  }, vaultPeriod);
 
   const factsByDate = groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || []);
   const aggregation = aggregateCashUpFactsOverRange({
@@ -1082,11 +1151,11 @@ async function fetchCashUpRangeBundle(
     endDate,
     branchId: scopedBranch,
     factsByDate,
-    includeDailyBreakdown,
+    includeDailyBreakdown: resolvedDailyBreakdown,
   });
 
   let coverage: Record<string, unknown>[] = [];
-  let warnings: string[] = [];
+  let warnings: string[] = [...((factsResult.chunkWarnings as string[]) || [])];
   if (includeCoverage) {
     const coverageResult = await getVaultCoverage(supabase, {
       ...context,
@@ -1111,7 +1180,7 @@ async function fetchCashUpRangeBundle(
     periodLabel: vaultPeriod?.label || `${startDate} – ${endDate}`,
     coverage,
     vaultSources: collectVaultSources((factsResult.facts as Record<string, unknown>[]) || [], coverage),
-    factsByDate: includeDailyBreakdown ? factsByDate : undefined,
+    factsByDate: resolvedDailyBreakdown ? factsByDate : undefined,
     aggregation,
     warnings,
     sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up range aggregation" }],

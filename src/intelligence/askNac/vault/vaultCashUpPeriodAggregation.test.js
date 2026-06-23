@@ -7,6 +7,10 @@ import {
   aggregateCashUpFactsOverRange,
   groupCashUpFactsByBusinessDate,
   buildCashUpRangeQueryLimit,
+  splitRangeIntoMonthChunks,
+  shouldUseChunkedCashUpFetch,
+  shouldSkipDailyBreakdownForRange,
+  countCalendarDaysInRange,
 } from "./vaultCashUpAggregation";
 import { CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS } from "./vaultSalesPerformanceIntelligence";
 import { buildCashUpPeriodAggregateAnswer } from "./vaultSalesPerformanceIntelligence";
@@ -132,6 +136,33 @@ describe("aggregateCashUpFactsOverRange", () => {
   test("range query limit scales modestly with span", () => {
     expect(buildCashUpRangeQueryLimit("2026-06-14", "2026-06-20")).toBe(140);
     expect(buildCashUpRangeQueryLimit("2026-06-01", "2026-06-20")).toBeLessThanOrEqual(800);
+  });
+
+  test("YTD range splits into monthly chunks and skips daily breakdown", () => {
+    const chunks = splitRangeIntoMonthChunks("2026-01-01", "2026-06-20");
+    expect(chunks.length).toBeGreaterThanOrEqual(6);
+    expect(chunks[0].startDate).toBe("2026-01-01");
+    expect(chunks[chunks.length - 1].endDate).toBe("2026-06-20");
+    expect(shouldUseChunkedCashUpFetch("2026-01-01", "2026-06-20", "year_to_date")).toBe(true);
+    expect(shouldUseChunkedCashUpFetch("2026-06-14", "2026-06-20", "last_7_days")).toBe(false);
+    expect(shouldSkipDailyBreakdownForRange("2026-01-01", "2026-06-20", "year_to_date")).toBe(true);
+    expect(countCalendarDaysInRange("2026-01-01", "2026-06-20")).toBeGreaterThan(160);
+  });
+
+  test("aggregation keeps coverage bounds without daily breakdown", () => {
+    const facts = buildRangeFacts();
+    const factsByDate = groupCashUpFactsByBusinessDate(facts);
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-07",
+      endDate: "2026-06-20",
+      branchId: "khobar",
+      factsByDate,
+      includeDailyBreakdown: false,
+    });
+    expect(agg.dailyBreakdown).toHaveLength(0);
+    expect(agg.salesCoverageStart).toBeTruthy();
+    expect(agg.salesCoverageEnd).toBeTruthy();
+    expect(agg.dayCount).toBeGreaterThan(0);
   });
 
   test("aggregation metric keys exclude reconciliation and payment mix", () => {
