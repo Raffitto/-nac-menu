@@ -6,6 +6,7 @@ import {
   normCell,
   normHeader,
   parseIsoDate,
+  parseNacDateFromFilename,
   parseNacDateFromText,
   resolveBranchFromMatrix,
 } from "./vaultParseUtils";
@@ -124,9 +125,10 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
   const periodStart =
     parseIsoDate(extracted.log_date) ||
     parseNacDateFromText(text) ||
+    parseNacDateFromFilename(logbookFilenameHint(context)) ||
     context.periodStart ||
     null;
-  const periodEnd = periodStart || context.periodEnd || null;
+  const periodEnd = periodStart || context.periodEnd || context.periodStart || null;
 
   const googleCounts = extractGoogleReviewCounts(text);
   const textFieldKeys = [
@@ -247,6 +249,13 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
         sourceRowRef: "google_reviews",
       }),
     );
+  }
+
+  if (periodStart) {
+    for (const fact of facts) {
+      if (!fact.period_start) fact.period_start = periodStart;
+      if (!fact.period_end) fact.period_end = periodEnd || periodStart;
+    }
   }
 
   return {

@@ -76,4 +76,25 @@ Google Review: 5 star 3, 4 star 1
     expect(result.facts.some((f) => f.metric_key === "complaints")).toBe(true);
     expect(result.facts.some((f) => f.metric_key === "dinner_notes")).toBe(true);
   });
+
+  test("derives period from NAC logbook filename when body date is missing", () => {
+    const result = parseDailyLogbookText(
+      "Complaints: Terrace wait exceeded 25 minutes during dinner rush.",
+      {
+        fileId: "file-june",
+        branchId: "khobar",
+        department: "operations",
+        reportType: "daily_logbook",
+        sensitivityLevel: "internal",
+        createdBy: "test@nac.com",
+        originalFilename: "11 June NAC Khobar Logbook.docx",
+      },
+      null,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.periodStart).toBe("2026-06-11");
+    expect(result.periodEnd).toBe("2026-06-11");
+    expect(result.facts.every((f) => f.period_end === "2026-06-11")).toBe(true);
+  });
 });

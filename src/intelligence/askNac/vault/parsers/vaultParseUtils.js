@@ -58,6 +58,68 @@ export function parseNacDateFromText(text) {
   return null;
 }
 
+const NAC_MONTH_MAP = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8,
+  september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+};
+
+function resolveNacFilenameYear(monthIndex, explicitYear, referenceDate = new Date()) {
+  let year = explicitYear ? Number(explicitYear) : referenceDate.getFullYear();
+  if (!explicitYear && monthIndex > referenceDate.getMonth()) year -= 1;
+  return year;
+}
+
+function isoFromParts(year, monthIndex, day) {
+  const d = new Date(Date.UTC(year, monthIndex, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== monthIndex || d.getUTCDate() !== day) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Parse business day from NAC vault filenames (logbooks, cash-up exports).
+ * Handles "24 Mar", "June 16", "10June", "08 Jun 2025", etc.
+ */
+export function parseNacDateFromFilename(text = "", referenceDate = new Date()) {
+  const value = String(text || "");
+  if (!value) return null;
+
+  const iso = value.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+  if (iso) return iso[1];
+
+  const dmy = value.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](20\d{2})\b/);
+  if (dmy) return parseIsoDate(`${dmy[1]}/${dmy[2]}/${dmy[3]}`);
+
+  const monthToken =
+    "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+
+  const dayMonth = value.match(new RegExp(`\\b(\\d{1,2})\\s+${monthToken}(?:\\s+(20\\d{2}))?\\b`, "i"));
+  if (dayMonth) {
+    const monthKey = dayMonth[2].toLowerCase();
+    const monthIndex = NAC_MONTH_MAP[monthKey];
+    const year = resolveNacFilenameYear(monthIndex, dayMonth[3], referenceDate);
+    return isoFromParts(year, monthIndex, Number(dayMonth[1]));
+  }
+
+  const monthDay = value.match(new RegExp(`\\b${monthToken}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(20\\d{2}))?\\b`, "i"));
+  if (monthDay) {
+    const monthKey = monthDay[1].toLowerCase();
+    const monthIndex = NAC_MONTH_MAP[monthKey];
+    const year = resolveNacFilenameYear(monthIndex, monthDay[3], referenceDate);
+    return isoFromParts(year, monthIndex, Number(monthDay[2]));
+  }
+
+  const glued = value.match(new RegExp(`\\b(\\d{1,2})${monthToken}(?:\\s+(20\\d{2}))?\\b`, "i"));
+  if (glued) {
+    const monthKey = glued[2].toLowerCase();
+    const monthIndex = NAC_MONTH_MAP[monthKey];
+    const year = resolveNacFilenameYear(monthIndex, glued[3], referenceDate);
+    return isoFromParts(year, monthIndex, Number(glued[1]));
+  }
+
+  return null;
+}
+
 export function explainConfidence(confidence, options = {}) {
   const { coreMatched = 0, coreRequired = 1, warnings = [] } = options;
   const baseWarnings = [...warnings];

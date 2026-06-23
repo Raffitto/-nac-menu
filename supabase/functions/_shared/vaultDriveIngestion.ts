@@ -527,7 +527,7 @@ function normalizeIsoDate(year: number, month: number, day: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function parseBusinessDate(text = "") {
+function parseBusinessDate(text = "", referenceDate = new Date()) {
   const value = String(text || "");
   const iso = value.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/);
   if (iso) return normalizeIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
@@ -538,12 +538,44 @@ function parseBusinessDate(text = "") {
     may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9,
     september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
   };
-  const named = value.match(/\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+(20\d{2}))?\b/i);
+  const monthToken =
+    "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const named = value.match(new RegExp(`\\b(\\d{1,2})\\s+${monthToken}(?:\\s+(20\\d{2}))?\\b`, "i"));
   if (named) {
-    const year = Number(named[3] || new Date().getUTCFullYear());
+    const year = named[3] ? Number(named[3]) : resolveBusinessYear(months[named[2].toLowerCase()], named[3], referenceDate);
     return normalizeIsoDate(year, months[named[2].toLowerCase()], Number(named[1]));
   }
+  const monthDay = value.match(new RegExp(`\\b${monthToken}\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(20\\d{2}))?\\b`, "i"));
+  if (monthDay) {
+    const year = monthDay[3] ? Number(monthDay[3]) : resolveBusinessYear(months[monthDay[1].toLowerCase()], monthDay[3], referenceDate);
+    return normalizeIsoDate(year, months[monthDay[1].toLowerCase()], Number(monthDay[2]));
+  }
+  const glued = value.match(new RegExp(`\\b(\\d{1,2})${monthToken}(?:\\s+(20\\d{2}))?\\b`, "i"));
+  if (glued) {
+    const year = glued[3] ? Number(glued[3]) : resolveBusinessYear(months[glued[2].toLowerCase()], glued[3], referenceDate);
+    return normalizeIsoDate(year, months[glued[2].toLowerCase()], Number(glued[1]));
+  }
   return null;
+}
+
+function resolveBusinessYear(monthIndex: number, explicitYear: string | undefined, referenceDate: Date) {
+  if (explicitYear) return Number(explicitYear);
+  let year = referenceDate.getUTCFullYear();
+  if (monthIndex - 1 > referenceDate.getUTCMonth()) year -= 1;
+  return year;
+}
+
+function resolveDriveBusinessPeriod(
+  text: string,
+  fileRow: Record<string, any>,
+  referenceDate = new Date(),
+) {
+  return (
+    parseBusinessDate(text, referenceDate)
+    || parseBusinessDate(fileRow.original_filename || fileRow.title || "", referenceDate)
+    || fileRow.period_start
+    || null
+  );
 }
 
 function rowContainsLabel(row: string[], patterns: RegExp[]) {
@@ -644,7 +676,10 @@ async function extractText(download: { buffer: ArrayBuffer; extension: string; f
 
   if (extension === "docx") {
     const mammoth = await import("npm:mammoth@1.12.0");
-    const result = await mammoth.extractRawText({ buffer: download.buffer });
+    const arrayBuffer = download.buffer instanceof ArrayBuffer
+      ? download.buffer
+      : new Uint8Array(download.buffer as ArrayBufferLike).buffer;
+    const result = await mammoth.extractRawText({ arrayBuffer });
     return {
       text: String(result.value || ""),
       sections: [{ label: "Document text", text: String(result.value || "") }],
@@ -1012,6 +1047,10 @@ async function insertStructuredFacts(
   }
 
   const matrix = textLinesToMatrix(String(text || "").split(/\r?\n/));
+  const resolvedPeriod = resolveDriveBusinessPeriod(text, fileRow);
+  const periodStart = resolvedPeriod || fileRow.period_start || null;
+  const periodEnd = resolvedPeriod || fileRow.period_end || fileRow.period_start || null;
+
   const cashUpFacts = fileRow.report_type === "cash_up"
     ? extractCashUpStructuredFacts(matrix, fileRow, versionRowId, email)
     : [];
@@ -1053,8 +1092,8 @@ async function insertStructuredFacts(
     metric_key: "raw_extract_line",
     metric_value: null,
     dimensions: { row_index: index, text: line.join(" | ").slice(0, 500) },
-    period_start: fileRow.period_start,
-    period_end: fileRow.period_end,
+    period_start: periodStart,
+    period_end: periodEnd,
     grain: "line",
     source_row_ref: `drive-row-${index + 1}`,
     confidence: 0.35,
@@ -1073,13 +1112,16 @@ async function insertStructuredFacts(
       warnings: [],
     };
   }
+  if (!periodStart || !periodEnd) {
+    throw new Error("Drive ingest could not resolve period_start/period_end for structured facts — existing facts preserved.");
+  }
   await persistParsedFacts(admin, {
     fileRow,
     versionRowId,
     email,
     rows,
-    periodStart: fileRow.period_start,
-    periodEnd: fileRow.period_end,
+    periodStart,
+    periodEnd,
   });
   return {
     factCount: rows.length,
@@ -1088,8 +1130,8 @@ async function insertStructuredFacts(
     confidenceLevel: "low",
     publish: false,
     parser: "raw_extract_line",
-    periodStart: fileRow.period_start || null,
-    periodEnd: fileRow.period_end || null,
+    periodStart,
+    periodEnd,
     warnings: [],
   };
 }
@@ -1352,6 +1394,9 @@ async function completeJob(
     readiness_status: readiness,
     last_ingested_at: nowIso(),
     updated_at: nowIso(),
+    ...(parseResult.periodStart && parseResult.periodEnd
+      ? { period_start: parseResult.periodStart, period_end: parseResult.periodEnd }
+      : {}),
   }).eq("source_file_id", fileId);
 }
 

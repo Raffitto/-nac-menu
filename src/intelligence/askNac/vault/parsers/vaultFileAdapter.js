@@ -128,7 +128,8 @@ async function readDocxText(file) {
     );
   }
 
-  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+  const nodeBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const result = await mammoth.extractRawText({ buffer: nodeBuffer });
   const text = String(result.value || "").trim();
   const warnings = (result.messages || []).map((m) => m.message).filter(Boolean);
   const matrix = textLinesToMatrix(text.split(/\r?\n/));
