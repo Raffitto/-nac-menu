@@ -2,6 +2,8 @@
  * Server-side OpenAI analyst narrator — rewrites prose only; never changes verified numbers.
  */
 
+import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
+
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") || "gpt-4o-mini";
 const MAX_FACT_ROWS = 24;
 const MAX_TOKENS = 600;
@@ -189,9 +191,18 @@ export async function narrateWithOpenAi(
       return { answer: { ...deterministic, isAiGenerated: false }, aiConnected: true };
     }
 
+    const coercedDirectAnswer = coercePlainTextDirectAnswer(
+      parsed.directAnswer,
+      deterministic as { executiveBrief?: { executiveSummary?: string } },
+    ) || coercePlainTextDirectAnswer(deterministic.directAnswer, deterministic as { executiveBrief?: { executiveSummary?: string } });
+
+    if (!coercedDirectAnswer) {
+      return { answer: { ...deterministic, isAiGenerated: false }, aiConnected: true };
+    }
+
     const merged: DeterministicAnswer = {
       ...deterministic,
-      directAnswer: parsed.directAnswer,
+      directAnswer: coercedDirectAnswer,
       insights: parsed.insights?.length ? parsed.insights : (deterministic.insights as string[]) || [],
       recommendations: parsed.recommendations?.length
         ? parsed.recommendations

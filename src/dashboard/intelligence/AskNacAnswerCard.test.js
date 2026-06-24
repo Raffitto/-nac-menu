@@ -121,6 +121,73 @@ describe("AskNacAnswerCard cash-up executive brief", () => {
     expect(screen.getByText(/Management note:/)).toBeInTheDocument();
   });
 
+  test("coerces object-shaped directAnswer to plain text in details", () => {
+    renderCard(
+      buildCashUpResponse({
+        executiveBrief: null,
+        directAnswer: { executiveSummary: "Khobar cash-up shows net sales of 17,941 SAR." },
+      }),
+    );
+
+    expect(screen.getByText(/Khobar cash-up shows net sales of 17,941 SAR/)).toBeInTheDocument();
+    expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+  });
+
+  test("renders conversation chart for visualization follow-up", () => {
+    renderCard({
+      answerType: ANSWER_TYPES.METRIC,
+      intent: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
+      title: "Daily breakdown · last 7 days",
+      directAnswer: "Khobar daily net sales for last 7 days (5 day(s) from prior answer).",
+      conversationResolution: { followUpCategory: "visualization", usedContext: true },
+      conversationChart: {
+        metricKey: "net_sales",
+        metricLabel: "Net sales",
+        unit: "SAR",
+        points: [
+          { date: "2026-06-18", label: "2026-06-18", value: 12000 },
+          { date: "2026-06-19", label: "2026-06-19", value: 9000 },
+        ],
+      },
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      sources: [],
+      warnings: [],
+      missingData: [],
+      confidence: "high",
+      exportOptions: [],
+      isAiGenerated: false,
+    });
+
+    expect(screen.getByTestId("ask-nac-conversation-chart")).toBeInTheDocument();
+    expect(screen.getByText("Net sales by day")).toBeInTheDocument();
+  });
+
+  test("shows visualization fallback when dataset is missing", () => {
+    renderCard({
+      answerType: ANSWER_TYPES.METRIC,
+      intent: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
+      title: "Daily breakdown · last 7 days",
+      directAnswer: "No daily breakdown available.",
+      conversationResolution: { followUpCategory: "visualization", usedContext: true },
+      conversationDataset: { dailyBreakdown: [] },
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      sources: [],
+      warnings: [],
+      missingData: [],
+      confidence: "medium",
+      exportOptions: [],
+      isAiGenerated: false,
+    });
+
+    expect(screen.getByTestId("ask-nac-visualization-fallback")).toHaveTextContent(
+      /once daily breakdown data is available/i,
+    );
+  });
+
   test("does not apply executive brief renderer to non-cash-up answers", () => {
     renderCard(
       buildCashUpResponse({

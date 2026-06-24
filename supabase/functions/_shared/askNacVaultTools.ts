@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
+import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
 import {
   assessSearchMatchConfidence,
   buildOperationalSearchDirectAnswer,
@@ -2232,6 +2233,7 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       conversationDataset: {
         kind: "cash_up_aggregation",
         reportType: "cash_up",
+        metric: "net_sales",
         aggregation: {
           totalSales: aggregation.totalSales ?? null,
           totalGuests: aggregation.totalGuests ?? null,
@@ -2307,7 +2309,7 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       : []),
   ];
 
-  const directAnswer = formatManagerStyleAnswer({
+  const managerDirectAnswer = formatManagerStyleAnswer({
     answer: executive.answer,
     managementNote: executive.managementNote,
     source: executive.source,
@@ -2331,6 +2333,11 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     coverage: (tool?.coverage as Record<string, unknown>[]) || [],
     question: String(route.question || ""),
   });
+
+  const directAnswer = coercePlainTextDirectAnswer(
+    executiveBrief?.executiveSummary || managerDirectAnswer,
+    { executiveBrief },
+  ) || managerDirectAnswer;
 
   return {
     ...baseVaultFields(route, tool, readiness),

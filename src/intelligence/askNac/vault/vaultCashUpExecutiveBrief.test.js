@@ -114,7 +114,8 @@ describe("buildVaultCashUpAnswer executiveBrief attachment", () => {
       { status: READINESS.READY },
     );
 
-    expect(answer.directAnswer).toMatch(/Answer:/);
+    expect(answer.directAnswer).toMatch(/net sales of 17,941\.739 SAR/i);
+    expect(answer.directAnswer).not.toBe("[object Object]");
     expect(answer.executiveBrief).toBeDefined();
     expect(answer.executiveBrief.executiveSummary).toMatch(/17,941\.739 SAR/);
     expect(answer.executiveBrief.keyFindings.length).toBeGreaterThan(0);

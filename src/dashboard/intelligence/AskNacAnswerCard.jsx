@@ -12,6 +12,12 @@ import {
   applyExecutiveMetricDisplayLabels,
   extractExecutiveKpiMetrics,
 } from "../../intelligence/askNac/export/executiveBriefExport";
+import { resolveAskNacDirectAnswer } from "../../intelligence/askNac/conversation/coercePlainTextDirectAnswer";
+import {
+  buildConversationChartPayload,
+  resolveVisualizationPresentation,
+} from "../../intelligence/askNac/conversation/conversationVisualization";
+import AskNacConversationChart from "./AskNacConversationChart";
 
 function ExecutiveBriefBulletSection({ title, items = [] }) {
   if (!items.length) return null;
@@ -62,6 +68,23 @@ function CashUpExecutiveBriefView({ brief, keyMetrics = [] }) {
   );
 }
 
+function ConversationVisualizationSection({ response }) {
+  const chart = response?.conversationChart || buildConversationChartPayload(response);
+  const { fallback } = resolveVisualizationPresentation(response);
+
+  if (chart) {
+    return <AskNacConversationChart chart={chart} />;
+  }
+  if (fallback) {
+    return (
+      <p className="nac-ask-nac-visualization-fallback" data-testid="ask-nac-visualization-fallback">
+        {fallback}
+      </p>
+    );
+  }
+  return null;
+}
+
 function PrimaryAnswerContent({ response }) {
   if (shouldRenderCashUpExecutiveBrief(response)) {
     return (
@@ -71,7 +94,12 @@ function PrimaryAnswerContent({ response }) {
       />
     );
   }
-  return <p className="nac-ask-nac-response__answer">{response.directAnswer}</p>;
+  return (
+    <>
+      <p className="nac-ask-nac-response__answer">{resolveAskNacDirectAnswer(response)}</p>
+      <ConversationVisualizationSection response={response} />
+    </>
+  );
 }
 
 function MobilePrimaryAnswerContent({ response }) {
@@ -83,8 +111,16 @@ function MobilePrimaryAnswerContent({ response }) {
       />
     );
   }
-  const answerLead = formatMobileAnswerLead(response);
-  return <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>;
+  const answerLead = formatMobileAnswerLead({
+    ...response,
+    directAnswer: resolveAskNacDirectAnswer(response),
+  });
+  return (
+    <>
+      <p className="nac-ask-nac-response__answer nac-ask-nac-response__answer--lead">{answerLead}</p>
+      <ConversationVisualizationSection response={response} />
+    </>
+  );
 }
 
 function MetricList({ metrics, compact = false }) {
@@ -366,7 +402,7 @@ function AskNacAnswerDetails({ response, isMissing, isError }) {
 
       <p className="nac-ask-nac-details__verbatim">
         <span className="nac-ask-nac-details__verbatim-label">Verified answer</span>
-        {response.directAnswer}
+        {resolveAskNacDirectAnswer(response)}
       </p>
     </div>
   );

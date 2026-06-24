@@ -4,6 +4,8 @@
 
 import { ANSWER_TYPES, CONFIDENCE_LEVELS, createAskNacResponse, metricEntry } from "../askNacContract";
 import { FOLLOW_UP_CATEGORIES } from "./conversationFollowUpTaxonomy";
+import { buildConversationChartPayload } from "./conversationVisualization";
+import { inferMetricFromQuestion } from "./conversationState";
 
 function formatNumber(value) {
   if (value == null || value === "") return null;
@@ -72,7 +74,17 @@ export function buildAnswerFromConversationDataset({
       periodLabel,
       branchLabel,
       warnings: ["Reused dataset from the previous answer — no new vault query."],
-      conversationDataset: dataset,
+      conversationDataset: {
+        ...dataset,
+        metric: state.metric || "net_sales",
+      },
+      conversationChart: buildConversationChartPayload({
+        conversationDataset: { ...dataset, metric: state.metric },
+        conversationResolution: {
+          followUpCategory: followUpCategory || FOLLOW_UP_CATEGORIES.VISUALIZATION,
+        },
+        title: `Daily breakdown · ${periodLabel}`,
+      }),
       diagnostics: { reusedDataset: true, aggregation },
     });
   }
@@ -120,10 +132,11 @@ export function attachConversationDatasetToVaultAnswer(answer, tool, route) {
 
   return {
     ...answer,
-    conversationDataset: {
-      kind: "cash_up_aggregation",
-      reportType: "cash_up",
-      aggregation: {
+      conversationDataset: {
+        kind: "cash_up_aggregation",
+        reportType: "cash_up",
+        metric: inferMetricFromQuestion(route?.question || "") || "net_sales",
+        aggregation: {
         totalSales: aggregation.totalSales ?? null,
         totalGuests: aggregation.totalGuests ?? null,
         totalDeliverySales: aggregation.totalDeliverySales ?? null,

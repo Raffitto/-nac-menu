@@ -48,6 +48,7 @@ import {
 } from "../executive/humanInLoopAnswerBuilder";
 import { buildKnowledgeHealthAnswer } from "../knowledge/knowledgeHealthAnswerBuilder";
 import { attachConversationDatasetToVaultAnswer } from "../conversation/conversationDatasetAnswer";
+import { coercePlainTextDirectAnswer } from "../conversation/coercePlainTextDirectAnswer";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -422,7 +423,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       : []),
   ];
 
-  const directAnswer = formatManagerStyleAnswer({
+  const managerDirectAnswer = formatManagerStyleAnswer({
     answer: executive.answer,
     managementNote: executive.managementNote,
     source: executive.source,
@@ -440,6 +441,11 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     coverage: tool.coverage,
     question: route.question || "",
   });
+
+  const directAnswer = coercePlainTextDirectAnswer(
+    executiveBrief?.executiveSummary || managerDirectAnswer,
+    { executiveBrief },
+  ) || managerDirectAnswer;
 
   return createAskNacResponse({
     ...baseVaultFields(route, tool, readiness),

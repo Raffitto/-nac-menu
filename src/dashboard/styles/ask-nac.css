@@ -417,6 +417,28 @@
   color: rgba(249, 249, 247, 0.92);
 }
 
+.nac-ask-nac-conversation-chart {
+  margin-top: 1rem;
+}
+
+.nac-ask-nac-conversation-chart h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(249, 249, 247, 0.92);
+}
+
+.nac-ask-nac-conversation-chart__wrap {
+  width: 100%;
+  min-height: 220px;
+}
+
+.nac-ask-nac-visualization-fallback {
+  margin: 0.75rem 0 0;
+  color: rgba(249, 249, 247, 0.65);
+  font-size: 0.92rem;
+}
+
 .nac-ask-nac-metrics {
   list-style: none;
   margin: 1rem 0 0;
