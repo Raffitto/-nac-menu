@@ -15,6 +15,7 @@ import {
   REPORT_TYPE_LABELS,
   REQUIRED_COVERAGE_REPORT_TYPES,
 } from "./knowledgeHealthConstants";
+import { assessDomainReadinessPlaceholders } from "./knowledgeTaxonomy";
 
 function clampScore(value) {
   if (!Number.isFinite(value)) return 0;
@@ -448,6 +449,7 @@ export function computeKnowledgeHealth(snapshot = {}) {
     components,
     componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness },
     executiveReadiness,
+    domainReadiness: assessDomainReadinessPlaceholders({ fileInventory }),
     missingRegistry,
     recommendations: [],
     sources: snapshot.sources || [],

@@ -48,6 +48,9 @@ export const EXECUTIVE_INTELLIGENCE_REPORT_TYPES = Object.freeze([
   ...EXECUTIVE_OPTIONAL_SOURCES,
 ]);
 
+/** Domains tracked for readiness placeholders (re-exported from taxonomy). */
+export { KNOWLEDGE_DOMAIN_READINESS } from "./knowledgeTaxonomy";
+
 /** Scored weekly dashboard checklist (weights sum to 1). */
 export const DASHBOARD_READINESS_CHECKS = Object.freeze([
   { key: "cash_up_week", label: "Cash-up sales for the week", weight: 0.4, source: "ask_nac_structured_facts" },

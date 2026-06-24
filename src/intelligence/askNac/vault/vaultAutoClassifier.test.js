@@ -45,4 +45,18 @@ describe("vaultAutoClassifier", () => {
     expect(merged.reportType).toBe("cash_up");
     expect(merged.branch).toBe("jeddah");
   });
+
+  test("classifies temperature log with food safety taxonomy", () => {
+    const result = classifyVaultUpload({ filename: "Khobar temperature log June.xlsx" });
+    expect(result.detectedReportType).toBe("food_safety_temperature");
+    expect(result.detectedKnowledgeSubdomain).toBe("food_safety.temperature");
+    expect(result.detectedDataLayer).toBe("brand_brain");
+  });
+
+  test("classifies supplier evaluation as procurement", () => {
+    const result = classifyVaultUpload({ filename: "Supplier evaluation vendor A.xlsx" });
+    expect(result.detectedReportType).toBe("supplier_evaluation");
+    expect(result.detectedKnowledgeDomain).toBe("procurement");
+    expect(result.detectedKnowledgeSubdomain).toBe("procurement.supplier");
+  });
 });

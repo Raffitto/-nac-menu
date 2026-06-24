@@ -12,6 +12,11 @@ export const DISCOVERY_TO_VAULT_REPORT_TYPE: Record<string, string | null> = {
   discount_void_comp: "discount_void_comp",
   guest_feedback: "guest_feedback",
   weekly_dashboard: "weekly_dashboard",
+  food_safety_haccp: "food_safety_haccp",
+  food_safety_temperature: "food_safety_temperature",
+  food_safety_receiving: "food_safety_receiving",
+  waste_report: "waste_report",
+  supplier_evaluation: "supplier_evaluation",
   ignore: null,
   unknown_needs_review: null,
 };
@@ -32,6 +37,11 @@ const CLASSIFIER_PATTERNS: Array<{ pattern: RegExp; type: string; action: string
   },
   { pattern: /\bguest feedback\b/i, type: "guest_feedback", action: "ask", confidence: 0.72, reason: "Guest Feedback purpose may vary." },
   { pattern: /\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b/i, type: "weekly_dashboard", action: "ingest", confidence: 0.96, reason: "Executive weekly dashboard folder." },
+  { pattern: /\bhaccp\b/i, type: "food_safety_haccp", action: "ingest", confidence: 0.95, reason: "HACCP / food safety manual folder." },
+  { pattern: /\btemperature log\b|\btemp(?:erature)?\s+monitor/i, type: "food_safety_temperature", action: "ingest", confidence: 0.94, reason: "Temperature monitoring folder." },
+  { pattern: /\breceiving\b/i, type: "food_safety_receiving", action: "ingest", confidence: 0.93, reason: "Receiving checklist folder." },
+  { pattern: /\bwaste\b|\bspoilage\b/i, type: "waste_report", action: "ingest", confidence: 0.92, reason: "Waste / spoilage reporting folder." },
+  { pattern: /\bsupplier evaluation\b/i, type: "supplier_evaluation", action: "ingest", confidence: 0.91, reason: "Supplier evaluation folder." },
   { pattern: /\bdaily napkins count\b|\bnapkins count\b/i, type: "ignore", action: "ignore", confidence: 0.99, reason: "Excluded Daily Napkins Count folder." },
   { pattern: /\bmonthly cash safe\b/i, type: "ignore", action: "ignore", confidence: 0.99, reason: "Excluded Monthly Cash Safe folder." },
 ];

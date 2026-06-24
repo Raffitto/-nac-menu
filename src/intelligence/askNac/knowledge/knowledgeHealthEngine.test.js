@@ -124,4 +124,11 @@ describe("knowledgeHealthEngine", () => {
     expect(health.components.executiveIntelligenceReadiness).toBeGreaterThanOrEqual(75);
     expect(health.components.coverageCompleteness).toBeGreaterThanOrEqual(70);
   });
+
+  it("includes domain readiness placeholders without changing overall score", () => {
+    const health = computeKnowledgeHealth(khobarJuneSnapshot);
+    expect(health.domainReadiness).toHaveLength(6);
+    expect(health.domainReadiness.find((d) => d.domain === "operations")?.status).toBe("production_scored");
+    expect(health.domainReadiness.find((d) => d.domain === "food_safety")?.status).toBe("not_yet_parseable");
+  });
 });

@@ -3,12 +3,27 @@
  */
 
 import { VAULT_REPORT_TYPES } from "./vaultConstants";
+import { resolveKnowledgeTaxonomy } from "../knowledge/knowledgeTaxonomy";
 
 const REPORT_PATTERNS = [
   { type: "cash_up", score: 16, patterns: [/\bcash[\s_-]?up\b/i, /\bdaily cash\b/i] },
   { type: "reception_daily_report", score: 16, patterns: [/\breception\b/i, /\bcovers?\b/i, /\breservations?\b/i] },
   { type: "daily_logbook", score: 18, patterns: [/nac[\s_./-]*logbook|logbook[\s_./-]*nac/i] },
   { type: "daily_logbook", score: 16, patterns: [/logbook/i, /\bdaily log\b/i, /\bshift log\b/i] },
+  { type: "food_safety_haccp", score: 20, patterns: [/\bhaccp\b/i, /\bhazard analysis\b/i] },
+  { type: "food_safety_audit", score: 19, patterns: [/\bfood safety audit\b/i, /\bhygiene audit\b/i] },
+  { type: "food_safety_temperature", score: 18, patterns: [/\btemperature log\b/i, /\btemp(?:erature)?\s+monitor/i, /\bcooling log\b/i, /\bholding (?:hot|cold)\b/i] },
+  { type: "food_safety_calibration", score: 18, patterns: [/\bthermometer calibration\b/i, /\bcalibration (?:log|record)\b/i] },
+  { type: "food_safety_receiving", score: 18, patterns: [/\breceiving checklist\b/i, /\bsupplier vehicle check\b/i, /\bfood sampling\b/i] },
+  { type: "food_safety_cleaning", score: 17, patterns: [/\bhood cleaning\b/i, /\boven cleaning\b/i, /\bice machine cleaning\b/i, /\bpersonal hygiene checklist\b/i] },
+  { type: "food_safety_incident", score: 17, patterns: [/\bincident report\b/i, /\bfoodborne illness\b/i] },
+  { type: "waste_report", score: 16, patterns: [/\bwaste\b/i, /\bspoilage\b/i] },
+  { type: "waste_recycling", score: 16, patterns: [/\brecycling\b/i] },
+  { type: "supplier_evaluation", score: 16, patterns: [/\bsupplier evaluation\b/i, /\bvendor evaluation\b/i] },
+  { type: "supplier_invoice", score: 15, patterns: [/\bsupplier invoice\b/i] },
+  { type: "recipe", score: 15, patterns: [/\brecipe\b/i, /\byield sheet\b/i] },
+  { type: "food_bible", score: 16, patterns: [/\bfood bible\b/i] },
+  { type: "preventive_maintenance", score: 15, patterns: [/\bpreventive maintenance\b/i, /\bmaintenance program\b/i] },
   { type: "ccm_reconciliation", score: 15, patterns: [/\bccm\b/i, /\breconcil/i, /\baudit\b/i] },
   { type: "weekly_sales_overview", score: 14, patterns: [/\bweekly sales\b/i, /\bsales overview\b/i] },
   { type: "weekly_dashboard", score: 16, patterns: [/\bweekly dashboard\b/i, /\bexecutive reports?\b/i, /\bnac[\s-]?weekly[\s-]?dashboard\b/i] },
@@ -18,7 +33,11 @@ const REPORT_PATTERNS = [
   { type: "forecast", score: 13, patterns: [/\bforecast\b/i] },
   { type: "gm_report", score: 13, patterns: [/\bgm report\b/i, /\bgeneral manager\b/i] },
   { type: "audit_report", score: 13, patterns: [/\baudit report\b/i, /\boperational audit\b/i] },
-  { type: "brand_brain_sop", score: 12, patterns: [/\bsop\b/i, /\bstandard operating\b/i, /\btraining\b/i] },
+  { type: "training_manual", score: 14, patterns: [/\binduction handbook\b/i, /\btraining manual\b/i] },
+  { type: "marketing_document", score: 14, patterns: [/\bmarketing\b/i, /\bcampaign\b/i, /\bepos\b/i] },
+  { type: "corporate_manual", score: 14, patterns: [/\bfranchise manual\b/i, /\bcorporate manual\b/i] },
+  { type: "brand_brain_sop", score: 12, patterns: [/\bsop\b/i, /\bstandard operating\b/i, /\bcustomer service\b/i] },
+  { type: "job_description", score: 13, patterns: [/\bjob description\b/i] },
   { type: "other", score: 1, patterns: [] },
 ];
 
@@ -86,7 +105,10 @@ function detectDepartment(text, reportType) {
   if (reportType === "foodics_export" || reportType === "weekly_sales_overview" || reportType === "weekly_dashboard" || reportType === "pnl") {
     return "sales";
   }
-  if (reportType === "brand_brain_sop") return "brand";
+  if (reportType === "brand_brain_sop" || String(reportType).startsWith("food_safety_")) return "kitchen";
+  if (["recipe", "food_bible", "supplier_evaluation", "supplier_invoice"].includes(reportType)) {
+    return reportType.includes("supplier") ? "purchasing" : "kitchen";
+  }
   return "operations";
 }
 
@@ -98,7 +120,13 @@ function detectSensitivity(reportType) {
 }
 
 function detectDataLayer(reportType) {
-  if (reportType === "brand_brain_sop") return "brand_brain";
+  if (
+    reportType === "brand_brain_sop"
+    || String(reportType).startsWith("food_safety_")
+    || ["recipe", "food_bible", "corporate_manual", "training_manual", "job_description", "marketing_document"].includes(reportType)
+  ) {
+    return "brand_brain";
+  }
   if (reportType === "other") return "unknown";
   return "operational";
 }
@@ -176,12 +204,16 @@ export function classifyVaultUpload({
   const manualType = metadata.reportType && metadata.reportType !== "other" ? metadata.reportType : null;
   const detected = detectReportType(text);
   const reportType = manualType || (isKnownReportType(detected.type) ? detected.type : "other");
+  const taxonomy = resolveKnowledgeTaxonomy({ filename, contentSnippet, reportType });
+  const resolvedReportType = (!manualType && taxonomy.detectedReportType && taxonomy.detectedReportType !== "other")
+    ? taxonomy.detectedReportType
+    : reportType;
   const branch = metadata.branch && metadata.branch !== "brand"
     ? metadata.branch
     : detectBranch(text, metadata.branch || null);
-  const department = metadata.department || detectDepartment(text, reportType);
-  const sensitivity = metadata.sensitivity || detectSensitivity(reportType);
-  const dataLayer = metadata.dataLayer || detectDataLayer(reportType);
+  const department = metadata.department || detectDepartment(text, resolvedReportType);
+  const sensitivity = metadata.sensitivity || detectSensitivity(resolvedReportType);
+  const dataLayer = metadata.dataLayer || detectDataLayer(resolvedReportType);
   const detectedPeriod = detectPeriod(text);
   const periodStart = metadata.periodStart || detectedPeriod.periodStart;
   const periodEnd = metadata.periodEnd || detectedPeriod.periodEnd;
@@ -189,15 +221,22 @@ export function classifyVaultUpload({
   const confidence = manualType ? 1 : normalizeConfidence(detected.score);
 
   return {
-    detectedReportType: reportType,
+    detectedReportType: resolvedReportType,
     detectedBranch: branch,
     detectedDepartment: department,
     detectedSensitivity: sensitivity,
     detectedDataLayer: dataLayer,
     detectedPeriod: { periodStart, periodEnd, periodLabel },
+    detectedKnowledgeDomain: taxonomy.knowledgeDomain,
+    detectedKnowledgeSubdomain: taxonomy.knowledgeSubdomain,
+    detectedArtifactType: taxonomy.artifactType,
+    detectedAuthorityLevel: taxonomy.authorityLevel,
     classificationConfidence: confidence,
     allowManualOverride: true,
-    matchedRules: detected.score > 0 ? [`report:${reportType}`] : [],
+    matchedRules: [
+      ...(detected.score > 0 ? [`report:${resolvedReportType}`] : []),
+      ...(taxonomy.matchedKnowledgeRule ? [`knowledge:${taxonomy.matchedKnowledgeRule}`] : []),
+    ],
   };
 }
 
@@ -224,6 +263,10 @@ export function mergeAutoClassification(metadata = {}, classification = {}) {
     periodStart: metadata.periodStart || classification.detectedPeriod?.periodStart || null,
     periodEnd: metadata.periodEnd || classification.detectedPeriod?.periodEnd || null,
     periodLabel: metadata.periodLabel || classification.detectedPeriod?.periodLabel || null,
+    knowledgeDomain: metadata.knowledgeDomain || classification.detectedKnowledgeDomain || null,
+    knowledgeSubdomain: metadata.knowledgeSubdomain || classification.detectedKnowledgeSubdomain || null,
+    artifactType: metadata.artifactType || classification.detectedArtifactType || null,
+    authorityLevel: metadata.authorityLevel || classification.detectedAuthorityLevel || null,
     autoClassification: classification,
   };
 }

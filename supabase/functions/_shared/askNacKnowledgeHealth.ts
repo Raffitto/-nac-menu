@@ -5,6 +5,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1
 import { branchDisplayName } from "./askNacEdgeAnswerBuilder.ts";
 import { getVaultCoverage, getVaultFacts } from "./askNacVaultTools.ts";
 import { fetchCashUpRangeAggregationViaRpc } from "./askNacCashUpRangeRpc.ts";
+import { assessDomainReadinessPlaceholders } from "./knowledgeTaxonomy.ts";
 
 const COVERAGE_TYPE_WEIGHTS: Record<string, number> = {
   cash_up: 0.45,
@@ -327,6 +328,7 @@ function computeHealth(snapshot: Record<string, unknown>) {
     componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness },
     missingRegistry,
     executiveReadiness,
+    domainReadiness: assessDomainReadinessPlaceholders({ fileInventory }),
     disclosures,
     sources: snapshot.sources,
   };
@@ -436,6 +438,18 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
   };
 }
 
+function formatDomainReadinessEdge(domainReadiness: Array<Record<string, unknown>> = []) {
+  if (!domainReadiness.length) return "";
+  const lines = ["Domain readiness (taxonomy foundation):"];
+  for (const d of domainReadiness) {
+    const label = String(d.label || d.domain || "domain");
+    const status = d.productionScored ? "production-scored" : String(d.status || "unknown");
+    const count = d.storedFileCount ? ` (${d.storedFileCount} files)` : "";
+    lines.push(`• ${label}: ${status}${count} — ${String(d.detail || "")}`);
+  }
+  return lines.join("\n");
+}
+
 function formatRegistry(registry: Record<string, unknown[]>) {
   const lines: string[] = [];
   const section = (title: string, items: unknown[], fmt: (i: Record<string, unknown>) => string) => {
@@ -510,6 +524,8 @@ export function buildKnowledgeHealthAnswer(
       `• Parser success: ${components.parserSuccess ?? 0}%`,
       `• Dashboard readiness: ${components.dashboardReadiness ?? 0}%`,
       `• Executive intelligence readiness: ${components.executiveIntelligenceReadiness ?? 0}%`,
+      "",
+      formatDomainReadinessEdge(health.domainReadiness as Array<Record<string, unknown>>),
       "",
       "Missing information registry:",
       formatRegistry(missingRegistry),

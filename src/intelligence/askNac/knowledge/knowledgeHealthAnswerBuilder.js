@@ -34,6 +34,14 @@ function formatRecommendations(recommendations = []) {
   ).join("\n\n");
 }
 
+function formatDomainReadiness(domainReadiness = []) {
+  if (!domainReadiness.length) return "";
+  return [
+    "Domain readiness (taxonomy foundation):",
+    ...domainReadiness.map((d) => `• ${d.label}: ${d.productionScored ? "production-scored" : d.status}${d.storedFileCount ? ` (${d.storedFileCount} files)` : ""} — ${d.detail}`),
+  ].join("\n");
+}
+
 function formatComponentScores(components = {}) {
   const labels = {
     coverageCompleteness: "Coverage completeness",
@@ -110,6 +118,8 @@ export function buildKnowledgeHealthAnswer(route, tool, readiness) {
       health.componentDetail?.executiveReadiness?.confidenceReductionReasons?.length
         ? `Confidence reduced by: ${health.componentDetail.executiveReadiness.confidenceReductionReasons.join("; ")}`
         : "",
+      "",
+      formatDomainReadiness(health.domainReadiness),
       "",
       "Missing information registry:",
       formatRegistrySection(health.missingRegistry),
