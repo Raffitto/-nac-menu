@@ -29,8 +29,22 @@ export function isVaultParseableExtension(extension) {
   return ["csv", "xlsx", "xls", "pdf", "docx", "txt"].includes(String(extension || "").toLowerCase());
 }
 
+async function readBlobText(file) {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+  const buffer =
+    typeof file.arrayBuffer === "function"
+      ? await file.arrayBuffer()
+      : file.buffer || file.content;
+  if (buffer) {
+    return Buffer.from(buffer).toString("utf8");
+  }
+  return String(file.content || "");
+}
+
 async function readCsvMatrix(file) {
-  const text = typeof file.text === "function" ? await file.text() : String(file.content || "");
+  const text = await readBlobText(file);
   const parsed = Papa.parse(text, { header: false, skipEmptyLines: false });
   if (parsed.errors?.length && !parsed.data?.length) {
     throw new Error(parsed.errors[0]?.message || "CSV parse failed");
@@ -217,7 +231,7 @@ export async function parseUploadedFile(file, metadata = {}) {
         break;
       }
       case "txt": {
-        const text = typeof file.text === "function" ? await file.text() : String(file.content || "");
+        const text = await readBlobText(file);
         const matrix = textLinesToMatrix(text.split(/\r?\n/));
         payload = createIntermediate({
           fileType: "txt",

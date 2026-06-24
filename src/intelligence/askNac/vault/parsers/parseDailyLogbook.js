@@ -10,6 +10,7 @@ import {
   parseNacDateFromText,
   resolveBranchFromMatrix,
 } from "./vaultParseUtils";
+import { mergeMatrixAndText } from "./vaultIntermediate";
 import { normalizeBranchId } from "../../../../dashboard/utils/branchIdentity";
 
 const LOGBOOK_PATTERNS = [
@@ -64,7 +65,122 @@ function capturePatternValue(line, pattern) {
   return normCell(match[2] || match[1]);
 }
 
-function extractGoogleReviewCounts(text) {
+const TABULAR_STAFF_LABELS = [
+  { re: /^mod\s+restaurant$/i, bucket: "mod_restaurant" },
+  { re: /^chef\s+on\s+duty$/i, bucket: "chef_on_duty" },
+  { re: /^mod\s+bar$/i, bucket: "mod_bar" },
+];
+
+const RECEPTION_SHIFT_ROWS = new Set(["breakfast", "lunch", "dinner", "total"]);
+
+function isTabularStaffLabel(line) {
+  const norm = normCell(line).toLowerCase();
+  if (!norm) return true;
+  if (TABULAR_STAFF_LABELS.some((def) => def.re.test(norm))) return true;
+  return /^(lunch|dinner)\s+shift$/i.test(norm) || /^handover\b/i.test(norm) || /^floor$/i.test(norm);
+}
+
+function extractMultilineLabelFields(lines) {
+  const extracted = {};
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = normCell(lines[i]);
+    if (/^day\s*:?\s*$/i.test(line) && i + 1 < lines.length) {
+      extracted.shift = normCell(lines[i + 1]);
+      continue;
+    }
+    if (/^date\s*:?\s*$/i.test(line) && i + 1 < lines.length) {
+      extracted.log_date = normCell(lines[i + 1]);
+    }
+  }
+  return extracted;
+}
+
+function extractTabularStaffDuty(lines) {
+  const collected = { mod_restaurant: [], chef_on_duty: [], mod_bar: [] };
+  for (let i = 0; i < lines.length; i += 1) {
+    const norm = normCell(lines[i]);
+    const def = TABULAR_STAFF_LABELS.find((entry) => entry.re.test(norm));
+    if (!def) continue;
+    let j = i + 1;
+    while (j < lines.length && isTabularStaffLabel(lines[j])) j += 1;
+    if (j >= lines.length) continue;
+    const name = normCell(lines[j]);
+    if (name && !isTabularStaffLabel(name)) collected[def.bucket].push(name);
+  }
+
+  const extracted = {};
+  if (collected.mod_restaurant[0]) extracted.lunch_mod = collected.mod_restaurant[0];
+  if (collected.mod_restaurant[1]) extracted.dinner_mod = collected.mod_restaurant[1];
+  if (collected.chef_on_duty.length) extracted.chef_on_duty = collected.chef_on_duty.join(" / ");
+  if (collected.mod_bar.length) extracted.bar_mod = collected.mod_bar.join(" / ");
+  return extracted;
+}
+
+function extractShiftBulletNarratives(lines) {
+  const sections = { breakfast: [], lunch: [], dinner: [] };
+  let current = null;
+
+  for (const rawLine of lines) {
+    const line = normCell(rawLine);
+    if (/^breakfast\s*:?\s*$/i.test(line)) {
+      current = "breakfast";
+      continue;
+    }
+    if (/^lunch\s*:\s*$/i.test(line)) {
+      current = "lunch";
+      continue;
+    }
+    if (/^dinner\s*:?\s*$/i.test(line) && !/^dinner\s+shift$/i.test(line)) {
+      current = "dinner";
+      continue;
+    }
+    if (/^reception\b/i.test(line) || /^google\s+review\b/i.test(line)) {
+      current = null;
+      continue;
+    }
+    if (!current || !/^\*/.test(String(rawLine || "").trim())) continue;
+    sections[current].push(String(rawLine).replace(/^\*\s*/, "").trim());
+  }
+
+  const allBullets = [...sections.breakfast, ...sections.lunch, ...sections.dinner];
+  const complaintRe = /complain|refused|under\s*cooked|remove from bill|charge|didn'?t like|apologize/i;
+  const highlightRe = /smooth|quiet|busy|well|satisfied|inventory was done/i;
+  const issueRe = /unavailable|\b86\b/i;
+
+  const extracted = {};
+  const complaints = allBullets.filter((bullet) => complaintRe.test(bullet));
+  const highlights = allBullets.filter((bullet) => highlightRe.test(bullet) && !complaintRe.test(bullet));
+  const issues = allBullets.filter((bullet) => issueRe.test(bullet));
+  if (complaints.length) extracted.complaints = complaints.join(" ");
+  if (highlights.length) extracted.operational_highlights = highlights.join(" ");
+  if (issues.length) extracted.operational_issues = issues.join(" ");
+  if (sections.dinner.length) extracted.dinner_notes = sections.dinner.join(" ");
+  return extracted;
+}
+
+function extractReceptionVerticalMetrics(lines) {
+  const metrics = {};
+  for (let i = 0; i < lines.length; i += 1) {
+    const shift = normCell(lines[i]).toLowerCase();
+    if (!RECEPTION_SHIFT_ROWS.has(shift)) continue;
+    const nums = [];
+    for (let j = 1; j <= 6 && i + j < lines.length; j += 1) {
+      const candidate = normCell(lines[i + j]).replace(/,/g, "");
+      if (!/^-?\d+(\.\d+)?$/.test(candidate)) break;
+      nums.push(Number(candidate));
+    }
+    if (shift === "total" && nums.length >= 5) {
+      metrics.reservations = nums[0];
+      metrics.covers = nums[1];
+      metrics.walkins = nums[2];
+      metrics.no_shows = nums[3];
+      metrics.cancellations = nums[4];
+    }
+  }
+  return metrics;
+}
+
+function extractGoogleReviewCounts(text, lines = []) {
   const counts = {
     google_review_5: 0,
     google_review_4: 0,
@@ -82,6 +198,20 @@ function extractGoogleReviewCounts(text) {
     let m;
     while ((m = re.exec(text)) !== null) {
       counts[`google_review_${m[1]}`] = Number(m[2]);
+    }
+  }
+
+  if (!Object.values(counts).some((n) => n > 0)) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const inline = lines[i].match(/^([1-5])\s*star\s+(\d+)/i);
+      if (inline) {
+        counts[`google_review_${inline[1]}`] = Number(inline[2]);
+        continue;
+      }
+      const starOnly = lines[i].match(/^([1-5])\s*star$/i);
+      if (!starOnly || i + 1 >= lines.length) continue;
+      const next = normCell(lines[i + 1]).replace(/,/g, "");
+      if (/^\d+$/.test(next)) counts[`google_review_${starOnly[1]}`] = Number(next);
     }
   }
 
@@ -111,16 +241,24 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
     }
   }
 
-  Object.assign(extracted, extractFreeformLogbookSections(text));
+  Object.assign(
+    extracted,
+    extractMultilineLabelFields(lines),
+    extractTabularStaffDuty(lines),
+    extractShiftBulletNarratives(lines),
+    extractFreeformLogbookSections(text),
+  );
 
-  const receptionInline = extractInlineMetrics(text, RECEPTION_INLINE);
+  const matrix = mergeMatrixAndText({ lines, matrix: intermediate?.matrix || [] });
+  const receptionVertical = extractReceptionVerticalMetrics(lines);
+  const receptionInline = {
+    ...extractInlineMetrics(text, RECEPTION_INLINE),
+    ...receptionVertical,
+  };
 
   const branchId =
     normalizeBranchId(extracted.branch) ||
-    resolveBranchFromMatrix(
-      lines.map((line) => line.split(/[:=-]/).map((p) => p.trim())),
-      context.branchId,
-    );
+    resolveBranchFromMatrix(matrix, context.branchId);
 
   const periodStart =
     parseIsoDate(extracted.log_date) ||
@@ -130,7 +268,7 @@ export function parseDailyLogbookText(text, context, intermediate = null) {
     null;
   const periodEnd = periodStart || context.periodEnd || context.periodStart || null;
 
-  const googleCounts = extractGoogleReviewCounts(text);
+  const googleCounts = extractGoogleReviewCounts(text, lines);
   const textFieldKeys = [
     "complaints",
     "operational_issues",
