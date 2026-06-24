@@ -69,6 +69,8 @@ import {
 import { resolveHumanInTheLoopTurn } from "./askNacHumanInLoop.ts";
 import { applyExecutiveIntelligenceV2 } from "./askNacExecutiveEvidenceV2.ts";
 import { scoreDriveDiscoveryIntent } from "./askNacDriveDiscovery.ts";
+import { shouldSkipAiNarration } from "./askNacNarrationSkip.ts";
+import { attachResponseMeta, buildAskNacTimingMs } from "./askNacTiming.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -102,29 +104,8 @@ const CASH_UP_INTENT_SIGNAL =
 const CASH_UP_DAY_SALES_SIGNAL =
   /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
 
-function shouldSkipAiNarration(
-  intent: string,
-  tool: Record<string, unknown> | null,
-  vaultPeriod?: { periodType?: string },
-): boolean {
-  if (intent === VAULT_INTENTS.BUSINESS_REASONING) return true;
-  if (
-    intent === VAULT_INTENTS.TEACH_OPERATOR
-    || intent === VAULT_INTENTS.WEEKLY_DASHBOARD
-    || intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT
-    || intent === VAULT_INTENTS.DRIVE_DISCOVER
-    || intent === VAULT_INTENTS.DRIVE_APPROVE_RULES
-    || intent === VAULT_INTENTS.KNOWLEDGE_HEALTH
-  ) {
-    return true;
-  }
-  if (intent !== VAULT_INTENTS.CASH_UP) return false;
-  if (vaultPeriod?.periodType === "year_to_date") return true;
-  const aggregation = tool?.aggregation as Record<string, unknown> | undefined;
-  const dayCount = Number(aggregation?.dayCount) || 0;
-  if (dayCount > 31) return true;
-  const sources = (tool?.sources as { name?: string }[]) || [];
-  return sources.some((s) => s.name === "get_vault_cash_up_range_aggregate");
+function isVaultQueryIntent(intent: string): boolean {
+  return isVaultDataIntent(intent) || isVaultDocumentIntent(intent);
 }
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
@@ -946,6 +927,7 @@ export async function processAskNacOnEdge(
     userEmail?: string | null;
   },
 ) {
+  const requestStartedAt = performance.now();
   const baseFilters = {
     ...filters,
     branch: branch ?? (filters.branch as string | null) ?? null,
@@ -990,7 +972,8 @@ export async function processAskNacOnEdge(
         branchLabel,
         conversationDataset: dataset,
       };
-      return {
+      const datasetReuseMs = Math.round(performance.now() - requestStartedAt);
+      return attachResponseMeta({
         ...cachedAnswer,
         routingConfidence: "high",
         conversationResolution: {
@@ -1014,9 +997,14 @@ export async function processAskNacOnEdge(
         serverConnected: true,
         aiConnected: false,
         localFallback: false,
-      };
+      }, buildAskNacTimingMs({
+        total: datasetReuseMs,
+        datasetReuse: datasetReuseMs,
+      }), true);
     }
   }
+
+  const routeIntentStartedAt = performance.now();
 
   const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
@@ -1075,6 +1063,7 @@ export async function processAskNacOnEdge(
   }
 
   let tool: Record<string, unknown> | null = null;
+  const selectedToolStartedAt = performance.now();
   if (readiness.canQuery) {
     tool = await runQueryTool(supabase, route.intent, {
       hours: route.period.hours,
@@ -1104,6 +1093,10 @@ export async function processAskNacOnEdge(
       tool.warnings = [...((tool.warnings as string[]) || []), ...periodWarnings];
     }
   }
+  const selectedToolMs = Math.round(performance.now() - selectedToolStartedAt);
+  const routeIntentMs = Math.round(selectedToolStartedAt - routeIntentStartedAt);
+  const vaultToolMs = isVaultQueryIntent(route.intent) ? selectedToolMs : 0;
+  const knowledgeHealthMs = route.intent === VAULT_INTENTS.KNOWLEDGE_HEALTH ? selectedToolMs : 0;
 
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
   const routeWithQuestion = { ...route, question: effectiveQuestion };
@@ -1114,6 +1107,7 @@ export async function processAskNacOnEdge(
   deterministic.intent = route.intent;
   deterministic.readiness = readiness;
 
+  const executiveEvidenceStartedAt = performance.now();
   deterministic = await applyExecutiveIntelligenceV2({
     supabase,
     route: routeWithQuestion,
@@ -1123,6 +1117,7 @@ export async function processAskNacOnEdge(
     profile: profileHint as Record<string, unknown> | null,
     filters: mergedFilters as Record<string, unknown>,
   }) as typeof deterministic;
+  const executiveEvidenceV2Ms = Math.round(performance.now() - executiveEvidenceStartedAt);
 
   const isCashUpQuestion = /\bcash\s*up\b/i.test(effectiveQuestion);
   let cashUpProductionTrace: CashUpProductionTrace | undefined;
@@ -1182,17 +1177,28 @@ export async function processAskNacOnEdge(
     deterministic.cashUpProductionTrace = cashUpProductionTrace;
   }
 
-  const skipAiNarration = shouldSkipAiNarration(route.intent, tool, route.vaultPeriod as { periodType?: string } | undefined);
+  const skipAiNarration = shouldSkipAiNarration(
+    route.intent,
+    tool,
+    route.vaultPeriod as { periodType?: string } | undefined,
+    deterministic,
+  );
+  let openAiNarrationMs = 0;
   const { answer, aiConnected } = skipAiNarration
     ? { answer: deterministic, aiConnected: false }
-    : await narrateWithOpenAi(deterministic, {
-      question: effectiveQuestion,
-      intent: route.intent,
-      tool,
-      diagnostics: (tool?.mtdHybrid as Record<string, unknown>) || null,
-    });
+    : await (async () => {
+      const openAiStartedAt = performance.now();
+      const narrated = await narrateWithOpenAi(deterministic, {
+        question: effectiveQuestion,
+        intent: route.intent,
+        tool,
+        diagnostics: (tool?.mtdHybrid as Record<string, unknown>) || null,
+      });
+      openAiNarrationMs = Math.round(performance.now() - openAiStartedAt);
+      return narrated;
+    })();
 
-  return {
+  return attachResponseMeta({
     ...answer,
     intent: route.intent,
     cashUpDebug,
@@ -1221,5 +1227,14 @@ export async function processAskNacOnEdge(
     serverConnected: true,
     aiConnected,
     localFallback: false,
-  };
+  }, buildAskNacTimingMs({
+    total: Math.round(performance.now() - requestStartedAt),
+    routeIntent: routeIntentMs,
+    selectedTool: selectedToolMs,
+    vaultTool: vaultToolMs,
+    executiveEvidenceV2: executiveEvidenceV2Ms,
+    openAiNarration: openAiNarrationMs,
+    datasetReuse: 0,
+    knowledgeHealth: knowledgeHealthMs,
+  }), skipAiNarration);
 }
