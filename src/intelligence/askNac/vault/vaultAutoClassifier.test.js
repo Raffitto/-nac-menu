@@ -59,4 +59,11 @@ describe("vaultAutoClassifier", () => {
     expect(result.detectedKnowledgeDomain).toBe("procurement");
     expect(result.detectedKnowledgeSubdomain).toBe("procurement.supplier");
   });
+
+  test("classifies reheating log as food_safety.temperature", () => {
+    const result = classifyVaultUpload({ filename: "Reheating log hot holding.pdf" });
+    expect(result.detectedReportType).toBe("food_safety_temperature");
+    expect(result.detectedKnowledgeSubdomain).toBe("food_safety.temperature");
+    expect(result.detectedKnowledgeDomain).toBe("food_safety");
+  });
 });

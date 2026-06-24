@@ -12,7 +12,7 @@ const REPORT_PATTERNS = [
   { type: "daily_logbook", score: 16, patterns: [/logbook/i, /\bdaily log\b/i, /\bshift log\b/i] },
   { type: "food_safety_haccp", score: 20, patterns: [/\bhaccp\b/i, /\bhazard analysis\b/i] },
   { type: "food_safety_audit", score: 19, patterns: [/\bfood safety audit\b/i, /\bhygiene audit\b/i] },
-  { type: "food_safety_temperature", score: 18, patterns: [/\btemperature log\b/i, /\btemp(?:erature)?\s+monitor/i, /\bcooling log\b/i, /\bholding (?:hot|cold)\b/i] },
+  { type: "food_safety_temperature", score: 18, patterns: [/\btemperature log\b/i, /\btemp(?:erature)?\s+monitor/i, /\bcooling log\b/i, /\bholding (?:hot|cold)\b/i, /\breheating\b/i, /\breheating log\b/i] },
   { type: "food_safety_calibration", score: 18, patterns: [/\bthermometer calibration\b/i, /\bcalibration (?:log|record)\b/i] },
   { type: "food_safety_receiving", score: 18, patterns: [/\breceiving checklist\b/i, /\bsupplier vehicle check\b/i, /\bfood sampling\b/i] },
   { type: "food_safety_cleaning", score: 17, patterns: [/\bhood cleaning\b/i, /\boven cleaning\b/i, /\bice machine cleaning\b/i, /\bpersonal hygiene checklist\b/i] },

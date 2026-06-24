@@ -39,6 +39,12 @@ describe("knowledgeTaxonomy", () => {
     expect(result.detectedReportType).toBe("food_safety_haccp");
   });
 
+  test("classifies reheating logs as food_safety.temperature", () => {
+    const result = classifyKnowledgeFromContent("Reheating log hot holding.pdf");
+    expect(result.knowledgeSubdomain).toBe("food_safety.temperature");
+    expect(result.detectedReportType).toBe("food_safety_temperature");
+  });
+
   test("classifies temperature logs as food_safety.temperature", () => {
     const result = classifyKnowledgeFromContent("Daily temperature log June.xlsx");
     expect(result.knowledgeSubdomain).toBe("food_safety.temperature");
