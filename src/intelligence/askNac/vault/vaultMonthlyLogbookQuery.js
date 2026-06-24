@@ -8,7 +8,26 @@ import {
   parseMonthlyOperationalComparePeriods,
 } from "./vaultMonthlyOperationalSummaryRouting";
 import { buildMonthlyLogbookExecutiveSummary } from "./vaultMonthlyLogbookSummary";
-import { getVaultLogbookSummaryFacts, getVaultCoverage, attachLogbookFileTitles } from "./vaultQueryTools";
+import { attachLogbookFileTitles } from "./vaultQueryTools";
+import { fetchLogbookMonthBundle } from "./vaultLogbookMonthRpc";
+
+function periodCacheKey(period) {
+  return `${period?.startDate}:${period?.endDate}`;
+}
+
+function loadLogbookBundle(cache, supabase, context, period) {
+  const key = periodCacheKey(period);
+  if (!cache.has(key)) {
+    cache.set(
+      key,
+      fetchLogbookMonthBundle(supabase, context, {
+        startDate: period.startDate,
+        endDate: period.endDate,
+      }),
+    );
+  }
+  return cache.get(key);
+}
 
 export async function fetchMonthlyLogbookOperationalReview(supabase, context = {}) {
   const question = String(context.question || "");
@@ -18,44 +37,37 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
   const mode = detectMonthlyOperationalMode(question);
   const monthCompare = context.monthlyCompare || parseMonthlyOperationalComparePeriods(question);
 
-  const coverageResult = await getVaultCoverage(supabase, {
-    ...context,
-    startDate: vaultPeriod.startDate,
-    endDate: vaultPeriod.endDate,
-    reportType: "daily_logbook",
-    slim: false,
-  });
+  const bundleCache = new Map();
+  const bundlePromises = [loadLogbookBundle(bundleCache, supabase, context, vaultPeriod)];
 
-  const factsResult = await getVaultLogbookSummaryFacts(supabase, {
-    ...context,
-    startDate: vaultPeriod.startDate,
-    endDate: vaultPeriod.endDate,
-  });
-  factsResult.facts = attachLogbookFileTitles(factsResult.facts, coverageResult.coverage);
+  if (monthCompare?.current && monthCompare?.previous) {
+    bundlePromises.push(
+      loadLogbookBundle(bundleCache, supabase, context, monthCompare.current),
+      loadLogbookBundle(bundleCache, supabase, context, monthCompare.previous),
+    );
+  }
+
+  const bundles = await Promise.all(bundlePromises);
+  const periodBundle = bundles[0];
+  const factsResult = {
+    facts: periodBundle.facts,
+    branch: periodBundle.branch,
+    branchLabel: periodBundle.branchLabel,
+  };
+  const coverageResult = { coverage: periodBundle.coverage };
 
   let compareSummary = null;
   if (monthCompare?.current && monthCompare?.previous) {
-    const [currentFacts, previousFacts, previousCoverage] = await Promise.all([
-      getVaultLogbookSummaryFacts(supabase, {
-        ...context,
-        startDate: monthCompare.current.startDate,
-        endDate: monthCompare.current.endDate,
-      }),
-      getVaultLogbookSummaryFacts(supabase, {
-        ...context,
-        startDate: monthCompare.previous.startDate,
-        endDate: monthCompare.previous.endDate,
-      }),
-      getVaultCoverage(supabase, {
-        ...context,
-        startDate: monthCompare.previous.startDate,
-        endDate: monthCompare.previous.endDate,
-        reportType: "daily_logbook",
-        slim: false,
-      }),
-    ]);
-    const currentFactsEnriched = attachLogbookFileTitles(currentFacts.facts, coverageResult.coverage);
-    const previousFactsEnriched = attachLogbookFileTitles(previousFacts.facts, previousCoverage.coverage);
+    const currentBundle = bundles[1];
+    const previousBundle = bundles[2];
+    const currentFactsEnriched = attachLogbookFileTitles(
+      currentBundle.facts,
+      coverageResult.coverage,
+    );
+    const previousFactsEnriched = attachLogbookFileTitles(
+      previousBundle.facts,
+      previousBundle.coverage,
+    );
     const currentSummary = buildMonthlyLogbookExecutiveSummary({
       facts: currentFactsEnriched,
       coverage: coverageResult.coverage,
@@ -65,7 +77,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     });
     const previousSummary = buildMonthlyLogbookExecutiveSummary({
       facts: previousFactsEnriched,
-      coverage: previousCoverage.coverage,
+      coverage: previousBundle.coverage,
       branchLabel: factsResult.branchLabel,
       periodLabel: monthCompare.previous.label,
       mode: "summary",
@@ -88,6 +100,10 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
 
   if (!monthlyLogbookSummary.logbookDays) return null;
 
+  const retrievalMethod = bundles.every((bundle) => bundle.retrievalMethod === "rpc")
+    ? "structured_logbook_monthly_summary_rpc"
+    : "structured_logbook_monthly_summary";
+
   return {
     structuredLogbookReview: true,
     monthlyLogbookSummary,
@@ -100,8 +116,8 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     facts: factsResult.facts,
     coverage: coverageResult.coverage,
     logbookDaysCovered: monthlyLogbookSummary.logbookDays,
-    sources: [{ name: "ask_nac_structured_facts", detail: "Recovered daily_logbook structured facts" }],
-    searchMethod: "structured_logbook_monthly_summary",
+    sources: periodBundle.sources || [{ name: "ask_nac_structured_facts", detail: "Recovered daily_logbook structured facts" }],
+    searchMethod: retrievalMethod,
     queryStatus: "ok",
   };
 }
