@@ -781,6 +781,34 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
 }
 
 export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
+  if (tool?.monthlyLogbookSummary) {
+    const summary = tool.monthlyLogbookSummary;
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: ANSWER_TYPES.EXECUTIVE,
+      title: summary.title || `Operational summary · ${tool.periodLabel || "period"}`,
+      directAnswer: summary.directAnswer,
+      keyMetrics: (summary.keyMetrics || []).map((m) =>
+        metricEntry(m.label, m.value, { note: "daily_logbook structured facts" }),
+      ),
+      insights: summary.insights || [],
+      recommendations: summary.recommendations || [],
+      confidence:
+        summary.confidence === "high"
+          ? CONFIDENCE_LEVELS.HIGH
+          : summary.confidence === "medium"
+            ? CONFIDENCE_LEVELS.MEDIUM
+            : summary.confidence === "low"
+              ? CONFIDENCE_LEVELS.LOW
+              : CONFIDENCE_LEVELS.NONE,
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: tool?.vaultSources || summary.vaultSources || [],
+      warnings: summary.logbookDays < 10 ? [`Only ${summary.logbookDays} logbook day(s) covered for this month.`] : [],
+    });
+  }
+
   const grouped = tool?.groupedFindings || [];
   const theme = tool?.reviewTheme || "general";
   const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
@@ -817,6 +845,10 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
 }
 
 export function buildVaultDocumentSummaryAnswer(route, tool, readiness) {
+  if (tool?.monthlyLogbookSummary) {
+    return buildVaultOperationalReviewAnswer(route, tool, readiness);
+  }
+
   const chunks = tool?.chunks || tool?.matches || [];
   const queryStatus = tool?.queryStatus;
 

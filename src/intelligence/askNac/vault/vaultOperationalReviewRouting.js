@@ -6,12 +6,22 @@ import { parseVaultPeriodFromQuestion } from "./vaultPeriodParser";
 import { isVaultDocumentSearchQuery } from "./vaultDocumentSearchRouting";
 import { isVaultDocumentSummaryQuery } from "./vaultDocumentSummaryRouting";
 import { isVaultOperationalReviewQuery } from "./vaultOperationalIntelligence";
+import {
+  scoreVaultMonthlyOperationalSummaryIntent,
+  preferredMonthlyOperationalIntent,
+} from "./vaultMonthlyOperationalSummaryRouting";
 
 export { isVaultOperationalReviewQuery };
 
 export function scoreVaultOperationalReviewIntent(q = "") {
   const text = String(q || "").trim();
   if (!text) return 0;
+
+  const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
+  if (monthlyScore && preferredMonthlyOperationalIntent(text) === "vault_operational_review") {
+    return monthlyScore;
+  }
+
   if (isVaultDocumentSummaryQuery(text)) return 0;
   if (!isVaultOperationalReviewQuery(text)) return 0;
 

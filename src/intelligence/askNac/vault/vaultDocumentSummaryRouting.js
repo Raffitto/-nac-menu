@@ -2,6 +2,12 @@
  * Document summary intent — summarize uploaded chunks, not structured_facts or metrics.
  */
 
+import {
+  isVaultMonthlyOperationalSummaryQuery,
+  scoreVaultMonthlyOperationalSummaryIntent,
+  preferredMonthlyOperationalIntent,
+} from "./vaultMonthlyOperationalSummaryRouting";
+
 const SEARCH_PREFIX =
   /\b(search company knowledge|search uploaded documents|search uploaded reports|find mentions of|look up)\b/i;
 
@@ -18,6 +24,11 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext = null) {
 
   if (SEARCH_PREFIX.test(text)) return false;
   if (CASH_UP_INTENT_SIGNAL.test(text)) return false;
+
+  if (isVaultMonthlyOperationalSummaryQuery(text)
+    && preferredMonthlyOperationalIntent(text) === "vault_document_summary") {
+    return true;
+  }
 
   if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
@@ -46,6 +57,11 @@ export function isDocumentSummaryFollowUp(q = "") {
 }
 
 export function scoreVaultDocumentSummaryIntent(q = "", documentContext = null) {
+  const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(q);
+  if (monthlyScore && preferredMonthlyOperationalIntent(q) === "vault_document_summary") {
+    return monthlyScore;
+  }
+
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
   if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
   if (documentContext?.fileIds?.length && isDocumentSummaryFollowUp(q)) return 34;

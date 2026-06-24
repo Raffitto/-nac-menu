@@ -31,6 +31,9 @@ import {
   groupOperationalMatches,
   searchTermsForOperationalTheme,
 } from "./vaultOperationalIntelligence";
+import {
+  isVaultMonthlyOperationalSummaryQuery,
+} from "./vaultMonthlyOperationalSummaryRouting";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval";
 import { fetchExecutiveMemory } from "../executive/executiveMemory";
 import { runKnowledgeHealthQuery } from "../knowledge/knowledgeHealthQueryTools";
@@ -43,8 +46,72 @@ import {
   approveDriveDiscoveryRules,
   discoverDriveFoldersFromRules,
 } from "./driveDiscoveryQueryTools";
+import { MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS } from "./vaultMonthlyLogbookSummary";
 
 export { extractDocumentSearchTerms };
+
+const LOGBOOK_SUMMARY_FACT_SELECT =
+  "file_id,period_start,period_end,metric_key,metric_value,dimensions";
+
+export async function getVaultLogbookSummaryFacts(
+  supabase,
+  {
+    branch,
+    startDate,
+    endDate,
+    profile,
+    branchMention,
+    filters,
+    limit = 2500,
+  } = {},
+) {
+  const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
+  let query = supabase.from("ask_nac_structured_facts").select(LOGBOOK_SUMMARY_FACT_SELECT);
+  query = periodOverlapFilter(query, startDate, endDate);
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  query = query
+    .eq("report_type", "daily_logbook")
+    .in("metric_key", MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS)
+    .order("period_start", { ascending: true });
+  if (typeof limit === "number" && limit > 0) query = query.limit(limit);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const facts = (data || []).map((row) => ({
+    fileId: row.file_id,
+    metricKey: row.metric_key,
+    metricValue: row.metric_value,
+    dimensions: row.dimensions || {},
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
+    fileTitle: null,
+  }));
+
+  return {
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    startDate,
+    endDate,
+    facts,
+    sources: [{ name: "ask_nac_structured_facts", detail: "RLS-filtered daily_logbook summary facts" }],
+  };
+}
+
+function attachLogbookFileTitles(facts = [], coverage = []) {
+  const titleByFileId = new Map();
+  const titleByDate = new Map();
+  for (const row of coverage) {
+    if (row.sourceFileId && row.fileTitle) titleByFileId.set(row.sourceFileId, row.fileTitle);
+    if (row.periodStart && row.fileTitle) titleByDate.set(row.periodStart, row.fileTitle);
+  }
+  return facts.map((fact) => ({
+    ...fact,
+    fileTitle: titleByFileId.get(fact.fileId) || titleByDate.get(fact.periodStart) || fact.fileTitle,
+  }));
+}
+
+export { attachLogbookFileTitles };
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -729,8 +796,20 @@ export async function getLatestVaultCashUpFacts(supabase, context = {}) {
   };
 }
 
+export async function fetchMonthlyLogbookOperationalReview(supabase, context = {}) {
+  const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
+  return fetchReview(supabase, context);
+}
+
 export async function searchOperationalReviewDocuments(supabase, context = {}) {
-  const theme = context.reviewTheme || extractOperationalReviewTheme(context.question || "");
+  const question = String(context.question || "");
+  if (isVaultMonthlyOperationalSummaryQuery(question)) {
+    const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
+    const structured = await fetchReview(supabase, context);
+    if (structured?.structuredLogbookReview) return structured;
+  }
+
+  const theme = context.reviewTheme || extractOperationalReviewTheme(question);
   const searchTerms = context.searchTerms || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
   const reportTypes = ["daily_logbook", "reception_daily_report"];

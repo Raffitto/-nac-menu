@@ -77,6 +77,8 @@ export function shouldSkipAiNarration(
 
   if (deterministic?.conversationDataset) return true;
 
+  if (tool?.monthlyLogbookSummary || tool?.structuredLogbookReview) return true;
+
   if (intent === VAULT_INTENTS.CASH_UP) {
     if (vaultPeriod?.periodType === "year_to_date") return true;
     const dayCount = Number(tool?.aggregation?.dayCount) || 0;

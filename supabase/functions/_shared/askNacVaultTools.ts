@@ -69,6 +69,11 @@ import {
   searchTermsForOperationalTheme,
 } from "./vaultOperationalIntelligence.ts";
 import {
+  isVaultMonthlyOperationalSummaryQuery,
+  scoreVaultMonthlyOperationalSummaryIntent,
+  preferredMonthlyOperationalIntent,
+} from "./vaultMonthlyOperationalSummaryRouting.ts";
+import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
   groupCashUpFactsByBusinessDate,
@@ -82,6 +87,10 @@ import {
   shouldUseCashUpRangeRpc,
 } from "./askNacCashUpRangeRpc.ts";
 import { runKnowledgeHealthQuery, buildKnowledgeHealthAnswer } from "./askNacKnowledgeHealth.ts";
+import { MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS } from "./vaultMonthlyLogbookSummary.ts";
+
+const LOGBOOK_SUMMARY_FACT_SELECT =
+  "file_id,period_start,period_end,metric_key,metric_value,dimensions";
 
 const FACT_SELECT =
   "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
@@ -443,6 +452,67 @@ export async function getVaultFacts(
     facts,
     sources: [{ name: "ask_nac_structured_facts", detail: "RLS-filtered vault facts" }],
   };
+}
+
+export async function getVaultLogbookSummaryFacts(
+  supabase: SupabaseClient,
+  {
+    branch,
+    startDate,
+    endDate,
+    branchMention,
+    filters,
+    profile,
+    limit = 2500,
+  }: Record<string, unknown> = {},
+) {
+  const scopedBranch = (branch as string | null) ?? resolveBranch({ branchMention, filters, profile });
+  let query = supabase.from("ask_nac_structured_facts").select(LOGBOOK_SUMMARY_FACT_SELECT);
+  query = periodOverlapFilter(query, startDate as string, endDate as string);
+  if (scopedBranch) query = query.eq("branch_id", scopedBranch);
+  query = query
+    .eq("report_type", "daily_logbook")
+    .in("metric_key", [...MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS])
+    .order("period_start", { ascending: true });
+  if (typeof limit === "number" && limit > 0) query = query.limit(limit);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const facts = (data || []).map((row) => {
+    const typed = row as Record<string, unknown>;
+    return {
+      fileId: typed.file_id,
+      metricKey: typed.metric_key,
+      metricValue: typed.metric_value,
+      dimensions: (typed.dimensions as Record<string, unknown>) || {},
+      periodStart: typed.period_start,
+      periodEnd: typed.period_end,
+      fileTitle: null,
+    };
+  });
+
+  return {
+    branch: scopedBranch,
+    branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    startDate,
+    endDate,
+    facts,
+    sources: [{ name: "ask_nac_structured_facts", detail: "RLS-filtered daily_logbook summary facts" }],
+  };
+}
+
+export function attachLogbookFileTitles(facts: Record<string, unknown>[] = [], coverage: Record<string, unknown>[] = []) {
+  const titleByFileId = new Map<string, string>();
+  const titleByDate = new Map<string, string>();
+  for (const row of coverage) {
+    if (row.sourceFileId && row.fileTitle) titleByFileId.set(String(row.sourceFileId), String(row.fileTitle));
+    if (row.periodStart && row.fileTitle) titleByDate.set(String(row.periodStart), String(row.fileTitle));
+  }
+  return facts.map((fact) => ({
+    ...fact,
+    fileTitle: titleByFileId.get(String(fact.fileId)) || titleByDate.get(String(fact.periodStart)) || fact.fileTitle,
+  }));
 }
 
 export async function getVaultCoverage(
@@ -863,6 +933,10 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
   if (ctx?.fileIds?.length && isDocumentSummaryFollowUp(text)) return true;
   if (SEARCH_PREFIX.test(text)) return false;
   if (CASH_UP_INTENT_SIGNAL.test(text)) return false;
+  if (isVaultMonthlyOperationalSummaryQuery(text)
+    && preferredMonthlyOperationalIntent(text) === "vault_document_summary") {
+    return true;
+  }
   if (/\bsummarize\b/.test(text) && DOCUMENT_SCOPE.test(text)) return true;
   if (/\bsummarize (this|that|the) (document|report|logbook|file|upload)\b/.test(text)) return true;
   if (/\b(provide|give me) (an? )?executive summary\b/.test(text)) return true;
@@ -880,6 +954,10 @@ export function isVaultDocumentSummaryQuery(q = "", documentContext: Record<stri
 }
 
 export function scoreVaultDocumentSummaryIntent(q = "", documentContext: Record<string, unknown> | null = null): number {
+  const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(q);
+  if (monthlyScore && preferredMonthlyOperationalIntent(q) === "vault_document_summary") {
+    return monthlyScore;
+  }
   if (!isVaultDocumentSummaryQuery(q, documentContext)) return 0;
   if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
   const ctx = documentContext as { fileIds?: string[] } | null;
@@ -1638,7 +1716,14 @@ export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, contex
 }
 
 export async function searchOperationalReviewDocuments(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
-  const theme = (context.reviewTheme as string) || extractOperationalReviewTheme(String(context.question || ""));
+  const question = String(context.question || "");
+  if (isVaultMonthlyOperationalSummaryQuery(question)) {
+    const { fetchMonthlyLogbookOperationalReview } = await import("./vaultMonthlyLogbookQuery.ts");
+    const structured = await fetchMonthlyLogbookOperationalReview(supabase, context);
+    if (structured?.structuredLogbookReview) return structured;
+  }
+
+  const theme = (context.reviewTheme as string) || extractOperationalReviewTheme(question);
   const searchTerms = (context.searchTerms as string) || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
   const reportTypes = ["daily_logbook", "reception_daily_report"];
@@ -1826,6 +1911,21 @@ export async function summarizeVaultDocuments(
   supabase: SupabaseClient,
   context: Record<string, unknown> = {},
 ) {
+  const question = String(context.question || "");
+  if (isVaultMonthlyOperationalSummaryQuery(question)) {
+    const { fetchMonthlyLogbookOperationalReview } = await import("./vaultMonthlyLogbookQuery.ts");
+    const structured = await fetchMonthlyLogbookOperationalReview(supabase, context);
+    if (structured?.structuredLogbookReview) {
+      return {
+        ...structured,
+        chunks: [],
+        matches: [],
+        fileIds: ((structured.vaultSources as Array<Record<string, unknown>>) || []).map((s) => s.fileId).filter(Boolean),
+        fileTitles: ((structured.vaultSources as Array<Record<string, unknown>>) || []).map((s) => s.title).filter(Boolean),
+      };
+    }
+  }
+
   const resolved = await resolveDocumentSummaryFilesEdge(supabase, context);
   if (!resolved.fileIds.length) {
     return {
@@ -2370,6 +2470,31 @@ function buildVaultOperationalReviewAnswer(
   tool: Record<string, unknown>,
   readiness: Record<string, unknown> | null,
 ): AskNacAnswer {
+  const monthlySummary = tool?.monthlyLogbookSummary as Record<string, unknown> | undefined;
+  if (monthlySummary) {
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: "executive",
+      title: String(monthlySummary.title || `Operational summary · ${tool.periodLabel || "period"}`),
+      directAnswer: String(monthlySummary.directAnswer || ""),
+      keyMetrics: ((monthlySummary.keyMetrics as Array<Record<string, unknown>>) || []).map((m) =>
+        metricEntry(String(m.label), String(m.value), { note: "daily_logbook structured facts" }),
+      ),
+      insights: (monthlySummary.insights as string[]) || [],
+      recommendations: (monthlySummary.recommendations as string[]) || [],
+      confidence: String(monthlySummary.confidence || "low"),
+      isAiGenerated: false,
+      intent: route.intent,
+      branchLabel: tool?.branchLabel,
+      vaultSources: (tool?.vaultSources as unknown[]) || monthlySummary.vaultSources || [],
+      missingData: [],
+      exportOptions: [],
+      warnings: Number(monthlySummary.logbookDays || 0) < 10
+        ? [`Only ${monthlySummary.logbookDays} logbook day(s) covered for this month.`]
+        : [],
+    };
+  }
+
   const grouped = (tool?.groupedFindings as Record<string, unknown>[]) || [];
   const theme = String(tool?.reviewTheme || "general");
   const synthesis = buildCrossDocumentOperationalSummary(grouped, theme);
@@ -2662,6 +2787,9 @@ export function buildVaultAnswer(
   }
 
   if (route.intent === VAULT_INTENTS.DOCUMENT_SUMMARY) {
+    if (tool?.monthlyLogbookSummary) {
+      return buildVaultOperationalReviewAnswer(route, tool, readiness);
+    }
     const chunks = (tool?.chunks as Record<string, unknown>[]) || (tool?.matches as Record<string, unknown>[]) || [];
     const queryStatus = String(tool?.queryStatus || "");
     if (queryStatus === "connection_error") {

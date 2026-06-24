@@ -234,6 +234,9 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
     score(q) {
+      if (/\b(compare|compared|vs|versus)\b.*\btop\b/.test(q) || /\btop\b.*\b(compare|compared|vs|versus|between|two months)\b/.test(q)) {
+        return 0;
+      }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;

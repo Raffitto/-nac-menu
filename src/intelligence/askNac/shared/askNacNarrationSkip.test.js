@@ -59,4 +59,13 @@ describe("shouldSkipAiNarration", () => {
       { directAnswer: "Health score 83/100." },
     )).toBe(true);
   });
+
+  test("skips monthly logbook operational summary", () => {
+    expect(shouldSkipAiNarration(
+      ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW,
+      { monthlyLogbookSummary: { directAnswer: "**Executive Summary**" }, structuredLogbookReview: true },
+      { periodType: "month" },
+      { directAnswer: "**Executive Summary**", isAiGenerated: false },
+    )).toBe(true);
+  });
 });

@@ -11,6 +11,7 @@ import {
   normalizeSearchText,
   scoreChunkRelevance,
 } from "./vaultDocumentSearchRanking";
+import { parseVaultPeriodFromQuestion } from "./vaultPeriodParser";
 
 export { classifyOperationalIssue };
 
@@ -22,6 +23,11 @@ const OPERATIONAL_REVIEW_PATTERNS = [
   /\bsummarize.*logbooks?\b/i,
   /\bsummarize (uploaded )?(reports?|documents?|files)\b/i,
   /\bwhat happened\b.*\b(logbooks?|uploaded reports?|reports?)\b/i,
+  /\bwhat happened operationally\b/i,
+  /\bsummarize\b.*\b(january|february|march|april|may|june|july|august|september|october|november|december)\b.*\boperations?\b/i,
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b.*\boperations?\b/i,
+  /\boperations?\s+(?:in|for|during)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+  /\b(main|biggest|recurring)\b.*\b(operational )?issues?\b/i,
   /\boperational issues this week\b/i,
   /\bany recurring issues?\b/i,
   /\b(maintenance|operational|staff|sop|policy|manual).*\b(issues?|concerns?|violations?|repeat|recurring|follow[\s-]?ups?|action items?)\b/i,
@@ -52,6 +58,10 @@ const THEME_SEARCH_TERMS = Object.freeze({
 export function isVaultOperationalReviewQuery(question = "") {
   const q = String(question || "").trim();
   if (!q) return false;
+  const period = parseVaultPeriodFromQuestion(q);
+  if (period?.isSingleDay && /\b(what happened|summarize|summary|operationally)\b/i.test(q)) {
+    return false;
+  }
   return OPERATIONAL_REVIEW_PATTERNS.some((re) => re.test(q));
 }
 

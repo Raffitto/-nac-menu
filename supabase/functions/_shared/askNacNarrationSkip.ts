@@ -61,6 +61,8 @@ export function shouldSkipAiNarration(
 
   if (deterministic?.conversationDataset) return true;
 
+  if (tool?.monthlyLogbookSummary || tool?.structuredLogbookReview) return true;
+
   if (intent === VAULT_INTENTS.CASH_UP) {
     if (vaultPeriod?.periodType === "year_to_date") return true;
     const aggregation = tool?.aggregation as Record<string, unknown> | undefined;

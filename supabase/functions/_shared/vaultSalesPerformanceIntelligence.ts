@@ -149,6 +149,9 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
 
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
+  if (/\b(compare|compared|vs|versus)\b.*\btop\b/.test(q) || /\btop\b.*\b(compare|compared|vs|versus|between|two months)\b/.test(q)) {
+    return null;
+  }
   if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
   if (parseVaultComparePeriodsFromQuestion(question)) return "period_compare";
   if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";

@@ -6,6 +6,7 @@ import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
 import { tokenizeDocumentSearchQuery } from "./vaultDocumentSearchRetrieval";
 import { extractDocumentSummarySubject } from "./vaultDocumentSummaryRouting";
+import { isVaultMonthlyOperationalSummaryQuery } from "./vaultMonthlyOperationalSummaryRouting";
 
 const CHUNK_SELECT =
   "id,file_id,chunk_index,chunk_text,page_no,section_label,branch_id,department,report_type,period_start,period_end,file:ask_nac_files(id,title,original_filename,report_type,sensitivity_level)";
@@ -175,6 +176,21 @@ export function buildDocumentSummaryAnswerContent({ chunks = [], fileTitles = []
 }
 
 export async function summarizeVaultDocuments(supabase, context = {}) {
+  const question = String(context.question || "");
+  if (isVaultMonthlyOperationalSummaryQuery(question)) {
+    const { fetchMonthlyLogbookOperationalReview } = await import("./vaultMonthlyLogbookQuery.js");
+    const structured = await fetchMonthlyLogbookOperationalReview(supabase, context);
+    if (structured?.structuredLogbookReview) {
+      return {
+        ...structured,
+        chunks: [],
+        matches: [],
+        fileIds: (structured.vaultSources || []).map((s) => s.fileId).filter(Boolean),
+        fileTitles: (structured.vaultSources || []).map((s) => s.title).filter(Boolean),
+      };
+    }
+  }
+
   const scopedBranch = resolveBranch(context);
   const resolved = await resolveDocumentSummaryFiles(supabase, context);
 

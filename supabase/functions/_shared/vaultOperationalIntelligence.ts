@@ -11,6 +11,11 @@ import {
   normalizeSearchText,
   scoreChunkRelevance,
 } from "./vaultDocumentSearchRanking.ts";
+import {
+  scoreVaultMonthlyOperationalSummaryIntent,
+  preferredMonthlyOperationalIntent,
+} from "./vaultMonthlyOperationalSummaryRouting.ts";
+import { parseVaultPeriodFromQuestion } from "./vaultPeriodParser.ts";
 
 export { classifyOperationalIssue };
 
@@ -22,6 +27,11 @@ const OPERATIONAL_REVIEW_PATTERNS = [
   /\bsummarize.*logbooks?\b/i,
   /\bsummarize (uploaded )?(reports?|documents?|files)\b/i,
   /\bwhat happened\b.*\b(logbooks?|uploaded reports?|reports?)\b/i,
+  /\bwhat happened operationally\b/i,
+  /\bsummarize\b.*\b(january|february|march|april|may|june|july|august|september|october|november|december)\b.*\boperations?\b/i,
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b.*\boperations?\b/i,
+  /\boperations?\s+(?:in|for|during)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+  /\b(main|biggest|recurring)\b.*\b(operational )?issues?\b/i,
   /\boperational issues this week\b/i,
   /\bany recurring issues?\b/i,
   /\b(maintenance|operational|staff|sop|policy|manual).*\b(issues?|concerns?|violations?|repeat|recurring|follow[\s-]?ups?|action items?)\b/i,
@@ -52,6 +62,10 @@ const THEME_SEARCH_TERMS: Record<string, string> = {
 export function isVaultOperationalReviewQuery(question = "") {
   const q = String(question || "").trim();
   if (!q) return false;
+  const period = parseVaultPeriodFromQuestion(q);
+  if (period?.isSingleDay && /\b(what happened|summarize|summary|operationally)\b/i.test(q)) {
+    return false;
+  }
   return OPERATIONAL_REVIEW_PATTERNS.some((re) => re.test(q));
 }
 
@@ -73,7 +87,7 @@ export function searchTermsForOperationalTheme(theme = "general") {
   return THEME_SEARCH_TERMS[theme] || THEME_SEARCH_TERMS.general;
 }
 
-function extractDateFromFileTitle(fileTitle = "") {
+export function extractDateFromFileTitle(fileTitle = "") {
   const title = String(fileTitle || "");
   const dayMonth = title.match(
     /\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\b/i,
@@ -300,6 +314,12 @@ export function scoreVaultOperationalReviewIntent(q = "") {
   if (!text) return 0;
   if (/\bexecutive summary\b/i.test(text)) return 0;
   if (/\bsearch company knowledge\b/i.test(text)) return 0;
+
+  const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
+  if (monthlyScore && preferredMonthlyOperationalIntent(text) === "vault_operational_review") {
+    return monthlyScore;
+  }
+
   if (!isVaultOperationalReviewQuery(text)) return 0;
 
   if (/\b(sop|policy|manual).*\b(violations?|issues?|concerns?)\b/.test(text)) return 29;

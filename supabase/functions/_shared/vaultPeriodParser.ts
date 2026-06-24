@@ -41,6 +41,7 @@ const MONTH_MAP = Object.freeze({
 });
 
 const MONTH_PATTERN = "(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)";
+const MONTH_TOKEN = "(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)";
 
 function pad2(n) {
   return String(n).padStart(2, "0");
@@ -112,6 +113,13 @@ function monthBounds(year, monthIndex) {
     isMonth: true,
     isRange: true,
   };
+}
+
+export function monthBoundsFromToken(monthToken, explicitYear, referenceDate = new Date()) {
+  const monthIndex = MONTH_MAP[String(monthToken || "").toLowerCase()];
+  if (monthIndex == null) return null;
+  const year = resolveYearForMonth(monthIndex, explicitYear, referenceDate);
+  return monthBounds(year, monthIndex);
 }
 
 function monthToDateBounds(referenceDate) {
@@ -439,6 +447,18 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBounds(year, monthIndex);
   }
 
+  const operationalMonth = q.match(
+    new RegExp(`\\b(?:summarize|summary|operations?|operationally|highlights?|issues?|happened)\\b[^?]*\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+  );
+  if (operationalMonth) {
+    return monthBoundsFromToken(operationalMonth[1], operationalMonth[2], referenceDate);
+  }
+
+  const monthBeforeOps = q.match(new RegExp(`\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+operations?\\b`));
+  if (monthBeforeOps) {
+    return monthBoundsFromToken(monthBeforeOps[1], monthBeforeOps[2], referenceDate);
+  }
+
   return null;
 }
 
@@ -458,6 +478,22 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
         current: { ...current, label: current.label || formatRangeLabel(current.startDate, current.endDate) },
         previous: { ...previous, label: previous.label || formatRangeLabel(previous.startDate, previous.endDate) },
         periodType: "custom_compare",
+        isComparison: true,
+      };
+    }
+  }
+
+  const monthCompare = q.match(
+    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+  );
+  if (monthCompare) {
+    const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);
+    const previous = monthBoundsFromToken(monthCompare[3], monthCompare[4] || monthCompare[2], referenceDate);
+    if (current && previous) {
+      return {
+        current,
+        previous,
+        periodType: "month_compare",
         isComparison: true,
       };
     }
