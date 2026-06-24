@@ -133,11 +133,13 @@ export default function AskNacTab({
           conversationContext,
         });
         setConversationContext((prev) =>
-          updateConversationContext(prev, {
-            question: text,
-            resolvedQuestion: result.conversationResolution?.resolvedQuestion || text,
-            response: result,
-          }),
+          result.nextContext
+            ? result.nextContext
+            : updateConversationContext(prev, {
+              question: text,
+              resolvedQuestion: result.conversationResolution?.resolvedQuestion || text,
+              response: result,
+            }),
         );
         setMessages((prev) => [
           ...prev,

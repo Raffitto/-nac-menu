@@ -2229,6 +2229,22 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       warnings: coverageWarnings,
       confidence: confidenceResult.level,
       dataConfidence: confidenceResult.dataConfidence,
+      conversationDataset: {
+        kind: "cash_up_aggregation",
+        reportType: "cash_up",
+        aggregation: {
+          totalSales: aggregation.totalSales ?? null,
+          totalGuests: aggregation.totalGuests ?? null,
+          totalDeliverySales: aggregation.totalDeliverySales ?? null,
+          totalDeliveryOrders: aggregation.totalDeliveryOrders ?? null,
+          averageSpend: aggregation.averageSpend ?? null,
+          dayCount: aggregation.dayCount ?? null,
+          dailyBreakdown,
+          deliveryPlatformBreakdown: aggregation.deliveryPlatformBreakdown ?? null,
+        },
+        dailyBreakdown,
+      },
+      vaultPeriod: (route?.vaultPeriod as Record<string, unknown>) || null,
     };
   }
 

@@ -3,6 +3,8 @@
  */
 
 import { isDocumentSummaryFollowUp } from "../vault/vaultDocumentSummaryRouting";
+import { resolveConversationTurn } from "./resolveConversationTurn";
+import { isConversationFollowUp } from "./conversationFollowUpTaxonomy";
 
 const PERIOD_FRAGMENTS = [
   { pattern: /\blast month\b/i, text: "last month" },
@@ -61,8 +63,10 @@ function extractBranchFragment(text) {
 }
 
 export function isFollowUpFragment(question, context = {}) {
+  if (isConversationFollowUp(question, context)) return true;
+
   const q = normalizeQuestion(question).toLowerCase();
-  if (!context?.lastResolvedQuestion && !context?.lastQuestion) return false;
+  if (!context?.lastResolvedQuestion && !context?.lastQuestion && !context?.activeState) return false;
 
   if (/^i mean\b/.test(q)) return true;
   if (/^(what about|how about)\b/.test(q)) return true;
@@ -195,6 +199,11 @@ export function resolveFollowUpQuestion(question, context = {}) {
       usedContext: true,
       resolutionNotes: ["Using the active uploaded document from the previous answer."],
     };
+  }
+
+  const conversationTurn = resolveConversationTurn(original, context);
+  if (conversationTurn.usedContext) {
+    return conversationTurn;
   }
 
   if (!isFollowUpFragment(original, context)) {

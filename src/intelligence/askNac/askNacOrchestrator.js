@@ -8,8 +8,11 @@ import { runAskNacQueryTool } from "./queryTools";
 import { buildDeterministicAskNacAnswer } from "./answerBuilder";
 import { resolveFoodicsPeriodWithFallback } from "./shared/periodFallback";
 import { prepareAskNacQuestion, applyReviewPeriodDefaults } from "./conversation/prepareAskNacQuestion";
+import { updateConversationContext } from "./conversation/conversationContext";
 import { resolveHumanInTheLoopTurn } from "./executive/humanInLoopResolver";
 import { applyExecutiveIntelligenceV2 } from "./executive/executiveEvidenceV2";
+import { buildAnswerFromConversationDataset } from "./conversation/conversationDatasetAnswer";
+import { conversationStateFromLegacyContext } from "./conversation/conversationState";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -35,6 +38,38 @@ export async function processAskNacQuestion({
   const effectiveFilters = prepareResult.filters;
   const branch = effectiveFilters.branch || null;
   const userEmail = String(session?.user?.email || profile?.email || "").trim().toLowerCase() || null;
+  const conversationState = conversationStateFromLegacyContext(conversationContext || {});
+
+  const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
+    && conversationState?.dataset
+    && prepareResult.conversationTurn?.followUpCategory;
+  if (datasetReuse) {
+    const cached = buildAnswerFromConversationDataset({
+      followUpCategory: prepareResult.conversationTurn.followUpCategory,
+      state: conversationState,
+      route: { branchMention: conversationState.branch, vaultPeriod: conversationState.vaultPeriod },
+      originalQuestion: question,
+    });
+    if (cached) {
+      const conversationResolution = {
+        originalQuestion: prepareResult.originalQuestion,
+        resolvedQuestion: effectiveQuestion,
+        usedContext: true,
+        resolutionNotes: [
+          ...(prepareResult.conversationResolution?.resolutionNotes || []),
+          "Served from conversation dataset without a new vault query.",
+        ],
+      };
+      return {
+        ...cached,
+        intent: conversationState.intent,
+        routingConfidence: "high",
+        conversationResolution,
+        localFallback: true,
+        aiConnected: false,
+      };
+    }
+  }
 
   const humanLoop = supabase
     ? await resolveHumanInTheLoopTurn({
@@ -162,6 +197,7 @@ export async function processAskNacQuestion({
       ...(prepareResult.conversationResolution?.resolutionNotes || []),
       ...(humanLoop?.resolutionNotes || []),
     ],
+    followUpCategory: prepareResult.conversationTurn?.followUpCategory || null,
   };
 
   return {
@@ -170,6 +206,12 @@ export async function processAskNacQuestion({
     routingConfidence: route.confidence,
     routingDebug: route.debug,
     conversationResolution,
+    nextContext: updateConversationContext(conversationContext || {}, {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: deterministic,
+      route,
+    }),
     localFallback: true,
     aiConnected: false,
   };

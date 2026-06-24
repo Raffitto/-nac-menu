@@ -47,6 +47,7 @@ import {
   buildWeeklyDashboardAnswer,
 } from "../executive/humanInLoopAnswerBuilder";
 import { buildKnowledgeHealthAnswer } from "../knowledge/knowledgeHealthAnswerBuilder";
+import { attachConversationDatasetToVaultAnswer } from "../conversation/conversationDatasetAnswer";
 
 const REPORT_LABELS = Object.freeze({
   cash_up: "Cash Up",
@@ -347,7 +348,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       ),
     ];
 
-    return createAskNacResponse({
+    return attachConversationDatasetToVaultAnswer(createAskNacResponse({
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
       title: isPlatformQuery
@@ -370,7 +371,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       warnings: coverageWarnings,
       confidence: confidenceResult.level,
       dataConfidence: confidenceResult.dataConfidence,
-    });
+    }), tool, route);
   }
 
   if (tool?.queryStatus === "connection_error") {

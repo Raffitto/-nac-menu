@@ -26,6 +26,13 @@ export function prepareAskNacQuestion({
     originalQuestion: question,
     effectiveQuestion,
     conversationResolution: resolution,
+    conversationTurn: resolution.usedContext
+      ? {
+        followUpCategory: resolution.followUpCategory || null,
+        preferDatasetReuse: Boolean(resolution.preferDatasetReuse),
+        confidence: resolution.confidence || null,
+      }
+      : null,
     filters: effectiveFilters,
   };
 }

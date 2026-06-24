@@ -2,6 +2,13 @@
  * Session-only Ask NAC conversation memory (no database persistence).
  */
 
+import {
+  captureConversationStateFromTurn,
+  createEmptyConversationState,
+  inferMetricFromQuestion,
+  shouldInvalidateConversationState,
+} from "./conversationState";
+
 export function createEmptyConversationContext() {
   return {
     lastQuestion: null,
@@ -13,6 +20,8 @@ export function createEmptyConversationContext() {
     lastEntity: null,
     lastAnswerSummary: null,
     lastDocumentContext: null,
+    lastDataset: null,
+    activeState: createEmptyConversationState(),
     pendingSessionId: null,
     awaitingInput: false,
   };
@@ -62,20 +71,44 @@ export function updateConversationContext(context = {}, payload = {}) {
   const base = { ...createEmptyConversationContext(), ...context };
   const { question, resolvedQuestion, response, route } = payload;
 
+  if (question && shouldInvalidateConversationState(question)) {
+    return createEmptyConversationContext();
+  }
+
+  const nextResolvedQuestion = resolvedQuestion ?? base.lastResolvedQuestion;
+  const nextIntent = response?.intent ?? route?.intent ?? base.lastIntent;
+  const nextBranch = response?.branchLabel ?? route?.branchMention ?? base.lastBranch;
+  const nextPeriod = response?.periodLabel ?? route?.period?.rangeId ?? route?.vaultPeriod?.periodType ?? base.lastPeriod;
+  const nextMetric =
+    inferMetricFromQuestion(nextResolvedQuestion || question)
+    || response?.conversationDataset?.metric
+    || base.lastMetric;
+  const nextDataset = response?.conversationDataset ?? base.lastDataset;
+
+  const activeState = captureConversationStateFromTurn({
+    question,
+    resolvedQuestion: nextResolvedQuestion,
+    response,
+    route,
+    previousState: base.activeState,
+  });
+
   return {
     ...base,
     lastQuestion: question ?? base.lastQuestion,
-    lastResolvedQuestion: resolvedQuestion ?? base.lastResolvedQuestion,
-    lastIntent: response?.intent ?? route?.intent ?? base.lastIntent,
-    lastBranch: response?.branchLabel ?? route?.branchMention ?? base.lastBranch,
-    lastPeriod: response?.periodLabel ?? route?.period?.rangeId ?? base.lastPeriod,
-    lastMetric: response?.intent ?? route?.intent ?? base.lastMetric,
+    lastResolvedQuestion: nextResolvedQuestion,
+    lastIntent: nextIntent,
+    lastBranch: nextBranch,
+    lastPeriod: nextPeriod,
+    lastMetric: nextMetric,
     lastEntity: pickEntityFromResponse(response) ?? base.lastEntity,
     lastAnswerSummary: response?.directAnswer
       ? String(response.directAnswer).slice(0, 240)
       : base.lastAnswerSummary,
     lastDocumentContext:
       pickDocumentContextFromResponse(response) ?? base.lastDocumentContext,
+    lastDataset: nextDataset,
+    activeState,
     pendingSessionId: response?.awaitingInput
       ? (response?.pendingSessionId || response?.pendingSession?.id || base.pendingSessionId)
       : (response?.pendingSession?.status === "complete" ? null : (response?.pendingSessionId ?? base.pendingSessionId)),

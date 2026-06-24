@@ -51,7 +51,7 @@ import {
   resolveWhyVaultCompare,
   detectWhyMetricFocus,
 } from "./vaultBusinessReasoningRouting.ts";
-import { prepareAskNacQuestionEdge } from "./askNacConversation.ts";
+import { prepareAskNacQuestionEdge, updateConversationContextEdge, conversationStateFromLegacyContext } from "./askNacConversation.ts";
 import { detectExecutiveAnalysisKindEdge, queryExecutiveAnalysisEdge } from "./askNacExecutiveTools.ts";
 import {
   assessNetworkDataConfidence,
@@ -960,6 +960,64 @@ export async function processAskNacOnEdge(
   });
   const effectiveQuestion = prepareResult.effectiveQuestion;
 
+  const conversationState = conversationStateFromLegacyContext(
+    (conversationContext || {}) as Record<string, unknown>,
+  );
+  const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
+    && conversationState?.dataset
+    && prepareResult.conversationTurn?.followUpCategory;
+  if (datasetReuse) {
+    const dataset = conversationState.dataset as Record<string, unknown>;
+    const dailyBreakdown = (dataset.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
+    const aggregation = dataset.aggregation as Record<string, unknown> | undefined;
+    if (dailyBreakdown.length || aggregation) {
+      const branchLabel = conversationState.branchLabel || "Network";
+      const periodLabel = (conversationState.period?.label as string)
+        || (conversationState.vaultPeriod?.label as string)
+        || "the period";
+      const insights = dailyBreakdown.map(
+        (row) => `${row.date}: ${row.totalSales != null ? `${Number(row.totalSales).toLocaleString()} SAR` : "sales n/a"}`,
+      );
+      const cachedAnswer = {
+        answerType: "metric",
+        title: `Daily breakdown · ${periodLabel}`,
+        directAnswer: `${branchLabel} daily ${conversationState.metricLabel || "sales"} for ${periodLabel} (${dailyBreakdown.length} day(s) from prior answer).`,
+        keyMetrics: [],
+        insights,
+        warnings: ["Reused dataset from the previous answer — no new vault query."],
+        intent: conversationState.intent,
+        periodLabel,
+        branchLabel,
+        conversationDataset: dataset,
+      };
+      return {
+        ...cachedAnswer,
+        routingConfidence: "high",
+        conversationResolution: {
+          originalQuestion: prepareResult.originalQuestion,
+          resolvedQuestion: effectiveQuestion,
+          usedContext: true,
+          resolutionNotes: [
+            ...(prepareResult.conversationResolution?.resolutionNotes || []),
+            "Served from conversation dataset without a new vault query.",
+          ],
+          followUpCategory: prepareResult.conversationTurn?.followUpCategory || null,
+        },
+        nextContext: updateConversationContextEdge(
+          (conversationContext || {}) as Record<string, unknown>,
+          {
+            question,
+            resolvedQuestion: effectiveQuestion,
+            response: cachedAnswer,
+          },
+        ),
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+      };
+    }
+  }
+
   const mergedFilters = prepareResult.filters;
   const fallbackHours = Number(mergedFilters.timeRangeHours) || 24;
   const resolvedBranch = branch ?? (mergedFilters.branch as string | null) ?? null;
@@ -1149,7 +1207,17 @@ export async function processAskNacOnEdge(
         ...(prepareResult.conversationResolution?.resolutionNotes || []),
         ...(humanLoop?.resolutionNotes || []),
       ],
+      followUpCategory: prepareResult.conversationTurn?.followUpCategory || null,
     },
+    nextContext: updateConversationContextEdge(
+      (conversationContext || {}) as Record<string, unknown>,
+      {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: { ...answer, intent: route.intent, periodLabel: answer.periodLabel, branchLabel: answer.branchLabel },
+        route: route as Record<string, unknown>,
+      },
+    ),
     serverConnected: true,
     aiConnected,
     localFallback: false,
