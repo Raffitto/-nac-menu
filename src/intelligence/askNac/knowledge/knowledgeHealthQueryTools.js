@@ -7,8 +7,9 @@ import { getVaultCoverage, getVaultFacts } from "../vault/vaultQueryTools";
 import { fetchManualInputsForPeriod } from "../executive/manualInputs";
 import { fetchCashUpRangeAggregationViaRpc } from "../vault/vaultCashUpRangeRpc";
 import { computeKnowledgeHealth } from "./knowledgeHealthEngine";
+import { summarizeCompilerStageDiagnostics } from "./compilerStageDiagnostics";
 
-const INGESTION_SELECT = "id, status, error, finished_at, file_id, ask_nac_files!inner(id, title, primary_branch_id, report_type)";
+const INGESTION_SELECT = "id, status, stage, error, finished_at, compiler_stage, compiler_stages, compilation_manifest, file_id, ask_nac_files!inner(id, title, primary_branch_id, report_type)";
 const PENDING_SESSION_SELECT = "id, branch_id, session_type, status, missing_fields, provided_inputs, context, created_by, expires_at";
 const DISCOVERY_SELECT = "id, folder_path, detected_report_type, recommended_action, confidence, reason, status, branch_id, file_count";
 
@@ -117,6 +118,7 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
     discoveryCandidates: discoveryCandidatesResult.candidates || [],
     historicalDashboardCoverage: historicalDashboardCoverage.coverage || [],
     fileInventory: fileInventoryResult || {},
+    compilerDiagnostics: summarizeCompilerStageDiagnostics(ingestionJobsResult.rawJobs || []),
     sources: [
       { name: "ask_nac_data_coverage", detail: "coverage registry" },
       { name: "ask_nac_ingestion_jobs", detail: "ingestion status (last 30 days)" },
@@ -149,13 +151,21 @@ async function fetchIngestionJobs(supabase, { branch, since } = {}) {
   const jobs = (data || []).map((row) => ({
     id: row.id,
     status: row.status,
+    stage: row.stage,
     error: row.error,
     finishedAt: row.finished_at,
     fileTitle: row.ask_nac_files?.title,
     reportType: row.ask_nac_files?.report_type,
+    compiler_stage: row.compiler_stage,
+    compiler_stages: row.compiler_stages,
+    compilation_manifest: row.compilation_manifest,
   }));
 
-  return { jobs, sources: [{ name: "ask_nac_ingestion_jobs", detail: `${jobs.length} job(s) since ${since}` }] };
+  return {
+    jobs,
+    rawJobs: jobs,
+    sources: [{ name: "ask_nac_ingestion_jobs", detail: `${jobs.length} job(s) since ${since}` }],
+  };
 }
 
 async function fetchPendingSessions(supabase, { branch } = {}) {

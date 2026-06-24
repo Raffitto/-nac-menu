@@ -316,6 +316,12 @@ export async function registerVaultUpload(supabase, { file, metadata, session, p
     versionRowId: versionRow?.id || null,
     email,
     reportType: mergedMetadata.reportType,
+    compilerMetadata: {
+      knowledgeDomain: mergedMetadata.knowledgeDomain,
+      knowledgeSubdomain: mergedMetadata.knowledgeSubdomain,
+      artifactType: mergedMetadata.artifactType,
+      source: "manual_upload",
+    },
   });
 
   if (pipeline.jobError) {

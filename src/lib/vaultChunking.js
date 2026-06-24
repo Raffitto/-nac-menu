@@ -10,6 +10,11 @@ import {
 } from "../intelligence/askNac/vault/parsers/vaultFileAdapter";
 import { computeTextContentHash } from "../intelligence/askNac/vault/vaultContentHash";
 import { buildSalesPerformanceSearchableText } from "../intelligence/askNac/vault/vaultSalesPerformanceIntelligence";
+import {
+  completeCompilerStage,
+  failCompilerStage,
+  startCompilerStage,
+} from "../intelligence/askNac/vault/compilerStageTracking";
 
 export const CHUNK_TARGET_CHARS = 5000;
 export const CHUNK_MAX_CHARS = 7200;
@@ -522,6 +527,10 @@ export async function runVaultDocumentChunking(
     .update({ search_status: "indexing" })
     .eq("id", fileId);
 
+  if (jobId) {
+    await startCompilerStage(supabase, jobId, "legacy_chunk");
+  }
+
   const built = await buildChunksFromFile(file, {
     reportType: fileRecord?.report_type || fileRecord?.reportType,
     branchId: fileRecord?.primary_branch_id || fileRecord?.primaryBranchId,
@@ -535,6 +544,7 @@ export async function runVaultDocumentChunking(
       .eq("id", fileId);
 
     if (jobId) {
+      await failCompilerStage(supabase, jobId, "legacy_chunk", built.error || "Chunk build failed");
       await supabase
         .from("ask_nac_ingestion_jobs")
         .update({
@@ -558,6 +568,14 @@ export async function runVaultDocumentChunking(
   });
 
   if (jobId) {
+    if (persisted.ok && persisted.chunkCount > 0) {
+      await completeCompilerStage(supabase, jobId, "legacy_chunk", {
+        chunkCount: persisted.chunkCount,
+        searchStatus: "searchable",
+      });
+    } else {
+      await failCompilerStage(supabase, jobId, "legacy_chunk", persisted.error || "Chunk persist failed");
+    }
     await supabase
       .from("ask_nac_ingestion_jobs")
       .update({

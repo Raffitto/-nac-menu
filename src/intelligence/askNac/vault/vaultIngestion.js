@@ -16,6 +16,12 @@ import { parsePnlReport } from "./parsers/parsePnl";
 import { rebuildKnowledgeGraphForBranch } from "./knowledgeGraph";
 import { rebuildTimelineForFile } from "./vaultOperationalTimeline";
 import { PARSEABLE_REPORT_TYPES } from "./vaultConstants";
+import {
+  completeCompilerStage,
+  failCompilerStage,
+  setCompilerManifest,
+  startCompilerStage,
+} from "./compilerStageTracking";
 
 export { PARSEABLE_REPORT_TYPES };
 
@@ -176,11 +182,14 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
     .update({ status: "processing", stage: "extract", started_at: startedAt })
     .eq("id", jobId);
 
+  await startCompilerStage(supabase, jobId, "legacy_parse", { reportType: context.reportType });
+
   let parseResult;
   try {
     parseResult = await parseVaultStructuredFile(file, context);
   } catch (err) {
     const message = err?.message || "Parse failed";
+    await failCompilerStage(supabase, jobId, "legacy_parse", message);
     await supabase
       .from("ask_nac_ingestion_jobs")
       .update({
@@ -195,6 +204,7 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
   }
 
   if (!parseResult.ok) {
+    await failCompilerStage(supabase, jobId, "legacy_parse", parseResult.error || "Parse failed");
     await supabase
       .from("ask_nac_ingestion_jobs")
       .update({
@@ -322,6 +332,22 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
     })
     .eq("id", jobId);
 
+  await completeCompilerStage(supabase, jobId, "legacy_parse", {
+    factsExtracted: parseResult.facts?.length || 0,
+    publish: parseResult.publish,
+  });
+  await completeCompilerStage(supabase, jobId, "publish", {
+    factsPersisted: insertedCount,
+    readiness,
+    confidence: parseResult.confidence,
+  });
+  await setCompilerManifest(supabase, jobId, {
+    factsExtracted: parseResult.facts?.length || 0,
+    factsPersisted: insertedCount,
+    parserVersion: VAULT_PARSER_VERSION,
+    publish: parseResult.publish,
+  });
+
   if (insertedFacts.length > 0) {
     await rebuildTimelineForFile(supabase, {
       fileRecord,
@@ -330,9 +356,11 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
   }
 
   if (fileRecord.primary_branch_id) {
+    await startCompilerStage(supabase, jobId, "link", { branchId: fileRecord.primary_branch_id }).catch(() => null);
     await rebuildKnowledgeGraphForBranch(supabase, {
       branchId: fileRecord.primary_branch_id,
     }).catch(() => null);
+    await completeCompilerStage(supabase, jobId, "link", { branchId: fileRecord.primary_branch_id }).catch(() => null);
   }
 
   return {

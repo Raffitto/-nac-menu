@@ -5,6 +5,11 @@
 import { runVaultDocumentChunking } from "../../../lib/vaultChunking";
 import { isVaultReportTypeParseable } from "./vaultConstants";
 import { runVaultIngestion } from "./vaultIngestion";
+import {
+  buildCompilerProfile,
+  completeCompilerStage,
+  initializeCompilerJobObservability,
+} from "./compilerStageTracking";
 
 /**
  * Queue ingestion job, chunk for search, and run structured parser when report type is parseable.
@@ -17,6 +22,7 @@ export async function runVaultFileIngestionPipeline(supabase, {
   email,
   reportType,
   jobId = crypto.randomUUID(),
+  compilerMetadata = {},
 }) {
   const parseable = isVaultReportTypeParseable(reportType);
 
@@ -36,6 +42,20 @@ export async function runVaultFileIngestionPipeline(supabase, {
   if (jobError) {
     return { ok: false, storedOnly: !parseable, jobId, jobError: jobError.message, ingestion: null, chunking: null };
   }
+
+  await initializeCompilerJobObservability(supabase, jobId, {
+    compilerProfile: buildCompilerProfile({
+      knowledgeDomain: compilerMetadata.knowledgeDomain,
+      reportType,
+    }),
+  });
+  await completeCompilerStage(supabase, jobId, "classify", {
+    reportType,
+    knowledgeDomain: compilerMetadata.knowledgeDomain || null,
+    knowledgeSubdomain: compilerMetadata.knowledgeSubdomain || null,
+    artifactType: compilerMetadata.artifactType || null,
+    source: compilerMetadata.source || "manual_upload",
+  });
 
   const chunking = await runVaultDocumentChunking(supabase, {
     file,

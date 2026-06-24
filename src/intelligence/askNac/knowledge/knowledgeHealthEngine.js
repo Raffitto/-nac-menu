@@ -447,7 +447,7 @@ export function computeKnowledgeHealth(snapshot = {}) {
     periodLabel: snapshot.periodLabel,
     overallScore,
     components,
-    componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness },
+    componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness, compilerDiagnostics: snapshot.compilerDiagnostics || null },
     executiveReadiness,
     domainReadiness: assessDomainReadinessPlaceholders({ fileInventory }),
     missingRegistry,

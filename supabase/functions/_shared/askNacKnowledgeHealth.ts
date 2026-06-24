@@ -6,6 +6,7 @@ import { branchDisplayName } from "./askNacEdgeAnswerBuilder.ts";
 import { getVaultCoverage, getVaultFacts } from "./askNacVaultTools.ts";
 import { fetchCashUpRangeAggregationViaRpc } from "./askNacCashUpRangeRpc.ts";
 import { assessDomainReadinessPlaceholders } from "./knowledgeTaxonomy.ts";
+import { summarizeCompilerStageDiagnostics } from "./compilerStageTracking.ts";
 
 const COVERAGE_TYPE_WEIGHTS: Record<string, number> = {
   cash_up: 0.45,
@@ -325,7 +326,7 @@ function computeHealth(snapshot: Record<string, unknown>) {
     periodLabel: snapshot.periodLabel,
     overallScore,
     components,
-    componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness },
+    componentDetail: { coverageScore, ingestionScore, parserScore, dashboardReadiness, executiveReadiness, compilerDiagnostics: snapshot.compilerDiagnostics || null },
     missingRegistry,
     executiveReadiness,
     domainReadiness: assessDomainReadinessPlaceholders({ fileInventory }),
@@ -382,13 +383,19 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
     getVaultFacts(supabase, { branch, startDate: period.startDate, endDate: period.endDate, reportType: "daily_logbook" }).catch(() => ({ facts: [] })),
     getVaultFacts(supabase, { branch, startDate: period.startDate, endDate: period.endDate, metricKeys: ["google_review_1", "google_review_2", "google_review_3", "google_review_4", "google_review_5"] }).catch(() => ({ facts: [] })),
     branch ? fetchManualInputs(supabase, branch, period.startDate, period.endDate) : Promise.resolve([]),
-    supabase.from("ask_nac_ingestion_jobs").select("id, status, error, finished_at, file_id, ask_nac_files!inner(title, primary_branch_id, report_type)").gte("created_at", `${ingestionSince}T00:00:00Z`).limit(200).then((r) => {
+    supabase.from("ask_nac_ingestion_jobs").select("id, status, stage, error, finished_at, compiler_stage, compiler_stages, compilation_manifest, file_id, ask_nac_files!inner(title, primary_branch_id, report_type)").gte("created_at", `${ingestionSince}T00:00:00Z`).limit(200).then((r) => {
       let rows = (r.data || []) as Record<string, unknown>[];
       if (branch) rows = rows.filter((row) => (row.ask_nac_files as { primary_branch_id?: string })?.primary_branch_id === branch);
       return rows.map((row) => ({
+        id: row.id,
         status: row.status,
+        stage: row.stage,
         error: row.error,
         fileTitle: (row.ask_nac_files as { title?: string })?.title,
+        reportType: (row.ask_nac_files as { report_type?: string })?.report_type,
+        compiler_stage: row.compiler_stage,
+        compiler_stages: row.compiler_stages,
+        compilation_manifest: row.compilation_manifest,
       }));
     }).catch(() => []),
     supabase.from("ask_nac_pending_sessions").select("id, session_type, missing_fields").eq("status", "pending").then((r) => {
@@ -420,6 +427,7 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
     discoveryCandidates,
     historicalDashboardCoverage: (historicalDashboardCoverage as { coverage?: unknown[] }).coverage || [],
     fileInventory,
+    compilerDiagnostics: summarizeCompilerStageDiagnostics((ingestionJobs as Array<Record<string, unknown>>) || []),
     sources: [
       { name: "ask_nac_data_coverage", detail: "coverage registry" },
       { name: "ask_nac_ingestion_jobs", detail: "ingestion status" },

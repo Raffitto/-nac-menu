@@ -17,6 +17,14 @@ import {
   fetchActiveDiscoveryRules,
   shouldIngestDiscoveryDecision,
 } from "./driveDiscoveryClassifier.ts";
+import {
+  buildCompilerProfile,
+  completeCompilerStage,
+  failCompilerStage,
+  initializeCompilerJobObservability,
+  setCompilerManifest,
+  startCompilerStage,
+} from "./compilerStageTracking.ts";
 
 const VAULT_STORAGE_BUCKET = "ask-nac-vault-originals";
 const CHUNK_TARGET_CHARS = 5000;
@@ -1328,6 +1336,7 @@ async function registerDownloadedDriveFile(
   });
 
   const jobId = crypto.randomUUID();
+  const compilerProfile = buildCompilerProfile({ reportType });
   await admin.from("ask_nac_ingestion_jobs").insert({
     id: jobId,
     file_id: fileId,
@@ -1335,12 +1344,18 @@ async function registerDownloadedDriveFile(
     status: "processing",
     stage: "extract",
     started_at: nowIso(),
+    compiler_profile: compilerProfile,
     stats: {
       source: "google_drive",
       driveFileId: driveFile.id,
       folderPath: driveFile.folderPath,
       relativePath: driveFile.relativePath,
     },
+  });
+  await initializeCompilerJobObservability(admin, jobId, { compilerProfile });
+  await startCompilerStage(admin, jobId, "legacy_drive_ingest", {
+    driveFileId: driveFile.id,
+    relativePath: driveFile.relativePath,
   });
 
   return { fileId, fileRow, versionRowId: versionRow.id, jobId };
@@ -1365,6 +1380,24 @@ async function completeJob(
   const factCount = parseResult.factCount;
   const readiness = factCount > 0 ? (parseResult.publish ? "ready" : "partial") : "registered";
   const mergedWarnings = [...(parseResult.warnings || []), ...(warnings || [])];
+  await completeCompilerStage(admin, jobId, "legacy_parse", {
+    factCount,
+    parser: parseResult.parser,
+    publish: parseResult.publish,
+  });
+  await completeCompilerStage(admin, jobId, "publish", {
+    factCount,
+    readiness,
+    chunkCount,
+  });
+  await setCompilerManifest(admin, jobId, {
+    factCount,
+    chunkCount,
+    parser: parseResult.parser,
+    publish: parseResult.publish,
+    source: "google_drive",
+  });
+  await completeCompilerStage(admin, jobId, "legacy_drive_ingest", { factCount, chunkCount });
   await admin.from("ask_nac_ingestion_jobs").update({
     status: "completed",
     stage: parseResult.stage || (factCount > 0 ? "raw_extract_only" : "chunks_indexed"),
@@ -1399,6 +1432,7 @@ async function completeJob(
 
 async function failJob(admin: SupabaseLike, jobId: string | null, error: string) {
   if (!jobId) return;
+  await failCompilerStage(admin, jobId, "legacy_drive_ingest", error);
   await admin.from("ask_nac_ingestion_jobs").update({
     status: "failed",
     stage: "drive_ingest",
@@ -1513,6 +1547,12 @@ async function processOneDriveFile(
     });
     jobId = registered.jobId;
 
+    await completeCompilerStage(admin, jobId, "classify", {
+      reportType: registered.fileRow.report_type,
+      source: "google_drive",
+      discoveryType: discoveryDecision?.detectedReportType || null,
+    });
+
     await updateRun(admin, runId, {
       runtime_stage: "extracting_started",
       current_file: driveFile.relativePath || driveFile.name,
@@ -1520,6 +1560,8 @@ async function processOneDriveFile(
     }, counters);
     const extracted = await extractText(download);
     counters.extracted_count += 1;
+    await startCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
+    await completeCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
     const chunks = buildChunks(extracted);
     await updateRun(admin, runId, {
       runtime_stage: "indexing_started",
@@ -1533,7 +1575,9 @@ async function processOneDriveFile(
       chunks,
     });
     if (chunkCount > 0) counters.indexed_count += 1;
+    await completeCompilerStage(admin, jobId, "legacy_chunk", { chunkCount });
 
+    await startCompilerStage(admin, jobId, "legacy_parse", { reportType: registered.fileRow.report_type });
     const parseResult = await insertStructuredFacts(admin, {
       fileRow: registered.fileRow,
       versionRowId: registered.versionRowId,
