@@ -22,6 +22,7 @@ import {
   setCompilerManifest,
   startCompilerStage,
 } from "./compilerStageTracking";
+import { ensureIngestionEntities } from "./entityRegistry";
 
 export { PARSEABLE_REPORT_TYPES };
 
@@ -357,6 +358,12 @@ export async function runVaultIngestion(supabase, { file, fileRecord, jobId, ema
 
   if (fileRecord.primary_branch_id) {
     await startCompilerStage(supabase, jobId, "link", { branchId: fileRecord.primary_branch_id }).catch(() => null);
+    await ensureIngestionEntities(supabase, {
+      fileRecord,
+      jobId,
+      extractionMethod: "compiler_link",
+      createdBy: email,
+    }).catch(() => null);
     await rebuildKnowledgeGraphForBranch(supabase, {
       branchId: fileRecord.primary_branch_id,
     }).catch(() => null);

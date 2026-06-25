@@ -10,6 +10,7 @@ import {
   completeCompilerStage,
   initializeCompilerJobObservability,
 } from "./compilerStageTracking";
+import { ensureIngestionEntities } from "./entityRegistry";
 
 /**
  * Queue ingestion job, chunk for search, and run structured parser when report type is parseable.
@@ -66,6 +67,14 @@ export async function runVaultFileIngestionPipeline(supabase, {
   });
 
   if (!parseable) {
+    await ensureIngestionEntities(supabase, {
+      fileRecord,
+      jobId,
+      fileVersionId: versionRowId,
+      extractionMethod: "ingestion_registry",
+      createdBy: email,
+    }).catch(() => null);
+
     return {
       ok: true,
       storedOnly: true,

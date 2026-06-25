@@ -17,6 +17,7 @@ import {
   fetchActiveDiscoveryRules,
   shouldIngestDiscoveryDecision,
 } from "./driveDiscoveryClassifier.ts";
+import { ensureIngestionEntities } from "./entityRegistry.ts";
 import {
   buildCompilerProfile,
   completeCompilerStage,
@@ -1594,6 +1595,13 @@ async function processOneDriveFile(
       parseResult,
       warnings: extracted.warnings || [],
     });
+    await ensureIngestionEntities(admin, {
+      fileRecord: registered.fileRow,
+      jobId,
+      fileVersionId: registered.versionRowId,
+      extractionMethod: "google_drive_ingest",
+      createdBy: email,
+    }).catch(() => null);
     await markRunFile(admin, itemId, {
       status: "completed",
       file_id: registered.fileId,
