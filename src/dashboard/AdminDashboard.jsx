@@ -157,7 +157,6 @@ export default function AdminDashboard(props) {
   return (
     <PlatformFiltersProvider>
       <RbacProvider session={session}>
-        <RbacBranchConstraint />
         <AdminDashboardContent
           {...props}
           session={session}
@@ -329,6 +328,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
       className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""}`.trim()}
       style={scrollable && !intelligenceFullscreen ? { overflow: "auto", minHeight: "100vh" } : undefined}
     >
+      <RbacBranchConstraint activeView={adminView} />
       <div className="admin-bg-glow" />
 
       {!intelligenceFullscreen ? (

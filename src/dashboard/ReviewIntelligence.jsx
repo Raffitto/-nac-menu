@@ -36,8 +36,7 @@ import {
 } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { useRbacOptional } from "./context/RbacContext";
-import { canFetchCrossBranchComparison } from "../lib/rbacQueryScope";
-import { buildBranchComparisonForProfile } from "../lib/rbacIntelligenceScope";
+import { buildReviewBranchComparisonForProfile } from "../lib/rbacIntelligenceScope";
 import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import { applyPlatformFilters } from "./utils/platformFilterApply";
@@ -206,7 +205,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       const scopedBranch = reviewScope.queryBranch;
       if (scopedBranch) {
         reviewQ = reviewQ.eq("branch_id", scopedBranch);
-      } else if (rbac?.profile && !rbac.profile.allBranches) {
+      } else if (!reviewScope.networkWide && rbac?.profile) {
         reviewQ = reviewQ.eq("branch_id", rbac.profile.branchScope || "__rbac_denied__");
       }
 
@@ -216,7 +215,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         .order("created_at", { ascending: false })
         .limit(2000);
 
-      if (!canFetchCrossBranchComparison(rbac?.profile)) {
+      if (!reviewScope.networkWide) {
         reviewAllQ = reviewAllQ.eq(
           "branch_id",
           scopedBranch || rbac?.profile?.branchScope || "__rbac_denied__",
@@ -241,7 +240,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(
-        buildBranchComparisonForProfile(rbac?.profile, buildBranchReviewComparison(all)),
+        buildReviewBranchComparisonForProfile(rbac?.profile, buildBranchReviewComparison(all)),
       );
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");

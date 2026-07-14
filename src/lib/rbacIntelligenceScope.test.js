@@ -2,7 +2,9 @@ import { resolveRbacProfile, RBAC_ROLES } from "../dashboard/config/rbac";
 import {
   filterCommandCenterPackage,
   filterExecutiveCommandInput,
+  filterReviewIntelligenceInput,
   buildBranchComparisonForProfile,
+  buildReviewBranchComparisonForProfile,
   commandCenterPulseTitle,
   rbacScopeCacheKey,
   operationalBranchIdsForProfile,
@@ -73,6 +75,30 @@ describe("rbacIntelligenceScope", () => {
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].branch_id).toBe("khobar");
+  });
+
+  test("reviews-only capability retains network review rows without widening operations", () => {
+    const rows = [
+      { branch_id: "khobar", qr_scans: 40 },
+      { branch_id: "riyadh", qr_scans: 2 },
+      { branch_id: "jeddah", qr_scans: 21 },
+    ];
+    expect(buildBranchComparisonForProfile(fady, rows)).toHaveLength(1);
+    expect(buildReviewBranchComparisonForProfile(fady, rows)).toHaveLength(3);
+
+    const reviewInput = filterReviewIntelligenceInput(
+      {
+        branchComparison: rows,
+        staffByBranch: { khobar: [], riyadh: [], jeddah: [] },
+      },
+      fady,
+    );
+    expect(reviewInput.networkWide).toBe(true);
+    expect(Object.keys(reviewInput.staffByBranch)).toEqual([
+      "khobar",
+      "riyadh",
+      "jeddah",
+    ]);
   });
 
   test("filterCommandCenterPackage removes network alerts and timeline for GM", () => {

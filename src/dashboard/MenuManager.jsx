@@ -364,6 +364,7 @@ export default function MenuManager() {
   const sectionsCatalogRef = useRef([]);
   const categoriesRef = useRef([]);
   const lastLoadedCatRef = useRef(null);
+  const menuLoadRequestRef = useRef(0);
 
   useEffect(() => {
     sectionsCatalogRef.current = sectionsCatalog;
@@ -466,6 +467,7 @@ export default function MenuManager() {
 
   const loadMenuForCategory = useCallback(async (catId) => {
     if (!catId || !supabase) return;
+    const requestId = ++menuLoadRequestRef.current;
     setItemsLoading(true);
     try {
       const { data: sections, error: secErr } = await supabase
@@ -479,14 +481,16 @@ export default function MenuManager() {
       const secIds = (sections || []).map((s) => s.id);
       let items = [];
       if (secIds.length > 0) {
-        const { data: itemData } = await supabase
+        const { data: itemData, error: itemErr } = await supabase
           .from("menu_items")
           .select("*")
           .in("section_id", secIds)
           .eq("branch_id", menuBranch)
           .order("sort_order");
+        if (itemErr) throw itemErr;
         items = itemData || [];
       }
+      if (requestId !== menuLoadRequestRef.current) return;
 
       const result = (sections || []).map((sec) => ({
         ...sec,
@@ -515,9 +519,11 @@ export default function MenuManager() {
         setPlacementGroupSummary({});
       }
     } catch (e) {
-      setError("Failed to load menu items");
+      if (requestId === menuLoadRequestRef.current) {
+        setError(e?.message || "Failed to load menu items");
+      }
     } finally {
-      setItemsLoading(false);
+      if (requestId === menuLoadRequestRef.current) setItemsLoading(false);
     }
   }, [menuBranch]);
 
@@ -559,8 +565,11 @@ export default function MenuManager() {
         const cats = await loadCategories();
         await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
         if (!cancelled) {
-          setSelectedCatId(cats[0]?.id || null);
-          lastLoadedCatRef.current = null;
+          const firstCategoryId = cats[0]?.id || null;
+          setMenuData([]);
+          setSelectedCatId(firstCategoryId);
+          lastLoadedCatRef.current = firstCategoryId;
+          if (firstCategoryId) await loadMenuForCategory(firstCategoryId);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -570,7 +579,14 @@ export default function MenuManager() {
     return () => {
       cancelled = true;
     };
-  }, [menuBranch, loadCategories, loadSectionsCatalog, loadAddOns, loadAllergens]);
+  }, [
+    menuBranch,
+    loadCategories,
+    loadSectionsCatalog,
+    loadAddOns,
+    loadAllergens,
+    loadMenuForCategory,
+  ]);
 
   useEffect(() => {
     if (!selectedCatId) return undefined;
@@ -629,11 +645,14 @@ export default function MenuManager() {
   // ── Category CRUD ──
 
   const handleSelectCategory = useCallback((catId) => {
+    if (catId === selectedCatId) {
+      loadMenuForCategory(catId);
+    }
     lastLoadedCatRef.current = null;
     setSelectedCatId(catId);
     setSearchQuery("");
     setActiveFilter("all");
-  }, []);
+  }, [selectedCatId, loadMenuForCategory]);
 
   const handleAddCategory = useCallback(() => {
     setCatEditMode("create");
@@ -1525,6 +1544,7 @@ export default function MenuManager() {
         )}
       </div>
       <div className="mm-bg-glow" />
+      <div className="mm-body">
 
       {/* ═══ SIDEBAR ═══ */}
       <aside className="mm-sidebar">
@@ -2109,6 +2129,7 @@ export default function MenuManager() {
           )}
         </div>
       </main>
+      </div>
 
       {/* ═══ EDITOR PANEL ═══ */}
       <AnimatePresence>

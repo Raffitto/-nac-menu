@@ -10,15 +10,16 @@ import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelli
 import { cacheKey, getCachedIntelligence, invalidateIntelligenceCache } from "../utils/intelligenceCache";
 import { withSupabaseFallback } from "../utils/supabaseResilience";
 import {
-  buildBranchComparisonForProfile,
+  buildReviewBranchComparisonForProfile,
   filterExecutiveCommandInput,
+  filterReviewIntelligenceInput,
   operationalBranchIdsForProfile,
   rbacScopeCacheKey,
 } from "../../lib/rbacIntelligenceScope";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
+import { reviewAllowedBranchIds } from "../config/rbac";
 
-async function loadStaffByBranch(hours, rbacProfile) {
-  const branchIds = operationalBranchIdsForProfile(rbacProfile);
+async function loadStaffByBranch(hours, branchIds) {
   const pairs = await Promise.all(
     branchIds.map(async (branchId) => {
       const summary = await withSupabaseFallback(
@@ -37,6 +38,7 @@ async function loadStaffByBranch(hours, rbacProfile) {
 export function usePredictiveIntelligence(reviewData = null, options = {}) {
   const platform = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
+  const reviewSurface = Boolean(reviewData);
   const selectedRange = reviewData?.selectedRange ?? platform?.selectedRange ?? "today";
   const activeBranch = reviewData?.networkWide
     ? null
@@ -69,9 +71,13 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
 
     getCachedIntelligence(key, async () => {
       const hours = rangeToHours(selectedRange);
-      const allowedIds = operationalBranchIdsForProfile(rbac?.profile);
+      const allowedIds = reviewSurface
+        ? activeBranch
+          ? [activeBranch]
+          : reviewAllowedBranchIds(rbac?.profile)
+        : operationalBranchIdsForProfile(rbac?.profile);
       const [staffByBranch, snapResult] = await Promise.all([
-        loadStaffByBranch(hours, rbac?.profile),
+        loadStaffByBranch(hours, allowedIds),
         fetchGoogleReviewSnapshots(allowedIds).catch(() => ({ data: [] })),
       ]);
 
@@ -88,25 +94,25 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
           null,
         );
         if (net) {
-          branchComparison = buildBranchComparisonForProfile(
+          branchComparison = buildReviewBranchComparisonForProfile(
             rbac?.profile,
             branchComparisonFromReviewSummary(net),
           );
         }
       }
 
-      const scoped = filterExecutiveCommandInput(
-        {
-          kpis,
-          branchComparison: branchComparison || [],
-          staffByBranch,
-          snapshots: snapResult?.data || [],
-          selectedRange,
-          dailyTrend: dailyTrend || [],
-          activeBranch,
-        },
-        rbac?.profile,
-      );
+      const input = {
+        kpis,
+        branchComparison: branchComparison || [],
+        staffByBranch,
+        snapshots: snapResult?.data || [],
+        selectedRange,
+        dailyTrend: dailyTrend || [],
+        activeBranch,
+      };
+      const scoped = reviewSurface
+        ? filterReviewIntelligenceInput(input, rbac?.profile)
+        : filterExecutiveCommandInput(input, rbac?.profile);
 
       return buildPredictiveIntelligencePackage(scoped);
     })
@@ -133,6 +139,7 @@ export function usePredictiveIntelligence(reviewData = null, options = {}) {
     reviewData?.branchComparison,
     reviewData?.dailyTrend,
     reviewData?.networkWide,
+    reviewSurface,
     activeBranch,
     selectedRange,
     rbac?.profile,

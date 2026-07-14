@@ -74,6 +74,26 @@ describe("NAC OS RBAC", () => {
       expect(production.branchScope).toBe("khobar");
     });
 
+    test("preserves built-in review capabilities when production env overrides identity", () => {
+      const previous = process.env.REACT_APP_RBAC_USERS;
+      process.env.REACT_APP_RBAC_USERS = JSON.stringify([
+        {
+          emails: ["fady.aly@nacriyadh.com"],
+          role: "branch_gm",
+          branchScope: "khobar",
+          name: "Fady",
+        },
+      ]);
+      try {
+        const production = resolveRbacProfile(mockSession("fady.aly@nacriyadh.com"));
+        expect(production.permissions).toContain(PERMISSIONS.VIEW_NETWORK_REVIEWS);
+        expect(reviewAllowedBranchIds(production)).toEqual(["khobar", "riyadh", "jeddah"]);
+      } finally {
+        if (previous === undefined) delete process.env.REACT_APP_RBAC_USERS;
+        else process.env.REACT_APP_RBAC_USERS = previous;
+      }
+    });
+
     test("is scoped to khobar only", () => {
       expect(profile.role).toBe(RBAC_ROLES.BRANCH_GM);
       expect(profile.branchScope).toBe("khobar");

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "./PlatformFiltersContext";
 import { normalizeBranchId } from "../utils/branchIdentity";
@@ -7,6 +7,7 @@ import {
   buildBranchFilterOptions,
   buildExportBranchOptions,
   canAccessAllBranches,
+  canAccessNetworkReviews,
   canAccessIntelligenceTab,
   canAccessNav,
   canAccessReviewsTab,
@@ -65,19 +66,27 @@ export function useRbacOptional() {
 }
 
 /** Clamp platform branch filter to RBAC scope when user is branch-restricted. */
-export function RbacBranchConstraint() {
+export function RbacBranchConstraint({ activeView = null }) {
   const rbac = useRbacOptional();
   const filters = usePlatformFiltersOptional();
+  const previousViewRef = useRef(activeView);
 
   useEffect(() => {
     if (!rbac?.profile?.authenticated || rbac.canAccessAllBranches()) return;
+    const enteredReviews =
+      activeView === "reviews" && previousViewRef.current !== "reviews";
+    previousViewRef.current = activeView;
+    if (activeView === "reviews" && canAccessNetworkReviews(rbac.profile)) {
+      if (enteredReviews) filters?.setBranch?.(null);
+      return;
+    }
     const scopeBranch = rbac.profile.branchScope;
     if (!scopeBranch) return;
     const current = normalizeBranchId(filters?.branch);
     if (current !== scopeBranch) {
       filters?.setBranch?.(scopeBranch);
     }
-  }, [rbac, filters]);
+  }, [rbac, filters, activeView]);
 
   return null;
 }

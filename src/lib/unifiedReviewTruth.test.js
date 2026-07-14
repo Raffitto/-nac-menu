@@ -1,4 +1,5 @@
 import { resolveReviewScope, assertReviewDataIntegrity } from "./unifiedReviewTruth";
+import { PERMISSIONS } from "../dashboard/config/rbac";
 
 const ceoProfile = {
   authenticated: true,
@@ -10,6 +11,11 @@ const gmProfile = {
   authenticated: true,
   allBranches: false,
   branchScope: "khobar",
+};
+
+const fadyProfile = {
+  ...gmProfile,
+  permissions: [PERMISSIONS.VIEW_NETWORK_REVIEWS],
 };
 
 describe("unifiedReviewTruth", () => {
@@ -29,6 +35,13 @@ describe("unifiedReviewTruth", () => {
     const scope = resolveReviewScope(gmProfile, null);
     expect(scope.networkWide).toBe(false);
     expect(scope.queryBranch).toBe("khobar");
+  });
+
+  it("uses network scope for a reviews-only network capability", () => {
+    const scope = resolveReviewScope(fadyProfile, null);
+    expect(scope.networkWide).toBe(true);
+    expect(scope.queryBranch).toBeNull();
+    expect(resolveReviewScope(fadyProfile, "riyadh").queryBranch).toBe("riyadh");
   });
 
   it("flags insight vs table mismatch", () => {

@@ -12,8 +12,11 @@ import {
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useRbacOptional } from "../context/RbacContext";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import { shouldCountReviewEvent } from "../utils/isProductionStaff";
+import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
+import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
 
 const ICONS = {
   qr_scan: QrCode,
@@ -71,6 +74,7 @@ function normalizeRow(row, source) {
 
 function LiveActivityFeed({ maxItems = 25 }) {
   const filters = usePlatformFiltersOptional();
+  const rbac = useRbacOptional();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
@@ -81,7 +85,9 @@ function LiveActivityFeed({ maxItems = 25 }) {
       return;
     }
     const since = rangeToSince(filters?.selectedRange || "today");
-    const branch = filters?.branch;
+    const requestedBranch = filters?.branch || null;
+    const menuBranch = resolveRbacQueryBranch(rbac?.profile, requestedBranch);
+    const reviewBranch = resolveReviewScope(rbac?.profile, requestedBranch).queryBranch;
 
     try {
       let menuQ = supabase
@@ -99,10 +105,8 @@ function LiveActivityFeed({ maxItems = 25 }) {
         menuQ = menuQ.gte("created_at", since);
         reviewQ = reviewQ.gte("created_at", since);
       }
-      if (branch) {
-        menuQ = menuQ.eq("branch_id", branch);
-        reviewQ = reviewQ.eq("branch_id", branch);
-      }
+      if (menuBranch) menuQ = menuQ.eq("branch_id", menuBranch);
+      if (reviewBranch) reviewQ = reviewQ.eq("branch_id", reviewBranch);
 
       const [{ data: menu }, { data: review }] = await Promise.all([menuQ, reviewQ]);
       if (!mounted.current) return;
@@ -132,7 +136,7 @@ function LiveActivityFeed({ maxItems = 25 }) {
     } finally {
       if (mounted.current) setLoading(false);
     }
-  }, [maxItems, filters]);
+  }, [maxItems, filters, rbac?.profile]);
 
   useEffect(() => {
     mounted.current = true;

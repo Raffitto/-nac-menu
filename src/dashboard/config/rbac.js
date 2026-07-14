@@ -159,12 +159,21 @@ function directoryEntryForEmail(email) {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
 
-  const directory = [...loadEnvUserDirectory(), ...RBAC_USER_DIRECTORY];
-  for (const entry of directory) {
-    const emails = (entry.emails || []).map(normalizeEmail);
-    if (emails.includes(normalized)) return entry;
-  }
-  return null;
+  const matchesEmail = (entry) =>
+    (entry?.emails || []).map(normalizeEmail).includes(normalized);
+  const builtIn = RBAC_USER_DIRECTORY.find(matchesEmail) || null;
+  const environment = loadEnvUserDirectory().find(matchesEmail) || null;
+  if (!builtIn) return environment;
+  if (!environment) return builtIn;
+
+  return {
+    ...builtIn,
+    ...environment,
+    emails: [...new Set([...(builtIn.emails || []), ...(environment.emails || [])])],
+    permissions: [
+      ...new Set([...(builtIn.permissions || []), ...(environment.permissions || [])]),
+    ],
+  };
 }
 
 export function permissionsForRole(role) {

@@ -9,7 +9,7 @@ import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
-import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
+import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 
 const SELECT = "event_type,employee_name,employee_role,branch_id,created_at";
@@ -39,7 +39,8 @@ export default function EmployeePerformanceGrid() {
   const [sort, setSort] = useState("scans");
   const [loading, setLoading] = useState(true);
 
-  const branch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
+  const reviewScope = resolveReviewScope(rbac?.profile, filters?.branch || null);
+  const branch = reviewScope.queryBranch;
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {

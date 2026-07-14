@@ -5,6 +5,8 @@
 import {
   allowedBranchIds,
   canAccessAllBranches,
+  canAccessNetworkReviews,
+  reviewAllowedBranchIds,
 } from "../dashboard/config/rbac";
 import { OPERATIONAL_BRANCHES } from "../dashboard/engines/branchOperationalReviewEngine";
 import {
@@ -40,6 +42,14 @@ export function buildBranchComparisonForProfile(profile, rawRows = [], defaults 
   const merged = buildCanonicalBranchComparison(rawRows, defaults);
   if (!profile?.authenticated || canAccessAllBranches(profile)) return merged;
   const ids = new Set(allowedBranchIds(profile));
+  return merged.filter((row) => ids.has(normalizeBranchId(row.branch_id)));
+}
+
+/** Review-only branch comparison scope; never expands operational RBAC. */
+export function buildReviewBranchComparisonForProfile(profile, rawRows = [], defaults = {}) {
+  const merged = buildCanonicalBranchComparison(rawRows, defaults);
+  if (!profile?.authenticated || canAccessNetworkReviews(profile)) return merged;
+  const ids = new Set(reviewAllowedBranchIds(profile));
   return merged.filter((row) => ids.has(normalizeBranchId(row.branch_id)));
 }
 
@@ -298,6 +308,32 @@ export function filterExecutiveCommandInput(input = {}, profile) {
     kpis,
     networkWide,
     allowedBranchIds: allowedBranchIdsList,
+  };
+}
+
+/** Scope predictive inputs for review surfaces without widening operational access. */
+export function filterReviewIntelligenceInput(input = {}, profile) {
+  const permitted = reviewAllowedBranchIds(profile).filter(Boolean);
+  const requested = normalizeBranchId(input.activeBranch);
+  const allowedIds =
+    requested && permitted.includes(requested) ? [requested] : permitted;
+  const allowed = new Set(allowedIds);
+  const keep = (branchId) => allowed.has(normalizeBranchId(branchId));
+
+  return {
+    ...input,
+    branchComparison: (input.branchComparison || []).filter((row) =>
+      keep(branchIdFromComparisonRow(row)),
+    ),
+    previousComparison: (input.previousComparison || []).filter((row) =>
+      keep(branchIdFromComparisonRow(row)),
+    ),
+    staffByBranch: Object.fromEntries(
+      Object.entries(input.staffByBranch || {}).filter(([id]) => keep(id)),
+    ),
+    snapshots: (input.snapshots || []).filter((row) => keep(row.branch_id)),
+    networkWide: !requested && canAccessNetworkReviews(profile),
+    allowedBranchIds: allowedIds,
   };
 }
 

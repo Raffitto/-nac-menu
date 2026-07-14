@@ -7,7 +7,8 @@ import {
   canFetchCrossBranchComparison,
   resolveRbacQueryBranch,
 } from "./rbacQueryScope";
-import { buildBranchComparisonForProfile } from "./rbacIntelligenceScope";
+import { canAccessNetworkReviews } from "../dashboard/config/rbac";
+import { buildReviewBranchComparisonForProfile } from "./rbacIntelligenceScope";
 import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
 import { fetchStaffMergedByBranch } from "../dashboard/utils/reviewStaffByBranch";
 import {
@@ -28,7 +29,8 @@ import { isNacDebugEnabled } from "./nacDebug";
  */
 export function resolveReviewScope(profile, requestedBranch = null) {
   const normalized = normalizeBranchId(requestedBranch);
-  const networkCapable = canFetchCrossBranchComparison(profile);
+  const networkCapable =
+    canFetchCrossBranchComparison(profile) || canAccessNetworkReviews(profile);
 
   if (networkCapable && !normalized) {
     return {
@@ -40,7 +42,10 @@ export function resolveReviewScope(profile, requestedBranch = null) {
     };
   }
 
-  const queryBranch = resolveRbacQueryBranch(profile, normalized);
+  const queryBranch =
+    networkCapable && normalized
+      ? normalized
+      : resolveRbacQueryBranch(profile, normalized);
   return {
     mode: "branch",
     networkWide: false,
@@ -135,7 +140,7 @@ export async function fetchUnifiedReviewTruth(supabase, { hours = 24, profile = 
     activeBranch: scope.networkWide ? null : scope.queryBranch,
   });
 
-  const comparison = buildBranchComparisonForProfile(
+  const comparison = buildReviewBranchComparisonForProfile(
     profile,
     branchComparisonFromReviewSummary(summary || {}),
   );

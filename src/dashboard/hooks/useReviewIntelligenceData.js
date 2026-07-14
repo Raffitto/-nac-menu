@@ -17,7 +17,7 @@ import {
   buildDailyScanTrend,
   buildBranchScanTotals,
 } from "../utils/staffReviewStats";
-import { buildBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
+import { buildReviewBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
 import { EMPTY_REVIEW_KPIS } from "../utils/supabaseResilience";
 
 const REVIEW_EVENT_SELECT =
@@ -104,7 +104,11 @@ export function useReviewIntelligenceData(options = {}) {
 
       const queryBranch = truth?.scope?.queryBranch ?? reviewScope.queryBranch;
       if (queryBranch) reviewQ = reviewQ.eq("branch_id", queryBranch);
-      else if (rbacProfile?.authenticated && !rbacProfile.allBranches && rbacProfile.branchScope) {
+      else if (
+        !reviewScope.networkWide &&
+        rbacProfile?.authenticated &&
+        rbacProfile.branchScope
+      ) {
         reviewQ = reviewQ.eq("branch_id", rbacProfile.branchScope);
       }
 
@@ -133,7 +137,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       const events = applyPlatformFilters(branchEvents || [], platformFilters);
       const all = applyPlatformFilters(allEvents || [], platformFilters);
-      const comparison = buildBranchComparisonForProfile(
+      const comparison = buildReviewBranchComparisonForProfile(
         rbacProfile,
         buildBranchReviewComparison(all),
       );
