@@ -40,6 +40,7 @@ export function resolveRootAppKind({
   if (path === "/reset-password") return "reset-password";
   if (path === "/leaderboard") return "leaderboard";
   if (isReviewQr) return "review";
+  if (path === "/inventory") return "inventory";
   if (normalizePlatformMode(platformMode) === PLATFORM_MODES.ADMIN) return "admin";
   return "public-menu";
 }

@@ -100,6 +100,23 @@ describe("resolveRootAppKind routing", () => {
       "leaderboard",
     );
   });
+
+  test("inventory route is isolated from public and admin roots", () => {
+    expect(resolveRootAppKind({ pathname: "/inventory", platformMode: "admin" })).toBe(
+      "inventory",
+    );
+    expect(resolveRootAppKind({ pathname: "/inventory/", platformMode: "public" })).toBe(
+      "inventory",
+    );
+  });
+
+  test("review QR detection still takes priority over inventory route", () => {
+    expect(resolveRootAppKind({
+      pathname: "/inventory",
+      platformMode: "admin",
+      isReviewQr: true,
+    })).toBe("review");
+  });
 });
 
 describe("RBAC compatibility in admin mode", () => {

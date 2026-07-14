@@ -18,6 +18,10 @@ const backdatedCosting = fs.readFileSync(
   path.join(root, "supabase/migrations/20260714203000_inventory_backdated_cost_rebuild.sql"),
   "utf8"
 );
+const reviewResolution = fs.readFileSync(
+  path.join(root, "supabase/migrations/20260714204000_inventory_review_exception_resolution.sql"),
+  "utf8"
+);
 const edge = fs.readFileSync(
   path.join(root, "supabase/functions/inventory-invoice-ocr/index.ts"),
   "utf8"
@@ -86,6 +90,13 @@ describe("transactional approval and costing contract", () => {
     expect(transactions).toMatch(/Invoice cannot post from status/);
     expect(transactions).toMatch(/Every active invoice line must have a verified ingredient and conversion/);
     expect(transactions).toMatch(/Blocking invoice exceptions must be resolved/);
+  });
+
+  test("review corrections and explicit exception overrides remain audited", () => {
+    expect(reviewResolution).toMatch(/inventory_resolve_invoice_exception/);
+    expect(reviewResolution).toMatch(/A resolution reason is required/);
+    expect(reviewResolution).toMatch(/duplicate_overridden/);
+    expect(reviewResolution).toMatch(/inventory_audit_log/);
   });
 
   test("one RPC atomically creates receipt, movements, cost, variance and snapshots", () => {

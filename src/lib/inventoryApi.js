@@ -187,6 +187,16 @@ export async function retrieveOcrResult(invoiceId) {
   );
 }
 
+export async function getInvoiceSourceUrl(invoice, expiresIn = 300) {
+  const { signedUrl } = await unwrap(
+    requireClient().storage
+      .from(invoice.storage_bucket || "inventory-invoices")
+      .createSignedUrl(invoice.storage_path, expiresIn),
+    "Create protected invoice link"
+  );
+  return signedUrl;
+}
+
 export async function normalizeInvoiceHeader(invoiceId, corrections) {
   return updateInvoiceReview(invoiceId, corrections);
 }
@@ -274,6 +284,16 @@ export async function acknowledgePriceVariance(alertId, reason) {
   );
 }
 
+export async function resolveInvoiceException(exceptionId, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_resolve_invoice_exception", {
+      p_exception_id: exceptionId,
+      p_reason: reason,
+    }),
+    "Resolve invoice exception"
+  );
+}
+
 export async function fetchInvoiceHistory({ branchId, from, to, status }) {
   let query = requireClient().from("inventory_invoices").select("*, inventory_suppliers(supplier_name)");
   if (branchId) query = query.eq("branch_id", branchId);
@@ -281,6 +301,41 @@ export async function fetchInvoiceHistory({ branchId, from, to, status }) {
   if (to) query = query.lte("invoice_date", to);
   if (status) query = query.eq("status", status);
   return unwrap(query.order("invoice_date", { ascending: false }), "Fetch invoice history");
+}
+
+export async function fetchInventoryReferenceData(branchId) {
+  const client = requireClient();
+  const [ingredients, suppliers, locations] = await Promise.all([
+    unwrap(
+      client
+        .from("inventory_ingredients")
+        .select("*")
+        .eq("active", true)
+        .or(`branch_id.is.null,branch_id.eq.${branchId}`)
+        .order("canonical_name"),
+      "Fetch ingredients"
+    ),
+    unwrap(
+      client
+        .from("inventory_suppliers")
+        .select("*, inventory_supplier_branches!inner(branch_id, active)")
+        .eq("active", true)
+        .eq("inventory_supplier_branches.branch_id", branchId)
+        .eq("inventory_supplier_branches.active", true)
+        .order("supplier_name"),
+      "Fetch suppliers"
+    ),
+    unwrap(
+      client
+        .from("inventory_storage_locations")
+        .select("*")
+        .eq("branch_id", branchId)
+        .eq("active", true)
+        .order("name"),
+      "Fetch storage locations"
+    ),
+  ]);
+  return { ingredients, suppliers, locations };
 }
 
 export async function fetchReceiptHistory({ branchId, supplierId, from, to }) {

@@ -1,3 +1,5 @@
+/* global BigInt */
+
 const UNIT_ALIASES = Object.freeze({
   each: "each",
   ea: "each",
