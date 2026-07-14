@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   VIEW_OVERVIEW: "view:overview",
   VIEW_INTELLIGENCE: "view:intelligence",
   VIEW_REVIEWS: "view:reviews",
+  VIEW_NETWORK_REVIEWS: "view:network_reviews",
   VIEW_MENU: "view:menu",
   VIEW_BRANCHES: "view:branches",
   VIEW_SETTINGS: "view:settings",
@@ -117,8 +118,9 @@ export const RBAC_USER_DIRECTORY = [
     id: "fady",
     name: "Fady",
     role: RBAC_ROLES.BRANCH_GM,
-    emails: ["fady@nac.com", "fady@nac-khobar.com"],
+    emails: ["fady@nac.com", "fady@nac-khobar.com", "fady.aly@nacriyadh.com"],
     branchScope: "khobar",
+    permissions: [PERMISSIONS.VIEW_NETWORK_REVIEWS],
   },
   {
     id: "armel",
@@ -206,7 +208,33 @@ export function canAccessIntelligenceTab(profile, tabId) {
 
 export function canAccessReviewsTab(profile, tabId) {
   const perm = REVIEWS_TAB_PERMISSIONS[tabId];
+  if (tabId === "branches" && hasPermission(profile, PERMISSIONS.VIEW_NETWORK_REVIEWS)) {
+    return true;
+  }
   return perm ? hasPermission(profile, perm) : false;
+}
+
+export function canAccessNetworkReviews(profile) {
+  return (
+    canAccessAllBranches(profile) ||
+    hasPermission(profile, PERMISSIONS.VIEW_NETWORK_REVIEWS)
+  );
+}
+
+export function reviewAllowedBranchIds(profile) {
+  if (canAccessNetworkReviews(profile)) return [...CANONICAL_BRANCH_IDS];
+  return allowedBranchIds(profile);
+}
+
+export function buildReviewBranchFilterOptions(profile) {
+  const ids = reviewAllowedBranchIds(profile);
+  const options = ids.map((id) => ({
+    value: id,
+    label: branchDashboardName(id),
+  }));
+  return canAccessNetworkReviews(profile)
+    ? [{ value: "all", label: "All branches" }, ...options]
+    : options;
 }
 
 export function canAccessAllBranches(profile) {
@@ -308,13 +336,19 @@ export function resolveRbacProfile(session) {
   const branchScope = normalizeBranchId(entry.branchScope);
   const role = entry.role || RBAC_ROLES.RESTRICTED;
   const allBranches = role === RBAC_ROLES.DEVELOPER || role === RBAC_ROLES.CEO;
+  const permissions = [
+    ...new Set([
+      ...permissionsForRole(role),
+      ...(Array.isArray(entry.permissions) ? entry.permissions : []),
+    ]),
+  ];
 
   return {
     authenticated: true,
     email,
     name: entry.name || email,
     role,
-    permissions: permissionsForRole(role),
+    permissions,
     branchScope: allBranches ? null : branchScope,
     allBranches,
     rawEmail: email,

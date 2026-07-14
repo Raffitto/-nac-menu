@@ -1,4 +1,4 @@
-import { assertMenuMutation } from "./menuApi";
+import { assertMenuMutation, verifyGuestMenuExpectation } from "./menuApi";
 
 describe("assertMenuMutation", () => {
   test("maps PGRST116 coerce errors to a clear message", () => {
@@ -28,5 +28,60 @@ describe("assertMenuMutation", () => {
   test("returns data on success", () => {
     const row = { id: "abc", sold_out: true };
     expect(assertMenuMutation({ data: row, error: null }, "toggleSoldOut")).toEqual(row);
+  });
+});
+
+describe("verifyGuestMenuExpectation", () => {
+  const menu = {
+    menuData: {
+      dinner: [
+        {
+          items: [
+            {
+              id: "tenderloin",
+              en: "Tenderloin",
+              price: "120 SAR",
+              soldOut: false,
+              allergens: ["milk"],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  test("verifies allergen changes in the guest payload", () => {
+    expect(
+      verifyGuestMenuExpectation(menu, {
+        type: "item",
+        itemId: "tenderloin",
+        present: true,
+        allergens: ["milk"],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects final success when the guest payload is stale", () => {
+    expect(
+      verifyGuestMenuExpectation(menu, {
+        type: "item",
+        itemId: "tenderloin",
+        present: true,
+        allergens: ["milk", "gluten"],
+      }),
+    ).toEqual({
+      ok: false,
+      message: "Guest menu allergens did not match the saved value.",
+    });
+  });
+
+  test("verifies removed or disabled items are absent", () => {
+    expect(
+      verifyGuestMenuExpectation(menu, {
+        type: "item",
+        itemId: "removed-item",
+        present: false,
+      }),
+    ).toEqual({ ok: true });
   });
 });

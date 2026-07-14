@@ -248,6 +248,138 @@ export async function requireMenuEditorAuth() {
   return session;
 }
 
+export const MENU_PUBLISH_STAGES = {
+  SAVING: "Saving",
+  DATABASE_UPDATED: "Database updated",
+  VALIDATING: "Validating",
+  PUBLISHING: "Publishing",
+  REGENERATED: "Guest menu regenerated",
+  CACHE_UPDATED: "Cache/version updated",
+  VERIFYING: "Verifying live menu",
+  LIVE: "Live",
+  FAILED: "Publish failed",
+};
+
+function allGuestItems(menu) {
+  return Object.values(menu?.menuData || {}).flatMap((sections) =>
+    (sections || []).flatMap((section) => section?.items || []),
+  );
+}
+
+export function verifyGuestMenuExpectation(menu, expected = null) {
+  if (!expected) return { ok: true };
+  if (expected.type !== "item") return { ok: true };
+
+  const matches = allGuestItems(menu).filter((item) => item.id === expected.itemId);
+  const shouldBePresent = expected.present !== false;
+  if (!shouldBePresent) {
+    return matches.length === 0
+      ? { ok: true }
+      : { ok: false, message: "Item is still visible on the guest menu." };
+  }
+  if (!matches.length) {
+    return { ok: false, message: "Item is missing from the guest menu." };
+  }
+
+  for (const item of matches) {
+    for (const [field, value] of Object.entries(expected.fields || {})) {
+      if (item[field] !== value) {
+        return {
+          ok: false,
+          message: `Guest menu field ${field} did not match the saved value.`,
+        };
+      }
+    }
+    if (expected.allergens) {
+      const actual = [...(item.allergens || [])].sort();
+      const wanted = [...expected.allergens].sort();
+      if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+        return { ok: false, message: "Guest menu allergens did not match the saved value." };
+      }
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Publish the current branch snapshot, fetch the same live payload guests use,
+ * verify the expected change, then mark the immutable publication live.
+ */
+export async function publishAndVerifyMenuBranch({
+  branchId,
+  changeSummary = {},
+  expected = null,
+  idempotencyKey,
+  onStage,
+}) {
+  await requireMenuEditorAuth();
+  const stage = (value) => onStage?.(value);
+  stage(MENU_PUBLISH_STAGES.DATABASE_UPDATED);
+  stage(MENU_PUBLISH_STAGES.VALIDATING);
+
+  try {
+    stage(MENU_PUBLISH_STAGES.PUBLISHING);
+    const { data: publication, error: publishError } = await supabase.rpc(
+      "publish_menu_branch",
+      {
+        p_branch: normalizeBranchId(branchId),
+        p_change_summary: changeSummary,
+        p_idempotency_key: idempotencyKey || null,
+      },
+    );
+    if (publishError) throw publishError;
+    if (!publication?.id) throw new Error("Menu publication did not return a version.");
+
+    stage(MENU_PUBLISH_STAGES.REGENERATED);
+    invalidateMenuCache();
+    stage(MENU_PUBLISH_STAGES.CACHE_UPDATED);
+    stage(MENU_PUBLISH_STAGES.VERIFYING);
+
+    const { data: guestMenu, error: guestError } = await getFullMenu({
+      branchId,
+      bypassCache: true,
+    });
+    if (guestError) throw guestError;
+    const expectation = verifyGuestMenuExpectation(guestMenu, expected);
+    if (!expectation.ok) throw new Error(expectation.message);
+
+    const { data: verified, error: verifyError } = await supabase.rpc(
+      "verify_menu_publication",
+      { p_publication_id: publication.id },
+    );
+    if (verifyError) throw verifyError;
+    if (verified?.status !== "live" || !verified?.verification_result?.verified) {
+      throw new Error("Guest menu verification did not complete.");
+    }
+
+    stage(MENU_PUBLISH_STAGES.LIVE);
+    return { data: verified, guestMenu, error: null };
+  } catch (error) {
+    stage(MENU_PUBLISH_STAGES.FAILED);
+    return {
+      data: null,
+      error: new Error(
+        `Database updated. Guest menu not updated. Retry publish. ${error?.message || ""}`.trim(),
+      ),
+    };
+  }
+}
+
+export async function getMenuPublishStatus(branchId) {
+  await requireMenuEditorAuth();
+  return supabase.rpc("get_menu_publish_status", {
+    p_branch: normalizeBranchId(branchId),
+  });
+}
+
+export async function restoreMenuPublication(publicationId, idempotencyKey = null) {
+  await requireMenuEditorAuth();
+  return supabase.rpc("restore_menu_publication", {
+    p_publication_id: publicationId,
+    p_idempotency_key: idempotencyKey,
+  });
+}
+
 async function selectMenuItemById(id) {
   if (!id) {
     const error = new Error("menu_items fetch requires id");
@@ -711,22 +843,24 @@ export async function copyItemRelations(sourceItemId, targetItemId) {
   ]);
 
   if (addonJunc.data?.length) {
-    await supabase.from("item_addons").insert(
+    const { error } = await supabase.from("item_addons").insert(
       addonJunc.data.map((r) => ({
         item_id: targetItemId,
         addon_id: r.addon_id,
         sort_order: r.sort_order,
       })),
     );
+    if (error) throw error;
   }
 
   if (allergenJunc.data?.length) {
-    await supabase.from("item_allergens").insert(
+    const { error } = await supabase.from("item_allergens").insert(
       allergenJunc.data.map((r) => ({
         item_id: targetItemId,
         allergen_id: r.allergen_id,
       })),
     );
+    if (error) throw error;
   }
 }
 
@@ -827,8 +961,12 @@ export async function createMenuItemPlacements({
   }
 
   const primary = created[0];
-  if (allergenIds.length) await setItemAllergens(primary.id, allergenIds);
-  if (addonIds.length) await setItemAddons(primary.id, addonIds);
+  if (allergenIds.length) {
+    assertMenuMutation(await setItemAllergens(primary.id, allergenIds), "setItemAllergens");
+  }
+  if (addonIds.length) {
+    assertMenuMutation(await setItemAddons(primary.id, addonIds), "setItemAddons");
+  }
 
   for (let i = 1; i < created.length; i += 1) {
     await copyItemRelations(primary.id, created[i].id);
@@ -850,8 +988,8 @@ export async function updateMenuItemPlacements({
   removePlacementItemIds = [],
   syncLinked = false,
   placementGroupId = null,
-  allergenIds = [],
-  addonIds = [],
+  allergenIds = null,
+  addonIds = null,
 }) {
   await requireMenuEditorAuth();
 
@@ -882,29 +1020,35 @@ export async function updateMenuItemPlacements({
   }
 
   const applyRelations = async (ids) => {
-    await Promise.all(ids.map((id) => setItemAllergens(id, allergenIds).catch(() => {})));
-    await Promise.all(ids.map((id) => setItemAddons(id, addonIds).catch(() => {})));
+    for (const id of ids) {
+      if (Array.isArray(allergenIds)) {
+        assertMenuMutation(await setItemAllergens(id, allergenIds), "setItemAllergens");
+      }
+      if (Array.isArray(addonIds)) {
+        assertMenuMutation(await setItemAddons(id, addonIds), "setItemAddons");
+      }
+    }
   };
 
   const shouldSyncLinked = Boolean(groupId) || syncLinked;
 
   if (shouldSyncLinked && groupId) {
     await Promise.all(
-      members.map((m) =>
-        updateMenuItem(m.id, {
+      members.map(async (m) =>
+        assertMenuMutation(await updateMenuItem(m.id, {
           ...contentOnly,
           placement_group_id: groupId,
           ...(m.id === itemId ? { section_id: primarySectionId } : {}),
-        }),
+        }), "updateMenuItem"),
       ),
     );
     await applyRelations(members.map((m) => m.id));
   } else {
-    await updateMenuItem(itemId, {
+    assertMenuMutation(await updateMenuItem(itemId, {
       ...contentOnly,
       section_id: primarySectionId,
       placement_group_id: groupId,
-    });
+    }), "updateMenuItem");
     await applyRelations([itemId]);
   }
 
@@ -912,10 +1056,10 @@ export async function updateMenuItemPlacements({
     if (!placement.sectionId) continue;
     if (placement.itemId) {
       if (!shouldSyncLinked || placement.itemId !== itemId) {
-        await updateMenuItem(placement.itemId, {
+        assertMenuMutation(await updateMenuItem(placement.itemId, {
           section_id: placement.sectionId,
           placement_group_id: groupId,
-        });
+        }), "updateMenuItemPlacement");
       }
       continue;
     }
@@ -926,8 +1070,12 @@ export async function updateMenuItemPlacements({
     });
     if (error) throw error;
     if (shouldSyncLinked) {
-      await setItemAllergens(created.id, allergenIds).catch(() => {});
-      await setItemAddons(created.id, addonIds).catch(() => {});
+      if (Array.isArray(allergenIds)) {
+        assertMenuMutation(await setItemAllergens(created.id, allergenIds), "setItemAllergens");
+      }
+      if (Array.isArray(addonIds)) {
+        assertMenuMutation(await setItemAddons(created.id, addonIds), "setItemAddons");
+      }
     } else {
       await copyItemRelations(itemId, created.id);
     }

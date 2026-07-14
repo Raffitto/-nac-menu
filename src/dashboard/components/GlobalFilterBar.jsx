@@ -71,10 +71,11 @@ export default function GlobalFilterBar({
   onExport,
   loading,
   showLegacyBar = false,
+  branchOptions: branchOptionsOverride,
 }) {
   const filters = usePlatformFiltersOptional();
   const rbac = useRbacOptional();
-  const branchOptions = rbac?.branchFilterOptions || [
+  const branchOptions = branchOptionsOverride || rbac?.branchFilterOptions || [
     { value: "all", label: "All branches" },
     { value: "khobar", label: "NAC" },
     { value: "riyadh", label: "Riyadh" },

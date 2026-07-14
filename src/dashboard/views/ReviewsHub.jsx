@@ -10,6 +10,10 @@ import BranchBattle from "../reviews/BranchBattle";
 import ReviewPerformanceSection from "../reviews/ReviewPerformanceSection";
 import { GooglePlacesProvider } from "../context/GooglePlacesContext";
 import { useRbac } from "../context/RbacContext";
+import {
+  buildReviewBranchFilterOptions,
+  reviewAllowedBranchIds,
+} from "../config/rbac";
 import "../styles/platform-os.css";
 
 export default function ReviewsHub() {
@@ -18,6 +22,14 @@ export default function ReviewsHub() {
   const visibleTabs = useMemo(
     () => REVIEWS_TABS.filter((t) => rbac.canAccessReviewsTab(t.id)),
     [rbac],
+  );
+  const reviewBranchIds = useMemo(
+    () => reviewAllowedBranchIds(rbac.profile),
+    [rbac.profile],
+  );
+  const reviewBranchOptions = useMemo(
+    () => buildReviewBranchFilterOptions(rbac.profile),
+    [rbac.profile],
   );
 
   useEffect(() => {
@@ -32,7 +44,7 @@ export default function ReviewsHub() {
   };
 
   return (
-    <GooglePlacesProvider>
+    <GooglePlacesProvider branchIds={reviewBranchIds}>
     <motion.div className="nac-reviews-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
@@ -48,7 +60,7 @@ export default function ReviewsHub() {
         </div>
       </header>
 
-      <GlobalFilterBar variant="extended" />
+      <GlobalFilterBar variant="extended" branchOptions={reviewBranchOptions} />
 
       <HubTabs tabs={visibleTabs} active={tab} onChange={setTab} />
 

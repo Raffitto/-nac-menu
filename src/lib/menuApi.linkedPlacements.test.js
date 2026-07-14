@@ -131,7 +131,9 @@ describe("linked placement sync", () => {
     mockFrom.mockImplementation((table) => {
       if (table === "item_allergens" || table === "item_addons") {
         return {
-          delete: jest.fn(() => Promise.resolve({ data: [], error: null })),
+          delete: jest.fn(() => ({
+            eq: jest.fn(() => Promise.resolve({ data: [], error: null })),
+          })),
           insert: jest.fn(() => Promise.resolve({ data: [], error: null })),
           select: jest.fn(() => ({
             eq: jest.fn(() => Promise.resolve({ data: [], error: null })),

@@ -8,7 +8,7 @@ function apiKeyPresent() {
   return Boolean((process.env.REACT_APP_GOOGLE_API_KEY || "").trim());
 }
 
-export function GooglePlacesProvider({ children, enabled = true }) {
+export function GooglePlacesProvider({ children, enabled = true, branchIds = null }) {
   const [loading, setLoading] = useState(Boolean(enabled));
   const [byBranch, setByBranch] = useState({});
   const [error, setError] = useState(null);
@@ -25,7 +25,13 @@ export function GooglePlacesProvider({ children, enabled = true }) {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchBranchGooglePlaceMetrics(null);
+        const targets = Array.isArray(branchIds) && branchIds.length ? branchIds : null;
+        const data = targets
+          ? Object.assign(
+              {},
+              ...(await Promise.all(targets.map((id) => fetchBranchGooglePlaceMetrics(id)))),
+            )
+          : await fetchBranchGooglePlaceMetrics(null);
         if (cancelled) return;
         setByBranch(data);
         await upsertTodayGoogleReviewSnapshots(data).catch(() => {});
@@ -48,7 +54,7 @@ export function GooglePlacesProvider({ children, enabled = true }) {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, branchIds]);
 
   const value = useMemo(
     () => ({ loading, byBranch, error }),

@@ -315,6 +315,7 @@ describe("runVaultQueryTool range path", () => {
   });
 
   test("compare mode fetches ranges sequentially without merging facts", async () => {
+    const question = "compare last 7 days vs previous 7 days";
     const callLog = [];
     const supabase = {
       from(table) {
@@ -344,8 +345,9 @@ describe("runVaultQueryTool range path", () => {
     };
 
     const result = await runVaultQueryTool(supabase, "vault_cash_up_summary", {
-      question: "compare last 7 days vs previous 7 days",
-      vaultPeriod: parseVaultPeriodFromQuestion("compare last 7 days vs previous 7 days", REF),
+      question,
+      vaultPeriod: parseVaultPeriodFromQuestion(question, REF),
+      vaultCompare: parseVaultComparePeriodsFromQuestion(question, REF),
       filters: { branch: "khobar" },
     });
 

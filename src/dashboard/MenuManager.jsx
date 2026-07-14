@@ -52,6 +52,9 @@ import {
   uploadMenuImage,
   deleteMenuImage,
   duplicateMenuItem,
+  publishAndVerifyMenuBranch,
+  getMenuPublishStatus,
+  MENU_PUBLISH_STAGES,
 } from "../lib/menuApi";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
@@ -73,7 +76,10 @@ import {
   canManageGlobalAddOns,
   lockBranchIdOnPayload,
 } from "../lib/menuBranchScope";
-import { branchDisplayOptions } from "./config/branchDisplayConfig";
+import {
+  branchDisplayOptions,
+  publicMenuPathForBranch,
+} from "./config/branchDisplayConfig";
 import "./styles/menu-manager.css";
 
 function toDatetimeLocalValue(ms) {
@@ -334,6 +340,10 @@ export default function MenuManager() {
   });
   const [visibilityLoading, setVisibilityLoading] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [publishStage, setPublishStage] = useState(null);
+  const [publishStatus, setPublishStatus] = useState(null);
+  const [publishError, setPublishError] = useState("");
+  const [retryPublish, setRetryPublish] = useState(null);
 
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -380,6 +390,41 @@ export default function MenuManager() {
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
   }, []);
+
+  const loadPublishStatus = useCallback(async () => {
+    try {
+      const { data, error: statusError } = await getMenuPublishStatus(menuBranch);
+      if (statusError) throw statusError;
+      setPublishStatus(data);
+      return data;
+    } catch {
+      return null;
+    }
+  }, [menuBranch]);
+
+  const publishCurrentMenu = useCallback(async (changeSummary, expected = null, key = null) => {
+    const idempotencyKey =
+      key ||
+      `${menuBranch}:${changeSummary?.action || "publish"}:${
+        window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
+      }`;
+    setPublishError("");
+    setRetryPublish(null);
+    const result = await publishAndVerifyMenuBranch({
+      branchId: menuBranch,
+      changeSummary,
+      expected,
+      idempotencyKey,
+      onStage: setPublishStage,
+    });
+    await loadPublishStatus();
+    if (result.error) {
+      setPublishError(result.error.message);
+      setRetryPublish({ changeSummary, expected, idempotencyKey });
+      throw result.error;
+    }
+    return result.data;
+  }, [menuBranch, loadPublishStatus]);
 
   // ── Data Loading ──
 
@@ -540,6 +585,11 @@ export default function MenuManager() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    if (!rbac.profile?.authenticated) return;
+    loadPublishStatus();
+  }, [rbac.profile?.authenticated, loadPublishStatus]);
+
   // ── Filtering ──
 
   const filteredSections = useMemo(() => {
@@ -611,11 +661,23 @@ export default function MenuManager() {
         rbac.profile,
       );
       if (catEditMode === "create") {
-        await createCategory(payload);
-        showToast("Category created");
+        const created = assertMenuMutation(await createCategory(payload), "createCategory");
+        await publishCurrentMenu({
+          action: "create_category",
+          entity_type: "category",
+          entity_id: created.id,
+          changed_fields: payload,
+        });
+        showToast("Category created and verified live");
       } else {
-        await updateCategory(catEditData.id, catEditData);
-        showToast("Category updated");
+        assertMenuMutation(await updateCategory(catEditData.id, catEditData), "updateCategory");
+        await publishCurrentMenu({
+          action: "update_category",
+          entity_type: "category",
+          entity_id: catEditData.id,
+          changed_fields: catEditData,
+        });
+        showToast("Category updated and verified live");
       }
       setCatEditMode(null);
       const cats = await loadCategories();
@@ -625,7 +687,7 @@ export default function MenuManager() {
     } catch (e) {
       showToast(e?.message || "Failed to save category", "error");
     }
-  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch]);
+  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch, publishCurrentMenu]);
 
   const handleDeleteCategory = useCallback((cat, e) => {
     e.stopPropagation();
@@ -635,8 +697,14 @@ export default function MenuManager() {
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
-          await deleteCategory(cat.id);
-          showToast("Category deleted");
+          assertMenuMutation(await deleteCategory(cat.id), "deleteCategory");
+          await publishCurrentMenu({
+            action: "delete_category",
+            entity_type: "category",
+            entity_id: cat.id,
+            changed_fields: { name_en: cat.name_en },
+          });
+          showToast("Category deleted and verified live");
           const cats = await loadCategories();
           if (selectedCatId === cat.id) {
             setSelectedCatId(cats.length > 0 ? cats[0].id : null);
@@ -649,7 +717,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [loadCategories, showToast, selectedCatId]);
+  }, [loadCategories, showToast, selectedCatId, publishCurrentMenu]);
 
   const handleReorderCategory = useCallback(async (index, direction) => {
     const newCats = [...categories];
@@ -660,13 +728,21 @@ export default function MenuManager() {
     try {
       const ordered = newCats.map((c, i) => ({ id: c.id, sort_order: i }));
       for (const item of ordered) {
-        await updateCategory(item.id, { sort_order: item.sort_order });
+        assertMenuMutation(
+          await updateCategory(item.id, { sort_order: item.sort_order }),
+          "reorderCategory",
+        );
       }
+      await publishCurrentMenu({
+        action: "reorder_categories",
+        entity_type: "category",
+        changed_fields: { order: ordered },
+      });
     } catch (e) {
       showToast("Failed to reorder", "error");
       loadCategories();
     }
-  }, [categories, loadCategories, showToast]);
+  }, [categories, loadCategories, showToast, publishCurrentMenu]);
 
   // ── Section CRUD ──
 
@@ -677,30 +753,42 @@ export default function MenuManager() {
     const nameAr = prompt("Section name (Arabic):") || "";
     try {
       assertMenuBranchAccess(rbac.profile, menuBranch);
-      await createSection({
+      const created = assertMenuMutation(await createSection({
         name_en: name.trim(),
         name_ar: nameAr.trim(),
         category_id: selectedCatId,
         sort_order: menuData.length,
         branch_id: menuBranch,
+      }), "createSection");
+      await publishCurrentMenu({
+        action: "create_section",
+        entity_type: "section",
+        entity_id: created.id,
+        changed_fields: { name_en: name.trim(), category_id: selectedCatId },
       });
-      showToast("Section created");
+      showToast("Section created and verified live");
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to create section", "error");
     }
-  }, [selectedCatId, menuData.length, showToast, loadMenuForCategory, readOnlyMenu, rbac.profile, menuBranch]);
+  }, [selectedCatId, menuData.length, showToast, loadMenuForCategory, readOnlyMenu, rbac.profile, menuBranch, publishCurrentMenu]);
 
   const handleSaveSection = useCallback(async (sectionId) => {
     try {
-      await updateSection(sectionId, sectionEditData);
-      showToast("Section updated");
+      assertMenuMutation(await updateSection(sectionId, sectionEditData), "updateSection");
+      await publishCurrentMenu({
+        action: "update_section",
+        entity_type: "section",
+        entity_id: sectionId,
+        changed_fields: sectionEditData,
+      });
+      showToast("Section updated and verified live");
       setSectionEditId(null);
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to update section", "error");
     }
-  }, [sectionEditData, showToast, loadMenuForCategory, selectedCatId]);
+  }, [sectionEditData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const handleDeleteSection = useCallback((section) => {
     setConfirm({
@@ -709,8 +797,14 @@ export default function MenuManager() {
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
-          await deleteSection(section.id);
-          showToast("Section deleted");
+          assertMenuMutation(await deleteSection(section.id), "deleteSection");
+          await publishCurrentMenu({
+            action: "delete_section",
+            entity_type: "section",
+            entity_id: section.id,
+            changed_fields: { name_en: section.name_en },
+          });
+          showToast("Section deleted and verified live");
           loadMenuForCategory(selectedCatId);
         } catch (e) {
           showToast(e?.message || "Failed to delete section", "error");
@@ -720,7 +814,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [showToast, loadMenuForCategory, selectedCatId]);
+  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const handleReorderSection = useCallback(async (index, direction) => {
     const newSections = [...menuData];
@@ -730,12 +824,17 @@ export default function MenuManager() {
     setMenuData(newSections);
     try {
       const ordered = newSections.map((s, i) => ({ id: s.id, sort_order: i }));
-      await reorderSections(ordered);
+      assertMenuMutation(await reorderSections(ordered), "reorderSections");
+      await publishCurrentMenu({
+        action: "reorder_sections",
+        entity_type: "section",
+        changed_fields: { order: ordered },
+      });
     } catch (e) {
       showToast("Failed to reorder sections", "error");
       loadMenuForCategory(selectedCatId);
     }
-  }, [menuData, showToast, loadMenuForCategory, selectedCatId]);
+  }, [menuData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   // ── Item CRUD ──
 
@@ -844,6 +943,7 @@ export default function MenuManager() {
       return;
     }
     setSaving(true);
+    setPublishStage(MENU_PUBLISH_STAGES.SAVING);
     try {
       assertMenuBranchAccess(rbac.profile, menuBranch);
       let imgUrl = editingItem.image;
@@ -888,6 +988,7 @@ export default function MenuManager() {
       );
 
       let itemId = editingItemId;
+      let successMessage = "";
       const extraSectionIds = extraPlacements
         .map((p) => p.section_id)
         .filter(Boolean);
@@ -904,9 +1005,8 @@ export default function MenuManager() {
         itemId = result.data?.id;
         if (!itemId) throw new Error("Create succeeded but no item id returned");
         const count = (result.created || []).length;
-        showToast(
-          count > 1 ? `Item created in ${count} placements` : "Item created",
-        );
+        successMessage =
+          count > 1 ? `Item created in ${count} placements` : "Item created";
       } else {
         const isLinked = Boolean(placementGroupId || extraPlacements.length > 0);
         await updateMenuItemPlacements({
@@ -923,11 +1023,9 @@ export default function MenuManager() {
           allergenIds: itemAllergenIds,
           addonIds: itemAddOnIds,
         });
-        showToast(
-          isLinked
-            ? "Item updated across all linked placements"
-            : "Item updated",
-        );
+        successMessage = isLinked
+          ? "Item updated across all linked placements"
+          : "Item updated";
       }
 
       const { data: verified, error: verifyErr } = await fetchMenuItemById(itemId);
@@ -936,10 +1034,47 @@ export default function MenuManager() {
         throw new Error("Sold out did not persist — check Supabase column and permissions");
       }
 
+      const allergenCodes = itemAllergenIds
+        .map((id) => allergens.find((a) => a.id === id)?.code)
+        .filter(Boolean);
+      await publishCurrentMenu(
+        {
+          action: editorMode === "create" ? "create_item" : "update_item",
+          entity_type: "menu_item",
+          entity_id: itemId,
+          changed_fields: {
+            name_en: contentPayload.name_en,
+            description: contentPayload.desc_en,
+            price: contentPayload.price,
+            calories: contentPayload.calories,
+            active: contentPayload.active,
+            sold_out: contentPayload.sold_out,
+            allergens: allergenCodes,
+          },
+        },
+        {
+          type: "item",
+          itemId,
+          present: contentPayload.active !== false,
+          fields: contentPayload.active !== false
+            ? {
+                en: contentPayload.name_en,
+                descEn: contentPayload.desc_en,
+                price: contentPayload.price,
+                calories: contentPayload.calories,
+                soldOut: contentPayload.sold_out,
+              }
+            : {},
+          allergens: contentPayload.active !== false ? allergenCodes : undefined,
+        },
+      );
+      showToast(`${successMessage} — verified live`);
+
       setEditorOpen(false);
       resetPlacementEditor();
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
+      setPublishStage(MENU_PUBLISH_STAGES.FAILED);
       showToast(e?.message || "Failed to save item", "error");
       await loadMenuForCategory(selectedCatId);
     } finally {
@@ -962,6 +1097,8 @@ export default function MenuManager() {
     menuBranch,
     rbac.profile,
     readOnlyMenu,
+    allergens,
+    publishCurrentMenu,
   ]);
 
   const handleToggleSoldOut = useCallback(async (item) => {
@@ -972,13 +1109,27 @@ export default function MenuManager() {
       if (verified && Boolean(verified.sold_out) !== newVal) {
         throw new Error("Sold out did not persist");
       }
-      showToast(newVal ? "Marked sold out" : "Marked available");
+      await publishCurrentMenu(
+        {
+          action: "update_availability",
+          entity_type: "menu_item",
+          entity_id: item.id,
+          changed_fields: { sold_out: newVal },
+        },
+        {
+          type: "item",
+          itemId: item.id,
+          present: item.active !== false,
+          fields: { soldOut: newVal },
+        },
+      );
+      showToast(newVal ? "Marked sold out — verified live" : "Marked available — verified live");
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to update sold out", "error");
       await loadMenuForCategory(selectedCatId);
     }
-  }, [showToast, loadMenuForCategory, selectedCatId]);
+  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const openVisibilityModal = useCallback((item) => {
     const untilMs = parseHiddenUntil(item);
@@ -1008,8 +1159,22 @@ export default function MenuManager() {
       if (Boolean(verified.sold_out) !== patch.sold_out) {
         throw new Error("Sold out did not persist");
       }
+      await publishCurrentMenu(
+        {
+          action: "update_visibility",
+          entity_type: "menu_item",
+          entity_id: visibilityTarget.id,
+          changed_fields: patch,
+        },
+        {
+          type: "item",
+          itemId: visibilityTarget.id,
+          present: visibilityForm.mode === "active",
+          fields: visibilityForm.mode === "active" ? { soldOut: patch.sold_out } : {},
+        },
+      );
       setVisibilityTarget(null);
-      showToast("Visibility saved");
+      showToast("Visibility saved and verified live");
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to save visibility", "error");
@@ -1017,18 +1182,27 @@ export default function MenuManager() {
     } finally {
       setVisibilityLoading(false);
     }
-  }, [visibilityTarget, visibilityForm, showToast, loadMenuForCategory, selectedCatId]);
+  }, [visibilityTarget, visibilityForm, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const handleDuplicateItem = useCallback(async (item, e) => {
     e.stopPropagation();
     try {
-      await duplicateMenuItem(item.id);
-      showToast("Item duplicated");
+      const duplicated = assertMenuMutation(await duplicateMenuItem(item.id), "duplicateMenuItem");
+      await publishCurrentMenu(
+        {
+          action: "duplicate_item",
+          entity_type: "menu_item",
+          entity_id: duplicated.id,
+          changed_fields: { source_item_id: item.id },
+        },
+        { type: "item", itemId: duplicated.id, present: duplicated.active !== false },
+      );
+      showToast("Item duplicated and verified live");
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to duplicate", "error");
     }
-  }, [showToast, loadMenuForCategory, selectedCatId]);
+  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const handleDeleteItem = useCallback((item, e) => {
     e.stopPropagation();
@@ -1038,8 +1212,17 @@ export default function MenuManager() {
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
-          await deleteMenuItem(item.id);
-          showToast("Item deleted");
+          assertMenuMutation(await deleteMenuItem(item.id), "deleteMenuItem");
+          await publishCurrentMenu(
+            {
+              action: "delete_item",
+              entity_type: "menu_item",
+              entity_id: item.id,
+              changed_fields: { name_en: item.name_en },
+            },
+            { type: "item", itemId: item.id, present: false },
+          );
+          showToast("Item deleted and verified live");
           loadMenuForCategory(selectedCatId);
         } catch (e) {
           showToast(e?.message || "Failed to delete item", "error");
@@ -1049,7 +1232,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [showToast, loadMenuForCategory, selectedCatId]);
+  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   const handleReorderItem = useCallback(async (sectionIdx, itemIdx, direction) => {
     const newSections = [...menuData];
@@ -1061,12 +1244,17 @@ export default function MenuManager() {
     setMenuData(newSections);
     try {
       const ordered = items.map((it, i) => ({ id: it.id, sort_order: i }));
-      await reorderItems(ordered);
+      assertMenuMutation(await reorderItems(ordered), "reorderItems");
+      await publishCurrentMenu({
+        action: "reorder_items",
+        entity_type: "menu_item",
+        changed_fields: { order: ordered },
+      });
     } catch (e) {
       showToast("Failed to reorder", "error");
       loadMenuForCategory(selectedCatId);
     }
-  }, [menuData, showToast, loadMenuForCategory, selectedCatId]);
+  }, [menuData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
   // ── Image handling ──
 
@@ -1204,6 +1392,15 @@ export default function MenuManager() {
     });
   }, []);
 
+  const liveMenuBase =
+    process.env.REACT_APP_PUBLIC_MENU_URL || "https://nacmenu.netlify.app";
+  const liveMenuUrl = `${liveMenuBase.replace(/\/$/, "")}${publicMenuPathForBranch(menuBranch)}`;
+  const lastPublishedLabel = publishStatus?.last_published_at
+    ? new Date(publishStatus.last_published_at).toLocaleString("en-GB", {
+        timeZone: "Asia/Riyadh",
+      })
+    : "Never";
+
   if (loading) {
     return (
       <div className="mm">
@@ -1242,7 +1439,7 @@ export default function MenuManager() {
     <div className="mm">
       <div
         className="mm-branch-bar"
-        style={{ display: "flex", gap: "0.75rem", alignItems: "center", padding: "0.65rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", padding: "0.65rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
       >
         <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
           Branch
@@ -1269,6 +1466,62 @@ export default function MenuManager() {
         </label>
         {readOnlyMenu && (
           <span style={{ fontSize: "0.75rem", opacity: 0.75 }}>Read-only menu view</span>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap", fontSize: "0.72rem" }}>
+          <strong>
+            Menu Status: {publishStage || (publishStatus?.menu_status === "live" ? "Live" : "Publish failed")}
+          </strong>
+          <span>Database Version: {publishStatus?.database_version ?? "—"}</span>
+          <span>Guest Version: {publishStatus?.guest_version ?? "—"}</span>
+          <span>Last Published: {lastPublishedLabel}</span>
+          <span>Published by: {publishStatus?.publishing_user || "—"}</span>
+          <span>
+            Sync Status: {publishStatus?.sync_status === "healthy" ? "Healthy" : "Needs publish"}
+          </span>
+          <a
+            className="mm-btn mm-btn-secondary"
+            href={liveMenuUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ padding: "5px 9px", textDecoration: "none" }}
+          >
+            Open live menu
+          </a>
+          {(retryPublish || publishStatus?.sync_status === "needs_publish") && (
+            <button
+              type="button"
+              className="mm-btn mm-btn-primary"
+              style={{ padding: "5px 9px" }}
+              onClick={async () => {
+                const pending = retryPublish || {
+                  changeSummary: {
+                    action: "retry_publish",
+                    entity_type: "menu",
+                    entity_id: menuBranch,
+                  },
+                  expected: null,
+                  idempotencyKey: null,
+                };
+                try {
+                  await publishCurrentMenu(
+                    pending.changeSummary,
+                    pending.expected,
+                    pending.idempotencyKey,
+                  );
+                  showToast("Guest menu verified live");
+                } catch (e) {
+                  showToast(e?.message || "Publish retry failed", "error");
+                }
+              }}
+            >
+              Retry Publish
+            </button>
+          )}
+        </div>
+        {publishError && (
+          <div style={{ width: "100%", color: "#ffb4a8", fontSize: "0.75rem" }}>
+            {publishError}
+          </div>
         )}
       </div>
       <div className="mm-bg-glow" />

@@ -9,6 +9,8 @@ import {
   resolveEffectiveBranch,
   filterRowsByBranchScope,
   buildBranchFilterOptions,
+  reviewAllowedBranchIds,
+  buildReviewBranchFilterOptions,
 } from "./rbac";
 import {
   operationalBrandDisplay,
@@ -66,6 +68,12 @@ describe("NAC OS RBAC", () => {
   describe("Khobar GM (Fady)", () => {
     const profile = resolveRbacProfile(mockSession("fady@nac.com"));
 
+    test("maps the verified production account", () => {
+      const production = resolveRbacProfile(mockSession("fady.aly@nacriyadh.com"));
+      expect(production.role).toBe(RBAC_ROLES.BRANCH_GM);
+      expect(production.branchScope).toBe("khobar");
+    });
+
     test("is scoped to khobar only", () => {
       expect(profile.role).toBe(RBAC_ROLES.BRANCH_GM);
       expect(profile.branchScope).toBe("khobar");
@@ -74,11 +82,16 @@ describe("NAC OS RBAC", () => {
       expect(resolveEffectiveBranch(profile, null)).toBe("khobar");
     });
 
-    test("cannot access cross-branch nav or tabs", () => {
+    test("keeps operational data branch-scoped while allowing network reviews", () => {
       expect(canAccessNav(profile, "branches")).toBe(false);
       expect(canAccessIntelligenceTab(profile, "competitive")).toBe(false);
-      expect(canAccessReviewsTab(profile, "branches")).toBe(false);
+      expect(canAccessReviewsTab(profile, "branches")).toBe(true);
       expect(canFetchCrossBranchComparison(profile)).toBe(false);
+      expect(reviewAllowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
+      expect(buildReviewBranchFilterOptions(profile)[0]).toEqual({
+        value: "all",
+        label: "All branches",
+      });
     });
 
     test("can access branch operational surfaces", () => {
@@ -113,6 +126,8 @@ describe("NAC OS RBAC", () => {
       expect(profile.branchScope).toBe("riyadh");
       expect(allowedBranchIds(profile)).toEqual(["riyadh"]);
       expect(resolveEffectiveBranch(profile, "jeddah")).toBe("riyadh");
+      expect(reviewAllowedBranchIds(profile)).toEqual(["riyadh"]);
+      expect(canAccessReviewsTab(profile, "branches")).toBe(false);
     });
   });
 
@@ -122,6 +137,7 @@ describe("NAC OS RBAC", () => {
     test("is scoped to jeddah only", () => {
       expect(profile.branchScope).toBe("jeddah");
       expect(allowedBranchIds(profile)).toEqual(["jeddah"]);
+      expect(reviewAllowedBranchIds(profile)).toEqual(["jeddah"]);
     });
   });
 
