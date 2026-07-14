@@ -1,0 +1,871 @@
+{
+  "auditedAt": "2026-06-24T16:32:27.930Z",
+  "branch": "khobar",
+  "runsPerQuery": 3,
+  "note": "Edge/Supabase/OpenAI step timings are not exposed in API responses; totalLatencyMs is end-to-end HTTP.",
+  "results": [
+    {
+      "query": "show latest cash up",
+      "runs": [
+        {
+          "totalLatencyMs": 13178,
+          "ttfbMs": 13177,
+          "edgeLatencyMs": 10305,
+          "supabaseQueryMs": 1568,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash up 2026.xlsx, ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · 22 June 2026",
+          "responseSizeBytes": 11046,
+          "timingMs": {
+            "total": 10305,
+            "routeIntent": 573,
+            "selectedTool": 1568,
+            "vaultTool": 1568,
+            "executiveEvidenceV2": 8157,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 2,
+          "keyMetricCount": 22,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 10870,
+          "ttfbMs": 10868,
+          "edgeLatencyMs": 9385,
+          "supabaseQueryMs": 1219,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash up 2026.xlsx, ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · 22 June 2026",
+          "responseSizeBytes": 11045,
+          "timingMs": {
+            "total": 9385,
+            "routeIntent": 112,
+            "selectedTool": 1219,
+            "vaultTool": 1219,
+            "executiveEvidenceV2": 8047,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 2,
+          "keyMetricCount": 22,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9991,
+          "ttfbMs": 9990,
+          "edgeLatencyMs": 9398,
+          "supabaseQueryMs": 1310,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash up 2026.xlsx, ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · 22 June 2026",
+          "responseSizeBytes": 11044,
+          "timingMs": {
+            "total": 9398,
+            "routeIntent": 41,
+            "selectedTool": 1310,
+            "vaultTool": 1310,
+            "executiveEvidenceV2": 8041,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 2,
+          "keyMetricCount": 22,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 11346,
+        "minLatencyMs": 9991,
+        "maxLatencyMs": 13178,
+        "avgResponseSizeBytes": 11045,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_cash_up_summary"
+        ],
+        "vaultTools": [
+          "Cash up 2026.xlsx, ask_nac_structured_facts"
+        ]
+      }
+    },
+    {
+      "query": "show net sales for last 7 days",
+      "runs": [
+        {
+          "totalLatencyMs": 10766,
+          "ttfbMs": 10764,
+          "edgeLatencyMs": 10156,
+          "supabaseQueryMs": 1734,
+          "openAiNarrationMs": 0,
+          "vaultTool": "ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · last 7 days",
+          "responseSizeBytes": 17910,
+          "timingMs": {
+            "total": 10156,
+            "routeIntent": 50,
+            "selectedTool": 1734,
+            "vaultTool": 1734,
+            "executiveEvidenceV2": 8367,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 1,
+          "keyMetricCount": 8,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 11181,
+          "ttfbMs": 11180,
+          "edgeLatencyMs": 10043,
+          "supabaseQueryMs": 1726,
+          "openAiNarrationMs": 0,
+          "vaultTool": "ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · last 7 days",
+          "responseSizeBytes": 17910,
+          "timingMs": {
+            "total": 10043,
+            "routeIntent": 37,
+            "selectedTool": 1726,
+            "vaultTool": 1726,
+            "executiveEvidenceV2": 8278,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 1,
+          "keyMetricCount": 8,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 10796,
+          "ttfbMs": 10690,
+          "edgeLatencyMs": 10094,
+          "supabaseQueryMs": 1692,
+          "openAiNarrationMs": 0,
+          "vaultTool": "ask_nac_structured_facts",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Sales performance · last 7 days",
+          "responseSizeBytes": 17911,
+          "timingMs": {
+            "total": 10094,
+            "routeIntent": 104,
+            "selectedTool": 1692,
+            "vaultTool": 1692,
+            "executiveEvidenceV2": 8295,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 1,
+          "keyMetricCount": 8,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 10914,
+        "minLatencyMs": 10766,
+        "maxLatencyMs": 11181,
+        "avgResponseSizeBytes": 17910,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_cash_up_summary"
+        ],
+        "vaultTools": [
+          "ask_nac_structured_facts"
+        ]
+      }
+    },
+    {
+      "query": "visualize it (after last-7-days)",
+      "runs": [
+        {
+          "totalLatencyMs": 1051,
+          "ttfbMs": 1050,
+          "edgeLatencyMs": 1,
+          "supabaseQueryMs": 0,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_cash_up_summary",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": true,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": null,
+          "usedContext": true,
+          "title": "Daily breakdown · last 7 days",
+          "responseSizeBytes": 8353,
+          "timingMs": {
+            "total": 1,
+            "routeIntent": 0,
+            "selectedTool": 0,
+            "vaultTool": 0,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 1,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 693,
+          "ttfbMs": 691,
+          "edgeLatencyMs": 1,
+          "supabaseQueryMs": 0,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_cash_up_summary",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": true,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": null,
+          "usedContext": true,
+          "title": "Daily breakdown · last 7 days",
+          "responseSizeBytes": 8353,
+          "timingMs": {
+            "total": 1,
+            "routeIntent": 0,
+            "selectedTool": 0,
+            "vaultTool": 0,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 1,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 853,
+          "ttfbMs": 852,
+          "edgeLatencyMs": 1,
+          "supabaseQueryMs": 0,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_cash_up_summary",
+          "intent": "vault_cash_up_summary",
+          "datasetReused": true,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": null,
+          "usedContext": true,
+          "title": "Daily breakdown · last 7 days",
+          "responseSizeBytes": 8353,
+          "timingMs": {
+            "total": 1,
+            "routeIntent": 0,
+            "selectedTool": 0,
+            "vaultTool": 0,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 1,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 866,
+        "minLatencyMs": 693,
+        "maxLatencyMs": 1051,
+        "avgResponseSizeBytes": 8353,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": true,
+        "intents": [
+          "vault_cash_up_summary"
+        ],
+        "vaultTools": [
+          "intent:vault_cash_up_summary"
+        ]
+      }
+    },
+    {
+      "query": "health check",
+      "runs": [
+        {
+          "totalLatencyMs": 8961,
+          "ttfbMs": 8960,
+          "edgeLatencyMs": 8300,
+          "supabaseQueryMs": 16278,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Knowledge Health · Khobar",
+          "responseSizeBytes": 2727,
+          "timingMs": {
+            "total": 8300,
+            "routeIntent": 159,
+            "selectedTool": 8139,
+            "vaultTool": 8139,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8139
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9260,
+          "ttfbMs": 9259,
+          "edgeLatencyMs": 8247,
+          "supabaseQueryMs": 16268,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Knowledge Health · Khobar",
+          "responseSizeBytes": 2727,
+          "timingMs": {
+            "total": 8247,
+            "routeIntent": 112,
+            "selectedTool": 8134,
+            "vaultTool": 8134,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8134
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 8845,
+          "ttfbMs": 8845,
+          "edgeLatencyMs": 8228,
+          "supabaseQueryMs": 16328,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Knowledge Health · Khobar",
+          "responseSizeBytes": 2726,
+          "timingMs": {
+            "total": 8228,
+            "routeIntent": 62,
+            "selectedTool": 8164,
+            "vaultTool": 8164,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8164
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 9022,
+        "minLatencyMs": 8845,
+        "maxLatencyMs": 9260,
+        "avgResponseSizeBytes": 2727,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_knowledge_health"
+        ],
+        "vaultTools": [
+          "intent:vault_knowledge_health"
+        ]
+      }
+    },
+    {
+      "query": "dashboard readiness",
+      "runs": [
+        {
+          "totalLatencyMs": 10102,
+          "ttfbMs": 10102,
+          "edgeLatencyMs": 8340,
+          "supabaseQueryMs": 16318,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Dashboard Readiness · Khobar",
+          "responseSizeBytes": 2801,
+          "timingMs": {
+            "total": 8340,
+            "routeIntent": 179,
+            "selectedTool": 8159,
+            "vaultTool": 8159,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8159
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9555,
+          "ttfbMs": 9555,
+          "edgeLatencyMs": 8494,
+          "supabaseQueryMs": 16460,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Dashboard Readiness · Khobar",
+          "responseSizeBytes": 2801,
+          "timingMs": {
+            "total": 8494,
+            "routeIntent": 262,
+            "selectedTool": 8230,
+            "vaultTool": 8230,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8230
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 8719,
+          "ttfbMs": 8719,
+          "edgeLatencyMs": 8139,
+          "supabaseQueryMs": 16158,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_knowledge_health",
+          "intent": "vault_knowledge_health",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Dashboard Readiness · Khobar",
+          "responseSizeBytes": 2800,
+          "timingMs": {
+            "total": 8139,
+            "routeIntent": 58,
+            "selectedTool": 8079,
+            "vaultTool": 8079,
+            "executiveEvidenceV2": 0,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 8079
+          },
+          "hasExecutiveV2": false,
+          "sourceCount": 0,
+          "keyMetricCount": 0,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 9459,
+        "minLatencyMs": 8719,
+        "maxLatencyMs": 10102,
+        "avgResponseSizeBytes": 2801,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_knowledge_health"
+        ],
+        "vaultTools": [
+          "intent:vault_knowledge_health"
+        ]
+      }
+    },
+    {
+      "query": "why were sales down yesterday",
+      "runs": [
+        {
+          "totalLatencyMs": 9429,
+          "ttfbMs": 9429,
+          "edgeLatencyMs": 8931,
+          "supabaseQueryMs": 409,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts",
+          "intent": "vault_business_reasoning",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Business reasoning · 23 June 2026 vs previous day (2026-06-22)",
+          "responseSizeBytes": 13690,
+          "timingMs": {
+            "total": 8931,
+            "routeIntent": 60,
+            "selectedTool": 409,
+            "vaultTool": 409,
+            "executiveEvidenceV2": 8457,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 4,
+          "keyMetricCount": 3,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9315,
+          "ttfbMs": 9314,
+          "edgeLatencyMs": 8597,
+          "supabaseQueryMs": 217,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts",
+          "intent": "vault_business_reasoning",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Business reasoning · 23 June 2026 vs previous day (2026-06-22)",
+          "responseSizeBytes": 13691,
+          "timingMs": {
+            "total": 8597,
+            "routeIntent": 101,
+            "selectedTool": 217,
+            "vaultTool": 217,
+            "executiveEvidenceV2": 8274,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 4,
+          "keyMetricCount": 3,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9346,
+          "ttfbMs": 9345,
+          "edgeLatencyMs": 8539,
+          "supabaseQueryMs": 185,
+          "openAiNarrationMs": 0,
+          "vaultTool": "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts",
+          "intent": "vault_business_reasoning",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Business reasoning · 23 June 2026 vs previous day (2026-06-22)",
+          "responseSizeBytes": 13690,
+          "timingMs": {
+            "total": 8539,
+            "routeIntent": 53,
+            "selectedTool": 185,
+            "vaultTool": 185,
+            "executiveEvidenceV2": 8295,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 4,
+          "keyMetricCount": 3,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 9363,
+        "minLatencyMs": 9315,
+        "maxLatencyMs": 9429,
+        "avgResponseSizeBytes": 13690,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_business_reasoning"
+        ],
+        "vaultTools": [
+          "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts"
+        ]
+      }
+    },
+    {
+      "query": "show everything learned from historical weekly dashboards",
+      "runs": [
+        {
+          "totalLatencyMs": 9699,
+          "ttfbMs": 9698,
+          "edgeLatencyMs": 8950,
+          "supabaseQueryMs": 867,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_document_search",
+          "intent": "vault_document_search",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Document search · “show everything learned from historical weekly dashboards”",
+          "responseSizeBytes": 8985,
+          "timingMs": {
+            "total": 8950,
+            "routeIntent": 45,
+            "selectedTool": 867,
+            "vaultTool": 867,
+            "executiveEvidenceV2": 8037,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 0,
+          "keyMetricCount": 2,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 9965,
+          "ttfbMs": 9965,
+          "edgeLatencyMs": 9149,
+          "supabaseQueryMs": 855,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_document_search",
+          "intent": "vault_document_search",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Document search · “show everything learned from historical weekly dashboards”",
+          "responseSizeBytes": 8985,
+          "timingMs": {
+            "total": 9149,
+            "routeIntent": 52,
+            "selectedTool": 855,
+            "vaultTool": 855,
+            "executiveEvidenceV2": 8240,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 0,
+          "keyMetricCount": 2,
+          "matchCount": null,
+          "error": null
+        },
+        {
+          "totalLatencyMs": 10276,
+          "ttfbMs": 10275,
+          "edgeLatencyMs": 9161,
+          "supabaseQueryMs": 943,
+          "openAiNarrationMs": 0,
+          "vaultTool": "intent:vault_document_search",
+          "intent": "vault_document_search",
+          "datasetReused": false,
+          "narrationSkipped": true,
+          "aiConnected": false,
+          "isAiGenerated": false,
+          "usedContext": false,
+          "title": "Document search · “show everything learned from historical weekly dashboards”",
+          "responseSizeBytes": 8986,
+          "timingMs": {
+            "total": 9161,
+            "routeIntent": 150,
+            "selectedTool": 943,
+            "vaultTool": 943,
+            "executiveEvidenceV2": 8067,
+            "openAiNarration": 0,
+            "datasetReuse": 0,
+            "knowledgeHealth": 0
+          },
+          "hasExecutiveV2": true,
+          "sourceCount": 0,
+          "keyMetricCount": 2,
+          "matchCount": null,
+          "error": null
+        }
+      ],
+      "summary": {
+        "avgLatencyMs": 9980,
+        "minLatencyMs": 9699,
+        "maxLatencyMs": 10276,
+        "avgResponseSizeBytes": 8985,
+        "narrationSkippedAll": true,
+        "datasetReusedAll": false,
+        "intents": [
+          "vault_document_search"
+        ],
+        "vaultTools": [
+          "intent:vault_document_search"
+        ]
+      }
+    }
+  ],
+  "leaderboard": [
+    {
+      "rank": 1,
+      "query": "show latest cash up",
+      "avgLatencyMs": 11346,
+      "minMs": 9991,
+      "maxMs": 13178,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "Cash up 2026.xlsx, ask_nac_structured_facts"
+    },
+    {
+      "rank": 2,
+      "query": "show net sales for last 7 days",
+      "avgLatencyMs": 10914,
+      "minMs": 10766,
+      "maxMs": 11181,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "ask_nac_structured_facts"
+    },
+    {
+      "rank": 3,
+      "query": "show everything learned from historical weekly dashboards",
+      "avgLatencyMs": 9980,
+      "minMs": 9699,
+      "maxMs": 10276,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_document_search",
+      "vaultTool": "intent:vault_document_search"
+    },
+    {
+      "rank": 4,
+      "query": "dashboard readiness",
+      "avgLatencyMs": 9459,
+      "minMs": 8719,
+      "maxMs": 10102,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_knowledge_health",
+      "vaultTool": "intent:vault_knowledge_health"
+    },
+    {
+      "rank": 5,
+      "query": "why were sales down yesterday",
+      "avgLatencyMs": 9363,
+      "minMs": 9315,
+      "maxMs": 9429,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_business_reasoning",
+      "vaultTool": "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts"
+    },
+    {
+      "rank": 6,
+      "query": "health check",
+      "avgLatencyMs": 9022,
+      "minMs": 8845,
+      "maxMs": 9260,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_knowledge_health",
+      "vaultTool": "intent:vault_knowledge_health"
+    },
+    {
+      "rank": 7,
+      "query": "visualize it (after last-7-days)",
+      "avgLatencyMs": 866,
+      "minMs": 693,
+      "maxMs": 1051,
+      "narrationSkipped": true,
+      "datasetReused": true,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "intent:vault_cash_up_summary"
+    }
+  ]
+}

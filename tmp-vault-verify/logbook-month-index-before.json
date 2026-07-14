@@ -1,0 +1,37 @@
+{
+  "before": {
+    "Summarize May operations": {
+      "times": [
+        9783,
+        9264,
+        7990
+      ],
+      "avg": 9012
+    },
+    "What happened operationally in May?": {
+      "times": [
+        7977,
+        8585,
+        9899
+      ],
+      "avg": 8820
+    },
+    "Compare April vs May operational themes": {
+      "times": [
+        13628,
+        13609,
+        13417
+      ],
+      "avg": 13551
+    },
+    "Summarize Khobar daily logbook highlights for March 2026": {
+      "times": [
+        6708,
+        6866,
+        6517
+      ],
+      "avg": 6697
+    }
+  },
+  "vizMs": 3024
+}

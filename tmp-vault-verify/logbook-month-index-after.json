@@ -1,0 +1,93 @@
+{
+  "after": {
+    "Summarize May operations": {
+      "times": [
+        9451,
+        8433,
+        9193
+      ],
+      "avg": 9026
+    },
+    "What happened operationally in May?": {
+      "times": [
+        8071,
+        8432,
+        8183
+      ],
+      "avg": 8229
+    },
+    "Compare April vs May operational themes": {
+      "times": [
+        13689,
+        13174,
+        13428
+      ],
+      "avg": 13430
+    },
+    "Summarize Khobar daily logbook highlights for March 2026": {
+      "times": [
+        6804,
+        6773,
+        7061
+      ],
+      "avg": 6879
+    }
+  },
+  "reg": {
+    "show latest cash up": {
+      "ms": 10021,
+      "status": 200,
+      "intent": "vault_cash_up_summary",
+      "ok": true
+    },
+    "show net sales for last 7 days": {
+      "ms": 11235,
+      "status": 200,
+      "intent": "vault_cash_up_summary",
+      "ok": true
+    },
+    "health check": {
+      "ms": 8675,
+      "status": 200,
+      "intent": "vault_knowledge_health",
+      "ok": true
+    },
+    "dashboard readiness": {
+      "ms": 8682,
+      "status": 200,
+      "intent": "vault_knowledge_health",
+      "ok": true
+    }
+  },
+  "vizMs": 4072,
+  "comparison": [
+    {
+      "query": "Summarize May operations",
+      "beforeAvg": 9012,
+      "afterAvg": 9026,
+      "changeMs": 14,
+      "changePct": 0
+    },
+    {
+      "query": "What happened operationally in May?",
+      "beforeAvg": 8820,
+      "afterAvg": 8229,
+      "changeMs": -591,
+      "changePct": -7
+    },
+    {
+      "query": "Compare April vs May operational themes",
+      "beforeAvg": 13551,
+      "afterAvg": 13430,
+      "changeMs": -121,
+      "changePct": -1
+    },
+    {
+      "query": "Summarize Khobar daily logbook highlights for March 2026",
+      "beforeAvg": 6697,
+      "afterAvg": 6879,
+      "changeMs": 182,
+      "changePct": 3
+    }
+  ]
+}

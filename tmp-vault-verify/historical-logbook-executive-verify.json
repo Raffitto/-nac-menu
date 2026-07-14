@@ -1,0 +1,38 @@
+{
+  "Summarize March operations": {
+    "intent": "unknown",
+    "confidence": "none",
+    "evidenceCount": 1,
+    "sourceCount": 0,
+    "title": "Need a clearer metric question",
+    "directAnswerPreview": "To summarize March operations, consider asking specific questions about metrics such as menu QR scans, menu sessions, Google redirects, review QR scans, staff redirect leaderboard, branch comparisons,",
+    "narrationSkipped": false
+  },
+  "Summarize April operations": {
+    "intent": "unknown",
+    "confidence": "none",
+    "evidenceCount": 1,
+    "sourceCount": 0,
+    "title": "Need a clearer metric question",
+    "directAnswerPreview": "To summarize April operations, consider asking specific metric questions such as the number of menu QR scans, total sales, top-selling items, or branch performance comparisons.",
+    "narrationSkipped": false
+  },
+  "What were the biggest recurring issues in May?": {
+    "intent": "vault_operational_review",
+    "confidence": "low",
+    "evidenceCount": 0,
+    "sourceCount": 1,
+    "title": "Operational review · recurring",
+    "directAnswerPreview": "No recurring operational issues were identified in May 2026 for the Khobar branch, as there were no findings that matched the review criteria within the accessible scope. It is recommended to upload o",
+    "narrationSkipped": false
+  },
+  "Compare April vs May operational themes": {
+    "intent": "unknown",
+    "confidence": "none",
+    "evidenceCount": 2,
+    "sourceCount": 0,
+    "title": "Need a clearer metric question",
+    "directAnswerPreview": "To compare operational themes between April and May, consider asking specific questions about metrics such as menu QR scans, menu sessions, Google redirects, review QR scans, staff redirect leaderboar",
+    "narrationSkipped": false
+  }
+}

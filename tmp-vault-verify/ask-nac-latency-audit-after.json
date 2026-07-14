@@ -1,0 +1,82 @@
+{
+  "outPath": "/Users/raffiazarian/Desktop/nac-menu/tmp-vault-verify/ask-nac-latency-audit-results.json",
+  "leaderboard": [
+    {
+      "rank": 1,
+      "query": "show latest cash up",
+      "avgLatencyMs": 11346,
+      "minMs": 9991,
+      "maxMs": 13178,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "Cash up 2026.xlsx, ask_nac_structured_facts"
+    },
+    {
+      "rank": 2,
+      "query": "show net sales for last 7 days",
+      "avgLatencyMs": 10914,
+      "minMs": 10766,
+      "maxMs": 11181,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "ask_nac_structured_facts"
+    },
+    {
+      "rank": 3,
+      "query": "show everything learned from historical weekly dashboards",
+      "avgLatencyMs": 9980,
+      "minMs": 9699,
+      "maxMs": 10276,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_document_search",
+      "vaultTool": "intent:vault_document_search"
+    },
+    {
+      "rank": 4,
+      "query": "dashboard readiness",
+      "avgLatencyMs": 9459,
+      "minMs": 8719,
+      "maxMs": 10102,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_knowledge_health",
+      "vaultTool": "intent:vault_knowledge_health"
+    },
+    {
+      "rank": 5,
+      "query": "why were sales down yesterday",
+      "avgLatencyMs": 9363,
+      "minMs": 9315,
+      "maxMs": 9429,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_business_reasoning",
+      "vaultTool": "Cash-up facts, Cash-up coverage, Cash-up analytics correlation, ask_nac_structured_facts"
+    },
+    {
+      "rank": 6,
+      "query": "health check",
+      "avgLatencyMs": 9022,
+      "minMs": 8845,
+      "maxMs": 9260,
+      "narrationSkipped": true,
+      "datasetReused": false,
+      "intent": "vault_knowledge_health",
+      "vaultTool": "intent:vault_knowledge_health"
+    },
+    {
+      "rank": 7,
+      "query": "visualize it (after last-7-days)",
+      "avgLatencyMs": 866,
+      "minMs": 693,
+      "maxMs": 1051,
+      "narrationSkipped": true,
+      "datasetReused": true,
+      "intent": "vault_cash_up_summary",
+      "vaultTool": "intent:vault_cash_up_summary"
+    }
+  ]
+}
