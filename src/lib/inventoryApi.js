@@ -1,0 +1,435 @@
+import { supabase } from "./supabase";
+import { buildInvoiceLineFingerprint, normalizeText } from "../inventory/inventoryIntelligence";
+
+function requireClient() {
+  if (!supabase) throw new Error("Supabase is not configured");
+  return supabase;
+}
+
+async function unwrap(request, context) {
+  const { data, error } = await request;
+  if (error) throw new Error(`${context}: ${error.message}`);
+  return data;
+}
+
+async function currentUserId() {
+  const client = requireClient();
+  const { data, error } = await client.auth.getUser();
+  if (error) throw new Error(`Resolve current user: ${error.message}`);
+  if (!data?.user?.id) throw new Error("Authentication required");
+  return data.user.id;
+}
+
+export async function createIngredient(input) {
+  const createdBy = input.createdBy || await currentUserId();
+  return unwrap(
+    requireClient().from("inventory_ingredients").insert({
+      canonical_name: input.canonicalName,
+      normalized_search_name: normalizeText(input.canonicalName),
+      description: input.description || null,
+      category: input.category || null,
+      base_inventory_unit: input.baseInventoryUnit,
+      purchasing_unit: input.purchasingUnit || null,
+      yield_percentage: input.yieldPercentage || "100",
+      scope: input.branchId ? "branch" : "network",
+      branch_id: input.branchId || null,
+      allergen_metadata: input.allergenMetadata || {},
+      created_by: createdBy,
+    }).select().single(),
+    "Create ingredient"
+  );
+}
+
+export async function createSupplier(input) {
+  const createdBy = input.createdBy || await currentUserId();
+  const supplier = await unwrap(
+    requireClient().from("inventory_suppliers").insert({
+      supplier_name: input.name,
+      normalized_name: normalizeText(input.name),
+      legal_name: input.legalName || null,
+      vat_number: input.vatNumber || null,
+      contact_information: input.contactInformation || {},
+      payment_terms: input.paymentTerms || null,
+      currency: input.currency || "SAR",
+      active: input.active !== false,
+      created_by: createdBy,
+    }).select().single(),
+    "Create supplier"
+  );
+  if (input.branchIds?.length) {
+    await unwrap(
+      requireClient().from("inventory_supplier_branches").insert(
+        input.branchIds.map((branchId) => ({ supplier_id: supplier.id, branch_id: branchId }))
+      ),
+      "Assign supplier branches"
+    );
+  }
+  return supplier;
+}
+
+export async function createSupplierCatalogueItem(input) {
+  return unwrap(
+    requireClient().from("inventory_supplier_catalogue_items").insert({
+      supplier_id: input.supplierId,
+      supplier_sku: input.supplierSku || null,
+      original_product_name: input.originalProductName,
+      normalized_product_name: normalizeText(input.originalProductName),
+      ingredient_id: input.ingredientId,
+      purchase_unit: input.purchaseUnit,
+      pack_quantity: input.packQuantity || "1",
+      pack_size: input.packSize || "1",
+      pack_unit: input.packUnit || input.purchaseUnit,
+      conversion_factor: input.conversionFactor,
+      default_tax_rate: input.defaultTaxRate || "0",
+      verification_state: input.verificationState || "unverified",
+      created_by: input.createdBy || await currentUserId(),
+    }).select().single(),
+    "Create supplier catalogue item"
+  );
+}
+
+export async function verifySupplierAlias(input) {
+  return unwrap(
+    requireClient().rpc("inventory_verify_supplier_alias", {
+      p_supplier_id: input.supplierId,
+      p_catalogue_item_id: input.catalogueItemId,
+      p_supplier_sku: input.supplierSku || null,
+      p_original_description: input.originalDescription,
+      p_reason: input.reason || "invoice_review",
+    }),
+    "Verify supplier alias"
+  );
+}
+
+export async function hashInvoiceFile(file) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function uploadInvoice({
+  branchId,
+  file,
+  supplierId = null,
+  invoiceNumber = null,
+  invoiceDate = null,
+  effectiveReceiptDate = null,
+  currency = "SAR",
+  notes = null,
+  idempotencyKey,
+}) {
+  const client = requireClient();
+  const uploaderId = await currentUserId();
+  const fileHash = await hashInvoiceFile(file);
+  const objectPath = `${branchId}/${fileHash}/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const existing = await unwrap(
+    client.from("inventory_invoices").select("*").eq("file_hash", fileHash).maybeSingle(),
+    "Check duplicate invoice file"
+  );
+  if (existing) return { invoice: existing, duplicate: true };
+
+  await unwrap(
+    client.storage.from("inventory-invoices").upload(objectPath, file, {
+      contentType: file.type,
+      upsert: false,
+    }),
+    "Upload source invoice"
+  );
+
+  try {
+    const invoice = await unwrap(
+      client.from("inventory_invoices").insert({
+        branch_id: branchId,
+        supplier_id: supplierId,
+        source_filename: file.name,
+        storage_bucket: "inventory-invoices",
+        storage_path: objectPath,
+        mime_type: file.type,
+        file_size_bytes: file.size,
+        file_hash: fileHash,
+        status: "uploaded",
+        ocr_status: "pending",
+        processing_status: "uploaded",
+        approval_status: "pending",
+        uploader_id: uploaderId,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        effective_receipt_date: effectiveReceiptDate || invoiceDate,
+        currency,
+        notes,
+        idempotency_key: idempotencyKey || `upload:${branchId}:${fileHash}`,
+      }).select().single(),
+      "Register invoice"
+    );
+    return { invoice, duplicate: false };
+  } catch (error) {
+    await client.storage.from("inventory-invoices").remove([objectPath]);
+    throw error;
+  }
+}
+
+export async function triggerInvoiceOcr(invoiceId, idempotencyKey = `ocr:${invoiceId}`) {
+  return unwrap(
+    requireClient().functions.invoke("inventory-invoice-ocr", {
+      body: { invoiceId, idempotencyKey },
+    }),
+    "Trigger invoice OCR"
+  );
+}
+
+export async function retrieveOcrResult(invoiceId) {
+  return unwrap(
+    requireClient()
+      .from("inventory_invoices")
+      .select("*, inventory_invoice_lines(*), inventory_invoice_exceptions(*)")
+      .eq("id", invoiceId)
+      .single(),
+    "Retrieve OCR result"
+  );
+}
+
+export async function normalizeInvoiceHeader(invoiceId, corrections) {
+  return updateInvoiceReview(invoiceId, corrections);
+}
+
+export async function normalizeInvoiceLines(invoiceId, lines) {
+  const client = requireClient();
+  const results = [];
+  for (const line of lines) {
+    results.push(await unwrap(
+      client.rpc("inventory_update_invoice_line", {
+        p_invoice_id: invoiceId,
+        p_line_id: line.id,
+        p_patch: line,
+        p_reason: line.reason || "review_correction",
+      }),
+      "Normalize invoice line"
+    ));
+  }
+  return results;
+}
+
+export async function generateMatchCandidates(invoiceLineId) {
+  return unwrap(
+    requireClient().rpc("inventory_generate_match_candidates", { p_invoice_line_id: invoiceLineId }),
+    "Generate ingredient match candidates"
+  );
+}
+
+export async function confirmLineMapping(input) {
+  return unwrap(
+    requireClient().rpc("inventory_confirm_line_mapping", {
+      p_invoice_line_id: input.invoiceLineId,
+      p_ingredient_id: input.ingredientId,
+      p_catalogue_item_id: input.catalogueItemId || null,
+      p_conversion_factor: input.conversionFactor,
+      p_canonical_quantity: input.canonicalQuantity,
+      p_canonical_unit: input.canonicalUnit,
+      p_create_verified_alias: input.createVerifiedAlias !== false,
+      p_reason: input.reason || "manual_review",
+    }),
+    "Confirm invoice line mapping"
+  );
+}
+
+export async function updateInvoiceReview(invoiceId, patch) {
+  return unwrap(
+    requireClient().rpc("inventory_update_invoice_review", {
+      p_invoice_id: invoiceId,
+      p_patch: patch,
+      p_reason: patch.reason || "review_correction",
+    }),
+    "Update invoice review"
+  );
+}
+
+export async function approveInvoice(invoiceId, idempotencyKey = `approve:${invoiceId}`) {
+  return unwrap(
+    requireClient().rpc("inventory_approve_and_post_invoice", {
+      p_invoice_id: invoiceId,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Approve and post invoice"
+  );
+}
+
+export const postReceipt = approveInvoice;
+
+export async function rejectInvoice(invoiceId, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_reject_invoice", {
+      p_invoice_id: invoiceId,
+      p_reason: reason,
+    }),
+    "Reject invoice"
+  );
+}
+
+export async function acknowledgePriceVariance(alertId, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_acknowledge_price_variance", {
+      p_alert_id: alertId,
+      p_reason: reason,
+    }),
+    "Acknowledge price variance"
+  );
+}
+
+export async function fetchInvoiceHistory({ branchId, from, to, status }) {
+  let query = requireClient().from("inventory_invoices").select("*, inventory_suppliers(supplier_name)");
+  if (branchId) query = query.eq("branch_id", branchId);
+  if (from) query = query.gte("invoice_date", from);
+  if (to) query = query.lte("invoice_date", to);
+  if (status) query = query.eq("status", status);
+  return unwrap(query.order("invoice_date", { ascending: false }), "Fetch invoice history");
+}
+
+export async function fetchReceiptHistory({ branchId, supplierId, from, to }) {
+  let query = requireClient().from("inventory_purchase_receipts").select("*, inventory_purchase_receipt_lines(*)");
+  if (branchId) query = query.eq("branch_id", branchId);
+  if (supplierId) query = query.eq("supplier_id", supplierId);
+  if (from) query = query.gte("effective_at", from);
+  if (to) query = query.lte("effective_at", to);
+  return unwrap(query.order("effective_at", { ascending: false }), "Fetch receipt history");
+}
+
+export async function fetchInventoryBalance({ branchId, locationId, ingredientId }) {
+  let query = requireClient().from("inventory_current_stock").select("*").eq("branch_id", branchId);
+  if (locationId) query = query.eq("storage_location_id", locationId);
+  if (ingredientId) query = query.eq("ingredient_id", ingredientId);
+  return unwrap(query, "Fetch inventory balance");
+}
+
+export async function fetchStockAsOf({ branchId, asOf, locationId = null, ingredientId = null }) {
+  return unwrap(
+    requireClient().rpc("inventory_stock_as_of", {
+      p_branch_id: branchId,
+      p_as_of: asOf,
+      p_storage_location_id: locationId,
+      p_ingredient_id: ingredientId,
+    }),
+    "Fetch historical stock"
+  );
+}
+
+export async function fetchCostHistory({ branchId, ingredientId, from = null, to = null }) {
+  let query = requireClient()
+    .from("inventory_ingredient_cost_history")
+    .select("*")
+    .eq("branch_id", branchId)
+    .eq("ingredient_id", ingredientId);
+  if (from) query = query.gte("effective_at", from);
+  if (to) query = query.lte("effective_at", to);
+  return unwrap(query.order("effective_at", { ascending: false }), "Fetch cost history");
+}
+
+export async function fetchSupplierPriceHistory({ supplierId, ingredientId = null, branchId = null }) {
+  let query = requireClient()
+    .from("inventory_ingredient_cost_history")
+    .select("*")
+    .eq("supplier_id", supplierId);
+  if (ingredientId) query = query.eq("ingredient_id", ingredientId);
+  if (branchId) query = query.eq("branch_id", branchId);
+  return unwrap(query.order("effective_at", { ascending: false }), "Fetch supplier price history");
+}
+
+export async function fetchRecipeCost({ recipeId, asOf = null }) {
+  return unwrap(
+    requireClient().rpc("inventory_recipe_cost_as_of", { p_recipe_id: recipeId, p_as_of: asOf }),
+    "Fetch recipe cost"
+  );
+}
+
+export async function fetchMenuItemMargin({ menuItemId, branchId, asOf = null }) {
+  return unwrap(
+    requireClient().rpc("inventory_menu_margin_as_of", {
+      p_menu_item_id: menuItemId,
+      p_branch_id: branchId,
+      p_as_of: asOf,
+    }),
+    "Fetch menu item margin"
+  );
+}
+
+async function createMovement(action, payload) {
+  return unwrap(
+    requireClient().rpc("inventory_create_operational_movement", {
+      p_action: action,
+      p_payload: payload,
+      p_idempotency_key: payload.idempotencyKey,
+    }),
+    `Create ${action} movement`
+  );
+}
+
+export const createWastage = (payload) => createMovement("wastage", payload);
+export const createManualAdjustment = (payload) => createMovement("manual_adjustment", payload);
+export const createReturnToSupplier = (payload) => createMovement("return_to_supplier", payload);
+export const createStaffMeal = (payload) => createMovement("staff_meal", payload);
+export const createComplimentaryUsage = (payload) => createMovement("complimentary", payload);
+export const createProductionMovement = (payload) => createMovement("production", payload);
+
+export async function createTransfer(payload) {
+  return unwrap(
+    requireClient().rpc("inventory_create_transfer", {
+      p_payload: payload,
+      p_idempotency_key: payload.idempotencyKey,
+    }),
+    "Create inventory transfer"
+  );
+}
+
+export async function reverseOrCorrectMovement({ movementId, quantity, reason, idempotencyKey }) {
+  return unwrap(
+    requireClient().rpc("inventory_reverse_movement", {
+      p_movement_id: movementId,
+      p_corrected_quantity: quantity ?? null,
+      p_reason: reason,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Reverse or correct movement"
+  );
+}
+
+export async function createStockCount(payload) {
+  const count = await unwrap(
+    requireClient().from("inventory_stock_counts").insert({
+      branch_id: payload.branchId,
+      storage_location_id: payload.locationId,
+      effective_at: payload.effectiveAt,
+      status: "draft",
+      created_by: payload.createdBy || await currentUserId(),
+      idempotency_key: payload.idempotencyKey,
+    }).select().single(),
+    "Create stock count"
+  );
+  if (payload.lines?.length) {
+    await unwrap(
+      requireClient().from("inventory_stock_count_lines").insert(
+        payload.lines.map((line) => ({
+          stock_count_id: count.id,
+          ingredient_id: line.ingredientId,
+          expected_quantity: line.expectedQuantity,
+          counted_quantity: line.countedQuantity,
+          canonical_unit: line.canonicalUnit,
+          notes: line.notes || null,
+        }))
+      ),
+      "Create stock count lines"
+    );
+  }
+  return count;
+}
+
+export async function approveStockCount(countId, idempotencyKey = `stock-count:${countId}`) {
+  return unwrap(
+    requireClient().rpc("inventory_approve_stock_count", {
+      p_count_id: countId,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Approve stock count"
+  );
+}
+
+export function invoiceLineFingerprint(lines) {
+  return buildInvoiceLineFingerprint(lines);
+}
