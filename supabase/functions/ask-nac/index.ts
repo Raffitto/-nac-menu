@@ -55,6 +55,24 @@ Deno.serve(async (req) => {
       return json(400, { error: "question is required" });
     }
 
+    const requestedBranch = body?.branch ?? body?.filters?.branch ?? null;
+    if (requestedBranch != null && String(requestedBranch).trim()) {
+      const { data: branchAllowed, error: branchAuthError } = await supabase.rpc(
+        "ask_nac_vault_branch_allowed",
+        { p_branch: String(requestedBranch) },
+      );
+      if (branchAuthError) {
+        console.error("[ask-nac] branch authorization failed", branchAuthError.message);
+        return json(500, { error: "Unable to verify branch access" });
+      }
+      if (!branchAllowed) {
+        return json(403, {
+          error: "Branch access denied",
+          branch: String(requestedBranch),
+        });
+      }
+    }
+
     const answered = await processAskNacOnEdge(supabase, {
       question,
       conversationContext: body?.conversationContext ?? null,

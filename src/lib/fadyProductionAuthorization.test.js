@@ -15,6 +15,17 @@ const vaultAdminMigration = fs.readFileSync(
   ),
   "utf8",
 );
+const askNacEdge = fs.readFileSync(
+  path.join(process.cwd(), "supabase/functions/ask-nac/index.ts"),
+  "utf8",
+);
+const productionIdentityMigration = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    "supabase/migrations/20260714223000_production_staff_identity_scope.sql",
+  ),
+  "utf8",
+);
 
 describe("Fady production authorization migration", () => {
   test("maps the verified account to Khobar admin without global operational access", () => {
@@ -60,6 +71,18 @@ describe("Fady production authorization migration", () => {
     );
   });
 
+  test("maps verified Ahmed and Armel identities without widening Armel", () => {
+    expect(productionIdentityMigration).toMatch(
+      /\('a\.zaki@aseel-holding\.com', null, 'ceo'\)/,
+    );
+    expect(productionIdentityMigration).toMatch(
+      /\('a\.bisiau@nacriyadh\.com', 'riyadh', 'branch_gm'\)/,
+    );
+    expect(productionIdentityMigration).not.toMatch(
+      /\('a\.bisiau@nacriyadh\.com', null, '(ceo|developer)'\)/,
+    );
+  });
+
   test("secures direct reads and security-definer review RPCs", () => {
     expect(migration).toMatch(
       /get_review_events_summary[\s\S]*nac_reviews_branch_allowed\(e\.branch_id\)/,
@@ -70,6 +93,12 @@ describe("Fady production authorization migration", () => {
     expect(migration).toMatch(
       /revoke all on public\.google_review_snapshots from anon/,
     );
+  });
+
+  test("rejects explicit Ask NAC requests outside the authenticated Vault scope", () => {
+    expect(askNacEdge).toMatch(/ask_nac_vault_branch_allowed/);
+    expect(askNacEdge).toMatch(/return json\(403,[\s\S]*Branch access denied/);
+    expect(askNacEdge).not.toMatch(/profileHint[\s\S]*branchAllowed/);
   });
 
   test("publishes idempotently and only marks live after verification", () => {
