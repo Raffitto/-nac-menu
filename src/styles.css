@@ -2077,18 +2077,69 @@ text-transform: uppercase;
 
 .menu-card-featured,
 .drink-card.menu-card-featured {
-  border: 1px solid rgba(215, 188, 138, 0.55);
+  position: relative;
+  isolation: isolate;
+  border: 1px solid rgba(224, 196, 142, 0.78);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(215, 188, 138, 0.14) 0%,
+      rgba(255, 255, 255, 0.03) 42%,
+      rgba(215, 188, 138, 0.08) 100%
+    );
   box-shadow:
-    0 0 0 1px rgba(215, 188, 138, 0.18),
-    0 10px 28px rgba(215, 188, 138, 0.16),
-    0 0 18px rgba(215, 188, 138, 0.12);
-  background: linear-gradient(
-    135deg,
-    rgba(215, 188, 138, 0.08) 0%,
-    rgba(255, 255, 255, 0.02) 55%,
-    rgba(215, 188, 138, 0.05) 100%
+    0 16px 38px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(215, 188, 138, 0.28),
+    0 0 26px rgba(215, 188, 138, 0.24),
+    0 0 54px rgba(215, 188, 138, 0.14);
+  animation:
+    guest-featured-fade-in 500ms ease-out both,
+    guest-featured-glow 12s ease-in-out infinite 500ms;
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+
+.menu-card-featured::before,
+.drink-card.menu-card-featured::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 23px;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(
+    ellipse at 50% 18%,
+    rgba(243, 226, 188, 0.34) 0%,
+    rgba(215, 188, 138, 0.12) 38%,
+    transparent 72%
   );
-  animation: guest-featured-shimmer 1.2s ease-out 1;
+  opacity: 0.9;
+}
+
+.menu-card-featured::after,
+.drink-card.menu-card-featured::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 21px;
+  pointer-events: none;
+  z-index: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 236, 198, 0.18);
+}
+
+.menu-card-featured > *,
+.drink-card.menu-card-featured > * {
+  position: relative;
+  z-index: 1;
+}
+
+.menu-card-featured:hover,
+.drink-card.menu-card-featured:hover {
+  transform: translateY(-2px) scale(1.012);
+  box-shadow:
+    0 20px 44px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(224, 196, 142, 0.42),
+    0 0 34px rgba(215, 188, 138, 0.3),
+    0 0 68px rgba(215, 188, 138, 0.18);
 }
 
 .menu-card-featured-badge {
@@ -2096,15 +2147,17 @@ text-transform: uppercase;
   top: 10px;
   left: 10px;
   z-index: 2;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #2b2418;
-  background: linear-gradient(135deg, #f3e2bc 0%, #d7bc8a 100%);
-  box-shadow: 0 2px 8px rgba(215, 188, 138, 0.35);
+  color: rgba(243, 226, 188, 0.92);
+  background: rgba(20, 18, 14, 0.42);
+  border: 1px solid rgba(215, 188, 138, 0.34);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(4px);
 }
 
 .guest-featured-section {
@@ -2132,26 +2185,56 @@ text-transform: uppercase;
 
 .guest-featured-grid .menu-card-featured,
 .guest-featured-grid .drink-card.menu-card-featured {
-  animation: guest-featured-shimmer 1.4s ease-out 1;
+  animation:
+    guest-featured-fade-in 500ms ease-out both,
+    guest-featured-glow 12s ease-in-out infinite 500ms;
 }
 
-@keyframes guest-featured-shimmer {
+@keyframes guest-featured-fade-in {
   0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
     box-shadow:
+      0 8px 18px rgba(0, 0, 0, 0.18),
       0 0 0 1px rgba(215, 188, 138, 0.08),
-      0 4px 12px rgba(215, 188, 138, 0.08);
-  }
-  45% {
-    box-shadow:
-      0 0 0 1px rgba(215, 188, 138, 0.42),
-      0 12px 30px rgba(215, 188, 138, 0.22),
-      0 0 24px rgba(215, 188, 138, 0.18);
+      0 0 8px rgba(215, 188, 138, 0.06);
   }
   100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes guest-featured-glow {
+  0%,
+  100% {
     box-shadow:
-      0 0 0 1px rgba(215, 188, 138, 0.18),
-      0 10px 28px rgba(215, 188, 138, 0.16),
-      0 0 18px rgba(215, 188, 138, 0.12);
+      0 16px 38px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(215, 188, 138, 0.28),
+      0 0 26px rgba(215, 188, 138, 0.22),
+      0 0 54px rgba(215, 188, 138, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 18px 42px rgba(0, 0, 0, 0.32),
+      0 0 0 1px rgba(232, 204, 150, 0.42),
+      0 0 34px rgba(215, 188, 138, 0.34),
+      0 0 72px rgba(215, 188, 138, 0.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-card-featured,
+  .drink-card.menu-card-featured,
+  .guest-featured-grid .menu-card-featured,
+  .guest-featured-grid .drink-card.menu-card-featured {
+    animation: none;
+    transition: none;
+  }
+
+  .menu-card-featured:hover,
+  .drink-card.menu-card-featured:hover {
+    transform: none;
   }
 }
 

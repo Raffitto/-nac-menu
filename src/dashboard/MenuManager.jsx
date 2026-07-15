@@ -24,6 +24,8 @@ import {
 import {
   getCategories,
   
+  addExistingItemsToSection,
+  fetchBranchMenuItemRows,
   createMenuItemPlacements,
   updateMenuItemPlacements,
   fetchPlacementGroupMembers,
@@ -72,6 +74,8 @@ import {
   reorderPlacementRows,
 } from "../lib/menuPlacements";
 import MenuItemPlacementEditor from "./MenuItemPlacementEditor";
+import MenuAddItemModal from "./MenuAddItemModal";
+import { buildMenuItemCatalogue } from "../lib/menuSectionPlacement";
 import { useRbac } from "./context/RbacContext";
 import {
   resolveMenuEditorBranch,
@@ -371,6 +375,11 @@ export default function MenuManager() {
   const [extraPlacements, setExtraPlacements] = useState([]);
   const [placementGroupId, setPlacementGroupId] = useState(null);
   const [removedPlacementIds, setRemovedPlacementIds] = useState([]);
+  const [addItemTarget, setAddItemTarget] = useState(null);
+  const [addItemModalOpen, setAddItemModalOpen] = useState(false);
+  const [branchCatalogue, setBranchCatalogue] = useState([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
+  const [addItemSaving, setAddItemSaving] = useState(false);
 
   const sectionsCatalogRef = useRef([]);
   const categoriesRef = useRef([]);
@@ -874,11 +883,11 @@ export default function MenuManager() {
     setRemovedPlacementIds([]);
   }, []);
 
-  const openCreateItem = useCallback((sectionId) => {
+  const openCreateItem = useCallback((sectionId, categoryId = selectedCatId) => {
     setEditorMode("create");
     setEditingItem({
       ...EMPTY_ITEM,
-      category_id: selectedCatId || "",
+      category_id: categoryId || "",
       section_id: sectionId || "",
     });
     setEditingItemId(null);
@@ -889,6 +898,101 @@ export default function MenuManager() {
     resetPlacementEditor();
     setEditorOpen(true);
   }, [selectedCatId, resetPlacementEditor]);
+
+  const openAddItemChooser = useCallback((section) => {
+    if (readOnlyMenu) {
+      showToast("Read-only menu access", "error");
+      return;
+    }
+    const category = categories.find((cat) => cat.id === selectedCatId);
+    setAddItemTarget({
+      sectionId: section.id,
+      sectionName: section.name_en || section.name || "Section",
+      categoryId: selectedCatId,
+      categoryName: category?.name_en || category?.slug || "Menu",
+    });
+    setBranchCatalogue([]);
+    setAddItemModalOpen(true);
+  }, [categories, readOnlyMenu, selectedCatId, showToast]);
+
+  const loadBranchCatalogue = useCallback(async () => {
+    setCatalogueLoading(true);
+    try {
+      assertMenuBranchAccess(rbac.profile, menuBranch);
+      const { data: rows, error } = await fetchBranchMenuItemRows(menuBranch);
+      if (error) throw error;
+      setBranchCatalogue(
+        buildMenuItemCatalogue(rows || [], sectionsCatalog, categories),
+      );
+    } catch (e) {
+      showToast(e?.message || "Failed to load menu catalogue", "error");
+      setBranchCatalogue([]);
+    } finally {
+      setCatalogueLoading(false);
+    }
+  }, [categories, menuBranch, rbac.profile, sectionsCatalog, showToast]);
+
+  const handleConfirmAddExistingItems = useCallback(async (selectedEntries) => {
+    if (!addItemTarget?.sectionId || !selectedEntries.length) return;
+    setAddItemSaving(true);
+    setPublishStage(MENU_PUBLISH_STAGES.SAVING);
+    try {
+      assertMenuBranchAccess(rbac.profile, menuBranch);
+      const itemRows = selectedEntries.map((entry) => entry.row);
+      const { data: added, error } = await addExistingItemsToSection({
+        items: itemRows,
+        destinationSectionId: addItemTarget.sectionId,
+      });
+      if (error) throw error;
+      if (!added.length) {
+        throw new Error("No items were added to this section.");
+      }
+
+      await publishCurrentMenu(
+        {
+          action: "add_placement",
+          entity_type: "menu_section",
+          entity_id: addItemTarget.sectionId,
+          changed_fields: {
+            section_id: addItemTarget.sectionId,
+            item_ids: added.map((item) => item.id),
+          },
+        },
+        added[0]
+          ? {
+              type: "item",
+              itemId: added[added.length - 1].id,
+              present: true,
+              fields: { en: added[added.length - 1].name_en },
+            }
+          : null,
+      );
+
+      showToast(
+        added.length > 1
+          ? `${added.length} items added to ${addItemTarget.sectionName} — verified live`
+          : `${added[0].name_en} added to ${addItemTarget.sectionName} — verified live`,
+      );
+      setAddItemModalOpen(false);
+      setAddItemTarget(null);
+      setBranchCatalogue([]);
+      await loadMenuForCategory(selectedCatId);
+    } catch (e) {
+      setPublishStage(MENU_PUBLISH_STAGES.FAILED);
+      showToast(e?.message || "Failed to add items", "error");
+      await loadMenuForCategory(selectedCatId);
+    } finally {
+      setAddItemSaving(false);
+    }
+  }, [
+    addItemTarget,
+    loadMenuForCategory,
+    menuBranch,
+    publishCurrentMenu,
+    rbac.profile,
+    selectedCatId,
+    showToast,
+  ]);
 
   const openEditItem = useCallback(async (item) => {
     const secRow = sectionsCatalog.find((s) => s.id === item.section_id);
@@ -1958,7 +2062,7 @@ export default function MenuManager() {
 
                               <div
                                 className="mm-add-item-card"
-                                onClick={() => openCreateItem(section.id)}
+                                onClick={() => openAddItemChooser(section)}
                               >
                                 <Plus size={22} />
                                 Add item
@@ -2444,6 +2548,30 @@ export default function MenuManager() {
             onConfirm={handleSaveVisibility}
             onCancel={() => setVisibilityTarget(null)}
             loading={visibilityLoading}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {addItemModalOpen && addItemTarget && (
+          <MenuAddItemModal
+            key={`${addItemTarget.sectionId}-add-item`}
+            open={addItemModalOpen}
+            destination={addItemTarget}
+            catalogue={branchCatalogue}
+            loading={catalogueLoading}
+            saving={addItemSaving}
+            onClose={() => {
+              if (addItemSaving) return;
+              setAddItemModalOpen(false);
+              setAddItemTarget(null);
+              setBranchCatalogue([]);
+            }}
+            onOpenExisting={loadBranchCatalogue}
+            onChooseCreateNew={() =>
+              openCreateItem(addItemTarget.sectionId, addItemTarget.categoryId)
+            }
+            onConfirmExisting={handleConfirmAddExistingItems}
           />
         )}
       </AnimatePresence>

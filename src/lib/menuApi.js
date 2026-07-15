@@ -2,6 +2,10 @@ import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 import { filterPublicMenuData } from "./menuVisibility";
 import { mapGuestMenuHighlightFields } from "./guestMenuFeatured";
+import {
+  buildPublishFailureMessage,
+  publicationNeedsVerification,
+} from "./menuPublishPipeline";
 import { newPlacementGroupId } from "./menuPlacements";
 import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
 import { menuBranchQueryFilter } from "./menuBranchScope";
@@ -344,12 +348,17 @@ export async function publishAndVerifyMenuBranch({
     const expectation = verifyGuestMenuExpectation(guestMenu, expected);
     if (!expectation.ok) throw new Error(expectation.message);
 
-    const { data: verified, error: verifyError } = await supabase.rpc(
-      "verify_menu_publication",
-      { p_publication_id: publication.id },
-    );
-    if (verifyError) throw verifyError;
-    if (verified?.status !== "live" || !verified?.verification_result?.verified) {
+    let verified = publication;
+    if (publicationNeedsVerification(publication)) {
+      const { data: verifiedRow, error: verifyError } = await supabase.rpc(
+        "verify_menu_publication",
+        { p_publication_id: publication.id },
+      );
+      if (verifyError) throw verifyError;
+      verified = verifiedRow;
+    }
+
+    if (verified?.status !== "live" || verified?.verification_result?.verified === false) {
       throw new Error("Guest menu verification did not complete.");
     }
 
@@ -359,9 +368,7 @@ export async function publishAndVerifyMenuBranch({
     stage(MENU_PUBLISH_STAGES.FAILED);
     return {
       data: null,
-      error: new Error(
-        `Database updated. Guest menu not updated. Retry publish. ${error?.message || ""}`.trim(),
-      ),
+      error: new Error(buildPublishFailureMessage(error)),
     };
   }
 }
@@ -1087,6 +1094,65 @@ export async function updateMenuItemPlacements({
   invalidateMenuCache();
   const { data: primary } = await fetchMenuItemById(itemId);
   return { data: primary, error: null };
+}
+
+/** Fetch all branch menu item rows for the section-level add-existing catalogue. */
+export async function fetchBranchMenuItemRows(branchId) {
+  await requireMenuEditorAuth();
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("*")
+    .eq("branch_id", normalizeBranchId(branchId))
+    .order("name_en");
+  return { data: data || [], error };
+}
+
+/**
+ * Add one or more existing items to a destination section as linked placements.
+ * Reuses placement groups and syncs content/allergens/add-ons across linked rows.
+ */
+export async function addExistingItemsToSection({
+  items = [],
+  destinationSectionId,
+}) {
+  await requireMenuEditorAuth();
+  if (!destinationSectionId) {
+    return { data: [], error: new Error("Destination section is required.") };
+  }
+
+  const added = [];
+  for (const item of items) {
+    if (!item?.id || item.section_id === destinationSectionId) continue;
+
+    const [allergenIds, addonIds] = await Promise.all([
+      fetchItemAllergenIds(item.id),
+      fetchItemAddonIds(item.id),
+    ]);
+
+    if (item.placement_group_id) {
+      const { data: members } = await fetchPlacementGroupMembers(item.placement_group_id);
+      const alreadyPlaced = (members || []).some(
+        (member) => member.section_id === destinationSectionId,
+      );
+      if (alreadyPlaced) continue;
+    }
+
+    const result = await updateMenuItemPlacements({
+      itemId: item.id,
+      contentPayload: sanitizeMenuItemPayload(item),
+      primarySectionId: item.section_id,
+      extraPlacements: [{ sectionId: destinationSectionId }],
+      placementGroupId: item.placement_group_id || null,
+      syncLinked: true,
+      allergenIds,
+      addonIds,
+    });
+    if (result.error) return { data: added, error: result.error };
+    added.push(result.data);
+  }
+
+  invalidateMenuCache();
+  return { data: added, error: null };
 }
 
 export async function deleteMenuItem(id) {

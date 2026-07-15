@@ -71,4 +71,14 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("featured: contentPayload.featured");
     expect(componentSource).toContain('className="mm-badge mm-badge-featured">Highlighted</span>');
   });
+
+  test("section add-item flow uses destination-first modal and placement API", () => {
+    expect(componentSource).toContain('import MenuAddItemModal from "./MenuAddItemModal"');
+    expect(componentSource).toContain("openAddItemChooser(section)");
+    expect(componentSource).toContain("addExistingItemsToSection");
+    expect(componentSource).toContain("buildMenuItemCatalogue");
+    expect(componentSource).toContain('action: "add_placement"');
+    expect(componentSource).toContain("onChooseCreateNew={() =>");
+    expect(componentSource).toContain("<MenuItemPlacementEditor");
+  });
 });
