@@ -2075,6 +2075,86 @@ text-transform: uppercase;
   opacity: 0.72;
 }
 
+.menu-card-featured,
+.drink-card.menu-card-featured {
+  border: 1px solid rgba(215, 188, 138, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(215, 188, 138, 0.18),
+    0 10px 28px rgba(215, 188, 138, 0.16),
+    0 0 18px rgba(215, 188, 138, 0.12);
+  background: linear-gradient(
+    135deg,
+    rgba(215, 188, 138, 0.08) 0%,
+    rgba(255, 255, 255, 0.02) 55%,
+    rgba(215, 188, 138, 0.05) 100%
+  );
+  animation: guest-featured-shimmer 1.2s ease-out 1;
+}
+
+.menu-card-featured-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2b2418;
+  background: linear-gradient(135deg, #f3e2bc 0%, #d7bc8a 100%);
+  box-shadow: 0 2px 8px rgba(215, 188, 138, 0.35);
+}
+
+.guest-featured-section {
+  margin-bottom: 22px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(215, 188, 138, 0.16);
+}
+
+.guest-featured-head {
+  margin-bottom: 14px;
+}
+
+.guest-featured-title {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+  color: #f3e2bc;
+}
+
+.guest-featured-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: rgba(249, 249, 247, 0.62);
+}
+
+.guest-featured-grid .menu-card-featured,
+.guest-featured-grid .drink-card.menu-card-featured {
+  animation: guest-featured-shimmer 1.4s ease-out 1;
+}
+
+@keyframes guest-featured-shimmer {
+  0% {
+    box-shadow:
+      0 0 0 1px rgba(215, 188, 138, 0.08),
+      0 4px 12px rgba(215, 188, 138, 0.08);
+  }
+  45% {
+    box-shadow:
+      0 0 0 1px rgba(215, 188, 138, 0.42),
+      0 12px 30px rgba(215, 188, 138, 0.22),
+      0 0 24px rgba(215, 188, 138, 0.18);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(215, 188, 138, 0.18),
+      0 10px 28px rgba(215, 188, 138, 0.16),
+      0 0 18px rgba(215, 188, 138, 0.12);
+  }
+}
+
 .menu-card-sold-out .menu-card-media img,
 .menu-card-sold-out .drink-card-media img {
   filter: grayscale(0.35);

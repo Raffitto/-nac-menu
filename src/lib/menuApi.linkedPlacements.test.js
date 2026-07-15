@@ -124,6 +124,31 @@ describe("linked placement sync", () => {
     expect(updates[1]).toMatchObject({ price: "30 SAR", sold_out: true });
   });
 
+  test("patchLinkedPlacementMembers syncs featured highlight state across linked rows", async () => {
+    const updates = [];
+    let menuItemsCalls = 0;
+
+    mockFrom.mockImplementation((table) => {
+      if (table !== "menu_items") throw new Error(`unexpected table ${table}`);
+      menuItemsCalls += 1;
+      if (menuItemsCalls === 1) {
+        return menuItemByIdChain({ id: "a", placement_group_id: "group-1" });
+      }
+      if (menuItemsCalls === 2) {
+        return menuItemMembersChain([
+          { id: "a", section_id: "s1", placement_group_id: "group-1" },
+          { id: "b", section_id: "s2", placement_group_id: "group-1" },
+        ]);
+      }
+      return menuItemUpdateChain((payload) => updates.push(payload));
+    });
+
+    await patchLinkedPlacementMembers("a", { featured: true });
+
+    expect(updates).toHaveLength(2);
+    expect(updates.every((payload) => payload.featured === true)).toBe(true);
+  });
+
   test("updateMenuItemPlacements syncs content when placement_group_id exists", async () => {
     const updates = [];
     let menuItemsCalls = 0;

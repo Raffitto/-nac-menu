@@ -609,6 +609,119 @@
   background: rgba(0, 0, 0, 0.12);
 }
 
+.mm-placement-section + .mm-placement-section {
+  margin-top: 16px;
+}
+
+.mm-placement-empty {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: rgba(249, 249, 247, 0.55);
+}
+
+.mm-placement-chip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.mm-placement-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mm-placement-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(215, 188, 138, 0.28);
+  background: rgba(215, 188, 138, 0.08);
+  color: #f9f9f7;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mm-placement-chip:hover {
+  border-color: rgba(215, 188, 138, 0.5);
+  background: rgba(215, 188, 138, 0.14);
+}
+
+.mm-placement-chip-primary {
+  border-color: rgba(120, 200, 140, 0.45);
+  background: rgba(80, 160, 100, 0.12);
+}
+
+.mm-placement-chip-primary svg {
+  color: #9fd9ad;
+  flex-shrink: 0;
+}
+
+.mm-placement-chip-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mm-placement-chip-control,
+.mm-placement-chip-remove {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.85);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mm-placement-chip-control:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.mm-placement-chip-remove {
+  background: rgba(220, 80, 80, 0.12);
+  color: #f5c4c4;
+}
+
+.mm-placement-chip-editor {
+  margin-bottom: 10px;
+}
+
+.mm-placement-picker {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(215, 188, 138, 0.35);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.mm-placement-picker-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mm-placement-picker-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #f5c4c4;
+}
+
+.mm-placement-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .mm-placement-extras {
   margin-top: 12px;
 }
@@ -641,7 +754,7 @@
 }
 
 .mm-placement-add {
-  margin-top: 10px;
+  margin-top: 4px;
   width: 100%;
   justify-content: center;
   gap: 6px;

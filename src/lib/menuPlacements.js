@@ -12,6 +12,81 @@ export function placementKey(categoryId, sectionId) {
   return `${categoryId || ""}:${sectionId || ""}`;
 }
 
+/** Human-readable chip label for a category + section pair. */
+export function formatPlacementLabel(categoryName, sectionName) {
+  const category = categoryName?.trim() || "Category";
+  const section = sectionName?.trim() || "Section";
+  return `${category} → ${section}`;
+}
+
+/** Keys already used by primary and/or additional placements. */
+export function collectUsedPlacementKeys(
+  primary,
+  extras = [],
+  { excludeRowKey = null, extrasOnly = false } = {},
+) {
+  const keys = new Set();
+  if (!extrasOnly && primary?.category_id && primary?.section_id) {
+    keys.add(placementKey(primary.category_id, primary.section_id));
+  }
+  extras.forEach((row) => {
+    if (excludeRowKey && row.rowKey === excludeRowKey) return;
+    if (row.category_id && row.section_id) {
+      keys.add(placementKey(row.category_id, row.section_id));
+    }
+  });
+  return keys;
+}
+
+/** Reorder additional placement rows without mutating the input array. */
+export function reorderPlacementRows(rows, fromIndex, toIndex) {
+  if (fromIndex === toIndex) return rows;
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= rows.length ||
+    toIndex >= rows.length
+  ) {
+    return rows;
+  }
+  const next = [...rows];
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+/** Backfill category_id on saved rows from the sections catalog. */
+export function hydratePlacementCategoryIds(rows = [], sections = []) {
+  const sectionsById = new Map(sections.map((section) => [section.id, section]));
+  return rows.map((row) => {
+    if (row.category_id) return row;
+    const section = sectionsById.get(row.section_id);
+    return { ...row, category_id: section?.category_id || "" };
+  });
+}
+
+/** Build additional placement editor rows from linked group members. */
+export function buildExtraPlacementsFromMembers(
+  members,
+  primaryItemId,
+  sections = [],
+  createRowKey = (itemId) => `saved-${itemId}`,
+) {
+  const sectionsById = new Map(sections.map((section) => [section.id, section]));
+  return (members || [])
+    .filter((member) => member.id !== primaryItemId)
+    .map((member) => {
+      const section = sectionsById.get(member.section_id);
+      return {
+        itemId: member.id,
+        rowKey: createRowKey(member.id),
+        category_id: section?.category_id || "",
+        section_id: member.section_id,
+      };
+    })
+    .filter((row) => row.section_id);
+}
+
 /** Deduplicate placements; primary wins on conflict. */
 export function normalizePlacements(primary, extras = []) {
   const seen = new Set();

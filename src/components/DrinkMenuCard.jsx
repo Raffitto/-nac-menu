@@ -19,10 +19,13 @@ export default function DrinkMenuCard({
   language,
   isArabic,
   enabled,
+  highlighted = false,
   onOpenItem,
+  variants,
 }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const soldOut = Boolean(menuItem?.soldOut);
+  const isHighlighted = Boolean(highlighted || menuItem?.featured);
   const showCal = menuItem.calories && menuItem.calories !== "-";
 
   const handleCardClick = () => {
@@ -43,7 +46,7 @@ export default function DrinkMenuCard({
     <>
       <ImpressionTracked
         asMotion={false}
-        className={`drink-card${soldOut ? " menu-card-sold-out" : ""}`}
+        className={`drink-card${soldOut ? " menu-card-sold-out" : ""}${isHighlighted ? " menu-card-featured" : ""}`}
         categoryId={categoryId}
         sectionTitleEn={sectionTitleEn}
         sectionIndex={sectionIndex}
@@ -52,7 +55,13 @@ export default function DrinkMenuCard({
         language={language}
         enabled={enabled}
         onClick={handleCardClick}
+        variants={variants}
       >
+        {isHighlighted && (
+          <span className="menu-card-featured-badge">
+            {isArabic ? "موصى به" : "Featured"}
+          </span>
+        )}
         <div className="drink-card-media">
           {hasImageSrc(menuItem) && (
             <MenuImage src={menuItem.image} alt="" />

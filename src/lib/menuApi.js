@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 import { filterPublicMenuData } from "./menuVisibility";
+import { mapGuestMenuHighlightFields } from "./guestMenuFeatured";
 import { newPlacementGroupId } from "./menuPlacements";
 import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
 import { menuBranchQueryFilter } from "./menuBranchScope";
@@ -605,6 +606,7 @@ export async function getFullMenu(options = {}) {
         soldOut: it.sold_out,
         active: it.active !== false,
         hiddenUntil: it.hidden_until || null,
+        ...mapGuestMenuHighlightFields(it),
         recommended: (addonsByItem[it.id] || []).map((addon) => ({
           en: addon.name_en,
           ar: addon.name_ar,
@@ -730,6 +732,7 @@ export async function getMenuByCategory(categorySlug) {
       soldOut: it.sold_out,
       active: it.active !== false,
       hiddenUntil: it.hidden_until || null,
+      ...mapGuestMenuHighlightFields(it),
       recommended: (addonsByItem[it.id] || []).map((addon) => ({
         en: addon.name_en,
         ar: addon.name_ar,

@@ -42,6 +42,7 @@ describe("verifyGuestMenuExpectation", () => {
               en: "Tenderloin",
               price: "120 SAR",
               soldOut: false,
+              featured: true,
               allergens: ["milk"],
             },
           ],
@@ -83,5 +84,28 @@ describe("verifyGuestMenuExpectation", () => {
         present: false,
       }),
     ).toEqual({ ok: true });
+  });
+
+  test("verifies featured highlight state in the guest payload", () => {
+    expect(
+      verifyGuestMenuExpectation(menu, {
+        type: "item",
+        itemId: "tenderloin",
+        present: true,
+        fields: { featured: true },
+      }),
+    ).toEqual({ ok: true });
+
+    expect(
+      verifyGuestMenuExpectation(menu, {
+        type: "item",
+        itemId: "tenderloin",
+        present: true,
+        fields: { featured: false },
+      }),
+    ).toEqual({
+      ok: false,
+      message: "Guest menu field featured did not match the saved value.",
+    });
   });
 });

@@ -65,10 +65,13 @@ import {
 } from "../lib/menuVisibility";
 import {
   validatePlacements,
-  placementKey,
   formatLinkedPlacementBadge,
   buildPlacementGroupSummary,
+  buildExtraPlacementsFromMembers,
+  hydratePlacementCategoryIds,
+  reorderPlacementRows,
 } from "../lib/menuPlacements";
+import MenuItemPlacementEditor from "./MenuItemPlacementEditor";
 import { useRbac } from "./context/RbacContext";
 import {
   resolveMenuEditorBranch,
@@ -865,14 +868,6 @@ export default function MenuManager() {
 
   // ── Item CRUD ──
 
-  const sectionsForCategory = useCallback(
-    (categoryId) => {
-      if (!categoryId) return [];
-      return sectionsCatalog.filter((s) => s.category_id === categoryId);
-    },
-    [sectionsCatalog],
-  );
-
   const resetPlacementEditor = useCallback(() => {
     setExtraPlacements([]);
     setPlacementGroupId(null);
@@ -942,17 +937,15 @@ export default function MenuManager() {
 
     if (groupId) {
       const { data: members } = await fetchPlacementGroupMembers(groupId);
-      const extras = (members || [])
-        .filter((m) => m.id !== item.id)
-        .map((m) => {
-          const sec = sectionsCatalog.find((s) => s.id === m.section_id);
-          return {
-            itemId: m.id,
-            rowKey: newPlacementRowKey(m.id),
-            category_id: sec?.category_id || "",
-            section_id: m.section_id,
-          };
-        });
+      const extras = hydratePlacementCategoryIds(
+        buildExtraPlacementsFromMembers(
+          members,
+          item.id,
+          sectionsCatalog,
+          newPlacementRowKey,
+        ),
+        sectionsCatalog,
+      );
       setExtraPlacements(extras);
     } else {
       setExtraPlacements([]);
@@ -1081,6 +1074,7 @@ export default function MenuManager() {
             calories: contentPayload.calories,
             active: contentPayload.active,
             sold_out: contentPayload.sold_out,
+            featured: contentPayload.featured,
             allergens: allergenCodes,
           },
         },
@@ -1095,6 +1089,7 @@ export default function MenuManager() {
                 price: contentPayload.price,
                 calories: contentPayload.calories,
                 soldOut: contentPayload.sold_out,
+                featured: contentPayload.featured,
               }
             : {},
           allergens: contentPayload.active !== false ? allergenCodes : undefined,
@@ -1392,44 +1387,8 @@ export default function MenuManager() {
     [categories, selectedCatId]
   );
 
-  const usedPlacementKeys = useMemo(() => {
-    const keys = new Set();
-    if (editingItem.category_id && editingItem.section_id) {
-      keys.add(placementKey(editingItem.category_id, editingItem.section_id));
-    }
-    extraPlacements.forEach((p) => {
-      if (p.category_id && p.section_id) {
-        keys.add(placementKey(p.category_id, p.section_id));
-      }
-    });
-    return keys;
-  }, [editingItem.category_id, editingItem.section_id, extraPlacements]);
-
-  const additionalPlacementKeys = useMemo(
-    () =>
-      new Set(
-        extraPlacements
-          .filter((row) => row.category_id && row.section_id)
-          .map((row) => placementKey(row.category_id, row.section_id)),
-      ),
-    [extraPlacements],
-  );
-
-  const addExtraPlacement = useCallback(() => {
-    setExtraPlacements((prev) => [
-      ...prev,
-      {
-        rowKey: newPlacementRowKey(),
-        category_id: "",
-        section_id: "",
-      },
-    ]);
-  }, []);
-
-  const updateExtraPlacement = useCallback((index, patch) => {
-    setExtraPlacements((prev) =>
-      prev.map((row, i) => (i === index ? { ...row, ...patch } : row)),
-    );
+  const moveExtraPlacement = useCallback((fromIndex, toIndex) => {
+    setExtraPlacements((prev) => reorderPlacementRows(prev, fromIndex, toIndex));
   }, []);
 
   const removeExtraPlacement = useCallback((index) => {
@@ -1927,7 +1886,9 @@ export default function MenuManager() {
                                       {visBadge.label}
                                     </span>
                                     {item.sold_out && <span className="mm-badge mm-badge-sold-out">Sold Out</span>}
-                                    {item.featured && <span className="mm-badge mm-badge-featured">Featured</span>}
+                                    {item.featured && (
+                                      <span className="mm-badge mm-badge-featured">Highlighted</span>
+                                    )}
                                     {item.new_item && <span className="mm-badge mm-badge-new">New</span>}
                                     {item.vegetarian && <span className="mm-badge mm-badge-veg">Veg</span>}
                                     {item.vegan && <span className="mm-badge mm-badge-vegan">Vegan</span>}
@@ -2292,169 +2253,27 @@ export default function MenuManager() {
                 </div>
 
                 {/* Placements */}
-                <div className="mm-placement-block">
-                  <label className="mm-field-label">Primary placement</label>
-                  <div className="mm-field-row">
-                    <div className="mm-field">
-                      <label className="mm-field-label mm-field-label-sub">Category</label>
-                      <select
-                        className="mm-field-select"
-                        value={editingItem.category_id}
-                        onChange={(e) => {
-                          const categoryId = e.target.value;
-                          const secs = sectionsForCategory(categoryId);
-                          setEditingItem((p) => ({
-                            ...p,
-                            category_id: categoryId,
-                            section_id:
-                              secs.find(
-                                (section) =>
-                                  !additionalPlacementKeys.has(
-                                    placementKey(categoryId, section.id),
-                                  ),
-                              )?.id || "",
-                          }));
-                        }}
-                      >
-                        <option value="">Select category</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name_en || c.id}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="mm-field">
-                      <label className="mm-field-label mm-field-label-sub">Section</label>
-                      <select
-                        className="mm-field-select"
-                        value={editingItem.section_id}
-                        onChange={(e) =>
-                          setEditingItem((p) => ({ ...p, section_id: e.target.value }))
-                        }
-                      >
-                        <option value="">Select section</option>
-                        {sectionsForCategory(editingItem.category_id).map((s) => {
-                          const taken = additionalPlacementKeys.has(
-                            placementKey(editingItem.category_id, s.id),
-                          );
-                          return (
-                            <option key={s.id} value={s.id} disabled={taken}>
-                              {s.name_en}
-                              {taken ? " (in use)" : ""}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                  </div>
+                <MenuItemPlacementEditor
+                  categories={categories}
+                  sectionsCatalog={sectionsCatalog}
+                  primaryCategoryId={editingItem.category_id}
+                  primarySectionId={editingItem.section_id}
+                  onPrimaryChange={(patch) =>
+                    setEditingItem((prev) => ({ ...prev, ...patch }))
+                  }
+                  extraPlacements={extraPlacements}
+                  onExtraPlacementsChange={setExtraPlacements}
+                  onRemoveExtraPlacement={removeExtraPlacement}
+                  onMoveExtraPlacement={moveExtraPlacement}
+                  createRowKey={newPlacementRowKey}
+                />
 
-                  {extraPlacements.length > 0 && (
-                    <div className="mm-placement-extras">
-                      <label className="mm-field-label">Additional placements</label>
-                      {extraPlacements.map((placement, index) => {
-                        const rowSections = sectionsForCategory(placement.category_id);
-                        return (
-                          <div
-                            className="mm-placement-extra-row"
-                            key={placement.rowKey || placement.itemId || `placement-${index}`}
-                          >
-                            <div className="mm-field-row">
-                              <div className="mm-field">
-                                <select
-                                  className="mm-field-select"
-                                  value={placement.category_id}
-                                  aria-label={`Additional placement ${index + 1} category`}
-                                  onChange={(e) => {
-                                    const categoryId = e.target.value;
-                                    const secs = sectionsForCategory(categoryId);
-                                    const currentKey = placementKey(
-                                      placement.category_id,
-                                      placement.section_id,
-                                    );
-                                    const sectionStillValid = secs.some(
-                                      (section) => section.id === placement.section_id,
-                                    );
-                                    const nextKey = placementKey(
-                                      categoryId,
-                                      placement.section_id,
-                                    );
-                                    const sectionTaken =
-                                      usedPlacementKeys.has(nextKey) &&
-                                      nextKey !== currentKey;
-                                    updateExtraPlacement(index, {
-                                      category_id: categoryId,
-                                      section_id:
-                                        sectionStillValid && !sectionTaken
-                                          ? placement.section_id
-                                          : "",
-                                    });
-                                  }}
-                                >
-                                  <option value="">Category</option>
-                                  {categories.map((c) => (
-                                    <option key={c.id} value={c.id}>{c.name_en}</option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="mm-field">
-                                <select
-                                  className="mm-field-select"
-                                  value={placement.section_id}
-                                  disabled={!placement.category_id}
-                                  aria-label={`Additional placement ${index + 1} section`}
-                                  onChange={(e) =>
-                                    updateExtraPlacement(index, { section_id: e.target.value })
-                                  }
-                                >
-                                  <option value="">Section</option>
-                                  {rowSections.map((s) => {
-                                    const key = placementKey(placement.category_id, s.id);
-                                    const taken =
-                                      usedPlacementKeys.has(key) &&
-                                      key !==
-                                        placementKey(
-                                          placement.category_id,
-                                          placement.section_id,
-                                        );
-                                    return (
-                                      <option key={s.id} value={s.id} disabled={taken}>
-                                        {s.name_en}
-                                        {taken ? " (in use)" : ""}
-                                      </option>
-                                    );
-                                  })}
-                                </select>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="mm-placement-remove"
-                              onClick={() => removeExtraPlacement(index)}
-                              aria-label="Remove placement"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    className="mm-btn mm-btn-secondary mm-placement-add"
-                    onClick={addExtraPlacement}
-                  >
-                    <Plus size={14} />
-                    Add another placement
-                  </button>
-
-                  {editorMode === "edit" && (placementGroupId || extraPlacements.length > 0) && (
-                    <p className="mm-linked-sync-note">
-                      Linked item — name, description, price, image, tags, allergens, add-ons,
-                      sold out, and active status stay in sync across all placements.
-                    </p>
-                  )}
-                </div>
+                {editorMode === "edit" && (placementGroupId || extraPlacements.length > 0) && (
+                  <p className="mm-linked-sync-note">
+                    Linked item — name, description, price, image, tags, allergens, add-ons,
+                    sold out, and active status stay in sync across all placements.
+                  </p>
+                )}
 
                 {/* Toggles */}
                 <div className="mm-field">
@@ -2468,7 +2287,7 @@ export default function MenuManager() {
                       />
                     </div>
                     <div className="mm-toggle-row">
-                      <span className="mm-toggle-label">Featured</span>
+                      <span className="mm-toggle-label">Highlight on Guest Menu</span>
                       <ToggleSwitch
                         value={editingItem.featured}
                         onChange={(v) => setEditingItem((p) => ({ ...p, featured: v }))}

@@ -6,6 +6,10 @@ const componentSource = fs.readFileSync(
   path.join(dashboardDir, "MenuManager.jsx"),
   "utf8",
 );
+const placementEditorSource = fs.readFileSync(
+  path.join(dashboardDir, "MenuItemPlacementEditor.jsx"),
+  "utf8",
+);
 const cssSource = fs.readFileSync(
   path.join(dashboardDir, "styles/menu-manager.css"),
   "utf8",
@@ -26,17 +30,45 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("menuLoadRequestRef");
   });
 
-  test("additional placements remain dynamic, category-scoped, and editable in place", () => {
-    expect(componentSource).toContain(
-      "sectionsForCategory(placement.category_id)",
-    );
-    expect(componentSource).toContain("newPlacementRowKey()");
-    expect(componentSource).toContain("disabled={!placement.category_id}");
-    expect(componentSource).toContain(
-      "removeExtraPlacement(index)",
-    );
+  test("menu manager delegates placement editing to the chip-based editor", () => {
+    expect(componentSource).toContain('import MenuItemPlacementEditor from "./MenuItemPlacementEditor"');
+    expect(componentSource).toContain("<MenuItemPlacementEditor");
+    expect(componentSource).toContain("buildExtraPlacementsFromMembers");
+    expect(componentSource).toContain("hydratePlacementCategoryIds");
+    expect(componentSource).toContain("reorderPlacementRows");
     expect(componentSource).toContain(
       "validatePlacements(\n        primaryPlacement,\n        extraPlacements,\n        sectionsCatalog,",
     );
+    expect(componentSource).not.toContain("mm-placement-extra-row");
+  });
+
+  test("placement editor uses chip cards with inline add and edit pickers", () => {
+    expect(placementEditorSource).toContain('data-testid="primary-placement-chip"');
+    expect(placementEditorSource).toContain('data-testid="add-placement-button"');
+    expect(placementEditorSource).toContain("PlacementPicker");
+    expect(placementEditorSource).toContain("onMoveExtraPlacement");
+    expect(cssSource).toMatch(/\.mm-placement-chip\s*\{/);
+    expect(cssSource).toMatch(/\.mm-placement-picker\s*\{/);
+  });
+
+  test("save path preserves existing placement API and publish workflow", () => {
+    expect(componentSource).toContain("createMenuItemPlacements({");
+    expect(componentSource).toContain("updateMenuItemPlacements({");
+    expect(componentSource).toContain("publishCurrentMenu(");
+    expect(componentSource).toContain("removePlacementItemIds: removedPlacementIds");
+    expect(componentSource).toContain("extraSectionIds");
+  });
+
+  test("backward compatibility normalizes linked members without category ids", () => {
+    expect(componentSource).toContain(
+      "hydratePlacementCategoryIds(\n        buildExtraPlacementsFromMembers(",
+    );
+    expect(placementEditorSource).toContain("collectUsedPlacementKeys");
+  });
+
+  test("guest highlight toggle reuses featured field and verifies publish payload", () => {
+    expect(componentSource).toContain("Highlight on Guest Menu");
+    expect(componentSource).toContain("featured: contentPayload.featured");
+    expect(componentSource).toContain('className="mm-badge mm-badge-featured">Highlighted</span>');
   });
 });

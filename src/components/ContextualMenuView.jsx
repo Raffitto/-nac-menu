@@ -10,6 +10,8 @@ import {
   hasMenuLevelTabs,
   isDrinksCatalog,
 } from "../lib/menuPresentation";
+import { collectHighlightedGuestItems } from "../lib/guestMenuFeatured";
+import GuestFeaturedSection from "./GuestFeaturedSection";
 
 function mapSectionNavItems(sourceCategoryId, sections, isArabic) {
   return sections.map((sec) => ({
@@ -79,6 +81,11 @@ export default function ContextualMenuView({
     const raw = getMenuTabSections(sourceCategoryId, menuData);
     return filterSections(raw, search, isAllowed);
   }, [sourceCategoryId, menuData, search, isAllowed]);
+
+  const highlightedItems = useMemo(
+    () => collectHighlightedGuestItems(menuData, { isAllowed, search }),
+    [menuData, isAllowed, search],
+  );
 
   const sectionNavItems = useMemo(() => {
     if (!visibleSections.length) return [];
@@ -218,6 +225,13 @@ export default function ContextualMenuView({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
           >
+        <GuestFeaturedSection
+          items={highlightedItems}
+          isArabic={isArabic}
+          lang={lang}
+          onOpenItem={onOpenItem}
+        />
+
         {visibleSections.map((sec, sectionIndex) => {
           const sectionDomId = makeSectionDomId(sourceCategoryId, sec.title.en);
 
