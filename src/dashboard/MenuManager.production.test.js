@@ -17,7 +17,8 @@ const cssSource = fs.readFileSync(
 
 describe("MenuManager production layout and loading contract", () => {
   test("publish metadata sits above a dedicated editor body", () => {
-    expect(componentSource).toContain('className="mm-branch-bar"');
+    expect(componentSource).toContain('className="mm-top-shell"');
+    expect(componentSource).toContain("MenuPublishStatusBar");
     expect(componentSource).toContain('className="mm-body"');
     expect(cssSource).toMatch(/\.mm\s*\{[^}]*flex-direction:\s*column/s);
     expect(cssSource).toMatch(/\.mm-body\s*\{[^}]*display:\s*flex/s);

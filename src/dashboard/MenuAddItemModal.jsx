@@ -6,6 +6,8 @@ import {
   isCatalogueItemInDestination,
   partitionCatalogueForDestination,
 } from "../lib/menuSectionPlacement";
+import MenuManagerTooltip from "./MenuManagerTooltip";
+import { MENU_TOOLTIPS } from "./menuManagerUx";
 
 export default function MenuAddItemModal({
   open,
@@ -95,32 +97,38 @@ export default function MenuAddItemModal({
               Choose whether to place an existing menu item here or create a new one.
             </p>
             <div className="mm-add-item-choice-grid">
-              <button
-                type="button"
-                className="mm-add-item-choice"
-                data-testid="add-existing-item-choice"
-                onClick={() => {
-                  setMode("existing");
-                  onOpenExisting?.();
-                }}
-              >
-                <Plus size={18} />
-                <span>Add existing menu item</span>
-                <small>Search the full menu and add one or more items here.</small>
-              </button>
-              <button
-                type="button"
-                className="mm-add-item-choice"
-                data-testid="create-new-item-choice"
-                onClick={() => {
-                  resetAndClose();
-                  onChooseCreateNew();
-                }}
-              >
-                <Plus size={18} />
-                <span>Create new item</span>
-                <small>Start a new item with this section as its primary placement.</small>
-              </button>
+              <MenuManagerTooltip label={MENU_TOOLTIPS.addExistingItem}>
+                <button
+                  type="button"
+                  className="mm-add-item-choice"
+                  data-testid="add-existing-item-choice"
+                  aria-label="Add existing menu item"
+                  onClick={() => {
+                    setMode("existing");
+                    onOpenExisting?.();
+                  }}
+                >
+                  <Plus size={18} aria-hidden="true" />
+                  <span>Add existing menu item</span>
+                  <small>Search the full menu and add one or more items here.</small>
+                </button>
+              </MenuManagerTooltip>
+              <MenuManagerTooltip label={MENU_TOOLTIPS.createNewItem}>
+                <button
+                  type="button"
+                  className="mm-add-item-choice"
+                  data-testid="create-new-item-choice"
+                  aria-label="Create new menu item"
+                  onClick={() => {
+                    resetAndClose();
+                    onChooseCreateNew();
+                  }}
+                >
+                  <Plus size={18} aria-hidden="true" />
+                  <span>Create new item</span>
+                  <small>Start a new item with this section as its primary placement.</small>
+                </button>
+              </MenuManagerTooltip>
             </div>
           </>
         )}
@@ -206,7 +214,20 @@ export default function MenuAddItemModal({
                 ))}
 
                 {!loading && available.length === 0 && alreadyPlaced.length === 0 && (
-                  <p className="mm-add-item-empty">No menu items match your search.</p>
+                  <div className="mm-add-item-empty" data-testid="catalogue-search-empty">
+                    <p>No matching menu items.</p>
+                    {search ? (
+                      <button
+                        type="button"
+                        className="mm-btn mm-btn-secondary"
+                        style={{ padding: "4px 12px", fontSize: 12 }}
+                        onClick={() => setSearch("")}
+                        data-testid="clear-catalogue-search"
+                      >
+                        Clear search
+                      </button>
+                    ) : null}
+                  </div>
                 )}
               </div>
             )}

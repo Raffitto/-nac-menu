@@ -1517,6 +1517,13 @@
   color: rgba(249, 249, 247, 0.62);
 }
 
+.mm-add-item-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
 .mm-add-item-catalogue {
   display: flex;
   flex-direction: column;
@@ -1921,5 +1928,318 @@
   .mm-topbar-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ── Manager UX: onboarding, status bar, tooltips ── */
+
+.mm-top-shell {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative;
+  z-index: 12;
+}
+
+.mm-branch-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.55rem 1rem;
+  font-size: 0.8rem;
+}
+
+.mm-publish-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 1rem;
+  font-size: 0.8rem;
+  background: rgba(255,255,255,0.02);
+}
+
+.mm-publish-bar-message {
+  color: rgba(249,249,247,0.88);
+}
+
+.mm-publish-bar-icon--live {
+  color: #6ee7a8;
+}
+
+.mm-publish-bar-icon--waiting {
+  color: #f5a623;
+}
+
+.mm-publish-bar-icon--failed {
+  color: #ff8a7a;
+}
+
+.mm-publish-bar--waiting {
+  background: rgba(245,166,35,0.06);
+}
+
+.mm-publish-bar--failed {
+  background: rgba(255,120,100,0.08);
+}
+
+.mm-publish-bar--publishing {
+  background: rgba(96,165,250,0.08);
+}
+
+.mm-publish-bar-error {
+  color: rgba(249,249,247,0.72);
+}
+
+.mm-publish-bar-action {
+  padding: 5px 12px !important;
+  min-height: 30px;
+  font-size: 0.75rem !important;
+}
+
+.mm-publish-bar-link {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #d7bc8a;
+  text-decoration: none;
+  font-size: 0.75rem;
+}
+
+.mm-publish-bar-link:hover {
+  text-decoration: underline;
+}
+
+.mm-onboarding {
+  position: relative;
+  margin: 0.75rem 1rem 0;
+  padding: 1.1rem 1.15rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid rgba(215,188,138,0.22);
+  background:
+    linear-gradient(135deg, rgba(48,72,78,0.35), rgba(143,122,87,0.12)),
+    rgba(255,255,255,0.03);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+}
+
+.mm-onboarding-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  color: rgba(249,249,247,0.55);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.mm-onboarding-close:hover,
+.mm-onboarding-close:focus-visible {
+  color: #f9f9f7;
+  background: rgba(255,255,255,0.08);
+  outline: 2px solid rgba(215,188,138,0.45);
+  outline-offset: 2px;
+}
+
+.mm-onboarding-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.mm-onboarding-subtitle {
+  margin: 0 0 0.85rem;
+  color: rgba(249,249,247,0.62);
+  font-size: 0.82rem;
+}
+
+.mm-onboarding-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.mm-onboarding-step {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.mm-onboarding-step-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #d7bc8a;
+  background: rgba(215,188,138,0.14);
+  flex-shrink: 0;
+}
+
+.mm-onboarding-step-title,
+.mm-onboarding-step-body {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(249,249,247,0.9);
+}
+
+.mm-onboarding-examples {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  color: rgba(249,249,247,0.58);
+  font-size: 0.78rem;
+}
+
+.mm-onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.95rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.mm-onboarding-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: rgba(249,249,247,0.72);
+  cursor: pointer;
+}
+
+.mm-onboarding-dismiss {
+  padding: 6px 14px !important;
+  font-size: 0.78rem !important;
+}
+
+.mm-tooltip-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mm-tooltip-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(12,14,16,0.96);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(249,249,247,0.92);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 30;
+}
+
+.mm-tooltip-wrap:hover .mm-tooltip-bubble,
+.mm-tooltip-wrap:focus-within .mm-tooltip-bubble {
+  opacity: 1;
+}
+
+.mm-unsaved-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #f5a623;
+}
+
+.mm-unsaved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f5a623;
+}
+
+.mm-btn-emphasis {
+  box-shadow: 0 0 0 1px rgba(215,188,138,0.45), 0 8px 20px rgba(143,122,87,0.22);
+}
+
+.mm-section-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  border-radius: 14px;
+  border: 1px dashed rgba(255,255,255,0.1);
+  color: rgba(249,249,247,0.62);
+  text-align: center;
+}
+
+.mm-section-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mm-search-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.82rem;
+  color: rgba(249,249,247,0.72);
+}
+
+.mm-recommended-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #e8c98a;
+  background: rgba(215,188,138,0.12);
+  border: 1px solid rgba(215,188,138,0.28);
+}
+
+.mm-recommended-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e8c98a, #c9a45c);
+}
+
+.mm-toast-success-icon {
+  color: #6ee7a8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-onboarding,
+  .mm-tooltip-bubble,
+  .mm-publish-bar-action {
+    transition: none;
   }
 }

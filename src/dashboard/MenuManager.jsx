@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  lazy,
+  Suspense,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -75,6 +83,17 @@ import {
 } from "../lib/menuPlacements";
 import MenuItemPlacementEditor from "./MenuItemPlacementEditor";
 import MenuAddItemModal from "./MenuAddItemModal";
+import MenuPublishStatusBar from "./MenuPublishStatusBar";
+import MenuManagerTooltip from "./MenuManagerTooltip";
+import {
+  buildEditorSnapshot,
+  formatRelativeTimestamp,
+  friendlyPublishErrorMessage,
+  isOnboardingDismissed,
+  MENU_TOOLTIPS,
+  resolvePublishBarState,
+  snapshotsEqual,
+} from "./menuManagerUx";
 import { buildMenuItemCatalogue } from "../lib/menuSectionPlacement";
 import { useRbac } from "./context/RbacContext";
 import {
@@ -89,6 +108,8 @@ import {
   publicMenuPathForBranch,
 } from "./config/branchDisplayConfig";
 import "./styles/menu-manager.css";
+
+const MenuManagerOnboarding = lazy(() => import("./MenuManagerOnboarding"));
 
 function toDatetimeLocalValue(ms) {
   const d = new Date(ms);
@@ -172,7 +193,15 @@ function Toast({ message, type, onClose }) {
   );
 }
 
-function ConfirmDialog({ title, message, onConfirm, onCancel, loading }) {
+function ConfirmDialog({
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  loading,
+  confirmLabel = "Delete",
+  danger = true,
+}) {
   return (
     <motion.div
       className="mm-confirm-overlay"
@@ -180,6 +209,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, loading }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onCancel}
+      role="presentation"
     >
       <motion.div
         className="mm-confirm-dialog"
@@ -187,16 +217,23 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, loading }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-labelledby="mm-confirm-title"
+        aria-describedby="mm-confirm-message"
       >
-        <h4>{title}</h4>
-        <p>{message}</p>
+        <h4 id="mm-confirm-title">{title}</h4>
+        <p id="mm-confirm-message">{message}</p>
         <div className="mm-confirm-actions">
           <button className="mm-btn mm-btn-secondary" onClick={onCancel} disabled={loading}>
             Cancel
           </button>
-          <button className="mm-btn mm-btn-danger" onClick={onConfirm} disabled={loading}>
+          <button
+            className={`mm-btn ${danger ? "mm-btn-danger" : "mm-btn-primary"}`}
+            onClick={onConfirm}
+            disabled={loading}
+          >
             {loading ? <Loader2 size={14} className="mm-spin-icon" /> : null}
-            Delete
+            {confirmLabel}
           </button>
         </div>
       </motion.div>
@@ -204,12 +241,15 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, loading }) {
   );
 }
 
-function ToggleSwitch({ value, onChange }) {
+function ToggleSwitch({ value, onChange, ariaLabel }) {
   return (
     <button
       type="button"
       className={`mm-toggle-switch ${value ? "on" : ""}`}
       onClick={() => onChange(!value)}
+      role="switch"
+      aria-checked={value}
+      aria-label={ariaLabel}
     >
       <span className="mm-toggle-switch-dot" />
     </button>
@@ -359,6 +399,9 @@ export default function MenuManager() {
   const [publishStatus, setPublishStatus] = useState(null);
   const [publishError, setPublishError] = useState("");
   const [retryPublish, setRetryPublish] = useState(null);
+  const [publishInFlight, setPublishInFlight] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [editorBaseline, setEditorBaseline] = useState(null);
 
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -412,6 +455,73 @@ export default function MenuManager() {
     setToast({ message, type });
   }, []);
 
+  const editorDirty = useMemo(() => {
+    if (!editorOpen || editorBaseline == null) return false;
+    return !snapshotsEqual(
+      editorBaseline,
+      buildEditorSnapshot({
+        editingItem,
+        itemAllergenIds,
+        itemAddOnIds,
+        extraPlacements,
+        imageFile,
+        removedPlacementIds,
+      }),
+    );
+  }, [
+    editorOpen,
+    editorBaseline,
+    editingItem,
+    itemAllergenIds,
+    itemAddOnIds,
+    extraPlacements,
+    imageFile,
+    removedPlacementIds,
+  ]);
+
+  const publishBarState = useMemo(
+    () =>
+      resolvePublishBarState({
+        publishStage,
+        publishStatus,
+        retryPublish,
+        publishInFlight,
+      }),
+    [publishStage, publishStatus, retryPublish, publishInFlight],
+  );
+
+  const friendlyPublishError = useMemo(
+    () => (publishError ? friendlyPublishErrorMessage({ message: publishError }) : ""),
+    [publishError],
+  );
+
+  const requestLeaveWithUnsavedCheck = useCallback(
+    (onLeave) => {
+      if (!editorDirty) {
+        onLeave();
+        return;
+      }
+      setConfirm({
+        title: "Unsaved changes",
+        message: "You have unsaved changes. Leave anyway?",
+        confirmLabel: "Leave",
+        danger: false,
+        onConfirm: () => {
+          setConfirm(null);
+          onLeave();
+        },
+      });
+    },
+    [editorDirty],
+  );
+
+  const closeEditor = useCallback(() => {
+    requestLeaveWithUnsavedCheck(() => {
+      setEditorOpen(false);
+      setEditorBaseline(null);
+    });
+  }, [requestLeaveWithUnsavedCheck]);
+
   const loadPublishStatus = useCallback(async () => {
     try {
       const { data, error: statusError } = await getMenuPublishStatus(menuBranch);
@@ -423,7 +533,13 @@ export default function MenuManager() {
     }
   }, [menuBranch]);
 
-  const publishCurrentMenu = useCallback(async (changeSummary, expected = null, key = null) => {
+  const publishCurrentMenu = useCallback(async (
+    changeSummary,
+    expected = null,
+    key = null,
+    options = {},
+  ) => {
+    const { silentToast = false } = options;
     const idempotencyKey =
       key ||
       `${menuBranch}:${changeSummary?.action || "publish"}:${
@@ -431,6 +547,7 @@ export default function MenuManager() {
       }`;
     setPublishError("");
     setRetryPublish(null);
+    setPublishInFlight(true);
     const result = await publishAndVerifyMenuBranch({
       branchId: menuBranch,
       changeSummary,
@@ -439,13 +556,57 @@ export default function MenuManager() {
       onStage: setPublishStage,
     });
     await loadPublishStatus();
+    setPublishInFlight(false);
     if (result.error) {
+      console.error("[MenuManager] publish failed:", result.error);
       setPublishError(result.error.message);
       setRetryPublish({ changeSummary, expected, idempotencyKey });
       throw result.error;
     }
+    const publishedAt = Date.now();
+    if (!silentToast) {
+      setToast({
+        message: `✓ Guest menu updated successfully. ${formatRelativeTimestamp(publishedAt, publishedAt)}`,
+        type: "success",
+      });
+    }
     return result.data;
   }, [menuBranch, loadPublishStatus]);
+
+  const handleManualPublish = useCallback(async () => {
+    if (readOnlyMenu || publishInFlight) return;
+    try {
+      await publishCurrentMenu({
+        action: "retry_publish",
+        entity_type: "menu",
+        entity_id: menuBranch,
+      });
+    } catch {
+      /* friendly error shown in status bar */
+    }
+  }, [readOnlyMenu, publishInFlight, publishCurrentMenu, menuBranch]);
+
+  const handleRetryPublish = useCallback(async () => {
+    if (readOnlyMenu || publishInFlight) return;
+    const pending = retryPublish || {
+      changeSummary: {
+        action: "retry_publish",
+        entity_type: "menu",
+        entity_id: menuBranch,
+      },
+      expected: null,
+      idempotencyKey: null,
+    };
+    try {
+      await publishCurrentMenu(
+        pending.changeSummary,
+        pending.expected,
+        pending.idempotencyKey,
+      );
+    } catch {
+      /* friendly error shown in status bar */
+    }
+  }, [readOnlyMenu, publishInFlight, retryPublish, publishCurrentMenu, menuBranch]);
 
   // ── Data Loading ──
 
@@ -626,6 +787,36 @@ export default function MenuManager() {
     loadPublishStatus();
   }, [rbac.profile?.authenticated, loadPublishStatus]);
 
+  useEffect(() => {
+    setShowOnboarding(!isOnboardingDismissed());
+  }, []);
+
+  useEffect(() => {
+    if (!editorDirty) return undefined;
+    const onBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [editorDirty]);
+
+  useEffect(() => {
+    if (!editorOpen) return;
+    setEditorBaseline(
+      buildEditorSnapshot({
+        editingItem,
+        itemAllergenIds,
+        itemAddOnIds,
+        extraPlacements,
+        imageFile,
+        removedPlacementIds,
+      }),
+    );
+    // Baseline captures the opened form state once per editor session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editorOpen, editingItemId]);
+
   // ── Filtering ──
 
   const filteredSections = useMemo(() => {
@@ -662,17 +853,41 @@ export default function MenuManager() {
     [filteredSections]
   );
 
+  const totalMenuItems = useMemo(
+    () => menuData.reduce((sum, s) => sum + (s.items?.length || 0), 0),
+    [menuData],
+  );
+
+  const showSearchEmpty = Boolean(
+    selectedCatId &&
+      !itemsLoading &&
+      searchQuery.trim() &&
+      totalFilteredItems === 0 &&
+      totalMenuItems > 0,
+  );
+
   // ── Category CRUD ──
 
   const handleSelectCategory = useCallback((catId) => {
-    if (catId === selectedCatId) {
-      loadMenuForCategory(catId);
+    const applySelection = () => {
+      if (catId === selectedCatId) {
+        loadMenuForCategory(catId);
+      }
+      lastLoadedCatRef.current = null;
+      setSelectedCatId(catId);
+      setSearchQuery("");
+      setActiveFilter("all");
+    };
+    if (editorOpen && editorDirty) {
+      requestLeaveWithUnsavedCheck(() => {
+        setEditorOpen(false);
+        setEditorBaseline(null);
+        applySelection();
+      });
+      return;
     }
-    lastLoadedCatRef.current = null;
-    setSelectedCatId(catId);
-    setSearchQuery("");
-    setActiveFilter("all");
-  }, [selectedCatId, loadMenuForCategory]);
+    applySelection();
+  }, [selectedCatId, loadMenuForCategory, editorOpen, editorDirty, requestLeaveWithUnsavedCheck]);
 
   const handleAddCategory = useCallback(() => {
     setCatEditMode("create");
@@ -1117,7 +1332,6 @@ export default function MenuManager() {
       );
 
       let itemId = editingItemId;
-      let successMessage = "";
       const extraSectionIds = extraPlacements
         .map((p) => p.section_id)
         .filter(Boolean);
@@ -1133,9 +1347,6 @@ export default function MenuManager() {
         if (result.error) throw result.error;
         itemId = result.data?.id;
         if (!itemId) throw new Error("Create succeeded but no item id returned");
-        const count = (result.created || []).length;
-        successMessage =
-          count > 1 ? `Item created in ${count} placements` : "Item created";
       } else {
         const isLinked = Boolean(placementGroupId || extraPlacements.length > 0);
         await updateMenuItemPlacements({
@@ -1152,9 +1363,6 @@ export default function MenuManager() {
           allergenIds: itemAllergenIds,
           addonIds: itemAddOnIds,
         });
-        successMessage = isLinked
-          ? "Item updated across all linked placements"
-          : "Item updated";
       }
 
       const { data: verified, error: verifyErr } = await fetchMenuItemById(itemId);
@@ -1166,6 +1374,7 @@ export default function MenuManager() {
       const allergenCodes = itemAllergenIds
         .map((id) => allergens.find((a) => a.id === id)?.code)
         .filter(Boolean);
+      const publishedAt = Date.now();
       await publishCurrentMenu(
         {
           action: editorMode === "create" ? "create_item" : "update_item",
@@ -1198,10 +1407,16 @@ export default function MenuManager() {
             : {},
           allergens: contentPayload.active !== false ? allergenCodes : undefined,
         },
+        null,
+        { silentToast: true },
       );
-      showToast(`${successMessage} — verified live`);
+      setToast({
+        message: `✓ Menu item saved. Guest menu updated successfully. ${formatRelativeTimestamp(publishedAt, publishedAt)}`,
+        type: "success",
+      });
 
       setEditorOpen(false);
+      setEditorBaseline(null);
       resetPlacementEditor();
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
@@ -1339,8 +1554,11 @@ export default function MenuManager() {
   const handleDeleteItem = useCallback((item, e) => {
     e.stopPropagation();
     setConfirm({
-      title: "Delete Item",
-      message: `Delete "${item.name_en}"? This action cannot be undone.`,
+      title: "Delete menu item?",
+      message:
+        "This removes it from the menu. Linked placements will also be removed.",
+      confirmLabel: "Delete",
+      danger: true,
       onConfirm: async () => {
         setConfirmLoading(true);
         try {
@@ -1510,11 +1728,6 @@ export default function MenuManager() {
   const liveMenuBase =
     process.env.REACT_APP_PUBLIC_MENU_URL || "https://nacmenu.netlify.app";
   const liveMenuUrl = `${liveMenuBase.replace(/\/$/, "")}${publicMenuPathForBranch(menuBranch)}`;
-  const lastPublishedLabel = publishStatus?.last_published_at
-    ? new Date(publishStatus.last_published_at).toLocaleString("en-GB", {
-        timeZone: "Asia/Riyadh",
-      })
-    : "Never";
 
   if (loading) {
     return (
@@ -1552,92 +1765,52 @@ export default function MenuManager() {
 
   return (
     <div className="mm">
-      <div
-        className="mm-branch-bar"
-        style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", padding: "0.65rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-      >
-        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", fontSize: "0.8rem" }}>
-          Branch
-          {showMenuBranchSelector ? (
-            <select
-              value={menuBranch}
-              disabled={!rbac.canAccessAllBranches()}
-              onChange={(e) => {
-                try {
-                  assertMenuBranchAccess(rbac.profile, e.target.value);
-                  setMenuBranch(e.target.value);
-                } catch (err) {
-                  showToast(err?.message || "Branch access denied", "error");
-                }
-              }}
-            >
-              {menuBranchOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          ) : (
-            <strong>{branchDisplayOptions("dashboardName").find((o) => o.value === menuBranch)?.label || menuBranch}</strong>
-          )}
-        </label>
-        {readOnlyMenu && (
-          <span style={{ fontSize: "0.75rem", opacity: 0.75 }}>Read-only menu view</span>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: "0.65rem", alignItems: "center", flexWrap: "wrap", fontSize: "0.72rem" }}>
-          <strong>
-            Menu Status: {publishStage || (publishStatus?.menu_status === "live" ? "Live" : "Publish failed")}
-          </strong>
-          <span>Database Version: {publishStatus?.database_version ?? "—"}</span>
-          <span>Guest Version: {publishStatus?.guest_version ?? "—"}</span>
-          <span>Last Published: {lastPublishedLabel}</span>
-          <span>Published by: {publishStatus?.publishing_user || "—"}</span>
-          <span>
-            Sync Status: {publishStatus?.sync_status === "healthy" ? "Healthy" : "Needs publish"}
-          </span>
-          <a
-            className="mm-btn mm-btn-secondary"
-            href={liveMenuUrl}
-            target="_blank"
-            rel="noreferrer"
-            style={{ padding: "5px 9px", textDecoration: "none" }}
-          >
-            Open live menu
-          </a>
-          {(retryPublish || publishStatus?.sync_status === "needs_publish") && (
-            <button
-              type="button"
-              className="mm-btn mm-btn-primary"
-              style={{ padding: "5px 9px" }}
-              onClick={async () => {
-                const pending = retryPublish || {
-                  changeSummary: {
-                    action: "retry_publish",
-                    entity_type: "menu",
-                    entity_id: menuBranch,
-                  },
-                  expected: null,
-                  idempotencyKey: null,
-                };
-                try {
-                  await publishCurrentMenu(
-                    pending.changeSummary,
-                    pending.expected,
-                    pending.idempotencyKey,
-                  );
-                  showToast("Guest menu verified live");
-                } catch (e) {
-                  showToast(e?.message || "Publish retry failed", "error");
-                }
-              }}
-            >
-              Retry Publish
-            </button>
-          )}
+      <div className="mm-top-shell">
+        <MenuPublishStatusBar
+          state={publishBarState}
+          friendlyError={friendlyPublishError}
+          publishing={publishInFlight}
+          onPublish={handleManualPublish}
+          onRetry={handleRetryPublish}
+          liveMenuUrl={liveMenuUrl}
+          readOnly={readOnlyMenu}
+        />
+
+        {showOnboarding ? (
+          <Suspense fallback={null}>
+            <MenuManagerOnboarding onDismiss={() => setShowOnboarding(false)} />
+          </Suspense>
+        ) : null}
+
+        <div className="mm-branch-row">
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            Branch
+            {showMenuBranchSelector ? (
+              <select
+                value={menuBranch}
+                disabled={!rbac.canAccessAllBranches()}
+                onChange={(e) => {
+                  try {
+                    assertMenuBranchAccess(rbac.profile, e.target.value);
+                    setMenuBranch(e.target.value);
+                  } catch (err) {
+                    showToast(err?.message || "Branch access denied", "error");
+                  }
+                }}
+                aria-label="Select branch"
+              >
+                {menuBranchOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            ) : (
+              <strong>{branchDisplayOptions("dashboardName").find((o) => o.value === menuBranch)?.label || menuBranch}</strong>
+            )}
+          </label>
+          {readOnlyMenu ? (
+            <span style={{ fontSize: "0.75rem", opacity: 0.75 }}>Read-only menu view</span>
+          ) : null}
         </div>
-        {publishError && (
-          <div style={{ width: "100%", color: "#ffb4a8", fontSize: "0.75rem" }}>
-            {publishError}
-          </div>
-        )}
       </div>
       <div className="mm-bg-glow" />
       <div className="mm-body">
@@ -1789,12 +1962,13 @@ export default function MenuManager() {
           {activeTab === "menu" && selectedCatId && (
             <div className="mm-search-bar">
               <div className="mm-search-input-wrap">
-                <Search size={16} />
+                <Search size={16} aria-hidden="true" />
                 <input
                   className="mm-search-input"
                   placeholder="Search items…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="Search menu items"
                 />
               </div>
               <div className="mm-filter-pills">
@@ -1803,6 +1977,7 @@ export default function MenuManager() {
                     key={f.key}
                     className={`mm-filter-pill ${activeFilter === f.key ? "active" : ""}`}
                     onClick={() => setActiveFilter(f.key)}
+                    aria-pressed={activeFilter === f.key}
                   >
                     {f.label}
                   </button>
@@ -1844,9 +2019,27 @@ export default function MenuManager() {
                 </div>
               )}
 
+              {selectedCatId && !itemsLoading && showSearchEmpty && (
+                <div className="mm-search-empty" data-testid="menu-search-empty">
+                  <span>No matching menu items.</span>
+                  <button
+                    type="button"
+                    className="mm-btn mm-btn-secondary"
+                    style={{ padding: "4px 12px", fontSize: 12 }}
+                    onClick={() => setSearchQuery("")}
+                    data-testid="clear-menu-search"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              )}
+
               {selectedCatId && !itemsLoading && (
                 <>
-                  {filteredSections.map((section, sectionIdx) => (
+                  {filteredSections.map((section, sectionIdx) => {
+                    const rawSection = menuData.find((s) => s.id === section.id);
+                    const isSectionEmpty = (rawSection?.items || []).length === 0;
+                    return (
                     <div className="mm-section" key={section.id}>
                       <div
                         className="mm-section-header"
@@ -1949,6 +2142,36 @@ export default function MenuManager() {
                             transition={{ duration: 0.25 }}
                           >
                             <div className="mm-item-grid">
+                              {isSectionEmpty ? (
+                                <div className="mm-section-empty" data-testid="section-empty-state">
+                                  <span>No menu items in this section yet.</span>
+                                  <div className="mm-section-empty-actions">
+                                    <MenuManagerTooltip label={MENU_TOOLTIPS.addExistingItem}>
+                                      <button
+                                        type="button"
+                                        className="mm-btn mm-btn-secondary"
+                                        style={{ padding: "6px 12px", fontSize: 12 }}
+                                        onClick={() => openAddItemChooser(section)}
+                                        data-testid="section-add-existing"
+                                      >
+                                        Add Existing Item
+                                      </button>
+                                    </MenuManagerTooltip>
+                                    <MenuManagerTooltip label={MENU_TOOLTIPS.createNewItem}>
+                                      <button
+                                        type="button"
+                                        className="mm-btn mm-btn-primary"
+                                        style={{ padding: "6px 12px", fontSize: 12 }}
+                                        onClick={() => openCreateItem(section.id, selectedCatId)}
+                                        data-testid="section-create-new"
+                                      >
+                                        Create New Item
+                                      </button>
+                                    </MenuManagerTooltip>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
                               {section.items.map((item, itemIdx) => {
                                 const visBadge = getItemVisibilityBadge(item, nowMs);
                                 const guestHidden = visBadge.key !== "active";
@@ -2060,19 +2283,34 @@ export default function MenuManager() {
                                 );
                               })}
 
-                              <div
-                                className="mm-add-item-card"
-                                onClick={() => openAddItemChooser(section)}
-                              >
-                                <Plus size={22} />
-                                Add item
-                              </div>
+                              <MenuManagerTooltip label={MENU_TOOLTIPS.addItem}>
+                                <div
+                                  className="mm-add-item-card"
+                                  onClick={() => openAddItemChooser(section)}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label="Add item to this section"
+                                  data-testid="section-add-item-card"
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      openAddItemChooser(section);
+                                    }
+                                  }}
+                                >
+                                  <Plus size={22} aria-hidden="true" />
+                                  Add item
+                                </div>
+                              </MenuManagerTooltip>
+                                </>
+                              )}
                             </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   <button className="mm-add-section-btn" onClick={handleAddSection}>
                     <Plus size={16} />
@@ -2238,7 +2476,7 @@ export default function MenuManager() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setEditorOpen(false)}
+              onClick={closeEditor}
             />
             <motion.div
               className="mm-editor"
@@ -2246,10 +2484,25 @@ export default function MenuManager() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 300 }}
+              role="dialog"
+              aria-modal="true"
+              aria-label={editorMode === "create" ? "Create menu item" : "Edit menu item"}
             >
               <div className="mm-editor-header">
-                <h3>{editorMode === "create" ? "New Item" : "Edit Item"}</h3>
-                <button className="mm-editor-close" onClick={() => setEditorOpen(false)}>
+                <div>
+                  <h3>{editorMode === "create" ? "New Item" : "Edit Item"}</h3>
+                  {editorDirty ? (
+                    <span className="mm-unsaved-indicator" data-testid="unsaved-changes-indicator">
+                      <span className="mm-unsaved-dot" aria-hidden="true" />
+                      Unsaved changes
+                    </span>
+                  ) : null}
+                </div>
+                <button
+                  className="mm-editor-close"
+                  onClick={closeEditor}
+                  aria-label="Close editor"
+                >
                   <X size={18} />
                 </button>
               </div>
@@ -2391,12 +2644,21 @@ export default function MenuManager() {
                       />
                     </div>
                     <div className="mm-toggle-row">
-                      <span className="mm-toggle-label">Highlight on Guest Menu</span>
+                      <MenuManagerTooltip label={MENU_TOOLTIPS.highlightGuest}>
+                        <span className="mm-toggle-label">Highlight on Guest Menu</span>
+                      </MenuManagerTooltip>
                       <ToggleSwitch
                         value={editingItem.featured}
                         onChange={(v) => setEditingItem((p) => ({ ...p, featured: v }))}
+                        ariaLabel="Highlight on guest menu"
                       />
                     </div>
+                    {editingItem.featured ? (
+                      <span className="mm-recommended-badge" data-testid="recommended-preview-badge">
+                        <span className="mm-recommended-badge-dot" aria-hidden="true" />
+                        Appears in Recommended
+                      </span>
+                    ) : null}
                     <div className="mm-toggle-row">
                       <span className="mm-toggle-label">New Item</span>
                       <ToggleSwitch
@@ -2491,13 +2753,15 @@ export default function MenuManager() {
               </div>
 
               <div className="mm-editor-footer">
-                <button className="mm-btn mm-btn-secondary" onClick={() => setEditorOpen(false)}>
+                <button className="mm-btn mm-btn-secondary" onClick={closeEditor}>
                   Cancel
                 </button>
                 <button
-                  className="mm-btn mm-btn-primary"
+                  className={`mm-btn mm-btn-primary${editorDirty ? " mm-btn-emphasis" : ""}`}
                   onClick={handleSaveItem}
                   disabled={saving}
+                  aria-label={editorMode === "create" ? "Create menu item" : "Save menu item changes"}
+                  data-testid="save-menu-item-button"
                 >
                   {saving ? (
                     <Loader2 size={15} style={{ animation: "mm-spin 0.7s linear infinite" }} />
@@ -2534,6 +2798,8 @@ export default function MenuManager() {
             onConfirm={confirm.onConfirm}
             onCancel={() => setConfirm(null)}
             loading={confirmLoading}
+            confirmLabel={confirm.confirmLabel}
+            danger={confirm.danger}
           />
         )}
       </AnimatePresence>
