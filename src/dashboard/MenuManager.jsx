@@ -65,6 +65,7 @@ import {
 } from "../lib/menuVisibility";
 import {
   validatePlacements,
+  placementKey,
   formatLinkedPlacementBadge,
   buildPlacementGroupSummary,
 } from "../lib/menuPlacements";
@@ -86,6 +87,13 @@ function toDatetimeLocalValue(ms) {
   const d = new Date(ms);
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+let placementRowSequence = 0;
+function newPlacementRowKey(itemId = null) {
+  if (itemId) return `saved-${itemId}`;
+  placementRowSequence += 1;
+  return `placement-${Date.now()}-${placementRowSequence}`;
 }
 
 function resolveVisibilityPatch(form) {
@@ -940,6 +948,7 @@ export default function MenuManager() {
           const sec = sectionsCatalog.find((s) => s.id === m.section_id);
           return {
             itemId: m.id,
+            rowKey: newPlacementRowKey(m.id),
             category_id: sec?.category_id || "",
             section_id: m.section_id,
           };
@@ -978,7 +987,11 @@ export default function MenuManager() {
         category_id: editingItem.category_id,
         section_id: editingItem.section_id,
       };
-      const placementCheck = validatePlacements(primaryPlacement, extraPlacements);
+      const placementCheck = validatePlacements(
+        primaryPlacement,
+        extraPlacements,
+        sectionsCatalog,
+      );
       if (!placementCheck.ok) {
         showToast(placementCheck.message, "error");
         return;
@@ -1117,6 +1130,7 @@ export default function MenuManager() {
     rbac.profile,
     readOnlyMenu,
     allergens,
+    sectionsCatalog,
     publishCurrentMenu,
   ]);
 
@@ -1381,16 +1395,35 @@ export default function MenuManager() {
   const usedPlacementKeys = useMemo(() => {
     const keys = new Set();
     if (editingItem.category_id && editingItem.section_id) {
-      keys.add(`${editingItem.category_id}:${editingItem.section_id}`);
+      keys.add(placementKey(editingItem.category_id, editingItem.section_id));
     }
     extraPlacements.forEach((p) => {
-      if (p.category_id && p.section_id) keys.add(`${p.category_id}:${p.section_id}`);
+      if (p.category_id && p.section_id) {
+        keys.add(placementKey(p.category_id, p.section_id));
+      }
     });
     return keys;
   }, [editingItem.category_id, editingItem.section_id, extraPlacements]);
 
+  const additionalPlacementKeys = useMemo(
+    () =>
+      new Set(
+        extraPlacements
+          .filter((row) => row.category_id && row.section_id)
+          .map((row) => placementKey(row.category_id, row.section_id)),
+      ),
+    [extraPlacements],
+  );
+
   const addExtraPlacement = useCallback(() => {
-    setExtraPlacements((prev) => [...prev, { category_id: "", section_id: "" }]);
+    setExtraPlacements((prev) => [
+      ...prev,
+      {
+        rowKey: newPlacementRowKey(),
+        category_id: "",
+        section_id: "",
+      },
+    ]);
   }, []);
 
   const updateExtraPlacement = useCallback((index, patch) => {
@@ -2273,7 +2306,13 @@ export default function MenuManager() {
                           setEditingItem((p) => ({
                             ...p,
                             category_id: categoryId,
-                            section_id: secs[0]?.id || "",
+                            section_id:
+                              secs.find(
+                                (section) =>
+                                  !additionalPlacementKeys.has(
+                                    placementKey(categoryId, section.id),
+                                  ),
+                              )?.id || "",
                           }));
                         }}
                       >
@@ -2293,9 +2332,17 @@ export default function MenuManager() {
                         }
                       >
                         <option value="">Select section</option>
-                        {sectionsForCategory(editingItem.category_id).map((s) => (
-                          <option key={s.id} value={s.id}>{s.name_en}</option>
-                        ))}
+                        {sectionsForCategory(editingItem.category_id).map((s) => {
+                          const taken = additionalPlacementKeys.has(
+                            placementKey(editingItem.category_id, s.id),
+                          );
+                          return (
+                            <option key={s.id} value={s.id} disabled={taken}>
+                              {s.name_en}
+                              {taken ? " (in use)" : ""}
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   </div>
@@ -2306,28 +2353,39 @@ export default function MenuManager() {
                       {extraPlacements.map((placement, index) => {
                         const rowSections = sectionsForCategory(placement.category_id);
                         return (
-                          <div className="mm-placement-extra-row" key={placement.itemId || `new-${index}`}>
+                          <div
+                            className="mm-placement-extra-row"
+                            key={placement.rowKey || placement.itemId || `placement-${index}`}
+                          >
                             <div className="mm-field-row">
                               <div className="mm-field">
                                 <select
                                   className="mm-field-select"
                                   value={placement.category_id}
+                                  aria-label={`Additional placement ${index + 1} category`}
                                   onChange={(e) => {
                                     const categoryId = e.target.value;
                                     const secs = sectionsForCategory(categoryId);
-                                    let sectionId = placement.section_id;
-                                    const key = `${categoryId}:${sectionId}`;
-                                    if (!sectionId || usedPlacementKeys.has(key)) {
-                                      sectionId =
-                                        secs.find(
-                                          (s) =>
-                                            !usedPlacementKeys.has(`${categoryId}:${s.id}`) ||
-                                            s.id === placement.section_id,
-                                        )?.id || secs[0]?.id || "";
-                                    }
+                                    const currentKey = placementKey(
+                                      placement.category_id,
+                                      placement.section_id,
+                                    );
+                                    const sectionStillValid = secs.some(
+                                      (section) => section.id === placement.section_id,
+                                    );
+                                    const nextKey = placementKey(
+                                      categoryId,
+                                      placement.section_id,
+                                    );
+                                    const sectionTaken =
+                                      usedPlacementKeys.has(nextKey) &&
+                                      nextKey !== currentKey;
                                     updateExtraPlacement(index, {
                                       category_id: categoryId,
-                                      section_id: sectionId,
+                                      section_id:
+                                        sectionStillValid && !sectionTaken
+                                          ? placement.section_id
+                                          : "",
                                     });
                                   }}
                                 >
@@ -2341,16 +2399,22 @@ export default function MenuManager() {
                                 <select
                                   className="mm-field-select"
                                   value={placement.section_id}
+                                  disabled={!placement.category_id}
+                                  aria-label={`Additional placement ${index + 1} section`}
                                   onChange={(e) =>
                                     updateExtraPlacement(index, { section_id: e.target.value })
                                   }
                                 >
                                   <option value="">Section</option>
                                   {rowSections.map((s) => {
-                                    const key = `${placement.category_id}:${s.id}`;
+                                    const key = placementKey(placement.category_id, s.id);
                                     const taken =
                                       usedPlacementKeys.has(key) &&
-                                      key !== `${placement.category_id}:${placement.section_id}`;
+                                      key !==
+                                        placementKey(
+                                          placement.category_id,
+                                          placement.section_id,
+                                        );
                                     return (
                                       <option key={s.id} value={s.id} disabled={taken}>
                                         {s.name_en}

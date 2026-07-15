@@ -25,4 +25,18 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("if (itemErr) throw itemErr");
     expect(componentSource).toContain("menuLoadRequestRef");
   });
+
+  test("additional placements remain dynamic, category-scoped, and editable in place", () => {
+    expect(componentSource).toContain(
+      "sectionsForCategory(placement.category_id)",
+    );
+    expect(componentSource).toContain("newPlacementRowKey()");
+    expect(componentSource).toContain("disabled={!placement.category_id}");
+    expect(componentSource).toContain(
+      "removeExtraPlacement(index)",
+    );
+    expect(componentSource).toContain(
+      "validatePlacements(\n        primaryPlacement,\n        extraPlacements,\n        sectionsCatalog,",
+    );
+  });
 });

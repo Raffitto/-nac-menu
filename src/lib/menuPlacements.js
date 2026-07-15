@@ -30,14 +30,35 @@ export function normalizePlacements(primary, extras = []) {
   return out;
 }
 
-export function validatePlacements(primary, extras = []) {
-  const normalized = normalizePlacements(primary, extras);
+export function validatePlacements(primary, extras = [], sections = []) {
   if (!primary?.section_id) {
     return { ok: false, message: "Primary section is required." };
   }
   if (!primary?.category_id) {
     return { ok: false, message: "Primary category is required." };
   }
+  if (extras.some((row) => !row?.category_id || !row?.section_id)) {
+    return {
+      ok: false,
+      message: "Choose a category and section for every additional placement.",
+    };
+  }
+
+  if (sections.length > 0) {
+    const sectionsById = new Map(sections.map((section) => [section.id, section]));
+    const invalid = [primary, ...extras].find((row) => {
+      const section = sectionsById.get(row.section_id);
+      return !section || section.category_id !== row.category_id;
+    });
+    if (invalid) {
+      return {
+        ok: false,
+        message: "Each placement section must belong to its selected category.",
+      };
+    }
+  }
+
+  const normalized = normalizePlacements(primary, extras);
   const extraCount = normalized.filter((p) => !p.isPrimary).length;
   if (extraCount !== extras.length) {
     return { ok: false, message: "Duplicate category/section placement." };
