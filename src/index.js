@@ -21,7 +21,7 @@ const ReviewPortal = lazy(() => import("./review/ReviewPortal"));
 const LeaderboardView = lazy(() => import("./dashboard/LeaderboardView"));
 const ResetPasswordView = lazy(() => import("./dashboard/views/ResetPasswordView"));
 const AdminDashboard = lazy(() => import("./dashboard/AdminDashboard"));
-const InvoiceIntakeView = lazy(() => import("./inventory/InvoiceIntakeView"));
+const InventoryApp = lazy(() => import("./inventory/InventoryApp"));
 const MenuApp = lazy(() => import("./App"));
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
@@ -54,7 +54,7 @@ if (rootKind === "reset-password") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0d1112" }} />}>
-        <InvoiceIntakeView />
+        <InventoryApp />
       </Suspense>
     </React.StrictMode>,
   );

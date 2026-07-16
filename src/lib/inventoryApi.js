@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { buildInvoiceLineFingerprint, normalizeText } from "../inventory/inventoryIntelligence";
+import { mapIngredientRow, trimIngredientName } from "../inventory/ingredientMaster";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -22,9 +23,9 @@ async function currentUserId() {
 
 export async function createIngredient(input) {
   const createdBy = input.createdBy || await currentUserId();
-  return unwrap(
+  const row = await unwrap(
     requireClient().from("inventory_ingredients").insert({
-      canonical_name: input.canonicalName,
+      canonical_name: trimIngredientName(input.canonicalName),
       normalized_search_name: normalizeText(input.canonicalName),
       description: input.description || null,
       category: input.category || null,
@@ -35,9 +36,11 @@ export async function createIngredient(input) {
       branch_id: input.branchId || null,
       allergen_metadata: input.allergenMetadata || {},
       created_by: createdBy,
+      active: input.active !== false,
     }).select().single(),
     "Create ingredient"
   );
+  return mapIngredientRow(row);
 }
 
 export async function createSupplier(input) {
@@ -483,6 +486,138 @@ export async function approveStockCount(countId, idempotencyKey = `stock-count:$
     }),
     "Approve stock count"
   );
+}
+
+export async function fetchIngredients({ branchId, includeInactive = true } = {}) {
+  let query = requireClient()
+    .from("inventory_ingredients")
+    .select("*")
+    .or(`branch_id.is.null,branch_id.eq.${branchId}`)
+    .order("canonical_name");
+  if (!includeInactive) query = query.eq("active", true);
+  const rows = await unwrap(query, "Fetch ingredients");
+  return rows.map(mapIngredientRow);
+}
+
+export async function fetchIngredientById(ingredientId) {
+  const row = await unwrap(
+    requireClient().from("inventory_ingredients").select("*").eq("id", ingredientId).maybeSingle(),
+    "Fetch ingredient",
+  );
+  return mapIngredientRow(row);
+}
+
+export async function findDuplicateIngredient({
+  canonicalName,
+  branchId = null,
+  scope = "branch",
+  excludeId = null,
+}) {
+  const normalized = normalizeText(trimIngredientName(canonicalName));
+  if (!normalized) return null;
+  let query = requireClient()
+    .from("inventory_ingredients")
+    .select("id, canonical_name, active, scope, branch_id")
+    .eq("normalized_search_name", normalized);
+  if (scope === "network") {
+    query = query.eq("scope", "network").is("branch_id", null);
+  } else {
+    query = query.eq("scope", "branch").eq("branch_id", branchId);
+  }
+  if (excludeId) query = query.neq("id", excludeId);
+  return unwrap(query.maybeSingle(), "Check duplicate ingredient name");
+}
+
+export async function fetchIngredientDependencySummary(ingredientId) {
+  const client = requireClient();
+  const [movements, catalogue, receipts] = await Promise.all([
+    client
+      .from("inventory_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("ingredient_id", ingredientId)
+      .eq("status", "posted"),
+    client
+      .from("inventory_supplier_catalogue_items")
+      .select("id", { count: "exact", head: true })
+      .eq("ingredient_id", ingredientId),
+    client
+      .from("inventory_purchase_receipt_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("ingredient_id", ingredientId),
+  ]);
+  if (movements.error) throw new Error(`Check ingredient movements: ${movements.error.message}`);
+  if (catalogue.error) throw new Error(`Check supplier catalogue links: ${catalogue.error.message}`);
+  if (receipts.error) throw new Error(`Check purchase receipts: ${receipts.error.message}`);
+  const movementCount = movements.count || 0;
+  const catalogueCount = catalogue.count || 0;
+  const receiptCount = receipts.count || 0;
+  return {
+    movementCount,
+    catalogueCount,
+    receiptCount,
+    hasDependencies: movementCount + catalogueCount + receiptCount > 0,
+  };
+}
+
+export async function updateIngredient(ingredientId, input) {
+  const patch = {
+    updated_at: new Date().toISOString(),
+  };
+  if (input.canonicalName != null) {
+    patch.canonical_name = trimIngredientName(input.canonicalName);
+    patch.normalized_search_name = normalizeText(patch.canonical_name);
+  }
+  if (input.category !== undefined) patch.category = input.category || null;
+  if (input.baseInventoryUnit != null) patch.base_inventory_unit = input.baseInventoryUnit;
+  if (input.description !== undefined) patch.description = input.description || null;
+  if (input.active != null) patch.active = Boolean(input.active);
+  const row = await unwrap(
+    requireClient().from("inventory_ingredients").update(patch).eq("id", ingredientId).select().single(),
+    "Update ingredient",
+  );
+  return mapIngredientRow(row);
+}
+
+export async function setIngredientActive(ingredientId, active) {
+  return updateIngredient(ingredientId, { active });
+}
+
+export async function fetchInventoryStaffAccess() {
+  const client = requireClient();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError) throw new Error(`Resolve current user: ${authError.message}`);
+  const email = authData?.user?.email?.toLowerCase();
+  if (!email) {
+    return {
+      email: null,
+      vaultRole: null,
+      primaryBranchId: null,
+      branchIds: [],
+    };
+  }
+
+  const staff = await unwrap(
+    client.from("ask_nac_staff").select("vault_role, primary_branch_id").ilike("email", email).maybeSingle(),
+    "Fetch inventory staff access",
+  );
+
+  const branchRows = await unwrap(
+    client.from("ask_nac_user_branch_access").select("branch_id").ilike("email", email),
+    "Fetch inventory branch access",
+  );
+
+  const branchIds = [
+    ...new Set(
+      [staff?.primary_branch_id, ...(branchRows || []).map((row) => row.branch_id)].filter(Boolean),
+    ),
+  ];
+
+  return {
+    email,
+    vaultRole: staff?.vault_role || null,
+    primaryBranchId: staff?.primary_branch_id || null,
+    branchIds,
+  };
 }
 
 export function invoiceLineFingerprint(lines) {

@@ -61,9 +61,15 @@ function confidence(value) {
   return `${Math.round(Number(value) * 100)}%`;
 }
 
-export default function InvoiceIntakeView() {
+export default function InvoiceIntakeView({
+  embedded = false,
+  branchId: branchIdProp,
+  setBranchId: setBranchIdProp,
+} = {}) {
   const { session, checked, issue } = usePlatformSession();
-  const [branchId, setBranchId] = useState(branchFromLocation);
+  const [internalBranchId, setInternalBranchId] = useState(branchFromLocation);
+  const branchId = embedded && branchIdProp != null ? branchIdProp : internalBranchId;
+  const setBranchId = embedded && setBranchIdProp ? setBranchIdProp : setInternalBranchId;
   const [invoices, setInvoices] = useState([]);
   const [reference, setReference] = useState({ ingredients: [], suppliers: [], locations: [] });
   const [selectedId, setSelectedId] = useState(null);
@@ -196,7 +202,7 @@ export default function InvoiceIntakeView() {
     [selected]
   );
 
-  if (!checked || !session) {
+  if (!embedded && (!checked || !session)) {
     return (
       <NacAnalyticsSignIn
         checking={!checked}
@@ -208,32 +214,8 @@ export default function InvoiceIntakeView() {
     );
   }
 
-  return (
-    <main className="inv-page">
-      <header className="inv-header">
-        <div>
-          <p className="inv-kicker">NAC Hospitality OS</p>
-          <h1>Inventory & Invoice Intelligence</h1>
-          <p>Upload the supplier invoice, review exceptions, then post stock and cost once.</p>
-        </div>
-        <div className="inv-header-actions">
-          <label>
-            <span>Branch</span>
-            <select value={branchId} onChange={(event) => {
-              setBranchId(event.target.value);
-              setSelectedId(null);
-            }}>
-              {BRANCHES.map((branch) => (
-                <option key={branch.id} value={branch.id}>{branch.label}</option>
-              ))}
-            </select>
-          </label>
-          <button className="inv-button inv-button--ghost" onClick={() => supabase?.auth.signOut()}>
-            <LogOut size={16} /> Sign out
-          </button>
-        </div>
-      </header>
-
+  const workspace = (
+    <>
       {(error || notice) && (
         <div className={`inv-banner ${error ? "inv-banner--error" : "inv-banner--success"}`}>
           {error ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
@@ -493,6 +475,39 @@ export default function InvoiceIntakeView() {
           )}
         </section>
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return workspace;
+  }
+
+  return (
+    <main className="inv-page">
+      <header className="inv-header">
+        <div>
+          <p className="inv-kicker">NAC Hospitality OS</p>
+          <h1>Inventory & Invoice Intelligence</h1>
+          <p>Upload the supplier invoice, review exceptions, then post stock and cost once.</p>
+        </div>
+        <div className="inv-header-actions">
+          <label>
+            <span>Branch</span>
+            <select value={branchId} onChange={(event) => {
+              setBranchId(event.target.value);
+              setSelectedId(null);
+            }}>
+              {BRANCHES.map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.label}</option>
+              ))}
+            </select>
+          </label>
+          <button className="inv-button inv-button--ghost" onClick={() => supabase?.auth.signOut()}>
+            <LogOut size={16} /> Sign out
+          </button>
+        </div>
+      </header>
+      {workspace}
     </main>
   );
 }
