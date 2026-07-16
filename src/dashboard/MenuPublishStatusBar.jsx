@@ -11,6 +11,7 @@ function MenuPublishStatusBar({
   onRetry,
   liveMenuUrl,
   readOnly,
+  lastPublishedLabel,
 }) {
   const publishDisabled = publishing || readOnly;
 
@@ -24,7 +25,15 @@ function MenuPublishStatusBar({
       {state === "live" && (
         <>
           <CheckCircle2 size={16} className="mm-publish-bar-icon mm-publish-bar-icon--live" aria-hidden="true" />
-          <span className="mm-publish-bar-message">Guest menu is up to date.</span>
+          <span className="mm-publish-bar-message">
+            Guest menu is up to date.
+            {lastPublishedLabel ? (
+              <span className="mm-publish-bar-meta" data-testid="publish-last-updated">
+                {" "}
+                Last updated {lastPublishedLabel}.
+              </span>
+            ) : null}
+          </span>
         </>
       )}
 

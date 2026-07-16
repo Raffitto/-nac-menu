@@ -12,7 +12,8 @@ const STEPS = [
     body: "Choose Add Existing Menu Item or Create New Item.",
   },
   {
-    title: "When you're finished, press Publish to update the guest menu.",
+    title: "When you're finished, check the status bar at the top.",
+    body: "Most changes update the guest menu when you save. If it shows unpublished changes, press Publish.",
   },
 ];
 

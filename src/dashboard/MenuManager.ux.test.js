@@ -11,6 +11,8 @@ import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
   friendlyPublishErrorMessage,
+  friendlyActionErrorMessage,
+  formatLastPublishedLabel,
   isOnboardingDismissed,
   persistOnboardingDismissed,
   resolvePublishBarState,
@@ -70,12 +72,17 @@ describe("menuManagerUx helpers", () => {
     ).toBe("failed");
   });
 
-  test("friendlyPublishErrorMessage hides technical database errors", () => {
+  test("friendlyActionErrorMessage hides technical database errors", () => {
     expect(
-      friendlyPublishErrorMessage({
+      friendlyActionErrorMessage({
         message: 'duplicate key value violates unique constraint "menu_publications_branch_id_version_key"',
       }),
-    ).toBe("We couldn't update the guest menu. Please try again.");
+    ).toBe("Something went wrong. Please try again.");
+  });
+
+  test("formatLastPublishedLabel formats guest menu timestamps", () => {
+    const label = formatLastPublishedLabel("2026-07-16T12:00:00.000Z");
+    expect(label).toMatch(/16/);
   });
 
   test("formatRelativeTimestamp returns human-readable recency", () => {
@@ -117,7 +124,7 @@ describe("MenuManagerOnboarding", () => {
     expect(screen.getByText(/Choose the destination section/i)).toBeInTheDocument();
     expect(screen.getByText(/Breakfast → Eggs/i)).toBeInTheDocument();
     expect(screen.getByText(/Press \+ Add Item/i)).toBeInTheDocument();
-    expect(screen.getByText(/press Publish/i)).toBeInTheDocument();
+    expect(screen.getByText(/status bar at the top/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("onboarding-dismiss"));
     expect(onDismiss).toHaveBeenCalled();
@@ -143,9 +150,11 @@ describe("MenuPublishStatusBar", () => {
         onRetry={onRetry}
         liveMenuUrl="https://example.com/khobar"
         readOnly={false}
+        lastPublishedLabel="16 Jul, 14:30"
       />,
     );
     expect(screen.getByText("Guest menu is up to date.")).toBeInTheDocument();
+    expect(screen.getByTestId("publish-last-updated")).toHaveTextContent("Last updated 16 Jul, 14:30.");
 
     rerender(
       <MenuPublishStatusBar
@@ -280,10 +289,13 @@ describe("MenuManager UX integration contract", () => {
     expect(componentSource).toContain('data-testid="section-empty-state"');
     expect(componentSource).toContain('data-testid="menu-search-empty"');
     expect(componentSource).toContain('data-testid="recommended-preview-badge"');
+    expect(componentSource).toContain('data-testid="section-create-form"');
     expect(componentSource).toContain("Delete menu item?");
     expect(componentSource).toContain("Linked placements will also be removed.");
     expect(componentSource).toContain("✓ Menu item saved.");
+    expect(componentSource).toContain("Save to guest menu");
     expect(componentSource).toContain("friendlyPublishErrorMessage");
     expect(componentSource).toContain("beforeunload");
+    expect(componentSource).not.toContain("prompt(");
   });
 });

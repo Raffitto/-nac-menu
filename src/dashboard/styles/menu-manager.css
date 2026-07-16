@@ -609,6 +609,18 @@
   background: rgba(0, 0, 0, 0.12);
 }
 
+.mm-placement-intro {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  color: rgba(249,249,247,0.58);
+}
+
+.mm-placement-hint {
+  margin: -2px 0 8px;
+  font-size: 0.72rem;
+  color: rgba(249,249,247,0.45);
+}
+
 .mm-placement-section + .mm-placement-section {
   margin-top: 16px;
 }
@@ -1023,9 +1035,21 @@
 
 .mm-editor-footer {
   display: flex;
+  flex-direction: column;
   gap: 10px;
   padding: 16px 24px;
   border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.mm-editor-save-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgba(249,249,247,0.55);
+}
+
+.mm-editor-footer-actions {
+  display: flex;
+  gap: 10px;
 }
 
 /* ── Form Fields ── */
@@ -1918,6 +1942,10 @@
     flex-direction: column;
     align-items: stretch;
   }
+
+  .mm-section-create-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 500px) {
@@ -2012,6 +2040,38 @@
 
 .mm-publish-bar-link:hover {
   text-decoration: underline;
+}
+
+.mm-publish-bar-meta {
+  color: rgba(249,249,247,0.55);
+  font-size: 0.74rem;
+}
+
+.mm-section-create-form {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px dashed rgba(215,188,138,0.28);
+  background: rgba(255,255,255,0.025);
+}
+
+.mm-section-create-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.mm-section-create-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.mm-section-create-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .mm-onboarding {

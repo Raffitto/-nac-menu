@@ -75,7 +75,7 @@ describe("MenuItemPlacementEditor", () => {
     expect(screen.getByTestId("primary-placement-chip")).toHaveTextContent(
       "Breakfast → Eggs",
     );
-    expect(screen.getByText("No additional placements yet.")).toBeInTheDocument();
+    expect(screen.getByText("Not shown in any other sections yet.")).toBeInTheDocument();
   });
 
   test("add placement opens inline picker and collapses into a chip on confirm", () => {

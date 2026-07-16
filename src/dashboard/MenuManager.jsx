@@ -89,6 +89,9 @@ import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
   friendlyPublishErrorMessage,
+  friendlyActionErrorMessage,
+  guestMenuSuccessMessage,
+  formatLastPublishedLabel,
   isOnboardingDismissed,
   MENU_TOOLTIPS,
   resolvePublishBarState,
@@ -169,7 +172,7 @@ const EMPTY_ITEM = {
 const FILTER_OPTIONS = [
   { key: "all", label: "All" },
   { key: "sold_out", label: "Sold Out" },
-  { key: "inactive", label: "Inactive" },
+  { key: "inactive", label: "Hidden" },
   { key: "vegetarian", label: "Vegetarian" },
   { key: "new_item", label: "New" },
 ];
@@ -291,7 +294,7 @@ function ItemVisibilityModal({
               checked={form.mode === "active"}
               onChange={() => setForm((f) => ({ ...f, mode: "active" }))}
             />
-            <span>Active — visible on guest menu</span>
+            <span>Visible on guest menu</span>
           </label>
           <label className={`mm-hide-option ${form.mode === "indefinite" ? "selected" : ""}`}>
             <input
@@ -444,6 +447,9 @@ export default function MenuManager() {
   // Section editor
   const [sectionEditId, setSectionEditId] = useState(null);
   const [sectionEditData, setSectionEditData] = useState({ name_en: "", name_ar: "" });
+  const [sectionCreateOpen, setSectionCreateOpen] = useState(false);
+  const [sectionCreateData, setSectionCreateData] = useState({ name_en: "", name_ar: "" });
+  const [sectionCreateSaving, setSectionCreateSaving] = useState(false);
 
   // Add-on editor
   const [addonFormOpen, setAddonFormOpen] = useState(false);
@@ -817,6 +823,15 @@ export default function MenuManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editorOpen, editingItemId]);
 
+  useEffect(() => {
+    if (!editorOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") closeEditor();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editorOpen, closeEditor]);
+
   // ── Filtering ──
 
   const filteredSections = useMemo(() => {
@@ -922,7 +937,7 @@ export default function MenuManager() {
           entity_id: created.id,
           changed_fields: payload,
         });
-        showToast("Category created and verified live");
+        showToast(guestMenuSuccessMessage("Category created. Guest menu updated."));
       } else {
         assertMenuMutation(await updateCategory(catEditData.id, catEditData), "updateCategory");
         await publishCurrentMenu({
@@ -931,7 +946,7 @@ export default function MenuManager() {
           entity_id: catEditData.id,
           changed_fields: catEditData,
         });
-        showToast("Category updated and verified live");
+        showToast(guestMenuSuccessMessage("Category updated. Guest menu updated."));
       }
       setCatEditMode(null);
       const cats = await loadCategories();
@@ -939,7 +954,7 @@ export default function MenuManager() {
         setSelectedCatId(cats[0].id);
       }
     } catch (e) {
-      showToast(e?.message || "Failed to save category", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not save category. Please try again."), "error");
     }
   }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch, publishCurrentMenu]);
 
@@ -958,13 +973,13 @@ export default function MenuManager() {
             entity_id: cat.id,
             changed_fields: { name_en: cat.name_en },
           });
-          showToast("Category deleted and verified live");
+          showToast(guestMenuSuccessMessage("Category removed from guest menu."));
           const cats = await loadCategories();
           if (selectedCatId === cat.id) {
             setSelectedCatId(cats.length > 0 ? cats[0].id : null);
           }
         } catch (e) {
-          showToast(e?.message || "Failed to delete category", "error");
+          showToast(friendlyActionErrorMessage(e, "Could not delete category. Please try again."), "error");
         } finally {
           setConfirmLoading(false);
           setConfirm(null);
@@ -1000,16 +1015,24 @@ export default function MenuManager() {
 
   // ── Section CRUD ──
 
-  const handleAddSection = useCallback(async () => {
-    if (!selectedCatId) return;
-    const name = prompt("Section name (English):");
-    if (!name?.trim() || readOnlyMenu) return;
-    const nameAr = prompt("Section name (Arabic):") || "";
+  const handleAddSection = useCallback(() => {
+    if (!selectedCatId || readOnlyMenu) return;
+    setSectionCreateOpen(true);
+    setSectionCreateData({ name_en: "", name_ar: "" });
+  }, [selectedCatId, readOnlyMenu]);
+
+  const handleCreateSection = useCallback(async () => {
+    if (!selectedCatId || readOnlyMenu) return;
+    if (!sectionCreateData.name_en.trim()) {
+      showToast("Section name (English) is required", "error");
+      return;
+    }
+    setSectionCreateSaving(true);
     try {
       assertMenuBranchAccess(rbac.profile, menuBranch);
       const created = assertMenuMutation(await createSection({
-        name_en: name.trim(),
-        name_ar: nameAr.trim(),
+        name_en: sectionCreateData.name_en.trim(),
+        name_ar: sectionCreateData.name_ar.trim(),
         category_id: selectedCatId,
         sort_order: menuData.length,
         branch_id: menuBranch,
@@ -1018,14 +1041,31 @@ export default function MenuManager() {
         action: "create_section",
         entity_type: "section",
         entity_id: created.id,
-        changed_fields: { name_en: name.trim(), category_id: selectedCatId },
+        changed_fields: {
+          name_en: sectionCreateData.name_en.trim(),
+          category_id: selectedCatId,
+        },
       });
-      showToast("Section created and verified live");
+      showToast(guestMenuSuccessMessage("Section created. Guest menu updated."));
+      setSectionCreateOpen(false);
+      setSectionCreateData({ name_en: "", name_ar: "" });
       loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast(e?.message || "Failed to create section", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not create section. Please try again."), "error");
+    } finally {
+      setSectionCreateSaving(false);
     }
-  }, [selectedCatId, menuData.length, showToast, loadMenuForCategory, readOnlyMenu, rbac.profile, menuBranch, publishCurrentMenu]);
+  }, [
+    selectedCatId,
+    readOnlyMenu,
+    sectionCreateData,
+    menuData.length,
+    showToast,
+    loadMenuForCategory,
+    rbac.profile,
+    menuBranch,
+    publishCurrentMenu,
+  ]);
 
   const handleSaveSection = useCallback(async (sectionId) => {
     try {
@@ -1036,11 +1076,11 @@ export default function MenuManager() {
         entity_id: sectionId,
         changed_fields: sectionEditData,
       });
-      showToast("Section updated and verified live");
+      showToast(guestMenuSuccessMessage("Section updated. Guest menu updated."));
       setSectionEditId(null);
       loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast(e?.message || "Failed to update section", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not update section. Please try again."), "error");
     }
   }, [sectionEditData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
@@ -1058,10 +1098,10 @@ export default function MenuManager() {
             entity_id: section.id,
             changed_fields: { name_en: section.name_en },
           });
-          showToast("Section deleted and verified live");
+          showToast(guestMenuSuccessMessage("Section removed from guest menu."));
           loadMenuForCategory(selectedCatId);
         } catch (e) {
-          showToast(e?.message || "Failed to delete section", "error");
+          showToast(friendlyActionErrorMessage(e, "Could not delete section. Please try again."), "error");
         } finally {
           setConfirmLoading(false);
           setConfirm(null);
@@ -1185,8 +1225,8 @@ export default function MenuManager() {
 
       showToast(
         added.length > 1
-          ? `${added.length} items added to ${addItemTarget.sectionName} — verified live`
-          : `${added[0].name_en} added to ${addItemTarget.sectionName} — verified live`,
+          ? guestMenuSuccessMessage(`${added.length} items added to ${addItemTarget.sectionName}. Guest menu updated.`)
+          : guestMenuSuccessMessage(`${added[0].name_en} added to ${addItemTarget.sectionName}. Guest menu updated.`),
       );
       setAddItemModalOpen(false);
       setAddItemTarget(null);
@@ -1194,7 +1234,7 @@ export default function MenuManager() {
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       setPublishStage(MENU_PUBLISH_STAGES.FAILED);
-      showToast(e?.message || "Failed to add items", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not add items. Please try again."), "error");
       await loadMenuForCategory(selectedCatId);
     } finally {
       setAddItemSaving(false);
@@ -1421,7 +1461,7 @@ export default function MenuManager() {
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       setPublishStage(MENU_PUBLISH_STAGES.FAILED);
-      showToast(e?.message || "Failed to save item", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not save item. Please try again."), "error");
       await loadMenuForCategory(selectedCatId);
     } finally {
       setSaving(false);
@@ -1470,10 +1510,14 @@ export default function MenuManager() {
           fields: { soldOut: newVal },
         },
       );
-      showToast(newVal ? "Marked sold out — verified live" : "Marked available — verified live");
+      showToast(
+        newVal
+          ? guestMenuSuccessMessage("Marked sold out on guest menu.")
+          : guestMenuSuccessMessage("Marked available on guest menu."),
+      );
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast(e?.message || "Failed to update sold out", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not update sold out status. Please try again."), "error");
       await loadMenuForCategory(selectedCatId);
     }
   }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
@@ -1521,10 +1565,10 @@ export default function MenuManager() {
         },
       );
       setVisibilityTarget(null);
-      showToast("Visibility saved and verified live");
+      showToast(guestMenuSuccessMessage("Guest visibility updated."));
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
-      showToast(e?.message || "Failed to save visibility", "error");
+      showToast(friendlyActionErrorMessage(e, "Could not update visibility. Please try again."), "error");
       await loadMenuForCategory(selectedCatId);
     } finally {
       setVisibilityLoading(false);
@@ -1544,7 +1588,7 @@ export default function MenuManager() {
         },
         { type: "item", itemId: duplicated.id, present: duplicated.active !== false },
       );
-      showToast("Item duplicated and verified live");
+      showToast(guestMenuSuccessMessage("Item duplicated on guest menu."));
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to duplicate", "error");
@@ -1572,7 +1616,7 @@ export default function MenuManager() {
             },
             { type: "item", itemId: item.id, present: false },
           );
-          showToast("Item deleted and verified live");
+          showToast(guestMenuSuccessMessage("Item removed from guest menu."));
           loadMenuForCategory(selectedCatId);
         } catch (e) {
           showToast(e?.message || "Failed to delete item", "error");
@@ -1728,6 +1772,10 @@ export default function MenuManager() {
   const liveMenuBase =
     process.env.REACT_APP_PUBLIC_MENU_URL || "https://nacmenu.netlify.app";
   const liveMenuUrl = `${liveMenuBase.replace(/\/$/, "")}${publicMenuPathForBranch(menuBranch)}`;
+  const lastPublishedLabel = useMemo(
+    () => formatLastPublishedLabel(publishStatus?.last_published_at),
+    [publishStatus?.last_published_at],
+  );
 
   if (loading) {
     return (
@@ -1774,6 +1822,7 @@ export default function MenuManager() {
           onRetry={handleRetryPublish}
           liveMenuUrl={liveMenuUrl}
           readOnly={readOnlyMenu}
+          lastPublishedLabel={lastPublishedLabel}
         />
 
         {showOnboarding ? (
@@ -2231,16 +2280,20 @@ export default function MenuManager() {
                                       className={`mm-item-action-btn ${item.sold_out ? "sold-out-active" : ""}`}
                                       onClick={() => handleToggleSoldOut(item)}
                                       title={item.sold_out ? "Mark available" : "Mark sold out"}
+                                      aria-label={item.sold_out ? "Mark available on guest menu" : "Mark sold out on guest menu"}
                                     >
                                       <Ban size={14} />
                                     </button>
-                                    <button
-                                      className={`mm-item-action-btn ${!guestHidden ? "active-toggle" : ""}`}
-                                      onClick={() => openVisibilityModal(item)}
-                                      title="Guest menu visibility"
-                                    >
-                                      <Eye size={14} />
-                                    </button>
+                                    <MenuManagerTooltip label={MENU_TOOLTIPS.visibility}>
+                                      <button
+                                        className={`mm-item-action-btn ${!guestHidden ? "active-toggle" : ""}`}
+                                        onClick={() => openVisibilityModal(item)}
+                                        title="Guest menu visibility"
+                                        aria-label="Change guest menu visibility"
+                                      >
+                                        <Eye size={14} />
+                                      </button>
+                                    </MenuManagerTooltip>
                                     <button
                                       className="mm-item-action-btn"
                                       onClick={() => openEditItem(item)}
@@ -2312,7 +2365,76 @@ export default function MenuManager() {
                     );
                   })}
 
-                  <button className="mm-add-section-btn" onClick={handleAddSection}>
+                  <AnimatePresence>
+                    {sectionCreateOpen && (
+                      <motion.div
+                        className="mm-section-create-form"
+                        data-testid="section-create-form"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                      >
+                        <p className="mm-section-create-title">New section</p>
+                        <div className="mm-section-create-fields">
+                          <input
+                            className="mm-field-input"
+                            placeholder="Name (English)"
+                            value={sectionCreateData.name_en}
+                            onChange={(e) =>
+                              setSectionCreateData((prev) => ({ ...prev, name_en: e.target.value }))
+                            }
+                            aria-label="New section name in English"
+                            autoFocus
+                          />
+                          <input
+                            className="mm-field-input"
+                            placeholder="الاسم (AR)"
+                            dir="rtl"
+                            value={sectionCreateData.name_ar}
+                            onChange={(e) =>
+                              setSectionCreateData((prev) => ({ ...prev, name_ar: e.target.value }))
+                            }
+                            aria-label="New section name in Arabic"
+                          />
+                        </div>
+                        <div className="mm-section-create-actions">
+                          <button
+                            type="button"
+                            className="mm-btn mm-btn-secondary"
+                            onClick={() => {
+                              setSectionCreateOpen(false);
+                              setSectionCreateData({ name_en: "", name_ar: "" });
+                            }}
+                            disabled={sectionCreateSaving}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="mm-btn mm-btn-primary"
+                            onClick={handleCreateSection}
+                            disabled={sectionCreateSaving || !sectionCreateData.name_en.trim()}
+                            data-testid="section-create-submit"
+                          >
+                            {sectionCreateSaving ? (
+                              <Loader2 size={14} className="mm-spin-icon" />
+                            ) : (
+                              <Check size={14} />
+                            )}
+                            Create section
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <button
+                    type="button"
+                    className="mm-add-section-btn"
+                    onClick={handleAddSection}
+                    disabled={readOnlyMenu || sectionCreateOpen}
+                    data-testid="add-section-button"
+                  >
                     <Plus size={16} />
                     Add Section
                   </button>
@@ -2627,8 +2749,7 @@ export default function MenuManager() {
 
                 {editorMode === "edit" && (placementGroupId || extraPlacements.length > 0) && (
                   <p className="mm-linked-sync-note">
-                    Linked item — name, description, price, image, tags, allergens, add-ons,
-                    sold out, and active status stay in sync across all placements.
+                    This dish is linked — changes here update every section where it appears.
                   </p>
                 )}
 
@@ -2637,10 +2758,13 @@ export default function MenuManager() {
                   <label className="mm-field-label">Options</label>
                   <div className="mm-toggles-grid">
                     <div className="mm-toggle-row">
-                      <span className="mm-toggle-label">Sold Out</span>
+                      <MenuManagerTooltip label={MENU_TOOLTIPS.soldOut}>
+                        <span className="mm-toggle-label">Sold Out</span>
+                      </MenuManagerTooltip>
                       <ToggleSwitch
                         value={editingItem.sold_out}
                         onChange={(v) => setEditingItem((p) => ({ ...p, sold_out: v }))}
+                        ariaLabel="Mark item sold out on guest menu"
                       />
                     </div>
                     <div className="mm-toggle-row">
@@ -2753,6 +2877,10 @@ export default function MenuManager() {
               </div>
 
               <div className="mm-editor-footer">
+                <p className="mm-editor-save-note" data-testid="editor-save-note">
+                  Saving updates the guest menu for this branch.
+                </p>
+                <div className="mm-editor-footer-actions">
                 <button className="mm-btn mm-btn-secondary" onClick={closeEditor}>
                   Cancel
                 </button>
@@ -2760,7 +2888,7 @@ export default function MenuManager() {
                   className={`mm-btn mm-btn-primary${editorDirty ? " mm-btn-emphasis" : ""}`}
                   onClick={handleSaveItem}
                   disabled={saving}
-                  aria-label={editorMode === "create" ? "Create menu item" : "Save menu item changes"}
+                  aria-label={editorMode === "create" ? "Add item to guest menu" : "Save item to guest menu"}
                   data-testid="save-menu-item-button"
                 >
                   {saving ? (
@@ -2768,8 +2896,9 @@ export default function MenuManager() {
                   ) : (
                     <Check size={15} />
                   )}
-                  {saving ? "Saving…" : editorMode === "create" ? "Create Item" : "Save Changes"}
+                  {saving ? "Saving…" : editorMode === "create" ? "Add to guest menu" : "Save to guest menu"}
                 </button>
+                </div>
               </div>
             </motion.div>
           </>

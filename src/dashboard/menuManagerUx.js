@@ -13,8 +13,12 @@ export const MENU_TOOLTIPS = {
     "Create a completely new dish that does not already exist.",
   highlightGuest:
     "Feature this item in the Recommended section at the top of the guest menu.",
+  soldOut:
+    "Guests can see this dish but cannot order it until you mark it available again.",
+  visibility:
+    "Control whether guests can see this dish on the menu.",
   publish:
-    "Save all menu changes to the live guest menu.",
+    "Update the live guest menu when the status bar shows unpublished changes.",
 };
 
 const PUBLISHING_STAGES = new Set([
@@ -104,6 +108,38 @@ export function buildEditorSnapshot({
     extraPlacements,
     hasImageFile: Boolean(imageFile),
     removedPlacementIds: [...(removedPlacementIds || [])].sort(),
+  });
+}
+
+export function friendlyActionErrorMessage(error, fallback = "Something went wrong. Please try again.") {
+  const raw = error?.message || String(error || "");
+  if (!raw) return fallback;
+  if (/duplicate key|violates|constraint|SQL|relation|pg_/i.test(raw)) {
+    return fallback;
+  }
+  if (/access denied|permission/i.test(raw)) {
+    return "You don't have permission to do that.";
+  }
+  if (/network|fetch|timeout/i.test(raw)) {
+    return "Connection issue. Check your internet and try again.";
+  }
+  return raw.length > 120 ? fallback : raw;
+}
+
+export function guestMenuSuccessMessage(summary) {
+  return `✓ ${summary}`;
+}
+
+export function formatLastPublishedLabel(isoString) {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString("en-GB", {
+    timeZone: "Asia/Riyadh",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 

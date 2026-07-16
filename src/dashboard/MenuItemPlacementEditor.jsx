@@ -233,8 +233,10 @@ export default function MenuItemPlacementEditor({
 
   return (
     <div className="mm-placement-block" data-testid="menu-item-placement-editor">
+      <p className="mm-placement-intro">Choose where guests will find this dish on the menu.</p>
       <div className="mm-placement-section">
-        <label className="mm-field-label">Primary</label>
+        <label className="mm-field-label">Main section</label>
+        <p className="mm-placement-hint">The primary place guests browse for this dish.</p>
         {editingPrimary ? (
           <PlacementPicker
             categories={categories}
@@ -264,9 +266,10 @@ export default function MenuItemPlacementEditor({
       </div>
 
       <div className="mm-placement-section">
-        <label className="mm-field-label">Additional</label>
+        <label className="mm-field-label">Also show in</label>
+        <p className="mm-placement-hint">Optional extra sections using the same dish details.</p>
         {extraPlacements.length === 0 && !addingPlacement && (
-          <p className="mm-placement-empty">No additional placements yet.</p>
+          <p className="mm-placement-empty">Not shown in any other sections yet.</p>
         )}
         <div className="mm-placement-chip-list" data-testid="additional-placement-list">
           {extraPlacements.map((placement, index) => {
@@ -371,7 +374,7 @@ export default function MenuItemPlacementEditor({
             onClick={startAddPlacement}
           >
             <Plus size={14} />
-            Add placement
+            Add another section
           </button>
         )}
       </div>
