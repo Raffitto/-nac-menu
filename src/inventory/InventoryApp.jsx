@@ -5,6 +5,7 @@ import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 import { supabase } from "../lib/supabase";
 import InvoiceIntakeView from "./InvoiceIntakeView";
 import IngredientMasterView from "./IngredientMasterView";
+import FoodBibleView from "./FoodBibleView";
 import {
   INVENTORY_BRANCHES,
   INVENTORY_TABS,
@@ -28,7 +29,13 @@ export default function InventoryApp() {
       <NacAnalyticsSignIn
         checking={!checked}
         kicker="NAC Inventory"
-        title={activeTab === "ingredients" ? "Ingredient master" : "Invoice intake"}
+        title={
+          activeTab === "ingredients"
+            ? "Ingredient master"
+            : activeTab === "food-bible"
+              ? "Food Bible"
+              : "Invoice intake"
+        }
         subtitle="Authorized purchasing, inventory, and operations team members"
         sessionIssue={issue}
       />
@@ -41,7 +48,7 @@ export default function InventoryApp() {
         <div>
           <p className="inv-kicker">NAC Hospitality OS</p>
           <h1>Inventory</h1>
-          <p>Review supplier invoices and manage the canonical ingredient list for this branch.</p>
+          <p>Review supplier invoices, manage ingredients, and document the Food Bible for this branch.</p>
           <nav className="inv-tabs" aria-label="Inventory sections">
             {INVENTORY_TABS.map((tab) => (
               <button
@@ -78,8 +85,13 @@ export default function InventoryApp() {
 
       {activeTab === "invoices" ? (
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
-      ) : (
+      ) : activeTab === "ingredients" ? (
         <IngredientMasterView branchId={branchId} />
+      ) : (
+        <FoodBibleView
+          branchId={branchId}
+          onOpenIngredients={() => setActiveTab("ingredients")}
+        />
       )}
     </main>
   );

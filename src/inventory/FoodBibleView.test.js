@@ -1,0 +1,144 @@
+import React from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import FoodBibleView from "./FoodBibleView";
+import { fetchFoodBibleOverview, fetchInventoryStaffAccess } from "../lib/inventoryApi";
+import { READINESS } from "./foodBible";
+
+jest.mock("../lib/inventoryApi", () => ({
+  createRecipe: jest.fn(),
+  fetchFoodBibleOverview: jest.fn(),
+  fetchInventoryStaffAccess: jest.fn(),
+  fetchRecipeBundle: jest.fn(),
+  fetchRecipeUsageCounts: jest.fn(),
+  saveRecipeDraft: jest.fn(),
+  setRecipeActive: jest.fn(),
+}));
+
+jest.mock("./RecipeEditorPanel", () => ({
+  __esModule: true,
+  default: ({ target, onClose }) => (
+    <div data-testid="recipe-editor-panel">
+      Editor for {target.displayName}
+      <button type="button" onClick={onClose}>Close editor</button>
+    </div>
+  ),
+}));
+
+const managerAccess = {
+  vaultRole: "branch_manager",
+  primaryBranchId: "khobar",
+  branchIds: ["khobar"],
+};
+
+const overview = {
+  summary: {
+    totalMenuItems: 2,
+    complete: 0,
+    inProgress: 0,
+    missing: 2,
+    needsAttention: 0,
+    coveragePct: 0,
+  },
+  rows: [
+    {
+      kind: "menu_item",
+      identityKey: "menu-1",
+      displayName: "Burrata",
+      displayNameAr: "بوراتا",
+      recipeType: "menu_item",
+      categoryName: "Mains",
+      guestStatus: "live",
+      readiness: READINESS.MISSING,
+      lineCount: 0,
+      yieldSummary: "—",
+      placements: [{ id: "menu-1" }, { id: "menu-1b" }],
+    },
+    {
+      kind: "menu_item",
+      identityKey: "menu-2",
+      displayName: "Iced Spanish Latte",
+      displayNameAr: "لاتيه",
+      recipeType: "menu_item",
+      categoryName: "Drinks",
+      guestStatus: "sold_out",
+      readiness: READINESS.MISSING,
+      lineCount: 0,
+      yieldSummary: "—",
+      placements: [{ id: "menu-2" }],
+    },
+  ],
+  recipes: [],
+  ingredients: [],
+  hasActiveIngredients: false,
+};
+
+describe("FoodBibleView", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fetchFoodBibleOverview.mockResolvedValue(overview);
+    fetchInventoryStaffAccess.mockResolvedValue(managerAccess);
+  });
+
+  test("loads overview metrics and menu rows", async () => {
+    render(<FoodBibleView branchId="khobar" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("food-bible-metric-total")).toHaveTextContent("2");
+      expect(screen.getByTestId("food-bible-metric-missing")).toHaveTextContent("2");
+      expect(screen.getByTestId("food-bible-metric-coverage")).toHaveTextContent("0%");
+    });
+    expect(screen.getByText("Burrata")).toBeInTheDocument();
+    expect(screen.getByText(/Appears in 2 menu placements/)).toBeInTheDocument();
+  });
+
+  test("filters by readiness and search", async () => {
+    fetchFoodBibleOverview.mockResolvedValue({
+      ...overview,
+      rows: [
+        ...overview.rows,
+        {
+          kind: "component",
+          identityKey: "recipe-1",
+          displayName: "Hollandaise",
+          recipeType: "preparation",
+          categoryName: "Kitchen components",
+          readiness: READINESS.DRAFT,
+          lineCount: 2,
+          yieldSummary: "1000 gram",
+          guestStatus: null,
+        },
+      ],
+      recipes: [{ id: "recipe-1", recipeType: "preparation", active: true }],
+    });
+    render(<FoodBibleView branchId="khobar" />);
+    await screen.findByText("Hollandaise");
+    fireEvent.change(screen.getByTestId("food-bible-readiness-filter"), { target: { value: READINESS.DRAFT } });
+    expect(screen.getByText("Hollandaise")).toBeInTheDocument();
+    expect(screen.queryByText("Burrata")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("food-bible-readiness-filter"), { target: { value: "all" } });
+    fireEvent.change(screen.getByTestId("food-bible-search-input"), { target: { value: "burrata" } });
+    expect(await screen.findByText("Burrata")).toBeInTheDocument();
+  });
+
+  test("shows ingredient shortcut when no active ingredients exist", async () => {
+    const onOpenIngredients = jest.fn();
+    render(<FoodBibleView branchId="khobar" onOpenIngredients={onOpenIngredients} />);
+    await screen.findByText("Burrata");
+    expect(screen.queryByTestId("food-bible-empty-state")).not.toBeInTheDocument();
+  });
+
+  test("opens recipe editor from a menu row", async () => {
+    render(<FoodBibleView branchId="khobar" />);
+    await screen.findByText("Burrata");
+    fireEvent.click(screen.getByTestId("open-recipe-editor-menu-1"));
+    expect(screen.getByTestId("recipe-editor-panel")).toHaveTextContent("Burrata");
+  });
+
+  test("read-only users cannot document recipes", async () => {
+    fetchInventoryStaffAccess.mockResolvedValue({ vaultRole: "viewer", branchIds: ["khobar"] });
+    render(<FoodBibleView branchId="khobar" />);
+    await screen.findByText("Burrata");
+    expect(screen.queryByTestId("create-component-recipe-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("open-recipe-editor-menu-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("food-bible-result-count")).toHaveTextContent("Read-only access");
+  });
+});

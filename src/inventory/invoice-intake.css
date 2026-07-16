@@ -475,6 +475,71 @@
   border: 0;
 }
 
+.inv-food-bible { max-width: 1540px; margin: 0 auto; }
+.inv-fb-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.inv-fb-summary article {
+  padding: 14px;
+  border: 1px solid var(--inv-border);
+  border-radius: 12px;
+  background: var(--inv-panel);
+}
+.inv-fb-summary strong { display: block; font-size: 24px; margin-bottom: 4px; }
+.inv-fb-summary span { color: var(--inv-muted); font-size: 12px; }
+.inv-status-pill--missing { background: rgba(144, 160, 161, .16); color: #b8c3c3; }
+.inv-status-pill--draft { background: rgba(224, 173, 98, .2); color: #efc987; }
+.inv-status-pill--ready { background: rgba(75, 143, 110, .22); color: #9bd4b7; }
+.inv-status-pill--needs_attention { background: rgba(223, 130, 120, .2); color: #f0a299; }
+.inv-fb-table td { vertical-align: middle; }
+.inv-fb-empty-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.inv-fb-editor { width: min(720px, 100%); }
+.inv-fb-editor-subtitle { margin: 6px 0 0; color: var(--inv-muted); font-size: 13px; }
+.inv-fb-editor-form { display: grid; gap: 14px; }
+.inv-fb-section { border: 1px solid var(--inv-border); border-radius: 12px; background: var(--inv-panel-2); }
+.inv-fb-section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: #f5f2eb;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.inv-fb-section-body { display: grid; gap: 12px; padding: 0 14px 14px; }
+.inv-fb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.inv-fb-grid-full { grid-column: 1 / -1; }
+.inv-fb-checklist { margin: 0; padding: 0 14px 14px 30px; color: var(--inv-muted); }
+.inv-fb-checklist .is-complete { color: #a7d6bf; }
+.inv-fb-readonly-block {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.04);
+}
+.inv-fb-readonly-block span { display: block; color: var(--inv-muted); font-size: 11px; margin-bottom: 4px; }
+.inv-fb-line {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--inv-border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+}
+.inv-fb-stage-toolbar { margin-bottom: 8px; }
+.inv-fb-unsaved { margin: 0; color: var(--inv-gold); font-size: 12px; }
+
+@media (max-width: 760px) {
+  .inv-fb-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 1100px) {
   .inv-header-form { grid-template-columns: repeat(3, 1fr); }
   .inv-line { grid-template-columns: 1fr 1fr; }
