@@ -105,11 +105,11 @@ export function findRecipeForMenuIdentity(recipes = [], identity) {
   if (!identity) return null;
   return recipes.find((recipe) => {
     if (!recipe.active) return false;
-    if (recipe.placement_group_id && identity.placementGroupId) {
-      return recipe.placement_group_id === identity.placementGroupId;
+    if (recipe.placementGroupId && identity.placementGroupId) {
+      return recipe.placementGroupId === identity.placementGroupId;
     }
-    return recipe.menu_item_id === identity.primaryItem.id
-      || identity.placements.some((item) => item.id === recipe.menu_item_id);
+    return recipe.menuItemId === identity.primaryItem.id
+      || identity.placements.some((item) => item.id === recipe.menuItemId);
   }) || null;
 }
 

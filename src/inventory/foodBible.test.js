@@ -6,6 +6,7 @@ import {
   detectRecipeCycle,
   duplicateLineWarning,
   filterFoodBibleRows,
+  findRecipeForMenuIdentity,
   guestMenuStatus,
   menuIdentityKey,
   validateRecipeDraft,
@@ -156,5 +157,22 @@ describe("foodBible helpers", () => {
     expect(guestMenuStatus({ active: false })).toBe("hidden");
     expect(guestMenuStatus({ active: true, sold_out: true })).toBe("sold_out");
     expect(guestMenuStatus({ active: true, hidden_until: "2099-01-01T00:00:00.000Z" })).toBe("hidden");
+  });
+
+  test("findRecipeForMenuIdentity matches placement groups and menu item ids", () => {
+    const identity = {
+      placementGroupId: "group-1",
+      primaryItem: { id: "menu-a" },
+      placements: [{ id: "menu-a" }, { id: "menu-b" }],
+    };
+    const byGroup = findRecipeForMenuIdentity([
+      { id: "r1", active: true, placementGroupId: "group-1", menuItemId: "menu-a" },
+    ], identity);
+    expect(byGroup?.id).toBe("r1");
+
+    const byItem = findRecipeForMenuIdentity([
+      { id: "r2", active: true, placementGroupId: null, menuItemId: "menu-b" },
+    ], identity);
+    expect(byItem?.id).toBe("r2");
   });
 });

@@ -230,4 +230,10 @@ describe("OCR provider and workflow contract", () => {
       "fetchMenuItemMargin",
     ].forEach((name) => expect(api).toContain(`function ${name}`));
   });
+
+  test("Food Bible overview loads editable branch menu catalogue", () => {
+    const fn = api.match(/export async function fetchFoodBibleOverview[\s\S]*?^}/m)?.[0] || "";
+    expect(fn).toContain("fetchMenuCatalogueForBranch");
+    expect(fn).not.toContain("getFullMenu");
+  });
 });

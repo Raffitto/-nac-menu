@@ -16,7 +16,7 @@ import {
   wouldCreateCycle,
   computeCanonicalLine,
 } from "../inventory/foodBible";
-import { getFullMenu } from "./menuApi";
+import { fetchMenuCatalogueForBranch } from "./menuApi";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -692,7 +692,7 @@ export async function fetchRecipeUsageCounts(recipeIds = []) {
 
 export async function fetchFoodBibleOverview({ branchId }) {
   const [{ data: menuData, error: menuError }, recipeRows, ingredientRows] = await Promise.all([
-    getFullMenu({ branchId, bypassCache: true }),
+    fetchMenuCatalogueForBranch({ branchId }),
     fetchRecipes({ branchId, includeInactive: true }),
     fetchIngredients({ branchId, includeInactive: true }),
   ]);

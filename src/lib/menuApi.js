@@ -524,6 +524,34 @@ export async function getCategories(options = {}) {
   return { data, error };
 }
 
+/** Raw branch menu catalogue for internal tools (Menu Manager, Food Bible). */
+export async function fetchMenuCatalogueForBranch(options = {}) {
+  const branchId = normalizeBranchId(options.branchId);
+  if (!branchId) {
+    return { data: null, error: new Error("Branch is required for menu catalogue") };
+  }
+
+  let catQuery = supabase.from("categories").select("*").order("sort_order");
+  let secQuery = supabase.from("sections").select("*").order("sort_order");
+  let itemQuery = supabase.from("menu_items").select("*").order("sort_order");
+  catQuery = menuBranchQueryFilter(catQuery, branchId);
+  secQuery = menuBranchQueryFilter(secQuery, branchId);
+  itemQuery = menuBranchQueryFilter(itemQuery, branchId);
+
+  const [catRes, secRes, itemRes] = await Promise.all([catQuery, secQuery, itemQuery]);
+  const firstError = catRes.error || secRes.error || itemRes.error;
+  if (firstError) return { data: null, error: firstError };
+
+  return {
+    data: {
+      categories: catRes.data || [],
+      sections: secRes.data || [],
+      items: itemRes.data || [],
+    },
+    error: null,
+  };
+}
+
 export async function getFullMenu(options = {}) {
   const bypassCache = options.bypassCache === true;
   const branchId = normalizeBranchId(options.branchId);
