@@ -1,9 +1,9 @@
 # Food Bible / Cost Control — End-of-day checkpoint (2026-08-07)
 
-Status: **PREVIEW / REVIEW ONLY**  
-Branch: `feature/inventory-cost-control-phase-a`  
-Final source commit this day: `219cd8d10316b76218ed8d90c65d4190a7e1e447` (*Add Foodics legacy recipe reconciliation preview*).  
-Netlify: **NOT DEPLOYED**  
+Status: **PREVIEW / REVIEW ONLY**
+Branch: `feature/inventory-cost-control-phase-a`
+Final source commit this day: `219cd8d10316b76218ed8d90c65d4190a7e1e447` (*Add Foodics legacy recipe reconciliation preview*).
+Netlify: **NOT DEPLOYED**
 Production culinary apply: **NONE from today's Food Bible / Foodics work**
 
 This document locks today's architecture and business decisions and holds the Chef Review backlog for the next session. It does not authorize production mutation.
