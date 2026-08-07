@@ -17,6 +17,10 @@ import {
   computeCanonicalLine,
 } from "../inventory/foodBible";
 import { fetchMenuCatalogueForBranch } from "./menuApi";
+import {
+  buildVarianceAnalysis,
+  summarizeVarianceCommandCenter,
+} from "../inventory/varianceIntelligence";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -1412,6 +1416,59 @@ export async function fetchInventoryCostHealth({
       p_stale_after_days: staleAfterDays,
     }),
     "Fetch inventory cost health",
+  );
+}
+
+export async function fetchInventoryVarianceAnalysis({
+  branchId,
+  periodStart,
+  periodEnd,
+  ingredientId = null,
+  staleCostDays = 90,
+  materiality,
+}) {
+  const result = await unwrap(
+    requireClient().rpc("inventory_variance_analysis", {
+      p_branch_id: branchId,
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
+      p_ingredient_id: ingredientId,
+      p_stale_cost_days: staleCostDays,
+    }),
+    "Fetch inventory variance analysis",
+  );
+  const items = (result?.items || []).map((item) => buildVarianceAnalysis(item, materiality));
+  return {
+    ...result,
+    items,
+    summary: summarizeVarianceCommandCenter(items),
+  };
+}
+
+export async function setInventoryVarianceReview({
+  branchId,
+  ingredientId,
+  periodStart,
+  periodEnd,
+  status,
+  reason,
+  correctiveReference = {},
+  countSessionId = null,
+  stockCountId = null,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_set_variance_review", {
+      p_branch_id: branchId,
+      p_ingredient_id: ingredientId,
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
+      p_status: status,
+      p_reason: reason,
+      p_corrective_reference: correctiveReference,
+      p_count_session_id: countSessionId,
+      p_stock_count_id: stockCountId,
+    }),
+    "Update inventory variance review",
   );
 }
 

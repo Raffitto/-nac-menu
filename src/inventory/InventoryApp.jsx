@@ -9,6 +9,7 @@ import FoodBibleView from "./FoodBibleView";
 import OperationalControlView from "./OperationalControlView";
 import ProcurementControlView from "./ProcurementControlView";
 import TransferCountControlView from "./TransferCountControlView";
+import InventoryCommandCenter from "./InventoryCommandCenter";
 import { fetchInventoryStaffAccess } from "../lib/inventoryApi";
 import {
   INVENTORY_BRANCHES,
@@ -117,6 +118,8 @@ export default function InventoryApp() {
 
       {activeTab === "invoices" ? (
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
+      ) : activeTab === "overview" ? (
+        <InventoryCommandCenter branchId={branchId} />
       ) : ["purchase-orders", "purchases", "returns"].includes(activeTab) ? (
         <ProcurementControlView branchId={branchId} mode={activeTab} />
       ) : ["transfers", "stock-counts"].includes(activeTab) ? (

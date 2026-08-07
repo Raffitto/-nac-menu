@@ -8,6 +8,7 @@ import {
   fetchInvoiceHistory,
   fetchIngredients,
   fetchInventoryStaffAccess,
+  fetchInventoryVarianceAnalysis,
   fetchOperationalEvents,
   fetchPurchaseOrders,
   fetchReceiptHistory,
@@ -50,6 +51,7 @@ jest.mock("../lib/inventoryApi", () => ({
   fetchInventoryExceptions: jest.fn(),
   fetchInventoryReferenceData: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
+  fetchInventoryVarianceAnalysis: jest.fn(),
   fetchInvoiceHistory: jest.fn(),
   fetchOperationalEvents: jest.fn(),
   fetchPurchaseOrderProgress: jest.fn(),
@@ -98,6 +100,13 @@ describe("InventoryApp", () => {
     fetchTransfers.mockResolvedValue([]);
     fetchCountSessions.mockResolvedValue([]);
     fetchInventoryExceptions.mockResolvedValue([]);
+    fetchInventoryVarianceAnalysis.mockResolvedValue({
+      branchId: "khobar",
+      recipeCoveragePct: 0,
+      theoreticalConsumptionAvailable: false,
+      items: [],
+      summary: {},
+    });
     fetchInventoryReferenceData.mockResolvedValue({ ingredients: [], suppliers: [], locations: [] });
     fetchIngredients.mockResolvedValue([]);
     fetchFoodBibleOverview.mockResolvedValue({
@@ -123,6 +132,7 @@ describe("InventoryApp", () => {
   test("shows invoice, procurement, transfer, count, ingredient, food bible, and operations tabs", async () => {
     render(<InventoryApp />);
     expect(await screen.findByTestId("inventory-tab-invoices")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-overview")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-purchase-orders")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-purchases")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-returns")).toBeInTheDocument();
@@ -137,6 +147,8 @@ describe("InventoryApp", () => {
   test("switches between inventory sections without breaking invoice review", async () => {
     render(<InventoryApp />);
     await screen.findByText("Upload supplier invoice");
+    fireEvent.click(screen.getByTestId("inventory-tab-overview"));
+    expect(await screen.findByTestId("inventory-command-center")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-ingredients"));
     expect(await screen.findByTestId("ingredient-master-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-food-bible"));

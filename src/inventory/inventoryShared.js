@@ -5,6 +5,7 @@ export const INVENTORY_BRANCHES = Object.freeze([
 ]);
 
 export const INVENTORY_TABS = Object.freeze([
+  { id: "overview", label: "Command Center" },
   { id: "invoices", label: "Invoice Review" },
   { id: "purchase-orders", label: "Purchase Orders" },
   { id: "purchases", label: "Purchases" },
