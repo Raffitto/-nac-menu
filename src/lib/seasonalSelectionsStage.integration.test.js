@@ -7,6 +7,13 @@ const migrationPath = path.resolve(
   "../../supabase/migrations/20260807160000_stage_riyadh_seasonal_selections.sql",
 );
 const migration = fs.readFileSync(migrationPath, "utf8");
+const correctionMigration = fs.readFileSync(
+  path.resolve(
+    __dirname,
+    "../../supabase/migrations/20260807161000_correct_seasonal_selections_to_khobar.sql",
+  ),
+  "utf8",
+);
 const itemInsert = migration.match(
   /insert into public\.menu_items \([\s\S]*?\n  on conflict \(id\) do nothing;/i,
 )?.[0] || "";
@@ -139,5 +146,24 @@ describe("Riyadh Seasonal Selections staging migration", () => {
 
   test("does not invent a dessert menu item", () => {
     expect(itemInsert).not.toMatch(/dessert|ice cream|caramel/i);
+  });
+});
+
+describe("Seasonal Selections Khobar scope correction", () => {
+  test("moves only the five deterministic inactive unplaced rows to Khobar", () => {
+    expect(correctionMigration).toContain("set branch_id = 'khobar'");
+    expect(correctionMigration).toContain("and branch_id = 'riyadh'");
+    expect(correctionMigration).toContain("and active = false");
+    expect(correctionMigration).toContain("and section_id is null");
+    expectedItems.forEach((item) => {
+      expect(correctionMigration).toContain(`'${item.id}'::uuid`);
+    });
+  });
+
+  test("is idempotent and rejects Khobar slug conflicts", () => {
+    expect(correctionMigration).toContain("pg_advisory_xact_lock");
+    expect(correctionMigration).toContain("and mi.id <> all(v_expected_ids)");
+    expect(correctionMigration).toContain("Expected five Khobar seasonal records");
+    expect(correctionMigration).not.toContain("publish_menu_branch");
   });
 });
