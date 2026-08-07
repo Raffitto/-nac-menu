@@ -6,6 +6,8 @@ import { supabase } from "../lib/supabase";
 import InvoiceIntakeView from "./InvoiceIntakeView";
 import IngredientMasterView from "./IngredientMasterView";
 import FoodBibleView from "./FoodBibleView";
+import OperationalControlView from "./OperationalControlView";
+import { fetchInventoryStaffAccess } from "../lib/inventoryApi";
 import {
   INVENTORY_BRANCHES,
   INVENTORY_TABS,
@@ -19,6 +21,25 @@ export default function InventoryApp() {
   const { session, checked, issue } = usePlatformSession();
   const [branchId, setBranchId] = useState(inventoryBranchFromLocation);
   const [activeTab, setActiveTab] = useState(inventoryTabFromLocation);
+  const [access, setAccess] = useState(null);
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    fetchInventoryStaffAccess()
+      .then((value) => {
+        if (!active) return;
+        setAccess(value);
+        const globalRole = ["ceo", "super_admin", "ops_manager"].includes(value?.vaultRole);
+        if (!globalRole && value?.branchIds?.length) {
+          setBranchId((current) => value.branchIds.includes(current) ? current : value.branchIds[0]);
+        }
+      })
+      .catch(() => {
+        if (active) setAccess(null);
+      });
+    return () => { active = false; };
+  }, [session]);
 
   useEffect(() => {
     syncInventoryLocation({ branchId, activeTab });
@@ -34,6 +55,8 @@ export default function InventoryApp() {
             ? "Ingredient master"
             : activeTab === "food-bible"
               ? "Food Bible"
+              : activeTab === "operations"
+                ? "Operations & Waste"
               : "Invoice intake"
         }
         subtitle="Authorized purchasing, inventory, and operations team members"
@@ -41,6 +64,11 @@ export default function InventoryApp() {
       />
     );
   }
+
+  const globalBranchAccess = ["ceo", "super_admin", "ops_manager"].includes(access?.vaultRole);
+  const availableBranches = globalBranchAccess || !access?.branchIds?.length
+    ? INVENTORY_BRANCHES
+    : INVENTORY_BRANCHES.filter(({ id }) => access.branchIds.includes(id));
 
   return (
     <main className="inv-page">
@@ -72,7 +100,7 @@ export default function InventoryApp() {
               aria-label="Inventory branch"
               onChange={(event) => setBranchId(event.target.value)}
             >
-              {INVENTORY_BRANCHES.map((branch) => (
+              {availableBranches.map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.label}</option>
               ))}
             </select>
@@ -87,11 +115,13 @@ export default function InventoryApp() {
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
       ) : activeTab === "ingredients" ? (
         <IngredientMasterView branchId={branchId} />
-      ) : (
+      ) : activeTab === "food-bible" ? (
         <FoodBibleView
           branchId={branchId}
           onOpenIngredients={() => setActiveTab("ingredients")}
         />
+      ) : (
+        <OperationalControlView branchId={branchId} />
       )}
     </main>
   );

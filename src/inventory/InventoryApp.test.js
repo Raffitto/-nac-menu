@@ -1,7 +1,15 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InventoryApp from "./InventoryApp";
-import { fetchFoodBibleOverview, fetchInventoryReferenceData, fetchInvoiceHistory, fetchIngredients, fetchInventoryStaffAccess } from "../lib/inventoryApi";
+import {
+  fetchFoodBibleOverview,
+  fetchInventoryExceptions,
+  fetchInventoryReferenceData,
+  fetchInvoiceHistory,
+  fetchIngredients,
+  fetchInventoryStaffAccess,
+  fetchOperationalEvents,
+} from "../lib/inventoryApi";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 
 jest.mock("../dashboard/hooks/usePlatformSession", () => ({
@@ -21,13 +29,16 @@ jest.mock("../lib/inventoryApi", () => ({
   approveInvoice: jest.fn(),
   confirmLineMapping: jest.fn(),
   createIngredient: jest.fn(),
+  createOperationalEvent: jest.fn(),
   createRecipe: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
+  fetchInventoryExceptions: jest.fn(),
   fetchInventoryReferenceData: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
   fetchInvoiceHistory: jest.fn(),
+  fetchOperationalEvents: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
   findDuplicateIngredient: jest.fn(),
@@ -55,6 +66,8 @@ describe("InventoryApp", () => {
       issue: null,
     });
     fetchInvoiceHistory.mockResolvedValue([]);
+    fetchOperationalEvents.mockResolvedValue([]);
+    fetchInventoryExceptions.mockResolvedValue([]);
     fetchInventoryReferenceData.mockResolvedValue({ ingredients: [], suppliers: [], locations: [] });
     fetchIngredients.mockResolvedValue([]);
     fetchFoodBibleOverview.mockResolvedValue({
@@ -77,11 +90,12 @@ describe("InventoryApp", () => {
     expect(screen.getByTestId("inventory-sign-in")).toHaveTextContent("Invoice intake");
   });
 
-  test("shows invoice review, ingredients, and food bible tabs", async () => {
+  test("shows invoice review, ingredients, food bible, and operations tabs", async () => {
     render(<InventoryApp />);
     expect(await screen.findByTestId("inventory-tab-invoices")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-ingredients")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-food-bible")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-operations")).toBeInTheDocument();
     expect(screen.getByText("Upload supplier invoice")).toBeInTheDocument();
   });
 
@@ -92,6 +106,8 @@ describe("InventoryApp", () => {
     expect(await screen.findByTestId("ingredient-master-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-food-bible"));
     expect(await screen.findByTestId("food-bible-view")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-operations"));
+    expect(await screen.findByTestId("operational-control-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-invoices"));
     expect(await screen.findByText("Upload supplier invoice")).toBeInTheDocument();
   });

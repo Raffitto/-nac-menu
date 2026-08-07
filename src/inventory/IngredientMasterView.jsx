@@ -30,6 +30,7 @@ import {
   unitLabel,
   validateIngredientForm,
 } from "./ingredientMaster";
+import { classificationDefault, INVENTORY_CLASSIFICATIONS } from "./inventoryControls";
 
 const STATUS_FILTERS = [
   { id: "all", label: "All" },
@@ -43,6 +44,8 @@ function formFromIngredient(ingredient) {
     canonicalName: ingredient.canonicalName || "",
     category: ingredient.category || "",
     baseInventoryUnit: ingredient.baseInventoryUnit || "each",
+    inventoryClassification: ingredient.inventoryClassification || "food_ingredient",
+    recipeCostEligible: ingredient.recipeCostEligible !== false,
     notes: ingredient.description || "",
     scope: ingredient.scope || "branch",
     active: ingredient.active !== false,
@@ -190,6 +193,8 @@ export default function IngredientMasterView({ branchId }) {
           canonicalName: validation.canonicalName,
           category: form.category.trim(),
           baseInventoryUnit: form.baseInventoryUnit,
+          inventoryClassification: form.inventoryClassification,
+          recipeCostEligible: form.recipeCostEligible,
           description: form.notes.trim() || null,
           branchId: scope === "network" ? null : branchId,
           active: true,
@@ -200,6 +205,8 @@ export default function IngredientMasterView({ branchId }) {
           canonicalName: validation.canonicalName,
           category: form.category.trim(),
           baseInventoryUnit: unitLocked ? form.originalBaseUnit : form.baseInventoryUnit,
+          inventoryClassification: form.inventoryClassification,
+          recipeCostEligible: form.recipeCostEligible,
           description: form.notes.trim() || null,
         });
         setNotice("Ingredient updated.");
@@ -345,6 +352,7 @@ export default function IngredientMasterView({ branchId }) {
               <tr>
                 <th scope="col">Ingredient</th>
                 <th scope="col">Category</th>
+                <th scope="col">Classification</th>
                 <th scope="col">Base unit</th>
                 <th scope="col">Scope</th>
                 <th scope="col">Status</th>
@@ -362,6 +370,7 @@ export default function IngredientMasterView({ branchId }) {
                     ) : null}
                   </td>
                   <td>{ingredient.category || "—"}</td>
+                  <td>{INVENTORY_CLASSIFICATIONS.find(({ value }) => value === ingredient.inventoryClassification)?.label || "Other"}</td>
                   <td>{unitLabel(ingredient.baseInventoryUnit)}</td>
                   <td>{ingredient.scope === "network" ? "Network" : "Branch"}</td>
                   <td>
@@ -455,6 +464,37 @@ export default function IngredientMasterView({ branchId }) {
                     <option key={unit.value} value={unit.value}>{unit.label}</option>
                   ))}
                 </select>
+              </label>
+
+              <label>
+                <span>Inventory classification</span>
+                <select
+                  value={form.inventoryClassification}
+                  onChange={(event) => {
+                    const inventoryClassification = event.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      inventoryClassification,
+                      recipeCostEligible: classificationDefault(inventoryClassification),
+                    }));
+                  }}
+                  required
+                  data-testid="ingredient-classification-select"
+                >
+                  {INVENTORY_CLASSIFICATIONS.map((classification) => (
+                    <option key={classification.value} value={classification.value}>{classification.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="inv-ingredients-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.recipeCostEligible}
+                  onChange={(event) => setForm((prev) => ({ ...prev, recipeCostEligible: event.target.checked }))}
+                  data-testid="ingredient-recipe-eligible-checkbox"
+                />
+                <span>Eligible for recipe costing</span>
               </label>
 
               {unitLocked ? (

@@ -108,6 +108,7 @@ describe("IngredientMasterView", () => {
     fireEvent.change(screen.getByTestId("ingredient-name-input"), { target: { value: "Whipping cream" } });
     fireEvent.change(screen.getByTestId("ingredient-category-input"), { target: { value: "Dairy" } });
     fireEvent.change(screen.getByTestId("ingredient-unit-select"), { target: { value: "litre" } });
+    fireEvent.change(screen.getByTestId("ingredient-classification-select"), { target: { value: "beverage" } });
     fireEvent.click(screen.getByTestId("save-ingredient-button"));
     await waitFor(() => {
       expect(findDuplicateIngredient).toHaveBeenCalled();
@@ -115,6 +116,8 @@ describe("IngredientMasterView", () => {
         canonicalName: "Whipping cream",
         category: "Dairy",
         baseInventoryUnit: "litre",
+        inventoryClassification: "beverage",
+        recipeCostEligible: true,
         branchId: "khobar",
       }));
     });

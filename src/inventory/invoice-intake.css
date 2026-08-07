@@ -536,8 +536,59 @@
 .inv-fb-stage-toolbar { margin-bottom: 8px; }
 .inv-fb-unsaved { margin: 0; color: var(--inv-gold); font-size: 12px; }
 
+.inv-operations { max-width: 1540px; margin: 0 auto; }
+.inv-operations-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+  gap: 18px;
+}
+.inv-operations-card {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--inv-border);
+  border-radius: 14px;
+  background: var(--inv-panel);
+}
+.inv-operations-card h2, .inv-operations-card p { margin: 0; }
+.inv-operations-card > div > p:last-child, .inv-operations-card > p { color: var(--inv-muted); }
+.inv-operations-card label { display: grid; gap: 6px; }
+.inv-operations-card label > span { color: var(--inv-muted); font-size: 12px; }
+.inv-operations-card input,
+.inv-operations-card select,
+.inv-operations-card textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--inv-border);
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: var(--inv-panel-2);
+  color: var(--inv-text);
+  font: inherit;
+}
+.inv-operations-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.inv-operations-stack { display: grid; align-content: start; gap: 18px; }
+.inv-operations-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.inv-operations-list li {
+  display: grid;
+  gap: 3px;
+  padding-top: 10px;
+  border-top: 1px solid var(--inv-border);
+}
+.inv-operations-list span { color: var(--inv-muted); font-size: 12px; }
+.inv-operations-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 240px;
+  color: var(--inv-muted);
+}
+.inv-ingredients-checkbox { display: flex !important; align-items: center; gap: 8px !important; }
+.inv-ingredients-checkbox input { width: auto; }
+
 @media (max-width: 760px) {
-  .inv-fb-grid { grid-template-columns: 1fr; }
+  .inv-fb-grid, .inv-operations-grid, .inv-operations-pair { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 1100px) {

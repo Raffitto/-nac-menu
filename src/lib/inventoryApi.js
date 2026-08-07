@@ -47,6 +47,8 @@ export async function createIngredient(input) {
       category: input.category || null,
       base_inventory_unit: input.baseInventoryUnit,
       purchasing_unit: input.purchasingUnit || null,
+      inventory_classification: input.inventoryClassification || "food_ingredient",
+      recipe_cost_eligible: input.recipeCostEligible !== false,
       yield_percentage: input.yieldPercentage || "100",
       scope: input.branchId ? "branch" : "network",
       branch_id: input.branchId || null,
@@ -435,12 +437,55 @@ async function createMovement(action, payload) {
   );
 }
 
+export const createOperationalEvent = (action, payload) => createMovement(action, payload);
+
+export async function fetchOperationalEvents({ branchId, eventType = null, from = null, to = null }) {
+  let query = requireClient()
+    .from("inventory_operational_events")
+    .select("*, inventory_operational_event_lines(*)")
+    .eq("branch_id", branchId);
+  if (eventType) query = query.eq("event_type", eventType);
+  if (from) query = query.gte("business_date", from);
+  if (to) query = query.lte("business_date", to);
+  return unwrap(query.order("business_date", { ascending: false }), "Fetch operational events");
+}
+
+export async function fetchInventoryExceptions({ branchId, status = "open" }) {
+  let query = requireClient()
+    .from("inventory_exceptions")
+    .select("*, inventory_ingredients(canonical_name)")
+    .eq("branch_id", branchId);
+  if (status) query = query.eq("status", status);
+  return unwrap(query.order("detected_at", { ascending: false }), "Fetch inventory exceptions");
+}
+
+export async function resolveInventoryException(exceptionId, status, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_resolve_exception", {
+      p_exception_id: exceptionId,
+      p_status: status,
+      p_reason: reason,
+    }),
+    "Resolve inventory exception",
+  );
+}
+
 export const createWastage = (payload) => createMovement("wastage", payload);
+export const createDisposal = (payload) => createMovement("disposal", payload);
+export const createOperationalUse = (payload) => createMovement("operational_use", payload);
 export const createManualAdjustment = (payload) => createMovement("manual_adjustment", payload);
 export const createReturnToSupplier = (payload) => createMovement("return_to_supplier", payload);
 export const createStaffMeal = (payload) => createMovement("staff_meal", payload);
 export const createComplimentaryUsage = (payload) => createMovement("complimentary", payload);
 export const createProductionMovement = (payload) => createMovement("production", payload);
+export const createProductionConsumption = (payload) => createMovement("production_consumption", payload);
+export const createProductionOutput = (payload) => createMovement("production_output", payload);
+export const createProductionWaste = (payload) => createMovement("production_waste", payload);
+export const createOrderConsumption = (payload) => createMovement("order_consumption", payload);
+export const createOrderWaste = (payload) => createMovement("order_waste", payload);
+export const createSpoilage = (payload) => createMovement("spoilage", payload);
+export const createBreakage = (payload) => createMovement("breakage", payload);
+export const createComplimentaryInternalUse = (payload) => createMovement("complimentary_internal_use", payload);
 
 export async function createTransfer(payload) {
   return unwrap(
@@ -465,14 +510,19 @@ export async function reverseOrCorrectMovement({ movementId, quantity, reason, i
 }
 
 export async function createStockCount(payload) {
+  const userId = payload.createdBy || await currentUserId();
   const count = await unwrap(
     requireClient().from("inventory_stock_counts").insert({
       branch_id: payload.branchId,
       storage_location_id: payload.locationId,
       effective_at: payload.effectiveAt,
+      business_date: payload.businessDate || String(payload.effectiveAt).slice(0, 10),
       status: "draft",
-      created_by: payload.createdBy || await currentUserId(),
+      created_by: userId,
+      counted_by: payload.countedBy || userId,
       idempotency_key: payload.idempotencyKey,
+      evidence_metadata: payload.evidence || {},
+      notes: payload.notes || null,
     }).select().single(),
     "Create stock count"
   );
@@ -485,6 +535,11 @@ export async function createStockCount(payload) {
           expected_quantity: line.expectedQuantity,
           counted_quantity: line.countedQuantity,
           canonical_unit: line.canonicalUnit,
+          source_counted_quantity: line.sourceCountedQuantity || line.countedQuantity,
+          source_count_unit: line.sourceCountUnit || line.canonicalUnit,
+          conversion_factor: line.conversionFactor || "1",
+          expected_snapshot_at: line.expectedSnapshotAt || payload.effectiveAt,
+          evidence_metadata: line.evidence || {},
           notes: line.notes || null,
         }))
       ),
@@ -494,7 +549,25 @@ export async function createStockCount(payload) {
   return count;
 }
 
+export async function confirmStockCountWarning(lineId, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_confirm_count_warning", {
+      p_count_line_id: lineId,
+      p_reason: reason,
+    }),
+    "Confirm unusual stock count",
+  );
+}
+
+export async function submitStockCount(countId) {
+  return unwrap(
+    requireClient().rpc("inventory_submit_stock_count", { p_count_id: countId }),
+    "Submit stock count",
+  );
+}
+
 export async function approveStockCount(countId, idempotencyKey = `stock-count:${countId}`) {
+  await submitStockCount(countId);
   return unwrap(
     requireClient().rpc("inventory_approve_stock_count", {
       p_count_id: countId,
@@ -585,6 +658,8 @@ export async function updateIngredient(ingredientId, input) {
   }
   if (input.category !== undefined) patch.category = input.category || null;
   if (input.baseInventoryUnit != null) patch.base_inventory_unit = input.baseInventoryUnit;
+  if (input.inventoryClassification != null) patch.inventory_classification = input.inventoryClassification;
+  if (input.recipeCostEligible != null) patch.recipe_cost_eligible = Boolean(input.recipeCostEligible);
   if (input.description !== undefined) patch.description = input.description || null;
   if (input.active != null) patch.active = Boolean(input.active);
   const row = await unwrap(

@@ -1,4 +1,5 @@
 import { normalizeText } from "./inventoryIntelligence";
+import { classificationDefault, INVENTORY_CLASSIFICATIONS } from "./inventoryControls";
 
 export const CANONICAL_UNITS = Object.freeze([
   { value: "each", label: "Each (pieces, cartons, items)" },
@@ -59,6 +60,9 @@ export function validateIngredientForm(form, { allowUnitChange = true } = {}) {
   if (!CANONICAL_UNITS.some((unit) => unit.value === form.baseInventoryUnit)) {
     return { ok: false, message: "Choose a valid base unit." };
   }
+  if (!INVENTORY_CLASSIFICATIONS.some(({ value }) => value === (form.inventoryClassification || "food_ingredient"))) {
+    return { ok: false, message: "Choose a valid inventory classification." };
+  }
   if (!allowUnitChange && form.baseInventoryUnit !== form.originalBaseUnit) {
     return {
       ok: false,
@@ -76,6 +80,8 @@ export function mapIngredientRow(row) {
     normalizedSearchName: row.normalized_search_name,
     category: row.category,
     baseInventoryUnit: row.base_inventory_unit,
+    inventoryClassification: row.inventory_classification || "food_ingredient",
+    recipeCostEligible: row.recipe_cost_eligible !== false,
     description: row.description,
     scope: row.scope,
     branchId: row.branch_id,
@@ -92,6 +98,8 @@ export function buildIngredientPayload(form, { branchId, scope = "branch" }) {
     normalizedSearchName: normalizeText(canonicalName),
     category: form.category?.trim() || null,
     baseInventoryUnit: form.baseInventoryUnit,
+    inventoryClassification: form.inventoryClassification || "food_ingredient",
+    recipeCostEligible: form.recipeCostEligible !== false,
     description: form.notes?.trim() || null,
     branchId: scope === "network" ? null : branchId,
     scope,
@@ -174,6 +182,8 @@ export const EMPTY_INGREDIENT_FORM = Object.freeze({
   canonicalName: "",
   category: "",
   baseInventoryUnit: "each",
+  inventoryClassification: "food_ingredient",
+  recipeCostEligible: classificationDefault("food_ingredient"),
   notes: "",
   scope: "branch",
   active: true,
