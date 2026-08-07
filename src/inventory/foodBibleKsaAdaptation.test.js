@@ -76,6 +76,8 @@ describe("Food Bible KSA adaptations", () => {
       expect.objectContaining({
         code: "SOURCE_RECIPE_INCONSISTENCY",
         detail: expect.stringMatching(/vodka/i),
+        ksaBlocking: false,
+        ksaPolicy: "INTENTIONAL_SPIRIT_EXCLUSION_NO_KSA_QTY_REQUIRED",
       }),
     ]);
   });

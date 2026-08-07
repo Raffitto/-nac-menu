@@ -64,6 +64,11 @@ function isNoiseLine(line) {
   return false;
 }
 
+const FALSE_TITLE_RE =
+  /^(n\/?a|none|null|nil|tbd|unknown|total|base|mains|starters|desserts|add ons|batch|unit(?:s)?)$/i;
+const PURE_QTY_TITLE_RE =
+  /^(?:gr|g|kg|ml|l|litre|liter|pcs?|ea|ae|unit|units|pax)?\s*\d+(?:[.,]\d+)?\s*(?:gr|g|kg|ml|l|litre|liter|pcs?|ea|ae|unit|units|pax)?$/i;
+
 function looksLikeTitle(line) {
   const text = normalizeFoodBibleText(line);
   if (!text || text.length < 3 || text.length > 90) return false;
@@ -71,6 +76,9 @@ function looksLikeTitle(line) {
   if (UNIT_RE.test(text)) return false;
   if (QTY_ONLY_RE.test(text)) return false;
   if (INLINE_ING_RE.test(text) && /\b(g|kg|ml|l)\s+\d/i.test(text)) return false;
+  if (FALSE_TITLE_RE.test(text)) return false;
+  if (PURE_QTY_TITLE_RE.test(text)) return false;
+  if (/^\d+(?:[.,]\d+)?\s*(?:units?|kg|g|ml|l|pax)\b/i.test(text)) return false;
   if (/^[a-z]/.test(text) && !/batch/i.test(text)) return false;
   // Titles in Food Bible are mostly uppercase / title-like.
   const letters = text.replace(/[^A-Za-z]/g, "");
@@ -96,7 +104,60 @@ function isPrepTitle(title) {
   if (text.split(/[,\s]+/).length <= 5 && /\b(sauce|mayo|base|mix|cooking|confit|chips)\b/i.test(text)) {
     return true;
   }
+  // Common short prep/component cards that are not finished menu products.
+  if (
+    text.split(/[,\s]+/).length <= 4 &&
+    /^(sweet corn|grated parmesan|dulce de leche|clotted cream|mashed avocado|frosties ice cream|caramelize toast|cajun brown butter|red pepper|speculos|pistachio cream)$/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
   return false;
+}
+
+/**
+ * Deterministic Food Bible recipe-title validation.
+ * Rejects layout placeholders/quantities; never discards underlying source text.
+ */
+export function validateFoodBibleRecipeTitle(title, card = {}) {
+  const text = normalizeFoodBibleText(title);
+  const reasons = [];
+  if (!text) reasons.push("EMPTY_TITLE");
+  if (text && FALSE_TITLE_RE.test(text)) reasons.push("PLACEHOLDER_TITLE");
+  if (text && PURE_QTY_TITLE_RE.test(text)) reasons.push("QUANTITY_AS_TITLE");
+  if (text && /^\d+(?:[.,]\d+)?\s*(?:units?|kg|g|ml|l|pax)\b/i.test(text)) {
+    reasons.push("QUANTITY_AS_TITLE");
+  }
+  if (text && /^untitled card\b/i.test(text)) reasons.push("GENERATED_PLACEHOLDER");
+  if (text && !looksLikeTitle(text) && !isPrepTitle(text)) reasons.push("NOT_TITLE_LIKE");
+
+  const hasIngredientHeader = (card.pageTexts || []).some((t) => /ingredients\b/i.test(t || ""));
+  const hasMethod =
+    (card.method || []).length > 0 ||
+    (card.pageTexts || []).some((t) => /\bmethod\b/i.test(t || "") || /^\d+\.\s+/m.test(t || ""));
+  const hasYield = Boolean(card.yieldRaw) || (card.pageTexts || []).some((t) => /\byield\b/i.test(t || ""));
+  const ingredientCount = (card.ingredients || []).length;
+
+  // A valid recipe candidate needs a title-like heading plus culinary structure.
+  if (!reasons.length && ingredientCount === 0 && !hasIngredientHeader) {
+    reasons.push("NO_INGREDIENT_STRUCTURE");
+  }
+  if (!reasons.length && !hasMethod && !hasYield && ingredientCount === 0) {
+    reasons.push("NO_RECIPE_STRUCTURE");
+  }
+
+  return {
+    ok: reasons.length === 0,
+    title: text,
+    reasons,
+    structure: {
+      hasIngredientHeader,
+      hasMethod,
+      hasYield,
+      ingredientCount,
+    },
+  };
 }
 
 export function splitFoodBiblePages(rawText) {
@@ -225,14 +286,12 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
   const orphanQtys = [];
   const orphanNames = [];
   const issues = [];
-  const titleNorm = normalizeFoodBibleText(cardTitle).toLowerCase();
-
   for (const raw of lines) {
     const line = normalizeFoodBibleText(raw);
     if (!line || isNoiseLine(line)) continue;
     if (METHOD_START_RE.test(line)) continue;
     if (/^critical control|^to serve|^method$/i.test(line)) continue;
-    if (titleNorm && line.toLowerCase() === titleNorm) continue;
+    // Do not drop ingredient names that match the dish title (e.g. Halloumi).
 
     const qtyOnly = line.match(QTY_ONLY_RE);
     if (qtyOnly) {
@@ -264,6 +323,7 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
     // Plain ingredient name candidates (left column).
     if (
       !looksLikeProse(line) &&
+      !FALSE_TITLE_RE.test(line) &&
       !UNIT_RE.test(line) &&
       !/^\d/.test(line) &&
       line.length <= 80 &&
@@ -388,16 +448,13 @@ export function extractFoodBibleRecipesFromPages({
   sha256 = null,
 } = {}) {
   const cards = [];
+  const rejectedTitles = [];
   let current = null;
 
   const flush = () => {
     if (!current) return;
     const allLines = current.lines;
     const pageTexts = current.pageTexts;
-    const title =
-      current.title ||
-      findTitleInPages(pageTexts) ||
-      `UNTITLED CARD ${cards.length + 1}`;
     const method = extractMethodLines(allLines);
     // Also capture method prose continuations that omit leading "1."
     for (const raw of allLines) {
@@ -407,10 +464,73 @@ export function extractFoodBibleRecipesFromPages({
       }
     }
     const ingredientLines = extractIngredientSectionLines(allLines);
+    const yieldRaw = extractYield(allLines, pageTexts);
+
+    const titleCandidates = [];
+    const primary =
+      current.title ||
+      findTitleInPages(pageTexts) ||
+      null;
+    if (primary) titleCandidates.push(primary);
+    for (const text of pageTexts) {
+      for (const line of String(text).split(/\n+/)) {
+        const cleaned = normalizeFoodBibleText(line);
+        if (looksLikeTitle(cleaned) && !titleCandidates.includes(cleaned)) {
+          titleCandidates.push(cleaned);
+        }
+      }
+    }
+
+    let title = null;
+    let titleValidation = null;
+    for (const candidate of titleCandidates) {
+      const probeIngredients = parseIngredientCandidates(ingredientLines, {
+        cardTitle: candidate,
+      }).ingredients;
+      const validation = validateFoodBibleRecipeTitle(candidate, {
+        pageTexts,
+        method,
+        yieldRaw,
+        ingredients: probeIngredients,
+      });
+      if (validation.ok) {
+        title = candidate;
+        titleValidation = validation;
+        break;
+      }
+      if (!titleValidation) titleValidation = validation;
+    }
+
+    if (!title) {
+      const rejectedTitle = primary || titleCandidates[0] || `UNTITLED CARD ${cards.length + rejectedTitles.length + 1}`;
+      const validation =
+        titleValidation ||
+        validateFoodBibleRecipeTitle(rejectedTitle, {
+          pageTexts,
+          method,
+          yieldRaw,
+          ingredients: parseIngredientCandidates(ingredientLines, {
+            cardTitle: rejectedTitle,
+          }).ingredients,
+        });
+      rejectedTitles.push({
+        sourceFile,
+        sourcePath,
+        sha256,
+        rejectedTitle,
+        reasons: validation.reasons,
+        pages: current.pages.slice(),
+        sourceLocator: `file=${sourceFile}; pages=${current.pages[0]}-${current.pages[current.pages.length - 1]}; rejectedTitle=${rejectedTitle}`,
+        sourcePreserved: true,
+        pageTextsPreserved: true,
+      });
+      current = null;
+      return;
+    }
+
     const { ingredients: rawIngredients, issues } = parseIngredientCandidates(ingredientLines, {
       cardTitle: title,
     });
-    const yieldRaw = extractYield(allLines, pageTexts);
     if (!yieldRaw) {
       issues.push({
         code: "MISSING_YIELD",
@@ -449,17 +569,24 @@ export function extractFoodBibleRecipesFromPages({
       issues,
       pages: current.pages.slice(),
       sourceLocator: `file=${sourceFile}; pages=${current.pages[0]}-${current.pages[current.pages.length - 1]}; title=${title}`,
+      titleValidation,
     };
 
     const adapted = adaptFoodBibleRecipeForKsa(sourceRecipe);
-    const hasBlockingIssue = (adapted.issues || []).some((i) =>
-      [
-        "SOURCE_RECIPE_INCONSISTENCY",
-        "AMBIGUOUS_UNIT",
-        "MISSING_YIELD",
-        "KSA_MARKET_ADAPTATION_REQUIRED",
-      ].includes(i.code)
-    );
+    const hasBlockingIssue = (adapted.issues || []).some((i) => {
+      if (
+        ![
+          "SOURCE_RECIPE_INCONSISTENCY",
+          "AMBIGUOUS_UNIT",
+          "MISSING_YIELD",
+          "KSA_MARKET_ADAPTATION_REQUIRED",
+        ].includes(i.code)
+      ) {
+        return false;
+      }
+      if (i.code === "SOURCE_RECIPE_INCONSISTENCY" && i.ksaBlocking === false) return false;
+      return true;
+    });
     const hasMarketAdaptation = (adapted.adaptations || []).some(
       (a) => a.code === "KSA_MARKET_ADAPTATION_REQUIRED" || a.code === "KSA_ZERO_ALCOHOL_WINE_MAPPING"
     );
@@ -513,16 +640,18 @@ export function extractFoodBibleRecipesFromPages({
 
   // Deduplicate exact same title+pages
   const seen = new Set();
-  return cards.filter((card) => {
+  const recipes = cards.filter((card) => {
     const key = `${card.sourceTitle}::${card.pages.join(",")}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return { recipes, rejectedTitles };
 }
 
 export function buildFoodBibleCohortPreview({ files = [], menuItems = [] } = {}) {
   const recipes = [];
+  const rejectedTitles = [];
   for (const file of files) {
     const pages =
       file.pages ||
@@ -536,7 +665,8 @@ export function buildFoodBibleCohortPreview({ files = [], menuItems = [] } = {})
       sha256: file.sha256 || null,
       pages,
     });
-    recipes.push(...extracted);
+    recipes.push(...extracted.recipes);
+    rejectedTitles.push(...extracted.rejectedTitles);
   }
 
   const prepTitles = new Map();
@@ -666,6 +796,7 @@ export function buildFoodBibleCohortPreview({ files = [], menuItems = [] } = {})
     menuMatched: menuLinks.filter((l) => l.linkStatus === "MATCHED").length,
     menuCandidate: menuLinks.filter((l) => l.linkStatus === "CANDIDATE").length,
     menuUnresolved: menuLinks.filter((l) => l.linkStatus === "UNRESOLVED").length,
+    rejectedFalseTitles: rejectedTitles.length,
     productionApply: "BLOCKED_UNTIL_REVIEW",
     salesApproval: "NOT_IN_SCOPE",
   };
@@ -673,6 +804,7 @@ export function buildFoodBibleCohortPreview({ files = [], menuItems = [] } = {})
   return {
     summary,
     recipes,
+    rejectedTitles,
     rawIngredientNames,
     adaptations,
     dependencies,

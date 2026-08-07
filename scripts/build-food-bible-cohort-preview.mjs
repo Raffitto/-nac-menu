@@ -191,6 +191,16 @@ async function main() {
     if (n >= 50) break;
   }
   lines.push("");
+  lines.push("## Rejected false titles");
+  lines.push("");
+  lines.push(`Count: **${(preview.rejectedTitles || []).length}**`);
+  lines.push("");
+  for (const rejected of (preview.rejectedTitles || []).slice(0, 40)) {
+    lines.push(
+      `- \`${rejected.rejectedTitle}\` (${rejected.sourceFile}) reasons=${(rejected.reasons || []).join(",")}`
+    );
+  }
+  lines.push("");
   lines.push("## Gates");
   lines.push("");
   lines.push("- Production mutation: **NO**");

@@ -3,6 +3,7 @@ import {
   extractFoodBibleRecipesFromPages,
   normalizeCanonicalUnit,
   splitFoodBiblePages,
+  validateFoodBibleRecipeTitle,
 } from "./foodBiblePdfExtract";
 
 const RIGATONI_PAGES = [
@@ -94,8 +95,20 @@ describe("Food Bible PDF extract", () => {
     });
   });
 
+  test("rejects placeholder and quantity-only false titles", () => {
+    expect(validateFoodBibleRecipeTitle("N/A").ok).toBe(false);
+    expect(validateFoodBibleRecipeTitle("50 UNITS").ok).toBe(false);
+    expect(validateFoodBibleRecipeTitle("10.94 KG").ok).toBe(false);
+    expect(validateFoodBibleRecipeTitle("RIGATONI, PINK SAUCE, BASIL, CHILI, PARMIGIANO", {
+      pageTexts: ["Ingredients\nMethod\nYield\n1 Pax"],
+      method: ["1. Cook"],
+      yieldRaw: "1 Pax",
+      ingredients: [{ sourceName: "Pasta" }],
+    }).ok).toBe(true);
+  });
+
   test("extracts Rigatoni finished dish with sequential qty/name pairing", () => {
-    const recipes = extractFoodBibleRecipesFromPages({
+    const { recipes } = extractFoodBibleRecipesFromPages({
       sourceFile: "Rigatoni, pink sauce, basil, chili, parmigiano.pdf",
       pages: RIGATONI_PAGES,
     });
@@ -117,7 +130,7 @@ describe("Food Bible PDF extract", () => {
   });
 
   test("extracts Vodka Tomato Sauce as KSA Tomato Sauce with reverse orphan pairing", () => {
-    const recipes = extractFoodBibleRecipesFromPages({
+    const { recipes } = extractFoodBibleRecipesFromPages({
       sourceFile: "Rigatoni, pink sauce, basil, chili, parmigiano.pdf",
       pages: RIGATONI_PAGES,
     });
@@ -138,7 +151,7 @@ describe("Food Bible PDF extract", () => {
   });
 
   test("preserves international source title separately from KSA operational title", () => {
-    const recipes = extractFoodBibleRecipesFromPages({
+    const { recipes } = extractFoodBibleRecipesFromPages({
       sourceFile: "Rigatoni, pink sauce, basil, chili, parmigiano.pdf",
       pages: RIGATONI_PAGES,
     });
@@ -177,8 +190,49 @@ describe("Food Bible PDF extract", () => {
     ]);
   });
 
+  test("keeps dish-named ingredients like Halloumi and pairs sequential quantities", () => {
+    const { recipes } = extractFoodBibleRecipesFromPages({
+      sourceFile: "Halloumi.pdf",
+      pages: [
+        {
+          page: 1,
+          text: `Utensils Used Allergens: Dairy / sesame
+Menu Section
+Prep Time
+Cooking Time
+Yield
+HALLOUMI`,
+        },
+        {
+          page: 2,
+          text: `Unit 1 Batch Notes
+g 95 3 slices of 1cm
+g 2
+ml 15
+1. Place the halloumi on the griddle
+To Serve
+Critical Control
+Ingredients
+Halloumi
+Za'atar
+Olive oil
+Method`,
+        },
+      ],
+    });
+    const halloumi = recipes.find((r) => r.sourceTitle === "HALLOUMI");
+    expect(halloumi).toBeTruthy();
+    expect(halloumi.ksaIngredients.map((i) => i.ksaOperationalName)).toEqual([
+      "Halloumi",
+      "Za'atar",
+      "Olive oil",
+    ]);
+    expect(halloumi.ksaIngredients[0].sourceQuantity).toBe(95);
+    expect(halloumi.ksaIngredients[2].sourceQuantity).toBe(15);
+  });
+
   test("keeps inline ingredient rows when notes contain verbs like remove", () => {
-    const recipes = extractFoodBibleRecipesFromPages({
+    const { recipes } = extractFoodBibleRecipesFromPages({
       sourceFile: "cajun.pdf",
       pages: [
         {

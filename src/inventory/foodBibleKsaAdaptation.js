@@ -170,7 +170,11 @@ export function adaptFoodBibleIngredientForKsa(ingredient) {
   };
 }
 
-export function findMethodIngredientMismatches({ methodText = "", ingredients = [] } = {}) {
+export function findMethodIngredientMismatches({
+  methodText = "",
+  ingredients = [],
+  operationalMarket = "KSA",
+} = {}) {
   const issues = [];
   const names = ingredients
     .map((item) => normalizeFoodBibleText(item.sourceName || item.name).toLowerCase())
@@ -181,9 +185,17 @@ export function findMethodIngredientMismatches({ methodText = "", ingredients = 
     const key = mention.toLowerCase();
     const present = names.some((name) => name.includes(key));
     if (!present) {
+      const intentionalKsaSpiritExclusion =
+        operationalMarket === "KSA" && SPIRIT_RE.test(key) && !isCookingWine(key);
       issues.push({
         code: "SOURCE_RECIPE_INCONSISTENCY",
         detail: `Method references "${mention}" but ingredient table has no matching line`,
+        // Preserve source evidence, but do not block KSA ops when the spirit is
+        // intentionally excluded and no KSA replacement quantity is required.
+        ksaBlocking: intentionalKsaSpiritExclusion ? false : true,
+        ksaPolicy: intentionalKsaSpiritExclusion
+          ? "INTENTIONAL_SPIRIT_EXCLUSION_NO_KSA_QTY_REQUIRED"
+          : null,
       });
     }
   }
@@ -219,6 +231,7 @@ export function adaptFoodBibleRecipeForKsa(recipe) {
     ...findMethodIngredientMismatches({
       methodText: Array.isArray(recipe?.method) ? recipe.method.join(" ") : recipe?.method,
       ingredients: recipe?.ingredients || [],
+      operationalMarket: "KSA",
     }),
   ];
 
