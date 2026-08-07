@@ -9,6 +9,11 @@ import {
   fetchIngredients,
   fetchInventoryStaffAccess,
   fetchOperationalEvents,
+  fetchPurchaseOrders,
+  fetchReceiptHistory,
+  fetchCountSessions,
+  fetchSupplierReturns,
+  fetchTransfers,
 } from "../lib/inventoryApi";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 
@@ -29,8 +34,16 @@ jest.mock("../lib/inventoryApi", () => ({
   approveInvoice: jest.fn(),
   confirmLineMapping: jest.fn(),
   createIngredient: jest.fn(),
+  createCountSession: jest.fn(),
   createOperationalEvent: jest.fn(),
+  createPurchaseOrder: jest.fn(),
   createRecipe: jest.fn(),
+  createTransfer: jest.fn(),
+  confirmStockCountWarning: jest.fn(),
+  dispatchTransfer: jest.fn(),
+  fetchCountSessionDetails: jest.fn(),
+  fetchCountSessions: jest.fn(),
+  fetchInventoryAuditTrail: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
@@ -39,18 +52,30 @@ jest.mock("../lib/inventoryApi", () => ({
   fetchInventoryStaffAccess: jest.fn(),
   fetchInvoiceHistory: jest.fn(),
   fetchOperationalEvents: jest.fn(),
+  fetchPurchaseOrderProgress: jest.fn(),
+  fetchPurchaseOrders: jest.fn(),
+  fetchReceiptHistory: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
+  fetchSupplierReturns: jest.fn(),
+  fetchTransfers: jest.fn(),
   findDuplicateIngredient: jest.fn(),
   generateMatchCandidates: jest.fn(),
   getInvoiceSourceUrl: jest.fn(),
+  linkInvoicePurchaseOrder: jest.fn(),
+  postSupplierReturn: jest.fn(),
   rejectInvoice: jest.fn(),
   resolveInvoiceException: jest.fn(),
   retrieveOcrResult: jest.fn(),
   saveRecipeDraft: jest.fn(),
+  saveCountSessionLine: jest.fn(),
   setIngredientActive: jest.fn(),
   setRecipeActive: jest.fn(),
   triggerInvoiceOcr: jest.fn(),
+  transitionPurchaseOrder: jest.fn(),
+  transitionCountSession: jest.fn(),
+  transitionTransfer: jest.fn(),
+  receiveTransfer: jest.fn(),
   updateIngredient: jest.fn(),
   updateInvoiceReview: jest.fn(),
   uploadInvoice: jest.fn(),
@@ -67,6 +92,11 @@ describe("InventoryApp", () => {
     });
     fetchInvoiceHistory.mockResolvedValue([]);
     fetchOperationalEvents.mockResolvedValue([]);
+    fetchPurchaseOrders.mockResolvedValue([]);
+    fetchReceiptHistory.mockResolvedValue([]);
+    fetchSupplierReturns.mockResolvedValue([]);
+    fetchTransfers.mockResolvedValue([]);
+    fetchCountSessions.mockResolvedValue([]);
     fetchInventoryExceptions.mockResolvedValue([]);
     fetchInventoryReferenceData.mockResolvedValue({ ingredients: [], suppliers: [], locations: [] });
     fetchIngredients.mockResolvedValue([]);
@@ -90,9 +120,14 @@ describe("InventoryApp", () => {
     expect(screen.getByTestId("inventory-sign-in")).toHaveTextContent("Invoice intake");
   });
 
-  test("shows invoice review, ingredients, food bible, and operations tabs", async () => {
+  test("shows invoice, procurement, transfer, count, ingredient, food bible, and operations tabs", async () => {
     render(<InventoryApp />);
     expect(await screen.findByTestId("inventory-tab-invoices")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-purchase-orders")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-purchases")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-returns")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-transfers")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-stock-counts")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-ingredients")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-food-bible")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-operations")).toBeInTheDocument();
@@ -108,6 +143,16 @@ describe("InventoryApp", () => {
     expect(await screen.findByTestId("food-bible-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-operations"));
     expect(await screen.findByTestId("operational-control-view")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-purchase-orders"));
+    expect(await screen.findByTestId("procurement-view-purchase-orders")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-purchases"));
+    expect(await screen.findByTestId("procurement-view-purchases")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-returns"));
+    expect(await screen.findByTestId("procurement-view-returns")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-transfers"));
+    expect(await screen.findByTestId("inventory-operations-transfers")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-stock-counts"));
+    expect(await screen.findByTestId("inventory-operations-stock-counts")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-invoices"));
     expect(await screen.findByText("Upload supplier invoice")).toBeInTheDocument();
   });

@@ -6,6 +6,11 @@ export const INVENTORY_BRANCHES = Object.freeze([
 
 export const INVENTORY_TABS = Object.freeze([
   { id: "invoices", label: "Invoice Review" },
+  { id: "purchase-orders", label: "Purchase Orders" },
+  { id: "purchases", label: "Purchases" },
+  { id: "returns", label: "Returns" },
+  { id: "transfers", label: "Transfers" },
+  { id: "stock-counts", label: "Stock Counts" },
   { id: "ingredients", label: "Ingredients" },
   { id: "food-bible", label: "Food Bible" },
   { id: "operations", label: "Operations & Waste" },

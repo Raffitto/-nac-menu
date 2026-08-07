@@ -360,12 +360,147 @@ export async function fetchInventoryReferenceData(branchId) {
 }
 
 export async function fetchReceiptHistory({ branchId, supplierId, from, to }) {
-  let query = requireClient().from("inventory_purchase_receipts").select("*, inventory_purchase_receipt_lines(*)");
+  let query = requireClient().from("inventory_purchase_receipts").select(`
+    *,
+    inventory_suppliers(supplier_name),
+    inventory_invoices(invoice_number, invoice_date, source_filename, storage_bucket, storage_path),
+    inventory_purchase_orders(reference_number, status),
+    inventory_purchase_receipt_lines(
+      *,
+      inventory_ingredients(canonical_name),
+      inventory_purchase_order_lines(line_number, normalized_base_quantity, canonical_unit)
+    )
+  `);
   if (branchId) query = query.eq("branch_id", branchId);
   if (supplierId) query = query.eq("supplier_id", supplierId);
   if (from) query = query.gte("effective_at", from);
   if (to) query = query.lte("effective_at", to);
   return unwrap(query.order("effective_at", { ascending: false }), "Fetch receipt history");
+}
+
+export async function fetchPurchaseOrders({ branchId, status } = {}) {
+  let query = requireClient().from("inventory_purchase_orders").select(`
+    *,
+    inventory_suppliers(supplier_name),
+    destination:inventory_storage_locations!destination_location_id(name),
+    inventory_purchase_order_lines(
+      *,
+      inventory_ingredients(canonical_name)
+    )
+  `);
+  if (branchId) query = query.eq("branch_id", branchId);
+  if (status) query = query.eq("status", status);
+  return unwrap(query.order("created_at", { ascending: false }), "Fetch purchase orders");
+}
+
+export async function fetchPurchaseOrderProgress(purchaseOrderId) {
+  return unwrap(
+    requireClient()
+      .from("inventory_purchase_order_progress")
+      .select("*")
+      .eq("purchase_order_id", purchaseOrderId)
+      .order("line_number"),
+    "Fetch purchase order progress"
+  );
+}
+
+export async function createPurchaseOrder(payload) {
+  return unwrap(
+    requireClient().rpc("inventory_create_purchase_order", {
+      p_payload: {
+        branchId: payload.branchId,
+        supplierId: payload.supplierId,
+        destinationLocationId: payload.destinationLocationId,
+        referenceNumber: payload.referenceNumber,
+        businessContext: payload.businessContext || null,
+        expectedDeliveryDate: payload.expectedDeliveryDate || null,
+        expectedDeliveryTime: payload.expectedDeliveryTime || null,
+        notes: payload.notes || null,
+        currency: payload.currency || "SAR",
+      },
+      p_lines: payload.lines,
+      p_idempotency_key: payload.idempotencyKey || `purchase-order:${payload.branchId}:${crypto.randomUUID()}`,
+    }),
+    "Create purchase order"
+  );
+}
+
+export async function transitionPurchaseOrder(purchaseOrderId, targetStatus, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_transition_purchase_order", {
+      p_purchase_order_id: purchaseOrderId,
+      p_target_status: targetStatus,
+      p_reason: reason,
+    }),
+    "Transition purchase order"
+  );
+}
+
+export async function linkInvoicePurchaseOrder({
+  invoiceId,
+  purchaseOrderId = null,
+  additionalCost = 0,
+  reason = "invoice_intake_receiving_control",
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_link_invoice_purchase_order", {
+      p_invoice_id: invoiceId,
+      p_purchase_order_id: purchaseOrderId,
+      p_additional_cost: additionalCost || 0,
+      p_reason: reason,
+    }),
+    "Link invoice to purchase order"
+  );
+}
+
+export async function fetchSupplierReturns({ branchId, supplierId } = {}) {
+  let query = requireClient().from("inventory_supplier_returns").select(`
+    *,
+    inventory_suppliers(supplier_name),
+    inventory_purchase_orders(reference_number),
+    inventory_purchase_receipts(source_reference, invoice_number),
+    inventory_supplier_return_lines(
+      *,
+      inventory_ingredients(canonical_name)
+    )
+  `);
+  if (branchId) query = query.eq("branch_id", branchId);
+  if (supplierId) query = query.eq("supplier_id", supplierId);
+  return unwrap(query.order("business_date", { ascending: false }), "Fetch supplier returns");
+}
+
+export async function postSupplierReturn(payload) {
+  return unwrap(
+    requireClient().rpc("inventory_post_supplier_return", {
+      p_payload: {
+        branchId: payload.branchId,
+        supplierId: payload.supplierId,
+        locationId: payload.locationId,
+        originalReceiptId: payload.originalReceiptId || null,
+        purchaseOrderId: payload.purchaseOrderId || null,
+        referenceNumber: payload.referenceNumber,
+        businessDate: payload.businessDate,
+        documentDate: payload.documentDate || null,
+        effectiveAt: payload.effectiveAt || `${payload.businessDate}T12:00:00+03:00`,
+        reason: payload.reason,
+        notes: payload.notes || null,
+        evidence: payload.evidence || {},
+      },
+      p_lines: payload.lines,
+      p_idempotency_key: payload.idempotencyKey || `supplier-return:${payload.branchId}:${crypto.randomUUID()}`,
+    }),
+    "Post supplier return"
+  );
+}
+
+export async function fetchInventoryAuditTrail({ entityType, entityId }) {
+  let query = requireClient()
+    .from("inventory_audit_log")
+    .select("*")
+    .eq("entity_type", entityType)
+    .order("created_at", { ascending: false });
+  if (entityId) query = query.eq("entity_id", entityId);
+  return unwrap(query, "Fetch inventory audit trail");
 }
 
 export async function fetchInventoryBalance({ branchId, locationId, ingredientId }) {
@@ -489,11 +624,59 @@ export const createComplimentaryInternalUse = (payload) => createMovement("compl
 
 export async function createTransfer(payload) {
   return unwrap(
-    requireClient().rpc("inventory_create_transfer", {
+    requireClient().rpc("inventory_create_transfer_request", {
       p_payload: payload,
+      p_lines: payload.lines || [],
       p_idempotency_key: payload.idempotencyKey,
     }),
     "Create inventory transfer"
+  );
+}
+
+export async function fetchTransfers(branchId) {
+  return unwrap(
+    requireClient()
+      .from("inventory_transfers")
+      .select("*, inventory_transfer_lines(*)")
+      .or(`source_branch_id.eq.${branchId},destination_branch_id.eq.${branchId}`)
+      .order("business_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    "Fetch inventory transfers",
+  );
+}
+
+export async function transitionTransfer(transferId, status, reason) {
+  return unwrap(
+    requireClient().rpc("inventory_transition_transfer", {
+      p_transfer_id: transferId,
+      p_target_status: status,
+      p_reason: reason,
+    }),
+    "Transition inventory transfer",
+  );
+}
+
+export async function dispatchTransfer(transferId, lines, reason, idempotencyKey) {
+  return unwrap(
+    requireClient().rpc("inventory_dispatch_transfer", {
+      p_transfer_id: transferId,
+      p_sent_lines: lines,
+      p_reason: reason,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Dispatch inventory transfer",
+  );
+}
+
+export async function receiveTransfer(transferId, lines, reason, idempotencyKey) {
+  return unwrap(
+    requireClient().rpc("inventory_receive_transfer", {
+      p_transfer_id: transferId,
+      p_received_lines: lines,
+      p_reason: reason,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Receive inventory transfer",
   );
 }
 
@@ -574,6 +757,76 @@ export async function approveStockCount(countId, idempotencyKey = `stock-count:$
       p_idempotency_key: idempotencyKey,
     }),
     "Approve stock count"
+  );
+}
+
+export async function fetchCountSessions(branchId) {
+  return unwrap(
+    requireClient()
+      .from("inventory_count_sessions")
+      .select("*")
+      .eq("branch_id", branchId)
+      .order("business_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    "Fetch stock count sessions",
+  );
+}
+
+export async function fetchCountSessionDetails(sessionId) {
+  const [session, counts, totals] = await Promise.all([
+    unwrap(
+      requireClient().from("inventory_count_sessions").select("*").eq("id", sessionId).single(),
+      "Fetch stock count session",
+    ),
+    unwrap(
+      requireClient()
+        .from("inventory_stock_counts")
+        .select("*, inventory_stock_count_lines(*)")
+        .eq("count_session_id", sessionId)
+        .order("created_at"),
+      "Fetch location counts",
+    ),
+    unwrap(
+      requireClient()
+        .from("inventory_count_session_item_totals")
+        .select("*")
+        .eq("count_session_id", sessionId),
+      "Fetch count session totals",
+    ),
+  ]);
+  return { ...session, counts, totals };
+}
+
+export async function createCountSession(payload) {
+  return unwrap(
+    requireClient().rpc("inventory_create_count_session", {
+      p_payload: payload,
+      p_location_ids: payload.locationIds || [],
+      p_idempotency_key: payload.idempotencyKey,
+    }),
+    "Create stock count session",
+  );
+}
+
+export async function saveCountSessionLine(stockCountId, payload) {
+  return unwrap(
+    requireClient().rpc("inventory_save_count_session_line", {
+      p_stock_count_id: stockCountId,
+      p_payload: payload,
+    }),
+    "Save stock count line",
+  );
+}
+
+export async function transitionCountSession(sessionId, status, reason, idempotencyKey = null) {
+  return unwrap(
+    requireClient().rpc("inventory_transition_count_session", {
+      p_count_session_id: sessionId,
+      p_target_status: status,
+      p_reason: reason,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Transition stock count session",
   );
 }
 

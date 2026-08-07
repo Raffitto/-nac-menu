@@ -7,6 +7,8 @@ import InvoiceIntakeView from "./InvoiceIntakeView";
 import IngredientMasterView from "./IngredientMasterView";
 import FoodBibleView from "./FoodBibleView";
 import OperationalControlView from "./OperationalControlView";
+import ProcurementControlView from "./ProcurementControlView";
+import TransferCountControlView from "./TransferCountControlView";
 import { fetchInventoryStaffAccess } from "../lib/inventoryApi";
 import {
   INVENTORY_BRANCHES,
@@ -55,6 +57,8 @@ export default function InventoryApp() {
             ? "Ingredient master"
             : activeTab === "food-bible"
               ? "Food Bible"
+              : ["purchase-orders", "purchases", "returns"].includes(activeTab)
+                ? INVENTORY_TABS.find(({ id }) => id === activeTab)?.label
               : activeTab === "operations"
                 ? "Operations & Waste"
               : "Invoice intake"
@@ -113,6 +117,10 @@ export default function InventoryApp() {
 
       {activeTab === "invoices" ? (
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
+      ) : ["purchase-orders", "purchases", "returns"].includes(activeTab) ? (
+        <ProcurementControlView branchId={branchId} mode={activeTab} />
+      ) : ["transfers", "stock-counts"].includes(activeTab) ? (
+        <TransferCountControlView branchId={branchId} mode={activeTab} />
       ) : activeTab === "ingredients" ? (
         <IngredientMasterView branchId={branchId} />
       ) : activeTab === "food-bible" ? (

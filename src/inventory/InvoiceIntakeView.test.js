@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import InvoiceIntakeView from "./InvoiceIntakeView";
-import { fetchInventoryReferenceData, fetchInvoiceHistory } from "../lib/inventoryApi";
+import { fetchInventoryReferenceData, fetchInvoiceHistory, fetchPurchaseOrders } from "../lib/inventoryApi";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 
 jest.mock("../dashboard/hooks/usePlatformSession", () => ({
@@ -22,8 +22,10 @@ jest.mock("../lib/inventoryApi", () => ({
   confirmLineMapping: jest.fn(),
   fetchInventoryReferenceData: jest.fn(),
   fetchInvoiceHistory: jest.fn(),
+  fetchPurchaseOrders: jest.fn(),
   generateMatchCandidates: jest.fn(),
   getInvoiceSourceUrl: jest.fn(),
+  linkInvoicePurchaseOrder: jest.fn(),
   rejectInvoice: jest.fn(),
   resolveInvoiceException: jest.fn(),
   retrieveOcrResult: jest.fn(),
@@ -51,6 +53,7 @@ describe("InvoiceIntakeView", () => {
       issue: null,
     });
     fetchInvoiceHistory.mockResolvedValue([]);
+    fetchPurchaseOrders.mockResolvedValue([]);
     fetchInventoryReferenceData.mockResolvedValue({
       ingredients: [],
       suppliers: [],
@@ -66,6 +69,7 @@ describe("InvoiceIntakeView", () => {
     await waitFor(() => {
       expect(fetchInvoiceHistory).toHaveBeenCalledWith({ branchId: "khobar" });
       expect(fetchInventoryReferenceData).toHaveBeenCalledWith("khobar");
+      expect(fetchPurchaseOrders).toHaveBeenCalledWith({ branchId: "khobar" });
     });
   });
 });

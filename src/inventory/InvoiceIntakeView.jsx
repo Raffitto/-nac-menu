@@ -19,9 +19,11 @@ import {
   confirmLineMapping,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
+  fetchPurchaseOrders,
   generateMatchCandidates,
   getInvoiceSourceUrl,
   rejectInvoice,
+  linkInvoicePurchaseOrder,
   resolveInvoiceException,
   retrieveOcrResult,
   triggerInvoiceOcr,
@@ -72,6 +74,7 @@ export default function InvoiceIntakeView({
   const setBranchId = embedded && setBranchIdProp ? setBranchIdProp : setInternalBranchId;
   const [invoices, setInvoices] = useState([]);
   const [reference, setReference] = useState({ ingredients: [], suppliers: [], locations: [] });
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState("");
@@ -82,12 +85,14 @@ export default function InvoiceIntakeView({
 
   const refreshList = useCallback(async () => {
     if (!session) return;
-    const [invoiceRows, referenceData] = await Promise.all([
+    const [invoiceRows, referenceData, purchaseOrderRows] = await Promise.all([
       fetchInvoiceHistory({ branchId }),
       fetchInventoryReferenceData(branchId),
+      fetchPurchaseOrders({ branchId }),
     ]);
     setInvoices(invoiceRows);
     setReference(referenceData);
+    setPurchaseOrders(purchaseOrderRows);
     setSelectedId((current) => current || invoiceRows[0]?.id || null);
   }, [branchId, session]);
 
@@ -147,18 +152,25 @@ export default function InvoiceIntakeView({
   const handleHeaderSave = async (event) => {
     event.preventDefault();
     const values = new FormData(event.currentTarget);
-    await run("header", () => updateInvoiceReview(selected.id, {
-      supplierId: values.get("supplierId"),
-      invoiceNumber: values.get("invoiceNumber"),
-      invoiceDate: values.get("invoiceDate"),
-      effectiveReceiptDate: values.get("effectiveReceiptDate"),
-      purchaseOrderReference: values.get("purchaseOrderReference"),
-      subtotal: values.get("subtotal"),
-      discount: values.get("discount"),
-      tax: values.get("tax"),
-      total: values.get("total"),
-      reason: "invoice_intake_review",
-    }), "Invoice header saved.");
+    await run("header", async () => {
+      await updateInvoiceReview(selected.id, {
+        supplierId: values.get("supplierId"),
+        invoiceNumber: values.get("invoiceNumber"),
+        invoiceDate: values.get("invoiceDate"),
+        effectiveReceiptDate: values.get("effectiveReceiptDate"),
+        purchaseOrderReference: values.get("purchaseOrderReference"),
+        subtotal: values.get("subtotal"),
+        discount: values.get("discount"),
+        tax: values.get("tax"),
+        total: values.get("total"),
+        reason: "invoice_intake_review",
+      });
+      return linkInvoicePurchaseOrder({
+        invoiceId: selected.id,
+        purchaseOrderId: values.get("purchaseOrderId") || null,
+        additionalCost: values.get("additionalCost") || 0,
+      });
+    }, "Invoice header and purchase-order link saved.");
   };
 
   const handleMapLine = async (event, line) => {
@@ -340,10 +352,19 @@ export default function InvoiceIntakeView({
                 <label>Invoice number<input name="invoiceNumber" defaultValue={selected.invoice_number || ""} required /></label>
                 <label>Invoice date<input type="date" name="invoiceDate" defaultValue={selected.invoice_date || ""} required /></label>
                 <label>Effective receipt date<input type="date" name="effectiveReceiptDate" defaultValue={selected.effective_receipt_date || selected.invoice_date || ""} required /></label>
-                <label>Purchase order<input name="purchaseOrderReference" defaultValue={selected.purchase_order_reference || ""} /></label>
+                <label>Approved purchase order
+                  <select name="purchaseOrderId" defaultValue={selected.purchase_order_id || ""}>
+                    <option value="">No linked PO</option>
+                    {purchaseOrders
+                      .filter(({ supplier_id, status }) => supplier_id === selected.supplier_id && ["approved", "partially_received", "received"].includes(status))
+                      .map((order) => <option key={order.id} value={order.id}>{order.reference_number}</option>)}
+                  </select>
+                </label>
+                <label>Purchase order reference<input name="purchaseOrderReference" defaultValue={selected.purchase_order_reference || ""} /></label>
                 <label>Subtotal<input type="number" step="0.000001" name="subtotal" defaultValue={selected.subtotal ?? ""} required /></label>
                 <label>Discount<input type="number" step="0.000001" name="discount" defaultValue={selected.discount ?? "0"} required /></label>
                 <label>Tax<input type="number" step="0.000001" name="tax" defaultValue={selected.tax ?? "0"} required /></label>
+                <label>Additional cost<input type="number" min="0" step="0.000001" name="additionalCost" defaultValue={selected.additional_cost ?? "0"} required /></label>
                 <label>Total<input type="number" step="0.000001" name="total" defaultValue={selected.total ?? ""} required /></label>
                 <button className="inv-button inv-button--secondary" disabled={FINAL_STATUSES.has(selected.status) || busy === "header"}>
                   Save header
