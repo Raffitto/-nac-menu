@@ -394,9 +394,11 @@ export default function RestaurantIntelligence({ embeddedInHub = false }) {
               <div className="ri-quadrants">
                 <h3>Menu engineering</h3>
                 <motion.div className="ri-quad-grid">
-                  {["Star", "Puzzle", "Workhorse", "Dog"].map((q) => (
+                  {["Star", "Puzzle", "Workhorse", "Dog", "COST_DATA_INCOMPLETE"].map((q) => (
                     <motion.div key={q} className={`ri-quad-card q-${q.toLowerCase()}`} whileHover={{ y: -2 }}>
-                      <span className="ri-quad-label">{q}</span>
+                      <span className="ri-quad-label">
+                        {q === "COST_DATA_INCOMPLETE" ? "Cost data incomplete" : q}
+                      </span>
                       <ul>
                         {menuEngineering.filter((m) => m.quadrant === q).slice(0, 4).map((m) => (
                           <li key={m.item_name}>{m.item_name}</li>

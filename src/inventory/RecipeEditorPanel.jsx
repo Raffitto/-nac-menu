@@ -9,8 +9,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  activateRecipeVersion,
   createRecipe,
   fetchRecipeBundle,
+  fetchRecipeCostTrust,
   fetchRecipeUsageCounts,
   saveRecipeDraft,
   setRecipeActive,
@@ -32,6 +34,7 @@ import {
   wouldCreateCycle,
   yieldSummary,
 } from "./foodBible";
+import { costTrustLabel, formatSar } from "./costTrust";
 
 function emptyLine() {
   return {
@@ -65,11 +68,11 @@ function formFromBundle(bundle, target) {
     menuItemId: recipe?.menuItemId || target?.menuItemId || "",
     placementGroupId: recipe?.placementGroupId || target?.placementGroupId || null,
     scope: recipe?.scope || "branch",
-    outputQuantity: recipe?.outputQuantity ?? "1",
-    outputUnit: recipe?.outputUnit || "each",
-    portionCount: recipe?.portionCount ?? "",
-    portionSize: recipe?.portionSize ?? "",
-    portionUnit: recipe?.portionUnit || "each",
+    outputQuantity: bundle?.version?.outputQuantity ?? recipe?.outputQuantity ?? "1",
+    outputUnit: bundle?.version?.outputUnit || recipe?.outputUnit || "each",
+    portionCount: bundle?.version?.portionCount ?? recipe?.portionCount ?? "",
+    portionSize: bundle?.version?.portionSize ?? recipe?.portionSize ?? "",
+    portionUnit: bundle?.version?.portionUnit || recipe?.portionUnit || "each",
     documentation: { ...DEFAULT_DOCUMENTATION, ...(bundle?.version?.documentation || {}) },
   };
 }
@@ -92,6 +95,7 @@ export default function RecipeEditorPanel({
   const [lines, setLines] = useState([emptyLine()]);
   const [stages, setStages] = useState([]);
   const [usageCounts, setUsageCounts] = useState({});
+  const [costTrust, setCostTrust] = useState(null);
   const [loading, setLoading] = useState(Boolean(target?.recipeId));
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -119,6 +123,7 @@ export default function RecipeEditorPanel({
       setLines(initialLines);
       setStages([]);
       setBundle(null);
+      setCostTrust(null);
       baselineRef.current = snapshotEditor(initialForm, initialLines, [], null);
       setLoading(false);
       return;
@@ -135,14 +140,23 @@ export default function RecipeEditorPanel({
       setLines(nextLines);
       setStages(nextStages);
       baselineRef.current = snapshotEditor(nextForm, nextLines, nextStages, nextBundle.version);
-      const counts = await fetchRecipeUsageCounts([target.recipeId]);
+      const [counts, nextCostTrust] = await Promise.all([
+        fetchRecipeUsageCounts([target.recipeId]),
+        fetchRecipeCostTrust({
+          recipeId: target.recipeId,
+          branchId,
+          asOf: overview?.costAsOf,
+          recipeVersionId: nextBundle.version?.id || null,
+        }).catch(() => null),
+      ]);
       setUsageCounts(counts);
+      setCostTrust(nextCostTrust);
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not load recipe."));
     } finally {
       setLoading(false);
     }
-  }, [target]);
+  }, [target, branchId, overview?.costAsOf]);
 
   useEffect(() => {
     load();
@@ -288,6 +302,38 @@ export default function RecipeEditorPanel({
     }
   };
 
+  const handlePublish = async () => {
+    if (!bundle?.version?.id || bundle.version.status !== "draft" || busy) return;
+    if (isDirty()) {
+      setError("Save the draft before activating this recipe version.");
+      return;
+    }
+    const reason = window.prompt("Reason for activating this recipe version:");
+    if (!reason?.trim()) return;
+    const effectiveDate = window.prompt(
+      "Effective business date (YYYY-MM-DD):",
+      new Date().toISOString().slice(0, 10),
+    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate || "")) {
+      setError("Enter a valid effective business date.");
+      return;
+    }
+    setBusy("publish");
+    setError("");
+    try {
+      await activateRecipeVersion({
+        recipeVersionId: bundle.version.id,
+        effectiveFrom: `${effectiveDate}T00:00:00+03:00`,
+        reason: reason.trim(),
+      });
+      onSaved();
+    } catch (err) {
+      setError(friendlyRecipeError(err, "Could not activate recipe version."));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const menuPlacements = target?.placements || [];
 
   return (
@@ -325,6 +371,69 @@ export default function RecipeEditorPanel({
                 <AlertTriangle size={16} />
                 <span>{error}</span>
               </div>
+            ) : null}
+
+            {costTrust ? (
+              <section className="inv-fb-section" data-testid="recipe-cost-trust-detail">
+                <div className="inv-fb-section-heading">
+                  <div>
+                    <h3>Historical cost · {costTrust.businessDate}</h3>
+                    <p>
+                      {costTrustLabel(costTrust.trustStatus)} · {costTrust.completenessPct}% complete
+                    </p>
+                  </div>
+                </div>
+                <div className="inv-fb-summary">
+                  <article>
+                    <strong>{formatSar(costTrust.totalCost)}</strong>
+                    <span>Batch cost</span>
+                  </article>
+                  <article>
+                    <strong>{formatSar(costTrust.costPerPortion ?? costTrust.outputUnitCost)}</strong>
+                    <span>Cost per portion/output</span>
+                  </article>
+                  <article>
+                    <strong>{costTrust.resolvedLines}/{costTrust.totalCostBearingLines}</strong>
+                    <span>Resolved cost lines</span>
+                  </article>
+                </div>
+                {costTrust.missingComponents?.length ? (
+                  <div className="inv-banner inv-banner--error">
+                    <AlertTriangle size={16} />
+                    <span>
+                      Missing: {costTrust.missingComponents
+                        .map((component) => component.itemName || component.recipeName || component.status)
+                        .join(", ")}
+                    </span>
+                  </div>
+                ) : null}
+                {costTrust.lines?.length ? (
+                  <div className="inv-ingredients-table-wrap">
+                    <table className="inv-ingredients-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Component</th>
+                          <th scope="col">Base quantity</th>
+                          <th scope="col">Unit cost</th>
+                          <th scope="col">Line cost</th>
+                          <th scope="col">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {costTrust.lines.map((line) => (
+                          <tr key={line.lineId}>
+                            <td>{line.itemName || line.componentCost?.recipeName || "Component"}</td>
+                            <td>{line.normalizedBaseQuantity} {line.normalizedBaseUnit}</td>
+                            <td>{formatSar(line.historicalUnitCost)}</td>
+                            <td>{formatSar(line.extendedLineCost)}</td>
+                            <td>{line.costStatus}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+              </section>
             ) : null}
 
             {isDirty() ? (
@@ -717,6 +826,18 @@ export default function RecipeEditorPanel({
                 <button type="button" className="inv-button inv-button--ghost" onClick={requestClose} disabled={Boolean(busy)}>
                   Cancel
                 </button>
+                {bundle?.version?.status === "draft" ? (
+                  <button
+                    type="button"
+                    className="inv-button inv-button--secondary"
+                    onClick={handlePublish}
+                    disabled={Boolean(busy) || !canEdit}
+                    data-testid="activate-recipe-version-button"
+                  >
+                    {busy === "publish" ? <Loader2 size={16} className="inv-spin" /> : null}
+                    Activate version
+                  </button>
+                ) : null}
                 <button
                   type="submit"
                   className="inv-button inv-button--primary"

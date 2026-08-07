@@ -46,6 +46,7 @@ function formFromIngredient(ingredient) {
     baseInventoryUnit: ingredient.baseInventoryUnit || "each",
     inventoryClassification: ingredient.inventoryClassification || "other",
     recipeCostEligible: ingredient.recipeCostEligible === true,
+    legitimateZeroCost: ingredient.legitimateZeroCost === true,
     notes: ingredient.description || "",
     scope: ingredient.scope || "branch",
     active: ingredient.active !== false,
@@ -195,6 +196,7 @@ export default function IngredientMasterView({ branchId }) {
           baseInventoryUnit: form.baseInventoryUnit,
           inventoryClassification: form.inventoryClassification,
           recipeCostEligible: form.recipeCostEligible,
+          legitimateZeroCost: form.legitimateZeroCost,
           description: form.notes.trim() || null,
           branchId: scope === "network" ? null : branchId,
           active: true,
@@ -207,6 +209,7 @@ export default function IngredientMasterView({ branchId }) {
           baseInventoryUnit: unitLocked ? form.originalBaseUnit : form.baseInventoryUnit,
           inventoryClassification: form.inventoryClassification,
           recipeCostEligible: form.recipeCostEligible,
+          legitimateZeroCost: form.legitimateZeroCost,
           description: form.notes.trim() || null,
         });
         setNotice("Ingredient updated.");
@@ -495,6 +498,19 @@ export default function IngredientMasterView({ branchId }) {
                   data-testid="ingredient-recipe-eligible-checkbox"
                 />
                 <span>Eligible for recipe costing</span>
+              </label>
+
+              <label className="inv-ingredients-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.legitimateZeroCost}
+                  onChange={(event) => setForm((prev) => ({
+                    ...prev,
+                    legitimateZeroCost: event.target.checked,
+                  }))}
+                  data-testid="ingredient-legitimate-zero-cost-checkbox"
+                />
+                <span>Zero cost is legitimate and controller-confirmed</span>
               </label>
 
               {unitLocked ? (

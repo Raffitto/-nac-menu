@@ -49,6 +49,7 @@ export async function createIngredient(input) {
       purchasing_unit: input.purchasingUnit || null,
       inventory_classification: input.inventoryClassification || "food_ingredient",
       recipe_cost_eligible: input.recipeCostEligible !== false,
+      legitimate_zero_cost: input.legitimateZeroCost === true,
       yield_percentage: input.yieldPercentage || "100",
       scope: input.branchId ? "branch" : "network",
       branch_id: input.branchId || null,
@@ -913,6 +914,7 @@ export async function updateIngredient(ingredientId, input) {
   if (input.baseInventoryUnit != null) patch.base_inventory_unit = input.baseInventoryUnit;
   if (input.inventoryClassification != null) patch.inventory_classification = input.inventoryClassification;
   if (input.recipeCostEligible != null) patch.recipe_cost_eligible = Boolean(input.recipeCostEligible);
+  if (input.legitimateZeroCost != null) patch.legitimate_zero_cost = Boolean(input.legitimateZeroCost);
   if (input.description !== undefined) patch.description = input.description || null;
   if (input.active != null) patch.active = Boolean(input.active);
   const row = await unwrap(
@@ -1018,11 +1020,12 @@ export async function fetchRecipeUsageCounts(recipeIds = []) {
   return counts;
 }
 
-export async function fetchFoodBibleOverview({ branchId }) {
-  const [{ data: menuData, error: menuError }, recipeRows, ingredientRows] = await Promise.all([
+export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISOString().slice(0, 10) }) {
+  const [{ data: menuData, error: menuError }, recipeRows, ingredientRows, costHealth] = await Promise.all([
     fetchMenuCatalogueForBranch({ branchId }),
     fetchRecipes({ branchId, includeInactive: true }),
     fetchIngredients({ branchId, includeInactive: true }),
+    fetchInventoryCostHealth({ branchId, asOf }),
   ]);
   if (menuError) throw new Error(`Fetch menu for Food Bible: ${menuError.message}`);
 
@@ -1050,6 +1053,28 @@ export async function fetchFoodBibleOverview({ branchId }) {
   const sectionById = Object.fromEntries((menuData?.sections || []).map((section) => [section.id, section]));
   const categoryById = Object.fromEntries((menuData?.categories || []).map((category) => [category.id, category]));
   const menuItemById = Object.fromEntries((menuData?.items || []).map((item) => [item.id, item]));
+  const productCostByMenuItemId = new Map(
+    (costHealth?.products || []).map((product) => [product.menuItemId, product]),
+  );
+  const productCostByRecipeId = new Map(
+    (costHealth?.products || []).filter((product) => product.recipeId).map((product) => [product.recipeId, product]),
+  );
+  for (const recipeCost of costHealth?.recipes || []) {
+    if (!productCostByRecipeId.has(recipeCost.recipeId)) {
+      productCostByRecipeId.set(recipeCost.recipeId, {
+        recipeId: recipeCost.recipeId,
+        recipeCost: recipeCost.totalCost,
+        costPerSoldPortion: recipeCost.costPerPortion ?? recipeCost.outputUnitCost,
+        costCompletenessPct: recipeCost.completenessPct,
+        costConfidencePct: recipeCost.confidencePct,
+        costTrustStatus: recipeCost.trustStatus,
+        costStatus: recipeCost.costStatus,
+        profitabilityAvailable: recipeCost.profitabilityAvailable,
+        missingComponents: recipeCost.missingComponents,
+        warnings: recipeCost.warnings,
+      });
+    }
+  }
 
   const allLinesByRecipeId = {};
   for (const recipe of recipes) {
@@ -1080,6 +1105,8 @@ export async function fetchFoodBibleOverview({ branchId }) {
       : { readiness: READINESS.MISSING, checklist: [], issues: [] };
     const section = sectionById[identity.primaryItem.section_id];
     const category = categoryById[section?.category_id];
+    const productCost = productCostByMenuItemId.get(identity.primaryItem.id)
+      || (recipe ? productCostByRecipeId.get(recipe.id) : null);
     return {
       kind: "menu_item",
       identityKey: identity.identityKey,
@@ -1099,6 +1126,9 @@ export async function fetchFoodBibleOverview({ branchId }) {
       yieldSummary: recipe ? `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}` : "—",
       scope: recipe?.scope || "branch",
       updatedAt: recipe?.updatedAt || null,
+      cost: productCost || null,
+      costTrustStatus: productCost?.costTrustStatus || "UNRELIABLE",
+      costCompletenessPct: productCost?.costCompletenessPct ?? 0,
     };
   });
 
@@ -1116,6 +1146,7 @@ export async function fetchFoodBibleOverview({ branchId }) {
       menuItem: recipe.menuItemId ? menuItemById[recipe.menuItemId] : null,
       cycleDetected: wouldCreateCycle(recipe.id, null, allLinesByRecipeId),
     });
+    const productCost = productCostByRecipeId.get(recipe.id) || null;
     rows.push({
       kind: "component",
       identityKey: recipe.id,
@@ -1135,6 +1166,9 @@ export async function fetchFoodBibleOverview({ branchId }) {
       yieldSummary: `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}`,
       scope: recipe.scope,
       updatedAt: recipe.updatedAt,
+      cost: productCost,
+      costTrustStatus: productCost?.costTrustStatus || "UNRELIABLE",
+      costCompletenessPct: productCost?.costCompletenessPct ?? 0,
     });
   }
 
@@ -1143,6 +1177,8 @@ export async function fetchFoodBibleOverview({ branchId }) {
     rows,
     ingredients: ingredientRows,
     recipes,
+    costHealth,
+    costAsOf: asOf,
     hasActiveIngredients: ingredientRows.some((ingredient) => ingredient.active),
     lineGraph: allLinesByRecipeId,
   };
@@ -1179,6 +1215,11 @@ export async function createRecipe(input) {
       version_number: 1,
       effective_from: new Date().toISOString(),
       status: "draft",
+      output_quantity: input.outputQuantity,
+      output_unit: input.outputUnit,
+      portion_count: input.portionCount || null,
+      portion_size: input.portionSize || null,
+      portion_unit: input.portionUnit || null,
       documentation: input.documentation || {},
       created_by: userId,
       updated_by: userId,
@@ -1222,6 +1263,16 @@ export async function saveRecipeDraft(recipeId, payload) {
   );
 
   let version = payload.version;
+  if (version?.id && version.status !== "draft") {
+    const versionRow = await unwrap(
+      client.rpc("inventory_prepare_recipe_draft_version", {
+        p_recipe_id: recipeId,
+        p_documentation: payload.documentation || {},
+      }),
+      "Prepare recipe draft version",
+    );
+    version = mapVersionRow(versionRow);
+  }
   if (!version?.id) {
     const versionRow = await unwrap(
       client.from("inventory_recipe_versions").insert({
@@ -1229,6 +1280,11 @@ export async function saveRecipeDraft(recipeId, payload) {
         version_number: 1,
         effective_from: new Date().toISOString(),
         status: "draft",
+        output_quantity: payload.outputQuantity,
+        output_unit: payload.outputUnit,
+        portion_count: payload.portionCount || null,
+        portion_size: payload.portionSize || null,
+        portion_unit: payload.portionUnit || null,
         documentation: payload.documentation || {},
         created_by: userId,
         updated_by: userId,
@@ -1239,6 +1295,11 @@ export async function saveRecipeDraft(recipeId, payload) {
   } else {
     const versionRow = await unwrap(
       client.from("inventory_recipe_versions").update({
+        output_quantity: payload.outputQuantity,
+        output_unit: payload.outputUnit,
+        portion_count: payload.portionCount || null,
+        portion_size: payload.portionSize || null,
+        portion_unit: payload.portionUnit || null,
         documentation: payload.documentation || {},
         updated_at: new Date().toISOString(),
         updated_by: userId,
@@ -1301,6 +1362,72 @@ export async function saveRecipeDraft(recipeId, payload) {
   }
 
   return fetchRecipeBundle(recipeId);
+}
+
+export async function fetchRecipeCostTrust({
+  recipeId,
+  branchId,
+  asOf = new Date().toISOString().slice(0, 10),
+  recipeVersionId = null,
+  staleAfterDays = 90,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_recipe_cost_trust_as_of", {
+      p_recipe_id: recipeId,
+      p_branch_id: branchId,
+      p_as_of: asOf,
+      p_recipe_version_id: recipeVersionId,
+      p_stale_after_days: staleAfterDays,
+    }),
+    "Fetch recipe cost trust",
+  );
+}
+
+export async function fetchProductCostTrust({
+  menuItemId,
+  branchId,
+  asOf = new Date().toISOString().slice(0, 10),
+  staleAfterDays = 90,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_product_cost_trust_as_of", {
+      p_menu_item_id: menuItemId,
+      p_branch_id: branchId,
+      p_as_of: asOf,
+      p_stale_after_days: staleAfterDays,
+    }),
+    "Fetch product cost trust",
+  );
+}
+
+export async function fetchInventoryCostHealth({
+  branchId,
+  asOf = new Date().toISOString().slice(0, 10),
+  staleAfterDays = 90,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_cost_health_as_of", {
+      p_branch_id: branchId,
+      p_as_of: asOf,
+      p_stale_after_days: staleAfterDays,
+    }),
+    "Fetch inventory cost health",
+  );
+}
+
+export async function activateRecipeVersion({
+  recipeVersionId,
+  effectiveFrom,
+  reason,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_activate_recipe_version", {
+      p_recipe_version_id: recipeVersionId,
+      p_effective_from: effectiveFrom,
+      p_reason: reason,
+    }),
+    "Activate recipe version",
+  );
 }
 
 export async function setRecipeActive(recipeId, active) {

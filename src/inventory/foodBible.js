@@ -148,6 +148,11 @@ export function mapVersionRow(row) {
     versionNumber: row.version_number,
     status: row.status,
     yieldPercentage: row.yield_percentage,
+    outputQuantity: row.output_quantity,
+    outputUnit: row.output_unit,
+    portionCount: row.portion_count,
+    portionSize: row.portion_size,
+    portionUnit: row.portion_unit,
     documentation: { ...DEFAULT_DOCUMENTATION, ...(row.documentation || {}) },
     effectiveFrom: row.effective_from,
     effectiveTo: row.effective_to,
@@ -460,6 +465,20 @@ export function validateRecipeDraft(form, lines = []) {
   if (!form.outputUnit) return { ok: false, message: "Choose a yield unit." };
   if ((form.recipeType === "menu_item" || form.recipeType === "direct_stock") && !form.menuItemId) {
     return { ok: false, message: "Link a menu item for this recipe type." };
+  }
+  const populatedLines = lines.filter((line) => line.ingredientId || line.subRecipeId);
+  if (
+    form.recipeType === "direct_stock"
+    && (
+      populatedLines.length !== 1
+      || !populatedLines[0].ingredientId
+      || populatedLines[0].subRecipeId
+    )
+  ) {
+    return {
+      ok: false,
+      message: "A direct-stock product requires exactly one inventory item line.",
+    };
   }
   for (const line of lines) {
     if (!line.ingredientId && !line.subRecipeId) continue;

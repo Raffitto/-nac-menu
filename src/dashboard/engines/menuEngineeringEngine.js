@@ -1,5 +1,6 @@
 /** BCG-style menu engineering: Star, Puzzle, Workhorse, Dog */
 import { clampMetric, filterExecutiveRows } from "../utils/intelligenceSanity";
+import { gateMenuEngineeringClassification } from "../../inventory/costTrust";
 
 export function classifyMenuItems(funnels = []) {
   const visible = filterExecutiveRows(funnels);
@@ -41,7 +42,7 @@ export function classifyMenuItems(funnels = []) {
       suggestion = "Strong performer with low visibility — promote higher in menu.";
     }
 
-    return {
+    return gateMenuEngineeringClassification(f, {
       item_name: f.item_name,
       quadrant,
       popularity: Math.round(popularity),
@@ -50,6 +51,6 @@ export function classifyMenuItems(funnels = []) {
       orders: f.orders,
       conversion_pct: f.conversion_pct,
       suggestion,
-    };
+    });
   }).sort((a, b) => b.popularity - a.popularity);
 }

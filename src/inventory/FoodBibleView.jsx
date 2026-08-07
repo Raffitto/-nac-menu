@@ -24,6 +24,7 @@ import {
   recipeTypeLabel,
 } from "./foodBible";
 import RecipeEditorPanel from "./RecipeEditorPanel";
+import { costTrustLabel, formatSar } from "./costTrust";
 
 const READINESS_FILTERS = [
   { id: "all", label: "All" },
@@ -51,6 +52,7 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
   const [menuFilter, setMenuFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editorTarget, setEditorTarget] = useState(null);
+  const [costAsOf, setCostAsOf] = useState(() => new Date().toISOString().slice(0, 10));
 
   const canEditBranch = canManageBranchRecipes(access, branchId);
   const canEditNetwork = canManageNetworkRecipes(access);
@@ -61,7 +63,7 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     setError("");
     try {
       const [data, staffAccess] = await Promise.all([
-        fetchFoodBibleOverview({ branchId }),
+        fetchFoodBibleOverview({ branchId, asOf: costAsOf }),
         fetchInventoryStaffAccess(),
       ]);
       setOverview(data);
@@ -71,7 +73,7 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     } finally {
       setLoading(false);
     }
-  }, [branchId]);
+  }, [branchId, costAsOf]);
 
   useEffect(() => {
     refresh();
@@ -102,6 +104,13 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     missing: 0,
     needsAttention: 0,
     coveragePct: 0,
+  };
+  const costSummary = overview?.costHealth?.summary || {
+    trustedRecipes: 0,
+    incompleteRecipes: 0,
+    productsMissingRecipe: 0,
+    ingredientsMissingOrStaleCost: 0,
+    recipeCoveragePct: 0,
   };
 
   const openEditor = (row) => {
@@ -154,6 +163,29 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
         </article>
       </div>
 
+      <div className="inv-fb-summary" data-testid="food-bible-cost-health">
+        <article>
+          <strong>{costSummary.trustedRecipes}</strong>
+          <span>Trusted recipe costs</span>
+        </article>
+        <article>
+          <strong>{costSummary.incompleteRecipes}</strong>
+          <span>Incomplete recipe costs</span>
+        </article>
+        <article>
+          <strong>{costSummary.productsMissingRecipe}</strong>
+          <span>Products missing recipe</span>
+        </article>
+        <article>
+          <strong>{costSummary.ingredientsMissingOrStaleCost}</strong>
+          <span>Ingredients missing/stale cost</span>
+        </article>
+        <article>
+          <strong>{costSummary.recipeCoveragePct}%</strong>
+          <span>Cost coverage</span>
+        </article>
+      </div>
+
       <div className="inv-ingredients-toolbar">
         <div className="inv-ingredients-search">
           <Search size={16} aria-hidden="true" />
@@ -166,6 +198,15 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
             data-testid="food-bible-search-input"
           />
         </div>
+        <label className="inv-ingredients-filter">
+          <span>Cost as of</span>
+          <input
+            type="date"
+            value={costAsOf}
+            onChange={(event) => setCostAsOf(event.target.value)}
+            data-testid="food-bible-cost-as-of"
+          />
+        </label>
         <label className="inv-ingredients-filter">
           <span>Recipe status</span>
           <select
@@ -262,6 +303,8 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
                 <th scope="col">Menu item / recipe</th>
                 <th scope="col">Category</th>
                 <th scope="col">Recipe status</th>
+                <th scope="col">Cost trust</th>
+                <th scope="col">Cost / portion</th>
                 <th scope="col">Type</th>
                 <th scope="col">Menu status</th>
                 <th scope="col">Yield</th>
@@ -287,6 +330,16 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
                     <span className={`inv-status-pill inv-status-pill--${row.readiness}`}>
                       {READINESS_LABELS[row.readiness]}
                     </span>
+                  </td>
+                  <td>
+                    <span className={`inv-status-pill inv-status-pill--${String(row.costTrustStatus).toLowerCase()}`}>
+                      {costTrustLabel(row.costTrustStatus)} · {row.costCompletenessPct}%
+                    </span>
+                  </td>
+                  <td>
+                    {row.cost?.profitabilityAvailable
+                      ? formatSar(row.cost.costPerSoldPortion ?? row.cost.recipeCost)
+                      : "Unavailable"}
                   </td>
                   <td>{recipeTypeLabel(row.recipeType)}</td>
                   <td>{row.guestStatus ? guestMenuStatusLabel(row.guestStatus) : "—"}</td>

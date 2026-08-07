@@ -1,6 +1,7 @@
 jest.mock("./supabase", () => ({
   supabase: {
     from: jest.fn(),
+    rpc: jest.fn(),
     auth: {
       getUser: jest.fn().mockResolvedValue({ data: { user: { id: "user-1" } }, error: null }),
     },
@@ -17,6 +18,7 @@ import { fetchFoodBibleOverview } from "./inventoryApi";
 import { READINESS } from "../inventory/foodBible";
 
 const mockFrom = supabase.from;
+const mockRpc = supabase.rpc;
 
 function emptyQuery() {
   const chain = {
@@ -36,6 +38,10 @@ describe("fetchFoodBibleOverview", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockFrom.mockImplementation(() => emptyQuery());
+    mockRpc.mockResolvedValue({
+      data: { summary: {}, products: [], recipes: [], ingredientsMissingOrStaleCost: [] },
+      error: null,
+    });
   });
 
   test("lists menu items without recipes and marks them missing", async () => {

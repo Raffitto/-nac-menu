@@ -36,6 +36,7 @@ describe("ingredientMaster helpers", () => {
       baseInventoryUnit: "litre",
       inventoryClassification: "food_ingredient",
       recipeCostEligible: true,
+      legitimateZeroCost: false,
       description: "35% cream",
       scope: "branch",
       branchId: "khobar",

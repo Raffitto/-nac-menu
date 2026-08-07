@@ -140,6 +140,19 @@ describe("foodBible helpers", () => {
       outputQuantity: "0",
       outputUnit: "each",
     }, []).ok).toBe(false);
+    expect(validateRecipeDraft({
+      name: "Water",
+      recipeType: "direct_stock",
+      outputQuantity: "1",
+      outputUnit: "each",
+      menuItemId: "menu-1",
+    }, [
+      { ingredientId: "water", quantity: "1", unit: "each" },
+      { ingredientId: "bottle", quantity: "1", unit: "each" },
+    ])).toEqual(expect.objectContaining({
+      ok: false,
+      message: expect.stringMatching(/exactly one inventory item/i),
+    }));
   });
 
   test("filterFoodBibleRows supports readiness and menu visibility filters", () => {

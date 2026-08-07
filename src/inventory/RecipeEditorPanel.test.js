@@ -2,15 +2,19 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import RecipeEditorPanel from "./RecipeEditorPanel";
 import {
+  activateRecipeVersion,
   createRecipe,
   fetchRecipeBundle,
+  fetchRecipeCostTrust,
   fetchRecipeUsageCounts,
   saveRecipeDraft,
 } from "../lib/inventoryApi";
 
 jest.mock("../lib/inventoryApi", () => ({
+  activateRecipeVersion: jest.fn(),
   createRecipe: jest.fn(),
   fetchRecipeBundle: jest.fn(),
+  fetchRecipeCostTrust: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
   saveRecipeDraft: jest.fn(),
   setRecipeActive: jest.fn(),
@@ -29,7 +33,9 @@ describe("RecipeEditorPanel", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fetchRecipeUsageCounts.mockResolvedValue({});
+    fetchRecipeCostTrust.mockResolvedValue(null);
     window.confirm = jest.fn(() => true);
+    window.prompt = jest.fn();
   });
 
   test("creates and saves a draft recipe", async () => {
@@ -99,6 +105,25 @@ describe("RecipeEditorPanel", () => {
   });
 
   test("loads existing recipe bundle for edit", async () => {
+    fetchRecipeCostTrust.mockResolvedValue({
+      businessDate: "2026-07-20",
+      trustStatus: "TRUSTED",
+      completenessPct: 100,
+      totalCost: 12,
+      costPerPortion: 3,
+      resolvedLines: 1,
+      totalCostBearingLines: 1,
+      missingComponents: [],
+      lines: [{
+        lineId: "line-1",
+        itemName: "Heavy cream",
+        normalizedBaseQuantity: 0.5,
+        normalizedBaseUnit: "litre",
+        historicalUnitCost: 24,
+        extendedLineCost: 12,
+        costStatus: "VALID_COST",
+      }],
+    });
     fetchRecipeBundle.mockResolvedValue({
       recipe: {
         id: "recipe-1",
@@ -131,6 +156,7 @@ describe("RecipeEditorPanel", () => {
     );
     expect(await screen.findByTestId("recipe-name-input")).toHaveValue("Hollandaise");
     expect(screen.getByTestId("recipe-readiness-checklist")).toBeInTheDocument();
+    expect(await screen.findByTestId("recipe-cost-trust-detail")).toHaveTextContent("SAR 3.00");
   });
 
   test("rejects circular component selection", async () => {
@@ -165,5 +191,50 @@ describe("RecipeEditorPanel", () => {
     const select = screen.getAllByLabelText("Ingredient or component")[0];
     fireEvent.change(select, { target: { value: "cmp:recipe-2" } });
     expect(await screen.findByTestId("recipe-editor-error")).toHaveTextContent(/circular/i);
+  });
+
+  test("activates a saved draft with reason and effective business date", async () => {
+    fetchRecipeBundle.mockResolvedValue({
+      recipe: {
+        id: "recipe-1",
+        name: "Hollandaise",
+        recipeType: "preparation",
+        outputQuantity: "1000",
+        outputUnit: "gram",
+        active: true,
+      },
+      version: {
+        id: "version-2",
+        status: "draft",
+        outputQuantity: "1000",
+        outputUnit: "gram",
+        documentation: {},
+      },
+      lines: [{ id: "line-1", ingredientId: "ing-1", quantity: "1", unit: "litre" }],
+      stages: [],
+    });
+    window.prompt
+      .mockReturnValueOnce("Approved kitchen standard")
+      .mockReturnValueOnce("2026-08-10");
+    activateRecipeVersion.mockResolvedValue({});
+    const onSaved = jest.fn();
+    render(
+      <RecipeEditorPanel
+        branchId="khobar"
+        target={{ recipeId: "recipe-1", displayName: "Hollandaise" }}
+        overview={overview}
+        canEditBranch
+        canEditNetwork={false}
+        onClose={jest.fn()}
+        onSaved={onSaved}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("activate-recipe-version-button"));
+    await waitFor(() => expect(activateRecipeVersion).toHaveBeenCalledWith({
+      recipeVersionId: "version-2",
+      effectiveFrom: "2026-08-10T00:00:00+03:00",
+      reason: "Approved kitchen standard",
+    }));
+    expect(onSaved).toHaveBeenCalled();
   });
 });
