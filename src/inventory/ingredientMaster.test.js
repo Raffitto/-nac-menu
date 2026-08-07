@@ -45,6 +45,17 @@ describe("ingredientMaster helpers", () => {
     });
   });
 
+  test("maps unclassified legacy items to safe non-recipe defaults", () => {
+    expect(mapIngredientRow({
+      ...sampleRow,
+      inventory_classification: null,
+      recipe_cost_eligible: null,
+    })).toMatchObject({
+      inventoryClassification: "other",
+      recipeCostEligible: false,
+    });
+  });
+
   test("trimIngredientName normalizes whitespace", () => {
     expect(trimIngredientName("  whipping   cream  ")).toBe("whipping cream");
   });

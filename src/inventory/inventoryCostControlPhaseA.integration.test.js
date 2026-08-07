@@ -12,11 +12,31 @@ const migration = fs.readFileSync(
 describe("Inventory & Cost Control Phase A schema contract", () => {
   test("extends the canonical item and movement models", () => {
     expect(migration).toMatch(/alter table public\.inventory_ingredients/);
-    expect(migration).toMatch(/inventory_classification text not null/);
-    expect(migration).toMatch(/recipe_cost_eligible boolean not null/);
+    expect(migration).toMatch(/inventory_classification text/);
+    expect(migration).toMatch(/recipe_cost_eligible boolean/);
     expect(migration).toMatch(/alter table public\.inventory_movements/);
     expect(migration).toMatch(/business_date date/);
     expect(migration).toMatch(/evidence_metadata jsonb/);
+  });
+
+  test("backfills classification conservatively without overwriting explicit values", () => {
+    const backfill = migration.match(
+      /-- Backfill only unset values[\s\S]*?alter column recipe_cost_eligible set default false;/,
+    )?.[0] || "";
+    expect(backfill).toMatch(/where i\.inventory_classification is null/);
+    expect(backfill).toMatch(/or i\.recipe_cost_eligible is null/);
+    expect(backfill).toMatch(/coalesce\(i\.previous_classification, i\.inferred_classification\)/);
+    expect(backfill).toMatch(/coalesce\(\s*i\.previous_recipe_cost_eligible,/);
+    expect(backfill).not.toMatch(/canonical_name/);
+    expect(backfill).not.toMatch(/else 'food_ingredient'/);
+  });
+
+  test("audits every changed backfill row and is re-run safe", () => {
+    expect(migration).toMatch(/inventory_item_classification_backfilled/);
+    expect(migration).toMatch(/classification_backfill_v2/);
+    expect(migration).toMatch(/sourceCategory/);
+    expect(migration).toMatch(/is distinct from c\.next_classification/);
+    expect(migration).toMatch(/is distinct from c\.next_recipe_cost_eligible/);
   });
 
   test("posts explicit operational source events into the immutable ledger", () => {

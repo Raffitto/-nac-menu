@@ -3,8 +3,8 @@
 -- stock-count, audit, and branch-RLS architecture.
 
 alter table public.inventory_ingredients
-  add column if not exists inventory_classification text not null default 'food_ingredient',
-  add column if not exists recipe_cost_eligible boolean not null default true;
+  add column if not exists inventory_classification text,
+  add column if not exists recipe_cost_eligible boolean;
 
 alter table public.inventory_ingredients
   drop constraint if exists inventory_ingredients_classification_check;
@@ -16,20 +16,133 @@ alter table public.inventory_ingredients
     )
   );
 
-update public.inventory_ingredients
-set inventory_classification = case
-      when lower(coalesce(category, '')) ~ 'packag|takeaway|disposable' then 'packaging'
-      when lower(coalesce(category, '')) ~ 'clean|janitorial' then 'cleaning'
-      when lower(coalesce(category, '')) ~ 'chemical' then 'chemical'
-      when lower(coalesce(category, '')) ~ 'beverage|coffee|tea|juice|drink' then 'beverage'
-      when lower(coalesce(category, '')) ~ 'operating|supply|glove|paper' then 'operating_supply'
-      else inventory_classification
-    end,
-    recipe_cost_eligible = case
-      when lower(coalesce(category, '')) ~ 'packag|takeaway|disposable|clean|janitorial|chemical|operating|supply|glove|paper'
-        then false
-      else recipe_cost_eligible
-    end;
+-- Backfill only unset values from conservative, category-level evidence.
+-- Canonical item names are intentionally not guessed: names such as milk, oil,
+-- paper, syrup, or direct-stock menu items are context-dependent.
+with normalized as (
+  select
+    i.id,
+    i.branch_id,
+    i.category,
+    i.inventory_classification as previous_classification,
+    i.recipe_cost_eligible as previous_recipe_cost_eligible,
+    trim(regexp_replace(lower(coalesce(i.category, '')), '[^a-z0-9]+', ' ', 'g')) as category_key
+  from public.inventory_ingredients i
+  where i.inventory_classification is null
+     or i.recipe_cost_eligible is null
+),
+inferred as (
+  select
+    n.*,
+    case
+      when n.category_key in (
+        'food', 'foods', 'food ingredient', 'food ingredients', 'ingredient', 'ingredients',
+        'dairy', 'produce', 'protein', 'proteins', 'dry goods', 'spice', 'spices',
+        'oil', 'oils', 'oil fats', 'oils fats', 'sauce', 'sauces'
+      ) then 'food_ingredient'
+      when n.category_key in (
+        'beverage', 'beverages', 'coffee', 'tea', 'coffee tea', 'juice', 'juices'
+      ) then 'beverage'
+      when n.category_key in (
+        'packaging', 'food packaging', 'takeaway packaging', 'disposable', 'disposables'
+      ) then 'packaging'
+      when n.category_key in (
+        'cleaning', 'cleaning supply', 'cleaning supplies',
+        'janitorial', 'janitorial supply', 'janitorial supplies', 'sanitation'
+      ) then 'cleaning'
+      when n.category_key in ('chemical', 'chemicals') then 'chemical'
+      when n.category_key in (
+        'operating supply', 'operating supplies', 'restaurant supply', 'restaurant supplies'
+      ) then 'operating_supply'
+      when n.category_key in (
+        'equipment consumable', 'equipment consumables'
+      ) then 'equipment_consumable'
+      else null
+    end as inferred_classification
+  from normalized n
+),
+candidates as (
+  select
+    i.*,
+    coalesce(i.previous_classification, i.inferred_classification) as next_classification,
+    coalesce(
+      i.previous_recipe_cost_eligible,
+      case coalesce(i.previous_classification, i.inferred_classification)
+        when 'food_ingredient' then true
+        when 'beverage' then true
+        when 'packaging' then false
+        when 'cleaning' then false
+        when 'operating_supply' then false
+        when 'chemical' then false
+        when 'equipment_consumable' then false
+        when 'other' then false
+        else null
+      end
+    ) as next_recipe_cost_eligible
+  from inferred i
+),
+updated as (
+  update public.inventory_ingredients item
+  set
+    inventory_classification = c.next_classification,
+    recipe_cost_eligible = c.next_recipe_cost_eligible
+  from candidates c
+  where item.id = c.id
+    and (
+      item.inventory_classification is distinct from c.next_classification
+      or item.recipe_cost_eligible is distinct from c.next_recipe_cost_eligible
+    )
+  returning
+    item.id,
+    item.branch_id,
+    c.category,
+    c.category_key,
+    c.previous_classification,
+    c.previous_recipe_cost_eligible,
+    item.inventory_classification,
+    item.recipe_cost_eligible
+)
+insert into public.inventory_audit_log (
+  event_type,
+  actor_id,
+  branch_id,
+  entity_type,
+  entity_id,
+  previous_value,
+  new_value,
+  source,
+  reason,
+  metadata
+)
+select
+  'inventory_item_classification_backfilled',
+  null,
+  u.branch_id,
+  'inventory_ingredient',
+  u.id,
+  jsonb_build_object(
+    'inventoryClassification', u.previous_classification,
+    'recipeCostEligible', u.previous_recipe_cost_eligible
+  ),
+  jsonb_build_object(
+    'inventoryClassification', u.inventory_classification,
+    'recipeCostEligible', u.recipe_cost_eligible
+  ),
+  'migration',
+  'conservative_category_backfill',
+  jsonb_build_object(
+    'migration', '20260807090000_inventory_cost_control_phase_a',
+    'ruleVersion', 'classification_backfill_v2',
+    'sourceCategory', u.category,
+    'normalizedCategory', u.category_key
+  )
+from updated u;
+
+-- Defaults apply only to future legacy inserts that omit these fields.
+-- Current application writes explicit values for newly created items.
+alter table public.inventory_ingredients
+  alter column inventory_classification set default 'other',
+  alter column recipe_cost_eligible set default false;
 
 drop trigger if exists inventory_movements_immutable on public.inventory_movements;
 
