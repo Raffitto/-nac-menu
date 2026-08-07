@@ -58,6 +58,34 @@ describe("menuSectionPlacement", () => {
     });
   });
 
+  test("keeps inactive unplaced items searchable in the manager catalogue", () => {
+    const unplaced = {
+      id: "seasonal-prawn",
+      name_en: "King Prawn Rendang",
+      name_ar: "روبيان الملك برندانغ",
+      price: "62",
+      section_id: null,
+      active: false,
+      sold_out: false,
+    };
+
+    const catalogue = buildMenuItemCatalogue(
+      [...rows, unplaced],
+      sections,
+      categories,
+    );
+    const staged = catalogue.find((entry) => entry.id === unplaced.id);
+
+    expect(staged).toMatchObject({
+      active: false,
+      isUnplaced: true,
+      primarySectionId: null,
+      primaryLocationLabel: "Unplaced — choose a section",
+      placedSectionIds: [],
+    });
+    expect(filterCatalogueSearch(catalogue, "rendang")).toContain(staged);
+  });
+
   test("filters catalogue rows by search term", () => {
     const catalogue = buildMenuItemCatalogue(rows, sections, categories);
     expect(filterCatalogueSearch(catalogue, "avocado")).toHaveLength(1);

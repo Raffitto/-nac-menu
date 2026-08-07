@@ -82,4 +82,12 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("onChooseCreateNew={() =>");
     expect(componentSource).toContain("<MenuItemPlacementEditor");
   });
+
+  test("placing an inactive catalogue item verifies it remains absent from guests", () => {
+    expect(componentSource).toContain(
+      "const shouldBePublic = verificationItem.active !== false",
+    );
+    expect(componentSource).toContain("present: shouldBePublic");
+    expect(componentSource).toContain("They remain hidden until activated.");
+  });
 });

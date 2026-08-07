@@ -48,14 +48,17 @@ export function buildMenuItemCatalogue(
     const placedSectionIds = collectPlacedSectionIds(groupRows);
     const primarySection = sectionsById.get(anchor.section_id);
     const primaryCategory = categoriesById.get(primarySection?.category_id);
-    const allPlacementLabels = groupRows.map((row) => {
-      const section = sectionsById.get(row.section_id);
-      const category = categoriesById.get(section?.category_id);
-      return formatPlacementLabel(
-        category?.name_en || category?.slug,
-        section?.name_en,
-      );
-    });
+    const allPlacementLabels = groupRows
+      .filter((row) => row.section_id)
+      .map((row) => {
+        const section = sectionsById.get(row.section_id);
+        const category = categoriesById.get(section?.category_id);
+        return formatPlacementLabel(
+          category?.name_en || category?.slug,
+          section?.name_en,
+        );
+      });
+    const isUnplaced = placedSectionIds.size === 0;
 
     catalogue.push({
       id: anchor.id,
@@ -67,13 +70,16 @@ export function buildMenuItemCatalogue(
       active: anchor.active !== false,
       sold_out: Boolean(anchor.sold_out),
       placement_group_id: anchor.placement_group_id || null,
-      primarySectionId: anchor.section_id,
-      primaryLocationLabel: formatPlacementLabel(
-        primaryCategory?.name_en || primaryCategory?.slug,
-        primarySection?.name_en,
-      ),
+      primarySectionId: anchor.section_id || null,
+      primaryLocationLabel: isUnplaced
+        ? "Unplaced — choose a section"
+        : formatPlacementLabel(
+            primaryCategory?.name_en || primaryCategory?.slug,
+            primarySection?.name_en,
+          ),
       allPlacementLabels,
       placedSectionIds: [...placedSectionIds],
+      isUnplaced,
       row: anchor,
     });
   });

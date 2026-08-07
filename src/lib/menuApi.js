@@ -1136,8 +1136,9 @@ export async function fetchBranchMenuItemRows(branchId) {
 }
 
 /**
- * Add one or more existing items to a destination section as linked placements.
- * Reuses placement groups and syncs content/allergens/add-ons across linked rows.
+ * Add one or more existing items to a destination section.
+ * Unplaced catalogue rows are assigned in place; already-placed items become
+ * linked placements with synchronized content/allergens/add-ons.
  */
 export async function addExistingItemsToSection({
   items = [],
@@ -1151,6 +1152,15 @@ export async function addExistingItemsToSection({
   const added = [];
   for (const item of items) {
     if (!item?.id || item.section_id === destinationSectionId) continue;
+
+    if (!item.section_id) {
+      const result = await updateMenuItem(item.id, {
+        section_id: destinationSectionId,
+      });
+      if (result.error) return { data: added, error: result.error };
+      added.push(result.data);
+      continue;
+    }
 
     const [allergenIds, addonIds] = await Promise.all([
       fetchItemAllergenIds(item.id),

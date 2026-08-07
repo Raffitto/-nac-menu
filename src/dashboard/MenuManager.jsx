@@ -1203,6 +1203,8 @@ export default function MenuManager() {
         throw new Error("No items were added to this section.");
       }
 
+      const verificationItem = added[added.length - 1];
+      const shouldBePublic = verificationItem.active !== false;
       await publishCurrentMenu(
         {
           action: "add_placement",
@@ -1213,21 +1215,24 @@ export default function MenuManager() {
             item_ids: added.map((item) => item.id),
           },
         },
-        added[0]
+        verificationItem
           ? {
               type: "item",
-              itemId: added[added.length - 1].id,
-              present: true,
-              fields: { en: added[added.length - 1].name_en },
+              itemId: verificationItem.id,
+              present: shouldBePublic,
+              ...(shouldBePublic
+                ? { fields: { en: verificationItem.name_en } }
+                : {}),
             }
           : null,
       );
 
-      showToast(
-        added.length > 1
+      const allInactive = added.every((item) => item.active === false);
+      showToast(allInactive
+        ? `${added.length > 1 ? `${added.length} inactive items` : added[0].name_en} added to ${addItemTarget.sectionName}. They remain hidden until activated.`
+        : added.length > 1
           ? guestMenuSuccessMessage(`${added.length} items added to ${addItemTarget.sectionName}. Guest menu updated.`)
-          : guestMenuSuccessMessage(`${added[0].name_en} added to ${addItemTarget.sectionName}. Guest menu updated.`),
-      );
+          : guestMenuSuccessMessage(`${added[0].name_en} added to ${addItemTarget.sectionName}. Guest menu updated.`));
       setAddItemModalOpen(false);
       setAddItemTarget(null);
       setBranchCatalogue([]);

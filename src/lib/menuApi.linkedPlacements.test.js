@@ -12,6 +12,7 @@ jest.mock("./supabase", () => ({
 
 import { supabase } from "./supabase";
 import {
+  addExistingItemsToSection,
   patchLinkedPlacementMembers,
   resolveLinkedPlacementTargetIds,
   updateMenuItemPlacements,
@@ -74,6 +75,31 @@ beforeEach(() => {
 });
 
 describe("linked placement sync", () => {
+  test("assigns an unplaced inactive catalogue item in place", async () => {
+    const updates = [];
+    mockFrom.mockImplementation((table) => {
+      if (table !== "menu_items") throw new Error(`unexpected table ${table}`);
+      return menuItemUpdateChain((payload) => updates.push(payload));
+    });
+
+    const result = await addExistingItemsToSection({
+      items: [{
+        id: "seasonal-prawn",
+        section_id: null,
+        active: false,
+        name_en: "King Prawn Rendang",
+      }],
+      destinationSectionId: "evening-mains",
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.data).toHaveLength(1);
+    expect(updates).toEqual([{ section_id: "evening-mains" }]);
+    expect(result.data[0]).toMatchObject({
+      section_id: "evening-mains",
+    });
+  });
+
   test("resolveLinkedPlacementTargetIds returns all group members", async () => {
     let menuItemsCalls = 0;
     mockFrom.mockImplementation((table) => {
