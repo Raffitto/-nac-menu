@@ -7,6 +7,7 @@ import {
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
   fetchIngredients,
+  fetchInventoryDataReadiness,
   fetchInventoryStaffAccess,
   fetchInventoryVarianceAnalysis,
   fetchOperationalEvents,
@@ -48,6 +49,7 @@ jest.mock("../lib/inventoryApi", () => ({
   fetchFoodBibleOverview: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
+  fetchInventoryDataReadiness: jest.fn(),
   fetchInventoryExceptions: jest.fn(),
   fetchInventoryReferenceData: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
@@ -109,6 +111,14 @@ describe("InventoryApp", () => {
     });
     fetchInventoryReferenceData.mockResolvedValue({ ingredients: [], suppliers: [], locations: [] });
     fetchIngredients.mockResolvedValue([]);
+    fetchInventoryDataReadiness.mockResolvedValue({
+      productCoverage: {},
+      ingredientCoverage: {},
+      salesCoverage: {},
+      products: [],
+      catalogueCandidates: [],
+      salesSources: [],
+    });
     fetchFoodBibleOverview.mockResolvedValue({
       summary: { totalMenuItems: 0, complete: 0, inProgress: 0, missing: 0, needsAttention: 0, coveragePct: 0 },
       rows: [],
@@ -129,7 +139,7 @@ describe("InventoryApp", () => {
     expect(screen.getByTestId("inventory-sign-in")).toHaveTextContent("Invoice intake");
   });
 
-  test("shows invoice, procurement, transfer, count, ingredient, food bible, and operations tabs", async () => {
+  test("shows invoice, procurement, transfer, count, ingredient, food bible, readiness, and operations tabs", async () => {
     render(<InventoryApp />);
     expect(await screen.findByTestId("inventory-tab-invoices")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-overview")).toBeInTheDocument();
@@ -140,6 +150,7 @@ describe("InventoryApp", () => {
     expect(screen.getByTestId("inventory-tab-stock-counts")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-ingredients")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-food-bible")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-data-readiness")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-operations")).toBeInTheDocument();
     expect(screen.getByText("Upload supplier invoice")).toBeInTheDocument();
   });
@@ -153,6 +164,8 @@ describe("InventoryApp", () => {
     expect(await screen.findByTestId("ingredient-master-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-food-bible"));
     expect(await screen.findByTestId("food-bible-view")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("inventory-tab-data-readiness"));
+    expect(await screen.findByTestId("inventory-data-readiness")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-operations"));
     expect(await screen.findByTestId("operational-control-view")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inventory-tab-purchase-orders"));

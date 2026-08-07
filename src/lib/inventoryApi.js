@@ -21,6 +21,7 @@ import {
   buildVarianceAnalysis,
   summarizeVarianceCommandCenter,
 } from "../inventory/varianceIntelligence";
+import { mergeTheoreticalConsumption } from "../inventory/dataReadiness";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -1427,22 +1428,125 @@ export async function fetchInventoryVarianceAnalysis({
   staleCostDays = 90,
   materiality,
 }) {
-  const result = await unwrap(
-    requireClient().rpc("inventory_variance_analysis", {
-      p_branch_id: branchId,
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-      p_ingredient_id: ingredientId,
-      p_stale_cost_days: staleCostDays,
-    }),
-    "Fetch inventory variance analysis",
-  );
+  const [rawVariance, theoretical] = await Promise.all([
+    unwrap(
+      requireClient().rpc("inventory_variance_analysis", {
+        p_branch_id: branchId,
+        p_period_start: periodStart,
+        p_period_end: periodEnd,
+        p_ingredient_id: ingredientId,
+        p_stale_cost_days: staleCostDays,
+      }),
+      "Fetch inventory variance analysis",
+    ),
+    fetchInventoryTheoreticalConsumption({
+      branchId,
+      periodStart,
+      periodEnd,
+    }).catch(() => null),
+  ]);
+  const result = mergeTheoreticalConsumption(rawVariance, theoretical);
   const items = (result?.items || []).map((item) => buildVarianceAnalysis(item, materiality));
   return {
     ...result,
     items,
     summary: summarizeVarianceCommandCenter(items),
   };
+}
+
+export async function fetchInventoryDataReadiness({ branchId, asOf }) {
+  return unwrap(
+    requireClient().rpc("inventory_data_readiness_overview", {
+      p_branch_id: branchId,
+      p_as_of: asOf,
+    }),
+    "Fetch inventory data readiness",
+  );
+}
+
+export async function setMenuItemCostingIntent({
+  branchId,
+  menuItemId,
+  costingIntent,
+  reason,
+  evidence = {},
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_set_menu_item_costing_intent", {
+      p_branch_id: branchId,
+      p_menu_item_id: menuItemId,
+      p_costing_intent: costingIntent,
+      p_reason: reason,
+      p_evidence: evidence,
+    }),
+    "Confirm menu-item costing intent",
+  );
+}
+
+export async function reviewSalesConsumptionBatch({
+  batchId,
+  status,
+  quantitySemantics,
+  reason,
+  sourceMetadata = {},
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_review_sales_consumption_batch", {
+      p_batch_id: batchId,
+      p_status: status,
+      p_quantity_semantics: quantitySemantics,
+      p_reason: reason,
+      p_source_metadata: sourceMetadata,
+    }),
+    "Review sales consumption source",
+  );
+}
+
+export async function linkMenuItemRecipe({
+  branchId,
+  menuItemId,
+  recipeId,
+  reason,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_link_menu_item_recipe", {
+      p_branch_id: branchId,
+      p_menu_item_id: menuItemId,
+      p_recipe_id: recipeId,
+      p_reason: reason,
+    }),
+    "Link menu item to recipe",
+  );
+}
+
+export async function createInventoryItemFromInvoiceCandidate({
+  invoiceLineId,
+  payload,
+  reason,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_create_item_from_invoice_candidate", {
+      p_invoice_line_id: invoiceLineId,
+      p_payload: payload,
+      p_reason: reason,
+    }),
+    "Create canonical item from supplier source",
+  );
+}
+
+export async function fetchInventoryTheoreticalConsumption({
+  branchId,
+  periodStart,
+  periodEnd,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_theoretical_consumption", {
+      p_branch_id: branchId,
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
+    }),
+    "Fetch theoretical inventory consumption",
+  );
 }
 
 export async function setInventoryVarianceReview({

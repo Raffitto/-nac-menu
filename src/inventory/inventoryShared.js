@@ -14,6 +14,7 @@ export const INVENTORY_TABS = Object.freeze([
   { id: "stock-counts", label: "Stock Counts" },
   { id: "ingredients", label: "Ingredients" },
   { id: "food-bible", label: "Food Bible" },
+  { id: "data-readiness", label: "Data Readiness" },
   { id: "operations", label: "Operations & Waste" },
 ]);
 

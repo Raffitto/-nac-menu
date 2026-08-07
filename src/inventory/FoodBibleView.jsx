@@ -41,7 +41,12 @@ const MENU_FILTERS = [
   { id: "sold_out", label: "Sold out" },
 ];
 
-export default function FoodBibleView({ branchId, onOpenIngredients }) {
+export default function FoodBibleView({
+  branchId,
+  onOpenIngredients,
+  initialTarget = null,
+  onInitialTargetHandled,
+}) {
   const [overview, setOverview] = useState(null);
   const [access, setAccess] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +83,20 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!initialTarget?.menuItemId || !(overview?.rows || []).length) return;
+    const row = overview.rows.find(
+      (entry) => entry.menuItemId === initialTarget.menuItemId,
+    );
+    if (row) {
+      setEditorTarget({
+        ...row,
+        suggestedRecipeType: initialTarget.recipeType || "menu_item",
+      });
+    }
+    onInitialTargetHandled?.();
+  }, [initialTarget, overview?.rows, onInitialTargetHandled]);
 
   const categories = useMemo(() => {
     const values = new Set();

@@ -64,7 +64,9 @@ function formFromBundle(bundle, target) {
     nameEn: recipe?.nameEn || target?.displayName || "",
     nameAr: recipe?.nameAr || target?.displayNameAr || "",
     internalName: recipe?.internalName || "",
-    recipeType: recipe?.recipeType || (target?.kind === "new_component" ? "preparation" : "menu_item"),
+    recipeType: recipe?.recipeType
+      || target?.suggestedRecipeType
+      || (target?.kind === "new_component" ? "preparation" : "menu_item"),
     menuItemId: recipe?.menuItemId || target?.menuItemId || "",
     placementGroupId: recipe?.placementGroupId || target?.placementGroupId || null,
     scope: recipe?.scope || "branch",

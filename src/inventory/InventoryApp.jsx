@@ -10,6 +10,7 @@ import OperationalControlView from "./OperationalControlView";
 import ProcurementControlView from "./ProcurementControlView";
 import TransferCountControlView from "./TransferCountControlView";
 import InventoryCommandCenter from "./InventoryCommandCenter";
+import InventoryDataReadinessView from "./InventoryDataReadinessView";
 import { fetchInventoryStaffAccess } from "../lib/inventoryApi";
 import {
   INVENTORY_BRANCHES,
@@ -25,6 +26,7 @@ export default function InventoryApp() {
   const [branchId, setBranchId] = useState(inventoryBranchFromLocation);
   const [activeTab, setActiveTab] = useState(inventoryTabFromLocation);
   const [access, setAccess] = useState(null);
+  const [foodBibleTarget, setFoodBibleTarget] = useState(null);
 
   useEffect(() => {
     if (!session) return;
@@ -58,6 +60,8 @@ export default function InventoryApp() {
             ? "Ingredient master"
             : activeTab === "food-bible"
               ? "Food Bible"
+              : activeTab === "data-readiness"
+                ? "Inventory Data Readiness"
               : ["purchase-orders", "purchases", "returns"].includes(activeTab)
                 ? INVENTORY_TABS.find(({ id }) => id === activeTab)?.label
               : activeTab === "operations"
@@ -129,6 +133,17 @@ export default function InventoryApp() {
       ) : activeTab === "food-bible" ? (
         <FoodBibleView
           branchId={branchId}
+          onOpenIngredients={() => setActiveTab("ingredients")}
+          initialTarget={foodBibleTarget}
+          onInitialTargetHandled={() => setFoodBibleTarget(null)}
+        />
+      ) : activeTab === "data-readiness" ? (
+        <InventoryDataReadinessView
+          branchId={branchId}
+          onOpenFoodBible={(target = null) => {
+            setFoodBibleTarget(target);
+            setActiveTab("food-bible");
+          }}
           onOpenIngredients={() => setActiveTab("ingredients")}
         />
       ) : (

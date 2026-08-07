@@ -741,3 +741,45 @@
   .inv-line-match, .inv-map-form, .inv-candidates { grid-column: 1; }
   .inv-approval > div:last-child { flex-direction: column; }
 }
+
+.inv-readiness {
+  display: grid;
+  gap: 1rem;
+}
+
+.inv-readiness table td {
+  vertical-align: top;
+}
+
+.inv-readiness table td small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--inv-muted, #68707a);
+}
+
+.inv-readiness table select {
+  min-width: 10rem;
+  max-width: 13rem;
+}
+
+.inv-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 760px) {
+  .inv-readiness .inv-command-toolbar {
+    align-items: stretch;
+  }
+
+  .inv-readiness .inv-command-view-tabs {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .inv-readiness table select {
+    min-width: 9rem;
+  }
+}
