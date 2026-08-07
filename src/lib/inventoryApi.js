@@ -1549,6 +1549,95 @@ export async function fetchInventoryTheoreticalConsumption({
   );
 }
 
+export async function fetchInventoryTheoreticalConsumptionScope({
+  branchId,
+  periodStart,
+  periodEnd,
+  menuItemIds,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_theoretical_consumption_scope", {
+      p_branch_id: branchId,
+      p_period_start: periodStart,
+      p_period_end: periodEnd,
+      p_menu_item_ids: menuItemIds,
+    }),
+    "Fetch selected-product theoretical consumption",
+  );
+}
+
+export async function previewRecipeOnboarding({ branchId, payload }) {
+  return unwrap(
+    requireClient().rpc("inventory_preview_recipe_onboarding", {
+      p_branch_id: branchId,
+      p_payload: payload,
+    }),
+    "Preview recipe onboarding",
+  );
+}
+
+export async function createRecipeOnboardingBatch({
+  branchId,
+  cohortName,
+  payload,
+  idempotencyKey,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_create_recipe_onboarding_batch", {
+      p_branch_id: branchId,
+      p_cohort_name: cohortName,
+      p_payload: payload,
+      p_idempotency_key: idempotencyKey,
+    }),
+    "Stage recipe onboarding batch",
+  );
+}
+
+export async function reviewRecipeOnboardingBatch({ batchId, status, reason }) {
+  return unwrap(
+    requireClient().rpc("inventory_review_recipe_onboarding_batch", {
+      p_batch_id: batchId,
+      p_status: status,
+      p_reason: reason,
+    }),
+    "Review recipe onboarding batch",
+  );
+}
+
+export async function applyRecipeOnboardingBatch({ batchId, reason }) {
+  return unwrap(
+    requireClient().rpc("inventory_apply_recipe_onboarding_batch", {
+      p_batch_id: batchId,
+      p_reason: reason,
+    }),
+    "Apply recipe onboarding batch",
+  );
+}
+
+export async function listRecipeOnboardingBatches({ branchId }) {
+  return unwrap(
+    requireClient()
+      .from("inventory_recipe_onboarding_batches")
+      .select("id,branch_id,cohort_name,source_file_ids,preview,status,idempotency_key,result,created_at,approved_at,applied_at")
+      .eq("branch_id", branchId)
+      .order("created_at", { ascending: false })
+      .limit(50),
+    "List recipe onboarding batches",
+  );
+}
+
+export async function listApprovedCostBaselines({ branchId }) {
+  return unwrap(
+    requireClient()
+      .from("inventory_approved_cost_baselines")
+      .select("id,ingredient_id,effective_date,canonical_unit,canonical_unit_cost,currency,source_file_id,source_locator,status,approved_at,inventory_ingredients(canonical_name)")
+      .eq("branch_id", branchId)
+      .order("effective_date", { ascending: false })
+      .limit(200),
+    "List approved cost baselines",
+  );
+}
+
 export async function setInventoryVarianceReview({
   branchId,
   ingredientId,

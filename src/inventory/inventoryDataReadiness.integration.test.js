@@ -14,6 +14,10 @@ const hardeningSql = fs.readFileSync(path.join(
   process.cwd(),
   "supabase/migrations/20260807152000_inventory_data_readiness_hardening.sql",
 ), "utf8");
+const onboardingSql = fs.readFileSync(path.join(
+  process.cwd(),
+  "supabase/migrations/20260807162000_inventory_recipe_cohort_onboarding.sql",
+), "utf8");
 
 describe("real-data-readiness migration contract", () => {
   test("stores explicit product intent without replacing canonical recipe linkage", () => {
@@ -111,5 +115,45 @@ describe("real-data-readiness migration contract", () => {
     expect(sql).not.toMatch(/delete from public\.inventory_recipes/);
     expect(sql).not.toMatch(/update public\.foodics_sales_items/);
     expect(sql).not.toMatch(/delete from public\.foodics_sales_items/);
+  });
+
+  test("stages source-cited recipe cohorts with deterministic blocking checks", () => {
+    expect(onboardingSql).toMatch(/inventory_recipe_onboarding_batches/);
+    expect(onboardingSql).toMatch(/inventory_preview_recipe_onboarding/);
+    expect(onboardingSql).toMatch(/MISSING_SOURCE_FILE/);
+    expect(onboardingSql).toMatch(/INGREDIENT_COLLISION/);
+    expect(onboardingSql).toMatch(/DUPLICATE_COST_BASELINE/);
+    expect(onboardingSql).toMatch(/MISSING_COST_EVIDENCE/);
+    expect(onboardingSql).toMatch(/DIRECT_STOCK_REQUIRES_ONE_ITEM/);
+    expect(onboardingSql).toMatch(/Only an approved onboarding batch can be applied/);
+    expect(onboardingSql).toMatch(/pg_advisory_xact_lock/);
+  });
+
+  test("uses approved source-cited cost only after real WAC precedence", () => {
+    expect(onboardingSql).toMatch(/inventory_approved_cost_baselines/);
+    expect(onboardingSql).toMatch(/source_priority/);
+    expect(onboardingSql).toMatch(/approved_external_baseline/);
+    expect(onboardingSql).toMatch(/APPROVED_EXTERNAL_BASELINE/);
+    expect(onboardingSql).toMatch(/HISTORICAL_WAC_WITH_APPROVED_EXTERNAL_BASELINE/);
+    expect(onboardingSql).toMatch(/sourceFileId/);
+    expect(onboardingSql).toMatch(/sourceLocator/);
+  });
+
+  test("supports explicitly scoped cohort consumption without weakening full coverage", () => {
+    expect(onboardingSql).toMatch(/inventory_theoretical_consumption_scope/);
+    expect(onboardingSql).toMatch(/'type', 'SELECTED_PRODUCTS'/);
+    expect(onboardingSql).toMatch(/EXCLUDED_UNLESS_SEPARATELY_REPORTED/);
+    expect(onboardingSql).toMatch(/PARTIAL_PERIOD/);
+    expect(onboardingSql).toMatch(/NO_APPROVED_SALES_SOURCE/);
+    expect(onboardingSql).toMatch(/inventory_theoretical_consumption\(/);
+  });
+
+  test("does not fabricate operational stock or WAC history", () => {
+    expect(onboardingSql).not.toMatch(/insert into public\.inventory_movements/);
+    expect(onboardingSql).not.toMatch(/insert into public\.inventory_ingredient_cost_history/);
+    expect(onboardingSql).not.toMatch(/insert into public\.inventory_purchase_receipts/);
+    expect(onboardingSql).not.toMatch(/update public\.inventory_movements/);
+    expect(onboardingSql).not.toMatch(/update public\.inventory_ingredient_cost_history/);
+    expect(onboardingSql).not.toMatch(/delete from public\.inventory_movements/);
   });
 });

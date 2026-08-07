@@ -10,6 +10,10 @@ const STORAGE_FIX_V2_MIGRATION = path.resolve(
   __dirname,
   "../../../../supabase/migrations/20260615150000_ask_nac_vault_storage_upload_rls_fix_v2.sql",
 );
+const READ_PERFORMANCE_MIGRATION = path.resolve(
+  __dirname,
+  "../../../../supabase/migrations/20260807153000_ask_nac_vault_read_rls_performance.sql",
+);
 
 describe("ask_nac_vault storage upload RLS fix", () => {
   let sql;
@@ -75,5 +79,30 @@ describe("ask_nac_vault storage upload RLS fix v2", () => {
 
   test("includes sql editor debug helper", () => {
     expect(sql).toMatch(/ask_nac_vault_storage_upload_debug/);
+  });
+});
+
+describe("ask_nac_vault statement-cached read scope", () => {
+  let sql;
+
+  beforeAll(() => {
+    sql = readFileSync(READ_PERFORMANCE_MIGRATION, "utf8");
+  });
+
+  test("caches branch, department, and sensitivity scope once per statement", () => {
+    expect(sql).toMatch(/ask_nac_vault_read_scope_snapshot/);
+    expect(sql).toMatch(/ask_nac_vault_scope_snapshot_allows/);
+    expect(sql).toMatch(/ask_nac_sensitivity_policies/);
+    expect(sql).toMatch(/ask_nac_user_branch_access/);
+    expect(sql).toMatch(/ask_nac_user_department_access/);
+    expect(sql).toMatch(/\(select public\.ask_nac_vault_read_scope_snapshot\(\)\)/);
+  });
+
+  test("retains registry, chunk, and private storage read gates", () => {
+    expect(sql).toMatch(/create policy ask_nac_files_select/);
+    expect(sql).toMatch(/create policy ask_nac_chunks_select/);
+    expect(sql).toMatch(/create policy ask_nac_vault_storage_select/);
+    expect(sql).toMatch(/objects\.bucket_id = 'ask-nac-vault-originals'/);
+    expect(sql).toMatch(/file\.status = 'active'/);
   });
 });

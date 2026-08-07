@@ -9,11 +9,17 @@ import {
   X,
 } from "lucide-react";
 import {
+  applyRecipeOnboardingBatch,
+  createRecipeOnboardingBatch,
   createInventoryItemFromInvoiceCandidate,
   fetchInventoryDataReadiness,
   fetchInventoryStaffAccess,
   linkMenuItemRecipe,
+  listApprovedCostBaselines,
+  listRecipeOnboardingBatches,
+  previewRecipeOnboarding,
   reviewSalesConsumptionBatch,
+  reviewRecipeOnboardingBatch,
   setMenuItemCostingIntent,
 } from "../lib/inventoryApi";
 import {
@@ -28,6 +34,7 @@ import {
 const VIEWS = [
   { id: "coverage", label: "Recipe coverage" },
   { id: "catalogue", label: "Catalogue onboarding" },
+  { id: "cohort", label: "Recipe cohort import" },
   { id: "sales", label: "Sales sources" },
 ];
 
@@ -59,6 +66,12 @@ export default function InventoryDataReadinessView({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [candidate, setCandidate] = useState(null);
+  const [cohortName, setCohortName] = useState("Khobar trusted recipe cohort");
+  const [idempotencyKey, setIdempotencyKey] = useState("");
+  const [payloadText, setPayloadText] = useState("");
+  const [cohortPreview, setCohortPreview] = useState(null);
+  const [onboardingBatches, setOnboardingBatches] = useState([]);
+  const [costBaselines, setCostBaselines] = useState([]);
 
   const canApprove = ["ceo", "super_admin", "ops_manager", "branch_manager", "cost_controller"].includes(
     access?.vaultRole,
@@ -84,6 +97,24 @@ export default function InventoryDataReadinessView({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const refreshOnboarding = useCallback(async () => {
+    if (view !== "cohort") return;
+    try {
+      const [batches, baselines] = await Promise.all([
+        listRecipeOnboardingBatches({ branchId }),
+        listApprovedCostBaselines({ branchId }),
+      ]);
+      setOnboardingBatches(batches || []);
+      setCostBaselines(baselines || []);
+    } catch (err) {
+      setError(err.message || "Could not load recipe onboarding evidence.");
+    }
+  }, [branchId, view]);
+
+  useEffect(() => {
+    refreshOnboarding();
+  }, [refreshOnboarding]);
 
   const products = useMemo(
     () => filterCoverageProducts(data?.products || [], {
@@ -209,6 +240,80 @@ export default function InventoryDataReadinessView({
       "Canonical item created and source mapping preserved.",
     );
     if (succeeded) setCandidate(null);
+  };
+
+  const parseOnboardingPayload = () => {
+    try {
+      return JSON.parse(payloadText);
+    } catch {
+      throw new Error("Onboarding payload must be valid JSON.");
+    }
+  };
+
+  const previewOnboarding = async () => {
+    setBusy("cohort:preview");
+    setError("");
+    setNotice("");
+    try {
+      const result = await previewRecipeOnboarding({
+        branchId,
+        payload: parseOnboardingPayload(),
+      });
+      setCohortPreview(result);
+      setNotice(result.safeToApply
+        ? "Preview passed all blocking evidence and collision checks."
+        : "Preview completed with blocking issues. Nothing was applied.");
+    } catch (err) {
+      setError(err.message || "Could not preview recipe onboarding.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const stageOnboarding = async () => {
+    if (!cohortPreview?.safeToApply) {
+      setError("Run a clean preview before staging this cohort.");
+      return;
+    }
+    const succeeded = await run(
+      "cohort:stage",
+      () => createRecipeOnboardingBatch({
+        branchId,
+        cohortName,
+        payload: parseOnboardingPayload(),
+        idempotencyKey,
+      }),
+      "Source-cited recipe onboarding batch staged for approval.",
+    );
+    if (succeeded) await refreshOnboarding();
+  };
+
+  const reviewOnboarding = async (batch, status) => {
+    const reason = window.prompt(
+      `${status === "approved" ? "Approve" : "Reject"} ${batch.cohort_name}.\nReason:`,
+      "Reviewed against authoritative recipe and cost sources",
+    );
+    if (!reason?.trim()) return;
+    const succeeded = await run(
+      `cohort:${batch.id}:${status}`,
+      () => reviewRecipeOnboardingBatch({ batchId: batch.id, status, reason }),
+      `Onboarding batch ${status}.`,
+    );
+    if (succeeded) await refreshOnboarding();
+  };
+
+  const applyOnboarding = async (batch) => {
+    const reason = window.prompt(
+      `Apply ${batch.cohort_name} transactionally.\nReason:`,
+      "Approved source-cited cohort onboarding",
+    );
+    if (!reason?.trim()) return;
+    const succeeded = await run(
+      `cohort:${batch.id}:apply`,
+      () => applyRecipeOnboardingBatch({ batchId: batch.id, reason }),
+      "Ingredients, cost evidence, and recipe versions applied transactionally.",
+    );
+    if (succeeded) await refreshOnboarding();
   };
 
   const productCoverage = data?.productCoverage || {};
@@ -424,6 +529,167 @@ export default function InventoryDataReadinessView({
           <button type="button" className="inv-button inv-button--ghost" onClick={onOpenIngredients}>
             Open Ingredient Master
           </button>
+        </>
+      ) : view === "cohort" ? (
+        <>
+          <div className="inv-command-callout">
+            <Database size={18} />
+            <div>
+              <strong>Preview, approve, then apply</strong>
+              <p>
+                This controlled path requires Company Knowledge file IDs and source
+                locators for every recipe line and July cost. Applying is transactional,
+                idempotent, and does not create stock, receipts, movements, or WAC history.
+              </p>
+            </div>
+          </div>
+          <div className="inv-fb-editor-form">
+            <div className="inv-fb-section-body inv-fb-grid">
+              <label>
+                <span>Cohort name</span>
+                <input
+                  value={cohortName}
+                  onChange={(event) => setCohortName(event.target.value)}
+                  disabled={!canApprove}
+                />
+              </label>
+              <label>
+                <span>Idempotency key</span>
+                <input
+                  value={idempotencyKey}
+                  onChange={(event) => setIdempotencyKey(event.target.value)}
+                  placeholder="khobar-july-2026-cohort-v1"
+                  disabled={!canApprove}
+                />
+              </label>
+              <label className="inv-fb-grid-full">
+                <span>Source-cited onboarding payload</span>
+                <textarea
+                  value={payloadText}
+                  onChange={(event) => {
+                    setPayloadText(event.target.value);
+                    setCohortPreview(null);
+                  }}
+                  rows={14}
+                  spellCheck={false}
+                  placeholder='{"sourceFileIds":[],"ingredients":[],"costs":[],"recipes":[]}'
+                  disabled={!canApprove}
+                />
+              </label>
+            </div>
+            <div className="inv-inline-actions">
+              <button
+                type="button"
+                className="inv-button inv-button--secondary"
+                onClick={previewOnboarding}
+                disabled={!canApprove || !payloadText.trim() || busy === "cohort:preview"}
+              >
+                Preview evidence
+              </button>
+              <button
+                type="button"
+                className="inv-button inv-button--primary"
+                onClick={stageOnboarding}
+                disabled={
+                  !canApprove
+                  || !cohortPreview?.safeToApply
+                  || !cohortName.trim()
+                  || !idempotencyKey.trim()
+                  || busy === "cohort:stage"
+                }
+              >
+                Stage for approval
+              </button>
+            </div>
+          </div>
+
+          {cohortPreview ? (
+            <div className="inv-fb-summary">
+              <article><strong>{cohortPreview.ingredientCount || 0}</strong><span>Ingredients</span></article>
+              <article><strong>{cohortPreview.costBaselineCount || 0}</strong><span>Cost baselines</span></article>
+              <article><strong>{cohortPreview.recipeCount || 0}</strong><span>Recipes / direct stock</span></article>
+              <article><strong>{cohortPreview.blockingIssueCount || 0}</strong><span>Blocking issues</span></article>
+            </div>
+          ) : null}
+          {(cohortPreview?.issues || []).length ? (
+            <div className="inv-ingredients-table-wrap">
+              <table className="inv-ingredients-table">
+                <thead><tr><th>Severity</th><th>Issue</th><th>Record</th></tr></thead>
+                <tbody>
+                  {cohortPreview.issues.map((issue, index) => (
+                    <tr key={`${issue.code}:${index}`}>
+                      <td>{issue.severity}</td>
+                      <td>{statusLabel(issue.code)}</td>
+                      <td>{issue.recipeKey || issue.ingredientKey || issue.key || "Batch"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          <div className="inv-ingredients-table-wrap">
+            <table className="inv-ingredients-table">
+              <thead>
+                <tr><th>Cohort</th><th>Sources</th><th>Preview</th><th>Status</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {onboardingBatches.map((batch) => (
+                  <tr key={batch.id}>
+                    <td><strong>{batch.cohort_name}</strong><small>{batch.idempotency_key}</small></td>
+                    <td>{batch.source_file_ids?.length || 0}<small>Company Knowledge files</small></td>
+                    <td>
+                      {batch.preview?.ingredientCount || 0} ingredients · {batch.preview?.recipeCount || 0} recipes
+                      <small>{batch.preview?.blockingIssueCount || 0} blocking issues</small>
+                    </td>
+                    <td><span className="inv-status-pill">{statusLabel(batch.status)}</span></td>
+                    <td>
+                      {batch.status === "draft" ? (
+                        <div className="inv-inline-actions">
+                          <button
+                            type="button"
+                            className="inv-button inv-button--secondary"
+                            disabled={!canApprove || busy.startsWith(`cohort:${batch.id}`)}
+                            onClick={() => reviewOnboarding(batch, "approved")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="inv-button inv-button--ghost"
+                            disabled={!canApprove || busy.startsWith(`cohort:${batch.id}`)}
+                            onClick={() => reviewOnboarding(batch, "rejected")}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      ) : null}
+                      {batch.status === "approved" ? (
+                        <button
+                          type="button"
+                          className="inv-button inv-button--primary"
+                          disabled={!canApprove || busy === `cohort:${batch.id}:apply`}
+                          onClick={() => applyOnboarding(batch)}
+                        >
+                          Apply transactionally
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="inv-command-callout">
+            <CheckCircle2 size={18} />
+            <div>
+              <strong>{costBaselines.length} approved external cost baselines</strong>
+              <p>
+                Recipe costing prefers real WAC history and uses these source-cited
+                observations only when WAC is unavailable for the requested date.
+              </p>
+            </div>
+          </div>
         </>
       ) : (
         <>

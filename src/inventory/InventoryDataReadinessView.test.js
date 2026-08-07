@@ -2,17 +2,28 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InventoryDataReadinessView from "./InventoryDataReadinessView";
 import {
+  createRecipeOnboardingBatch,
   createInventoryItemFromInvoiceCandidate,
   fetchInventoryDataReadiness,
   fetchInventoryStaffAccess,
+  listApprovedCostBaselines,
+  listRecipeOnboardingBatches,
+  previewRecipeOnboarding,
   reviewSalesConsumptionBatch,
   setMenuItemCostingIntent,
 } from "../lib/inventoryApi";
 
 jest.mock("../lib/inventoryApi", () => ({
+  applyRecipeOnboardingBatch: jest.fn(),
+  createRecipeOnboardingBatch: jest.fn(),
   createInventoryItemFromInvoiceCandidate: jest.fn(),
   fetchInventoryDataReadiness: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
+  linkMenuItemRecipe: jest.fn(),
+  listApprovedCostBaselines: jest.fn(),
+  listRecipeOnboardingBatches: jest.fn(),
+  previewRecipeOnboarding: jest.fn(),
+  reviewRecipeOnboardingBatch: jest.fn(),
   reviewSalesConsumptionBatch: jest.fn(),
   setMenuItemCostingIntent: jest.fn(),
 }));
@@ -79,6 +90,8 @@ describe("InventoryDataReadinessView", () => {
     jest.clearAllMocks();
     fetchInventoryDataReadiness.mockResolvedValue(readiness);
     fetchInventoryStaffAccess.mockResolvedValue({ vaultRole: "super_admin" });
+    listRecipeOnboardingBatches.mockResolvedValue([]);
+    listApprovedCostBaselines.mockResolvedValue([]);
   });
 
   test("shows honest product and unavailable sales coverage", async () => {
@@ -119,6 +132,45 @@ describe("InventoryDataReadinessView", () => {
       menuItemId: "menu-1",
       recipeType: "direct_stock",
     });
+  });
+
+  test("previews source-cited cohort payload before staging", async () => {
+    previewRecipeOnboarding.mockResolvedValue({
+      ingredientCount: 1,
+      costBaselineCount: 1,
+      recipeCount: 1,
+      blockingIssueCount: 0,
+      safeToApply: true,
+      issues: [],
+    });
+    createRecipeOnboardingBatch.mockResolvedValue({ id: "cohort-1" });
+    render(<InventoryDataReadinessView branchId="khobar" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Recipe cohort import" }));
+    const payload = {
+      sourceFileIds: ["source-1"],
+      ingredients: [],
+      costs: [],
+      recipes: [],
+    };
+    fireEvent.change(screen.getByLabelText("Source-cited onboarding payload"), {
+      target: { value: JSON.stringify(payload) },
+    });
+    fireEvent.change(screen.getByLabelText("Idempotency key"), {
+      target: { value: "khobar-july-v1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preview evidence" }));
+    await waitFor(() => expect(previewRecipeOnboarding).toHaveBeenCalledWith({
+      branchId: "khobar",
+      payload,
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Stage for approval" }));
+    await waitFor(() => expect(createRecipeOnboardingBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: "khobar",
+        idempotencyKey: "khobar-july-v1",
+        payload,
+      }),
+    ));
   });
 
   test("blocks duplicate catalogue candidates from canonical creation", async () => {
