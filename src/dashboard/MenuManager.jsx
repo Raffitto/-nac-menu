@@ -14,6 +14,7 @@ import {
   Edit3,
   Trash2,
   Copy,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   ChevronDown,
@@ -105,6 +106,13 @@ import { isApplePlatform, isEditableTarget, isModKey } from "../lib/menuInteract
 import { moveSelectedGroup, shouldConfirmBulk } from "../lib/menuInteraction/groupOrdering";
 import { diffBoardPlacements } from "../lib/menuInteraction/boardDiff";
 import { flattenVisibleItems } from "../lib/menuInteraction/selectionModel";
+import {
+  SIDEBAR_EVENTS,
+  SIDEBAR_KEYS,
+  emitSidebarToggle,
+  writeSidebarCollapsed,
+} from "../lib/sidebarPrefs";
+import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
 import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
@@ -474,6 +482,13 @@ export default function MenuManager() {
   const [quickLookItemId, setQuickLookItemId] = useState(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const {
+    collapsed: menuSidebarCollapsed,
+    toggle: toggleMenuSidebar,
+    expand: expandMenuSidebar,
+  } = useCollapsibleSidebar(SIDEBAR_KEYS.menu, {
+    toggleEvent: SIDEBAR_EVENTS.menuToggle,
+  });
   const boardScrollRef = useRef(null);
   const showToastRef = useRef(null);
 
@@ -2221,6 +2236,28 @@ export default function MenuManager() {
     const commands = [
       { id: "arrange", label: "Arrange menu", group: "Commands", keywords: "organize drag", run: () => setArrangeMode(true) },
       { id: "palette-help", label: "Keyboard shortcuts", group: "Commands", keywords: "help", run: () => setShortcutsOpen(true) },
+      { id: "toggle-nav-sidebar", label: "Toggle Navigation Sidebar", group: "View", keywords: "collapse expand global nav", run: () => emitSidebarToggle("global") },
+      { id: "toggle-menu-sidebar", label: "Toggle Menu Sidebar", group: "View", keywords: "collapse expand categories", run: () => emitSidebarToggle("menu") },
+      {
+        id: "expand-both-sidebars",
+        label: "Expand Both Sidebars",
+        group: "View",
+        keywords: "show panels",
+        run: () => {
+          writeSidebarCollapsed(SIDEBAR_KEYS.global, false);
+          writeSidebarCollapsed(SIDEBAR_KEYS.menu, false);
+        },
+      },
+      {
+        id: "collapse-both-sidebars",
+        label: "Collapse Both Sidebars",
+        group: "View",
+        keywords: "hide panels workspace",
+        run: () => {
+          writeSidebarCollapsed(SIDEBAR_KEYS.global, true);
+          writeSidebarCollapsed(SIDEBAR_KEYS.menu, true);
+        },
+      },
       { id: "quicklook", label: "Open Quick Look", group: "Commands", keywords: "space preview", run: () => openQuickLook() },
       { id: "hide-selected", label: "Hide selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: false, hidden_until: null }, `Hidden ${selectionApi.count} items`) },
       { id: "show-selected", label: "Show selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: true, hidden_until: null }, `Showed ${selectionApi.count} items`) },
@@ -2290,6 +2327,11 @@ export default function MenuManager() {
         setPaletteOpen(true);
         return;
       }
+      if (isModKey(event) && event.shiftKey && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        toggleMenuSidebar();
+        return;
+      }
       if (isModKey(event) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) undoApi.redo();
@@ -2322,6 +2364,7 @@ export default function MenuManager() {
     undoApi,
     menuData,
     openEditItem,
+    toggleMenuSidebar,
   ]);
 
   // ── Image handling ──
@@ -2536,119 +2579,175 @@ export default function MenuManager() {
         </div>
       </div>
       <div className="mm-bg-glow" />
-      <div className="mm-body">
+      <div className={`mm-body ${menuSidebarCollapsed ? "mm-body--menu-sidebar-collapsed" : ""}`}>
 
       {/* ═══ SIDEBAR ═══ */}
-      <aside className="mm-sidebar">
-        <div className="mm-sidebar-header">
-          <p className="mm-sidebar-title">Categories</p>
-          <button className="mm-sidebar-add-btn" onClick={handleAddCategory}>
-            <Plus size={14} />
-            Add Category
+      <aside
+        className={`mm-sidebar ${menuSidebarCollapsed ? "is-collapsed" : ""}`}
+        data-testid="menu-category-sidebar"
+        aria-label="Menu categories"
+        data-collapsed={menuSidebarCollapsed ? "true" : "false"}
+      >
+        <button
+          type="button"
+          className="mm-sidebar-edge-toggle"
+          onClick={toggleMenuSidebar}
+          aria-label={menuSidebarCollapsed ? "Expand menu categories" : "Collapse menu categories"}
+          aria-controls="mm-category-list"
+          aria-expanded={!menuSidebarCollapsed}
+          data-testid="menu-sidebar-toggle"
+          title={menuSidebarCollapsed ? "Expand menu categories" : "Collapse menu categories"}
+        >
+          {menuSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+
+        <div className="mm-sidebar-rail" data-testid="menu-sidebar-rail">
+          <button
+            type="button"
+            className="mm-sidebar-rail-context"
+            onClick={expandMenuSidebar}
+            title={selectedCategory?.name_en || "Menu categories"}
+            aria-label={
+              selectedCategory
+                ? `Expand categories — current: ${selectedCategory.name_en}`
+                : "Expand menu categories"
+            }
+          >
+            <UtensilsCrossed size={16} aria-hidden="true" />
+            <span className="mm-sidebar-rail-pill" aria-hidden="true">
+              {(selectedCategory?.name_en || "Menu").slice(0, 2)}
+            </span>
           </button>
         </div>
 
-        {/* Category Create/Edit Form */}
-        <AnimatePresence>
-          {catEditMode && (
-            <motion.div
-              className="mm-cat-edit-form"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-            >
-              <div className="mm-cat-edit-form-row">
-                <input
-                  className="mm-field-input"
-                  placeholder="Name (EN)"
-                  value={catEditData.name_en}
-                  onChange={(e) => setCatEditData((p) => ({ ...p, name_en: e.target.value }))}
-                  autoFocus
-                />
-                <input
-                  className="mm-field-input"
-                  placeholder="الاسم (AR)"
-                  dir="rtl"
-                  value={catEditData.name_ar}
-                  onChange={(e) => setCatEditData((p) => ({ ...p, name_ar: e.target.value }))}
-                />
-              </div>
-              <div className="mm-cat-edit-actions">
-                <button className="mm-btn mm-btn-secondary" onClick={() => setCatEditMode(null)} style={{ flex: 0, padding: "6px 14px", fontSize: 12 }}>
-                  Cancel
-                </button>
-                <button className="mm-btn mm-btn-primary" onClick={handleSaveCategory} style={{ flex: 0, padding: "6px 14px", fontSize: 12 }}>
-                  <Check size={13} />
-                  {catEditMode === "create" ? "Create" : "Save"}
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <div className="mm-sidebar-expanded-content">
+          <div className="mm-sidebar-header">
+            <p className="mm-sidebar-title">Categories</p>
+            <button className="mm-sidebar-add-btn" onClick={handleAddCategory}>
+              <Plus size={14} />
+              Add Category
+            </button>
+          </div>
 
-        <div className="mm-cat-list">
-          {categories.map((cat, idx) => (
-            <motion.div
-              key={cat.id}
-              role="button"
-              tabIndex={0}
-              className={`mm-cat-item ${cat.id === selectedCatId ? "active" : ""} ${cat.active === false ? "mm-cat-item-inactive" : ""}`}
-              onClick={() => handleSelectCategory(cat.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleSelectCategory(cat.id);
-                }
-              }}
-              whileHover={{ x: 3 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <span className="mm-cat-item-name">
-                {cat.name_en || cat.id}
-              </span>
-              <div className="mm-cat-actions">
-                <button
-                  className="mm-cat-reorder-btn"
-                  onClick={(e) => { e.stopPropagation(); handleReorderCategory(idx, -1); }}
-                  disabled={idx === 0}
-                  title="Move up"
-                >
-                  <ChevronUp size={14} />
-                </button>
-                <button
-                  className="mm-cat-reorder-btn"
-                  onClick={(e) => { e.stopPropagation(); handleReorderCategory(idx, 1); }}
-                  disabled={idx === categories.length - 1}
-                  title="Move down"
-                >
-                  <ChevronDown size={14} />
-                </button>
-                <button
-                  className="mm-cat-reorder-btn"
-                  onClick={(e) => handleEditCategory(cat, e)}
-                  title="Edit"
-                >
-                  <Edit3 size={13} />
-                </button>
-                <button
-                  className="mm-cat-reorder-btn"
-                  onClick={(e) => handleDeleteCategory(cat, e)}
-                  title="Delete"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            </motion.div>
-          ))}
+          {/* Category Create/Edit Form */}
+          <AnimatePresence>
+            {catEditMode && (
+              <motion.div
+                className="mm-cat-edit-form"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <div className="mm-cat-edit-form-row">
+                  <input
+                    className="mm-field-input"
+                    placeholder="Name (EN)"
+                    value={catEditData.name_en}
+                    onChange={(e) => setCatEditData((p) => ({ ...p, name_en: e.target.value }))}
+                    autoFocus
+                  />
+                  <input
+                    className="mm-field-input"
+                    placeholder="الاسم (AR)"
+                    dir="rtl"
+                    value={catEditData.name_ar}
+                    onChange={(e) => setCatEditData((p) => ({ ...p, name_ar: e.target.value }))}
+                  />
+                </div>
+                <div className="mm-cat-edit-actions">
+                  <button className="mm-btn mm-btn-secondary" onClick={() => setCatEditMode(null)} style={{ flex: 0, padding: "6px 14px", fontSize: 12 }}>
+                    Cancel
+                  </button>
+                  <button className="mm-btn mm-btn-primary" onClick={handleSaveCategory} style={{ flex: 0, padding: "6px 14px", fontSize: 12 }}>
+                    <Check size={13} />
+                    {catEditMode === "create" ? "Create" : "Save"}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          {categories.length === 0 && (
-            <div className="mm-empty" style={{ height: 120, fontSize: 12 }}>
-              <UtensilsCrossed size={24} />
-              No categories yet
-            </div>
-          )}
+          <div className="mm-cat-list" id="mm-category-list">
+            {categories.map((cat, idx) => (
+              <motion.div
+                key={cat.id}
+                role="button"
+                tabIndex={0}
+                className={`mm-cat-item ${cat.id === selectedCatId ? "active" : ""} ${cat.active === false ? "mm-cat-item-inactive" : ""}`}
+                onClick={() => handleSelectCategory(cat.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleSelectCategory(cat.id);
+                  }
+                }}
+                whileHover={{ x: 3 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <span className="mm-cat-item-name">
+                  {cat.name_en || cat.id}
+                </span>
+                <div className="mm-cat-actions">
+                  <button
+                    className="mm-cat-reorder-btn"
+                    onClick={(e) => { e.stopPropagation(); handleReorderCategory(idx, -1); }}
+                    disabled={idx === 0}
+                    title="Move up"
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    className="mm-cat-reorder-btn"
+                    onClick={(e) => { e.stopPropagation(); handleReorderCategory(idx, 1); }}
+                    disabled={idx === categories.length - 1}
+                    title="Move down"
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                  <button
+                    className="mm-cat-reorder-btn"
+                    onClick={(e) => handleEditCategory(cat, e)}
+                    title="Edit"
+                  >
+                    <Edit3 size={13} />
+                  </button>
+                  <button
+                    className="mm-cat-reorder-btn"
+                    onClick={(e) => handleDeleteCategory(cat, e)}
+                    title="Delete"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+
+            {categories.length === 0 && (
+              <div className="mm-empty" style={{ height: 120, fontSize: 12 }}>
+                <UtensilsCrossed size={24} />
+                No categories yet
+              </div>
+            )}
+          </div>
         </div>
       </aside>
+
+      {menuSidebarCollapsed ? (
+        <button
+          type="button"
+          className="mm-sidebar-mobile-reveal"
+          onClick={expandMenuSidebar}
+          data-testid="menu-sidebar-mobile-reveal"
+          aria-label={
+            selectedCategory
+              ? `Show categories — ${selectedCategory.name_en}`
+              : "Show menu categories"
+          }
+        >
+          <ChevronRight size={14} />
+          <span>{selectedCategory?.name_en || "Categories"}</span>
+        </button>
+      ) : null}
 
       {/* ═══ MAIN AREA ═══ */}
       <main className="mm-main">
@@ -3902,6 +4001,8 @@ export default function MenuManager() {
               <li><kbd>Esc</kbd> — Clear / close</li>
               <li><kbd>Space</kbd> — Quick Look</li>
               <li><kbd>⌘/Ctrl</kbd> + <kbd>K</kbd> — Command palette</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>B</kbd> — Toggle navigation sidebar</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd> — Toggle menu sidebar</li>
               <li><kbd>⌘/Ctrl</kbd> + <kbd>Z</kbd> — Undo</li>
               <li><kbd>⌘/Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> — Redo</li>
               <li><kbd>Enter</kbd> — Edit focused item</li>

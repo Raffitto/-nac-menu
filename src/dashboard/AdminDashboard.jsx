@@ -23,7 +23,12 @@ import {
   AlertTriangle,
   Crown,
   Info,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
+import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
+import { SIDEBAR_EVENTS, SIDEBAR_KEYS } from "../lib/sidebarPrefs";
+import { isEditableTarget, isModKey } from "../lib/menuInteraction/platform";
 import {
   BarChart,
   Bar,
@@ -170,6 +175,24 @@ export default function AdminDashboard(props) {
 
 function AdminDashboardContent({ onBack, session = null, authChecked = true, rbacEnvInvalid = false }) {
   const [adminView, setAdminView] = useState("overview");
+  const {
+    collapsed: globalSidebarCollapsed,
+    toggle: toggleGlobalSidebar,
+  } = useCollapsibleSidebar(SIDEBAR_KEYS.global, {
+    toggleEvent: SIDEBAR_EVENTS.globalToggle,
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (isEditableTarget(event.target)) return;
+      if (isModKey(event) && event.key.toLowerCase() === "b" && !event.shiftKey) {
+        event.preventDefault();
+        toggleGlobalSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleGlobalSidebar]);
   const unifiedOverview = isUnifiedOverviewEnabled();
   const [overviewTab, setOverviewTab] = useState("operations");
   const rbac = useRbac();
@@ -325,17 +348,38 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
   return (
     <motion.div
-      className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""}`.trim()}
+      className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""} ${globalSidebarCollapsed ? "admin-shell--nav-collapsed" : ""}`.trim()}
       style={scrollable && !intelligenceFullscreen ? { overflow: "auto", minHeight: "100vh" } : undefined}
     >
       <RbacBranchConstraint activeView={adminView} />
       <div className="admin-bg-glow" />
 
       {!intelligenceFullscreen ? (
-      <aside className="admin-sidebar">
+      <aside
+        className={`admin-sidebar ${globalSidebarCollapsed ? "is-collapsed" : ""}`}
+        data-testid="global-app-sidebar"
+        aria-label="Primary navigation"
+        data-collapsed={globalSidebarCollapsed ? "true" : "false"}
+      >
         <div>
-          <p className="sidebar-logo">NAC HOSPITALITY OS</p>
-          <div className="sidebar-menu">
+          <div className="sidebar-header-row">
+            <p className="sidebar-logo" title="NAC HOSPITALITY OS">
+              {globalSidebarCollapsed ? "NAC" : "NAC HOSPITALITY OS"}
+            </p>
+            <button
+              type="button"
+              className="sidebar-collapse-btn"
+              onClick={toggleGlobalSidebar}
+              aria-label={globalSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-controls="nac-global-sidebar-menu"
+              aria-expanded={!globalSidebarCollapsed}
+              data-testid="global-sidebar-toggle"
+              title={globalSidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+            >
+              {globalSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          </div>
+          <div className="sidebar-menu" id="nac-global-sidebar-menu">
             {visibleNav.map((item) => {
               const Icon = NAV_ICONS[item.id];
               const isActive = adminView === item.id;
@@ -344,11 +388,14 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                   key={item.id}
                   type="button"
                   className={`sidebar-item ${isActive ? "active" : ""}`}
-                  whileHover={{ x: 6 }}
+                  whileHover={globalSidebarCollapsed ? undefined : { x: 6 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setAdminView(item.id)}
+                  title={item.label}
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
                 >
-                  {Icon && <Icon size={18} />}
+                  {Icon && <Icon size={18} aria-hidden="true" />}
                   <span>{item.label}</span>
                 </motion.button>
               );
@@ -356,12 +403,25 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         </div>
         {!isAdminPlatformMode() && onBack && (
-          <button type="button" className="admin-back" onClick={onBack}>
-            Back to Menu
+          <button type="button" className="admin-back" onClick={onBack} title="Back to Menu">
+            {globalSidebarCollapsed ? "Back" : "Back to Menu"}
           </button>
         )}
       </aside>
       ) : null}
+
+      {intelligenceFullscreen || !globalSidebarCollapsed ? null : (
+        <button
+          type="button"
+          className="admin-sidebar-mobile-reveal"
+          onClick={toggleGlobalSidebar}
+          data-testid="global-sidebar-mobile-reveal"
+          aria-label="Show navigation"
+        >
+          <PanelLeftOpen size={16} />
+          Nav
+        </button>
+      )}
 
       <main
         className="admin-content"
