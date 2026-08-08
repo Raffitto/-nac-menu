@@ -96,7 +96,7 @@ import {
 } from "./MenuManagerDnd";
 import useMenuSelection from "./menuInteraction/useMenuSelection";
 import useMenuUndo from "./menuInteraction/useMenuUndo";
-import MenuSelectionToolbar from "./menuInteraction/MenuSelectionToolbar";
+import MenuCommandDock from "./menuInteraction/MenuCommandDock";
 import MenuContextMenu from "./menuInteraction/MenuContextMenu";
 import MenuQuickLook from "./menuInteraction/MenuQuickLook";
 import MenuCommandPalette from "./menuInteraction/MenuCommandPalette";
@@ -106,6 +106,7 @@ import { isApplePlatform, isEditableTarget, isModKey } from "../lib/menuInteract
 import { moveSelectedGroup, shouldConfirmBulk } from "../lib/menuInteraction/groupOrdering";
 import { diffBoardPlacements } from "../lib/menuInteraction/boardDiff";
 import { flattenVisibleItems } from "../lib/menuInteraction/selectionModel";
+import { summarizeSelectionAggregates } from "../lib/menuInteraction/selectionAggregates";
 import {
   SIDEBAR_EVENTS,
   SIDEBAR_KEYS,
@@ -113,6 +114,7 @@ import {
   writeSidebarCollapsed,
 } from "../lib/sidebarPrefs";
 import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
+import useCoarsePointer from "./hooks/useCoarsePointer";
 import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
@@ -476,8 +478,8 @@ export default function MenuManager() {
   const [activeDragLabel, setActiveDragLabel] = useState(null);
   const [activeDragCount, setActiveDragCount] = useState(1);
   const [orderStatus, setOrderStatus] = useState(null);
-  const [arrangeMode, setArrangeMode] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const coarsePointer = useCoarsePointer();
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickLookItemId, setQuickLookItemId] = useState(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
@@ -2234,8 +2236,21 @@ export default function MenuManager() {
 
   const paletteCommands = useMemo(() => {
     const commands = [
-      { id: "arrange", label: "Arrange menu", group: "Commands", keywords: "organize drag", run: () => setArrangeMode(true) },
       { id: "palette-help", label: "Keyboard shortcuts", group: "Commands", keywords: "help", run: () => setShortcutsOpen(true) },
+      {
+        id: "select-all-visible",
+        label: "Select All Visible",
+        group: "Commands",
+        keywords: "multi select",
+        run: () => selectionApi.selectAll(filteredSections),
+      },
+      {
+        id: "clear-selection",
+        label: "Clear Selection",
+        group: "Commands",
+        keywords: "deselect",
+        run: () => selectionApi.clear(),
+      },
       { id: "toggle-nav-sidebar", label: "Toggle Navigation Sidebar", group: "View", keywords: "collapse expand global nav", run: () => emitSidebarToggle("global") },
       { id: "toggle-menu-sidebar", label: "Toggle Menu Sidebar", group: "View", keywords: "collapse expand categories", run: () => emitSidebarToggle("menu") },
       {
@@ -2262,7 +2277,7 @@ export default function MenuManager() {
       { id: "hide-selected", label: "Hide selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: false, hidden_until: null }, `Hidden ${selectionApi.count} items`) },
       { id: "show-selected", label: "Show selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: true, hidden_until: null }, `Showed ${selectionApi.count} items`) },
       { id: "soldout-selected", label: "Mark selected sold out", group: "Commands", run: () => applyBulkSoldOut(selectionApi.selectedIds, true) },
-      { id: "move-selected", label: "Move selected to…", group: "Commands", run: () => setMoveSheetOpen(true) },
+      { id: "move-selected", label: "Move Selected To…", group: "Commands", run: () => setMoveSheetOpen(true) },
     ];
     categories.forEach((cat) => {
       commands.push({
@@ -2286,11 +2301,11 @@ export default function MenuManager() {
   }, [
     categories,
     menuData,
+    filteredSections,
     openQuickLook,
     applyBulkVisibility,
     applyBulkSoldOut,
-    selectionApi.selectedIds,
-    selectionApi.count,
+    selectionApi,
     goToItem,
   ]);
 
@@ -2308,7 +2323,6 @@ export default function MenuManager() {
         else if (quickLookItemId) setQuickLookItemId(null);
         else if (moveSheetOpen) setMoveSheetOpen(false);
         else if (shortcutsOpen) setShortcutsOpen(false);
-        else if (arrangeMode) setArrangeMode(false);
         else selectionApi.clear();
         return;
       }
@@ -2357,7 +2371,6 @@ export default function MenuManager() {
     quickLookItemId,
     moveSheetOpen,
     shortcutsOpen,
-    arrangeMode,
     selectionApi,
     filteredSections,
     openQuickLook,
@@ -2470,6 +2483,97 @@ export default function MenuManager() {
     [categories, selectedCatId]
   );
 
+  const selectedItems = useMemo(() => {
+    const idSet = new Set(selectionApi.selectedIds || []);
+    if (!idSet.size) return [];
+    const items = [];
+    (menuData || []).forEach((section) => {
+      (section.items || []).forEach((item) => {
+        if (idSet.has(item.id)) items.push(item);
+      });
+    });
+    return items;
+  }, [menuData, selectionApi.selectedIds]);
+
+  const selectionAggregates = useMemo(
+    () => summarizeSelectionAggregates(selectedItems, nowMs),
+    [selectedItems, nowMs],
+  );
+
+  const commandDockVisible =
+    selectionApi.count >= 2 || (coarsePointer && selectionApi.count >= 1);
+
+  const fluidDnd =
+    selectionApi.count >= 2 || (coarsePointer && selectionApi.count >= 1);
+
+  const hideSelected = useCallback(() => {
+    applyBulkVisibility(
+      selectionApi.selectedIds,
+      { active: false, hidden_until: null },
+      `Hidden ${selectionApi.count} items`,
+    );
+  }, [applyBulkVisibility, selectionApi.selectedIds, selectionApi.count]);
+
+  const showSelected = useCallback(() => {
+    applyBulkVisibility(
+      selectionApi.selectedIds,
+      { active: true, hidden_until: null },
+      `Showed ${selectionApi.count} items`,
+    );
+  }, [applyBulkVisibility, selectionApi.selectedIds, selectionApi.count]);
+
+  const markSelectedSoldOut = useCallback(() => {
+    applyBulkSoldOut(selectionApi.selectedIds, true);
+  }, [applyBulkSoldOut, selectionApi.selectedIds]);
+
+  const markSelectedAvailable = useCallback(() => {
+    applyBulkSoldOut(selectionApi.selectedIds, false);
+  }, [applyBulkSoldOut, selectionApi.selectedIds]);
+
+  const runPrimaryVisibilityAction = useCallback(() => {
+    if (selectionAggregates.visibilityMode === "hidden") showSelected();
+    else hideSelected();
+  }, [selectionAggregates.visibilityMode, hideSelected, showSelected]);
+
+  const runPrimarySoldOutAction = useCallback(() => {
+    if (selectionAggregates.soldOutMode === "sold_out") markSelectedAvailable();
+    else markSelectedSoldOut();
+  }, [selectionAggregates.soldOutMode, markSelectedAvailable, markSelectedSoldOut]);
+
+  const selectSimilarSection = useCallback((itemId) => {
+    const loc = findItemLocation(menuData, itemId);
+    if (!loc) return;
+    const ids = (menuData[loc.sectionIndex].items || []).map((i) => i.id);
+    selectionApi.setSelection({
+      selectedIds: ids,
+      anchorId: ids[0] || null,
+      focusId: itemId || null,
+    });
+  }, [menuData, selectionApi]);
+
+  const commandDockMoreItems = useMemo(
+    () => [
+      {
+        id: "quicklook",
+        label: "Quick Look",
+        onSelect: () => openQuickLook(selectionApi.focusId || selectionApi.selectedIds[0]),
+      },
+      {
+        id: "select-section",
+        label: "Select Similar → Same section",
+        onSelect: () =>
+          selectSimilarSection(selectionApi.focusId || selectionApi.selectedIds[0]),
+      },
+      { id: "sep-more", type: "separator" },
+      {
+        id: "shortcuts",
+        label: "Keyboard Shortcuts",
+        onSelect: () => setShortcutsOpen(true),
+      },
+    ],
+    [openQuickLook, selectSimilarSection, selectionApi.focusId, selectionApi.selectedIds],
+  );
+
   const moveExtraPlacement = useCallback((fromIndex, toIndex) => {
     setExtraPlacements((prev) => reorderPlacementRows(prev, fromIndex, toIndex));
   }, []);
@@ -2529,7 +2633,7 @@ export default function MenuManager() {
   }
 
   return (
-    <div className="mm">
+    <div className={`mm ${commandDockVisible ? "has-command-dock" : ""}`}>
       <div className="mm-top-shell">
         <MenuPublishStatusBar
           state={publishBarState}
@@ -2773,17 +2877,6 @@ export default function MenuManager() {
               </p>
             </div>
             <div className="mm-tab-bar">
-              {activeTab === "menu" && !readOnlyMenu && (
-                <button
-                  type="button"
-                  className={`mm-tab ${arrangeMode ? "active" : ""}`}
-                  onClick={() => setArrangeMode((v) => !v)}
-                  data-testid="arrange-mode-toggle"
-                  title="Arrange mode"
-                >
-                  Arrange
-                </button>
-              )}
               <button
                 className={`mm-tab ${activeTab === "menu" ? "active" : ""}`}
                 onClick={() => setActiveTab("menu")}
@@ -2829,7 +2922,7 @@ export default function MenuManager() {
           )}
         </div>
 
-        <div className="mm-content">
+        <div className={`mm-content ${commandDockVisible ? "has-command-dock" : ""}`}>
           {error && (
             <div className="mm-error-state">
               <AlertCircle size={16} />
@@ -2878,9 +2971,9 @@ export default function MenuManager() {
 
               {selectedCatId && !itemsLoading && (
                 <>
-                  <div className={`mm-board-shell ${arrangeMode ? "is-arrange-mode" : ""}`} ref={boardScrollRef}>
+                  <div className="mm-board-shell" ref={boardScrollRef}>
                   <MenuLassoLayer
-                    enabled={dndEnabled && (arrangeMode || true) && typeof window !== "undefined"}
+                    enabled={dndEnabled && typeof window !== "undefined"}
                     containerRef={boardScrollRef}
                     onSelectIds={(ids, { additive }) => {
                       if (!ids.length) {
@@ -2901,7 +2994,7 @@ export default function MenuManager() {
                   />
                   <MenuManagerDndProvider
                     disabled={!dndEnabled}
-                    arrangeMode={arrangeMode}
+                    fluid={fluidDnd}
                     sectionIds={filteredSections.map((section) => section.id)}
                     onDragStart={handleBoardDragStart}
                     onDragOver={handleBoardDragOver}
@@ -3078,16 +3171,12 @@ export default function MenuManager() {
                                   sectionId={section.id}
                                   dndEnabled={dndEnabled}
                                   selected={selectionApi.isSelected(item.id)}
-                                  arrangeMode={arrangeMode}
                                   className={guestHidden ? "inactive" : ""}
                                   label={item.name_en || "Menu item"}
                                   onOpen={() => openEditItem(item)}
                                   onSelectClick={(event) => {
                                     event.stopPropagation();
                                     selectionApi.handleItemPointerSelect(event, item.id, filteredSections);
-                                    if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !arrangeMode) {
-                                      // single click selects; double-click edits
-                                    }
                                   }}
                                   onContextMenu={(event) => {
                                     event.preventDefault();
@@ -3846,28 +3935,23 @@ export default function MenuManager() {
         )}
       </AnimatePresence>
 
-      <MenuSelectionToolbar
+      <MenuCommandDock
         count={selectionApi.count}
-        arrangeMode={arrangeMode}
+        visible={commandDockVisible}
+        visibilityMode={selectionAggregates.visibilityMode}
+        visibilityLabel={selectionAggregates.visibilityLabel}
+        soldOutMode={selectionAggregates.soldOutMode}
+        soldOutLabel={selectionAggregates.soldOutLabel}
+        readOnly={readOnlyMenu}
         onClear={selectionApi.clear}
         onMove={() => setMoveSheetOpen(true)}
-        onHide={() =>
-          applyBulkVisibility(
-            selectionApi.selectedIds,
-            { active: false, hidden_until: null },
-            `Hidden ${selectionApi.count} items`,
-          )
-        }
-        onShow={() =>
-          applyBulkVisibility(
-            selectionApi.selectedIds,
-            { active: true, hidden_until: null },
-            `Showed ${selectionApi.count} items`,
-          )
-        }
-        onSoldOut={() => applyBulkSoldOut(selectionApi.selectedIds, true)}
-        onMore={() => setContextMenu({ x: window.innerWidth / 2, y: 120, itemId: selectionApi.focusId })}
-        onDoneArrange={() => setArrangeMode(false)}
+        onVisibilityAction={runPrimaryVisibilityAction}
+        onHide={hideSelected}
+        onShow={showSelected}
+        onSoldOutAction={runPrimarySoldOutAction}
+        onSoldOut={markSelectedSoldOut}
+        onMarkAvailable={markSelectedAvailable}
+        moreItems={commandDockMoreItems}
       />
 
       <MenuContextMenu
@@ -3902,50 +3986,31 @@ export default function MenuManager() {
             id: "hide",
             label: "Hide",
             disabled: readOnlyMenu,
-            onSelect: () =>
-              applyBulkVisibility(
-                selectionApi.selectedIds,
-                { active: false, hidden_until: null },
-                `Hidden ${selectionApi.count} items`,
-              ),
+            onSelect: hideSelected,
           },
           {
             id: "show",
             label: "Show",
             disabled: readOnlyMenu,
-            onSelect: () =>
-              applyBulkVisibility(
-                selectionApi.selectedIds,
-                { active: true, hidden_until: null },
-                `Showed ${selectionApi.count} items`,
-              ),
+            onSelect: showSelected,
           },
           {
             id: "soldout",
             label: "Mark Sold Out",
             disabled: readOnlyMenu,
-            onSelect: () => applyBulkSoldOut(selectionApi.selectedIds, true),
+            onSelect: markSelectedSoldOut,
           },
           {
             id: "available",
             label: "Mark Available",
             disabled: readOnlyMenu,
-            onSelect: () => applyBulkSoldOut(selectionApi.selectedIds, false),
+            onSelect: markSelectedAvailable,
           },
           { id: "sep2", type: "separator" },
           {
             id: "select-section",
             label: "Select Similar → Same section",
-            onSelect: () => {
-              const loc = findItemLocation(menuData, contextMenu?.itemId);
-              if (!loc) return;
-              const ids = (menuData[loc.sectionIndex].items || []).map((i) => i.id);
-              selectionApi.setSelection({
-                selectedIds: ids,
-                anchorId: ids[0] || null,
-                focusId: contextMenu?.itemId || null,
-              });
-            },
+            onSelect: () => selectSimilarSection(contextMenu?.itemId),
           },
           {
             id: "shortcuts",

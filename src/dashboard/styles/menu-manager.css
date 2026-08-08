@@ -463,6 +463,10 @@
   scrollbar-color: rgba(255,255,255,0.08) transparent;
 }
 
+.mm-content.has-command-dock {
+  padding-bottom: 108px;
+}
+
 .mm-content::-webkit-scrollbar {
   width: 6px;
 }
@@ -1635,6 +1639,12 @@
   gap: 10px;
 }
 
+/* Keep toasts clear of the floating selection dock */
+.mm.has-command-dock .mm-toast {
+  top: 24px;
+  bottom: auto;
+}
+
 .mm-toast.success {
   background: rgba(118,214,159,0.15);
   border: 1px solid rgba(118,214,159,0.3);
@@ -2576,18 +2586,10 @@
   position: relative;
 }
 
-.mm-board-shell.is-arrange-mode .mm-item-card--sortable {
-  box-shadow: 0 0 0 1px rgba(215,188,138,0.12);
-}
-
 .mm-item-card.is-selected {
   border-color: rgba(215,188,138,0.55);
   background: rgba(215,188,138,0.08);
   box-shadow: 0 0 0 1px rgba(215,188,138,0.25), 0 10px 28px rgba(0,0,0,0.22);
-}
-
-.mm-item-card.is-arrange {
-  transform: translateY(-1px);
 }
 
 .mm-item-card--pulse {
@@ -2620,53 +2622,200 @@
   padding: 0 6px;
 }
 
-.mm-selection-toolbar {
-  position: sticky;
-  bottom: 16px;
-  z-index: 40;
-  margin: 0 18px 12px;
+/* Floating multi-selection command dock */
+.mm-command-dock-slot {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  width: max-content;
+  max-width: min(920px, calc(100vw - 24px));
+  pointer-events: none;
+  animation: mm-command-dock-in 180ms ease;
+}
+
+@keyframes mm-command-dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+.mm-command-dock {
+  pointer-events: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(20, 22, 24, 0.92);
+  gap: 8px;
+  width: max-content;
+  max-width: min(920px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(16, 18, 20, 0.92);
   border: 1px solid rgba(215,188,138,0.22);
-  backdrop-filter: blur(16px);
-  box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+  color: rgba(249, 249, 247, 0.92);
 }
 
-.mm-selection-toolbar-count {
-  font-size: 13px;
+.mm-command-dock-count {
+  flex: 0 0 auto;
+  font-size: 12px;
   font-weight: 600;
-  color: rgba(249,249,247,0.85);
-  padding-left: 4px;
+  letter-spacing: 0.01em;
+  color: rgba(249, 249, 247, 0.78);
+  padding: 0 8px 0 10px;
+  white-space: nowrap;
 }
 
-.mm-selection-toolbar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.mm-command-dock-sep {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+
+.mm-command-dock-group {
+  display: inline-flex;
   align-items: center;
+  gap: 4px;
 }
 
-.mm-selection-btn {
-  padding: 6px 10px !important;
-  font-size: 12px !important;
+.mm-command-dock-group--trailing {
+  gap: 2px;
+}
+
+.mm-command-dock-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(249, 249, 247, 0.88);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
-.mm-selection-clear {
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 8px;
+.mm-command-dock-btn:hover:not(:disabled),
+.mm-command-dock-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.mm-command-dock-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mm-command-dock-btn--primary {
+  background: rgba(215, 188, 138, 0.18);
+  border-color: rgba(215, 188, 138, 0.38);
+  color: #f0e2c4;
+}
+
+.mm-command-dock-btn--primary:hover:not(:disabled),
+.mm-command-dock-btn--primary:focus-visible {
+  background: rgba(215, 188, 138, 0.28);
+  border-color: rgba(215, 188, 138, 0.55);
+}
+
+.mm-command-dock-btn--ghost {
+  padding: 6px 10px;
   background: transparent;
-  color: rgba(249,249,247,0.55);
+}
+
+.mm-command-dock-clear {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(249, 249, 247, 0.5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.mm-command-dock-clear:hover,
+.mm-command-dock-clear:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(249, 249, 247, 0.9);
+  outline: none;
+}
+
+.mm-command-dock-menu-wrap {
+  position: relative;
+}
+
+.mm-command-dock-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(18, 20, 22, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  z-index: 46;
+}
+
+.mm-command-dock-menu--right {
+  left: auto;
+  right: 0;
+}
+
+.mm-command-dock-menu-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: rgba(249, 249, 247, 0.9);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mm-command-dock-menu-item:hover:not(:disabled),
+.mm-command-dock-menu-item:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+.mm-command-dock-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mm-command-dock-menu-item.is-danger {
+  color: #f5c4c4;
+}
+
+.mm-command-dock-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-command-dock-slot {
+    animation: none;
+  }
 }
 
 .mm-context-menu {
@@ -2954,8 +3103,32 @@
   .mm-quicklook-panel {
     grid-template-columns: 1fr;
   }
-  .mm-selection-toolbar {
-    flex-direction: column;
-    align-items: stretch;
+
+  .mm-command-dock {
+    border-radius: 22px;
+    padding: 8px;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: calc(100vw - 16px);
+  }
+
+  .mm-command-dock-count {
+    width: 100%;
+    text-align: center;
+    padding: 2px 8px 4px;
+  }
+
+  .mm-command-dock-sep {
+    display: none;
+  }
+
+  .mm-command-dock-btn {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+
+  .mm-content.has-command-dock {
+    padding-bottom: 128px;
   }
 }

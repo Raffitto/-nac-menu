@@ -103,7 +103,8 @@ describe("Collapsible sidebars", () => {
   test("DnD / lasso / arrange foundations remain wired", () => {
     expect(manager).toContain("MenuManagerDndProvider");
     expect(manager).toContain("MenuLassoLayer");
-    expect(manager).toContain("arrange-mode-toggle");
+    expect(manager).toContain("MenuCommandDock");
+    expect(manager).not.toContain("arrange-mode-toggle");
     expect(dnd).toContain("@dnd-kit/core");
     expect(admin).toContain("useCollapsibleSidebar");
   });

@@ -30,8 +30,8 @@ describe("MenuManager Apple-style drag and drop", () => {
     expect(dndSource).toContain("@dnd-kit/core");
     expect(dndSource).toContain("@dnd-kit/sortable");
     expect(dndSource).toContain("TouchSensor");
-    expect(dndSource).toContain("delay: arrangeMode ? 180 : 280");
-    expect(dndSource).toContain("activationConstraint: { distance: arrangeMode ? 4 : 8 }");
+    expect(dndSource).toContain("delay: fluid ? 180 : 280");
+    expect(dndSource).toContain("activationConstraint: { distance: fluid ? 4 : 8 }");
   });
 
   test("isolates action controls from drag activation", () => {

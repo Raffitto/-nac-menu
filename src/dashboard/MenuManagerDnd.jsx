@@ -37,13 +37,17 @@ function collisionDetection(args) {
   return closestCenter(args);
 }
 
-export function useMenuManagerDndSensors({ arrangeMode = false } = {}) {
+/**
+ * fluid=true lowers activation friction after multi-select / coarse-pointer
+ * selection without requiring a visible Arrange mode.
+ */
+export function useMenuManagerDndSensors({ fluid = false } = {}) {
   return useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: arrangeMode ? 4 : 8 },
+      activationConstraint: { distance: fluid ? 4 : 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: arrangeMode ? 180 : 280, tolerance: 8 },
+      activationConstraint: { delay: fluid ? 180 : 280, tolerance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -86,7 +90,6 @@ export function ItemFrame({
   className = "",
   label = "",
   selected = false,
-  arrangeMode = false,
   onOpen,
   onSelectClick,
   onContextMenu,
@@ -95,7 +98,7 @@ export function ItemFrame({
   if (!dndEnabled) {
     return (
       <div
-        className={`mm-item-card ${className} ${selected ? "is-selected" : ""} ${arrangeMode ? "is-arrange" : ""}`}
+        className={`mm-item-card ${className} ${selected ? "is-selected" : ""}`}
         data-testid={`sortable-item-${itemId}`}
         onClick={(event) => {
           if (onSelectClick) onSelectClick(event);
@@ -114,7 +117,6 @@ export function ItemFrame({
       className={className}
       label={label}
       selected={selected}
-      arrangeMode={arrangeMode}
       onOpen={onOpen}
       onSelectClick={onSelectClick}
       onContextMenu={onContextMenu}
@@ -188,7 +190,6 @@ function SortableItemShell({
   className = "",
   label = "",
   selected = false,
-  arrangeMode = false,
   onOpen,
   onSelectClick,
   onContextMenu,
@@ -217,7 +218,7 @@ function SortableItemShell({
     <div
       ref={setNodeRef}
       style={style}
-      className={`mm-item-card mm-item-card--sortable ${className} ${isDragging ? "mm-item-card--dragging" : ""} ${selected ? "is-selected" : ""} ${arrangeMode ? "is-arrange" : ""} ${disabled ? "mm-item-card--dnd-disabled" : ""}`}
+      className={`mm-item-card mm-item-card--sortable ${className} ${isDragging ? "mm-item-card--dragging" : ""} ${selected ? "is-selected" : ""} ${disabled ? "mm-item-card--dnd-disabled" : ""}`}
       data-testid={`sortable-item-${itemId}`}
       aria-selected={selected}
       {...(disabled ? {} : { ...attributes, ...listeners })}
@@ -244,7 +245,7 @@ function SortableItemShell({
 
 export function MenuManagerDndProvider({
   disabled = false,
-  arrangeMode = false,
+  fluid = false,
   sectionIds,
   onDragStart,
   onDragOver,
@@ -254,7 +255,7 @@ export function MenuManagerDndProvider({
   activeDragCount = 1,
   children,
 }) {
-  const sensors = useMenuManagerDndSensors({ arrangeMode });
+  const sensors = useMenuManagerDndSensors({ fluid });
   const sortableSectionIds = useMemo(
     () => sectionIds.map((id) => sectionDndId(id)),
     [sectionIds],

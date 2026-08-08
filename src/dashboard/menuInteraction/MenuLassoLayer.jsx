@@ -21,7 +21,7 @@ export default function MenuLassoLayer({
       const target = event.target;
       if (
         target.closest?.(
-          ".mm-item-card, .mm-section-header, .mm-section-drag-handle, button, input, textarea, a, .mm-context-menu, .mm-selection-toolbar, .mm-palette, .mm-quicklook-panel",
+          ".mm-item-card, .mm-section-header, .mm-section-drag-handle, button, input, textarea, a, .mm-context-menu, .mm-command-dock, .mm-command-dock-slot, .mm-palette, .mm-quicklook-panel",
         )
       ) {
         return;
