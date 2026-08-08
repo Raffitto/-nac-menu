@@ -61,6 +61,8 @@ const RELEASE_ITEMS = [
   {
     key: "brownies",
     id: "a6070000-0000-4000-8000-000000000006",
+    // Original release migration inserted "Brownies"; printed-menu correction
+    // in 20260808200000 sets the live guest name/calories.
     en: "Brownies",
     allergens: ["d", "e", "g"],
     image: `${IMG_BASE}brownies.jpg`,
