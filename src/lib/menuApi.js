@@ -388,6 +388,97 @@ export async function restoreMenuPublication(publicationId, idempotencyKey = nul
   });
 }
 
+/** Latest verified live publication for a branch (includes snapshot). */
+export async function fetchLatestLivePublication(branchId) {
+  await requireMenuEditorAuth();
+  const branch = normalizeBranchId(branchId);
+  const { data, error } = await supabase
+    .from("menu_publications")
+    .select(
+      "id, branch_id, version, status, actor_email, change_summary, snapshot, snapshot_fingerprint, created_at, published_at, guest_verified_at, restored_from_publication_id",
+    )
+    .eq("branch_id", branch)
+    .eq("status", "live")
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return { data: data || null, error };
+}
+
+/** Publication history metadata (snapshot omitted for list performance). */
+export async function listMenuPublications(branchId, { limit = 30 } = {}) {
+  await requireMenuEditorAuth();
+  const branch = normalizeBranchId(branchId);
+  const { data, error } = await supabase
+    .from("menu_publications")
+    .select(
+      "id, branch_id, version, status, actor_email, change_summary, snapshot_fingerprint, created_at, published_at, guest_verified_at, restored_from_publication_id",
+    )
+    .eq("branch_id", branch)
+    .order("version", { ascending: false })
+    .limit(limit);
+  return { data: data || [], error };
+}
+
+export async function fetchMenuPublicationById(publicationId) {
+  await requireMenuEditorAuth();
+  const { data, error } = await supabase
+    .from("menu_publications")
+    .select(
+      "id, branch_id, version, status, actor_email, change_summary, snapshot, snapshot_fingerprint, created_at, published_at, guest_verified_at, restored_from_publication_id, verification_result",
+    )
+    .eq("id", publicationId)
+    .maybeSingle();
+  return { data: data || null, error };
+}
+
+/**
+ * Current editable branch rows shaped like nac_menu_branch_snapshot.
+ * Read-only — does not publish or mutate.
+ */
+export async function fetchCurrentBranchSnapshot(branchId) {
+  await requireMenuEditorAuth();
+  const branch = normalizeBranchId(branchId);
+  let catQuery = supabase.from("categories").select("*").order("sort_order");
+  let secQuery = supabase.from("sections").select("*").order("sort_order");
+  let itemQuery = supabase.from("menu_items").select("*").order("sort_order");
+  catQuery = menuBranchQueryFilter(catQuery, branch);
+  secQuery = menuBranchQueryFilter(secQuery, branch);
+  itemQuery = menuBranchQueryFilter(itemQuery, branch);
+
+  const [catRes, secRes, itemRes] = await Promise.all([catQuery, secQuery, itemQuery]);
+  const firstError = catRes.error || secRes.error || itemRes.error;
+  if (firstError) return { data: null, error: firstError };
+
+  const items = itemRes.data || [];
+  const itemIds = items.map((it) => it.id);
+  let itemAddons = [];
+  let itemAllergens = [];
+  if (itemIds.length) {
+    const [addonRes, allergenRes] = await Promise.all([
+      supabase.from("item_addons").select("*").in("item_id", itemIds),
+      supabase.from("item_allergens").select("*").in("item_id", itemIds),
+    ]);
+    if (addonRes.error || allergenRes.error) {
+      return { data: null, error: addonRes.error || allergenRes.error };
+    }
+    itemAddons = addonRes.data || [];
+    itemAllergens = allergenRes.data || [];
+  }
+
+  return {
+    data: {
+      branch_id: branch,
+      categories: catRes.data || [],
+      sections: secRes.data || [],
+      menu_items: items,
+      item_addons: itemAddons,
+      item_allergens: itemAllergens,
+    },
+    error: null,
+  };
+}
+
 async function selectMenuItemById(id) {
   if (!id) {
     const error = new Error("menu_items fetch requires id");

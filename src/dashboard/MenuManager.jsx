@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import {
   getCategories,
-  
+
   addExistingItemsToSection,
   fetchBranchMenuItemRows,
   createMenuItemPlacements,
@@ -68,6 +68,11 @@ import {
   getMenuPublishStatus,
   MENU_PUBLISH_STAGES,
 } from "../lib/menuApi";
+import { itemPublishBadge } from "../lib/menuPublishDiff";
+import useMenuPublishIntelligence from "./hooks/useMenuPublishIntelligence";
+import MenuPublishDiffSheet from "./menuPublish/MenuPublishDiffSheet";
+import MenuPublishPreviewPanel from "./menuPublish/MenuPublishPreviewPanel";
+import MenuVersionHistorySheet from "./menuPublish/MenuVersionHistorySheet";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import {
   computeHiddenUntilIso,
@@ -216,8 +221,7 @@ const FILTER_OPTIONS = [
   { key: "sold_out", label: "Sold Out" },
   { key: "inactive", label: "Hidden" },
   { key: "vegetarian", label: "Vegetarian" },
-  { key: "new_item", label: "New" },
-];
+  { key: "new_item", label: "New" }];
 
 function Toast({ message, type, onClose }) {
   useEffect(() => {
@@ -480,6 +484,10 @@ export default function MenuManager() {
   const [orderStatus, setOrderStatus] = useState(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const coarsePointer = useCoarsePointer();
+  const [publishDiffOpen, setPublishDiffOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState("draft");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickLookItemId, setQuickLookItemId] = useState(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
@@ -549,19 +557,7 @@ export default function MenuManager() {
     itemAddOnIds,
     extraPlacements,
     imageFile,
-    removedPlacementIds,
-  ]);
-
-  const publishBarState = useMemo(
-    () =>
-      resolvePublishBarState({
-        publishStage,
-        publishStatus,
-        retryPublish,
-        publishInFlight,
-      }),
-    [publishStage, publishStatus, retryPublish, publishInFlight],
-  );
+    removedPlacementIds]);
 
   const friendlyPublishError = useMemo(
     () => (publishError ? friendlyPublishErrorMessage({ message: publishError }) : ""),
@@ -646,18 +642,65 @@ export default function MenuManager() {
     return result.data;
   }, [menuBranch, loadPublishStatus]);
 
+  const publishIntel = useMenuPublishIntelligence({
+    branchId: menuBranch,
+    enabled: !loading,
+    publishStatus,
+  });
+  const refreshPublishIntel = publishIntel.refresh;
+  const publishDiff = publishIntel.diff;
+
+  const noteDraftChanged = useCallback(async () => {
+    setPublishStage(null);
+    setPublishError("");
+    await loadPublishStatus();
+    await refreshPublishIntel();
+  }, [loadPublishStatus, refreshPublishIntel]);
+
+  const publishBarState = useMemo(() => {
+    const base = resolvePublishBarState({
+      publishStage,
+      publishStatus,
+      retryPublish,
+      publishInFlight,
+    });
+    if (base === "live" && publishDiff?.hasChanges) return "waiting";
+    return base;
+  }, [
+    publishStage,
+    publishStatus,
+    retryPublish,
+    publishInFlight,
+    publishDiff?.hasChanges]);
+
   const handleManualPublish = useCallback(async () => {
     if (readOnlyMenu || publishInFlight) return;
+    await refreshPublishIntel();
+    setPublishDiffOpen(true);
+  }, [readOnlyMenu, publishInFlight, refreshPublishIntel]);
+
+  const confirmPublishFromDiff = useCallback(async () => {
+    if (readOnlyMenu || publishInFlight) return;
     try {
-      await publishCurrentMenu({
-        action: "retry_publish",
+      const summary = {
+        action: "manual_publish",
         entity_type: "menu",
         entity_id: menuBranch,
-      });
+        changed_fields: {
+          change_count: publishDiff?.counts?.total || 0,
+          categories: publishDiff?.counts || {},
+        },
+      };
+      const data = await publishCurrentMenu(summary);
+      setPublishDiffOpen(false);
+      await refreshPublishIntel();
+      if (data?.version != null) {
+        showToast(`Version ${data.version} published`, "success");
+      }
     } catch {
       /* friendly error shown in status bar */
     }
-  }, [readOnlyMenu, publishInFlight, publishCurrentMenu, menuBranch]);
+  }, [readOnlyMenu, publishInFlight, publishCurrentMenu, menuBranch, publishDiff, refreshPublishIntel, showToast]);
 
   const handleRetryPublish = useCallback(async () => {
     if (readOnlyMenu || publishInFlight) return;
@@ -757,8 +800,7 @@ export default function MenuManager() {
 
       const flatItems = result.flatMap((s) => s.items || []);
       const groupIds = [
-        ...new Set(flatItems.map((it) => it.placement_group_id).filter(Boolean)),
-      ];
+        ...new Set(flatItems.map((it) => it.placement_group_id).filter(Boolean))];
       if (groupIds.length > 0) {
         const { data: groupRows } = await fetchPlacementGroupIndex(groupIds);
         const catalog = sectionsCatalogRef.current;
@@ -839,8 +881,7 @@ export default function MenuManager() {
     loadSectionsCatalog,
     loadAddOns,
     loadAllergens,
-    loadMenuForCategory,
-  ]);
+    loadMenuForCategory]);
 
   useEffect(() => {
     if (!selectedCatId) return undefined;
@@ -917,8 +958,7 @@ export default function MenuManager() {
             item.sold_out ? "sold out" : "",
             item.vegetarian ? "vegetarian" : "",
             item.vegan ? "vegan" : "",
-            item.new_item ? "new seasonal" : "",
-          ]
+            item.new_item ? "new seasonal" : ""]
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
@@ -1009,23 +1049,13 @@ export default function MenuManager() {
         rbac.profile,
       );
       if (catEditMode === "create") {
-        const created = assertMenuMutation(await createCategory(payload), "createCategory");
-        await publishCurrentMenu({
-          action: "create_category",
-          entity_type: "category",
-          entity_id: created.id,
-          changed_fields: payload,
-        });
-        showToast(guestMenuSuccessMessage("Category created. Guest menu updated."));
+        assertMenuMutation(await createCategory(payload), "createCategory");
+        await noteDraftChanged();
+        showToast(guestMenuSuccessMessage("Category created. Saved. Publish when ready."));
       } else {
         assertMenuMutation(await updateCategory(catEditData.id, catEditData), "updateCategory");
-        await publishCurrentMenu({
-          action: "update_category",
-          entity_type: "category",
-          entity_id: catEditData.id,
-          changed_fields: catEditData,
-        });
-        showToast(guestMenuSuccessMessage("Category updated. Guest menu updated."));
+        await noteDraftChanged();
+        showToast(guestMenuSuccessMessage("Category updated. Saved. Publish when ready."));
       }
       setCatEditMode(null);
       const cats = await loadCategories();
@@ -1035,7 +1065,7 @@ export default function MenuManager() {
     } catch (e) {
       showToast(friendlyActionErrorMessage(e, "Could not save category. Please try again."), "error");
     }
-  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch, publishCurrentMenu]);
+  }, [catEditMode, catEditData, loadCategories, showToast, selectedCatId, readOnlyMenu, rbac.profile, menuBranch, noteDraftChanged]);
 
   const handleDeleteCategory = useCallback((cat, e) => {
     e.stopPropagation();
@@ -1046,13 +1076,8 @@ export default function MenuManager() {
         setConfirmLoading(true);
         try {
           assertMenuMutation(await deleteCategory(cat.id), "deleteCategory");
-          await publishCurrentMenu({
-            action: "delete_category",
-            entity_type: "category",
-            entity_id: cat.id,
-            changed_fields: { name_en: cat.name_en },
-          });
-          showToast(guestMenuSuccessMessage("Category removed from guest menu."));
+          await noteDraftChanged();
+          showToast(guestMenuSuccessMessage("Category removed. Publish when ready."));
           const cats = await loadCategories();
           if (selectedCatId === cat.id) {
             setSelectedCatId(cats.length > 0 ? cats[0].id : null);
@@ -1065,7 +1090,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [loadCategories, showToast, selectedCatId, publishCurrentMenu]);
+  }, [loadCategories, showToast, selectedCatId, noteDraftChanged]);
 
   const handleReorderCategory = useCallback(async (index, direction) => {
     const newCats = [...categories];
@@ -1081,16 +1106,12 @@ export default function MenuManager() {
           "reorderCategory",
         );
       }
-      await publishCurrentMenu({
-        action: "reorder_categories",
-        entity_type: "category",
-        changed_fields: { order: ordered },
-      });
+      await noteDraftChanged();
     } catch (e) {
       showToast("Failed to reorder", "error");
       loadCategories();
     }
-  }, [categories, loadCategories, showToast, publishCurrentMenu]);
+  }, [categories, loadCategories, showToast, noteDraftChanged]);
 
   // ── Section CRUD ──
 
@@ -1109,23 +1130,15 @@ export default function MenuManager() {
     setSectionCreateSaving(true);
     try {
       assertMenuBranchAccess(rbac.profile, menuBranch);
-      const created = assertMenuMutation(await createSection({
+      assertMenuMutation(await createSection({
         name_en: sectionCreateData.name_en.trim(),
         name_ar: sectionCreateData.name_ar.trim(),
         category_id: selectedCatId,
         sort_order: menuData.length,
         branch_id: menuBranch,
       }), "createSection");
-      await publishCurrentMenu({
-        action: "create_section",
-        entity_type: "section",
-        entity_id: created.id,
-        changed_fields: {
-          name_en: sectionCreateData.name_en.trim(),
-          category_id: selectedCatId,
-        },
-      });
-      showToast(guestMenuSuccessMessage("Section created. Guest menu updated."));
+      await noteDraftChanged();
+      showToast(guestMenuSuccessMessage("Section created. Saved. Publish when ready."));
       setSectionCreateOpen(false);
       setSectionCreateData({ name_en: "", name_ar: "" });
       loadMenuForCategory(selectedCatId);
@@ -1143,25 +1156,19 @@ export default function MenuManager() {
     loadMenuForCategory,
     rbac.profile,
     menuBranch,
-    publishCurrentMenu,
-  ]);
+      noteDraftChanged]);
 
   const handleSaveSection = useCallback(async (sectionId) => {
     try {
       assertMenuMutation(await updateSection(sectionId, sectionEditData), "updateSection");
-      await publishCurrentMenu({
-        action: "update_section",
-        entity_type: "section",
-        entity_id: sectionId,
-        changed_fields: sectionEditData,
-      });
-      showToast(guestMenuSuccessMessage("Section updated. Guest menu updated."));
+      await noteDraftChanged();
+      showToast(guestMenuSuccessMessage("Section updated. Saved. Publish when ready."));
       setSectionEditId(null);
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(friendlyActionErrorMessage(e, "Could not update section. Please try again."), "error");
     }
-  }, [sectionEditData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [sectionEditData, showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const handleDeleteSection = useCallback((section) => {
     setConfirm({
@@ -1171,13 +1178,8 @@ export default function MenuManager() {
         setConfirmLoading(true);
         try {
           assertMenuMutation(await deleteSection(section.id), "deleteSection");
-          await publishCurrentMenu({
-            action: "delete_section",
-            entity_type: "section",
-            entity_id: section.id,
-            changed_fields: { name_en: section.name_en },
-          });
-          showToast(guestMenuSuccessMessage("Section removed from guest menu."));
+          await noteDraftChanged();
+          showToast(guestMenuSuccessMessage("Section removed. Publish when ready."));
           loadMenuForCategory(selectedCatId);
         } catch (e) {
           showToast(friendlyActionErrorMessage(e, "Could not delete section. Please try again."), "error");
@@ -1187,7 +1189,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const handleReorderSection = useCallback(async (sectionId, direction) => {
     const index = menuData.findIndex((section) => section.id === sectionId);
@@ -1202,11 +1204,7 @@ export default function MenuManager() {
     try {
       const ordered = buildSectionOrderUpdates(newSections);
       assertMenuMutation(await reorderSections(ordered), "reorderSections");
-      await publishCurrentMenu({
-        action: "reorder_sections",
-        entity_type: "section",
-        changed_fields: { order: ordered },
-      });
+      await noteDraftChanged();
       setOrderStatus("saved");
       window.setTimeout(() => setOrderStatus(null), 1400);
     } catch (e) {
@@ -1214,7 +1212,7 @@ export default function MenuManager() {
       setOrderStatus(null);
       showToast("Failed to reorder sections", "error");
     }
-  }, [menuData, showToast, publishCurrentMenu]);
+  }, [menuData, showToast, noteDraftChanged]);
 
   // ── Item CRUD ──
 
@@ -1289,36 +1287,14 @@ export default function MenuManager() {
         throw new Error("No items were added to this section.");
       }
 
-      const verificationItem = added[added.length - 1];
-      const shouldBePublic = verificationItem.active !== false;
-      await publishCurrentMenu(
-        {
-          action: "add_placement",
-          entity_type: "menu_section",
-          entity_id: addItemTarget.sectionId,
-          changed_fields: {
-            section_id: addItemTarget.sectionId,
-            item_ids: added.map((item) => item.id),
-          },
-        },
-        verificationItem
-          ? {
-              type: "item",
-              itemId: verificationItem.id,
-              present: shouldBePublic,
-              ...(shouldBePublic
-                ? { fields: { en: verificationItem.name_en } }
-                : {}),
-            }
-          : null,
-      );
+      await noteDraftChanged();
 
       const allInactive = added.every((item) => item.active === false);
       showToast(allInactive
         ? `${added.length > 1 ? `${added.length} inactive items` : added[0].name_en} added to ${addItemTarget.sectionName}. They remain hidden until activated.`
         : added.length > 1
-          ? guestMenuSuccessMessage(`${added.length} items added to ${addItemTarget.sectionName}. Guest menu updated.`)
-          : guestMenuSuccessMessage(`${added[0].name_en} added to ${addItemTarget.sectionName}. Guest menu updated.`));
+          ? guestMenuSuccessMessage(`${added.length} items added to ${addItemTarget.sectionName}. Saved. Publish when ready.`)
+          : guestMenuSuccessMessage(`${added[0].name_en} added to ${addItemTarget.sectionName}. Saved. Publish when ready.`));
       setAddItemModalOpen(false);
       setAddItemTarget(null);
       setBranchCatalogue([]);
@@ -1334,11 +1310,10 @@ export default function MenuManager() {
     addItemTarget,
     loadMenuForCategory,
     menuBranch,
-    publishCurrentMenu,
+
     rbac.profile,
     selectedCatId,
-    showToast,
-  ]);
+    showToast,  noteDraftChanged]);
 
   const openEditItem = useCallback(async (item) => {
     const secRow = sectionsCatalog.find((s) => s.id === item.section_id);
@@ -1370,8 +1345,7 @@ export default function MenuManager() {
     try {
       [linkedAddonIds, linkedAllergenIds] = await Promise.all([
         fetchItemAddonIds(item.id),
-        fetchItemAllergenIds(item.id),
-      ]);
+        fetchItemAllergenIds(item.id)]);
     } catch {
       linkedAddonIds = (item.add_ons || []).map((a) => a.id || a);
       linkedAllergenIds = (item.allergens || []).map((a) => a.id || a);
@@ -1502,47 +1476,10 @@ export default function MenuManager() {
         throw new Error("Sold out did not persist — check Supabase column and permissions");
       }
 
-      const allergenCodes = itemAllergenIds
-        .map((id) => allergens.find((a) => a.id === id)?.code)
-        .filter(Boolean);
       const publishedAt = Date.now();
-      await publishCurrentMenu(
-        {
-          action: editorMode === "create" ? "create_item" : "update_item",
-          entity_type: "menu_item",
-          entity_id: itemId,
-          changed_fields: {
-            name_en: contentPayload.name_en,
-            description: contentPayload.desc_en,
-            price: contentPayload.price,
-            calories: contentPayload.calories,
-            active: contentPayload.active,
-            sold_out: contentPayload.sold_out,
-            featured: contentPayload.featured,
-            allergens: allergenCodes,
-          },
-        },
-        {
-          type: "item",
-          itemId,
-          present: contentPayload.active !== false,
-          fields: contentPayload.active !== false
-            ? {
-                en: contentPayload.name_en,
-                descEn: contentPayload.desc_en,
-                price: contentPayload.price,
-                calories: contentPayload.calories,
-                soldOut: contentPayload.sold_out,
-                featured: contentPayload.featured,
-              }
-            : {},
-          allergens: contentPayload.active !== false ? allergenCodes : undefined,
-        },
-        null,
-        { silentToast: true },
-      );
+      await noteDraftChanged();
       setToast({
-        message: `✓ Menu item saved. Guest menu updated successfully. ${formatRelativeTimestamp(publishedAt, publishedAt)}`,
+        message: `✓ Menu item saved. Publish when ready. ${formatRelativeTimestamp(publishedAt, publishedAt)}`,
         type: "success",
       });
 
@@ -1574,9 +1511,8 @@ export default function MenuManager() {
     menuBranch,
     rbac.profile,
     readOnlyMenu,
-    allergens,
     sectionsCatalog,
-    publishCurrentMenu,
+    noteDraftChanged,
   ]);
 
   const handleToggleSoldOut = useCallback(async (item) => {
@@ -1587,31 +1523,18 @@ export default function MenuManager() {
       if (verified && Boolean(verified.sold_out) !== newVal) {
         throw new Error("Sold out did not persist");
       }
-      await publishCurrentMenu(
-        {
-          action: "update_availability",
-          entity_type: "menu_item",
-          entity_id: item.id,
-          changed_fields: { sold_out: newVal },
-        },
-        {
-          type: "item",
-          itemId: item.id,
-          present: item.active !== false,
-          fields: { soldOut: newVal },
-        },
-      );
+      await noteDraftChanged();
       showToast(
         newVal
-          ? guestMenuSuccessMessage("Marked sold out on guest menu.")
-          : guestMenuSuccessMessage("Marked available on guest menu."),
+          ? guestMenuSuccessMessage("Marked sold out. Publish when ready.")
+          : guestMenuSuccessMessage("Marked available. Publish when ready."),
       );
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(friendlyActionErrorMessage(e, "Could not update sold out status. Please try again."), "error");
       await loadMenuForCategory(selectedCatId);
     }
-  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const openVisibilityModal = useCallback((item) => {
     const untilMs = parseHiddenUntil(item);
@@ -1641,22 +1564,9 @@ export default function MenuManager() {
       if (Boolean(verified.sold_out) !== patch.sold_out) {
         throw new Error("Sold out did not persist");
       }
-      await publishCurrentMenu(
-        {
-          action: "update_visibility",
-          entity_type: "menu_item",
-          entity_id: visibilityTarget.id,
-          changed_fields: patch,
-        },
-        {
-          type: "item",
-          itemId: visibilityTarget.id,
-          present: visibilityForm.mode === "active",
-          fields: visibilityForm.mode === "active" ? { soldOut: patch.sold_out } : {},
-        },
-      );
+      await noteDraftChanged();
       setVisibilityTarget(null);
-      showToast(guestMenuSuccessMessage("Guest visibility updated."));
+      showToast(guestMenuSuccessMessage("Visibility saved. Publish when ready."));
       await loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(friendlyActionErrorMessage(e, "Could not update visibility. Please try again."), "error");
@@ -1664,27 +1574,19 @@ export default function MenuManager() {
     } finally {
       setVisibilityLoading(false);
     }
-  }, [visibilityTarget, visibilityForm, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [visibilityTarget, visibilityForm, showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const handleDuplicateItem = useCallback(async (item, e) => {
     e.stopPropagation();
     try {
-      const duplicated = assertMenuMutation(await duplicateMenuItem(item.id), "duplicateMenuItem");
-      await publishCurrentMenu(
-        {
-          action: "duplicate_item",
-          entity_type: "menu_item",
-          entity_id: duplicated.id,
-          changed_fields: { source_item_id: item.id },
-        },
-        { type: "item", itemId: duplicated.id, present: duplicated.active !== false },
-      );
-      showToast(guestMenuSuccessMessage("Item duplicated on guest menu."));
+      assertMenuMutation(await duplicateMenuItem(item.id), "duplicateMenuItem");
+      await noteDraftChanged();
+      showToast(guestMenuSuccessMessage("Item duplicated. Publish when ready."));
       loadMenuForCategory(selectedCatId);
     } catch (e) {
       showToast(e?.message || "Failed to duplicate", "error");
     }
-  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const handleDeleteItem = useCallback((item, e) => {
     e.stopPropagation();
@@ -1698,16 +1600,8 @@ export default function MenuManager() {
         setConfirmLoading(true);
         try {
           assertMenuMutation(await deleteMenuItem(item.id), "deleteMenuItem");
-          await publishCurrentMenu(
-            {
-              action: "delete_item",
-              entity_type: "menu_item",
-              entity_id: item.id,
-              changed_fields: { name_en: item.name_en },
-            },
-            { type: "item", itemId: item.id, present: false },
-          );
-          showToast(guestMenuSuccessMessage("Item removed from guest menu."));
+          await noteDraftChanged();
+          showToast(guestMenuSuccessMessage("Item removed. Publish when ready."));
           loadMenuForCategory(selectedCatId);
         } catch (e) {
           showToast(e?.message || "Failed to delete item", "error");
@@ -1717,7 +1611,7 @@ export default function MenuManager() {
         }
       },
     });
-  }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [showToast, loadMenuForCategory, selectedCatId, noteDraftChanged]);
 
   const handleReorderItem = useCallback(async (sectionId, itemId, direction) => {
     const loc = findItemLocation(menuData, itemId);
@@ -1733,11 +1627,7 @@ export default function MenuManager() {
     try {
       const ordered = buildItemOrderUpdates(result.sections, [sectionId]);
       assertMenuMutation(await reorderItems(ordered), "reorderItems");
-      await publishCurrentMenu({
-        action: "reorder_items",
-        entity_type: "menu_item",
-        changed_fields: { order: ordered },
-      });
+      await noteDraftChanged();
       setOrderStatus("saved");
       window.setTimeout(() => setOrderStatus(null), 1400);
     } catch (e) {
@@ -1745,7 +1635,7 @@ export default function MenuManager() {
       setOrderStatus(null);
       showToast("Failed to reorder", "error");
     }
-  }, [menuData, showToast, publishCurrentMenu]);
+  }, [menuData, showToast, noteDraftChanged]);
 
   const dndEnabled = useMemo(
     () =>
@@ -1783,15 +1673,7 @@ export default function MenuManager() {
         if (diff.orderUpdates.length) {
           assertMenuMutation(await reorderItems(diff.orderUpdates), "reorderItems");
         }
-        await publishCurrentMenu({
-          action,
-          entity_type: "menu_item",
-          entity_id: entityId,
-          changed_fields: {
-            moves: diff.moves,
-            order: diff.orderUpdates,
-          },
-        });
+        await noteDraftChanged();
         if (!silent) {
           setOrderStatus("saved");
           window.setTimeout(() => setOrderStatus(null), 1400);
@@ -1834,7 +1716,7 @@ export default function MenuManager() {
         dragSnapshotRef.current = null;
       }
     },
-    [publishCurrentMenu, showToast, undoApi],
+    [showToast, undoApi, noteDraftChanged],
   );
 
   const persistItemBoardChange = useCallback(
@@ -1958,11 +1840,7 @@ export default function MenuManager() {
       setOrderStatus("saving");
       try {
         assertMenuMutation(await reorderSections(ordered), "reorderSections");
-        await publishCurrentMenu({
-          action: "reorder_sections",
-          entity_type: "section",
-          changed_fields: { order: ordered },
-        });
+        await noteDraftChanged();
         setOrderStatus("saved");
         window.setTimeout(() => setOrderStatus(null), 1400);
         undoApi.push({
@@ -1970,20 +1848,12 @@ export default function MenuManager() {
           undo: async () => {
             setMenuData(before);
             assertMenuMutation(await reorderSections(buildSectionOrderUpdates(before)), "reorderSections");
-            await publishCurrentMenu({
-              action: "reorder_sections",
-              entity_type: "section",
-              changed_fields: { order: buildSectionOrderUpdates(before) },
-            });
+            await noteDraftChanged();
           },
           redo: async () => {
             setMenuData(after);
             assertMenuMutation(await reorderSections(ordered), "reorderSections");
-            await publishCurrentMenu({
-              action: "reorder_sections",
-              entity_type: "section",
-              changed_fields: { order: ordered },
-            });
+            await noteDraftChanged();
           },
         });
       } catch (error) {
@@ -2064,11 +1934,10 @@ export default function MenuManager() {
     clearCollapseExpandTimer,
     menuData,
     persistItemBoardChange,
-    publishCurrentMenu,
+
     showToast,
     undoApi,
-    getDragGroupIds,
-  ]);
+    getDragGroupIds,  noteDraftChanged]);
 
   const handleBoardDragCancel = useCallback(() => {
     clearCollapseExpandTimer();
@@ -2090,11 +1959,7 @@ export default function MenuManager() {
       for (const id of ids) {
         assertMenuMutation(await applyMenuItemVisibility(id, patch), "applyMenuItemVisibility");
       }
-      await publishCurrentMenu({
-        action: "bulk_visibility",
-        entity_type: "menu_item",
-        changed_fields: { ids, patch },
-      });
+      await noteDraftChanged();
       await loadMenuForCategory(selectedCatId);
       setOrderStatus("saved");
       window.setTimeout(() => setOrderStatus(null), 1400);
@@ -2115,22 +1980,14 @@ export default function MenuManager() {
               );
             }
           }
-          await publishCurrentMenu({
-            action: "bulk_visibility_undo",
-            entity_type: "menu_item",
-            changed_fields: { ids },
-          });
+          await noteDraftChanged();
           await loadMenuForCategory(selectedCatId);
         },
         redo: async () => {
           for (const id of ids) {
             assertMenuMutation(await applyMenuItemVisibility(id, patch), "applyMenuItemVisibility");
           }
-          await publishCurrentMenu({
-            action: "bulk_visibility",
-            entity_type: "menu_item",
-            changed_fields: { ids, patch },
-          });
+          await noteDraftChanged();
           await loadMenuForCategory(selectedCatId);
         },
       });
@@ -2139,7 +1996,7 @@ export default function MenuManager() {
       showToast(friendlyActionErrorMessage(error, "Bulk update failed"), "error");
       await loadMenuForCategory(selectedCatId);
     }
-  }, [menuData, readOnlyMenu, publishCurrentMenu, loadMenuForCategory, selectedCatId, showToast, undoApi]);
+  }, [menuData, readOnlyMenu, loadMenuForCategory, selectedCatId, showToast, undoApi, noteDraftChanged]);
 
   const applyBulkSoldOut = useCallback(async (ids, soldOut) => {
     if (!ids.length || readOnlyMenu) return;
@@ -2149,11 +2006,7 @@ export default function MenuManager() {
       for (const id of ids) {
         assertMenuMutation(await toggleSoldOut(id, soldOut), "toggleSoldOut");
       }
-      await publishCurrentMenu({
-        action: "bulk_sold_out",
-        entity_type: "menu_item",
-        changed_fields: { ids, sold_out: soldOut },
-      });
+      await noteDraftChanged();
       await loadMenuForCategory(selectedCatId);
       setOrderStatus("saved");
       window.setTimeout(() => setOrderStatus(null), 1400);
@@ -2163,22 +2016,14 @@ export default function MenuManager() {
           for (const id of ids) {
             assertMenuMutation(await toggleSoldOut(id, !soldOut), "toggleSoldOut");
           }
-          await publishCurrentMenu({
-            action: "bulk_sold_out_undo",
-            entity_type: "menu_item",
-            changed_fields: { ids, sold_out: !soldOut },
-          });
+          await noteDraftChanged();
           await loadMenuForCategory(selectedCatId);
         },
         redo: async () => {
           for (const id of ids) {
             assertMenuMutation(await toggleSoldOut(id, soldOut), "toggleSoldOut");
           }
-          await publishCurrentMenu({
-            action: "bulk_sold_out",
-            entity_type: "menu_item",
-            changed_fields: { ids, sold_out: soldOut },
-          });
+          await noteDraftChanged();
           await loadMenuForCategory(selectedCatId);
         },
       });
@@ -2187,7 +2032,7 @@ export default function MenuManager() {
       showToast(friendlyActionErrorMessage(error, "Bulk sold out update failed"), "error");
       await loadMenuForCategory(selectedCatId);
     }
-  }, [readOnlyMenu, publishCurrentMenu, loadMenuForCategory, selectedCatId, showToast, undoApi]);
+  }, [readOnlyMenu, loadMenuForCategory, selectedCatId, showToast, undoApi, noteDraftChanged]);
 
   const moveSelectionToSection = useCallback(async (sectionId) => {
     const ids = selectionApi.selectedIds;
@@ -2274,11 +2119,16 @@ export default function MenuManager() {
         },
       },
       { id: "quicklook", label: "Open Quick Look", group: "Commands", keywords: "space preview", run: () => openQuickLook() },
+      { id: "preview-live", label: "Preview Live Menu", group: "Publish", keywords: "guest published", run: () => { setPreviewMode("live"); setPreviewOpen(true); } },
+      { id: "preview-draft", label: "Preview Draft Menu", group: "Publish", keywords: "current unpublished", run: () => { setPreviewMode("draft"); setPreviewOpen(true); } },
+      { id: "publish-changes", label: "Publish Changes", group: "Publish", keywords: "guest version", run: () => handleManualPublish() },
+      { id: "view-unpublished", label: "View Unpublished Changes", group: "Publish", keywords: "diff", run: () => { setPublishDiffOpen(true); publishIntel.refresh(); } },
+      { id: "view-versions", label: "View Menu Versions", group: "Publish", keywords: "history", run: () => setVersionHistoryOpen(true) },
+      { id: "compare-live", label: "Compare with Live", group: "Publish", keywords: "diff version", run: () => { setPublishDiffOpen(true); publishIntel.refresh(); } },
       { id: "hide-selected", label: "Hide selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: false, hidden_until: null }, `Hidden ${selectionApi.count} items`) },
       { id: "show-selected", label: "Show selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: true, hidden_until: null }, `Showed ${selectionApi.count} items`) },
       { id: "soldout-selected", label: "Mark selected sold out", group: "Commands", run: () => applyBulkSoldOut(selectionApi.selectedIds, true) },
-      { id: "move-selected", label: "Move Selected To…", group: "Commands", run: () => setMoveSheetOpen(true) },
-    ];
+      { id: "move-selected", label: "Move Selected To…", group: "Commands", run: () => setMoveSheetOpen(true) }];
     categories.forEach((cat) => {
       commands.push({
         id: `go-cat-${cat.id}`,
@@ -2307,7 +2157,8 @@ export default function MenuManager() {
     applyBulkSoldOut,
     selectionApi,
     goToItem,
-  ]);
+    handleManualPublish,
+    publishIntel]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -2377,8 +2228,7 @@ export default function MenuManager() {
     undoApi,
     menuData,
     openEditItem,
-    toggleMenuSidebar,
-  ]);
+    toggleMenuSidebar]);
 
   // ── Image handling ──
 
@@ -2569,8 +2419,7 @@ export default function MenuManager() {
         id: "shortcuts",
         label: "Keyboard Shortcuts",
         onSelect: () => setShortcutsOpen(true),
-      },
-    ],
+      }],
     [openQuickLook, selectSimilarSection, selectionApi.focusId, selectionApi.selectedIds],
   );
 
@@ -2597,6 +2446,12 @@ export default function MenuManager() {
     () => formatLastPublishedLabel(publishStatus?.last_published_at),
     [publishStatus?.last_published_at],
   );
+
+  const locatePreviewItem = useCallback((itemId) => {
+    if (!itemId) return;
+    const loc = findItemLocation(menuData, itemId);
+    goToItem({ id: itemId, section_id: loc?.sectionId });
+  }, [goToItem, menuData]);
 
   if (loading) {
     return (
@@ -2633,7 +2488,7 @@ export default function MenuManager() {
   }
 
   return (
-    <div className={`mm ${commandDockVisible ? "has-command-dock" : ""}`}>
+    <div className={`mm ${commandDockVisible ? "has-command-dock" : ""} ${previewOpen ? "has-publish-preview" : ""}`}>
       <div className="mm-top-shell">
         <MenuPublishStatusBar
           state={publishBarState}
@@ -2641,9 +2496,25 @@ export default function MenuManager() {
           publishing={publishInFlight}
           onPublish={handleManualPublish}
           onRetry={handleRetryPublish}
+          onPreview={() => {
+            setPreviewMode(publishIntel.diff?.hasChanges ? "draft" : "live");
+            setPreviewOpen(true);
+          }}
+          onViewChanges={() => {
+            publishIntel.refresh();
+            setPublishDiffOpen(true);
+          }}
+          onViewVersions={() => setVersionHistoryOpen(true)}
           liveMenuUrl={liveMenuUrl}
           readOnly={readOnlyMenu}
           lastPublishedLabel={lastPublishedLabel}
+          liveVersion={
+            publishIntel.livePublication?.version
+            ?? publishStatus?.published_version
+            ?? publishStatus?.guest_version
+            ?? null
+          }
+          pendingChangeCount={publishDiff?.counts?.total || 0}
         />
 
         {showOnboarding ? (
@@ -2790,6 +2661,11 @@ export default function MenuManager() {
               >
                 <span className="mm-cat-item-name">
                   {cat.name_en || cat.id}
+                  {publishIntel.diff?.changesByCategoryId?.[cat.id] ? (
+                    <span className="mm-cat-change-count">
+                      {publishIntel.diff.changesByCategoryId[cat.id]}
+                    </span>
+                  ) : null}
                 </span>
                 <div className="mm-cat-actions">
                   <button
@@ -3209,6 +3085,17 @@ export default function MenuManager() {
                                   </div>
 
                                   <div className="mm-item-card-badges">
+                                    {(() => {
+                                      const publishBadge = itemPublishBadge(item.id, publishIntel.diff);
+                                      return publishBadge ? (
+                                        <span
+                                          className={`mm-badge mm-badge-publish mm-badge-publish-${publishBadge.key}`}
+                                          data-testid={`publish-badge-${item.id}`}
+                                        >
+                                          {publishBadge.label}
+                                        </span>
+                                      ) : null;
+                                    })()}
                                     <span className={`mm-badge mm-badge-visibility mm-badge-visibility-${visBadge.key}`}>
                                       {visBadge.label}
                                     </span>
@@ -3216,7 +3103,9 @@ export default function MenuManager() {
                                     {item.featured && (
                                       <span className="mm-badge mm-badge-featured">Highlighted</span>
                                     )}
-                                    {item.new_item && <span className="mm-badge mm-badge-new">New</span>}
+                                    {item.new_item && !itemPublishBadge(item.id, publishIntel.diff) && (
+                                      <span className="mm-badge mm-badge-new">New</span>
+                                    )}
                                     {item.vegetarian && <span className="mm-badge mm-badge-veg">Veg</span>}
                                     {item.vegan && <span className="mm-badge mm-badge-vegan">Vegan</span>}
                                     {linkedBadge && (
@@ -3551,6 +3440,18 @@ export default function MenuManager() {
           )}
         </div>
       </main>
+
+      <MenuPublishPreviewPanel
+        open={previewOpen}
+        mode={previewMode}
+        onModeChange={setPreviewMode}
+        livePublication={publishIntel.livePublication}
+        draftSnapshot={publishIntel.draftSnapshot}
+        branchId={menuBranch}
+        categories={categories}
+        onClose={() => setPreviewOpen(false)}
+        onLocateItem={locatePreviewItem}
+      />
       </div>
 
       {/* ═══ EDITOR PANEL ═══ */}
@@ -4016,8 +3917,7 @@ export default function MenuManager() {
             id: "shortcuts",
             label: "Keyboard Shortcuts",
             onSelect: () => setShortcutsOpen(true),
-          },
-        ]}
+          }]}
       />
 
       <MenuMoveToSheet
@@ -4076,6 +3976,24 @@ export default function MenuManager() {
           </div>
         </div>
       )}
+
+      <MenuPublishDiffSheet
+        open={publishDiffOpen}
+        diff={publishIntel.diff}
+        liveVersion={publishIntel.livePublication?.version ?? null}
+        publishing={publishInFlight}
+        readOnly={readOnlyMenu}
+        onClose={() => setPublishDiffOpen(false)}
+        onConfirmPublish={confirmPublishFromDiff}
+      />
+
+      <MenuVersionHistorySheet
+        open={versionHistoryOpen}
+        history={publishIntel.history}
+        livePublication={publishIntel.livePublication}
+        onClose={() => setVersionHistoryOpen(false)}
+      />
+
     </div>
   );
 }

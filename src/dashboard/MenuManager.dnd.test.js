@@ -121,9 +121,10 @@ describe("MenuManager Apple-style drag and drop", () => {
     expect(canMoveItemToSection(moved.sections, "olives", "plates").ok).toBe(true);
   });
 
-  test("publish pipeline remains required after reorder/move", () => {
-    expect(componentSource).toContain('action: meta.crossSection ? "move_item_section" : "reorder_items"');
-    expect(componentSource).toContain('action: "reorder_sections"');
-    expect(componentSource).toContain("publishCurrentMenu({");
+  test("reorder/move save as draft and require explicit publish pipeline", () => {
+    expect(componentSource).toContain("noteDraftChanged");
+    expect(componentSource).toContain("confirmPublishFromDiff");
+    expect(componentSource).toContain("publishCurrentMenu");
+    expect(componentSource).toContain("publishAndVerifyMenuBranch");
   });
 });

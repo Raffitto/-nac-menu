@@ -153,8 +153,8 @@ describe("MenuPublishStatusBar", () => {
         lastPublishedLabel="16 Jul, 14:30"
       />,
     );
-    expect(screen.getByText("Guest menu is up to date.")).toBeInTheDocument();
-    expect(screen.getByTestId("publish-last-updated")).toHaveTextContent("Last updated 16 Jul, 14:30.");
+    expect(screen.getByText(/Guest menu is up to date/i)).toBeInTheDocument();
+    expect(screen.getByTestId("publish-last-updated")).toHaveTextContent("16 Jul, 14:30");
 
     rerender(
       <MenuPublishStatusBar
@@ -165,9 +165,10 @@ describe("MenuPublishStatusBar", () => {
         onRetry={onRetry}
         liveMenuUrl="https://example.com/khobar"
         readOnly={false}
+        pendingChangeCount={3}
       />,
     );
-    expect(screen.getByText("You have unpublished changes.")).toBeInTheDocument();
+    expect(screen.getByText(/Changes waiting/i)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("publish-menu-button"));
     expect(onPublish).toHaveBeenCalled();
 
@@ -182,7 +183,7 @@ describe("MenuPublishStatusBar", () => {
         readOnly={false}
       />,
     );
-    expect(screen.getByText("Publishing menu…")).toBeInTheDocument();
+    expect(screen.getByTestId("menu-publish-status-bar")).toHaveTextContent("Publishing…");
     expect(screen.getByTestId("publish-menu-button")).toBeDisabled();
 
     rerender(
@@ -196,7 +197,7 @@ describe("MenuPublishStatusBar", () => {
         readOnly={false}
       />,
     );
-    expect(screen.getByText(/Publishing failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Publish failed/i)).toBeInTheDocument();
     expect(screen.getByTestId("publish-friendly-error")).toHaveTextContent(
       "We couldn't update the guest menu. Please try again.",
     );

@@ -68,9 +68,9 @@ describe("MenuManager production layout and loading contract", () => {
     expect(placementEditorSource).toContain("collectUsedPlacementKeys");
   });
 
-  test("guest highlight toggle reuses featured field and verifies publish payload", () => {
+  test("guest highlight toggle reuses featured field", () => {
     expect(componentSource).toContain("Highlight on Guest Menu");
-    expect(componentSource).toContain("featured: contentPayload.featured");
+    expect(componentSource).toContain("featured: Boolean(editingItem.featured)");
     expect(componentSource).toContain('className="mm-badge mm-badge-featured">Highlighted</span>');
   });
 
@@ -79,16 +79,14 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("openAddItemChooser(section)");
     expect(componentSource).toContain("addExistingItemsToSection");
     expect(componentSource).toContain("buildMenuItemCatalogue");
-    expect(componentSource).toContain('action: "add_placement"');
+    expect(componentSource).toContain("noteDraftChanged");
     expect(componentSource).toContain("onChooseCreateNew={() =>");
     expect(componentSource).toContain("<MenuItemPlacementEditor");
   });
 
-  test("placing an inactive catalogue item verifies it remains absent from guests", () => {
-    expect(componentSource).toContain(
-      "const shouldBePublic = verificationItem.active !== false",
-    );
-    expect(componentSource).toContain("present: shouldBePublic");
+  test("placing catalogue items saves draft and refreshes publish intelligence", () => {
+    expect(componentSource).toContain("noteDraftChanged");
+    expect(componentSource).toContain("addExistingItemsToSection");
     expect(componentSource).toContain("They remain hidden until activated.");
   });
 });

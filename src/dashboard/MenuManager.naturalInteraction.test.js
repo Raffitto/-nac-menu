@@ -45,9 +45,11 @@ describe("Menu Manager natural interaction system", () => {
     expect(css).toContain(".mm-item-card.is-selected");
   });
 
-  test("interaction actions remain publish-backed", () => {
-    expect(manager).toContain('action: "bulk_visibility"');
-    expect(manager).toContain('action: "bulk_sold_out"');
+  test("interaction actions save draft then use explicit publish confirmation", () => {
+    expect(manager).toContain("noteDraftChanged");
+    expect(manager).toContain("applyBulkVisibility");
+    expect(manager).toContain("applyBulkSoldOut");
+    expect(manager).toContain("confirmPublishFromDiff");
     expect(manager).toContain("publishCurrentMenu");
     expect(manager).toContain("pushUndo");
   });
