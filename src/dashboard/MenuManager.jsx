@@ -46,6 +46,7 @@ import {
   fetchMenuItemById,
   reorderSections,
   reorderItems,
+  moveMenuItemToSection,
   createCategory,
   updateCategory,
   deleteCategory,
@@ -86,6 +87,13 @@ import MenuAddItemModal from "./MenuAddItemModal";
 import MenuPublishStatusBar from "./MenuPublishStatusBar";
 import MenuManagerTooltip from "./MenuManagerTooltip";
 import {
+  MenuManagerDndProvider,
+  SortableItemGrid,
+  SectionFrame,
+  ItemFrame,
+  isolateInteractivePointer,
+} from "./MenuManagerDnd";
+import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
   friendlyPublishErrorMessage,
@@ -98,6 +106,18 @@ import {
   snapshotsEqual,
 } from "./menuManagerUx";
 import { buildMenuItemCatalogue } from "../lib/menuSectionPlacement";
+import {
+  buildItemOrderUpdates,
+  buildSectionOrderUpdates,
+  canMoveItemToSection,
+  cloneSections,
+  findItemLocation,
+  moveItemBetweenSections,
+  parseItemDndId,
+  parseSectionDndId,
+  reorderSectionsById,
+  resolveItemDropTarget,
+} from "../lib/menuManagerOrdering";
 import { useRbac } from "./context/RbacContext";
 import {
   resolveMenuEditorBranch,
@@ -431,6 +451,10 @@ export default function MenuManager() {
   const categoriesRef = useRef([]);
   const lastLoadedCatRef = useRef(null);
   const menuLoadRequestRef = useRef(0);
+  const dragSnapshotRef = useRef(null);
+  const collapseExpandTimerRef = useRef(null);
+  const [activeDragLabel, setActiveDragLabel] = useState(null);
+  const [orderStatus, setOrderStatus] = useState(null);
 
   useEffect(() => {
     sectionsCatalogRef.current = sectionsCatalog;
@@ -1110,25 +1134,32 @@ export default function MenuManager() {
     });
   }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
-  const handleReorderSection = useCallback(async (index, direction) => {
-    const newSections = [...menuData];
+  const handleReorderSection = useCallback(async (sectionId, direction) => {
+    const index = menuData.findIndex((section) => section.id === sectionId);
+    if (index < 0) return;
     const swapIdx = index + direction;
-    if (swapIdx < 0 || swapIdx >= newSections.length) return;
+    if (swapIdx < 0 || swapIdx >= menuData.length) return;
+    const snapshot = cloneSections(menuData);
+    const newSections = cloneSections(menuData);
     [newSections[index], newSections[swapIdx]] = [newSections[swapIdx], newSections[index]];
     setMenuData(newSections);
+    setOrderStatus("saving");
     try {
-      const ordered = newSections.map((s, i) => ({ id: s.id, sort_order: i }));
+      const ordered = buildSectionOrderUpdates(newSections);
       assertMenuMutation(await reorderSections(ordered), "reorderSections");
       await publishCurrentMenu({
         action: "reorder_sections",
         entity_type: "section",
         changed_fields: { order: ordered },
       });
+      setOrderStatus("saved");
+      window.setTimeout(() => setOrderStatus(null), 1400);
     } catch (e) {
+      setMenuData(snapshot);
+      setOrderStatus(null);
       showToast("Failed to reorder sections", "error");
-      loadMenuForCategory(selectedCatId);
     }
-  }, [menuData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [menuData, showToast, publishCurrentMenu]);
 
   // ── Item CRUD ──
 
@@ -1633,27 +1664,264 @@ export default function MenuManager() {
     });
   }, [showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
 
-  const handleReorderItem = useCallback(async (sectionIdx, itemIdx, direction) => {
-    const newSections = [...menuData];
-    const items = [...newSections[sectionIdx].items];
-    const swapIdx = itemIdx + direction;
+  const handleReorderItem = useCallback(async (sectionId, itemId, direction) => {
+    const loc = findItemLocation(menuData, itemId);
+    if (!loc || loc.sectionId !== sectionId) return;
+    const swapIdx = loc.itemIndex + direction;
+    const items = menuData[loc.sectionIndex].items || [];
     if (swapIdx < 0 || swapIdx >= items.length) return;
-    [items[itemIdx], items[swapIdx]] = [items[swapIdx], items[itemIdx]];
-    newSections[sectionIdx] = { ...newSections[sectionIdx], items };
-    setMenuData(newSections);
+    const snapshot = cloneSections(menuData);
+    const result = moveItemBetweenSections(menuData, itemId, sectionId, swapIdx);
+    if (result.error) return;
+    setMenuData(result.sections);
+    setOrderStatus("saving");
     try {
-      const ordered = items.map((it, i) => ({ id: it.id, sort_order: i }));
+      const ordered = buildItemOrderUpdates(result.sections, [sectionId]);
       assertMenuMutation(await reorderItems(ordered), "reorderItems");
       await publishCurrentMenu({
         action: "reorder_items",
         entity_type: "menu_item",
         changed_fields: { order: ordered },
       });
+      setOrderStatus("saved");
+      window.setTimeout(() => setOrderStatus(null), 1400);
     } catch (e) {
+      setMenuData(snapshot);
+      setOrderStatus(null);
       showToast("Failed to reorder", "error");
-      loadMenuForCategory(selectedCatId);
     }
-  }, [menuData, showToast, loadMenuForCategory, selectedCatId, publishCurrentMenu]);
+  }, [menuData, showToast, publishCurrentMenu]);
+
+  const dndEnabled = useMemo(
+    () =>
+      !readOnlyMenu &&
+      !publishInFlight &&
+      !searchQuery.trim() &&
+      activeFilter === "all",
+    [readOnlyMenu, publishInFlight, searchQuery, activeFilter],
+  );
+
+  const clearCollapseExpandTimer = useCallback(() => {
+    if (collapseExpandTimerRef.current) {
+      window.clearTimeout(collapseExpandTimerRef.current);
+      collapseExpandTimerRef.current = null;
+    }
+  }, []);
+
+  const persistItemBoardChange = useCallback(
+    async (nextSections, meta) => {
+      setOrderStatus("saving");
+      try {
+        if (meta.crossSection) {
+          assertMenuMutation(
+            await moveMenuItemToSection(meta.itemId, meta.destinationSectionId),
+            "moveMenuItemToSection",
+          );
+        }
+        const ordered = buildItemOrderUpdates(nextSections, [
+          meta.sourceSectionId,
+          meta.destinationSectionId,
+        ]);
+        assertMenuMutation(await reorderItems(ordered), "reorderItems");
+        await publishCurrentMenu({
+          action: meta.crossSection ? "move_item_section" : "reorder_items",
+          entity_type: "menu_item",
+          entity_id: meta.itemId,
+          changed_fields: {
+            section_id: meta.destinationSectionId,
+            order: ordered,
+          },
+        });
+        setOrderStatus("saved");
+        window.setTimeout(() => setOrderStatus(null), 1400);
+      } catch (error) {
+        if (dragSnapshotRef.current) setMenuData(dragSnapshotRef.current);
+        setOrderStatus(null);
+        showToast(
+          friendlyActionErrorMessage(error, "Could not save new order. Please try again."),
+          "error",
+        );
+      } finally {
+        dragSnapshotRef.current = null;
+      }
+    },
+    [publishCurrentMenu, showToast],
+  );
+
+  const handleBoardDragStart = useCallback((event) => {
+    dragSnapshotRef.current = cloneSections(menuData);
+    const label =
+      event.active?.data?.current?.label ||
+      (parseItemDndId(event.active.id) ? "Menu item" : "Section");
+    setActiveDragLabel(label);
+  }, [menuData]);
+
+  const handleBoardDragOver = useCallback((event) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeSectionId = parseSectionDndId(active.id);
+    const overSectionId = parseSectionDndId(over.id);
+    if (activeSectionId && overSectionId && activeSectionId !== overSectionId) {
+      setMenuData((prev) => reorderSectionsById(prev, activeSectionId, overSectionId));
+      return;
+    }
+
+    const activeItemId = parseItemDndId(active.id);
+    if (!activeItemId) return;
+
+    setMenuData((prev) => {
+      const target = resolveItemDropTarget(prev, activeItemId, over.id);
+      if (!target) return prev;
+
+      const gate = canMoveItemToSection(prev, activeItemId, target.destinationSectionId);
+      if (!gate.ok) return prev;
+
+      const activeLoc = findItemLocation(prev, activeItemId);
+      if (!activeLoc) return prev;
+
+      // Same-section reorders are handled on drag end via transforms.
+      if (activeLoc.sectionId === target.destinationSectionId) return prev;
+
+      if (!expandedSections[target.destinationSectionId]) {
+        clearCollapseExpandTimer();
+        collapseExpandTimerRef.current = window.setTimeout(() => {
+          setExpandedSections((current) => ({
+            ...current,
+            [target.destinationSectionId]: true,
+          }));
+        }, 450);
+      }
+
+      const moved = moveItemBetweenSections(
+        prev,
+        activeItemId,
+        target.destinationSectionId,
+        target.destinationIndex,
+      );
+      return moved.error ? prev : moved.sections;
+    });
+  }, [expandedSections, clearCollapseExpandTimer]);
+
+  const handleBoardDragEnd = useCallback(async (event) => {
+    clearCollapseExpandTimer();
+    setActiveDragLabel(null);
+    const { active, over } = event;
+    const snapshot = dragSnapshotRef.current;
+
+    if (!over) {
+      if (snapshot) setMenuData(snapshot);
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    const activeSectionId = parseSectionDndId(active.id);
+    if (activeSectionId) {
+      const ordered = buildSectionOrderUpdates(menuData);
+      const unchanged =
+        snapshot &&
+        snapshot.length === menuData.length &&
+        snapshot.every((section, index) => section.id === menuData[index]?.id);
+      if (unchanged) {
+        dragSnapshotRef.current = null;
+        return;
+      }
+      setOrderStatus("saving");
+      try {
+        assertMenuMutation(await reorderSections(ordered), "reorderSections");
+        await publishCurrentMenu({
+          action: "reorder_sections",
+          entity_type: "section",
+          changed_fields: { order: ordered },
+        });
+        setOrderStatus("saved");
+        window.setTimeout(() => setOrderStatus(null), 1400);
+      } catch (error) {
+        if (snapshot) setMenuData(snapshot);
+        setOrderStatus(null);
+        showToast("Failed to reorder sections", "error");
+      } finally {
+        dragSnapshotRef.current = null;
+      }
+      return;
+    }
+
+    const activeItemId = parseItemDndId(active.id);
+    if (!activeItemId) {
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    const prior = snapshot || menuData;
+    const priorLoc = findItemLocation(prior, activeItemId);
+    if (!priorLoc) {
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    const target = resolveItemDropTarget(menuData, activeItemId, over.id)
+      || resolveItemDropTarget(prior, activeItemId, over.id);
+    if (!target) {
+      if (snapshot) setMenuData(snapshot);
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    const gate = canMoveItemToSection(prior, activeItemId, target.destinationSectionId);
+    if (!gate.ok) {
+      if (snapshot) setMenuData(snapshot);
+      dragSnapshotRef.current = null;
+      showToast(gate.reason || "That drop is not allowed.", "error");
+      return;
+    }
+
+    const baseForMove =
+      findItemLocation(menuData, activeItemId)?.sectionId === target.destinationSectionId
+        ? menuData
+        : prior;
+    const moved = moveItemBetweenSections(
+      baseForMove,
+      activeItemId,
+      target.destinationSectionId,
+      target.destinationIndex,
+    );
+    if (moved.error) {
+      if (snapshot) setMenuData(snapshot);
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    const nextLoc = findItemLocation(moved.sections, activeItemId);
+    const unchanged =
+      nextLoc &&
+      nextLoc.sectionId === priorLoc.sectionId &&
+      nextLoc.itemIndex === priorLoc.itemIndex;
+    if (unchanged) {
+      dragSnapshotRef.current = null;
+      return;
+    }
+
+    setMenuData(moved.sections);
+    await persistItemBoardChange(moved.sections, {
+      itemId: activeItemId,
+      sourceSectionId: priorLoc.sectionId,
+      destinationSectionId: target.destinationSectionId,
+      crossSection: priorLoc.sectionId !== target.destinationSectionId,
+    });
+  }, [
+    clearCollapseExpandTimer,
+    menuData,
+    persistItemBoardChange,
+    publishCurrentMenu,
+    showToast,
+  ]);
+
+  const handleBoardDragCancel = useCallback(() => {
+    clearCollapseExpandTimer();
+    setActiveDragLabel(null);
+    if (dragSnapshotRef.current) setMenuData(dragSnapshotRef.current);
+    dragSnapshotRef.current = null;
+  }, [clearCollapseExpandTimer]);
 
   // ── Image handling ──
 
@@ -1993,6 +2261,15 @@ export default function MenuManager() {
                 {selectedCategory
                   ? `${totalFilteredItems} item${totalFilteredItems !== 1 ? "s" : ""}${searchQuery || activeFilter !== "all" ? " (filtered)" : ""}`
                   : "Select a category to manage items"}
+                {orderStatus === "saving" && (
+                  <span className="mm-order-status" data-testid="order-status-saving"> · Saving…</span>
+                )}
+                {orderStatus === "saved" && (
+                  <span className="mm-order-status is-saved" data-testid="order-status-saved"> · Saved</span>
+                )}
+                {!dndEnabled && selectedCategory && !readOnlyMenu && (searchQuery || activeFilter !== "all") && (
+                  <span className="mm-order-status"> · Clear filters to drag cards</span>
+                )}
               </p>
             </div>
             <div className="mm-tab-bar">
@@ -2090,11 +2367,26 @@ export default function MenuManager() {
 
               {selectedCatId && !itemsLoading && (
                 <>
+                  <MenuManagerDndProvider
+                    disabled={!dndEnabled}
+                    sectionIds={filteredSections.map((section) => section.id)}
+                    onDragStart={handleBoardDragStart}
+                    onDragOver={handleBoardDragOver}
+                    onDragEnd={handleBoardDragEnd}
+                    onDragCancel={handleBoardDragCancel}
+                    activeDragLabel={activeDragLabel}
+                  >
                   {filteredSections.map((section, sectionIdx) => {
                     const rawSection = menuData.find((s) => s.id === section.id);
                     const isSectionEmpty = (rawSection?.items || []).length === 0;
+                    const sectionItemIds = (section.items || []).map((item) => item.id);
                     return (
-                    <div className="mm-section" key={section.id}>
+                    <SectionFrame
+                      key={section.id}
+                      sectionId={section.id}
+                      dndEnabled={dndEnabled}
+                      label={section.name_en || "Section"}
+                      header={(
                       <div
                         className="mm-section-header"
                         onClick={() => toggleSection(section.id)}
@@ -2150,20 +2442,26 @@ export default function MenuManager() {
                           </>
                         )}
 
-                        <div className="mm-section-actions" onClick={(e) => e.stopPropagation()}>
+                        <div
+                          className="mm-section-actions"
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={isolateInteractivePointer}
+                        >
                           <button
-                            className="mm-section-action-btn"
-                            onClick={() => handleReorderSection(sectionIdx, -1)}
+                            className="mm-section-action-btn mm-reorder-fallback"
+                            onClick={() => handleReorderSection(section.id, -1)}
                             disabled={sectionIdx === 0}
-                            title="Move up"
+                            title="Move section up"
+                            aria-label={`Move ${section.name_en || "section"} up`}
                           >
                             <ChevronUp size={14} />
                           </button>
                           <button
-                            className="mm-section-action-btn"
-                            onClick={() => handleReorderSection(sectionIdx, 1)}
+                            className="mm-section-action-btn mm-reorder-fallback"
+                            onClick={() => handleReorderSection(section.id, 1)}
                             disabled={sectionIdx === filteredSections.length - 1}
-                            title="Move down"
+                            title="Move section down"
+                            aria-label={`Move ${section.name_en || "section"} down`}
                           >
                             <ChevronDown size={14} />
                           </button>
@@ -2186,7 +2484,8 @@ export default function MenuManager() {
                           </button>
                         </div>
                       </div>
-
+                      )}
+                    >
                       <AnimatePresence>
                         {expandedSections[section.id] && (
                           <motion.div
@@ -2195,7 +2494,11 @@ export default function MenuManager() {
                             exit={{ opacity: 0, height: 0 }}
                             transition={{ duration: 0.25 }}
                           >
-                            <div className="mm-item-grid">
+                            <SortableItemGrid
+                              sectionId={section.id}
+                              itemIds={sectionItemIds}
+                              dndEnabled={dndEnabled}
+                            >
                               {isSectionEmpty ? (
                                 <div className="mm-section-empty" data-testid="section-empty-state">
                                   <span>No menu items in this section yet.</span>
@@ -2235,14 +2538,14 @@ export default function MenuManager() {
                                   placementGroupSummary,
                                 );
                                 return (
-                                <motion.div
+                                <ItemFrame
                                   key={item.id}
-                                  className={`mm-item-card ${guestHidden ? "inactive" : ""}`}
-                                  onClick={() => openEditItem(item)}
-                                  whileHover={{ y: -3 }}
-                                  initial={{ opacity: 0, y: 12 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ delay: itemIdx * 0.03 }}
+                                  itemId={item.id}
+                                  sectionId={section.id}
+                                  dndEnabled={dndEnabled}
+                                  className={guestHidden ? "inactive" : ""}
+                                  label={item.name_en || "Menu item"}
+                                  onOpen={() => openEditItem(item)}
                                 >
                                   <div className="mm-item-card-img-wrap">
                                     {item.image ? (
@@ -2251,6 +2554,7 @@ export default function MenuManager() {
                                         alt={item.name_en}
                                         className="mm-item-card-img"
                                         loading="lazy"
+                                        draggable={false}
                                       />
                                     ) : (
                                       <ImageIcon size={28} className="mm-item-card-no-img" />
@@ -2280,7 +2584,11 @@ export default function MenuManager() {
                                     )}
                                   </div>
 
-                                  <div className="mm-item-card-actions" onClick={(e) => e.stopPropagation()}>
+                                  <div
+                                    className="mm-item-card-actions"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onPointerDown={isolateInteractivePointer}
+                                  >
                                     <button
                                       className={`mm-item-action-btn ${item.sold_out ? "sold-out-active" : ""}`}
                                       onClick={() => handleToggleSoldOut(item)}
@@ -2303,6 +2611,7 @@ export default function MenuManager() {
                                       className="mm-item-action-btn"
                                       onClick={() => openEditItem(item)}
                                       title="Edit"
+                                      aria-label={`Edit ${item.name_en || "item"}`}
                                     >
                                       <Edit3 size={14} />
                                     </button>
@@ -2310,22 +2619,25 @@ export default function MenuManager() {
                                       className="mm-item-action-btn"
                                       onClick={(e) => handleDuplicateItem(item, e)}
                                       title="Duplicate"
+                                      aria-label={`Duplicate ${item.name_en || "item"}`}
                                     >
                                       <Copy size={14} />
                                     </button>
                                     <button
-                                      className="mm-item-action-btn"
-                                      onClick={(e) => { e.stopPropagation(); handleReorderItem(sectionIdx, itemIdx, -1); }}
+                                      className="mm-item-action-btn mm-reorder-fallback"
+                                      onClick={(e) => { e.stopPropagation(); handleReorderItem(section.id, item.id, -1); }}
                                       disabled={itemIdx === 0}
                                       title="Move up"
+                                      aria-label={`Move ${item.name_en || "item"} up`}
                                     >
                                       <ChevronUp size={12} />
                                     </button>
                                     <button
-                                      className="mm-item-action-btn"
-                                      onClick={(e) => { e.stopPropagation(); handleReorderItem(sectionIdx, itemIdx, 1); }}
+                                      className="mm-item-action-btn mm-reorder-fallback"
+                                      onClick={(e) => { e.stopPropagation(); handleReorderItem(section.id, item.id, 1); }}
                                       disabled={itemIdx === section.items.length - 1}
                                       title="Move down"
+                                      aria-label={`Move ${item.name_en || "item"} down`}
                                     >
                                       <ChevronDown size={12} />
                                     </button>
@@ -2333,11 +2645,12 @@ export default function MenuManager() {
                                       className="mm-item-action-btn danger"
                                       onClick={(e) => handleDeleteItem(item, e)}
                                       title="Delete"
+                                      aria-label={`Delete ${item.name_en || "item"}`}
                                     >
                                       <Trash2 size={14} />
                                     </button>
                                   </div>
-                                </motion.div>
+                                </ItemFrame>
                                 );
                               })}
 
@@ -2349,6 +2662,7 @@ export default function MenuManager() {
                                   tabIndex={0}
                                   aria-label="Add item to this section"
                                   data-testid="section-add-item-card"
+                                  onPointerDown={isolateInteractivePointer}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" || e.key === " ") {
                                       e.preventDefault();
@@ -2362,13 +2676,15 @@ export default function MenuManager() {
                               </MenuManagerTooltip>
                                 </>
                               )}
-                            </div>
+                            </SortableItemGrid>
                           </motion.div>
                         )}
                       </AnimatePresence>
-                    </div>
+                    </SectionFrame>
                     );
                   })}
+                  </MenuManagerDndProvider>
+
 
                   <AnimatePresence>
                     {sectionCreateOpen && (

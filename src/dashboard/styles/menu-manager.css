@@ -367,6 +367,52 @@
   margin-bottom: 28px;
 }
 
+.mm-section-header-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.mm-section-header-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.mm-section-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.03);
+  color: rgba(249,249,247,0.35);
+  cursor: grab;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.mm-section-drag-handle:hover {
+  color: rgba(249,249,247,0.75);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(215,188,138,0.2);
+}
+
+.mm-section-drag-handle:active {
+  cursor: grabbing;
+}
+
+.mm-section--dragging {
+  opacity: 0.92;
+  z-index: 5;
+}
+
+.mm-section--drop-target > .mm-section-header-shell .mm-section-header,
+.mm-item-grid--drop-target {
+  box-shadow: inset 0 0 0 1px rgba(215,188,138,0.35);
+}
+
 .mm-section-header {
   display: flex;
   align-items: center;
@@ -377,7 +423,8 @@
   border: 1px solid rgba(255,255,255,0.06);
   cursor: pointer;
   transition: all 0.2s ease;
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  height: 100%;
 }
 
 .mm-section-header:hover {
@@ -492,6 +539,16 @@
   position: relative;
   overflow: hidden;
   backdrop-filter: blur(12px);
+  touch-action: manipulation;
+}
+
+.mm-item-card--sortable {
+  cursor: grab;
+  touch-action: manipulation;
+}
+
+.mm-item-card--sortable:active {
+  cursor: grabbing;
 }
 
 .mm-item-card:hover {
@@ -499,6 +556,69 @@
   border-color: rgba(215,188,138,0.18);
   transform: translateY(-4px);
   box-shadow: 0 14px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(215,188,138,0.08);
+}
+
+.mm-item-card--dragging {
+  opacity: 0.96;
+  transform: scale(1.03) !important;
+  box-shadow: 0 22px 50px rgba(0,0,0,0.38), 0 0 0 1px rgba(215,188,138,0.22);
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(215,188,138,0.28);
+  cursor: grabbing;
+}
+
+.mm-item-drag-hint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(249,249,247,0.28);
+  background: rgba(0,0,0,0.12);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.mm-item-card--sortable:hover .mm-item-drag-hint,
+.mm-item-card--dragging .mm-item-drag-hint {
+  opacity: 1;
+}
+
+.mm-drag-overlay-card {
+  min-width: 160px;
+  max-width: 240px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(28, 30, 32, 0.96);
+  border: 1px solid rgba(215,188,138,0.28);
+  color: #f9f9f7;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 24px 50px rgba(0,0,0,0.45);
+  transform: scale(1.03);
+  pointer-events: none;
+}
+
+.mm-order-status {
+  color: rgba(249,249,247,0.45);
+  font-weight: 500;
+}
+
+.mm-order-status.is-saved {
+  color: rgba(140, 196, 160, 0.9);
+}
+
+.mm-reorder-fallback {
+  opacity: 0.45;
+}
+
+.mm-reorder-fallback:hover {
+  opacity: 1;
 }
 
 .mm-item-card.inactive {

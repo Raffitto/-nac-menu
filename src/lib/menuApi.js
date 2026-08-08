@@ -1278,6 +1278,21 @@ export async function reorderItems(updates) {
   return { data: !error, error };
 }
 
+/**
+ * Move a single placement row into another section in the same category.
+ * Only writes section_id — never touches commercial or visibility fields.
+ */
+export async function moveMenuItemToSection(itemId, destinationSectionId) {
+  await requireMenuEditorAuth();
+  if (!itemId || !destinationSectionId) {
+    return {
+      data: null,
+      error: new Error("Item and destination section are required."),
+    };
+  }
+  return updateMenuItem(itemId, { section_id: destinationSectionId });
+}
+
 // ═══════════════ CATEGORY CRUD ═══════════════
 
 export async function createCategory(data) {
