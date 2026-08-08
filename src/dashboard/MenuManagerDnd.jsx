@@ -37,13 +37,13 @@ function collisionDetection(args) {
   return closestCenter(args);
 }
 
-export function useMenuManagerDndSensors() {
+export function useMenuManagerDndSensors({ arrangeMode = false } = {}) {
   return useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { distance: arrangeMode ? 4 : 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 280, tolerance: 8 },
+      activationConstraint: { delay: arrangeMode ? 180 : 280, tolerance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -85,15 +85,23 @@ export function ItemFrame({
   dndEnabled = true,
   className = "",
   label = "",
+  selected = false,
+  arrangeMode = false,
   onOpen,
+  onSelectClick,
+  onContextMenu,
   children,
 }) {
   if (!dndEnabled) {
     return (
       <div
-        className={`mm-item-card ${className}`}
+        className={`mm-item-card ${className} ${selected ? "is-selected" : ""} ${arrangeMode ? "is-arrange" : ""}`}
         data-testid={`sortable-item-${itemId}`}
-        onClick={onOpen}
+        onClick={(event) => {
+          if (onSelectClick) onSelectClick(event);
+          else onOpen?.();
+        }}
+        onContextMenu={onContextMenu}
       >
         {children}
       </div>
@@ -105,7 +113,11 @@ export function ItemFrame({
       sectionId={sectionId}
       className={className}
       label={label}
+      selected={selected}
+      arrangeMode={arrangeMode}
       onOpen={onOpen}
+      onSelectClick={onSelectClick}
+      onContextMenu={onContextMenu}
     >
       {children}
     </SortableItemShell>
@@ -175,7 +187,11 @@ function SortableItemShell({
   disabled = false,
   className = "",
   label = "",
+  selected = false,
+  arrangeMode = false,
   onOpen,
+  onSelectClick,
+  onContextMenu,
   children,
 }) {
   const {
@@ -201,12 +217,20 @@ function SortableItemShell({
     <div
       ref={setNodeRef}
       style={style}
-      className={`mm-item-card mm-item-card--sortable ${className} ${isDragging ? "mm-item-card--dragging" : ""} ${disabled ? "mm-item-card--dnd-disabled" : ""}`}
+      className={`mm-item-card mm-item-card--sortable ${className} ${isDragging ? "mm-item-card--dragging" : ""} ${selected ? "is-selected" : ""} ${arrangeMode ? "is-arrange" : ""} ${disabled ? "mm-item-card--dnd-disabled" : ""}`}
       data-testid={`sortable-item-${itemId}`}
+      aria-selected={selected}
       {...(disabled ? {} : { ...attributes, ...listeners })}
-      onClick={() => {
-        if (!isDragging && onOpen) onOpen();
+      onClick={(event) => {
+        if (isDragging) return;
+        if (onSelectClick) onSelectClick(event);
+        else onOpen?.();
       }}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        onOpen?.();
+      }}
+      onContextMenu={onContextMenu}
     >
       {!disabled && (
         <span className="mm-item-drag-hint" aria-hidden="true">
@@ -220,15 +244,17 @@ function SortableItemShell({
 
 export function MenuManagerDndProvider({
   disabled = false,
+  arrangeMode = false,
   sectionIds,
   onDragStart,
   onDragOver,
   onDragEnd,
   onDragCancel,
   activeDragLabel = null,
+  activeDragCount = 1,
   children,
 }) {
-  const sensors = useMenuManagerDndSensors();
+  const sensors = useMenuManagerDndSensors({ arrangeMode });
   const sortableSectionIds = useMemo(
     () => sectionIds.map((id) => sectionDndId(id)),
     [sectionIds],
@@ -253,7 +279,14 @@ export function MenuManagerDndProvider({
       </SortableContext>
       <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }}>
         {activeDragLabel ? (
-          <div className="mm-drag-overlay-card">{activeDragLabel}</div>
+          <div className="mm-drag-overlay-card">
+            <span>{activeDragLabel}</span>
+            {activeDragCount > 1 ? (
+              <span className="mm-drag-overlay-badge" data-testid="drag-group-badge">
+                {activeDragCount}
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </DragOverlay>
     </DndContext>

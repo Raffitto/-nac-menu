@@ -93,6 +93,18 @@ import {
   ItemFrame,
   isolateInteractivePointer,
 } from "./MenuManagerDnd";
+import useMenuSelection from "./menuInteraction/useMenuSelection";
+import useMenuUndo from "./menuInteraction/useMenuUndo";
+import MenuSelectionToolbar from "./menuInteraction/MenuSelectionToolbar";
+import MenuContextMenu from "./menuInteraction/MenuContextMenu";
+import MenuQuickLook from "./menuInteraction/MenuQuickLook";
+import MenuCommandPalette from "./menuInteraction/MenuCommandPalette";
+import MenuLassoLayer from "./menuInteraction/MenuLassoLayer";
+import MenuMoveToSheet from "./menuInteraction/MenuMoveToSheet";
+import { isApplePlatform, isEditableTarget, isModKey } from "../lib/menuInteraction/platform";
+import { moveSelectedGroup, shouldConfirmBulk } from "../lib/menuInteraction/groupOrdering";
+import { diffBoardPlacements } from "../lib/menuInteraction/boardDiff";
+import { flattenVisibleItems } from "../lib/menuInteraction/selectionModel";
 import {
   buildEditorSnapshot,
   formatRelativeTimestamp,
@@ -454,7 +466,16 @@ export default function MenuManager() {
   const dragSnapshotRef = useRef(null);
   const collapseExpandTimerRef = useRef(null);
   const [activeDragLabel, setActiveDragLabel] = useState(null);
+  const [activeDragCount, setActiveDragCount] = useState(1);
   const [orderStatus, setOrderStatus] = useState(null);
+  const [arrangeMode, setArrangeMode] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [quickLookItemId, setQuickLookItemId] = useState(null);
+  const [moveSheetOpen, setMoveSheetOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
+  const boardScrollRef = useRef(null);
+  const showToastRef = useRef(null);
 
   useEffect(() => {
     sectionsCatalogRef.current = sectionsCatalog;
@@ -484,6 +505,11 @@ export default function MenuManager() {
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
   }, []);
+  showToastRef.current = showToast;
+  const selectionApi = useMenuSelection();
+  const undoApi = useMenuUndo({
+    onToast: (message, type = "success") => showToastRef.current?.(message, type),
+  });
 
   const editorDirty = useMemo(() => {
     if (!editorOpen || editorBaseline == null) return false;
@@ -864,11 +890,23 @@ export default function MenuManager() {
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        items = items.filter(
-          (item) =>
-            (item.name_en || "").toLowerCase().includes(q) ||
-            (item.name_ar || "").includes(q)
-        );
+        items = items.filter((item) => {
+          const hay = [
+            item.name_en,
+            item.name_ar,
+            item.price,
+            item.calories,
+            section.name_en,
+            item.sold_out ? "sold out" : "",
+            item.vegetarian ? "vegetarian" : "",
+            item.vegan ? "vegan" : "",
+            item.new_item ? "new seasonal" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        });
       }
 
       if (activeFilter !== "all") {
@@ -1708,53 +1746,118 @@ export default function MenuManager() {
     }
   }, []);
 
-  const persistItemBoardChange = useCallback(
-    async (nextSections, meta) => {
-      setOrderStatus("saving");
+  const persistBoardTransition = useCallback(
+    async (beforeSections, afterSections, {
+      label,
+      action = "reorder_items",
+      entityId = null,
+      pushUndo = true,
+      silent = false,
+    } = {}) => {
+      const diff = diffBoardPlacements(beforeSections, afterSections);
+      if (!silent) setOrderStatus("saving");
       try {
-        if (meta.crossSection) {
+        for (const move of diff.moves) {
           assertMenuMutation(
-            await moveMenuItemToSection(meta.itemId, meta.destinationSectionId),
+            await moveMenuItemToSection(move.itemId, move.sectionId),
             "moveMenuItemToSection",
           );
         }
-        const ordered = buildItemOrderUpdates(nextSections, [
-          meta.sourceSectionId,
-          meta.destinationSectionId,
-        ]);
-        assertMenuMutation(await reorderItems(ordered), "reorderItems");
+        if (diff.orderUpdates.length) {
+          assertMenuMutation(await reorderItems(diff.orderUpdates), "reorderItems");
+        }
         await publishCurrentMenu({
-          action: meta.crossSection ? "move_item_section" : "reorder_items",
+          action,
           entity_type: "menu_item",
-          entity_id: meta.itemId,
+          entity_id: entityId,
           changed_fields: {
-            section_id: meta.destinationSectionId,
-            order: ordered,
+            moves: diff.moves,
+            order: diff.orderUpdates,
           },
         });
-        setOrderStatus("saved");
-        window.setTimeout(() => setOrderStatus(null), 1400);
+        if (!silent) {
+          setOrderStatus("saved");
+          window.setTimeout(() => setOrderStatus(null), 1400);
+        }
+        if (pushUndo) {
+          undoApi.push({
+            label,
+            undo: async () => {
+              setMenuData(beforeSections);
+              await persistBoardTransition(afterSections, beforeSections, {
+                label: `Undo ${label}`,
+                action,
+                pushUndo: false,
+                silent: true,
+              });
+            },
+            redo: async () => {
+              setMenuData(afterSections);
+              await persistBoardTransition(beforeSections, afterSections, {
+                label,
+                action,
+                pushUndo: false,
+                silent: true,
+              });
+            },
+          });
+        }
+        return true;
       } catch (error) {
-        if (dragSnapshotRef.current) setMenuData(dragSnapshotRef.current);
-        setOrderStatus(null);
-        showToast(
-          friendlyActionErrorMessage(error, "Could not save new order. Please try again."),
-          "error",
-        );
+        setMenuData(beforeSections);
+        if (!silent) {
+          setOrderStatus(null);
+          showToast(
+            friendlyActionErrorMessage(error, "Could not save new order. Please try again."),
+            "error",
+          );
+        }
+        throw error;
       } finally {
         dragSnapshotRef.current = null;
       }
     },
-    [publishCurrentMenu, showToast],
+    [publishCurrentMenu, showToast, undoApi],
   );
+
+  const persistItemBoardChange = useCallback(
+    async (beforeSections, nextSections, meta) => {
+      const count = meta.movedIds?.length || 1;
+      const label = meta.crossSection
+        ? (count > 1 ? `Moved ${count} items` : "Moved item")
+        : (count > 1 ? `Reordered ${count} items` : "Reordered item");
+      try {
+        await persistBoardTransition(beforeSections, nextSections, {
+          label,
+          action: meta.crossSection ? "move_item_section" : "reorder_items",
+          entityId: meta.itemId,
+        });
+      } catch (_) {
+        /* toast handled */
+      }
+    },
+    [persistBoardTransition],
+  );
+
+  const getDragGroupIds = useCallback((activeItemId) => {
+    const selected = selectionApi.selectedIds || [];
+    if (selected.includes(activeItemId) && selected.length > 1) return selected;
+    return [activeItemId];
+  }, [selectionApi.selectedIds]);
 
   const handleBoardDragStart = useCallback((event) => {
     dragSnapshotRef.current = cloneSections(menuData);
+    const itemId = parseItemDndId(event.active.id);
+    if (itemId && !selectionApi.selectedIds.includes(itemId)) {
+      selectionApi.selectOnly(itemId);
+    }
+    const groupIds = itemId ? getDragGroupIds(itemId) : [];
     const label =
       event.active?.data?.current?.label ||
-      (parseItemDndId(event.active.id) ? "Menu item" : "Section");
+      (itemId ? "Menu item" : "Section");
     setActiveDragLabel(label);
-  }, [menuData]);
+    setActiveDragCount(Math.max(groupIds.length, 1));
+  }, [menuData, selectionApi, getDragGroupIds]);
 
   const handleBoardDragOver = useCallback((event) => {
     const { active, over } = event;
@@ -1769,19 +1872,22 @@ export default function MenuManager() {
 
     const activeItemId = parseItemDndId(active.id);
     if (!activeItemId) return;
+    const groupIds = getDragGroupIds(activeItemId);
 
     setMenuData((prev) => {
       const target = resolveItemDropTarget(prev, activeItemId, over.id);
       if (!target) return prev;
 
-      const gate = canMoveItemToSection(prev, activeItemId, target.destinationSectionId);
-      if (!gate.ok) return prev;
+      for (const id of groupIds) {
+        const gate = canMoveItemToSection(prev, id, target.destinationSectionId);
+        if (!gate.ok) return prev;
+      }
 
       const activeLoc = findItemLocation(prev, activeItemId);
       if (!activeLoc) return prev;
-
-      // Same-section reorders are handled on drag end via transforms.
-      if (activeLoc.sectionId === target.destinationSectionId) return prev;
+      if (activeLoc.sectionId === target.destinationSectionId && groupIds.length === 1) {
+        return prev;
+      }
 
       if (!expandedSections[target.destinationSectionId]) {
         clearCollapseExpandTimer();
@@ -1790,22 +1896,26 @@ export default function MenuManager() {
             ...current,
             [target.destinationSectionId]: true,
           }));
-        }, 450);
+        }, 550);
       }
 
-      const moved = moveItemBetweenSections(
-        prev,
-        activeItemId,
-        target.destinationSectionId,
-        target.destinationIndex,
-      );
-      return moved.error ? prev : moved.sections;
+      if (groupIds.length > 1 || activeLoc.sectionId !== target.destinationSectionId) {
+        const moved = moveSelectedGroup(
+          prev,
+          groupIds,
+          target.destinationSectionId,
+          target.destinationIndex,
+        );
+        return moved.error ? prev : moved.sections;
+      }
+      return prev;
     });
-  }, [expandedSections, clearCollapseExpandTimer]);
+  }, [expandedSections, clearCollapseExpandTimer, getDragGroupIds]);
 
   const handleBoardDragEnd = useCallback(async (event) => {
     clearCollapseExpandTimer();
     setActiveDragLabel(null);
+    setActiveDragCount(1);
     const { active, over } = event;
     const snapshot = dragSnapshotRef.current;
 
@@ -1826,6 +1936,8 @@ export default function MenuManager() {
         dragSnapshotRef.current = null;
         return;
       }
+      const before = snapshot || menuData;
+      const after = menuData;
       setOrderStatus("saving");
       try {
         assertMenuMutation(await reorderSections(ordered), "reorderSections");
@@ -1836,6 +1948,27 @@ export default function MenuManager() {
         });
         setOrderStatus("saved");
         window.setTimeout(() => setOrderStatus(null), 1400);
+        undoApi.push({
+          label: "Reordered sections",
+          undo: async () => {
+            setMenuData(before);
+            assertMenuMutation(await reorderSections(buildSectionOrderUpdates(before)), "reorderSections");
+            await publishCurrentMenu({
+              action: "reorder_sections",
+              entity_type: "section",
+              changed_fields: { order: buildSectionOrderUpdates(before) },
+            });
+          },
+          redo: async () => {
+            setMenuData(after);
+            assertMenuMutation(await reorderSections(ordered), "reorderSections");
+            await publishCurrentMenu({
+              action: "reorder_sections",
+              entity_type: "section",
+              changed_fields: { order: ordered },
+            });
+          },
+        });
       } catch (error) {
         if (snapshot) setMenuData(snapshot);
         setOrderStatus(null);
@@ -1853,6 +1986,7 @@ export default function MenuManager() {
     }
 
     const prior = snapshot || menuData;
+    const groupIds = getDragGroupIds(activeItemId);
     const priorLoc = findItemLocation(prior, activeItemId);
     if (!priorLoc) {
       dragSnapshotRef.current = null;
@@ -1867,32 +2001,32 @@ export default function MenuManager() {
       return;
     }
 
-    const gate = canMoveItemToSection(prior, activeItemId, target.destinationSectionId);
-    if (!gate.ok) {
-      if (snapshot) setMenuData(snapshot);
-      dragSnapshotRef.current = null;
-      showToast(gate.reason || "That drop is not allowed.", "error");
-      return;
+    for (const id of groupIds) {
+      const gate = canMoveItemToSection(prior, id, target.destinationSectionId);
+      if (!gate.ok) {
+        if (snapshot) setMenuData(snapshot);
+        dragSnapshotRef.current = null;
+        showToast(gate.reason || "That drop is not allowed for the selection.", "error");
+        return;
+      }
     }
 
-    const baseForMove =
-      findItemLocation(menuData, activeItemId)?.sectionId === target.destinationSectionId
-        ? menuData
-        : prior;
-    const moved = moveItemBetweenSections(
-      baseForMove,
-      activeItemId,
+    const moved = moveSelectedGroup(
+      prior,
+      groupIds,
       target.destinationSectionId,
       target.destinationIndex,
     );
     if (moved.error) {
       if (snapshot) setMenuData(snapshot);
       dragSnapshotRef.current = null;
+      showToast(moved.error, "error");
       return;
     }
 
     const nextLoc = findItemLocation(moved.sections, activeItemId);
     const unchanged =
+      groupIds.length === 1 &&
       nextLoc &&
       nextLoc.sectionId === priorLoc.sectionId &&
       nextLoc.itemIndex === priorLoc.itemIndex;
@@ -1902,8 +2036,9 @@ export default function MenuManager() {
     }
 
     setMenuData(moved.sections);
-    await persistItemBoardChange(moved.sections, {
+    await persistItemBoardChange(prior, moved.sections, {
       itemId: activeItemId,
+      movedIds: groupIds,
       sourceSectionId: priorLoc.sectionId,
       destinationSectionId: target.destinationSectionId,
       crossSection: priorLoc.sectionId !== target.destinationSectionId,
@@ -1914,14 +2049,280 @@ export default function MenuManager() {
     persistItemBoardChange,
     publishCurrentMenu,
     showToast,
+    undoApi,
+    getDragGroupIds,
   ]);
 
   const handleBoardDragCancel = useCallback(() => {
     clearCollapseExpandTimer();
     setActiveDragLabel(null);
+    setActiveDragCount(1);
     if (dragSnapshotRef.current) setMenuData(dragSnapshotRef.current);
     dragSnapshotRef.current = null;
   }, [clearCollapseExpandTimer]);
+
+  const applyBulkVisibility = useCallback(async (ids, patch, label) => {
+    if (!ids.length || readOnlyMenu) return;
+    if (shouldConfirmBulk(patch.active === false || patch.hidden_until ? "hide" : "show", ids.length)) {
+      const ok = window.confirm(`${label} for ${ids.length} items?`);
+      if (!ok) return;
+    }
+    const before = cloneSections(menuData);
+    try {
+      setOrderStatus("saving");
+      for (const id of ids) {
+        assertMenuMutation(await applyMenuItemVisibility(id, patch), "applyMenuItemVisibility");
+      }
+      await publishCurrentMenu({
+        action: "bulk_visibility",
+        entity_type: "menu_item",
+        changed_fields: { ids, patch },
+      });
+      await loadMenuForCategory(selectedCatId);
+      setOrderStatus("saved");
+      window.setTimeout(() => setOrderStatus(null), 1400);
+      undoApi.push({
+        label,
+        undo: async () => {
+          // Best-effort restore from prior board snapshot fields.
+          for (const section of before) {
+            for (const item of section.items || []) {
+              if (!ids.includes(item.id)) continue;
+              assertMenuMutation(
+                await applyMenuItemVisibility(item.id, {
+                  active: item.active !== false,
+                  hidden_until: item.hidden_until ?? null,
+                  sold_out: Boolean(item.sold_out),
+                }),
+                "applyMenuItemVisibility",
+              );
+            }
+          }
+          await publishCurrentMenu({
+            action: "bulk_visibility_undo",
+            entity_type: "menu_item",
+            changed_fields: { ids },
+          });
+          await loadMenuForCategory(selectedCatId);
+        },
+        redo: async () => {
+          for (const id of ids) {
+            assertMenuMutation(await applyMenuItemVisibility(id, patch), "applyMenuItemVisibility");
+          }
+          await publishCurrentMenu({
+            action: "bulk_visibility",
+            entity_type: "menu_item",
+            changed_fields: { ids, patch },
+          });
+          await loadMenuForCategory(selectedCatId);
+        },
+      });
+    } catch (error) {
+      setOrderStatus(null);
+      showToast(friendlyActionErrorMessage(error, "Bulk update failed"), "error");
+      await loadMenuForCategory(selectedCatId);
+    }
+  }, [menuData, readOnlyMenu, publishCurrentMenu, loadMenuForCategory, selectedCatId, showToast, undoApi]);
+
+  const applyBulkSoldOut = useCallback(async (ids, soldOut) => {
+    if (!ids.length || readOnlyMenu) return;
+    const label = soldOut ? `Marked ${ids.length} sold out` : `Marked ${ids.length} available`;
+    try {
+      setOrderStatus("saving");
+      for (const id of ids) {
+        assertMenuMutation(await toggleSoldOut(id, soldOut), "toggleSoldOut");
+      }
+      await publishCurrentMenu({
+        action: "bulk_sold_out",
+        entity_type: "menu_item",
+        changed_fields: { ids, sold_out: soldOut },
+      });
+      await loadMenuForCategory(selectedCatId);
+      setOrderStatus("saved");
+      window.setTimeout(() => setOrderStatus(null), 1400);
+      undoApi.push({
+        label,
+        undo: async () => {
+          for (const id of ids) {
+            assertMenuMutation(await toggleSoldOut(id, !soldOut), "toggleSoldOut");
+          }
+          await publishCurrentMenu({
+            action: "bulk_sold_out_undo",
+            entity_type: "menu_item",
+            changed_fields: { ids, sold_out: !soldOut },
+          });
+          await loadMenuForCategory(selectedCatId);
+        },
+        redo: async () => {
+          for (const id of ids) {
+            assertMenuMutation(await toggleSoldOut(id, soldOut), "toggleSoldOut");
+          }
+          await publishCurrentMenu({
+            action: "bulk_sold_out",
+            entity_type: "menu_item",
+            changed_fields: { ids, sold_out: soldOut },
+          });
+          await loadMenuForCategory(selectedCatId);
+        },
+      });
+    } catch (error) {
+      setOrderStatus(null);
+      showToast(friendlyActionErrorMessage(error, "Bulk sold out update failed"), "error");
+      await loadMenuForCategory(selectedCatId);
+    }
+  }, [readOnlyMenu, publishCurrentMenu, loadMenuForCategory, selectedCatId, showToast, undoApi]);
+
+  const moveSelectionToSection = useCallback(async (sectionId) => {
+    const ids = selectionApi.selectedIds;
+    if (!ids.length) return;
+    const before = cloneSections(menuData);
+    const dest = menuData.find((s) => s.id === sectionId);
+    const insertAt = (dest?.items || []).length;
+    const moved = moveSelectedGroup(before, ids, sectionId, insertAt);
+    if (moved.error) {
+      showToast(moved.error, "error");
+      return;
+    }
+    setMenuData(moved.sections);
+    setMoveSheetOpen(false);
+    await persistItemBoardChange(before, moved.sections, {
+      itemId: ids[0],
+      movedIds: ids,
+      sourceSectionId: findItemLocation(before, ids[0])?.sectionId,
+      destinationSectionId: sectionId,
+      crossSection: true,
+    });
+  }, [selectionApi.selectedIds, menuData, persistItemBoardChange, showToast]);
+
+  const openQuickLook = useCallback((itemId) => {
+    const id = itemId || selectionApi.focusId || selectionApi.selectedIds[0];
+    if (!id) return;
+    setQuickLookItemId(id);
+  }, [selectionApi.focusId, selectionApi.selectedIds]);
+
+  const goToItem = useCallback((item) => {
+    if (!item) return;
+    const sectionId = item.section_id;
+    if (sectionId) {
+      setExpandedSections((prev) => ({ ...prev, [sectionId]: true }));
+    }
+    selectionApi.selectOnly(item.id);
+    window.setTimeout(() => {
+      const node = document.querySelector(`[data-testid="sortable-item-${item.id}"]`);
+      if (node) {
+        node.scrollIntoView({ behavior: "smooth", block: "center" });
+        node.classList.add("mm-item-card--pulse");
+        window.setTimeout(() => node.classList.remove("mm-item-card--pulse"), 1200);
+      }
+    }, 50);
+  }, [selectionApi]);
+
+  const paletteCommands = useMemo(() => {
+    const commands = [
+      { id: "arrange", label: "Arrange menu", group: "Commands", keywords: "organize drag", run: () => setArrangeMode(true) },
+      { id: "palette-help", label: "Keyboard shortcuts", group: "Commands", keywords: "help", run: () => setShortcutsOpen(true) },
+      { id: "quicklook", label: "Open Quick Look", group: "Commands", keywords: "space preview", run: () => openQuickLook() },
+      { id: "hide-selected", label: "Hide selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: false, hidden_until: null }, `Hidden ${selectionApi.count} items`) },
+      { id: "show-selected", label: "Show selected", group: "Commands", keywords: "visibility", run: () => applyBulkVisibility(selectionApi.selectedIds, { active: true, hidden_until: null }, `Showed ${selectionApi.count} items`) },
+      { id: "soldout-selected", label: "Mark selected sold out", group: "Commands", run: () => applyBulkSoldOut(selectionApi.selectedIds, true) },
+      { id: "move-selected", label: "Move selected to…", group: "Commands", run: () => setMoveSheetOpen(true) },
+    ];
+    categories.forEach((cat) => {
+      commands.push({
+        id: `go-cat-${cat.id}`,
+        label: `Go to ${cat.name_en}`,
+        group: "Navigation",
+        keywords: cat.name_en,
+        run: () => setSelectedCatId(cat.id),
+      });
+    });
+    flattenVisibleItems(menuData).forEach((row) => {
+      commands.push({
+        id: `item-${row.itemId}`,
+        label: row.item.name_en || "Item",
+        group: "Items",
+        keywords: `${row.item.name_en || ""} ${row.item.name_ar || ""} ${row.item.price || ""}`,
+        run: () => goToItem(row.item),
+      });
+    });
+    return commands;
+  }, [
+    categories,
+    menuData,
+    openQuickLook,
+    applyBulkVisibility,
+    applyBulkSoldOut,
+    selectionApi.selectedIds,
+    selectionApi.count,
+    goToItem,
+  ]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (isEditableTarget(event.target) || editorOpen || paletteOpen) {
+        if (paletteOpen && event.key === "Escape") {
+          event.preventDefault();
+          setPaletteOpen(false);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        if (contextMenu) setContextMenu(null);
+        else if (quickLookItemId) setQuickLookItemId(null);
+        else if (moveSheetOpen) setMoveSheetOpen(false);
+        else if (shortcutsOpen) setShortcutsOpen(false);
+        else if (arrangeMode) setArrangeMode(false);
+        else selectionApi.clear();
+        return;
+      }
+      if (event.key === " " && !event.repeat) {
+        event.preventDefault();
+        openQuickLook();
+        return;
+      }
+      if (isModKey(event) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        selectionApi.selectAll(filteredSections);
+        return;
+      }
+      if (isModKey(event) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      if (isModKey(event) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) undoApi.redo();
+        else undoApi.undo();
+        return;
+      }
+      if (!isApplePlatform() && event.ctrlKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        undoApi.redo();
+        return;
+      }
+      if (event.key === "Enter" && selectionApi.focusId) {
+        const loc = findItemLocation(menuData, selectionApi.focusId);
+        if (loc?.item) openEditItem(loc.item);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    editorOpen,
+    paletteOpen,
+    contextMenu,
+    quickLookItemId,
+    moveSheetOpen,
+    shortcutsOpen,
+    arrangeMode,
+    selectionApi,
+    filteredSections,
+    openQuickLook,
+    undoApi,
+    menuData,
+    openEditItem,
+  ]);
 
   // ── Image handling ──
 
@@ -2273,6 +2674,17 @@ export default function MenuManager() {
               </p>
             </div>
             <div className="mm-tab-bar">
+              {activeTab === "menu" && !readOnlyMenu && (
+                <button
+                  type="button"
+                  className={`mm-tab ${arrangeMode ? "active" : ""}`}
+                  onClick={() => setArrangeMode((v) => !v)}
+                  data-testid="arrange-mode-toggle"
+                  title="Arrange mode"
+                >
+                  Arrange
+                </button>
+              )}
               <button
                 className={`mm-tab ${activeTab === "menu" ? "active" : ""}`}
                 onClick={() => setActiveTab("menu")}
@@ -2367,14 +2779,37 @@ export default function MenuManager() {
 
               {selectedCatId && !itemsLoading && (
                 <>
+                  <div className={`mm-board-shell ${arrangeMode ? "is-arrange-mode" : ""}`} ref={boardScrollRef}>
+                  <MenuLassoLayer
+                    enabled={dndEnabled && (arrangeMode || true) && typeof window !== "undefined"}
+                    containerRef={boardScrollRef}
+                    onSelectIds={(ids, { additive }) => {
+                      if (!ids.length) {
+                        if (!additive) selectionApi.clear();
+                        return;
+                      }
+                      selectionApi.setSelection((prev) => {
+                        const nextIds = additive
+                          ? [...new Set([...(prev.selectedIds || []), ...ids])]
+                          : ids;
+                        return {
+                          selectedIds: nextIds,
+                          anchorId: ids[0],
+                          focusId: ids[ids.length - 1],
+                        };
+                      });
+                    }}
+                  />
                   <MenuManagerDndProvider
                     disabled={!dndEnabled}
+                    arrangeMode={arrangeMode}
                     sectionIds={filteredSections.map((section) => section.id)}
                     onDragStart={handleBoardDragStart}
                     onDragOver={handleBoardDragOver}
                     onDragEnd={handleBoardDragEnd}
                     onDragCancel={handleBoardDragCancel}
                     activeDragLabel={activeDragLabel}
+                    activeDragCount={activeDragCount}
                   >
                   {filteredSections.map((section, sectionIdx) => {
                     const rawSection = menuData.find((s) => s.id === section.id);
@@ -2543,9 +2978,28 @@ export default function MenuManager() {
                                   itemId={item.id}
                                   sectionId={section.id}
                                   dndEnabled={dndEnabled}
+                                  selected={selectionApi.isSelected(item.id)}
+                                  arrangeMode={arrangeMode}
                                   className={guestHidden ? "inactive" : ""}
                                   label={item.name_en || "Menu item"}
                                   onOpen={() => openEditItem(item)}
+                                  onSelectClick={(event) => {
+                                    event.stopPropagation();
+                                    selectionApi.handleItemPointerSelect(event, item.id, filteredSections);
+                                    if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !arrangeMode) {
+                                      // single click selects; double-click edits
+                                    }
+                                  }}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    selectionApi.ensureIncludes(item.id);
+                                    setContextMenu({
+                                      x: event.clientX,
+                                      y: event.clientY,
+                                      itemId: item.id,
+                                    });
+                                  }}
                                 >
                                   <div className="mm-item-card-img-wrap">
                                     {item.image ? (
@@ -2684,6 +3138,7 @@ export default function MenuManager() {
                     );
                   })}
                   </MenuManagerDndProvider>
+                  </div>
 
 
                   <AnimatePresence>
@@ -3291,6 +3746,170 @@ export default function MenuManager() {
           />
         )}
       </AnimatePresence>
+
+      <MenuSelectionToolbar
+        count={selectionApi.count}
+        arrangeMode={arrangeMode}
+        onClear={selectionApi.clear}
+        onMove={() => setMoveSheetOpen(true)}
+        onHide={() =>
+          applyBulkVisibility(
+            selectionApi.selectedIds,
+            { active: false, hidden_until: null },
+            `Hidden ${selectionApi.count} items`,
+          )
+        }
+        onShow={() =>
+          applyBulkVisibility(
+            selectionApi.selectedIds,
+            { active: true, hidden_until: null },
+            `Showed ${selectionApi.count} items`,
+          )
+        }
+        onSoldOut={() => applyBulkSoldOut(selectionApi.selectedIds, true)}
+        onMore={() => setContextMenu({ x: window.innerWidth / 2, y: 120, itemId: selectionApi.focusId })}
+        onDoneArrange={() => setArrangeMode(false)}
+      />
+
+      <MenuContextMenu
+        open={Boolean(contextMenu)}
+        x={contextMenu?.x || 0}
+        y={contextMenu?.y || 0}
+        onClose={() => setContextMenu(null)}
+        items={[
+          {
+            id: "edit",
+            label: "Edit",
+            disabled: readOnlyMenu || selectionApi.count !== 1,
+            onSelect: () => {
+              const loc = findItemLocation(menuData, contextMenu?.itemId);
+              if (loc?.item) openEditItem(loc.item);
+            },
+          },
+          {
+            id: "quicklook",
+            label: "Quick Look",
+            shortcut: "Space",
+            onSelect: () => openQuickLook(contextMenu?.itemId),
+          },
+          { id: "sep1", type: "separator" },
+          {
+            id: "move",
+            label: "Move to…",
+            disabled: readOnlyMenu || selectionApi.count < 1,
+            onSelect: () => setMoveSheetOpen(true),
+          },
+          {
+            id: "hide",
+            label: "Hide",
+            disabled: readOnlyMenu,
+            onSelect: () =>
+              applyBulkVisibility(
+                selectionApi.selectedIds,
+                { active: false, hidden_until: null },
+                `Hidden ${selectionApi.count} items`,
+              ),
+          },
+          {
+            id: "show",
+            label: "Show",
+            disabled: readOnlyMenu,
+            onSelect: () =>
+              applyBulkVisibility(
+                selectionApi.selectedIds,
+                { active: true, hidden_until: null },
+                `Showed ${selectionApi.count} items`,
+              ),
+          },
+          {
+            id: "soldout",
+            label: "Mark Sold Out",
+            disabled: readOnlyMenu,
+            onSelect: () => applyBulkSoldOut(selectionApi.selectedIds, true),
+          },
+          {
+            id: "available",
+            label: "Mark Available",
+            disabled: readOnlyMenu,
+            onSelect: () => applyBulkSoldOut(selectionApi.selectedIds, false),
+          },
+          { id: "sep2", type: "separator" },
+          {
+            id: "select-section",
+            label: "Select Similar → Same section",
+            onSelect: () => {
+              const loc = findItemLocation(menuData, contextMenu?.itemId);
+              if (!loc) return;
+              const ids = (menuData[loc.sectionIndex].items || []).map((i) => i.id);
+              selectionApi.setSelection({
+                selectedIds: ids,
+                anchorId: ids[0] || null,
+                focusId: contextMenu?.itemId || null,
+              });
+            },
+          },
+          {
+            id: "shortcuts",
+            label: "Keyboard Shortcuts",
+            onSelect: () => setShortcutsOpen(true),
+          },
+        ]}
+      />
+
+      <MenuMoveToSheet
+        open={moveSheetOpen}
+        sections={menuData}
+        onClose={() => setMoveSheetOpen(false)}
+        onChoose={(section) => moveSelectionToSection(section.id)}
+      />
+
+      <MenuCommandPalette
+        open={paletteOpen}
+        commands={paletteCommands}
+        onClose={() => setPaletteOpen(false)}
+        onRun={(cmd) => cmd.run?.()}
+      />
+
+      <MenuQuickLook
+        item={
+          quickLookItemId
+            ? findItemLocation(menuData, quickLookItemId)?.item || null
+            : null
+        }
+        sectionName={
+          quickLookItemId
+            ? menuData.find(
+                (s) => s.id === findItemLocation(menuData, quickLookItemId)?.sectionId,
+              )?.name_en
+            : ""
+        }
+        categoryName={selectedCategory?.name_en || ""}
+        allergenLabels={[]}
+        onClose={() => setQuickLookItemId(null)}
+      />
+
+      {shortcutsOpen && (
+        <div className="mm-sheet-backdrop" onClick={() => setShortcutsOpen(false)} data-testid="shortcuts-sheet">
+          <div className="mm-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="mm-sheet-header">
+              <h3>Keyboard Shortcuts</h3>
+              <button type="button" className="mm-btn mm-btn-secondary" onClick={() => setShortcutsOpen(false)}>Close</button>
+            </div>
+            <ul className="mm-shortcuts-list">
+              <li><kbd>⌘/Ctrl</kbd> + click — Multi-select</li>
+              <li><kbd>Shift</kbd> + click — Range select</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>A</kbd> — Select all visible</li>
+              <li><kbd>Esc</kbd> — Clear / close</li>
+              <li><kbd>Space</kbd> — Quick Look</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>K</kbd> — Command palette</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>Z</kbd> — Undo</li>
+              <li><kbd>⌘/Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> — Redo</li>
+              <li><kbd>Enter</kbd> — Edit focused item</li>
+              <li>Double-click — Edit item</li>
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
