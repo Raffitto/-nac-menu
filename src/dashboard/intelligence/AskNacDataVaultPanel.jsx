@@ -24,6 +24,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { useRbacOptional } from "../context/RbacContext";
 import {
   listVaultFiles,
+  fetchVaultKnowledgeStats,
   registerVaultUpload,
   fetchVaultStaffRole,
   runVaultRegistryQaChecks,
@@ -224,6 +225,8 @@ export default function AskNacDataVaultPanel({ session }) {
   const [coverageData, setCoverageData] = useState(null);
   const [, setCoverageAttempted] = useState(false);
   const [registryAttempted, setRegistryAttempted] = useState(false);
+  const [registryUnavailable, setRegistryUnavailable] = useState(false);
+  const [registryAggregate, setRegistryAggregate] = useState(null);
   const [statusNotice, setStatusNotice] = useState("");
   const [driveStatus, setDriveStatus] = useState(null);
   const [driveFolderId, setDriveFolderId] = useState("");
@@ -291,6 +294,44 @@ export default function AskNacDataVaultPanel({ session }) {
   );
 
   const knowledgeStats = useMemo(() => {
+    const foldersRegistered = (driveStatus?.folders || []).length;
+    const connectedSources = driveStatus?.connected ? 1 : 0;
+    const branchScores = ["khobar", "riyadh", "jeddah"].map((id) => coverageData?.[id]?.overallScore ?? 0);
+    const coveragePct = branchScores.length
+      ? Math.round(branchScores.reduce((a, b) => a + b, 0) / branchScores.length)
+      : 0;
+
+    if (registryAggregate) {
+      return {
+        documentsStored: registryAggregate.documentsStored,
+        reportsParsed: registryAggregate.reportsParsed,
+        foldersRegistered,
+        connectedSources,
+        lastUpdated: registryAggregate.lastUpdated,
+        coveragePct,
+        searchIndexLabel: registryAggregate.searchIndexLabel,
+        searchableFiles: registryAggregate.searchableFiles,
+        totalChunks: registryAggregate.totalChunks,
+        registryUnavailable: false,
+      };
+    }
+
+    // Fallback from loaded page only when aggregates unavailable — never invent zeros on failure.
+    if (registryUnavailable) {
+      return {
+        documentsStored: null,
+        reportsParsed: null,
+        foldersRegistered,
+        connectedSources,
+        lastUpdated: null,
+        coveragePct,
+        searchIndexLabel: "Unavailable",
+        searchableFiles: null,
+        totalChunks: null,
+        registryUnavailable: true,
+      };
+    }
+
     const documentsStored = files.length;
     const reportsParsed = files.filter((row) => {
       const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
@@ -299,16 +340,10 @@ export default function AskNacDataVaultPanel({ session }) {
         tier.tier === VAULT_KNOWLEDGE_TIER.ASK_NAC_READY
       );
     }).length;
-    const foldersRegistered = (driveStatus?.folders || []).length;
-    const connectedSources = driveStatus?.connected ? 1 : 0;
     const lastUpdated = files.reduce((latest, row) => {
       if (!row.created_at) return latest;
       return !latest || row.created_at > latest ? row.created_at : latest;
     }, null);
-    const branchScores = ["khobar", "riyadh", "jeddah"].map((id) => coverageData?.[id]?.overallScore ?? 0);
-    const coveragePct = branchScores.length
-      ? Math.round(branchScores.reduce((a, b) => a + b, 0) / branchScores.length)
-      : 0;
     const searchIndex = computeVaultSearchIndexStats(files);
     return {
       documentsStored,
@@ -320,8 +355,9 @@ export default function AskNacDataVaultPanel({ session }) {
       searchIndexLabel: searchIndex.label,
       searchableFiles: searchIndex.searchableFiles,
       totalChunks: searchIndex.totalChunks,
+      registryUnavailable: false,
     };
-  }, [files, driveStatus, coverageData]);
+  }, [files, driveStatus, coverageData, registryAggregate, registryUnavailable]);
 
   const driveLastSyncAt = useMemo(() => {
     const folders = driveStatus?.folders || [];
@@ -387,30 +423,37 @@ export default function AskNacDataVaultPanel({ session }) {
     setError("");
 
     try {
-      const [{ files: rows, error: listError }, staff] = await Promise.all([
-        listVaultFiles(supabase),
+      const [listResult, statsResult, staff] = await Promise.all([
+        listVaultFiles(supabase, { limit: 100, includeRelations: false }),
+        fetchVaultKnowledgeStats(supabase),
         fetchVaultStaffRole(supabase),
       ]);
 
+      const listError = listResult.error;
       if (listError?.includes("does not exist") || listError?.includes("ask_nac_files")) {
         setSchemaReady(false);
         setError("Data Vault schema not applied yet. Run the Supabase migration.");
-      } else if (listError) {
+        setRegistryUnavailable(true);
+      } else if (listError || !statsResult.ok) {
         setSchemaReady(true);
-        setError(listError);
-        setStatusNotice("Document registry could not be loaded.");
+        setRegistryUnavailable(true);
+        setStatusNotice("Knowledge registry unavailable · Retry");
+        // Keep prior files / aggregates — never fall back to a false zero registry.
+        if (!listError && listResult.files) setFiles(listResult.files);
       } else {
         setSchemaReady(true);
         setError("");
         setStatusNotice("");
+        setRegistryUnavailable(false);
+        setFiles(listResult.files || []);
+        setRegistryAggregate(statsResult.stats);
       }
 
-      setFiles(rows || []);
       setVaultRole(staff?.role ?? null);
     } catch {
       setSchemaReady(true);
-      setStatusNotice("Document registry could not be loaded.");
-      setFiles([]);
+      setRegistryUnavailable(true);
+      setStatusNotice("Knowledge registry unavailable · Retry");
     } finally {
       setLoading(false);
       setRegistryAttempted(true);
@@ -1756,15 +1799,28 @@ export default function AskNacDataVaultPanel({ session }) {
               </div>
             ) : (
               <>
-                {statusNotice ? <p className="nac-vault-status__notice">{statusNotice}</p> : null}
+                {statusNotice ? (
+                  <p className="nac-vault-status__notice">
+                    {statusNotice}{" "}
+                    {registryUnavailable ? (
+                      <button type="button" className="nac-ask-vault__refresh" onClick={loadRegistry}>
+                        Retry
+                      </button>
+                    ) : null}
+                  </p>
+                ) : null}
                 <div className="nac-vault-status__grid">
                   <div className="nac-vault-stat-card">
                     <span className="nac-vault-stat-card__label">Documents Stored</span>
-                    <strong className="nac-vault-stat-card__value">{knowledgeStats.documentsStored}</strong>
+                    <strong className="nac-vault-stat-card__value">
+                      {knowledgeStats.registryUnavailable ? "—" : knowledgeStats.documentsStored}
+                    </strong>
                   </div>
                   <div className="nac-vault-stat-card">
                     <span className="nac-vault-stat-card__label">Reports Parsed</span>
-                    <strong className="nac-vault-stat-card__value">{knowledgeStats.reportsParsed}</strong>
+                    <strong className="nac-vault-stat-card__value">
+                      {knowledgeStats.registryUnavailable ? "—" : knowledgeStats.reportsParsed}
+                    </strong>
                   </div>
                   <div
                     className={`nac-vault-stat-card${knowledgeStats.searchableFiles > 0 ? "" : " nac-vault-stat-card--muted"}`}
@@ -2049,7 +2105,15 @@ export default function AskNacDataVaultPanel({ session }) {
                   <Loader2 size={18} className="nac-bi-spin" />
                   Loading registry…
                 </div>
-              ) : files.length === 0 ? (
+              ) : registryUnavailable ? (
+                <div className="nac-ask-vault__empty">
+                  <FileText size={20} aria-hidden />
+                  <p>Knowledge registry unavailable · Retry</p>
+                  <button type="button" className="nac-ask-vault__refresh" onClick={loadRegistry}>
+                    Retry
+                  </button>
+                </div>
+              ) : files.length === 0 && (registryAggregate?.documentsStored ?? 0) === 0 ? (
                 <div className="nac-ask-vault__empty">
                   <FileText size={20} aria-hidden />
                   <p>No documents yet. Upload a report to create the first entry.</p>

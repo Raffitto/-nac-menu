@@ -268,7 +268,44 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(driveHelper).toMatch(/cash_up_workbook_parsed/);
     expect(driveHelper).toMatch(/existing facts preserved/);
     expect(driveHelper).toMatch(/replaceStructuredFactsForFile/);
-    expect(driveHelper).not.toMatch(/await admin\.from\("ask_nac_structured_facts"\)\.delete\(\)\.eq\("file_id"/);
+    expect(driveHelper).toMatch(/parsing_started/);
+    expect(driveHelper).toMatch(/facts_persisting/);
+    expect(driveHelper).toMatch(/CHUNK_INSERT_BATCH_SIZE/);
+  });
+});
+
+describe("Drive indexing stall recovery", () => {
+  const factsReplace = fs.readFileSync(
+    path.join(root, "supabase/functions/_shared/vaultStructuredFactsReplace.ts"),
+    "utf8",
+  );
+
+  test("large structured fact replace batches by file_version_id", () => {
+    expect(factsReplace).toMatch(/STRUCTURED_FACTS_INSERT_BATCH_SIZE = 250/);
+    expect(factsReplace).toMatch(/replaceViaVersionedBatches/);
+    expect(factsReplace).toMatch(/parse-before-delete/);
+    expect(factsReplace).toMatch(/neq\("file_version_id", versionId\)/);
+  });
+
+  test("completeJob cannot leave runs stuck after facts persist", () => {
+    expect(driveHelper).toMatch(/Observability must never block marking the job completed/);
+    expect(driveHelper).toMatch(/runtime_stage: "completing"/);
+    expect(driveHelper).toMatch(/runtime_stage: "parsing_started"/);
+  });
+
+  test("registry list avoids heavy job embeds and false zero UI", () => {
+    expect(vaultApi).toMatch(/fetchVaultKnowledgeStats/);
+    expect(vaultApi).toMatch(/includeRelations/);
+    expect(vaultApi).toMatch(/count: "exact", head: true/);
+    expect(panel).toMatch(/Knowledge registry unavailable/);
+    expect(panel).toMatch(/registryUnavailable/);
+    expect(panel).toMatch(/fetchVaultKnowledgeStats/);
+  });
+
+  test("process_run processes one run per client invocation", () => {
+    expect(vaultApi).toMatch(/Process one run per Edge invocation/);
+    expect(driveFunction).toMatch(/PROCESS_RUN_BUDGET_MS/);
+    expect(driveFunction).toMatch(/includeDiscoveryRoots/);
   });
 });
 

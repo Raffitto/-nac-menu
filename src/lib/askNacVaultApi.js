@@ -61,7 +61,10 @@ function driveOAuthRedirectUri() {
 const FILE_COLUMNS =
   "id,title,original_filename,storage_bucket,storage_path,primary_branch_id,brand_wide,department,report_type,data_layer,period_start,period_end,period_label,sensitivity_level,status,uploaded_by,uploader_email,classification_confidence,parser_version,chunk_count,search_status,searchable_at,created_at,updated_at";
 
-const LIST_SELECT = `
+/** Lightweight list — avoid embedding every historical job (statement-timeout risk at 400+ docs). */
+const LIST_SELECT = FILE_COLUMNS;
+
+const LIST_SELECT_WITH_RELATIONS = `
   ${FILE_COLUMNS},
   jobs:ask_nac_ingestion_jobs(id, status, stage, stats, error, finished_at, created_at),
   coverage:ask_nac_data_coverage(id, fact_count, readiness_status, period_start, period_end, last_ingested_at)
@@ -134,14 +137,18 @@ export function enrichVaultFileRow(row) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ limit?: number }} opts
  */
-export async function listVaultFiles(supabase, { limit = 100, status = "active" } = {}) {
+export async function listVaultFiles(supabase, {
+  limit = 100,
+  status = "active",
+  includeRelations = false,
+} = {}) {
   if (!supabase) {
     return { files: [], error: "Supabase not configured" };
   }
 
   let query = supabase
     .from("ask_nac_files")
-    .select(LIST_SELECT)
+    .select(includeRelations ? LIST_SELECT_WITH_RELATIONS : LIST_SELECT)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -154,6 +161,78 @@ export async function listVaultFiles(supabase, { limit = 100, status = "active" 
   }
 
   return { files: (data || []).map(enrichVaultFileRow), error: null };
+}
+
+/**
+ * Lightweight knowledge status aggregates — never scans the full chunk corpus client-side.
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ */
+export async function fetchVaultKnowledgeStats(supabase) {
+  if (!supabase) {
+    return { ok: false, error: "Supabase not configured", stats: null };
+  }
+
+  try {
+    const [stored, searchable, parsed, chunks, latest] = await Promise.all([
+      supabase
+        .from("ask_nac_files")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active"),
+      supabase
+        .from("ask_nac_files")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active")
+        .eq("searchable", true),
+      supabase
+        .from("ask_nac_files")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "active")
+        .gt("chunk_count", 0),
+      supabase
+        .from("ask_nac_document_chunks")
+        .select("id", { count: "exact", head: true }),
+      supabase
+        .from("ask_nac_files")
+        .select("created_at,searchable_at,updated_at")
+        .eq("status", "active")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const firstError =
+      stored.error || searchable.error || parsed.error || chunks.error || latest.error;
+    if (firstError) {
+      return { ok: false, error: firstError.message, stats: null };
+    }
+
+    const documentsStored = Number(stored.count || 0);
+    const searchableFiles = Number(searchable.count || 0);
+    const reportsParsed = Number(parsed.count || 0);
+    const totalChunks = Number(chunks.count || 0);
+    const lastUpdated =
+      latest.data?.searchable_at || latest.data?.updated_at || latest.data?.created_at || null;
+
+    return {
+      ok: true,
+      error: null,
+      stats: {
+        documentsStored,
+        reportsParsed,
+        searchableFiles,
+        totalChunks,
+        lastUpdated,
+        searchIndexLabel:
+          searchableFiles > 0
+            ? `${searchableFiles} searchable · ${totalChunks} chunks`
+            : documentsStored > 0
+              ? "Registered · not searchable yet"
+              : "Empty",
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err), stats: null };
+  }
 }
 
 /**
@@ -646,7 +725,7 @@ export async function fetchDriveIngestionRunStatus(session, runId) {
 
 export async function processDriveIngestionRuns(session, {
   runIds,
-  maxFilesToProcess = 50,
+  maxFilesToProcess = 25,
   driveFileId = null,
   force = false,
 }) {
@@ -656,17 +735,35 @@ export async function processDriveIngestionRuns(session, {
     return { ok: false, error: "Drive run processing unavailable" };
   }
 
-  const res = await fetch(`${base}/vault-drive-sync`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action: "process_run", runIds: ids, maxFilesToProcess, driveFileId, force }),
-  });
-  const data = sanitizeDriveApiResponse(await res.json());
-  if (!res.ok) return { ok: false, error: data.error || "Drive run processing failed" };
-  return { ok: true, ...data };
+  // Process one run per Edge invocation so a heavy Cashup workbook cannot starve siblings.
+  const processedRuns = [];
+  for (const runId of ids) {
+    const res = await fetch(`${base}/vault-drive-sync`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "process_run",
+        runIds: [runId],
+        maxFilesToProcess,
+        driveFileId,
+        force,
+      }),
+    });
+    const data = sanitizeDriveApiResponse(await res.json());
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data.error || "Drive run processing failed",
+        processedRuns,
+        failedRunId: runId,
+      };
+    }
+    processedRuns.push(...(data.processedRuns || [{ runId, ok: true }]));
+  }
+  return { ok: true, processedRuns };
 }
 
 export async function retryDriveIngestionFile(session, { folderRowId, driveFileId }) {

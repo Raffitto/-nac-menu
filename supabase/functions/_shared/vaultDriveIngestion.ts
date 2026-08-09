@@ -765,6 +765,8 @@ function buildChunks(extracted: { text: string; sections: Array<{ label?: string
   return chunks.length ? chunks : splitTextIntoChunks(extracted.text || "", null, 0);
 }
 
+const CHUNK_INSERT_BATCH_SIZE = 40;
+
 async function persistChunks(
   admin: SupabaseLike,
   {
@@ -788,30 +790,37 @@ async function persistChunks(
     return 0;
   }
 
-  const rows = [];
-  for (const chunk of chunks) {
-    const chunkText = String(chunk.chunkText || "").trim();
-    if (!chunkText) continue;
-    rows.push({
-      file_id: fileId,
-      file_version_id: versionRowId,
-      chunk_index: chunk.chunkIndex,
-      chunk_text: chunkText,
-      section_label: chunk.sectionLabel,
-      branch_id: fileRow.primary_branch_id,
-      department: fileRow.department,
-      report_type: fileRow.report_type,
-      sensitivity_level: fileRow.sensitivity_level,
-      data_layer: fileRow.data_layer,
-      period_start: fileRow.period_start,
-      period_end: fileRow.period_end,
-      content_hash: await sha256Hex(chunkText),
-    });
-  }
+  const hashes = await Promise.all(
+    chunks.map(async (chunk) => {
+      const chunkText = String(chunk.chunkText || "").trim();
+      if (!chunkText) return null;
+      return {
+        file_id: fileId,
+        file_version_id: versionRowId,
+        chunk_index: chunk.chunkIndex,
+        chunk_text: chunkText,
+        section_label: chunk.sectionLabel,
+        branch_id: fileRow.primary_branch_id,
+        department: fileRow.department,
+        report_type: fileRow.report_type,
+        sensitivity_level: fileRow.sensitivity_level,
+        data_layer: fileRow.data_layer,
+        period_start: fileRow.period_start,
+        period_end: fileRow.period_end,
+        content_hash: await sha256Hex(chunkText),
+      };
+    }),
+  );
+  const rows = hashes.filter(Boolean) as Array<Record<string, unknown>>;
 
   if (!rows.length) return 0;
-  const { error } = await admin.from("ask_nac_document_chunks").insert(rows);
-  if (error) throw new Error(error.message);
+
+  // Batch inserts so one oversized workbook cannot stall a single PostgREST write.
+  for (let i = 0; i < rows.length; i += CHUNK_INSERT_BATCH_SIZE) {
+    const slice = rows.slice(i, i + CHUNK_INSERT_BATCH_SIZE);
+    const { error } = await admin.from("ask_nac_document_chunks").insert(slice);
+    if (error) throw new Error(error.message);
+  }
 
   await admin
     .from("ask_nac_files")
@@ -890,6 +899,7 @@ async function persistParsedFacts(
     periodStart,
     periodEnd,
     minInserted,
+    onBatch,
   }: {
     fileRow: Record<string, any>;
     versionRowId: string | null;
@@ -898,6 +908,7 @@ async function persistParsedFacts(
     periodStart: string | null;
     periodEnd: string | null;
     minInserted?: number;
+    onBatch?: (info: { batchIndex: number; batchCount: number; insertedSoFar: number }) => Promise<void> | void;
   },
 ) {
   await replaceStructuredFactsForFile(admin, {
@@ -906,6 +917,7 @@ async function persistParsedFacts(
     periodStart,
     periodEnd,
     minInserted: minInserted ?? rows.length,
+    onBatch,
   });
 }
 
@@ -917,12 +929,14 @@ async function insertStructuredFacts(
     text,
     email,
     download,
+    onFactsBatch,
   }: {
     fileRow: Record<string, any>;
     versionRowId: string | null;
     text: string;
     email: string;
     download?: { buffer: ArrayBuffer; extension: string; filename: string };
+    onFactsBatch?: (info: { batchIndex: number; batchCount: number; insertedSoFar: number }) => Promise<void> | void;
   },
 ): Promise<StructuredFactsResult> {
   if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) {
@@ -1038,6 +1052,7 @@ async function insertStructuredFacts(
       periodStart: parsed.periodStart,
       periodEnd: parsed.periodEnd,
       minInserted: rows.length,
+      onBatch: onFactsBatch,
     });
     return {
       factCount: rows.length,
@@ -1143,18 +1158,32 @@ async function insertStructuredFacts(
 }
 
 async function updateRun(admin: SupabaseLike, runId: string, patch: Record<string, any>, counters?: RunCounters) {
-  const stats = patch.stats || {};
+  const statsPatch = patch.stats || {};
+  let mergedStats = statsPatch;
+  if (Object.keys(statsPatch).length) {
+    const { data: existing } = await admin
+      .from("ask_nac_drive_sync_runs")
+      .select("stats")
+      .eq("id", runId)
+      .maybeSingle();
+    mergedStats = {
+      ...((existing?.stats as Record<string, unknown>) || {}),
+      ...statsPatch,
+      runtimeStage: patch.runtime_stage || statsPatch.runtimeStage || (existing?.stats as Record<string, unknown>)?.runtimeStage,
+    };
+  }
   const next = {
     ...patch,
     ...(counters || {}),
+    ...(Object.keys(statsPatch).length ? { stats: mergedStats } : {}),
     files_discovered: counters?.discovered_count,
     files_new: counters?.new_count,
     files_changed: counters?.changed_count,
     files_skipped: counters?.skipped_count,
     files_failed: counters?.failed_count,
-    runtime_stage: patch.runtime_stage || stats.runtimeStage,
+    runtime_stage: patch.runtime_stage || statsPatch.runtimeStage,
     error_message: patch.error_message || patch.error,
-    current_folder_path: patch.current_folder_path || stats.currentDriveFolderPath,
+    current_folder_path: patch.current_folder_path || statsPatch.currentDriveFolderPath,
     current_file_path: patch.current_file_path || patch.current_file,
     completed_at: patch.completed_at || patch.finished_at,
     updated_at: nowIso(),
@@ -1381,25 +1410,32 @@ async function completeJob(
   const factCount = parseResult.factCount;
   const readiness = factCount > 0 ? (parseResult.publish ? "ready" : "partial") : "registered";
   const mergedWarnings = [...(parseResult.warnings || []), ...(warnings || [])];
-  await completeCompilerStage(admin, jobId, "legacy_parse", {
-    factCount,
-    parser: parseResult.parser,
-    publish: parseResult.publish,
-  });
-  await completeCompilerStage(admin, jobId, "publish", {
-    factCount,
-    readiness,
-    chunkCount,
-  });
-  await setCompilerManifest(admin, jobId, {
-    factCount,
-    chunkCount,
-    parser: parseResult.parser,
-    publish: parseResult.publish,
-    source: "google_drive",
-  });
-  await completeCompilerStage(admin, jobId, "legacy_drive_ingest", { factCount, chunkCount });
-  await admin.from("ask_nac_ingestion_jobs").update({
+
+  // Observability must never block marking the job completed after facts/chunks are stored.
+  try {
+    await completeCompilerStage(admin, jobId, "legacy_parse", {
+      factCount,
+      parser: parseResult.parser,
+      publish: parseResult.publish,
+    });
+    await completeCompilerStage(admin, jobId, "publish", {
+      factCount,
+      readiness,
+      chunkCount,
+    });
+    await setCompilerManifest(admin, jobId, {
+      factCount,
+      chunkCount,
+      parser: parseResult.parser,
+      publish: parseResult.publish,
+      source: "google_drive",
+    });
+    await completeCompilerStage(admin, jobId, "legacy_drive_ingest", { factCount, chunkCount });
+  } catch (_err) {
+    // non-blocking
+  }
+
+  const { error: jobError } = await admin.from("ask_nac_ingestion_jobs").update({
     status: "completed",
     stage: parseResult.stage || (factCount > 0 ? "raw_extract_only" : "chunks_indexed"),
     finished_at: nowIso(),
@@ -1419,6 +1455,7 @@ async function completeJob(
       warnings: mergedWarnings,
     },
   }).eq("id", jobId);
+  if (jobError) throw new Error(jobError.message);
 
   await admin.from("ask_nac_data_coverage").update({
     fact_count: factCount,
@@ -1568,6 +1605,7 @@ async function processOneDriveFile(
       runtime_stage: "indexing_started",
       current_file: driveFile.relativePath || driveFile.name,
       current_file_path: driveFile.relativePath || driveFile.name,
+      stats: { chunkPlanCount: chunks.length, extractedChars: extracted.text?.length || 0 },
     }, counters);
     const chunkCount = await persistChunks(admin, {
       fileId: registered.fileId,
@@ -1577,6 +1615,13 @@ async function processOneDriveFile(
     });
     if (chunkCount > 0) counters.indexed_count += 1;
     await completeCompilerStage(admin, jobId, "legacy_chunk", { chunkCount });
+    // Flush indexed progress immediately so UI is not stuck on indexing_started during parse.
+    await updateRun(admin, runId, {
+      runtime_stage: "parsing_started",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+      stats: { chunkCount },
+    }, counters);
 
     await startCompilerStage(admin, jobId, "legacy_parse", { reportType: registered.fileRow.report_type });
     const parseResult = await insertStructuredFacts(admin, {
@@ -1585,8 +1630,26 @@ async function processOneDriveFile(
       text: extracted.text,
       email,
       download,
+      onFactsBatch: async ({ batchIndex, batchCount, insertedSoFar }) => {
+        await updateRun(admin, runId, {
+          runtime_stage: "facts_persisting",
+          current_file: driveFile.relativePath || driveFile.name,
+          current_file_path: driveFile.relativePath || driveFile.name,
+          stats: {
+            factsBatchIndex: batchIndex,
+            factsBatchCount: batchCount,
+            factsInsertedSoFar: insertedSoFar,
+          },
+        }, counters);
+      },
     });
     if (parseResult.factCount > 0) counters.parsed_count += 1;
+    await updateRun(admin, runId, {
+      runtime_stage: "completing",
+      current_file: driveFile.relativePath || driveFile.name,
+      current_file_path: driveFile.relativePath || driveFile.name,
+      stats: { factCount: parseResult.factCount, chunkCount },
+    }, counters);
 
     await completeJob(admin, {
       jobId,

@@ -556,7 +556,19 @@ Deno.serve(async (req) => {
       if (!requestedRunIds.length) return json(400, { error: "runId or runIds required" });
 
       const processedRuns = [];
+      const processStartedAt = Date.now();
+      const PROCESS_RUN_BUDGET_MS = Number(body?.budgetMs) || 50_000;
       for (const runId of requestedRunIds) {
+        if (Date.now() - processStartedAt > PROCESS_RUN_BUDGET_MS - 3_000) {
+          processedRuns.push({
+            runId,
+            ok: false,
+            skipped: true,
+            reason: "time_budget_exhausted",
+            error: "Process-run time budget exhausted; remaining runs stay queued for the next worker call.",
+          });
+          continue;
+        }
         const status = await fetchDriveRunStatus(admin, runId, userEmail);
         if (!status?.run?.folder_id && !status?.run?.folder?.id) {
           return json(404, { error: "Drive ingestion run not found.", runId });
@@ -683,11 +695,15 @@ Deno.serve(async (req) => {
 
       let folderQuery = admin
         .from("ask_nac_drive_sync_folders")
-        .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,enabled")
+        .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,is_discovery_root,enabled")
         .eq("enabled", true)
         .not("drive_folder_id", "is", null);
       if (folderRowId) folderQuery = folderQuery.eq("id", folderRowId);
       if (action === "sync_ingest" && body?.onlyAutoIngest !== false) folderQuery = folderQuery.eq("auto_ingest", true);
+      // Manual Sync & Ingest targets operational auto-ingest folders, not discovery roots.
+      if (action === "sync_ingest" && body?.includeDiscoveryRoots !== true) {
+        folderQuery = folderQuery.or("is_discovery_root.is.null,is_discovery_root.eq.false");
+      }
 
       const { data: folders, error: folderError } = await folderQuery;
       if (folderError) return json(500, { error: sanitizeErrorMessage(folderError.message) });
