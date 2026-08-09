@@ -1267,7 +1267,9 @@ async function markRunFile(admin: SupabaseLike, id: string, patch: Record<string
 async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFileWithPath, email: string) {
   const { data } = await admin
     .from("ask_nac_files")
-    .select("id,content_hash,external_source_modified_at,source_external_version,source_external_checksum")
+    .select(
+      "id,content_hash,external_source_modified_at,source_external_version,source_external_checksum,searchable,chunk_count,search_status",
+    )
     .eq("external_source_id", driveFile.id)
     .eq("uploader_email", email)
     .eq("status", "active")
@@ -1275,8 +1277,14 @@ async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFileWi
   return data || null;
 }
 
+function isSearchableIndexed(existing: any) {
+  return Boolean(existing?.searchable) && Number(existing?.chunk_count || 0) > 0;
+}
+
 function isUnchanged(existing: any, driveFile: DriveFile) {
   if (!existing) return false;
+  // Prior extract/index failures leave registry rows that must be retried.
+  if (!isSearchableIndexed(existing)) return false;
   if (driveFile.md5Checksum && existing.source_external_checksum === driveFile.md5Checksum) return true;
   if (driveFile.version && existing.source_external_version === String(driveFile.version)) return true;
   if (driveFile.modifiedTime && existing.external_source_modified_at) {
@@ -1568,7 +1576,12 @@ async function processOneDriveFile(
     const download = await downloadDriveFile(accessToken, driveFile);
     counters.downloaded_count += 1;
     const contentHash = await sha256Hex(download.buffer);
-    if (!force && existing?.content_hash && existing.content_hash === contentHash) {
+    if (
+      !force
+      && existing?.content_hash
+      && existing.content_hash === contentHash
+      && isSearchableIndexed(existing)
+    ) {
       counters.skipped_count += 1;
       await markRunFile(admin, itemId, {
         status: "skipped",

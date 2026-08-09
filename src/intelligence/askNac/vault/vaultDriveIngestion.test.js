@@ -177,6 +177,8 @@ describe("Google Drive Company Knowledge ingestion", () => {
 
   test("unchanged Drive files are skipped and changed files version/reindex", () => {
     expect(driveHelper).toMatch(/isUnchanged/);
+    expect(driveHelper).toMatch(/isSearchableIndexed/);
+    expect(driveHelper).toMatch(/Prior extract\/index failures leave registry rows that must be retried/);
     expect(driveHelper).toMatch(/source_external_version/);
     expect(driveHelper).toMatch(/source_external_checksum/);
     expect(driveHelper).toMatch(/createFileVersion/);
