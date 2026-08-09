@@ -8,6 +8,9 @@ import {
   detectReviewQrMode,
 } from "./lib/reviewPortalParams";
 import { resolveRootAppKind } from "./lib/platformMode";
+import { markBoot } from "./lib/bootTelemetry";
+
+markBoot("index_start");
 
 // Route BEFORE loading menu App (prevents qr_session_start / menu_events).
 const isReviewQr =
@@ -69,7 +72,28 @@ if (rootKind === "reset-password") {
 } else if (rootKind === "admin") {
   root.render(
     <React.StrictMode>
-      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
+      <Suspense
+        fallback={
+          <div
+            style={{
+              minHeight: "100vh",
+              background: "#0a0908",
+              color: "#f9f9f7",
+              fontFamily:
+                'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+              padding: "28px 32px",
+            }}
+          >
+            <p style={{ opacity: 0.55, letterSpacing: "0.08em", fontSize: 12, margin: 0 }}>
+              NAC HOSPITALITY OS
+            </p>
+            <h1 style={{ fontWeight: 500, fontSize: "1.75rem", margin: "10px 0 6px" }}>
+              Overview
+            </h1>
+            <p style={{ opacity: 0.5, margin: 0 }}>Loading workspace…</p>
+          </div>
+        }
+      >
         <AdminDashboard />
       </Suspense>
     </React.StrictMode>,

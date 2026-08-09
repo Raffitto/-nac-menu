@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -17,15 +17,6 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { supabase } from "../../lib/supabase";
 import { useOperationalDashboard } from "../hooks/useOperationalDashboard";
 import PlatformStatusBanner from "../components/PlatformStatusBanner";
@@ -48,15 +39,10 @@ import {
 } from "../../lib/operationalRangeHelpers";
 import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 import { canonicalAddonInteractionCount } from "../../lib/menuEventTypes";
+import { markBoot } from "../../lib/bootTelemetry";
 import "../styles/operational-dashboard.css";
 
-const TOOLTIP_STYLE = {
-  background: "rgba(10,10,10,0.88)",
-  border: "1px solid rgba(143,122,87,0.3)",
-  borderRadius: "14px",
-  color: "#f9f9f7",
-  fontSize: "12px",
-};
+const HourlyScanChart = lazy(() => import("../components/HourlyScanChart"));
 
 function ev(byType, key) {
   return Number(byType?.[key]) || 0;
@@ -216,6 +202,113 @@ export default function OperationalDashboard({
   const busy = Boolean(loading || refreshing);
 
   return (
+    <OperationalDashboardBody
+      session={session}
+      data={data}
+      busy={busy}
+      refreshing={refreshing}
+      reload={reload}
+      filters={filters}
+      platformStatus={platformStatus}
+      operationalTrust={operationalTrust}
+      partial={partial}
+      note={note}
+      reviewPartialNote={reviewPartialNote}
+      activityFeed={activityFeed}
+      activeGuestsNow={activeGuestsNow}
+      menuQrScans={menuQrScans}
+      reviewQrScans={reviewQrScans}
+      totalSessions={totalSessions}
+      reviewRedirect={reviewRedirect}
+      googleReviewOpen={googleReviewOpen}
+      reviewConversionPct={reviewConversionPct}
+      avgTimeSpent={avgTimeSpent}
+      totalLangSessions={totalLangSessions}
+      englishPct={englishPct}
+      arabicPct={arabicPct}
+      health={health}
+      funnel={funnel}
+      funnelStageMetrics={funnelStageMetrics}
+      sessionQuality={sessionQuality}
+      selectedRange={selectedRange}
+      scanChart={scanChart}
+      scanChartTitle={scanChartTitle}
+      hourlyData={hourlyData}
+      topItems={topItems}
+      topCategories={topCategories}
+      topSearches={topSearches}
+      topAddonPairs={topAddonPairs}
+      addOnRate={addOnRate}
+      addOnClickCount={addOnClickCount}
+      insights={insights}
+      rangeContextNote={rangeContextNote}
+      monthIntegrityWarning={monthIntegrityWarning}
+      sessionDiagnostics={sessionDiagnostics}
+      deadZones={deadZones}
+      lostSearches={lostSearches}
+    />
+  );
+}
+
+function OperationalDashboardBody(props) {
+  const {
+    session,
+    data,
+    busy,
+    refreshing,
+    reload,
+    filters,
+    platformStatus,
+    operationalTrust,
+    partial,
+    note,
+    reviewPartialNote,
+    activityFeed,
+    activeGuestsNow,
+    menuQrScans,
+    reviewQrScans,
+    totalSessions,
+    reviewRedirect,
+    googleReviewOpen,
+    reviewConversionPct,
+    avgTimeSpent,
+    totalLangSessions,
+    englishPct,
+    arabicPct,
+    health,
+    funnel,
+    funnelStageMetrics,
+    sessionQuality,
+    selectedRange,
+    scanChart,
+    scanChartTitle,
+    hourlyData,
+    topItems,
+    topCategories,
+    topSearches,
+    topAddonPairs,
+    addOnRate,
+    addOnClickCount,
+    insights,
+    rangeContextNote,
+    monthIntegrityWarning,
+    sessionDiagnostics,
+    deadZones = [],
+    lostSearches = [],
+  } = props;
+
+  const [tier2Ready, setTier2Ready] = useState(false);
+  useEffect(() => {
+    markBoot("ops_tier1_painted");
+    const t = window.setTimeout(() => setTier2Ready(true), 50);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const langStats = data?.session_language || {};
+  const arCount = Number(langStats.ar_sessions) || 0;
+  const enCount = Number(langStats.en_sessions) || 0;
+
+  return (
     <section className="nac-ops-dash">
       <div className="nac-ops-dash__toolbar">
         <div>
@@ -346,6 +439,16 @@ export default function OperationalDashboard({
         <p className="nac-ops-health__text">{health.explanation}</p>
       </div>
 
+      {!tier2Ready ? (
+        <section className="stats-grid" style={{ marginTop: 28 }} aria-hidden="true">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="nac-bi-skeleton" style={{ height: 120 }} />
+          ))}
+        </section>
+      ) : null}
+
+      {tier2Ready ? (
+      <>
       <p className="bi-section-title">
         <Activity size={14} /> Live Activity
       </p>
@@ -396,25 +499,13 @@ export default function OperationalDashboard({
             <h3>{scanChartTitle}</h3>
           </div>
           <div className="real-chart">
-            {!scanChart.usesQrEventsOnly ? (
-              <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)", padding: 16, textAlign: "center" }}>
-                {scanChart.emptyReason || "Hourly scan breakdown isn't available for this period yet."}
-              </div>
-            ) : hourlyData.length === 0 ? (
-              <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)" }}>
-                No menu QR scans in range
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourlyData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: "rgba(249,249,247,0.45)", fontSize: 10 }} interval="preserveStartEnd" />
-                  <YAxis tick={{ fill: "rgba(249,249,247,0.45)", fontSize: 11 }} allowDecimals={false} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="#d7bc8a" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+            <Suspense fallback={<div className="nac-bi-skeleton" style={{ height: "100%" }} />}>
+              <HourlyScanChart
+                hourlyData={hourlyData}
+                usesQrEventsOnly={scanChart.usesQrEventsOnly}
+                emptyReason={scanChart.emptyReason}
+              />
+            </Suspense>
           </div>
         </motion.div>
         <motion.div className="activity-card" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }}>
@@ -600,6 +691,8 @@ export default function OperationalDashboard({
           <InsightEngine insights={insights} />
         </>
       )}
+      </>
+      ) : null}
     </section>
   );
 }

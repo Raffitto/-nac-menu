@@ -3,26 +3,11 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   UtensilsCrossed,
-  BarChart3,
   Store,
   Star,
   Settings,
   RefreshCw,
-  Activity,
-  Users,
-  FolderOpen,
-  Layers,
-  PlusCircle,
-  Languages,
-  Search,
-  Timer,
-  Zap,
-  Sparkles,
   Brain,
-  TrendingUp,
-  AlertTriangle,
-  Crown,
-  Info,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -30,41 +15,24 @@ import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
 import useKeepAliveNav from "./hooks/useKeepAliveNav";
 import { SIDEBAR_EVENTS, SIDEBAR_KEYS } from "../lib/sidebarPrefs";
 import { isEditableTarget, isModKey } from "../lib/menuInteraction/platform";
-import {
-  BarChart,
-  Bar,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import { useOperationalDashboard } from "./hooks/useOperationalDashboard";
-import PlatformStatusBanner from "./components/PlatformStatusBanner";
-import OperationalTrustBadge from "./components/OperationalTrustBadge";
-import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
+import AdminBootShell from "./components/AdminBootShell";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
-import OperationalDashboard from "./views/OperationalDashboard";
 import HubTabs from "./components/HubTabs";
 import MenuEditorAuth from "./components/MenuEditorAuth";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
 import NacPlatformAccessGate from "./components/NacPlatformAccessGate";
 import { usePlatformSession } from "./hooks/usePlatformSession";
 import { formatSupabaseSetupMessage, validateRbacUsersEnv } from "../lib/platformAuth";
-
-import FunnelChart from "./components/FunnelChart";
-import LiveActivity from "./components/LiveActivity";
-import SessionQuality from "./components/SessionQuality";
-import InsightEngine from "./components/InsightEngine";
 import { CATEGORY_NAMES, formatDuration, exportCSV } from "./utils/formatters";
 import { rangeToHours } from "./utils/rangeState";
 import {
@@ -76,6 +44,7 @@ import { generateInsights } from "./utils/insights";
 import { filterCustomerFacingCategories } from "../lib/customerFacingAnalytics";
 import { filterDisplayInsights } from "../lib/operationalMetricsIntegrity";
 import { generateOperationalDashboardInsights } from "./utils/operationalInsightsIntegrity";
+import { markBoot } from "../lib/bootTelemetry";
 import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
 import "./styles/settings-view.css";
@@ -86,6 +55,8 @@ const ReviewsHub = lazy(() => import("./views/ReviewsHub"));
 const BranchesView = lazy(() => import("./views/BranchesView"));
 const SettingsView = lazy(() => import("./views/SettingsView"));
 const MenuManager = lazy(() => import("./MenuManager"));
+const OperationalDashboard = lazy(() => import("./views/OperationalDashboard"));
+const LegacyOverviewPanel = lazy(() => import("./views/LegacyOverviewPanel"));
 
 const VIEW_PREFETCHERS = {
   intelligence: () => import("./views/IntelligenceHub"),
@@ -118,24 +89,6 @@ function ViewFallback({ label }) {
   );
 }
 
-function InfoTip({ text }) {
-  const [show, setShow] = React.useState(false);
-  return (
-    <span className="nac-bi-infotip-wrap" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} onClick={() => setShow((s) => !s)}>
-      <Info size={14} className="nac-bi-infotip-icon" />
-      {show && <span className="nac-bi-infotip-bubble">{text}</span>}
-    </span>
-  );
-}
-
-const TOOLTIP_STYLE = {
-  background: "rgba(10,10,10,0.88)",
-  border: "1px solid rgba(143,122,87,0.3)",
-  borderRadius: "14px",
-  color: "#f9f9f7",
-  fontSize: "12px",
-};
-
 function ev(byType, key) {
   return Number(byType?.[key]) || 0;
 }
@@ -144,9 +97,13 @@ export default function AdminDashboard(props) {
   const { session, checked: authChecked, issue: authIssue } = usePlatformSession();
   const rbacEnv = useMemo(() => validateRbacUsersEnv(), []);
 
+  useEffect(() => {
+    markBoot("admin_dashboard_mount");
+  }, []);
+
   if (isAdminPlatformMode()) {
     if (!authChecked) {
-      return <NacAnalyticsSignIn checking kicker="NAC Hospitality OS" title="NAC Hospitality OS" />;
+      return <AdminBootShell message="Restoring your session…" />;
     }
     if (!isSupabaseConfigured()) {
       return (
@@ -210,21 +167,6 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleGlobalSidebar]);
 
-  useEffect(() => {
-    const idlePrefetch = () => {
-      ["menu", "reviews", "intelligence", "settings"].forEach((id) => {
-        const fn = VIEW_PREFETCHERS[id];
-        if (fn) schedulePrefetch(id, fn, 40);
-      });
-    };
-    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
-      const handle = window.requestIdleCallback(idlePrefetch, { timeout: 2500 });
-      return () => window.cancelIdleCallback?.(handle);
-    }
-    const t = window.setTimeout(idlePrefetch, 1200);
-    return () => window.clearTimeout(t);
-  }, [schedulePrefetch]);
-
   const unifiedOverview = isUnifiedOverviewEnabled();
   const [overviewTab, setOverviewTab] = useState("operations");
   const rbac = useRbac();
@@ -269,6 +211,48 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     operationalTrust,
     reload: loadDashboard,
   } = dashboardLoader;
+
+  useEffect(() => {
+    if (data) markBoot("overview_tier1_ready");
+  }, [data]);
+
+  // Prefetch AFTER Overview Tier-1 — never compete with cold-boot RPCs / parse.
+  // Heavy hubs (Menu / Intelligence) are last; Settings/Reviews are cheaper.
+  useEffect(() => {
+    if (!overviewActive || loading) return undefined;
+    if (!data && session) return undefined;
+    let cancelled = false;
+    const timers = [];
+    const schedule = (id, delay) => {
+      const fn = VIEW_PREFETCHERS[id];
+      if (!fn) return;
+      timers.push(
+        window.setTimeout(() => {
+          if (cancelled) return;
+          schedulePrefetch(id, fn, 0);
+        }, delay),
+      );
+    };
+    const start = () => {
+      if (cancelled) return;
+      const idle = (cb) =>
+        typeof window.requestIdleCallback === "function"
+          ? window.requestIdleCallback(cb, { timeout: 4000 })
+          : window.setTimeout(cb, 500);
+      idle(() => {
+        schedule("settings", 0);
+        schedule("reviews", 2000);
+        schedule("branches", 4000);
+        schedule("intelligence", 8000);
+        schedule("menu", 12000);
+      });
+    };
+    timers.push(window.setTimeout(start, 2500));
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+    };
+  }, [overviewActive, loading, data, session, schedulePrefetch]);
 
   // Derived metrics
   const totalEvents = Number(data?.total_events) || 0;
@@ -584,11 +568,13 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             )}
 
             {unifiedOverview ? (
-              <OperationalDashboard
-                session={session}
-                dashboard={operationalBi}
-                active={overviewActive}
-              />
+              <Suspense fallback={<ViewFallback label="Loading operational dashboard…" />}>
+                <OperationalDashboard
+                  session={session}
+                  dashboard={operationalBi}
+                  active={overviewActive}
+                />
+              </Suspense>
             ) : overviewTab === "sessions" ? (
               <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
                 <AnalyticsDashboard
@@ -596,357 +582,53 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 />
               </Suspense>
             ) : (
-          <>
-            <div className="topbar">
-              <div>
-                <p className="topbar-label">LIVE OPERATIONS</p>
-                <h1 style={{ fontSize: "1.35rem" }}>Today at a glance</h1>
-              </div>
-              <OperationalTrustBadge trust={operationalTrust} className="topbar-trust" />
-              <div className="topbar-actions">
-                {session && (
-                  <button type="button" className="glass-pill" onClick={loadDashboard} disabled={loading}>
-                    <RefreshCw size={14} style={{ marginRight: 6, animation: loading ? "nac-bi-spin 0.75s linear infinite" : undefined }} />
-                    Refresh
-                  </button>
-                )}
-                {liveMode && <div className="glass-pill" style={{ display: "flex", alignItems: "center", gap: 6 }}><span className="nac-bi-live-pulse" style={{ width: 8, height: 8, display: "inline-block" }} />Live</div>}
-              </div>
-            </div>
-
-            {/* STATE MESSAGES */}
-            {!configured && (
-              <motion.div className="big-glass-card" style={{ marginTop: 28 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="card-header"><h3>Connection unavailable</h3></div>
-                <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>{formatSupabaseSetupMessage()}</p>
-              </motion.div>
-            )}
-
-            {rbacEnvInvalid && (
-              <motion.div className="big-glass-card" style={{ marginTop: 28, borderColor: "rgba(220,160,80,0.25)" }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="card-header"><h3>Role configuration</h3></div>
-                <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>
-                  Staff role configuration is invalid. Default directory roles remain active; contact your platform administrator.
-                </p>
-              </motion.div>
-            )}
-
-            {needsAuth && (
-              <motion.div className="big-glass-card" style={{ marginTop: 28 }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                <div className="card-header"><h3>Sign in required</h3></div>
-                <p style={{ color: "rgba(249,249,247,0.55)", lineHeight: 1.6 }}>
-                  Open <strong style={{ color: "#f9f9f7" }}>Settings</strong> in the sidebar and sign in.
-                </p>
-              </motion.div>
-            )}
-
-            {error && (
-              <motion.div className="big-glass-card" style={{ marginTop: 28, borderColor: "rgba(220,80,80,0.3)" }} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-                <p style={{ color: "#f5c4c4" }}>{error}</p>
-              </motion.div>
-            )}
-
-            <PlatformStatusBanner platformStatus={platformStatus} />
-            {!unifiedOverview ? (
-              <SessionStabilizationDiagnostics diagnostics={sessionDiagnostics} />
-            ) : null}
-
-            {/* LOADING SKELETONS */}
-            {loading && !data && (
-              <section className="stats-grid" style={{ marginTop: 42 }}>
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <div key={i} className="nac-bi-skeleton" style={{ height: 140 }} />
-                ))}
-              </section>
-            )}
-
-            {data && (
-              <>
-                {/* ── EXECUTIVE KPI ROW ── */}
-                <p className="bi-section-title"><Crown size={14} /> Executive Summary</p>
-                <div className="nac-bi-exec-grid">
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
-                    <p className="nac-bi-exec-label"><Users size={13} /> QR Scans</p>
-                    <p className="nac-bi-exec-value">{qrSessionStarts.toLocaleString()}</p>
-                    <p className="nac-bi-exec-sub">{totalSessions.toLocaleString()} unique sessions</p>
-                  </motion.div>
-
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
-                    <p className="nac-bi-exec-label"><Layers size={13} /> Item Opens</p>
-                    <p className="nac-bi-exec-value">{itemOpenCount.toLocaleString()}</p>
-                    <p className="nac-bi-exec-sub">{Number(data?.avg_items_per_session) > 0 ? `${data.avg_items_per_session} avg per session` : "—"}</p>
-                  </motion.div>
-
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-                    <p className="nac-bi-exec-label"><TrendingUp size={13} /> Add-on Conversion</p>
-                    <p className="nac-bi-exec-value"><span className="nac-bi-exec-highlight">{addOnRate}%</span></p>
-                    <p className="nac-bi-exec-sub">{topAddon ? `Top: ${topAddon.addon}` : "No data yet"}</p>
-                  </motion.div>
-
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-                    <p className="nac-bi-exec-label"><Timer size={13} /> Avg Session</p>
-                    <p className="nac-bi-exec-value">
-                      {avgTimeSpent > 0 ? formatDuration(avgTimeSpent) : "—"}
-                    </p>
-                    <p className="nac-bi-exec-sub">
-                      {strongestHour != null ? `Peak at ${strongestHour > 12 ? strongestHour - 12 : strongestHour || 12} ${strongestHour >= 12 ? "PM" : "AM"}` : "—"}
-                    </p>
-                  </motion.div>
-
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
-                    <p className="nac-bi-exec-label"><Users size={13} /> Returning Guests</p>
-                    <p className="nac-bi-exec-value">{qrSessionStarts > 0 ? <><span className="nac-bi-exec-highlight">{returningPct}%</span></> : "—"}</p>
-                    <p className="nac-bi-exec-sub">{returningSessions.toLocaleString()} returning</p>
-                  </motion.div>
-
-                  <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-                    <p className="nac-bi-exec-label"><Languages size={13} /> Language</p>
-                    <p className="nac-bi-exec-value">
-                      {totalLangEvents > 0 ? <>{englishPct}% <span style={{ color: "rgba(249,249,247,0.4)", fontSize: 18 }}>EN</span> · {arabicPct}% <span style={{ color: "#d7bc8a", fontSize: 18 }}>AR</span></> : "—"}
-                    </p>
-                    <p className="nac-bi-exec-sub">
-                      {langBehavior?.ar?.avg_events && langBehavior?.en?.avg_events
-                        ? `AR ${langBehavior.ar.avg_events} avg · EN ${langBehavior.en.avg_events} avg events`
-                        : `${totalLangEvents.toLocaleString()} events`}
-                    </p>
-                  </motion.div>
-                </div>
-
-                {/* ── LIVE ACTIVITY + FUNNEL ── */}
-                <div className="bi-row-grid">
-                  <div>
-                    <LiveActivity supabase={supabase} session={session} CATEGORY_NAMES={CATEGORY_NAMES} />
-                  </div>
-                  <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h4><Zap size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Customer Journey</h4>
-                    <p className="bi-table-sub">Unique sessions at each funnel stage</p>
-                    <FunnelChart funnel={funnel} />
-                  </motion.div>
-                </div>
-
-                {/* ── SESSION QUALITY + INTELLIGENCE ── */}
-                <p className="bi-section-title"><Zap size={14} /> Session Intelligence</p>
-                <div className="bi-row-grid">
-                  <SessionQuality quality={sessionQuality} totalSessions={totalSessions} />
-                  <div>
-                    <div className="bi-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                      <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
-                        <p className="bi-card-label"><Timer size={13} /> Avg Duration</p>
-                        <p className="bi-card-value">{formatDuration(avgTimeSpent)}</p>
-                      </motion.div>
-                      <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
-                        <p className="bi-card-label"><Layers size={13} /> Items/Session</p>
-                        <p className="bi-card-value">{Number(data?.avg_items_per_session) > 0 ? data.avg_items_per_session : "—"}</p>
-                      </motion.div>
-                      <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
-                        <p className="bi-card-label"><Activity size={13} /> Bounce</p>
-                        <p className="bi-card-value">{totalSessions > 0 ? `${bouncePct}%` : "—"}</p>
-                        <p className="bi-card-sub">{bounceSessions.toLocaleString()} sessions</p>
-                      </motion.div>
-                      <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
-                        <p className="bi-card-label"><Sparkles size={13} /> Deep</p>
-                        <p className="bi-card-value">{totalSessions > 0 ? `${deepPct}%` : "—"}</p>
-                        <p className="bi-card-sub">{deepSessions.toLocaleString()} sessions</p>
-                      </motion.div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── HOURLY CHART + TOP ITEMS ── */}
-                <section className="dashboard-row">
-                  <motion.div className="big-glass-card" initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
-                    <div className="card-header">
-                      <h3>{hourlyGranularity === "day" ? "Daily Activity" : "Hourly Activity"}</h3>
-                      <span>{hourlyGranularity === "day" ? "Last 7 days" : "Today · Asia/Riyadh (24 hours)"}</span>
-                    </div>
-                    <div className="real-chart">
-                      {hourlyData.length === 0 ? (
-                        <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "rgba(249,249,247,0.4)" }}>No events in the last 24 hours</div>
-                      ) : (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={hourlyData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                            <XAxis dataKey="label" tick={{ fill: "rgba(249,249,247,0.45)", fontSize: 10 }} interval="preserveStartEnd" />
-                            <YAxis tick={{ fill: "rgba(249,249,247,0.45)", fontSize: 11 }} allowDecimals={false} />
-                            <Tooltip contentStyle={TOOLTIP_STYLE} />
-                            <Bar dataKey="count" radius={[8, 8, 0, 0]} fill="#d7bc8a" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      )}
-                    </div>
-                  </motion.div>
-
-                  <motion.div className="activity-card" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
-                    <div className="card-header"><h3>Top Dishes</h3><span>Top 10</span></div>
-                    <div className="top-items-list">
-                      {topItems.length === 0 ? (
-                        <p style={{ color: "rgba(249,249,247,0.45)" }}>No item opens yet</p>
-                      ) : (
-                        topItems.slice(0, 10).map((item, i) => (
-                          <div className="top-item" key={item.name}>
-                            <div><b>{i + 1}</b><span>{item.name}</span></div>
-                            <p>{item.opens}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </motion.div>
-                </section>
-
-                {/* ── BUSINESS INTELLIGENCE ── */}
-                <p className="bi-section-title"><BarChart3 size={14} /> Business Intelligence</p>
-                <div className="bi-row-grid">
-                  <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h4><FolderOpen size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Most Opened Categories</h4>
-                    <p className="bi-table-sub">Ranked by guest interest</p>
-                    <div className="bi-list">
-                      {topCategories.length === 0 ? <p className="bi-empty">No data yet</p> : topCategories.map((row, i) => (
-                        <div className="bi-list-item" key={row.id}>
-                          <div className="bi-list-item-left">
-                            <span className="bi-rank">{i + 1}</span>
-                            <span className="bi-list-name">{CATEGORY_NAMES[row.id] || row.id}</span>
-                          </div>
-                          <span className="bi-list-count">{Number(row.opens).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-
-                  <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h4><Search size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Most Searched Keywords</h4>
-                    <p className="bi-table-sub">Top 10 search queries</p>
-                    <div className="bi-list">
-                      {topSearches.length === 0 ? <p className="bi-empty">No searches yet</p> : topSearches.map((row, i) => (
-                        <div className="bi-list-item" key={row.query}>
-                          <div className="bi-list-item-left">
-                            <span className="bi-rank">{i + 1}</span>
-                            <span className="bi-list-name">&ldquo;{row.query}&rdquo;</span>
-                          </div>
-                          <span className="bi-list-count">{Number(row.count).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                </div>
-
-                <div className="bi-row-grid">
-                  <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h4><PlusCircle size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Add-on Conversion</h4>
-                    <p className="bi-table-sub">{addOnRate}% overall — {addOnClickCount.toLocaleString()} clicks ÷ {itemOpenCount.toLocaleString()} opens</p>
-                    <div className="bi-list">
-                      {topAddonPairs.length === 0 ? <p className="bi-empty">No add-on data yet</p> : topAddonPairs.map((row) => (
-                        <div className="bi-addon-row" key={`${row.item}-${row.addon}`}>
-                          <div style={{ minWidth: 0 }}>
-                            <div className="bi-addon-item">{row.item}</div>
-                            <div className="bi-addon-addon">+ {row.addon}</div>
-                          </div>
-                          <span className="bi-list-count">{Number(row.clicks).toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-
-                  <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <h4><Languages size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7bc8a" }} />Language Usage</h4>
-                    <p className="bi-table-sub">{totalLangEvents.toLocaleString()} events</p>
-                    {totalLangEvents > 0 ? (
-                      <>
-                        <div className="bi-lang-bar">
-                          <div className="bi-lang-bar-en" style={{ width: `${englishPct}%` }}>{englishPct > 10 ? `EN ${englishPct}%` : ""}</div>
-                          <div className="bi-lang-bar-ar" style={{ width: `${arabicPct}%` }}>{arabicPct > 10 ? `AR ${arabicPct}%` : ""}</div>
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
-                          <div>
-                            <p style={{ margin: 0, fontSize: 13, color: "rgba(249,249,247,0.6)" }}>English</p>
-                            <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700 }}>{enCount.toLocaleString()}</p>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <p style={{ margin: 0, fontSize: 13, color: "rgba(249,249,247,0.6)" }}>Arabic</p>
-                            <p style={{ margin: "4px 0 0", fontSize: 22, fontWeight: 700, color: "#d7bc8a" }}>{arCount.toLocaleString()}</p>
-                          </div>
-                        </div>
-                      </>
-                    ) : <p className="bi-empty">No language data yet</p>}
-                  </motion.div>
-                </div>
-
-                {/* ── DEAD ZONES + LOST SEARCHES ── */}
-                {(deadZones.length > 0 || lostSearches.length > 0) && (
-                  <>
-                    <p className="bi-section-title"><AlertTriangle size={14} /> Menu Dead Zones & Lost Intent</p>
-                    <div className="bi-row-grid">
-                      {deadZones.length > 0 && (
-                        <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <h4><AlertTriangle size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#d7a84a" }} />Menu Dead Zones</h4>
-                            <InfoTip text="Measures how often guests open items after entering a category. Low % means guests leave without exploring." />
-                          </div>
-                          <p className="bi-table-sub">Category engagement breakdown</p>
-                          <div className="bi-list">
-                            {deadZones.map((dz) => {
-                              const ratio = Number(dz.engagement_ratio) || 0;
-                              const opens = Number(dz.opens) || 0;
-                              const itemOpens = Number(dz.item_opens) || 0;
-                              const colorClass = ratio < 20 ? "nac-bi-deadzone-critical" : ratio < 50 ? "nac-bi-deadzone-low" : "nac-bi-deadzone-ok";
-                              const colorHex = ratio < 20 ? "#b05050" : ratio < 50 ? "#d7a84a" : "#76d69f";
-                              return (
-                                <div className="nac-bi-deadzone-item" key={dz.category}>
-                                  <div style={{ minWidth: 0, flex: "0 0 auto" }}>
-                                    <div className="bi-list-name" style={{ fontWeight: 600, marginBottom: 3 }}>{CATEGORY_NAMES[dz.category] || dz.category}</div>
-                                    <div style={{ fontSize: 11, color: "rgba(249,249,247,0.45)" }}>
-                                      {opens} opens · {itemOpens} item views
-                                    </div>
-                                  </div>
-                                  <div className="nac-bi-deadzone-bar" style={{ flex: 1 }}>
-                                    <div className={`nac-bi-deadzone-fill ${colorClass}`} style={{ width: `${Math.min(ratio, 100)}%` }} />
-                                  </div>
-                                  <span style={{ fontSize: 13, color: colorHex, fontWeight: 700, minWidth: 44, textAlign: "right" }}>
-                                    {ratio}%
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      )}
-
-                      {lostSearches.length > 0 && (
-                        <motion.div className="bi-table" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                          <h4><Search size={15} style={{ marginRight: 6, verticalAlign: "-2px", color: "#4a6d76" }} />Lost Search Intent</h4>
-                          <p className="bi-table-sub">Searches with no item views — unmet guest needs</p>
-                          <div className="bi-list">
-                            {lostSearches.map((row, i) => (
-                              <div className="bi-list-item" key={row.query} style={{ borderLeftColor: "#4a6d76", borderLeftWidth: 3 }}>
-                                <div className="bi-list-item-left">
-                                  <span className="bi-rank">{i + 1}</span>
-                                  <div>
-                                    <span className="bi-list-name">&ldquo;{row.query}&rdquo;</span>
-                                    <div style={{ fontSize: 11, color: "rgba(249,249,247,0.4)", marginTop: 2 }}>
-                                      {row.count} {Number(row.count) === 1 ? "session" : "sessions"} → no item opened
-                                    </div>
-                                  </div>
-                                </div>
-                                <span className="bi-list-count">{Number(row.count).toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>
-                          
-                        </motion.div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* ── AI INSIGHTS ── */}
-                {insights.length > 0 && (
-                  <>
-                    <p className="bi-section-title"><Sparkles size={14} /> AI Insights</p>
-                    <InsightEngine insights={insights} />
-                  </>
-                )}
-              </>
-            )}
-          </>
+              <Suspense fallback={<ViewFallback label="Loading overview…" />}>
+                <LegacyOverviewPanel
+                  session={session}
+                  configured={configured}
+                  rbacEnvInvalid={rbacEnvInvalid}
+                  needsAuth={needsAuth}
+                  error={error}
+                  platformStatus={platformStatus}
+                  sessionDiagnostics={sessionDiagnostics}
+                  operationalTrust={operationalTrust}
+                  loading={loading}
+                  data={data}
+                  loadDashboard={loadDashboard}
+                  liveMode={liveMode}
+                  qrSessionStarts={qrSessionStarts}
+                  totalSessions={totalSessions}
+                  itemOpenCount={itemOpenCount}
+                  addOnRate={addOnRate}
+                  topAddon={topAddon}
+                  avgTimeSpent={avgTimeSpent}
+                  strongestHour={strongestHour}
+                  returningPct={returningPct}
+                  returningSessions={returningSessions}
+                  bouncePct={bouncePct}
+                  bounceSessions={bounceSessions}
+                  deepPct={deepPct}
+                  deepSessions={deepSessions}
+                  funnel={funnel}
+                  sessionQuality={sessionQuality}
+                  hourlyData={hourlyData}
+                  hourlyGranularity={hourlyGranularity}
+                  topItems={topItems}
+                  topCategories={topCategories}
+                  topSearches={topSearches}
+                  topAddonPairs={topAddonPairs}
+                  addOnClickCount={addOnClickCount}
+                  totalLangEvents={totalLangEvents}
+                  englishPct={englishPct}
+                  arabicPct={arabicPct}
+                  enCount={enCount}
+                  arCount={arCount}
+                  deadZones={deadZones}
+                  lostSearches={lostSearches}
+                  insights={insights}
+                  langBehavior={langBehavior}
+                />
+              </Suspense>
             )}
           </>
           </div>
