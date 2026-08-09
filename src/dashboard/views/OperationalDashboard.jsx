@@ -78,11 +78,21 @@ function InfoTip({ text }) {
   );
 }
 
-export default function OperationalDashboard({ session }) {
+export default function OperationalDashboard({
+  session,
+  dashboard: injectedDashboard = null,
+  active = true,
+}) {
   const filters = usePlatformFiltersOptional();
+  const localDashboard = useOperationalDashboard({
+    // Parent AdminDashboard owns the fetch when `dashboard` is injected (avoids double RPC).
+    enabled: Boolean(session) && !injectedDashboard && active,
+    refreshIntervalMs: filters?.liveMode && active && !injectedDashboard ? 30000 : 0,
+  });
   const {
     data,
     loading,
+    refreshing,
     error,
     platformStatus,
     operationalTrust,
@@ -92,10 +102,7 @@ export default function OperationalDashboard({ session }) {
     activityFeed,
     activeGuestsNow,
     reload,
-  } = useOperationalDashboard({
-    enabled: Boolean(session),
-    refreshIntervalMs: filters?.liveMode ? 30000 : 0,
-  });
+  } = injectedDashboard || localDashboard;
 
   const funnel = data?.funnel || {};
   const menuQrScans =
@@ -193,15 +200,20 @@ export default function OperationalDashboard({ session }) {
     );
   }
 
-  if (error) {
+  if (error && !data) {
     return (
       <motion.div className="big-glass-card" style={{ marginTop: 28, borderColor: "rgba(220,80,80,0.3)" }}>
         <p style={{ color: "#f5c4c4" }}>{error}</p>
+        <button type="button" className="glass-pill" style={{ marginTop: 12 }} onClick={reload}>
+          Retry
+        </button>
       </motion.div>
     );
   }
 
   if (!data) return null;
+
+  const busy = Boolean(loading || refreshing);
 
   return (
     <section className="nac-ops-dash">
@@ -209,13 +221,16 @@ export default function OperationalDashboard({ session }) {
         <div>
           <p className="topbar-label">LIVE OPERATIONS</p>
           <h2 className="nac-ops-dash__title">Operational Dashboard</h2>
+          {refreshing ? (
+            <p className="nac-platform-sub" style={{ marginTop: 4 }}>Refreshing…</p>
+          ) : null}
         </div>
         <OperationalTrustBadge trust={operationalTrust} className="topbar-trust" />
         <div className="topbar-actions">
-          <button type="button" className="glass-pill" onClick={reload} disabled={loading}>
+          <button type="button" className="glass-pill" onClick={reload} disabled={busy}>
             <RefreshCw
               size={14}
-              style={{ marginRight: 6, animation: loading ? "nac-bi-spin 0.75s linear infinite" : undefined }}
+              style={{ marginRight: 6, animation: busy ? "nac-bi-spin 0.75s linear infinite" : undefined }}
             />
             Refresh
           </button>

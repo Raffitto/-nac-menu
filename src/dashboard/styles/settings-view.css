@@ -1,0 +1,139 @@
+.nac-settings {
+  width: 100%;
+  max-width: 720px;
+}
+
+.nac-settings-card {
+  margin-top: 1.25rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: 18px;
+  border: 1px solid rgba(215, 188, 138, 0.14);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(0, 0, 0, 0.18)
+  );
+  backdrop-filter: blur(12px);
+}
+
+.nac-settings-card h3 {
+  margin: 0 0 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #f9f9f7;
+}
+
+.nac-settings-muted {
+  margin: 0 0 0.85rem;
+  color: rgba(249, 249, 247, 0.55);
+  line-height: 1.55;
+  font-size: 0.9rem;
+}
+
+.nac-settings-dl {
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.nac-settings-dl > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.nac-settings-dl dt {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(249, 249, 247, 0.45);
+}
+
+.nac-settings-dl dd {
+  margin: 0;
+  color: #f9f9f7;
+  font-size: 0.95rem;
+}
+
+.nac-settings-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nac-settings-list--inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.nac-settings-list--inline li {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(215, 188, 138, 0.22);
+  font-size: 0.8rem;
+  color: rgba(249, 249, 247, 0.8);
+}
+
+.nac-settings-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.nac-settings-chip {
+  font-size: 0.72rem;
+  color: rgba(215, 188, 138, 0.95);
+  border: 1px solid rgba(215, 188, 138, 0.28);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+
+.nac-settings-field {
+  display: block;
+  margin-bottom: 0.75rem;
+}
+
+.nac-settings-field span {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(249, 249, 247, 0.5);
+}
+
+.nac-settings-field input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.2);
+  color: #f9f9f7;
+}
+
+.nac-settings-warn {
+  color: #f5a623;
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.nac-settings-ok {
+  color: rgba(118, 214, 159, 0.95);
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0;
+}
+
+.admin-keepalive-pane[hidden] {
+  display: none !important;
+}
+
+.admin-keepalive-pane {
+  min-width: 0;
+}

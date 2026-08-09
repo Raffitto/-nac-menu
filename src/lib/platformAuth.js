@@ -133,5 +133,13 @@ export function subscribePlatformSession(onChange) {
 
 export async function signOutPlatform() {
   if (!supabase) return;
+  try {
+    const { clearSessionIntelligenceCaches } = await import(
+      "../dashboard/utils/intelligenceCache"
+    );
+    clearSessionIntelligenceCaches();
+  } catch {
+    /* cache clear is best-effort */
+  }
   await supabase.auth.signOut();
 }

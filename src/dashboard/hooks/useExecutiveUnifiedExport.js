@@ -8,8 +8,6 @@ import {
 import { filterRowsByRbacProfile, resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { useRbacOptional } from "../context/RbacContext";
 import { buildExecutiveUnifiedExportPackage } from "../engines/executiveUnifiedExportEngine";
-import { exportExecutiveUnifiedPdf } from "../engines/executiveUnifiedPdfExport";
-import { exportExecutiveUnifiedXLSX } from "../engines/exportEngine";
 import { buildFocusItemCatalog } from "../utils/focusItemCatalog";
 import { resolveExportRange } from "../utils/exportRangeState";
 import {
@@ -115,6 +113,9 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
       setBusy(true);
       try {
         const pkg = await buildPackage(opts);
+        const { exportExecutiveUnifiedPdf } = await import(
+          "../engines/executiveUnifiedPdfExport"
+        );
         exportExecutiveUnifiedPdf(pkg);
       } catch (e) {
         window.alert(e?.message || "Executive export failed.");
@@ -134,6 +135,7 @@ export function useExecutiveUnifiedExport({ dashboardRange = "7d", menuSessions 
       setBusy(true);
       try {
         const pkg = await buildPackage(opts);
+        const { exportExecutiveUnifiedXLSX } = await import("../engines/exportEngine");
         exportExecutiveUnifiedXLSX(pkg);
       } catch (e) {
         window.alert(e?.message || "Executive export failed.");

@@ -44,17 +44,8 @@ export function useOperationalDashboard(options = {}) {
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [reviewPartialNote, setReviewPartialNote] = useState(null);
 
-  useEffect(() => {
-    setReviewSummary(null);
-    setActivityFeed([]);
-    setReviewPartialNote(null);
-  }, [hours, filters?.branch]);
-
   const loadEnrichment = useCallback(async () => {
     if (!enabled || !supabase || menuBi.needsAuth) {
-      setReviewSummary(null);
-      setActivityFeed([]);
-      setActiveGuestsNow(0);
       return;
     }
     setEnrichLoading(true);
@@ -77,10 +68,8 @@ export function useOperationalDashboard(options = {}) {
       const live = liveRes?.data;
       setActiveGuestsNow(Number(live?.active_sessions) || 0);
     } catch {
-      setReviewSummary(null);
-      setReviewPartialNote(null);
-      setActivityFeed([]);
-      setActiveGuestsNow(0);
+      // Keep prior enrichment on soft failure so navigation stays painted.
+      setReviewPartialNote("Could not load this panel");
     } finally {
       setEnrichLoading(false);
     }
@@ -129,6 +118,8 @@ export function useOperationalDashboard(options = {}) {
     activeGuestsNow,
     enrichLoading,
     reload,
-    loading: menuBi.loading || enrichLoading,
+    // Block only when we have nothing to paint; enrichment refreshes quietly.
+    loading: Boolean(menuBi.loading && !data),
+    refreshing: Boolean(menuBi.refreshing || enrichLoading || (menuBi.loading && data)),
   };
 }

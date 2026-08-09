@@ -9,6 +9,7 @@ import {
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
+import { rbacScopeCacheKey } from "../../lib/rbacIntelligenceScope";
 import { logBiIntelligenceDiagnostics } from "../../lib/intelligenceDiagnostics";
 import {
   resolveMenuPlatformStatus,
@@ -26,29 +27,37 @@ import { buildAndPublishTruthValidation } from "../../lib/truthValidationRegistr
 import { applyOperationalIntegrityToPayload } from "../../lib/operationalMetricsIntegrity";
 import { getMenuTrackingDiagnostics } from "../../lib/menuTrackingDiagnostics";
 import { getPipelineDiagnostics } from "../../lib/pipelineDiagnostics";
+import {
+  cacheKey,
+  peekCachedIntelligence,
+  setCachedIntelligence,
+  invalidateIntelligenceCache,
+} from "../utils/intelligenceCache";
 
-const EMPTY_CONTRACT = {
-  data: null,
-  loading: false,
-  needsAuth: false,
-  liveFallback: false,
-  showFallbackBanner: false,
-  menuDataEmpty: true,
-  partial: false,
-  note: null,
-  opsNotes: [],
-  error: "",
-  platformStatus: null,
-  rangeContract: null,
-  hours: 24,
-  selectedRange: "today",
-  sparseHistory: false,
-  truthValidation: null,
-  menuConfidence: null,
-  operationalTrust: null,
-  truth: null,
-  reload: () => {},
-};
+const BI_TTL_MS = 90 * 1000;
+
+function applyPackage(pkg, setters) {
+  const {
+    setData,
+    setTruth,
+    setPartial,
+    setNote,
+    setOpsNotes,
+    setLiveFallback,
+    setMenuDataEmpty,
+    setOperationalTrust,
+    setTruthValidation,
+  } = setters;
+  setData(pkg.normalized);
+  setTruth(pkg.truth);
+  setPartial(pkg.partial);
+  setNote(pkg.note);
+  setOpsNotes(pkg.opsNotes);
+  setLiveFallback(pkg.liveFallback);
+  setMenuDataEmpty(pkg.menuDataEmpty);
+  setOperationalTrust(pkg.operationalTrust);
+  setTruthValidation(pkg.truthValidation);
+}
 
 /**
  * Canonical BI loader — all menu_events / get_bi_dashboard consumers should use this hook or MenuBiDashboardProvider.
@@ -64,6 +73,7 @@ export function useMenuBiDashboard(options = {}) {
   const rbac = useRbacOptional();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [liveFallback, setLiveFallback] = useState(false);
   const [menuDataEmpty, setMenuDataEmpty] = useState(false);
@@ -74,115 +84,178 @@ export function useMenuBiDashboard(options = {}) {
   const [truthValidation, setTruthValidation] = useState(null);
   const [operationalTrust, setOperationalTrust] = useState(null);
   const [truth, setTruth] = useState(null);
+  const dataRef = useRef(null);
+  dataRef.current = data;
 
   const rangeContract = useMemo(
     () => rangeContractFromFilters(filters || {}),
     [filters],
   );
   const hours = hoursFromPlatformFilters(filters || {});
-  const rangeKey = `${hours}|${filters?.selectedRange || "today"}|${filters?.branch || "all"}`;
-  const prevRangeKeyRef = useRef(rangeKey);
+  const setters = useMemo(
+    () => ({
+      setData,
+      setTruth,
+      setPartial,
+      setNote,
+      setOpsNotes,
+      setLiveFallback,
+      setMenuDataEmpty,
+      setOperationalTrust,
+      setTruthValidation,
+    }),
+    [],
+  );
 
-  const load = useCallback(async () => {
-    if (!enabled) {
-      setLoading(false);
-      return;
-    }
+  const biCacheKey = useMemo(
+    () =>
+      cacheKey([
+        "menu-bi",
+        rbacScopeCacheKey(rbac?.profile),
+        hours,
+        filters?.selectedRange || "today",
+        filters?.branch || "all",
+      ]),
+    [rbac?.profile, hours, filters?.selectedRange, filters?.branch],
+  );
 
-    if (!supabase || !isSupabaseConfigured()) {
-      setLoading(false);
-      setData(null);
-      setNeedsAuth(false);
-      setMenuDataEmpty(true);
-      setError("Supabase not configured");
-      return;
-    }
-
-    const currentRangeKey = `${hours}|${filters?.selectedRange || "today"}|${filters?.branch || "all"}`;
-    if (prevRangeKeyRef.current !== currentRangeKey) {
-      setData(null);
-      setTruth(null);
-      setOperationalTrust(null);
-      setTruthValidation(null);
-      prevRangeKeyRef.current = currentRangeKey;
-    }
-
-    setLoading(true);
-    setError("");
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session) {
-        setNeedsAuth(true);
-        setData(null);
-        setLiveFallback(false);
-        setMenuDataEmpty(true);
-        setOpsNotes([]);
-        setNote(null);
-        setPartial(false);
+  const load = useCallback(
+    async (opts = {}) => {
+      const force = Boolean(opts?.force);
+      if (!enabled) {
+        setLoading(false);
+        setRefreshing(false);
         return;
       }
 
-      setNeedsAuth(false);
-      const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
-      const result = await fetchUnifiedOperationalTruth(supabase, {
-        ...(filters || {}),
-        branch: effectiveBranch,
-        timeRangeHours: hours,
-      });
+      if (!supabase || !isSupabaseConfigured()) {
+        setLoading(false);
+        setRefreshing(false);
+        setData(null);
+        setNeedsAuth(false);
+        setMenuDataEmpty(true);
+        setError("Supabase not configured");
+        return;
+      }
 
-      const normalized = applyOperationalIntegrityToPayload(
-        result?.data || normalizeBiDashboardPayload(result?.data, { hours }),
-        { hours, branch: effectiveBranch },
-      );
-      setData(normalized);
-      setTruth(result?.truth || normalized?._truth || null);
-      setPartial(Boolean(result?.partial));
-      setNote(result?.note || null);
-      setOpsNotes(result?.opsNotes || []);
-      setLiveFallback(Boolean(result?.liveFallback));
-      setMenuDataEmpty(Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)));
-      setOperationalTrust(result?.operationalTrust || null);
-      await probeLatestEventTimestamps(supabase).catch(() => {});
+      const cached = !force ? peekCachedIntelligence(biCacheKey) : null;
+      if (cached?.normalized) {
+        applyPackage(cached, setters);
+        setNeedsAuth(false);
+        setLoading(false);
+        setRefreshing(true);
+      } else if (!dataRef.current) {
+        setLoading(true);
+        setRefreshing(false);
+      } else {
+        // Keep previous paint while the new filter key resolves.
+        setLoading(false);
+        setRefreshing(true);
+      }
 
-      const sufficiency =
-        result?.sufficiency || assessMenuBiSufficiency(normalized, rangeContract);
+      setError("");
+      try {
+        const sessionOk = Boolean(rbac?.session);
+        if (!sessionOk) {
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (!sessionData?.session) {
+            setNeedsAuth(true);
+            setData(null);
+            setLiveFallback(false);
+            setMenuDataEmpty(true);
+            setOpsNotes([]);
+            setNote(null);
+            setPartial(false);
+            return;
+          }
+        }
 
-      const truthPkg = buildAndPublishTruthValidation({
-        biData: normalized,
-        rangeContract,
-        dataSource: result?.dataSource,
-        liveFallback: result?.liveFallback,
-        partial: result?.partial,
-        sufficiency,
-        tracking: getMenuTrackingDiagnostics(),
-        fetchHistory: getPipelineDiagnostics().fetchHistory,
-      });
-      setTruthValidation(truthPkg);
+        setNeedsAuth(false);
+        if (force) invalidateIntelligenceCache(biCacheKey);
 
-      logBiIntelligenceDiagnostics({
-        source,
-        biData: normalized,
-        hours,
-        selectedRange: filters?.selectedRange || "today",
-        liveFallback: result?.liveFallback,
-        partial: result?.partial,
-        dataSource: result?.dataSource,
-        healthScore: truthPkg?.healthScore?.score,
-        menuConfidence: truthPkg?.menuConfidence?.level,
-      });
-    } catch (e) {
-      setData(null);
-      setLiveFallback(false);
-      setMenuDataEmpty(true);
-      setOpsNotes([]);
-      setTruthValidation(null);
-      setOperationalTrust(null);
-      setTruth(null);
-      setError(e?.message || "Failed to load menu intelligence");
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled, filters, hours, source, rangeContract, rbac?.profile]);
+        const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
+        const result = await fetchUnifiedOperationalTruth(supabase, {
+          ...(filters || {}),
+          branch: effectiveBranch,
+          timeRangeHours: hours,
+        });
+
+        const normalized = applyOperationalIntegrityToPayload(
+          result?.data || normalizeBiDashboardPayload(result?.data, { hours }),
+          { hours, branch: effectiveBranch },
+        );
+
+        const sufficiency =
+          result?.sufficiency || assessMenuBiSufficiency(normalized, rangeContract);
+
+        const truthPkg = buildAndPublishTruthValidation({
+          biData: normalized,
+          rangeContract,
+          dataSource: result?.dataSource,
+          liveFallback: result?.liveFallback,
+          partial: result?.partial,
+          sufficiency,
+          tracking: getMenuTrackingDiagnostics(),
+          fetchHistory: getPipelineDiagnostics().fetchHistory,
+        });
+
+        const pkg = {
+          normalized,
+          truth: result?.truth || normalized?._truth || null,
+          partial: Boolean(result?.partial),
+          note: result?.note || null,
+          opsNotes: result?.opsNotes || [],
+          liveFallback: Boolean(result?.liveFallback),
+          menuDataEmpty: Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)),
+          operationalTrust: result?.operationalTrust || null,
+          truthValidation: truthPkg,
+        };
+
+        setCachedIntelligence(biCacheKey, pkg, BI_TTL_MS);
+        applyPackage(pkg, setters);
+        probeLatestEventTimestamps(supabase).catch(() => {});
+
+        logBiIntelligenceDiagnostics({
+          source,
+          biData: normalized,
+          hours,
+          selectedRange: filters?.selectedRange || "today",
+          liveFallback: result?.liveFallback,
+          partial: result?.partial,
+          dataSource: result?.dataSource,
+          healthScore: truthPkg?.healthScore?.score,
+          menuConfidence: truthPkg?.menuConfidence?.level,
+        });
+      } catch (e) {
+        if (!dataRef.current && !cached?.normalized) {
+          setData(null);
+          setLiveFallback(false);
+          setMenuDataEmpty(true);
+          setOpsNotes([]);
+          setTruthValidation(null);
+          setOperationalTrust(null);
+          setTruth(null);
+        }
+        setError(e?.message || "Failed to load menu intelligence");
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [
+      enabled,
+      filters,
+      hours,
+      source,
+      rangeContract,
+      rbac?.profile,
+      rbac?.session,
+      biCacheKey,
+      setters,
+    ],
+  );
+
+  const reload = useCallback(() => load({ force: true }), [load]);
 
   useEffect(() => {
     load();
@@ -190,7 +263,7 @@ export function useMenuBiDashboard(options = {}) {
 
   useEffect(() => {
     if (!enabled || !refreshIntervalMs || refreshIntervalMs < 5000) return undefined;
-    const id = setInterval(load, refreshIntervalMs);
+    const id = setInterval(() => load(), refreshIntervalMs);
     return () => clearInterval(id);
   }, [enabled, refreshIntervalMs, load]);
 
@@ -223,13 +296,42 @@ export function useMenuBiDashboard(options = {}) {
     platformStatus?.status === PLATFORM_STATUS.BASELINE_BUILDING ||
     dataSufficiency.sparse;
 
+  // Keep last payload when a keep-alive pane is inactive — do not wipe to EMPTY.
   if (!enabled) {
-    return { ...EMPTY_CONTRACT, rangeContract, reload: load };
+    return {
+      data,
+      loading: false,
+      refreshing: false,
+      needsAuth,
+      liveFallback,
+      showFallbackBanner: shouldShowLiveFallbackBanner(liveFallback),
+      menuDataEmpty,
+      partial,
+      note,
+      opsNotes,
+      error,
+      platformStatus,
+      rangeContract,
+      sparseHistory,
+      fallback: { partial, liveFallback, note, opsNotes },
+      reload,
+      hours,
+      selectedRange: filters?.selectedRange || "today",
+      dataSufficiency,
+      dataSource: data?.data_source || null,
+      truthValidation,
+      menuConfidence: truthValidation?.menuConfidence || null,
+      healthScore: truthValidation?.healthScore || null,
+      freshness: truthValidation?.freshness || null,
+      operationalTrust,
+      truth,
+    };
   }
 
   return {
     data,
     loading,
+    refreshing,
     needsAuth,
     liveFallback,
     showFallbackBanner: shouldShowLiveFallbackBanner(liveFallback),
@@ -247,7 +349,7 @@ export function useMenuBiDashboard(options = {}) {
       note,
       opsNotes,
     },
-    reload: load,
+    reload,
     hours,
     selectedRange: filters?.selectedRange || "today",
     dataSufficiency,

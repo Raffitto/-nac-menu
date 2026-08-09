@@ -65,3 +65,36 @@ export function invalidateIntelligenceCache(prefix = "") {
     if (k.startsWith(prefix)) store.delete(k);
   });
 }
+
+/** Clear all user-bound intelligence caches (call on sign-out / account change). */
+export function clearSessionIntelligenceCaches() {
+  store.clear();
+}
+
+/**
+ * Stale-while-revalidate helper.
+ * Returns cached data immediately when present, then refreshes via loader
+ * (always revalidates — does not rely on TTL alone for background refresh).
+ */
+export async function swrIntelligence(key, loader, { ttlMs = DEFAULT_TTL_MS, force = false } = {}) {
+  const refresh = () =>
+    Promise.resolve()
+      .then(() => loader())
+      .then((data) => {
+        setCachedIntelligence(key, data, ttlMs);
+        return data;
+      });
+
+  if (!force) {
+    const hit = peekCachedIntelligence(key);
+    if (hit != null) {
+      refresh().catch(() => {});
+      return { data: hit, fromCache: true };
+    }
+  } else {
+    invalidateIntelligenceCache(key);
+  }
+
+  const data = await refresh();
+  return { data, fromCache: false };
+}

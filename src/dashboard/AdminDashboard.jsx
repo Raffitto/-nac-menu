@@ -27,6 +27,7 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
+import useKeepAliveNav from "./hooks/useKeepAliveNav";
 import { SIDEBAR_EVENTS, SIDEBAR_KEYS } from "../lib/sidebarPrefs";
 import { isEditableTarget, isModKey } from "../lib/menuInteraction/platform";
 import {
@@ -45,7 +46,6 @@ import { useOperationalDashboard } from "./hooks/useOperationalDashboard";
 import PlatformStatusBanner from "./components/PlatformStatusBanner";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
-import MenuManager from "./MenuManager";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
@@ -55,10 +55,6 @@ import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
 import OperationalDashboard from "./views/OperationalDashboard";
 import HubTabs from "./components/HubTabs";
-import IntelligenceHub from "./views/IntelligenceHub";
-import ReviewsHub from "./views/ReviewsHub";
-import BranchesView from "./views/BranchesView";
-import SettingsView from "./views/SettingsView";
 import MenuEditorAuth from "./components/MenuEditorAuth";
 import NacAnalyticsSignIn from "./components/NacAnalyticsSignIn";
 import NacPlatformAccessGate from "./components/NacPlatformAccessGate";
@@ -82,8 +78,22 @@ import { filterDisplayInsights } from "../lib/operationalMetricsIntegrity";
 import { generateOperationalDashboardInsights } from "./utils/operationalInsightsIntegrity";
 import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
+import "./styles/settings-view.css";
 
 const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
+const IntelligenceHub = lazy(() => import("./views/IntelligenceHub"));
+const ReviewsHub = lazy(() => import("./views/ReviewsHub"));
+const BranchesView = lazy(() => import("./views/BranchesView"));
+const SettingsView = lazy(() => import("./views/SettingsView"));
+const MenuManager = lazy(() => import("./MenuManager"));
+
+const VIEW_PREFETCHERS = {
+  intelligence: () => import("./views/IntelligenceHub"),
+  reviews: () => import("./views/ReviewsHub"),
+  menu: () => import("./MenuManager"),
+  branches: () => import("./views/BranchesView"),
+  settings: () => import("./views/SettingsView"),
+};
 
 const NAV_ICONS = {
   overview: LayoutDashboard,
@@ -174,7 +184,13 @@ export default function AdminDashboard(props) {
 }
 
 function AdminDashboardContent({ onBack, session = null, authChecked = true, rbacEnvInvalid = false }) {
-  const [adminView, setAdminView] = useState("overview");
+  const {
+    activeView: adminView,
+    setActiveView: setAdminView,
+    isMounted,
+    schedulePrefetch,
+    cancelPrefetch,
+  } = useKeepAliveNav("overview");
   const {
     collapsed: globalSidebarCollapsed,
     toggle: toggleGlobalSidebar,
@@ -193,12 +209,30 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleGlobalSidebar]);
+
+  useEffect(() => {
+    const idlePrefetch = () => {
+      ["menu", "reviews", "intelligence", "settings"].forEach((id) => {
+        const fn = VIEW_PREFETCHERS[id];
+        if (fn) schedulePrefetch(id, fn, 40);
+      });
+    };
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(idlePrefetch, { timeout: 2500 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const t = window.setTimeout(idlePrefetch, 1200);
+    return () => window.clearTimeout(t);
+  }, [schedulePrefetch]);
+
   const unifiedOverview = isUnifiedOverviewEnabled();
   const [overviewTab, setOverviewTab] = useState("operations");
   const rbac = useRbac();
 
   const filters = usePlatformFilters();
   const liveMode = filters.liveMode;
+  const overviewActive = adminView === "overview";
+  const overviewMounted = isMounted("overview");
 
   const visibleNav = useMemo(
     () => NAV_ITEMS.filter((item) => rbac.canAccessNav(item.id)),
@@ -210,19 +244,19 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     if (!rbac.canAccessNav(adminView)) {
       setAdminView(visibleNav[0].id);
     }
-  }, [adminView, rbac, visibleNav]);
+  }, [adminView, rbac, visibleNav, setAdminView]);
 
   const configured = isSupabaseConfigured();
 
   const menuBi = useMenuBiDashboard({
-    enabled: Boolean(session) && adminView === "overview" && !unifiedOverview,
-    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
+    enabled: Boolean(session) && overviewMounted && !unifiedOverview,
+    refreshIntervalMs: liveMode && session && overviewActive ? 30000 : 0,
     source: "AdminDashboard",
   });
 
   const operationalBi = useOperationalDashboard({
-    enabled: Boolean(session) && adminView === "overview" && unifiedOverview,
-    refreshIntervalMs: liveMode && session && adminView === "overview" ? 30000 : 0,
+    enabled: Boolean(session) && overviewMounted && unifiedOverview,
+    refreshIntervalMs: liveMode && session && overviewActive ? 30000 : 0,
     source: "AdminDashboard",
   });
 
@@ -391,9 +425,19 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                   whileHover={globalSidebarCollapsed ? undefined : { x: 6 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setAdminView(item.id)}
+                  onMouseEnter={() => {
+                    const prefetch = VIEW_PREFETCHERS[item.id];
+                    if (prefetch) schedulePrefetch(item.id, prefetch);
+                  }}
+                  onFocus={() => {
+                    const prefetch = VIEW_PREFETCHERS[item.id];
+                    if (prefetch) schedulePrefetch(item.id, prefetch, 60);
+                  }}
+                  onMouseLeave={() => cancelPrefetch(item.id)}
                   title={item.label}
                   aria-label={item.label}
                   aria-current={isActive ? "page" : undefined}
+                  data-nav-id={item.id}
                 >
                   {Icon && <Icon size={18} aria-hidden="true" />}
                   <span>{item.label}</span>
@@ -431,35 +475,90 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             : undefined
         }
       >
-        {adminView === "intelligence" ? (
-          rbac.canAccessNav("intelligence") ? (
-            <IntelligenceHub />
-          ) : (
-            <AccessDeniedPanel message="Intelligence access is not enabled for your NAC OS role." />
-          )
-        ) : adminView === "reviews" ? (
-          rbac.canAccessNav("reviews") ? (
-            <ReviewsHub />
-          ) : (
-            <AccessDeniedPanel message="Reviews access is not enabled for your NAC OS role." />
-          )
-        ) : adminView === "menu" ? (
-          rbac.canAccessNav("menu") ? (
-            <MenuEditorAuth>
-              <MenuManager />
-            </MenuEditorAuth>
-          ) : (
-            <AccessDeniedPanel message="Menu management is not enabled for your NAC OS role." />
-          )
-        ) : adminView === "branches" ? (
-          rbac.canAccessNav("branches") ? (
-            <BranchesView />
-          ) : (
-            <AccessDeniedPanel message="Cross-branch network views are reserved for executive roles." />
-          )
-        ) : adminView === "settings" ? (
-          <SettingsView />
-        ) : (
+        {isMounted("intelligence") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "intelligence"}
+            data-testid="pane-intelligence"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Intelligence…" />}>
+              {rbac.canAccessNav("intelligence") ? (
+                <IntelligenceHub />
+              ) : (
+                <AccessDeniedPanel message="Intelligence access is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("reviews") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "reviews"}
+            data-testid="pane-reviews"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Reviews…" />}>
+              {rbac.canAccessNav("reviews") ? (
+                <ReviewsHub />
+              ) : (
+                <AccessDeniedPanel message="Reviews access is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("menu") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "menu"}
+            data-testid="pane-menu"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Menu Manager…" />}>
+              {rbac.canAccessNav("menu") ? (
+                <MenuEditorAuth>
+                  <MenuManager />
+                </MenuEditorAuth>
+              ) : (
+                <AccessDeniedPanel message="Menu management is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("branches") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "branches"}
+            data-testid="pane-branches"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Branches…" />}>
+              {rbac.canAccessNav("branches") ? (
+                <BranchesView />
+              ) : (
+                <AccessDeniedPanel message="Cross-branch network views are reserved for executive roles." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("settings") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "settings"}
+            data-testid="pane-settings"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Settings…" />}>
+              <SettingsView session={session} />
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("overview") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "overview"}
+            data-testid="pane-overview"
+          >
           <>
             <header className="nac-platform-header">
               <p className="nac-platform-kicker">NAC Hospitality OS</p>
@@ -485,7 +584,11 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             )}
 
             {unifiedOverview ? (
-              <OperationalDashboard session={session} />
+              <OperationalDashboard
+                session={session}
+                dashboard={operationalBi}
+                active={overviewActive}
+              />
             ) : overviewTab === "sessions" ? (
               <Suspense fallback={<ViewFallback label="Loading session analytics…" />}>
                 <AnalyticsDashboard
@@ -846,7 +949,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </>
             )}
           </>
-        )}
+          </div>
+        ) : null}
       </main>
     </motion.div>
   );
