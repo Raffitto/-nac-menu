@@ -282,12 +282,16 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
 
   test("scheduled ingest supports reportType, maxFolders, and maxFilesPerRun limits", () => {
     expect(driveFunction).toMatch(/reportType: body\?\.reportType/);
+    expect(driveFunction).toMatch(/reportTypes: Array\.isArray\(body\?\.reportTypes\)/);
     expect(driveFunction).toMatch(/maxFolders: body\?\.maxFolders/);
     expect(driveFunction).toMatch(/maxFilesPerRun: body\?\.maxFilesPerRun/);
     expect(scheduledIngest).toMatch(/filterScheduledFolders/);
     expect(scheduledIngest).toMatch(/maxFolders \? eligible\.slice\(0, maxFolders\)/);
     expect(scheduledIngest).toMatch(/maxFilesToProcess: maxFilesPerRun/);
-    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_FILES_DEFAULT = 10/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_MAX_FILES_DEFAULT = 25/);
+    expect(scheduledIngest).toMatch(/SCHEDULED_PRIORITY_REPORT_TYPES/);
+    expect(scheduledIngest).toMatch(/cash_up/);
+    expect(scheduledIngest).toMatch(/daily_logbook/);
   });
 
   test("scheduled ingest returns partial 200 within strict time budget", () => {
@@ -305,12 +309,47 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(scheduledIngest).toMatch(/scheduled_worker_aborted/);
     expect(scheduledIngest).toMatch(/SCHEDULED_STUCK_RUN_MINUTES = 15/);
     expect(scheduledIngest).toMatch(/stuckRunsCleaned/);
+    expect(scheduledIngest).toMatch(/\.in\("status", \["running", "queued"\]\)/);
+    expect(scheduledIngest).toMatch(/stale_run_reconciled/);
   });
 
   test("scheduled ingest avoids worker-kill style long loops", () => {
     expect(scheduledIngest).toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS = 1/);
     expect(scheduledIngest).not.toMatch(/SCHEDULED_MAX_LOOP_ATTEMPTS = 5/);
     expect(scheduledIngest).not.toMatch(/SCHEDULED_INGEST_TIMEOUT_MS = 110_000/);
+  });
+
+  test("concurrency lock skips active folder runs", () => {
+    expect(scheduledIngest).toMatch(/folderHasActiveIngestionRun/);
+    expect(scheduledIngest).toMatch(/concurrency_lock/);
+    expect(driveHelper).toMatch(/already \$\{activeRun\.status\}/);
+    expect(driveHelper).toMatch(/double-ingest/);
+  });
+
+  test("token refresh failure marks reconnect_required on connection", () => {
+    expect(driveFunction).toMatch(/status: "reconnect_required"/);
+    expect(driveFunction).toMatch(/tokens\.refresh_token \|\| existingConn\?\.refresh_token/);
+    expect(driveFunction).toMatch(/reconnect_required/);
+    expect(driveFunction).toMatch(/CONNECTION_REQUIRED/);
+    expect(scheduledIngest).toMatch(/connection_required/);
+    expect(panel).toMatch(/CONNECTION REQUIRED/);
+    expect(panel).toMatch(/Last automatic sync/);
+    expect(panel).toMatch(/Next sync/);
+    expect(panel).toMatch(/formatRiyadhSchedule/);
+  });
+
+  test("Asia/Riyadh 03:00 schedule uses 00:00 UTC cron", () => {
+    const cronMigration = fs.readFileSync(
+      path.join(root, "supabase/migrations/20260809030000_drive_cashup_logbook_daily_cron.sql"),
+      "utf8",
+    );
+    expect(cronMigration).toMatch(/'0 0 \* \* \*'/);
+    expect(cronMigration).toMatch(/03:00 Asia\/Riyadh/);
+    expect(cronMigration).toMatch(/cash_up/);
+    expect(cronMigration).toMatch(/daily_logbook/);
+    expect(cronMigration).toMatch(/reconnect_required/);
+    expect(driveFunction).toMatch(/cronUtc: "0 0 \* \* \*"/);
+    expect(driveFunction).toMatch(/timezone: "Asia\/Riyadh"/);
   });
 });
 

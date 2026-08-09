@@ -182,6 +182,7 @@ Deno.serve(async (req) => {
       const admin = createClient(supabaseUrl, serviceRoleKey);
       const summary = await runScheduledDriveIngestion(admin, {
         reportType: body?.reportType,
+        reportTypes: Array.isArray(body?.reportTypes) ? body.reportTypes : undefined,
         maxFolders: body?.maxFolders,
         maxFilesPerRun: body?.maxFilesPerRun,
         maxFilesToProcess: body?.maxFilesToProcess,
@@ -244,12 +245,26 @@ Deno.serve(async (req) => {
         ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
         : null;
 
+      // Google often omits refresh_token on re-consent — never wipe a durable token with null.
+      const { data: existingConn } = await admin
+        .from("ask_nac_drive_connections")
+        .select("refresh_token")
+        .eq("user_email", userEmail)
+        .maybeSingle();
+      const refreshToken = tokens.refresh_token || existingConn?.refresh_token || null;
+      if (!refreshToken) {
+        return json(400, {
+          error:
+            "Google did not return a refresh token. Reconnect and approve offline access (consent screen).",
+        });
+      }
+
       // Tokens written via service role only — never included in API response.
       const { error } = await admin.from("ask_nac_drive_connections").upsert(
         {
           user_email: userEmail,
           google_account_email: profile.email || null,
-          refresh_token: tokens.refresh_token,
+          refresh_token: refreshToken,
           access_token: tokens.access_token,
           token_expires_at: expiresAt,
           scopes: DRIVE_SCOPES.split(" "),
@@ -266,6 +281,7 @@ Deno.serve(async (req) => {
         googleAccountEmail: profile.email,
         tokenExpiresAt: expiresAt,
         scopesCount: DRIVE_SCOPES.split(" ").length,
+        reconnectRequired: false,
       });
     }
 
@@ -282,6 +298,12 @@ Deno.serve(async (req) => {
         .select("id,drive_folder_id,folder_name,label,branch_id,department,report_type,sensitivity,auto_ingest,schedule,last_sync_at,last_ingest_at,last_sync_status,enabled")
         .order("created_at", { ascending: false });
 
+      const reconnectRequired =
+        data?.status === "reconnect_required" ||
+        /reconnect|token|refresh|revoked|invalid_grant|Bad Request/i.test(
+          String(data?.last_error || ""),
+        );
+
       const safeConnection = data
         ? {
             google_account_email: data.google_account_email,
@@ -290,10 +312,41 @@ Deno.serve(async (req) => {
             last_error: data.last_error,
             token_expires_at: data.token_expires_at,
             scopes_count: Array.isArray(data.scopes) ? data.scopes.length : 0,
+            reconnect_required: reconnectRequired,
+            health: reconnectRequired
+              ? "CONNECTION_REQUIRED"
+              : data.status === "active"
+                ? "HEALTHY"
+                : "DEGRADED",
           }
         : null;
 
-      return json(200, { connected: Boolean(data), connection: safeConnection, folders: folders || [] });
+      // Next automatic sync: 03:00 Asia/Riyadh daily (= 00:00 UTC).
+      const now = new Date();
+      const nextUtc = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0),
+      );
+      if (nextUtc.getTime() <= now.getTime()) {
+        nextUtc.setUTCDate(nextUtc.getUTCDate() + 1);
+      }
+
+      const priorityFolders = (folders || []).filter((folder) =>
+        ["cash_up", "daily_logbook"].includes(String(folder.report_type || "")),
+      );
+
+      return json(200, {
+        connected: Boolean(data),
+        connection: safeConnection,
+        folders: folders || [],
+        schedule: {
+          cronUtc: "0 0 * * *",
+          timezone: "Asia/Riyadh",
+          localTime: "03:00",
+          nextRunAt: nextUtc.toISOString(),
+          priorityReportTypes: ["cash_up", "daily_logbook"],
+          priorityFolderCount: priorityFolders.length,
+        },
+      });
     }
 
     if (action === "browse") {
@@ -586,13 +639,20 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", runId);
         } catch (err) {
-          const message = "Google Drive token expired or revoked. Reconnect required.";
+          const detail = sanitizeErrorMessage(err) || "Refresh failed";
+          const message =
+            "Google Drive authorization expired. Reconnect Google Drive to resume automatic Cashup/Logbook ingestion.";
+          await admin.from("ask_nac_drive_connections").update({
+            status: "reconnect_required",
+            last_error: detail,
+            updated_at: new Date().toISOString(),
+          }).eq("id", connection.id);
           await admin.from("ask_nac_drive_sync_runs").update({
             status: "failed",
             runtime_stage: "token_refresh_failed",
             error_code: "drive_reconnect_required",
             error: message,
-            error_message: sanitizeErrorMessage(err) || message,
+            error_message: `${message} (${detail})`,
             finished_at: new Date().toISOString(),
             completed_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -670,25 +730,47 @@ Deno.serve(async (req) => {
         selectedFolderCount: selectedFolderDebug.length,
         selectedFolders: selectedFolderDebug,
       });
+      const skippedActive = [];
       for (const folder of runnableFolders) {
-        const runId = await createDriveIngestionRun(admin, {
-          folder,
-          triggerType,
-          initialStats: {
-            runtimeStage: "queued",
-            action,
-            sourceTable: "ask_nac_drive_sync_folders",
-            selectedFolderCount: selectedFolderDebug.length,
-            selectedFoldersCount: selectedFolderDebug.length,
-            selectedFolders: selectedFolderDebug,
-            selectedDriveFolderIds: selectedFolderDebug.map((item) => item.driveFolderId),
-            selectedFolderLabels: selectedFolderDebug.map((item) => item.label),
-            selectedAutoIngestFlags: selectedFolderDebug.map((item) => item.autoIngest),
-            selectedBranchIds: selectedFolderDebug.map((item) => item.branchId),
-            selectedReportTypes: selectedFolderDebug.map((item) => item.reportType),
-          },
+        try {
+          const runId = await createDriveIngestionRun(admin, {
+            folder,
+            triggerType,
+            initialStats: {
+              runtimeStage: "queued",
+              action,
+              sourceTable: "ask_nac_drive_sync_folders",
+              selectedFolderCount: selectedFolderDebug.length,
+              selectedFoldersCount: selectedFolderDebug.length,
+              selectedFolders: selectedFolderDebug,
+              selectedDriveFolderIds: selectedFolderDebug.map((item) => item.driveFolderId),
+              selectedFolderLabels: selectedFolderDebug.map((item) => item.label),
+              selectedAutoIngestFlags: selectedFolderDebug.map((item) => item.autoIngest),
+              selectedBranchIds: selectedFolderDebug.map((item) => item.branchId),
+              selectedReportTypes: selectedFolderDebug.map((item) => item.reportType),
+            },
+          });
+          runs.push({ runId, folder });
+        } catch (err) {
+          const message = sanitizeErrorMessage(err) || String((err as Error)?.message || err);
+          if (/already (running|queued)/i.test(message) || /double-ingest/i.test(message)) {
+            skippedActive.push({
+              folderId: folder.id,
+              driveFolderId: folder.drive_folder_id,
+              reason: "concurrency_lock",
+              error: message,
+            });
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      if (!runs.length) {
+        return json(409, {
+          error: "Drive ingestion already active for the selected folders.",
+          skippedActive,
         });
-        runs.push({ runId, folder });
       }
 
       return json(202, {
@@ -696,6 +778,7 @@ Deno.serve(async (req) => {
         runId: runs[0]?.runId,
         runIds: runs.map((run) => run.runId),
         queued: runs.length,
+        skippedActive,
         status: "queued",
         requiresClientProcessing: true,
       });

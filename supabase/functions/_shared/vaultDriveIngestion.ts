@@ -1634,6 +1634,21 @@ export async function createDriveIngestionRun(
     initialStats = {},
   }: { folder: DriveFolder; triggerType?: string; initialStats?: Record<string, unknown> },
 ) {
+  // Concurrency guard: one active run per folder (manual or scheduled).
+  const { data: activeRun } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .select("id,status")
+    .eq("folder_id", folder.id)
+    .in("status", ["running", "queued"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (activeRun?.id) {
+    throw new Error(
+      `Drive ingestion already ${activeRun.status} for this folder (run ${activeRun.id}). Skip to avoid double-ingest.`,
+    );
+  }
+
   const { data, error } = await admin
     .from("ask_nac_drive_sync_runs")
     .insert({

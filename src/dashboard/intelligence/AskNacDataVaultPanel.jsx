@@ -106,6 +106,72 @@ function formatLastSync(value) {
   }
 }
 
+function formatRiyadhSchedule(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString("en-GB", {
+      timeZone: "Asia/Riyadh",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return value;
+  }
+}
+
+function resolveDriveHealth({ connection, ingestStats, runActive }) {
+  const status = String(connection?.status || "");
+  const lastError = String(connection?.last_error || ingestStats?.errorMessage || "");
+  const stage = String(ingestStats?.runtimeStage || "");
+  if (
+    connection?.reconnect_required
+    || status === "reconnect_required"
+    || stage === "token_refresh_failed"
+    || /reconnect|token_refresh|invalid_grant|Bad Request/i.test(lastError)
+  ) {
+    return {
+      key: "CONNECTION_REQUIRED",
+      label: "CONNECTION REQUIRED",
+      className: "is-off",
+      note: "Google Drive authorization expired. Reconnect once to restore automatic Cashup and Logbook ingestion.",
+    };
+  }
+  if (runActive) {
+    return {
+      key: "SYNCING",
+      label: "SYNCING",
+      className: "is-on",
+      note: null,
+    };
+  }
+  if (Number(ingestStats?.failed || 0) > 0 || status === "error") {
+    return {
+      key: "DEGRADED",
+      label: "DEGRADED",
+      className: "is-off",
+      note: "Some files failed during the last Drive sync. Successful files remain available.",
+    };
+  }
+  if (status === "active" || connection) {
+    return {
+      key: "HEALTHY",
+      label: "HEALTHY",
+      className: "is-on",
+      note: "Last scheduled sync completed.",
+    };
+  }
+  return {
+    key: "CONNECTION_REQUIRED",
+    label: "CONNECTION REQUIRED",
+    className: "is-off",
+    note: "Connect Google Drive to enable automatic Cashup and Logbook ingestion.",
+  };
+}
+
 function formatLastUpdated(value) {
   if (!value) return "Not yet";
   return formatLastSync(value);
@@ -1116,6 +1182,15 @@ export default function AskNacDataVaultPanel({ session }) {
   const driveEmail = driveStatus?.connection?.google_account_email;
   const statusReady = registryAttempted;
   const driveRunActive = ["queued", "running", "processing"].includes(driveIngestRun?.status);
+  const driveHealth = resolveDriveHealth({
+    connection: driveStatus?.connection,
+    ingestStats: driveIngestStats,
+    runActive: driveRunActive,
+  });
+  const driveNextSyncAt = driveStatus?.schedule?.nextRunAt || null;
+  const drivePriorityFolders = (driveStatus?.folders || []).filter((folder) =>
+    ["cash_up", "daily_logbook"].includes(String(folder.report_type || "")),
+  );
 
   const metadataFields = (
     <div className="nac-ask-vault__grid">
@@ -1487,23 +1562,29 @@ export default function AskNacDataVaultPanel({ session }) {
                 </div>
 
                 <p className="nac-vault-source-card__note">
-                  Drive can sync metadata or ingest files from folders where auto-ingest is enabled.
+                  Cashup and Logbook auto-ingest every day at 03:00 Asia/Riyadh. Manual Sync uses the same pipeline.
                 </p>
 
                 {driveConnected ? (
                   <>
                     <dl className="nac-vault-source-card__stats">
                       <div>
-                        <dt>Status</dt>
-                        <dd className="nac-vault-source-card__status is-on">Connected</dd>
+                        <dt>Health</dt>
+                        <dd className={`nac-vault-source-card__status ${driveHealth.className}`}>
+                          {driveHealth.label}
+                        </dd>
                       </div>
                       <div>
                         <dt>Account email</dt>
                         <dd>{driveEmail || "Google account"}</dd>
                       </div>
                       <div>
-                        <dt>Last sync</dt>
+                        <dt>Last automatic sync</dt>
                         <dd>{formatLastSync(driveLastSyncAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Next sync</dt>
+                        <dd>{formatRiyadhSchedule(driveNextSyncAt)} Asia/Riyadh</dd>
                       </div>
                       <div>
                         <dt>Files discovered</dt>
@@ -1527,6 +1608,29 @@ export default function AskNacDataVaultPanel({ session }) {
                       </div>
                     </dl>
 
+                    {driveHealth.note ? (
+                      <p className="nac-vault-source-card__hint">{driveHealth.note}</p>
+                    ) : null}
+
+                    {drivePriorityFolders.length ? (
+                      <ul className="nac-ask-vault__qa">
+                        {drivePriorityFolders.map((folder) => (
+                          <li key={folder.id}>
+                            <span>
+                              {folder.label || folder.folder_name || folder.report_type}
+                              {" · "}
+                              {String(folder.report_type || "").replace(/_/g, " ")}
+                            </span>
+                            <span>
+                              {folder.last_ingest_at || folder.last_sync_at
+                                ? `up to date · ${formatLastSync(folder.last_ingest_at || folder.last_sync_at)}`
+                                : "awaiting first sync"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
                     {knowledgeStats.foldersRegistered === 0 ? (
                       <p className="nac-vault-source-card__hint">
                         No folders registered yet. Add a Google Drive folder ID in System Details to enable sync.
@@ -1538,7 +1642,7 @@ export default function AskNacDataVaultPanel({ session }) {
                         type="button"
                         className="nac-ask-vault__upload-btn"
                         onClick={onSyncAllDriveFolders}
-                        disabled={driveActionKey === "metadata:all" || !knowledgeStats.foldersRegistered}
+                        disabled={driveActionKey === "metadata:all" || !knowledgeStats.foldersRegistered || driveHealth.key === "CONNECTION_REQUIRED"}
                       >
                         {driveActionKey === "metadata:all" ? <Loader2 size={16} className="nac-bi-spin" /> : <RefreshCw size={16} />}
                         {driveActionKey === "metadata:all" ? "Syncing…" : "Sync Metadata"}
@@ -1547,18 +1651,22 @@ export default function AskNacDataVaultPanel({ session }) {
                         type="button"
                         className="nac-ask-vault__upload-btn"
                         onClick={onSyncAndIngestDrive}
-                        disabled={driveActionKey === "ingest:all" || !(driveStatus?.folders || []).some((folder) => folder.auto_ingest)}
+                        disabled={
+                          driveActionKey === "ingest:all"
+                          || driveHealth.key === "CONNECTION_REQUIRED"
+                          || !(driveStatus?.folders || []).some((folder) => folder.auto_ingest)
+                        }
                       >
                         {driveActionKey === "ingest:all" || driveRunActive ? <Loader2 size={16} className="nac-bi-spin" /> : <Cloud size={16} />}
                         {driveActionKey === "ingest:all" || driveRunActive ? "Ingesting…" : "Sync & Ingest Drive"}
                       </button>
                       <button
                         type="button"
-                        className="nac-ask-vault__refresh"
+                        className={`nac-ask-vault__refresh${driveHealth.key === "CONNECTION_REQUIRED" ? " nac-ask-vault__upload-btn" : ""}`}
                         onClick={onConnectDrive}
                         disabled={driveActionKey === "connect"}
                       >
-                        Reconnect
+                        {driveHealth.key === "CONNECTION_REQUIRED" ? "Reconnect Google Drive" : "Reconnect"}
                       </button>
                       <button type="button" className="nac-ask-vault__refresh" onClick={onDisconnectDrive}>
                         <Unplug size={14} aria-hidden />

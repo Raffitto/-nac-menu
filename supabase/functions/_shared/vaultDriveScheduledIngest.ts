@@ -13,9 +13,12 @@ import {
 /** Stop before Supabase worker kill (~80s). Leave headroom for JSON response. */
 export const SCHEDULED_INGEST_BUDGET_MS = 50_000;
 export const SCHEDULED_BUDGET_RESERVE_MS = 3_000;
+/** One process loop per folder keeps the worker under the Edge timeout; remaining files continue next night. */
 export const SCHEDULED_MAX_LOOP_ATTEMPTS = 1;
-export const SCHEDULED_MAX_FILES_DEFAULT = 10;
+export const SCHEDULED_MAX_FILES_DEFAULT = 25;
 export const SCHEDULED_STUCK_RUN_MINUTES = 15;
+/** Nightly job only guarantees these registered report types (folder IDs stay authoritative). */
+export const SCHEDULED_PRIORITY_REPORT_TYPES = ["cash_up", "daily_logbook"] as const;
 
 const REPORT_TYPE_PRIORITY: Record<string, number> = {
   cash_up: 0,
@@ -61,6 +64,8 @@ export type ScheduledIngestSummary = {
 
 export type ScheduledIngestOptions = {
   reportType?: string;
+  /** When set, only these report types are eligible (default: cash_up + daily_logbook). */
+  reportTypes?: string[];
   maxFolders?: number;
   maxFilesPerRun?: number;
   /** @deprecated use maxFilesPerRun */
@@ -97,7 +102,15 @@ export function sortScheduledFolders<T extends { report_type?: string | null; la
 export function filterScheduledFolders<T extends { report_type?: string | null }>(
   folders: T[],
   reportType?: string,
+  reportTypes?: string[],
 ): T[] {
+  const multi = Array.isArray(reportTypes)
+    ? reportTypes.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  if (multi.length) {
+    const allowed = new Set(multi);
+    return folders.filter((row) => allowed.has(String(row.report_type || "")));
+  }
   const filter = String(reportType || "").trim();
   if (!filter) return folders;
   return folders.filter((row) => String(row.report_type || "") === filter);
@@ -111,7 +124,16 @@ export function resolveScheduledIngestLimits(options: ScheduledIngestOptions = {
     || Number(Deno.env.get("DRIVE_SCHEDULED_MAX_FILES_TO_PROCESS"))
     || SCHEDULED_MAX_FILES_DEFAULT;
   const maxFolders = Number(options.maxFolders) > 0 ? Number(options.maxFolders) : null;
-  return { budgetMs, maxFilesPerRun, maxFolders, reportType: options.reportType };
+  const reportTypes = Array.isArray(options.reportTypes) && options.reportTypes.length
+    ? options.reportTypes
+    : [...SCHEDULED_PRIORITY_REPORT_TYPES];
+  return {
+    budgetMs,
+    maxFilesPerRun,
+    maxFolders,
+    reportType: options.reportType,
+    reportTypes: options.reportType ? undefined : reportTypes,
+  };
 }
 
 export function isScheduledIngestSecretConfigured(): boolean {
@@ -192,11 +214,11 @@ export async function cleanupStuckScheduledRuns(
   }: { stuckMinutes?: number; now?: number } = {},
 ): Promise<number> {
   const cutoff = new Date(now - stuckMinutes * 60 * 1000).toISOString();
+  // Reconcile both scheduled and manual runs stuck in running/queued so nightly jobs cannot pile up.
   const { data: stuck, error } = await admin
     .from("ask_nac_drive_sync_runs")
-    .select("id, stats")
-    .eq("trigger_type", "scheduled")
-    .eq("status", "running")
+    .select("id, stats, trigger_type, status")
+    .in("status", ["running", "queued"])
     .lt("created_at", cutoff);
 
   if (error) throw new Error(error.message);
@@ -205,24 +227,45 @@ export async function cleanupStuckScheduledRuns(
   const finishedAt = new Date(now).toISOString();
   for (const row of stuck) {
     const stats = (row.stats as Record<string, unknown>) || {};
+    const scheduled = String(row.trigger_type || "") === "scheduled";
     const { error: updateError } = await admin
       .from("ask_nac_drive_sync_runs")
       .update({
         status: "partial",
+        runtime_stage: "stale_run_reconciled",
         finished_at: finishedAt,
+        completed_at: finishedAt,
         updated_at: finishedAt,
+        current_file: null,
         stats: {
           ...stats,
-          scheduledIngest: true,
+          scheduledIngest: scheduled,
           scheduledStopReason: "scheduled_worker_aborted",
-          runtimeStage: "partial",
+          runtimeStage: "stale_run_reconciled",
+          staleRunReconciled: true,
         },
       })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .in("status", ["running", "queued"]);
     if (updateError) throw new Error(updateError.message);
   }
 
   return stuck.length;
+}
+
+async function folderHasActiveIngestionRun(
+  admin: SupabaseAdmin,
+  folderId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("ask_nac_drive_sync_runs")
+    .select("id")
+    .eq("folder_id", folderId)
+    .in("status", ["running", "queued"])
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return Boolean(data?.id);
 }
 
 async function finalizeScheduledRunStop(
@@ -299,6 +342,7 @@ export async function runScheduledDriveIngestion(
   const {
     refreshAccessToken = refreshGoogleAccessToken,
     reportType,
+    reportTypes,
     maxFolders,
     maxFilesPerRun,
     budgetMs,
@@ -335,7 +379,9 @@ export async function runScheduledDriveIngestion(
 
   if (folderError) throw new Error(folderError.message);
 
-  const eligible = sortScheduledFolders(filterScheduledFolders(folders || [], reportType));
+  const eligible = sortScheduledFolders(
+    filterScheduledFolders(folders || [], reportType, reportTypes),
+  );
   summary.foldersChecked = eligible.length;
 
   const foldersToProcess = maxFolders ? eligible.slice(0, maxFolders) : eligible;
@@ -358,16 +404,27 @@ export async function runScheduledDriveIngestion(
     let folderResult = emptyFolderResult(folderRow);
     foldersProcessed += 1;
 
+    if (await folderHasActiveIngestionRun(admin, String(folder.id))) {
+      folderResult = emptyFolderResult(folderRow, {
+        status: "skipped",
+        reason: "concurrency_lock",
+        error: "An ingestion run is already active for this folder; skipped to avoid double-ingest.",
+      });
+      summary.folderResults.push(folderResult);
+      continue;
+    }
+
     const { data: connection } = await admin
       .from("ask_nac_drive_connections")
-      .select("id,user_email,refresh_token,token_expires_at")
+      .select("id,user_email,refresh_token,token_expires_at,status")
       .eq("id", folder.connection_id)
       .maybeSingle();
 
     if (!connection?.refresh_token) {
       folderResult = emptyFolderResult(folderRow, {
         status: "failed",
-        error: "Drive connection not found or refresh token missing.",
+        error: "Drive connection not found or refresh token missing. Reconnect Google Drive.",
+        reason: "connection_required",
       });
       summary.folderResults.push(folderResult);
       continue;
@@ -405,6 +462,8 @@ export async function runScheduledDriveIngestion(
           token_expires_at: tokens.expires_in
             ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
             : connection.token_expires_at,
+          status: "active",
+          last_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", connection.id);
@@ -480,13 +539,38 @@ export async function runScheduledDriveIngestion(
 
       appendFolderCounters(summary, folderResult);
     } catch (err) {
-      folderResult.status = "failed";
-      folderResult.error = (err as Error)?.message || String(err);
-      if (folderResult.runId) {
-        const run = await loadRunRow(admin, folderResult.runId);
-        const counters = countersFromRun(run);
-        if (counters.status === "running") {
-          await finalizeScheduledRunStop(admin, folderResult.runId, "scheduled_processing_error", counters);
+      const message = (err as Error)?.message || String(err);
+      const concurrency = /already (running|queued)|double-ingest/i.test(message);
+      const reconnectRequired = !concurrency
+        && /invalid_grant|Bad Request|revoked|expired|refresh/i.test(message);
+      if (concurrency) {
+        folderResult = emptyFolderResult(folderRow, {
+          status: "skipped",
+          reason: "concurrency_lock",
+          error: message,
+        });
+      } else {
+        folderResult.status = "failed";
+        folderResult.error = reconnectRequired
+          ? "Google Drive authorization expired. Reconnect required."
+          : message;
+        folderResult.reason = reconnectRequired ? "connection_required" : "scheduled_processing_error";
+        if (reconnectRequired && connection?.id) {
+          await admin
+            .from("ask_nac_drive_connections")
+            .update({
+              status: "reconnect_required",
+              last_error: message.slice(0, 500),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", connection.id);
+        }
+        if (folderResult.runId) {
+          const run = await loadRunRow(admin, folderResult.runId);
+          const counters = countersFromRun(run);
+          if (counters.status === "running") {
+            await finalizeScheduledRunStop(admin, folderResult.runId, folderResult.reason, counters);
+          }
         }
       }
     }
