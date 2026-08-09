@@ -35,6 +35,22 @@
   padding-bottom: 0.25rem;
 }
 
+.nac-hub-tabs--primary {
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.nac-hub-tabs--secondary {
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.nac-hub-tabs--secondary .nac-hub-tab {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.74rem;
+  opacity: 0.92;
+}
+
 .nac-hub-tab {
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);

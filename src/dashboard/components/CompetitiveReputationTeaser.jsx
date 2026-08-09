@@ -46,7 +46,7 @@ export default function CompetitiveReputationTeaser() {
           );
         })}
       </div>
-      <p className="cr-teaser-link">Open Intelligence → Competitive Watch for full battlefield.</p>
+      <p className="cr-teaser-link">Open Intelligence → Market → Competitors for full battlefield.</p>
     </section>
   );
 }

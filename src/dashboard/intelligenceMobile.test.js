@@ -24,10 +24,13 @@ describe("mobile intelligence navigation", () => {
     ]);
   });
 
-  test("MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS excludes ask", () => {
+  test("MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS excludes ask and uses new taxonomy", () => {
     expect(MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS).not.toContain("ask");
-    expect(MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS).toContain("executive");
-    expect(MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS).toContain("sales");
+    expect(MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS).toEqual([
+      "operations",
+      "commercial",
+      "market",
+    ]);
   });
 });
 

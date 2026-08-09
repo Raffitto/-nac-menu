@@ -9,6 +9,7 @@ import {
   canAccessAllBranches,
   canAccessNetworkReviews,
   canAccessIntelligenceTab,
+  canAccessIntelligenceSecondary,
   canAccessNav,
   canAccessReviewsTab,
   hasPermission,
@@ -41,6 +42,8 @@ export function RbacProvider({ children, session: sessionProp = undefined }) {
       exportBranchOptions: buildExportBranchOptions(profile),
       canAccessNav: (navId) => canAccessNav(profile, navId),
       canAccessIntelligenceTab: (tabId) => canAccessIntelligenceTab(profile, tabId),
+      canAccessIntelligenceSecondary: (primaryId, secondaryId) =>
+        canAccessIntelligenceSecondary(profile, primaryId, secondaryId),
       canAccessReviewsTab: (tabId) => canAccessReviewsTab(profile, tabId),
       hasPermission: (perm) => hasPermission(profile, perm),
       canAccessAllBranches: () => canAccessAllBranches(profile),

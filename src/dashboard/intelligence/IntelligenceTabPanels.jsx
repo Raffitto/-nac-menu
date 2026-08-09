@@ -4,10 +4,11 @@ import MenuIntelligence from "./MenuIntelligence";
 import CompetitiveReputationWatch from "./CompetitiveReputationWatch";
 import AskNacTab from "./AskNacTab";
 import SalesIntelligenceHub from "./SalesIntelligenceHub";
-import RestaurantIntelligenceHub from "./RestaurantIntelligenceHub";
+import OperationsInsights from "./OperationsInsights";
 
 const ExecutiveCommandCenter = lazy(() => import("./ExecutiveCommandCenter"));
 const VisualIntelligenceEngine = lazy(() => import("./VisualIntelligenceEngine"));
+const RestaurantIntelligence = lazy(() => import("../RestaurantIntelligence"));
 
 function ViewFallback({ label }) {
   return (
@@ -21,11 +22,14 @@ function ViewFallback({ label }) {
   );
 }
 
-/** Shared Intelligence tab panels — reused by desktop hub and mobile dashboards tab. */
+/**
+ * Shared Intelligence panels — primary/secondary taxonomy.
+ * Legacy activeTab ids still resolve via resolveIntelligenceDestination upstream.
+ */
 export default function IntelligenceTabPanels({
   activeTab,
+  secondaryTab = null,
   salesSection,
-  restaurantSection,
   askNacPrefill,
   askNacPrefillSeed,
   onAskNacPrefillConsumed,
@@ -49,25 +53,51 @@ export default function IntelligenceTabPanels({
     );
   }
 
-  if (activeTab === "visual") {
+  if (activeTab === "operations") {
+    if (secondaryTab === "staff") {
+      return (
+        <div className="nac-intelligence-panel">
+          <header className="nac-intel-section-intro">
+            <h2 className="nac-intel-section-intro__title">Staff & Reviews</h2>
+            <p>
+              Reviews, staff signals, menu behavior, and restaurant health — scoped to your global
+              branch and time filters above.
+            </p>
+          </header>
+          <Suspense fallback={<ViewFallback label="Loading restaurant intelligence…" />}>
+            <RestaurantIntelligence embeddedInHub />
+          </Suspense>
+        </div>
+      );
+    }
+    if (secondaryTab === "diagnostics") {
+      return (
+        <div className="nac-intelligence-panel">
+          <header className="nac-intel-section-intro">
+            <h2 className="nac-intel-section-intro__title">Diagnostics</h2>
+            <p>Operational correlations, insights, and diagnostic signals for the selected period.</p>
+          </header>
+          <OperationsInsights embeddedInHub />
+        </div>
+      );
+    }
     return (
       <div className="nac-intelligence-panel">
-        <Suspense fallback={<ViewFallback label="Loading visual intelligence…" />}>
-          <VisualIntelligenceEngine />
+        <Suspense fallback={<ViewFallback label="Loading operations overview…" />}>
+          <ExecutiveCommandCenter />
         </Suspense>
       </div>
     );
   }
 
-  if (activeTab === "restaurant") {
-    return (
-      <div className="nac-intelligence-panel">
-        <RestaurantIntelligenceHub initialSection={restaurantSection} />
-      </div>
-    );
-  }
-
-  if (activeTab === "sales") {
+  if (activeTab === "commercial") {
+    if (secondaryTab === "menu") {
+      return (
+        <div className="nac-intelligence-panel">
+          <MenuIntelligence />
+        </div>
+      );
+    }
     return (
       <div className="nac-intelligence-panel">
         <SalesIntelligenceHub initialSection={salesSection} onAskNac={onAskNacFromSales} />
@@ -75,28 +105,19 @@ export default function IntelligenceTabPanels({
     );
   }
 
-  if (activeTab === "menu") {
+  if (activeTab === "market") {
+    if (secondaryTab === "competitors") {
+      return (
+        <div className="nac-intelligence-panel">
+          <CompetitiveReputationWatch />
+        </div>
+      );
+    }
     return (
       <div className="nac-intelligence-panel">
-        <MenuIntelligence />
-      </div>
-    );
-  }
-
-  if (activeTab === "executive") {
-    return (
-      <div className="nac-intelligence-panel">
-        <Suspense fallback={<ViewFallback label="Loading command center…" />}>
-          <ExecutiveCommandCenter />
+        <Suspense fallback={<ViewFallback label="Loading visual intelligence…" />}>
+          <VisualIntelligenceEngine />
         </Suspense>
-      </div>
-    );
-  }
-
-  if (activeTab === "competitive") {
-    return (
-      <div className="nac-intelligence-panel">
-        <CompetitiveReputationWatch />
       </div>
     );
   }

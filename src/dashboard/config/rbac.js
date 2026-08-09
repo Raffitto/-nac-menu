@@ -74,17 +74,20 @@ export const NAV_PERMISSIONS = {
 /** Intelligence hub tab → permission (canonical + legacy ids for alias resolution). */
 export const INTELLIGENCE_TAB_PERMISSIONS = {
   ask: PERMISSIONS.VIEW_INTELLIGENCE,
+  operations: PERMISSIONS.VIEW_INTELLIGENCE,
+  commercial: PERMISSIONS.VIEW_INTELLIGENCE,
+  market: PERMISSIONS.VIEW_INTELLIGENCE,
+  /** Legacy module ids — still honored via normalizeIntelligenceTabId */
   visual: PERMISSIONS.VIEW_INTELLIGENCE,
   restaurant: PERMISSIONS.VIEW_INTELLIGENCE,
   sales: PERMISSIONS.VIEW_INTELLIGENCE,
   menu: PERMISSIONS.VIEW_INTELLIGENCE,
   executive: PERMISSIONS.VIEW_COMMAND_CENTER,
   competitive: PERMISSIONS.VIEW_COMPETITIVE,
-  /** Legacy tab ids — still honored via normalizeIntelligenceTabId */
   ai: PERMISSIONS.VIEW_INTELLIGENCE,
   imports: PERMISSIONS.MANAGE_IMPORTS,
   predictive: PERMISSIONS.VIEW_PREDICTIVE,
-  operations: PERMISSIONS.VIEW_INTELLIGENCE,
+  foodics: PERMISSIONS.VIEW_INTELLIGENCE,
 };
 
 /** Reviews hub tab → permission */
@@ -198,21 +201,65 @@ export function canAccessIntelligenceTab(profile, tabId) {
   const normalized =
     raw === "ai" || raw === "predictive"
       ? "ask"
-      : raw === "imports"
-        ? "sales"
-        : raw === "operations"
-          ? "restaurant"
-          : raw;
+      : raw === "imports" || raw === "foodics" || raw === "sales" || raw === "menu"
+        ? "commercial"
+        : raw === "executive" || raw === "restaurant"
+          ? "operations"
+          : raw === "visual" || raw === "competitive"
+            ? "market"
+            : raw;
 
-  if (normalized === "sales") {
+  if (normalized === "commercial" || raw === "sales" || raw === "imports" || raw === "foodics") {
     return (
       hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE) ||
       hasPermission(profile, PERMISSIONS.MANAGE_IMPORTS)
     );
   }
 
+  if (normalized === "operations" || raw === "executive") {
+    return (
+      hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE) ||
+      hasPermission(profile, PERMISSIONS.VIEW_COMMAND_CENTER)
+    );
+  }
+
+  if (normalized === "market" || raw === "competitive" || raw === "visual") {
+    // Market primary is available when any market surface is allowed; Competitors filtered separately.
+    if (raw === "competitive") {
+      return hasPermission(profile, PERMISSIONS.VIEW_COMPETITIVE);
+    }
+    return (
+      hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE) ||
+      hasPermission(profile, PERMISSIONS.VIEW_COMPETITIVE)
+    );
+  }
+
   const perm = INTELLIGENCE_TAB_PERMISSIONS[normalized] || INTELLIGENCE_TAB_PERMISSIONS[raw];
   return perm ? hasPermission(profile, perm) : false;
+}
+
+/** Secondary Intelligence destinations (Overview / Sales / Competitors, etc.). */
+export function canAccessIntelligenceSecondary(profile, primaryId, secondaryId) {
+  const primary = String(primaryId || "").toLowerCase();
+  const secondary = String(secondaryId || "").toLowerCase();
+  if (!secondary) return true;
+
+  if (primary === "operations" && secondary === "overview") {
+    return (
+      hasPermission(profile, PERMISSIONS.VIEW_COMMAND_CENTER) ||
+      hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE)
+    );
+  }
+  if (primary === "market" && secondary === "competitors") {
+    return hasPermission(profile, PERMISSIONS.VIEW_COMPETITIVE);
+  }
+  if (primary === "commercial" && secondary === "sales") {
+    return (
+      hasPermission(profile, PERMISSIONS.VIEW_INTELLIGENCE) ||
+      hasPermission(profile, PERMISSIONS.MANAGE_IMPORTS)
+    );
+  }
+  return canAccessIntelligenceTab(profile, primary);
 }
 
 export function canAccessReviewsTab(profile, tabId) {

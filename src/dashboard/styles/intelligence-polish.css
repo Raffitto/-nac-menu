@@ -7,6 +7,69 @@
   margin-top: 0.25rem;
 }
 
+.nac-intel-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(6, 5, 4, 0.62);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 1rem 1rem;
+}
+
+.nac-intel-palette {
+  width: min(520px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(215, 188, 138, 0.28);
+  background: rgba(18, 16, 14, 0.96);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.nac-intel-palette-input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #f9f9f7;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nac-intel-palette-list {
+  max-height: 320px;
+  overflow: auto;
+  padding: 0.4rem;
+}
+
+.nac-intel-palette-item {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: rgba(249, 249, 247, 0.78);
+  font: inherit;
+  font-size: 0.86rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.nac-intel-palette-item.is-active,
+.nac-intel-palette-item:hover {
+  background: rgba(215, 188, 138, 0.14);
+  color: #f5e6c8;
+}
+
+.nac-intel-palette-empty {
+  padding: 1rem;
+  color: rgba(249, 249, 247, 0.45);
+  font-size: 0.84rem;
+}
+
 .nac-intel-section-intro {
   margin: 0 0 0.25rem;
 }

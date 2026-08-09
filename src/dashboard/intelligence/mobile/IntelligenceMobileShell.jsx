@@ -6,7 +6,9 @@ import { PERMISSIONS } from "../../config/rbac";
 import {
   INTELLIGENCE_TABS,
   MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS,
+  getIntelligenceSecondaryTabs,
   normalizeIntelligenceTabId,
+  resolveIntelligenceDestination,
 } from "../../navigation";
 import IntelligenceDashboardsTab from "./IntelligenceDashboardsTab";
 import IntelligenceVaultTab from "./IntelligenceVaultTab";
@@ -14,15 +16,14 @@ import IntelligenceMobileSettingsTab from "./IntelligenceMobileSettingsTab";
 import AskNacTab from "../AskNacTab";
 import "../../styles/intelligence-mobile.css";
 
-function applyLegacyTabHints(rawTab, setSalesSection, setRestaurantSection) {
+function applySalesSectionHint(rawTab, setSalesSection) {
   const raw = String(rawTab || "").toLowerCase();
   if (raw === "imports" || raw === "foodics") setSalesSection("upload");
-  if (raw === "operations") setRestaurantSection("operations");
 }
 
 function firstVisibleDashboardTab(visibleIds) {
   const hit = MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS.find((id) => visibleIds.includes(id));
-  return hit || visibleIds[0] || "executive";
+  return hit || visibleIds[0] || "operations";
 }
 
 export default function IntelligenceMobileShell({
@@ -32,12 +33,15 @@ export default function IntelligenceMobileShell({
   onAskNacFromSales,
   salesSection,
   setSalesSection,
-  restaurantSection,
-  setRestaurantSection,
 }) {
   const rbac = useRbac();
   const [mobileTab, setMobileTab] = useState("ask");
-  const [dashboardTab, setDashboardTab] = useState("executive");
+  const [dashboardTab, setDashboardTab] = useState("operations");
+  const [secondaryByPrimary, setSecondaryByPrimary] = useState({
+    operations: "overview",
+    commercial: "sales",
+    market: "visual",
+  });
 
   const visibleIntelligenceTabs = useMemo(
     () => INTELLIGENCE_TABS.filter((tab) => rbac.canAccessIntelligenceTab(tab.id)),
@@ -49,6 +53,20 @@ export default function IntelligenceMobileShell({
     [visibleIntelligenceTabs],
   );
 
+  const secondaryTabs = useMemo(() => {
+    const tabs = getIntelligenceSecondaryTabs(dashboardTab);
+    return tabs.filter((tab) =>
+      rbac.canAccessIntelligenceSecondary
+        ? rbac.canAccessIntelligenceSecondary(dashboardTab, tab.id)
+        : true,
+    );
+  }, [dashboardTab, rbac]);
+
+  const activeSecondary =
+    secondaryTabs.find((tab) => tab.id === secondaryByPrimary[dashboardTab])?.id ||
+    secondaryTabs[0]?.id ||
+    null;
+
   useEffect(() => {
     if (!visibleDashboardTabs.length) return;
     if (!visibleDashboardTabs.includes(dashboardTab)) {
@@ -56,14 +74,36 @@ export default function IntelligenceMobileShell({
     }
   }, [dashboardTab, visibleDashboardTabs]);
 
+  useEffect(() => {
+    if (!secondaryTabs.length || !activeSecondary) return;
+    if (!secondaryTabs.some((tab) => tab.id === activeSecondary)) {
+      setSecondaryByPrimary((prev) => ({
+        ...prev,
+        [dashboardTab]: secondaryTabs[0].id,
+      }));
+    }
+  }, [activeSecondary, dashboardTab, secondaryTabs]);
+
   const handleDashboardTabChange = useCallback(
     (nextTab) => {
-      const normalized = normalizeIntelligenceTabId(nextTab);
-      applyLegacyTabHints(normalized, setSalesSection, setRestaurantSection);
-      setDashboardTab(normalized);
+      const raw = String(nextTab || "").toLowerCase();
+      applySalesSectionHint(raw, setSalesSection);
+      if (INTELLIGENCE_TABS.some((tab) => tab.id === raw)) {
+        setDashboardTab(raw);
+        return;
+      }
+      const dest = resolveIntelligenceDestination(nextTab);
+      setDashboardTab(dest.primary);
+      if (dest.secondary) {
+        setSecondaryByPrimary((prev) => ({ ...prev, [dest.primary]: dest.secondary }));
+      }
     },
-    [setRestaurantSection, setSalesSection],
+    [setSalesSection],
   );
+
+  const handleSecondaryTabChange = useCallback((nextSecondary) => {
+    setSecondaryByPrimary((prev) => ({ ...prev, [dashboardTab]: nextSecondary }));
+  }, [dashboardTab]);
 
   const handleAskNacFromSalesMobile = useCallback(
     (question) => {
@@ -74,6 +114,15 @@ export default function IntelligenceMobileShell({
   );
 
   const handleMobileNavigate = useCallback((sectionId) => {
+    const dest = resolveIntelligenceDestination(sectionId);
+    if (dest.primary !== "ask" && MOBILE_INTELLIGENCE_DASHBOARD_TAB_IDS.includes(dest.primary)) {
+      setDashboardTab(dest.primary);
+      if (dest.secondary) {
+        setSecondaryByPrimary((prev) => ({ ...prev, [dest.primary]: dest.secondary }));
+      }
+      setMobileTab("dashboards");
+      return;
+    }
     setMobileTab(sectionId);
   }, []);
 
@@ -120,17 +169,18 @@ export default function IntelligenceMobileShell({
 
         {mobileTab === "dashboards" ? (
           <IntelligenceDashboardsTab
-            activeDashboardTab={dashboardTab}
+            activeDashboardTab={normalizeIntelligenceTabId(dashboardTab)}
             onDashboardTabChange={handleDashboardTabChange}
             visibleDashboardTabs={visibleDashboardTabs}
+            secondaryTab={activeSecondary}
+            onSecondaryTabChange={handleSecondaryTabChange}
+            visibleSecondaryTabs={secondaryTabs.map((tab) => tab.id)}
             salesSection={salesSection}
-            restaurantSection={restaurantSection}
             onAskNacFromSales={handleAskNacFromSalesMobile}
           />
         ) : null}
 
         {mobileTab === "vault" ? <IntelligenceVaultTab session={session} /> : null}
-
         {mobileTab === "settings" ? (
           <IntelligenceMobileSettingsTab showExecutiveExport={showExecutiveExport} />
         ) : null}

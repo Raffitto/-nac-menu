@@ -263,7 +263,7 @@ export default function AIInsights() {
       <PlatformStatusBanner platformStatus={platformStatus} />
 
       <p className="cr-teaser-link" style={{ marginTop: 0 }}>
-        Open Intelligence → Competitive Watch for competitor reputation.
+        Open Intelligence → Market → Competitors for competitor reputation.
       </p>
 
       {/* Filters */}
