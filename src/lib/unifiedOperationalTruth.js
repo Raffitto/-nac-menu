@@ -326,19 +326,72 @@ function formatTrustForDisplay(trust) {
   };
 }
 
+const inflightUnifiedTruth = new Map();
+
+function unifiedTruthCacheKey(filters = {}) {
+  const hours = filters.timeRangeHours ?? rangeToHours(filters.selectedRange || "today");
+  return [
+    filters.branch ?? "all",
+    hours,
+    filters.selectedRange || "today",
+    filters.language || "all",
+    filters.shift || "all",
+    filters.eventType || "all",
+    filters.dayType || "all",
+    filters.role || "all",
+  ].join("|");
+}
+
 /**
  * Canonical fetch — all dashboards must use this (not raw BI RPC paths).
+ * Dedupes concurrent identical loads (RBAC profile settle used to double-fire Overview).
  */
-export async function fetchUnifiedOperationalTruth(supabase, filters = {}) {
+export async function fetchUnifiedOperationalTruth(supabase, filters = {}, options = {}) {
   const hours = filters.timeRangeHours ?? rangeToHours(filters.selectedRange || "today");
-  const raw = await fetchUnifiedOperationalAnalytics(supabase, filters);
-  const data = applyTruthToBiPayload(raw.data, { hours });
-  const truth = data._truth || buildOperationalTruth(data, { hours });
+  const key = unifiedTruthCacheKey({ ...filters, timeRangeHours: hours });
+  const existing = inflightUnifiedTruth.get(key);
+  if (existing) {
+    if (typeof options.onTier1Partial === "function") {
+      existing.partialListeners.add(options.onTier1Partial);
+    }
+    return existing.promise;
+  }
 
-  return {
-    ...raw,
-    data,
-    truth,
-    operationalTrust: formatTrustForDisplay(raw.operationalTrust),
+  const partialListeners = new Set();
+  if (typeof options.onTier1Partial === "function") {
+    partialListeners.add(options.onTier1Partial);
+  }
+
+  const multicastPartial = (partial) => {
+    partialListeners.forEach((fn) => {
+      try {
+        fn(partial);
+      } catch {
+        /* ignore listener errors */
+      }
+    });
   };
+
+  const promise = (async () => {
+    const raw = await fetchUnifiedOperationalAnalytics(supabase, filters, {
+      ...options,
+      onTier1Partial: multicastPartial,
+    });
+    const data = applyTruthToBiPayload(raw.data, { hours });
+    const truth = data._truth || buildOperationalTruth(data, { hours });
+
+    return {
+      ...raw,
+      data,
+      truth,
+      operationalTrust: formatTrustForDisplay(raw.operationalTrust),
+    };
+  })();
+
+  inflightUnifiedTruth.set(key, { promise, partialListeners });
+  try {
+    return await promise;
+  } finally {
+    inflightUnifiedTruth.delete(key);
+  }
 }

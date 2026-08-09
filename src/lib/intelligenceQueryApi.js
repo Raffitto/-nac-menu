@@ -60,19 +60,52 @@ function normalizeRpcPayload(data) {
   return data;
 }
 
-async function rpcBiDashboard(supabase, rpcName, params) {
-  const { data, error } = await supabase.rpc(rpcName, params);
-  if (error) return { payload: null, error };
-  const payload = normalizeRpcPayload(data);
-  if (!payload || typeof payload !== "object") return { payload: null, error: null };
-  return { payload, error: null };
+async function rpcBiDashboard(supabase, rpcName, params, { softTimeoutMs = 0 } = {}) {
+  const rpcPromise = supabase.rpc(rpcName, params).then(({ data, error }) => {
+    if (error) return { payload: null, error };
+    const payload = normalizeRpcPayload(data);
+    if (!payload || typeof payload !== "object") return { payload: null, error: null };
+    return { payload, error: null };
+  });
+
+  if (!(Number(softTimeoutMs) > 0)) {
+    return rpcPromise;
+  }
+
+  let timer;
+  const timeoutPromise = new Promise((resolve) => {
+    timer = setTimeout(
+      () =>
+        resolve({
+          payload: null,
+          error: {
+            message: "statement timeout",
+            code: "57014",
+            softTimeout: true,
+          },
+        }),
+      softTimeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([rpcPromise, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
+
+/** Today BI RPC often scans raw menu_events for ~8s then statement-timeouts. Fail soft sooner. */
+export const BI_TODAY_SOFT_TIMEOUT_MS = 2200;
 
 /**
  * BI dashboard with rollup routing, false-zero fallbacks, and client menu_events aggregation.
  * @returns {{ data, partial, note, liveFallback, menuDataEmpty }}
  */
-export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } = {}) {
+export async function fetchBiDashboard(
+  supabase,
+  { branch = null, hours = 24, softTimeoutMs, deferClientPatches = false } = {},
+) {
   if (!supabase) {
     return {
       data: EMPTY_BI_DASHBOARD,
@@ -88,11 +121,25 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
   const params = { p_branch: pBranch, p_hours: pHours };
   const useRollup = biRollupForHours(pHours);
   const primaryRpc = useRollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
+  const resolvedSoftTimeout =
+    softTimeoutMs != null
+      ? softTimeoutMs
+      : !useRollup && pHours <= 24
+        ? BI_TODAY_SOFT_TIMEOUT_MS
+        : 0;
 
-  devLog("[fetchBiDashboard]", { phase: "rpc_start", rpc: primaryRpc, params, useRollup });
+  devLog("[fetchBiDashboard]", {
+    phase: "rpc_start",
+    rpc: primaryRpc,
+    params,
+    useRollup,
+    softTimeoutMs: resolvedSoftTimeout,
+  });
 
   const rpcStarted = Date.now();
-  let { payload, error } = await rpcBiDashboard(supabase, primaryRpc, params);
+  let { payload, error } = await rpcBiDashboard(supabase, primaryRpc, params, {
+    softTimeoutMs: resolvedSoftTimeout,
+  });
   let rpcTimingsMs = Date.now() - rpcStarted;
   const primaryRpcEmpty = isBiTotalsEmpty(payload);
 
@@ -198,11 +245,17 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
     error = null;
   } else if (error && isTimeoutError(error) && !useRollup) {
+    const rollupStarted = Date.now();
     const rollupRes = await rpcBiDashboard(supabase, "get_bi_dashboard_from_rollup", params);
+    rpcTimingsMs += Date.now() - rollupStarted;
     if (rollupRes.payload && !isBiTotalsEmpty(rollupRes.payload)) {
       payload = rollupRes.payload;
       partial = true;
-      note = "Loaded from daily rollup after timeout. Item-level charts may be limited.";
+      usedFallback = true;
+      dataSource = "rollup";
+      note = error?.softTimeout
+        ? "Loaded from daily rollup (live BI slow). Item-level charts may be limited."
+        : "Loaded from daily rollup after timeout. Item-level charts may be limited.";
       error = null;
     }
   }
@@ -211,7 +264,8 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     throw error;
   }
 
-  if (isBiTotalsEmpty(payload)) {
+  // Client menu_events scans (up to 12k rows) are Tier-2 — never block Overview KPI paint.
+  if (!deferClientPatches && isBiTotalsEmpty(payload)) {
     const clientStarted = Date.now();
     const clientPayload = await fetchBiFromMenuEvents(supabase, { branch: pBranch, hours: pHours });
     rpcTimingsMs += Date.now() - clientStarted;
@@ -228,7 +282,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  if (payload && biTopItemsNeedsRefresh(payload)) {
+  if (!deferClientPatches && payload && biTopItemsNeedsRefresh(payload)) {
     const detail = await fetchBiItemDetailFromMenuEvents(supabase, {
       branch: pBranch,
       hours: pHours,
@@ -247,7 +301,7 @@ export async function fetchBiDashboard(supabase, { branch = null, hours = 24 } =
     }
   }
 
-  if (payload) {
+  if (!deferClientPatches && payload) {
     const sessionRes = await applySessionQualityPatch(supabase, {
       branch: pBranch,
       hours: pHours,

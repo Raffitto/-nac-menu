@@ -27,6 +27,7 @@ import { buildAndPublishTruthValidation } from "../../lib/truthValidationRegistr
 import { applyOperationalIntegrityToPayload } from "../../lib/operationalMetricsIntegrity";
 import { getMenuTrackingDiagnostics } from "../../lib/menuTrackingDiagnostics";
 import { getPipelineDiagnostics } from "../../lib/pipelineDiagnostics";
+import { markBoot } from "../../lib/bootTelemetry";
 import {
   cacheKey,
   peekCachedIntelligence,
@@ -157,7 +158,9 @@ export function useMenuBiDashboard(options = {}) {
       try {
         const sessionOk = Boolean(rbac?.session);
         if (!sessionOk) {
+          markBoot("tier1_get_session_start");
           const { data: sessionData } = await supabase.auth.getSession();
+          markBoot("tier1_get_session_done");
           if (!sessionData?.session) {
             setNeedsAuth(true);
             setData(null);
@@ -174,42 +177,62 @@ export function useMenuBiDashboard(options = {}) {
         if (force) invalidateIntelligenceCache(biCacheKey);
 
         const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
-        const result = await fetchUnifiedOperationalTruth(supabase, {
-          ...(filters || {}),
-          branch: effectiveBranch,
-          timeRangeHours: hours,
-        });
+        markBoot("tier1_fetch_start");
 
-        const normalized = applyOperationalIntegrityToPayload(
-          result?.data || normalizeBiDashboardPayload(result?.data, { hours }),
-          { hours, branch: effectiveBranch },
+        const buildPkg = (result, { tier1Partial = false } = {}) => {
+          const normalized = applyOperationalIntegrityToPayload(
+            result?.data || normalizeBiDashboardPayload(result?.data, { hours }),
+            { hours, branch: effectiveBranch },
+          );
+          const sufficiency =
+            result?.sufficiency || assessMenuBiSufficiency(normalized, rangeContract);
+          const truthPkg = buildAndPublishTruthValidation({
+            biData: normalized,
+            rangeContract,
+            dataSource: result?.dataSource,
+            liveFallback: result?.liveFallback,
+            partial: result?.partial,
+            sufficiency,
+            tracking: getMenuTrackingDiagnostics(),
+            fetchHistory: getPipelineDiagnostics().fetchHistory,
+          });
+          return {
+            normalized: { ...normalized, _tier1Partial: tier1Partial || undefined },
+            truth: result?.truth || normalized?._truth || null,
+            partial: Boolean(result?.partial || tier1Partial),
+            note: result?.note || null,
+            opsNotes: result?.opsNotes || [],
+            liveFallback: Boolean(result?.liveFallback),
+            menuDataEmpty: Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)),
+            operationalTrust: result?.operationalTrust || null,
+            truthValidation: truthPkg,
+          };
+        };
+
+        const result = await fetchUnifiedOperationalTruth(
+          supabase,
+          {
+            ...(filters || {}),
+            branch: effectiveBranch,
+            timeRangeHours: hours,
+          },
+          {
+            deferClientPatches: true,
+            onTier1Partial: (partial) => {
+              // Paint KPI cards as soon as session analytics lands; keep refreshing for full BI.
+              if (dataRef.current && !dataRef.current._tier1Partial && !force) return;
+              markBoot("tier1_session_ready");
+              const earlyPkg = buildPkg(partial, { tier1Partial: true });
+              applyPackage(earlyPkg, setters);
+              setLoading(false);
+              setRefreshing(true);
+            },
+          },
         );
 
-        const sufficiency =
-          result?.sufficiency || assessMenuBiSufficiency(normalized, rangeContract);
+        markBoot("tier1_full_ready");
 
-        const truthPkg = buildAndPublishTruthValidation({
-          biData: normalized,
-          rangeContract,
-          dataSource: result?.dataSource,
-          liveFallback: result?.liveFallback,
-          partial: result?.partial,
-          sufficiency,
-          tracking: getMenuTrackingDiagnostics(),
-          fetchHistory: getPipelineDiagnostics().fetchHistory,
-        });
-
-        const pkg = {
-          normalized,
-          truth: result?.truth || normalized?._truth || null,
-          partial: Boolean(result?.partial),
-          note: result?.note || null,
-          opsNotes: result?.opsNotes || [],
-          liveFallback: Boolean(result?.liveFallback),
-          menuDataEmpty: Boolean(result?.menuDataEmpty ?? isMenuBiFullyEmpty(normalized)),
-          operationalTrust: result?.operationalTrust || null,
-          truthValidation: truthPkg,
-        };
+        const pkg = buildPkg(result, { tier1Partial: false });
 
         setCachedIntelligence(biCacheKey, pkg, BI_TTL_MS);
         applyPackage(pkg, setters);
@@ -217,14 +240,14 @@ export function useMenuBiDashboard(options = {}) {
 
         logBiIntelligenceDiagnostics({
           source,
-          biData: normalized,
+          biData: pkg.normalized,
           hours,
           selectedRange: filters?.selectedRange || "today",
           liveFallback: result?.liveFallback,
           partial: result?.partial,
           dataSource: result?.dataSource,
-          healthScore: truthPkg?.healthScore?.score,
-          menuConfidence: truthPkg?.menuConfidence?.level,
+          healthScore: pkg.truthValidation?.healthScore?.score,
+          menuConfidence: pkg.truthValidation?.menuConfidence?.level,
         });
       } catch (e) {
         if (!dataRef.current && !cached?.normalized) {

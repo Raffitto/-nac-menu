@@ -295,22 +295,84 @@ export function resolveOperationalTrust({
   };
 }
 
+function buildTier1PartialFromSession(aggregates, hours) {
+  if (!aggregates) return null;
+  const earlyRaw = mergeSessionMasterWithBiRaw({}, aggregates, hours);
+  const normalized = normalizeBiDashboardPayload(earlyRaw, { hours });
+  if (isBiTotalsEmpty(normalized)) return null;
+  return {
+    data: normalized,
+    partial: true,
+    note: null,
+    opsNotes: [],
+    liveFallback: false,
+    menuDataEmpty: false,
+    dataSource: "session_tier1",
+    operationalTrust: resolveOperationalTrust({
+      sessionPartial: true,
+      biPartial: false,
+      liveFallback: false,
+      dataSource: "session_tier1",
+      sessionEvents: Number(aggregates.total_events) || 0,
+      biEvents: 0,
+    }),
+  };
+}
+
 /**
  * Single fetch for Overview, Menu Intelligence, Restaurant Intelligence, and shared BI context.
+ * @param {object} [options]
+ * @param {(partial: object) => void} [options.onTier1Partial] Progressive KPI paint (session-first).
+ * @param {boolean} [options.deferClientPatches=true] Skip blocking 12k menu_events scans on critical path.
  */
-export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}) {
+export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, options = {}) {
+  const { onTier1Partial = null, deferClientPatches = true } = options;
   const hours = filters.timeRangeHours ?? rangeToHours(filters.selectedRange || "today");
   const branch = filters.branch ?? null;
 
-  let sessionResult = null;
-  let sessionError = null;
-  try {
-    sessionResult = await fetchSessionAnalytics(supabase, filters);
-  } catch (e) {
-    sessionError = e;
+  // Parallelize independent masters — do not wait for session quality scans before BI.
+  const sessionPromise = fetchSessionAnalytics(supabase, filters, {
+    skipFeed: true,
+    skipLiveQuality: true,
+  });
+  const biPromise = fetchBiDashboard(supabase, {
+    branch,
+    hours,
+    deferClientPatches,
+  });
+
+  // Progressive Tier-1: paint executive KPIs as soon as session analytics resolves (~300–500ms).
+  if (typeof onTier1Partial === "function") {
+    sessionPromise
+      .then((sessionResult) => {
+        const partial = buildTier1PartialFromSession(sessionResult?.aggregates, hours);
+        if (partial) onTier1Partial(partial);
+      })
+      .catch(() => {});
   }
 
-  const biResult = await fetchBiDashboard(supabase, { branch, hours });
+  const [sessionSettled, biSettled] = await Promise.allSettled([sessionPromise, biPromise]);
+
+  let sessionResult = null;
+  let sessionError = null;
+  if (sessionSettled.status === "fulfilled") {
+    sessionResult = sessionSettled.value;
+  } else {
+    sessionError = sessionSettled.reason;
+  }
+
+  const biResult =
+    biSettled.status === "fulfilled"
+      ? biSettled.value
+      : {
+          data: null,
+          partial: true,
+          note: biSettled.reason?.message || "BI dashboard unavailable",
+          opsNotes: [],
+          liveFallback: false,
+          menuDataEmpty: true,
+        };
+
   const aggregates = sessionResult?.aggregates || null;
 
   const biPayloadRaw = biResult?.data
@@ -330,7 +392,8 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}) {
 
   let opsNotes = [...(biResult?.opsNotes || [])];
 
-  if (supabase && biEngagementDetailNeedsRefresh(mergedRaw)) {
+  // Item/chart detail from live menu_events is Tier-2 — never hold KPI cards on it.
+  if (!deferClientPatches && supabase && biEngagementDetailNeedsRefresh(mergedRaw)) {
     try {
       const detail = await fetchBiItemDetailFromMenuEvents(supabase, { branch, hours });
       if (detail) {

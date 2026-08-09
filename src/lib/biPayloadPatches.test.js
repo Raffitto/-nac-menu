@@ -58,6 +58,25 @@ describe("biPayloadPatches month rollup preservation", () => {
     expect(result.funnel.qr_scans).toBe(10);
   });
 
+  test("today with healthy session quality does not force live menu_events scan", async () => {
+    const supabase = {};
+    const healthy = {
+      total_sessions: 12,
+      funnel: { qr_scans: 12 },
+      session_quality: { bounce: 2, casual: 3, engaged: 4, deep: 2, power: 1 },
+      avg_time_spent: 90,
+      bounce_sessions: 2,
+      deep_sessions: 2,
+    };
+    const result = await applySessionQualityToAggregates(
+      supabase,
+      { p_branch: null, p_hours: 24 },
+      healthy,
+    );
+    expect(fetchBiSessionQualityFromMenuEvents).not.toHaveBeenCalled();
+    expect(result.total_sessions).toBe(12);
+  });
+
   test("applyLiveSessionQualityFields does not change session totals", () => {
     const out = applyLiveSessionQualityFields(rollupAggregates, livePatch);
     expect(out.total_sessions).toBe(200);

@@ -12,7 +12,6 @@ import {
   sessionQualityTierSum,
 } from "./sessionQualityAggregate";
 import { MAX_CREDIBLE_AVG_TIME_SPENT_SEC } from "./sessionMetricsConfig";
-import { MONTH_HOURS } from "../dashboard/utils/rangeState";
 import {
   applyCanonicalMenuSessionsToPayload,
   enforceMenuFunnelIntegrity,
@@ -87,10 +86,10 @@ export async function applySessionQualityToAggregates(supabase, params, aggregat
   if (!supabase || !params) return aggregates;
 
   const hours = Number(params.p_hours);
-  const shouldRefresh =
-    sessionMetricsNeedLiveRefresh(aggregates) ||
-    hours <= 168 ||
-    hours === MONTH_HOURS;
+  // Only scan live menu_events when RPC/rollup quality is missing or incredible.
+  // Do NOT force a 12k-row client scan on every Today/7D load — that blocked Tier-1 for ~1s+
+  // and delayed get_bi_dashboard behind a sequential waterfall.
+  const shouldRefresh = sessionMetricsNeedLiveRefresh(aggregates);
 
   if (!shouldRefresh) return aggregates;
 

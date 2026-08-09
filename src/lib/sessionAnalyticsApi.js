@@ -33,10 +33,11 @@ function normalizeFeedRow(row) {
   };
 }
 
-async function mergePayload(supabase, params, summary, feedRows) {
+async function mergePayload(supabase, params, summary, feedRows, options = {}) {
+  const { skipLiveQuality = false } = options;
   const data = summary || {};
   let aggregates = mapBiToSessionAggregates(data, { hours: params.p_hours });
-  if (supabase && params) {
+  if (supabase && params && !skipLiveQuality) {
     aggregates = await applySessionQualityToAggregates(supabase, params, aggregates);
   }
   return {
@@ -62,10 +63,15 @@ async function fetchFeed(supabase, params) {
 
 /**
  * RPC-first Session Analytics — rollup for month, bounded feed query, no browser scans.
+ * @param {object} [options]
+ * @param {boolean} [options.skipFeed=false] Skip activity feed (Tier-1 / overview path).
+ * @param {boolean} [options.skipLiveQuality=false] Skip client menu_events quality scan.
  */
-export async function fetchSessionAnalytics(supabase, filters) {
+export async function fetchSessionAnalytics(supabase, filters, options = {}) {
+  const { skipFeed = false, skipLiveQuality = false } = options;
   const params = rpcParamsFromFilters(filters);
   const useRollup = params.p_hours >= 168 || params.p_hours === MONTH_HOURS;
+  const mergeOpts = { skipLiveQuality };
 
   if (useRollup) {
     const [rollupRes, feed] = await Promise.all([
@@ -78,16 +84,16 @@ export async function fetchSessionAnalytics(supabase, filters) {
         p_day_type: params.p_day_type,
         p_role: params.p_role,
       }),
-      fetchFeed(supabase, params).catch(() => []),
+      skipFeed ? Promise.resolve([]) : fetchFeed(supabase, params).catch(() => []),
     ]);
 
     if (rollupRes.error && isTimeoutError(rollupRes.error)) {
-      return fetchSessionAnalyticsFallback(supabase, params);
+      return fetchSessionAnalyticsFallback(supabase, params, mergeOpts);
     }
     if (rollupRes.error) throw rollupRes.error;
 
     const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
-    let result = await mergePayload(supabase, params, summary, feed);
+    let result = await mergePayload(supabase, params, summary, feed, mergeOpts);
     let opsNotes = [];
     if (!result.aggregates?.total_events) {
       const bi = await fetchBiDashboard(supabase, {
@@ -96,7 +102,7 @@ export async function fetchSessionAnalytics(supabase, filters) {
       });
       if (bi?.data && !isBiTotalsEmpty(bi.data)) {
         result = {
-          ...(await mergePayload(supabase, params, bi.data, feed)),
+          ...(await mergePayload(supabase, params, bi.data, feed, mergeOpts)),
           partial: true,
           note: bi.note || null,
           opsNotes: bi.opsNotes || [],
@@ -108,7 +114,7 @@ export async function fetchSessionAnalytics(supabase, filters) {
         );
         result.partial = true;
       }
-    } else if (sessionQualityIsEmpty(result.aggregates)) {
+    } else if (!skipLiveQuality && sessionQualityIsEmpty(result.aggregates)) {
       opsNotes = appendOpsNote(
         opsNotes,
         "Session quality computed from live menu_events.",
@@ -127,22 +133,22 @@ export async function fetchSessionAnalytics(supabase, filters) {
 
   const [summaryRes, feed] = await Promise.all([
     supabase.rpc("get_session_analytics", params),
-    fetchFeed(supabase, params).catch(() => []),
+    skipFeed ? Promise.resolve([]) : fetchFeed(supabase, params).catch(() => []),
   ]);
 
   if (summaryRes.error && isTimeoutError(summaryRes.error)) {
-    return fetchSessionAnalyticsFallback(supabase, params);
+    return fetchSessionAnalyticsFallback(supabase, params, mergeOpts);
   }
   if (summaryRes.error) throw summaryRes.error;
 
   const summary = Array.isArray(summaryRes.data) ? summaryRes.data[0] : summaryRes.data;
-  const result = await mergePayload(supabase, params, summary, feed);
+  const result = await mergePayload(supabase, params, summary, feed, mergeOpts);
   delete summary?.recent_feed;
   const { userNote, opsNotes } = partitionBiNotes(result.note, { partial: result.partial });
   return { ...result, note: userNote, opsNotes };
 }
 
-async function fetchSessionAnalyticsFallback(supabase, params) {
+async function fetchSessionAnalyticsFallback(supabase, params, mergeOpts = {}) {
   const fallbackHours = 168;
   const [rollupRes, feed] = await Promise.all([
     supabase.rpc("get_session_analytics_from_rollup", {
@@ -154,12 +160,20 @@ async function fetchSessionAnalyticsFallback(supabase, params) {
       p_day_type: params.p_day_type,
       p_role: params.p_role,
     }),
-    fetchFeed(supabase, { ...params, p_hours: fallbackHours }).catch(() => []),
+    mergeOpts.skipFeed
+      ? Promise.resolve([])
+      : fetchFeed(supabase, { ...params, p_hours: fallbackHours }).catch(() => []),
   ]);
 
   if (!rollupRes.error && rollupRes.data) {
     const summary = Array.isArray(rollupRes.data) ? rollupRes.data[0] : rollupRes.data;
-    const merged = await mergePayload(supabase, { ...params, p_hours: fallbackHours }, summary, feed);
+    const merged = await mergePayload(
+      supabase,
+      { ...params, p_hours: fallbackHours },
+      summary,
+      feed,
+      mergeOpts,
+    );
     const { userNote, opsNotes } = partitionBiNotes(
       "Showing last 7 days (aggregated). Narrow branch or run session_analytics_rollup.sql.",
       { partial: true, useRollup: true },
@@ -177,7 +191,13 @@ async function fetchSessionAnalyticsFallback(supabase, params) {
     hours: fallbackHours,
   });
   if (!biRes?.data) throw new Error("BI fallback empty");
-  const merged = await mergePayload(supabase, { ...params, p_hours: fallbackHours }, biRes.data, []);
+  const merged = await mergePayload(
+    supabase,
+    { ...params, p_hours: fallbackHours },
+    biRes.data,
+    [],
+    mergeOpts,
+  );
   const { userNote, opsNotes } = partitionBiNotes(
     "Showing last 7 days (fallback). Run session_analytics_rollup.sql in Supabase.",
     { partial: true },
