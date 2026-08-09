@@ -682,10 +682,19 @@ async function extractText(download: { buffer: ArrayBuffer; extension: string; f
 
   if (extension === "docx") {
     const mammoth = await import("npm:mammoth@1.12.0");
-    const arrayBuffer = download.buffer instanceof ArrayBuffer
-      ? download.buffer
-      : new Uint8Array(download.buffer as ArrayBufferLike).buffer;
-    const result = await mammoth.extractRawText({ arrayBuffer });
+    // Deno npm mammoth accepts Node-style { buffer: Uint8Array }. { arrayBuffer } alone
+    // can throw "Could not find file in options" and stall Logbook catch-up.
+    const bytes = download.buffer instanceof ArrayBuffer
+      ? new Uint8Array(download.buffer)
+      : new Uint8Array(download.buffer as ArrayBufferLike);
+    let result: { value?: string; messages?: Array<{ message?: string }> };
+    try {
+      result = await mammoth.extractRawText({ buffer: bytes });
+    } catch (err) {
+      const message = String((err as Error)?.message || err);
+      if (!/Could not find file in options/i.test(message)) throw err;
+      result = await mammoth.extractRawText({ arrayBuffer: bytes.buffer });
+    }
     return {
       text: String(result.value || ""),
       sections: [{ label: "Document text", text: String(result.value || "") }],
