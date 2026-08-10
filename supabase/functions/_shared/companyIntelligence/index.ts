@@ -32,3 +32,4 @@ export * from "./claimAssembly.ts";
 export * from "./deterministicSynthesis.ts";
 export * from "./conversationFollowUp.ts";
 export * from "./orchestrationSpine.ts";
+export * from "./vaultCapabilityExecutor.ts";

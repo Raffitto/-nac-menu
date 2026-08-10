@@ -12,6 +12,7 @@ import {
   isManagementIntelligenceQuestion,
   runCompanyIntelligenceOrchestration,
 } from "./companyIntelligence/orchestrationSpine.ts";
+import { createVaultCapabilityExecutor } from "./companyIntelligence/vaultCapabilityExecutor.ts";
 import type { StructuredConversationState } from "./companyIntelligence/conversationState.ts";
 import {
   compareFoodicsTopItems,
@@ -1105,6 +1106,49 @@ export async function processAskNacOnEdge(
       fabricConversation?: StructuredConversationState;
     } | null)?.fabricConversation || null;
 
+    const vaultExecutor = createVaultCapabilityExecutor(async ({ vaultIntent, queryFocus, request }) => {
+      const vaultPeriod = request.currentPeriod
+        ? {
+          startDate: request.currentPeriod.startDate,
+          endDate: request.currentPeriod.endDate,
+          label: request.currentPeriod.label || null,
+          periodType: request.currentPeriod.semantic || "fabric_period",
+        }
+        : null;
+      const vaultCompare = request.currentPeriod && request.comparisonPeriod
+        ? {
+          current: {
+            startDate: request.currentPeriod.startDate,
+            endDate: request.currentPeriod.endDate,
+            label: request.currentPeriod.label || null,
+            periodType: request.currentPeriod.semantic || "fabric_period",
+          },
+          previous: {
+            startDate: request.comparisonPeriod.startDate,
+            endDate: request.comparisonPeriod.endDate,
+            label: request.comparisonPeriod.label || null,
+            periodType: request.comparisonPeriod.semantic || "fabric_compare_period",
+          },
+          isComparison: true,
+          autoAttached: true,
+        }
+        : null;
+      return await runQueryTool(supabase, vaultIntent, {
+        question: request.question,
+        branch: request.branchId,
+        branchMention: request.branchId,
+        filters: { ...mergedFilters, branch: request.branchId || mergedFilters.branch },
+        profile: profileHint,
+        vaultPeriod,
+        vaultCompare: queryFocus === "period_compare" || request.capability === "commercial.compare"
+          ? vaultCompare
+          : null,
+        queryFocus,
+        performanceOverview: queryFocus === "performance_overview",
+        userEmail: effectiveUserEmail,
+      }) as Record<string, unknown> | null;
+    });
+
     const spine = await runCompanyIntelligenceOrchestration({
       question: effectiveQuestion,
       branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
@@ -1116,8 +1160,7 @@ export async function processAskNacOnEdge(
         confidence: route.confidence,
         branchMention: route.branchMention,
       },
-      // Edge still uses mock-capable executor until vault adapter is injected per-capability;
-      // production vault tools remain available via legacy path for non-spine intents.
+      executor: vaultExecutor,
       mode: Deno.env.get("ASK_NAC_PLANNER_MODE") === "heuristic" ? "heuristic" : "auto",
     });
     managementPlannerMs = Math.round(performance.now() - spineStartedAt);
