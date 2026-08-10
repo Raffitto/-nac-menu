@@ -39,4 +39,28 @@ describe("coverageAwareness", () => {
     expect(assessment.completeness).toBe("unavailable");
     expect(assessment.confidence).toBe("low");
   });
+
+  test("one available day in a 10-day request is partial and not treated as complete", () => {
+    const assessment = assessPeriodCoverage({
+      requestedPeriod: {
+        startDate: "2026-06-11",
+        endDate: "2026-06-20",
+        label: "last 10 days",
+        periodType: "last_10_days",
+      },
+      aggregation: {
+        dayCount: 1,
+        dailyBreakdown: [{ date: "2026-06-20", totalSales: 5000 }],
+        totalSales: 5000,
+        salesCoverageStart: "2026-06-20",
+        salesCoverageEnd: "2026-06-20",
+      },
+    });
+    expect(assessment.completeness).toBe("partial");
+    expect(assessment.expectedDays).toBe(10);
+    expect(assessment.availableDays).toBe(1);
+    expect(assessment.missingDays).toBe(9);
+    expect(assessment.confidence).toBe("low");
+    expect(assessment.coverageNotes.some((n) => /Only 1 of 10 requested days/i.test(n))).toBe(true);
+  });
 });

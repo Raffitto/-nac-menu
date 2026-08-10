@@ -63,6 +63,8 @@ export function assessPeriodCoverage({ requestedPeriod = null, aggregation = nul
   let confidence = CONFIDENCE_LEVELS.LOW;
   let confidenceExplanation = "No structured cash-up facts matched the requested period.";
 
+  const missingDays = expectedDays > 0 ? Math.max(0, expectedDays - dayCount) : null;
+
   if (dayCount > 0) {
     const availableLabel = salesStart && salesEnd
       ? (salesStart === salesEnd ? salesStart : `${salesStart} – ${salesEnd}`)
@@ -76,8 +78,14 @@ export function assessPeriodCoverage({ requestedPeriod = null, aggregation = nul
       completeness = "partial";
       confidence = CONFIDENCE_LEVELS.MEDIUM;
       coverageNotes.push(
-        `Requested period: ${requestedLabel}. Available sales coverage: ${availableLabel} (${dayCount} of ~${expectedDays} calendar day(s)).`,
+        `Requested period: ${requestedLabel}. Available sales coverage: ${availableLabel} (${dayCount} of ${expectedDays} calendar day(s); ${missingDays} missing).`,
       );
+      if (dayCount === 1 && expectedDays >= 2) {
+        coverageNotes.push(
+          `Only 1 of ${expectedDays} requested days has structured data — do not treat this single-day result as the full ${requestedLabel} total.`,
+        );
+        confidence = CONFIDENCE_LEVELS.LOW;
+      }
       confidenceExplanation = `Sales coverage is partial — ${dayCount} cash-up day(s) found for a ${expectedDays}-day requested window.`;
     } else {
       completeness = dayCount >= 2 ? "complete" : "partial";
@@ -111,12 +119,16 @@ export function assessPeriodCoverage({ requestedPeriod = null, aggregation = nul
       coverageNotes,
       confidence,
       confidenceExplanation,
+      expectedDays: expectedDays || null,
+      availableDays: dayCount,
+      missingDays,
       dataConfidence: {
         level: confidence,
         explanation: confidenceExplanation,
         requestedPeriod: requestedLabel,
         availableDays: dayCount,
         expectedDays: expectedDays || null,
+        missingDays,
         salesCoverageStart: salesStart,
         salesCoverageEnd: salesEnd,
         deliveryOrderCoverageStart: deliveryOrderStart,
@@ -131,12 +143,16 @@ export function assessPeriodCoverage({ requestedPeriod = null, aggregation = nul
     coverageNotes: [`No cash-up data is available for ${requestedLabel} under current access scope.`],
     confidence,
     confidenceExplanation,
+    expectedDays: expectedDays || null,
+    availableDays: 0,
+    missingDays: expectedDays || null,
     dataConfidence: {
       level: confidence,
       explanation: confidenceExplanation,
       requestedPeriod: requestedLabel,
       availableDays: 0,
       expectedDays: expectedDays || null,
+      missingDays: expectedDays || null,
     },
   };
 }

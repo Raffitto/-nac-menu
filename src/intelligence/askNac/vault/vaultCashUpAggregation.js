@@ -180,6 +180,10 @@ export function aggregateCashUpFactsOverRange({
     ? dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date)
     : dates.filter((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders") != null);
 
+  const expectedDayCount = countCalendarDaysInRange(startDate, endDate);
+  const dayCount = dates.length;
+  const missingDayCount = expectedDayCount > 0 ? Math.max(0, expectedDayCount - dayCount) : 0;
+
   return {
     totalSales,
     totalGuests,
@@ -187,7 +191,11 @@ export function aggregateCashUpFactsOverRange({
     averageSpend,
     totalDeliverySales,
     totalDeliveryOrders,
-    dayCount: dates.length,
+    dayCount,
+    expectedDayCount,
+    missingDayCount,
+    requestedStartDate: startDate || null,
+    requestedEndDate: endDate || null,
     dailyBreakdown,
     salesCoverageStart: salesDates[0] || null,
     salesCoverageEnd: salesDates[salesDates.length - 1] || null,

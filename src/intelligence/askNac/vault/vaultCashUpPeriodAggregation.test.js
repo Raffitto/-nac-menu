@@ -2,6 +2,8 @@ import {
   parseVaultPeriodFromQuestion,
   parseVaultComparePeriodsFromQuestion,
   isVaultRangePeriod,
+  listPeriodDates,
+  isVaultCashUpAnalyticsPeriod,
 } from "./vaultPeriodParser";
 import {
   aggregateCashUpFactsOverRange,
@@ -14,6 +16,7 @@ import {
 } from "./vaultCashUpAggregation";
 import { CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS } from "./vaultSalesPerformanceIntelligence";
 import { buildCashUpPeriodAggregateAnswer } from "./vaultSalesPerformanceIntelligence";
+import { assessPeriodCoverage, buildCoverageAnswerLines } from "../coverage/coverageAwareness";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
 import { buildVaultAnswer } from "./vaultAnswerBuilder";
 import { READINESS } from "../readinessEngine";
@@ -68,6 +71,26 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(last7?.periodType).toBe("last_7_days");
     expect(past7?.periodType).toBe("last_7_days");
     expect(last7?.startDate).toBe("2026-06-14");
+    expect(listPeriodDates(last7)).toHaveLength(7);
+  });
+
+  test("parses last 10 days as exactly 10 calendar dates", () => {
+    const period = parseVaultPeriodFromQuestion("show sales last 10 days", REF);
+    expect(period?.periodType).toBe("last_10_days");
+    expect(period?.expectedDayCount).toBe(10);
+    expect(listPeriodDates(period)).toHaveLength(10);
+    expect(period?.startDate).toBe("2026-06-11");
+    expect(period?.endDate).toBe("2026-06-20");
+    expect(isVaultCashUpAnalyticsPeriod(period)).toBe(true);
+  });
+
+  test("parses yesterday and today", () => {
+    const yesterday = parseVaultPeriodFromQuestion("sales yesterday", REF);
+    const today = parseVaultPeriodFromQuestion("sales today", REF);
+    expect(yesterday?.startDate).toBe("2026-06-19");
+    expect(yesterday?.endDate).toBe("2026-06-19");
+    expect(today?.startDate).toBe("2026-06-20");
+    expect(today?.endDate).toBe("2026-06-20");
   });
 
   test("parses this month as month-to-date", () => {
@@ -77,15 +100,91 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(period?.endDate).toBe("2026-06-20");
   });
 
+  test("parses last month as previous calendar month", () => {
+    const period = parseVaultPeriodFromQuestion("sales last month", REF);
+    expect(period?.startDate).toBe("2026-05-01");
+    expect(period?.endDate).toBe("2026-05-31");
+    expect(isVaultCashUpAnalyticsPeriod(period)).toBe(true);
+  });
+
+  test("parses YTD from Jan 1 through reference day", () => {
+    const period = parseVaultPeriodFromQuestion("sales ytd", REF);
+    expect(period?.periodType).toBe("year_to_date");
+    expect(period?.startDate).toBe("2026-01-01");
+    expect(period?.endDate).toBe("2026-06-20");
+    expect(listPeriodDates(period).length).toBe(period.expectedDayCount);
+  });
+
   test("parses compare last 7 vs previous 7", () => {
     const compare = parseVaultComparePeriodsFromQuestion("compare last 7 days vs previous 7 days", REF);
     expect(compare?.current.periodType).toBe("last_7_days");
     expect(compare?.previous.periodType).toBe("previous_7_days");
     expect(compare?.previous.endDate).toBe("2026-06-13");
+    expect(compare.previous.endDate < compare.current.startDate).toBe(true);
+  });
+
+  test("parses compare last 10 vs previous 10 as non-overlapping", () => {
+    const compare = parseVaultComparePeriodsFromQuestion("compare last 10 days vs previous 10 days", REF);
+    expect(compare?.current.periodType).toBe("last_10_days");
+    expect(compare?.previous.periodType).toBe("previous_10_days");
+    expect(listPeriodDates(compare.current)).toHaveLength(10);
+    expect(listPeriodDates(compare.previous)).toHaveLength(10);
+    expect(compare.previous.endDate < compare.current.startDate).toBe(true);
   });
 });
 
 describe("aggregateCashUpFactsOverRange", () => {
+  test("average spend recomputes from aggregate sales/guests not average-of-averages", () => {
+    const factsByDate = {
+      "2026-06-18": [
+        dayFact("2026-06-18", "total_sales", 1000),
+        dayFact("2026-06-18", "guest_count", 10), // day avg 100
+      ],
+      "2026-06-19": [
+        dayFact("2026-06-19", "total_sales", 2000),
+        dayFact("2026-06-19", "guest_count", 40), // day avg 50
+      ],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-18",
+      endDate: "2026-06-19",
+      factsByDate,
+    });
+    expect(agg.totalSales).toBe(3000);
+    expect(agg.totalGuests).toBe(50);
+    // Aggregate ratio 60; average-of-daily-averages would be 75.
+    expect(agg.averageSpend).toBe(60);
+  });
+
+  test("partial coverage exposes expected vs available days for a 10-day request", () => {
+    const factsByDate = {
+      "2026-06-20": [dayFact("2026-06-20", "total_sales", 5000), dayFact("2026-06-20", "guest_count", 50)],
+    };
+    const period = parseVaultPeriodFromQuestion("sales last 10 days", REF);
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: period.startDate,
+      endDate: period.endDate,
+      factsByDate,
+    });
+    expect(agg.expectedDayCount).toBe(10);
+    expect(agg.dayCount).toBe(1);
+    expect(agg.missingDayCount).toBe(9);
+    expect(agg.totalSales).toBe(5000);
+
+    const answer = buildCashUpPeriodAggregateAnswer("sales last 10 days", agg, {
+      branchLabel: "Khobar",
+      periodLabel: "last 10 days",
+    });
+    const coverage = assessPeriodCoverage({ requestedPeriod: period, aggregation: agg });
+    const lines = buildCoverageAnswerLines(coverage);
+    expect(coverage.completeness).toBe("partial");
+    expect(coverage.availableDays).toBe(1);
+    expect(coverage.expectedDays).toBe(10);
+    expect(lines.some((l) => /Only 1 of 10 requested days/i.test(l))).toBe(true);
+    expect(answer).toMatch(/1 cash-up day/);
+    expect(answer).not.toMatch(/across 10 cash-up day/);
+  });
+
   test("aggregates sales, guests, and delivery across days", () => {
     const facts = buildRangeFacts();
     const factsByDate = groupCashUpFactsByBusinessDate(facts);
