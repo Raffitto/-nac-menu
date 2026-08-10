@@ -11,6 +11,7 @@ export type VaultPeriod = {
   isMonth?: boolean;
   isWeek?: boolean;
   isRange?: boolean;
+  expectedDayCount?: number;
 };
 
 const MONTH_MAP = Object.freeze({
@@ -141,17 +142,38 @@ function monthToDateBounds(referenceDate) {
   };
 }
 
-function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }) {
+function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }: {
+  endOffset?: number;
+  label?: string;
+  periodType?: string;
+}) {
+  const n = Math.max(1, Math.floor(Number(days) || 0));
   const end = shiftLocalDate(referenceDate, endOffset);
-  const start = shiftLocalDate(end, -(days - 1));
+  const start = shiftLocalDate(end, -(n - 1));
+  const startDate = isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate());
+  const endDate = isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate());
   return {
-    startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
-    endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
-    label,
-    periodType,
-    isSingleDay: false,
-    isRange: true,
+    startDate,
+    endDate,
+    label: label || `last ${n} days`,
+    periodType: periodType || `last_${n}_days`,
+    isSingleDay: n === 1 && startDate === endDate,
+    isRange: startDate !== endDate,
+    expectedDayCount: n,
   };
+}
+
+/** Inclusive calendar dates for a resolved period (does not collapse to available data). */
+export function listPeriodDates(period: Pick<VaultPeriod, "startDate" | "endDate"> | null | undefined) {
+  if (!period?.startDate || !period?.endDate || period.startDate > period.endDate) return [];
+  const dates: string[] = [];
+  let cursor = new Date(`${period.startDate}T12:00:00`);
+  const end = new Date(`${period.endDate}T12:00:00`);
+  while (cursor <= end) {
+    dates.push(isoDate(cursor.getFullYear(), cursor.getMonth() + 1, cursor.getDate()));
+    cursor = shiftLocalDate(cursor, 1);
+  }
+  return dates;
 }
 
 function previousCalendarWeekBounds(referenceDate) {
@@ -344,16 +366,18 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     if (compare?.current) return compare.current;
   }
 
-  if (/\b(last|past)\s+30\s+days?\b/.test(q)) {
-    return rollingRange(referenceDate, 30, { label: "last 30 days", periodType: "last_30_days" });
+  // Generic "last/past N days" (covers 7/10/14/30 and arbitrary N). Cap keeps planner bounded.
+  const lastN = q.match(/\b(last|past)\s+(\d{1,3})\s+days?\b/);
+  if (lastN) {
+    const n = Math.min(366, Math.max(1, Number(lastN[2])));
+    return rollingRange(referenceDate, n, {
+      label: `last ${n} days`,
+      periodType: `last_${n}_days`,
+    });
   }
 
-  if (/\b(last|past)\s+14\s+days?\b/.test(q) || /\b(last|past)\s+two\s+weeks?\b/.test(q)) {
+  if (/\b(last|past)\s+two\s+weeks?\b/.test(q)) {
     return rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
-  }
-
-  if (/\b(last|past)\s+7\s+days?\b/.test(q)) {
-    return rollingRange(referenceDate, 7, { label: "last 7 days", periodType: "last_7_days" });
   }
 
   if (/\bprevious\s+week\b/.test(q)) {
@@ -364,11 +388,39 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return rollingRange(referenceDate, 7, { endOffset: -1, label: "last week", periodType: "last_week" });
   }
 
+  if (/\btoday\b/.test(q)) {
+    const iso = isoDate(
+      referenceDate.getFullYear(),
+      referenceDate.getMonth() + 1,
+      referenceDate.getDate(),
+    );
+    const label = formatDayMonthLabel(
+      referenceDate.getFullYear(),
+      referenceDate.getMonth(),
+      referenceDate.getDate(),
+    );
+    return {
+      startDate: iso,
+      endDate: iso,
+      label,
+      periodType: "single_day",
+      isSingleDay: true,
+      expectedDayCount: 1,
+    };
+  }
+
   if (/\byesterday\b/.test(q)) {
     const day = shiftLocalDate(referenceDate, -1);
     const iso = isoDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
     const label = formatDayMonthLabel(day.getFullYear(), day.getMonth(), day.getDate());
-    return { startDate: iso, endDate: iso, label, periodType: "single_day", isSingleDay: true };
+    return {
+      startDate: iso,
+      endDate: iso,
+      label,
+      periodType: "single_day",
+      isSingleDay: true,
+      expectedDayCount: 1,
+    };
   }
 
   const explicitRange = parseExplicitDateRangeFromText(q, referenceDate);
@@ -410,15 +462,23 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthToDateBounds(referenceDate);
   }
 
+  if (/\blast\s+month\b/.test(q)) {
+    const shifted = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
+    return monthBounds(shifted.getFullYear(), shifted.getMonth());
+  }
+
   if (/\b(this year|year to date|year-to-date|ytd)\b/.test(q)) {
     const y = referenceDate.getFullYear();
+    const startDate = isoDate(y, 1, 1);
+    const endDate = isoDate(y, referenceDate.getMonth() + 1, referenceDate.getDate());
     return {
-      startDate: isoDate(y, 1, 1),
-      endDate: isoDate(y, referenceDate.getMonth() + 1, referenceDate.getDate()),
+      startDate,
+      endDate,
       label: `${y} year-to-date`,
       periodType: "year_to_date",
       isSingleDay: false,
       isRange: true,
+      expectedDayCount: listPeriodDates({ startDate, endDate }).length,
     };
   }
 
@@ -499,21 +559,23 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     }
   }
 
-  const compare7 = /\b(last|past)\s+7\s+days?\b.*\b(vs|versus|compared to|against|compare)\b.*\b(previous|prior|preceding)\s+7\s+days?\b/.test(q)
-    || /\bcompare\b.*\b(last|past)\s+7\s+days?\b.*\b(previous|prior|preceding)\s+7\s+days?\b/.test(q);
-  if (compare7) {
-    const current = rollingRange(referenceDate, 7, { label: "last 7 days", periodType: "last_7_days" });
+  const compareN = q.match(
+    /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs|versus|compared to|against)\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
+  ) || q.match(
+    /\bcompare\b.*\b(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
+  );
+  if (compareN) {
+    const n = Math.min(366, Math.max(1, Number(compareN[1])));
+    const current = rollingRange(referenceDate, n, {
+      label: `last ${n} days`,
+      periodType: `last_${n}_days`,
+    });
     const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
-    const previous = rollingRange(previousEnd, 7, { label: "previous 7 days", periodType: "previous_7_days" });
-    return { current, previous };
-  }
-
-  const compare14 = /\b(last|past)\s+14\s+days?\b.*\b(vs|versus|compared to|against|compare)\b/.test(q);
-  if (compare14) {
-    const current = rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
-    const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
-    const previous = rollingRange(previousEnd, 14, { label: "previous 14 days", periodType: "previous_14_days" });
-    return { current, previous };
+    const previous = rollingRange(previousEnd, n, {
+      label: `previous ${n} days`,
+      periodType: `previous_${n}_days`,
+    });
+    return { current, previous, isComparison: true };
   }
 
   return null;
@@ -544,23 +606,28 @@ export function isVaultRangePeriod(period) {
 }
 
 const CASH_UP_ANALYTICS_PERIOD_TYPES = new Set([
-  "last_7_days",
-  "last_14_days",
-  "last_30_days",
   "last_week",
   "previous_week",
   "this_week",
   "this_month",
+  "named_month",
   "year_to_date",
-  "previous_7_days",
-  "previous_14_days",
   "custom_range",
   "first_half",
   "second_half",
 ]);
 
-export function isVaultCashUpAnalyticsPeriod(period) {
-  return Boolean(period?.periodType && CASH_UP_ANALYTICS_PERIOD_TYPES.has(period.periodType));
+function isRollingDayPeriodType(periodType: string | undefined) {
+  return /^last_\d+_days$/.test(periodType || "")
+    || /^previous_\d+_days$/.test(periodType || "");
+}
+
+export function isVaultCashUpAnalyticsPeriod(period: VaultPeriod | null | undefined) {
+  if (!period?.periodType) return false;
+  if (CASH_UP_ANALYTICS_PERIOD_TYPES.has(period.periodType)) return true;
+  if (isRollingDayPeriodType(period.periodType)) return true;
+  // Any explicit multi-day window with bounds is analytics-eligible.
+  return Boolean(period.isRange && period.startDate && period.endDate && period.startDate !== period.endDate);
 }
 
 export function isVaultFlexibleRangePeriod(period) {
