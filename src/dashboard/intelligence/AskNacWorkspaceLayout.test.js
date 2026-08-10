@@ -88,4 +88,26 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
       }),
     ).toHaveLength(0);
   });
+
+  test("mobile Ask NAC styles avoid chat-height jail and keep sticky composer clearance", () => {
+    const css = require("fs").readFileSync(
+      require("path").join(__dirname, "../styles/ask-nac.css"),
+      "utf8",
+    );
+    expect(css).toMatch(/\.nac-ask-nac-chat--page/);
+    expect(css).toMatch(/max-height:\s*none/);
+    expect(css).toMatch(/position:\s*sticky/);
+    expect(css).toMatch(/safe-area-inset-bottom/);
+    expect(css).toMatch(/@media \(max-width: 640px\)/);
+    // Phone styles must not reintroduce a tall fixed chat jail
+    expect(css).not.toMatch(/min-height:\s*min\(calc\(100dvh/);
+    expect(css).toMatch(/overflow-x:\s*hidden/);
+    expect(css).toMatch(/nac-ask-nac-suggestions__track[\s\S]*overflow-x:\s*auto/);
+
+    const { container } = render(<AskNacTab showVaultPanel={false} />);
+    const chat = screen.getByTestId("ask-nac-chat-page");
+    expect(chat).toHaveClass("nac-ask-nac-chat--page");
+    expect(container.querySelector(".nac-ask-nac-composer")).toBeTruthy();
+    expect(container.querySelector(".nac-ask-nac-workspace__column")).toBeTruthy();
+  });
 });

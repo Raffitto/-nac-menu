@@ -15,6 +15,7 @@ import {
 import {
   parseVaultPeriodFromQuestion,
   parseVaultComparePeriodsFromQuestion,
+  buildPreviousEquivalentVaultPeriod,
   hasVaultDayPeriod,
   isVaultCashUpAnalyticsPeriod,
   isVaultFlexibleRangePeriod,
@@ -24,7 +25,11 @@ import {
   scoreVaultDocumentSearchIntent,
 } from "./vault/vaultDocumentSearchRouting";
 import { scoreVaultOperationalReviewIntent } from "./vault/vaultOperationalReviewRouting";
-import { scoreSalesPerformanceQueryFocus, isDeliveryPlatformPeriodQuery } from "./vault/vaultSalesPerformanceIntelligence";
+import {
+  scoreSalesPerformanceQueryFocus,
+  isDeliveryPlatformPeriodQuery,
+  isPerformanceOverviewQuery,
+} from "./vault/vaultSalesPerformanceIntelligence";
 import {
   scoreVaultBusinessReasoningIntent,
   resolveWhyVaultCompare,
@@ -239,13 +244,15 @@ const INTENT_RULES = [
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      const period = parseVaultPeriodFromQuestion(q);
+      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
+      // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
+      if (isPerformanceOverviewQuery(q) && (period || vaultCompare)) return 37;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
         return 35;
       }
       if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
-      const period = parseVaultPeriodFromQuestion(q);
-      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on|net sales)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 34;
@@ -629,13 +636,36 @@ export function routeAskNacIntent(question, options = {}) {
 
   route = applyMetricDefaultsToRoute(route, normalized.text, normalized.hints);
 
-  const vaultCompare = intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING
+  let vaultCompare = intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING
     ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
     : parseVaultComparePeriodsFromQuestion(normalized.text);
+  // Performance overview defaults to previous-equivalent comparison when none was asked explicitly.
+  if (
+    !vaultCompare
+    && intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY
+    && isPerformanceOverviewQuery(normalized.text)
+    && route.vaultPeriod?.startDate
+    && route.vaultPeriod?.endDate
+  ) {
+    const previous = buildPreviousEquivalentVaultPeriod(route.vaultPeriod);
+    if (previous?.startDate && previous?.endDate) {
+      vaultCompare = {
+        current: route.vaultPeriod,
+        previous,
+        periodType: "performance_overview_compare",
+        isComparison: true,
+        autoAttached: true,
+      };
+    }
+  }
   route.vaultPeriod = vaultCompare?.current || route.vaultPeriod;
   route.vaultCompare = vaultCompare || null;
   if (intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING) {
     route.whyMetricFocus = detectWhyMetricFocus(normalized.text);
+  }
+  if (intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY && isPerformanceOverviewQuery(normalized.text)) {
+    route.performanceOverview = true;
+    route.queryFocus = "performance_overview";
   }
 
   route.debug.foodicsPeriod = route.foodicsPeriod;

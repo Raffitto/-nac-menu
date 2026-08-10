@@ -34,6 +34,7 @@ import {
   buildCashUpDeliveryPlatformMetrics,
   buildCashUpPeriodCompareMetrics,
   isDeliveryPlatformPeriodQuery,
+  scoreSalesPerformanceQueryFocus,
   extendedSalesPerformanceMetrics,
   appendCoverageToAggregateAnswer,
 } from "./vaultSalesPerformanceIntelligence";
@@ -295,42 +296,53 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     );
 
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
-    const metrics = previousAggregation
+    const isPerformanceOverview =
+      Boolean(route.performanceOverview)
+      || scoreSalesPerformanceQueryFocus(question) === "performance_overview";
+    const metrics = previousAggregation && !isPerformanceOverview
       ? buildCashUpPeriodCompareMetrics(aggregation, previousAggregation)
       : isPlatformQuery
         ? buildCashUpDeliveryPlatformMetrics(aggregation, question)
         : [];
-    if (!isPlatformQuery && !previousAggregation) {
-    if (aggregation.totalSales != null) {
-      metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
-      if (aggregation.dayCount > 0) {
-        metrics.push(metricEntry(
-          "Average sales per day",
-          formatNumber(aggregation.totalSales / aggregation.dayCount),
-          { unit: "SAR", source: "cash_up" },
+    if (!isPlatformQuery && (!previousAggregation || isPerformanceOverview)) {
+      if (aggregation.totalSales != null) {
+        metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
+        if (aggregation.dayCount > 0) {
+          metrics.push(metricEntry(
+            "Average sales per day",
+            formatNumber(aggregation.totalSales / aggregation.dayCount),
+            { unit: "SAR", source: "cash_up" },
+          ));
+        }
+      }
+      if (aggregation.totalGuests != null) {
+        metrics.push(metricEntry("Total guests", formatNumber(aggregation.totalGuests), { source: "cash_up" }));
+      }
+      if (aggregation.totalOrders != null) {
+        metrics.push(metricEntry("Total orders", formatNumber(aggregation.totalOrders), { source: "cash_up" }));
+      }
+      if (aggregation.averageSpend != null) {
+        metrics.push(metricEntry("Average spend", formatNumber(aggregation.averageSpend), { unit: "SAR", source: "cash_up" }));
+      }
+      if (!isPerformanceOverview && aggregation.totalDeliverySales != null) {
+        metrics.push(metricEntry("Total delivery sales", formatNumber(aggregation.totalDeliverySales), { unit: "SAR", source: "cash_up" }));
+        if (aggregation.dayCount > 0) {
+          metrics.push(metricEntry(
+            "Average delivery sales per day",
+            formatNumber(aggregation.totalDeliverySales / aggregation.dayCount),
+            { unit: "SAR", source: "cash_up" },
+          ));
+        }
+      }
+      if (!isPerformanceOverview && aggregation.totalDeliveryOrders != null) {
+        metrics.push(metricEntry("Total delivery orders", formatNumber(aggregation.totalDeliveryOrders), { source: "cash_up" }));
+      }
+      metrics.push(metricEntry("Days included", formatNumber(aggregation.dayCount), { source: "cash_up" }));
+      if (previousAggregation && isPerformanceOverview) {
+        metrics.push(...buildCashUpPeriodCompareMetrics(aggregation, previousAggregation).filter(
+          (row) => !metrics.some((m) => m.label === row.label),
         ));
       }
-    }
-    if (aggregation.totalGuests != null) {
-      metrics.push(metricEntry("Total guests", formatNumber(aggregation.totalGuests), { source: "cash_up" }));
-    }
-    if (aggregation.totalDeliverySales != null) {
-      metrics.push(metricEntry("Total delivery sales", formatNumber(aggregation.totalDeliverySales), { unit: "SAR", source: "cash_up" }));
-      if (aggregation.dayCount > 0) {
-        metrics.push(metricEntry(
-          "Average delivery sales per day",
-          formatNumber(aggregation.totalDeliverySales / aggregation.dayCount),
-          { unit: "SAR", source: "cash_up" },
-        ));
-      }
-    }
-    if (aggregation.totalDeliveryOrders != null) {
-      metrics.push(metricEntry("Total delivery orders", formatNumber(aggregation.totalDeliveryOrders), { source: "cash_up" }));
-    }
-    if (aggregation.averageSpend != null) {
-      metrics.push(metricEntry("Average spend", formatNumber(aggregation.averageSpend), { unit: "SAR", source: "cash_up" }));
-    }
-    metrics.push(metricEntry("Days included", formatNumber(aggregation.dayCount), { source: "cash_up" }));
     }
 
     const platformInsights = isPlatformQuery && aggregation.deliveryPlatformBreakdown
@@ -354,9 +366,11 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
       title: isPlatformQuery
         ? `Delivery platform breakdown · ${tool.periodLabel}`
-        : previousAggregation
-          ? `Period comparison · ${tool.periodLabel}`
-          : `Sales performance · ${tool.periodLabel}`,
+        : (route.performanceOverview || scoreSalesPerformanceQueryFocus(question) === "performance_overview")
+          ? `Performance overview · ${tool.periodLabel}`
+          : previousAggregation
+            ? `Period comparison · ${tool.periodLabel}`
+            : `Sales performance · ${tool.periodLabel}`,
       directAnswer: resolvedAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
       insights: [

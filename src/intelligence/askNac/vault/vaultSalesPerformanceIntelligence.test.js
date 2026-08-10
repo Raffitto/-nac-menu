@@ -1,11 +1,15 @@
 import {
   buildSalesPerformanceExecutiveSummary,
   buildSalesPerformanceQueryAnswer,
+  buildPerformanceOverviewAnswer,
+  buildCashUpPeriodAggregateAnswer,
   extendedSalesPerformanceMetrics,
   hasReconciliationData,
+  isPerformanceOverviewQuery,
   scoreSalesPerformanceQueryFocus,
 } from "./vaultSalesPerformanceIntelligence";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
+import { buildSpecificUnknownMessage } from "../conversation/missingDataMessages";
 
 const SALES_FACTS = [
   { metricKey: "net_sales", metricValue: 35912.17 },
@@ -102,6 +106,88 @@ describe("vaultSalesPerformanceIntelligence", () => {
     expect(routeAskNacIntent("How many guests this month?").intent).toBe(
       ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
     );
+  });
+
+  test("performance overview questions route with resolvable temporal windows", () => {
+    const tenDay = routeAskNacIntent("How did NAC Khobar perform over the last 10 days?");
+    expect(tenDay.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(tenDay.performanceOverview).toBe(true);
+    expect(tenDay.confidence).not.toBe("none");
+    expect(["high", "medium"]).toContain(tenDay.confidence);
+    expect(tenDay.vaultPeriod?.expectedDayCount).toBe(10);
+    expect(tenDay.vaultCompare?.previous?.startDate).toBeTruthy();
+    expect(tenDay.vaultCompare?.autoAttached).toBe(true);
+
+    const mtd = routeAskNacIntent("How are we doing this month?");
+    expect(mtd.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(mtd.performanceOverview).toBe(true);
+    expect(mtd.vaultPeriod?.periodType).toBe("this_month");
+
+    const lastMonth = routeAskNacIntent("How was business last month?");
+    expect(lastMonth.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(lastMonth.performanceOverview).toBe(true);
+    expect(lastMonth.vaultPeriod?.periodType).toBe("named_month");
+
+    expect(routeAskNacIntent("What color is the sky?").intent).toBe(ASK_NAC_INTENTS.UNKNOWN);
+    expect(isPerformanceOverviewQuery("What color is the sky?")).toBe(false);
+    expect(scoreSalesPerformanceQueryFocus("Which waiter performed best today?")).toBeNull();
+  });
+
+  test("performance overview answers with available KPIs and partial coverage", () => {
+    const aggregation = {
+      totalSales: 100000,
+      totalGuests: 1200,
+      totalOrders: null,
+      averageSpend: 100000 / 1200,
+      dayCount: 8,
+      expectedDayCount: 10,
+      missingDayCount: 2,
+      dailyBreakdown: [
+        { date: "2026-07-01", totalSales: 9000 },
+        { date: "2026-07-02", totalSales: 14000 },
+        { date: "2026-07-03", totalSales: 11000 },
+        { date: "2026-07-04", totalSales: 8000 },
+      ],
+    };
+    const previous = {
+      totalSales: 90000,
+      totalGuests: 1100,
+      averageSpend: 90000 / 1100,
+      dayCount: 8,
+    };
+    const answer = buildPerformanceOverviewAnswer(
+      "How did NAC Khobar perform over the last 10 days?",
+      aggregation,
+      {
+        branchLabel: "Khobar",
+        periodLabel: "last 10 days",
+        previousAggregation: previous,
+        previousPeriodLabel: "previous 10 days",
+      },
+    );
+    expect(answer).toMatch(/100,000 SAR|100000 SAR/);
+    expect(answer).toMatch(/Key KPIs/i);
+    expect(answer).toMatch(/Strongest day/i);
+    expect(answer).toMatch(/Weakest day/i);
+    expect(answer).toMatch(/8 of 10/);
+    expect(answer).not.toMatch(/clearer metric/i);
+    expect(String(buildSpecificUnknownMessage())).toMatch(/./);
+
+    const partial = buildCashUpPeriodAggregateAnswer(
+      "How are we doing this month?",
+      { totalSales: null, totalGuests: 400, dayCount: 5, expectedDayCount: 10, missingDayCount: 5, dailyBreakdown: [] },
+      { branchLabel: "Khobar", periodLabel: "this month" },
+    );
+    expect(partial).toMatch(/400 guests|guests/);
+    expect(partial).not.toMatch(/Need a clearer metric question/i);
+  });
+
+  test("explicit previous-period compare still routes for overview language", () => {
+    const route = routeAskNacIntent(
+      "How did we perform last week compared with the previous week?",
+    );
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.vaultCompare?.previous).toBeTruthy();
   });
 
   test("extended metrics exclude reconciliation unless present", () => {

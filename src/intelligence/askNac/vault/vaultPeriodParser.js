@@ -566,6 +566,46 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
 }
 
 /**
+ * Previous non-overlapping equivalent window for the same span as `current`.
+ * Used for performance-overview period-over-period context.
+ */
+export function buildPreviousEquivalentVaultPeriod(current) {
+  if (!current?.startDate || !current?.endDate) return null;
+
+  if (current.periodType === "this_month" || current.periodType === "named_month") {
+    const [y, m] = current.startDate.split("-").map(Number);
+    const prevMonthIndex = m - 2; // m is 1-based
+    const year = prevMonthIndex < 0 ? y - 1 : y;
+    const monthIndex = (prevMonthIndex + 12) % 12;
+    const previous = monthBounds(year, monthIndex);
+    // For MTD, mirror day-of-month span when possible.
+    if (current.periodType === "this_month") {
+      const span = listPeriodDates(current).length;
+      const prevDates = listPeriodDates(previous);
+      const clipped = prevDates.slice(0, Math.min(span, prevDates.length));
+      if (clipped.length) {
+        return buildCustomRangePeriod(
+          clipped[0],
+          clipped[clipped.length - 1],
+          `${previous.label} (to date)`,
+          "this_month_previous",
+        );
+      }
+    }
+    return previous;
+  }
+
+  const dates = listPeriodDates(current);
+  const n = dates.length || current.expectedDayCount;
+  if (!n) return null;
+  const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
+  return rollingRange(previousEnd, n, {
+    label: `previous ${n} days`,
+    periodType: `previous_${n}_days`,
+  });
+}
+
+/**
  * Normalized custom compare structure for flexible period engine.
  */
 export function parseVaultCustomCompareFromQuestion(question = "", referenceDate = new Date()) {

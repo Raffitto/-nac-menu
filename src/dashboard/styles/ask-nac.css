@@ -285,9 +285,45 @@
 }
 
 @media (max-width: 640px) {
+  .nac-ask-nac-tab,
+  .nac-ask-nac-workspace,
+  .nac-ask-nac-workspace__column,
+  .nac-ask-nac-chat,
+  .nac-ask-nac-chat__messages,
+  .nac-ask-nac-message,
+  .nac-ask-nac-composer {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .nac-ask-nac-workspace__column {
+    padding-left: 0.15rem;
+    padding-right: 0.15rem;
+    padding-bottom: calc(6.25rem + env(safe-area-inset-bottom, 0px));
+    gap: 0.55rem;
+  }
+
+  .nac-ask-nac-hero--compact {
+    padding: 0.45rem 0.65rem;
+  }
+
+  .nac-ask-nac-hero--compact h2 {
+    font-size: 1.05rem;
+  }
+
+  .nac-ask-nac-subtitle {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .nac-ask-nac-form {
     flex-direction: row;
     align-items: flex-end;
+    gap: 0.5rem;
   }
 
   .nac-ask-nac-form--chat .nac-ask-nac-submit {
@@ -297,6 +333,7 @@
     padding: 0.65rem;
     justify-content: center;
     border-radius: 12px;
+    flex-shrink: 0;
   }
 
   .nac-ask-nac-submit__label {
@@ -305,6 +342,7 @@
 
   .nac-ask-nac-hero__top {
     flex-direction: column;
+    gap: 0.45rem;
   }
 
   .nac-ask-nac-hero__actions {
@@ -312,9 +350,30 @@
     justify-content: space-between;
   }
 
-  .nac-ask-nac-chat {
-    min-height: min(calc(100dvh - 280px), 640px);
+  /* Natural page scroll — no tall empty chat jail on phones */
+  .nac-ask-nac-chat,
+  .nac-ask-nac-chat--page {
+    min-height: 0;
     max-height: none;
+    overflow: visible;
+  }
+
+  .nac-ask-nac-chat__messages {
+    padding-bottom: 0.35rem;
+    gap: 0.85rem;
+  }
+
+  .nac-ask-nac-composer {
+    position: sticky;
+    bottom: 0;
+    padding: 0.65rem 0.7rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    border-radius: 14px 14px 10px 10px;
+  }
+
+  .nac-ask-nac-form--chat textarea {
+    min-height: 44px;
+    max-height: 132px;
+    font-size: 1rem; /* avoid iOS zoom */
   }
 
   .nac-ask-nac-composer__hint-desktop {
@@ -327,6 +386,37 @@
 
   .nac-ask-nac-user-bubble {
     max-width: 92%;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+
+  .nac-ask-nac-message--assistant .nac-ask-nac-response {
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .nac-ask-nac-empty--chat {
+    padding: 0.85rem 0.35rem 0.25rem;
+  }
+
+  .nac-ask-nac-suggestions--scroll {
+    margin-bottom: 0.35rem;
+  }
+
+  .nac-ask-nac-suggestions__track {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 0.15rem;
+    scrollbar-width: none;
+  }
+
+  .nac-ask-nac-suggestions__track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nac-ask-nac-suggestions__track .nac-ask-nac-chip {
+    white-space: nowrap;
   }
 }
 

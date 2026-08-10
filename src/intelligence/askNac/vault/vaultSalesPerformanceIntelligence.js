@@ -149,11 +149,42 @@ export function isSalesPerformanceExecutiveQuery(question = "") {
   );
 }
 
+/**
+ * Broad management performance overview — not a request for a single metric.
+ * Deterministic intent focus: performance_overview.
+ */
+export function isPerformanceOverviewQuery(question = "") {
+  const q = String(question || "").toLowerCase().trim();
+  if (!q) return false;
+  // Avoid staff / Google Maps / cross-branch "which branch performing" traps.
+  if (/\b(waiter|waitress|server|employee|staff member|google maps)\b/.test(q)) return false;
+  if (/\bwhich branch\b.*\b(perform|performing|best|winning)\b/.test(q)) return false;
+  if (/\b(performing best|performing better|best overall|location is winning)\b/.test(q)) return false;
+
+  if (/\b(performance overview|business overview|branch overview)\b/.test(q)) return true;
+  if (/\b(give me|show me|provide)\b.{0,24}\boverview\b/.test(q)) return true;
+  if (/\bhow (is|was) business\b/.test(q)) return true;
+  if (/\bhow (are|is) we (doing|performing)\b/.test(q)) return true;
+  if (/\bhow (did|have) we (do|done|perform|performed)\b/.test(q)) return true;
+  if (/\bhow did\b.{0,60}\bperform(?:ed|ing)?\b/.test(q)) return true;
+  if (/\bhow (did|was|is)\b.{0,40}\b(khobar|riyadh|jeddah|branch|nac)\b.{0,40}\b(do|doing|perform|performing)\b/.test(q)) {
+    return true;
+  }
+  if (
+    /\bhow (was|were)\b.{0,40}\b(week|month|days?)\b/.test(q)
+    && /\b(business|sales|branch|khobar|riyadh|jeddah|perform|doing|overview)\b/.test(q)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
   if (/\b(compare|compared|vs|versus)\b.*\btop\b/.test(q) || /\btop\b.*\b(compare|compared|vs|versus|between|two months)\b/.test(q)) {
     return null;
   }
+  if (isPerformanceOverviewQuery(question)) return "performance_overview";
   if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
   if (parseVaultComparePeriodsFromQuestion(question)) return "period_compare";
   if (/\bcompare\b.*\b(last|past)\s+(7|14|30)\s+days?\b/.test(q)) return "period_compare";
@@ -856,6 +887,115 @@ export function buildCashUpPeriodCompareMetrics(aggregation, previousAggregation
   return metrics;
 }
 
+export function pickStrongestWeakestSalesDays(dailyBreakdown = []) {
+  const withSales = (dailyBreakdown || []).filter((row) => row?.totalSales != null && Number.isFinite(Number(row.totalSales)));
+  if (!withSales.length) return { strongest: null, weakest: null };
+  let strongest = withSales[0];
+  let weakest = withSales[0];
+  for (const row of withSales) {
+    if (Number(row.totalSales) > Number(strongest.totalSales)) strongest = row;
+    if (Number(row.totalSales) < Number(weakest.totalSales)) weakest = row;
+  }
+  return { strongest, weakest };
+}
+
+/**
+ * Management-first performance overview from cash-up period aggregation.
+ */
+export function buildPerformanceOverviewAnswer(question = "", aggregation, {
+  branchLabel = "Network",
+  periodLabel = "the period",
+  previousAggregation = null,
+  previousPeriodLabel = null,
+} = {}) {
+  if (!aggregation) return null;
+  const {
+    totalSales,
+    totalGuests,
+    totalOrders,
+    averageSpend,
+    dayCount,
+    expectedDayCount,
+    missingDayCount,
+    dailyBreakdown = [],
+  } = aggregation;
+
+  const hasAny =
+    totalSales != null || totalGuests != null || totalOrders != null || averageSpend != null;
+  if (!hasAny && !dayCount) {
+    return `No structured performance facts are available for ${branchLabel} over ${periodLabel}.`;
+  }
+
+  const lines = [];
+  if (totalSales != null) {
+    const avgSales = formatAveragePerDay(totalSales, dayCount);
+    lines.push(
+      `${branchLabel} generated ${formatCurrency(totalSales)} in sales over ${periodLabel}`
+        + `${avgSales ? ` (${avgSales} avg/day)` : ""}.`,
+    );
+  } else if (totalGuests != null) {
+    lines.push(`${branchLabel} recorded ${formatNumber(totalGuests)} guests over ${periodLabel}.`);
+  } else {
+    lines.push(`${branchLabel} performance overview for ${periodLabel}:`);
+  }
+
+  const kpiBits = [];
+  if (totalGuests != null) kpiBits.push(`${formatNumber(totalGuests)} guests`);
+  if (totalOrders != null) kpiBits.push(`${formatNumber(totalOrders)} orders`);
+  if (averageSpend != null) kpiBits.push(`${formatCurrency(averageSpend)} avg spend`);
+  if (kpiBits.length) lines.push(`Key KPIs: ${kpiBits.join(" · ")}.`);
+
+  if (previousAggregation?.totalSales != null && totalSales != null) {
+    const delta = Number(totalSales) - Number(previousAggregation.totalSales);
+    const pct = previousAggregation.totalSales
+      ? ((delta / Number(previousAggregation.totalSales)) * 100)
+      : null;
+    const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+    lines.push(
+      `Compared with ${previousPeriodLabel || "the previous equivalent period"}: `
+        + `${direction}${pct != null ? ` ${Math.abs(pct).toFixed(1)}%` : ""} `
+        + `(${formatSignedDelta(delta)} vs ${formatCurrency(previousAggregation.totalSales)}).`,
+    );
+    const interpretation = deriveTrafficSpendInterpretation(aggregation, previousAggregation);
+    if (interpretation) lines.push(interpretation);
+  } else if ((dailyBreakdown || []).filter((d) => d.totalSales != null).length >= 3) {
+    const first = dailyBreakdown.find((d) => d.totalSales != null);
+    const last = [...dailyBreakdown].reverse().find((d) => d.totalSales != null);
+    if (first && last && first.date !== last.date) {
+      const trendDelta = Number(last.totalSales) - Number(first.totalSales);
+      lines.push(
+        `Sales trend across the range: ${trendDelta > 0 ? "rising" : trendDelta < 0 ? "softening" : "stable"} `
+          + `from ${formatCurrency(first.totalSales)} (${first.date}) to ${formatCurrency(last.totalSales)} (${last.date}).`,
+      );
+    }
+  }
+
+  const { strongest, weakest } = pickStrongestWeakestSalesDays(dailyBreakdown);
+  if (strongest && weakest && strongest.date !== weakest.date) {
+    lines.push(
+      `Strongest day: ${strongest.date} (${formatCurrency(strongest.totalSales)}). `
+        + `Weakest day: ${weakest.date} (${formatCurrency(weakest.totalSales)}).`,
+    );
+  }
+
+  const expected = expectedDayCount || null;
+  if (expected && dayCount < expected) {
+    lines.push(
+      `Coverage: ${dayCount} of ${expected} requested day(s) have cash-up facts`
+        + `${missingDayCount ? ` (${missingDayCount} missing)` : ""}.`,
+    );
+  } else if (dayCount) {
+    lines.push(`Coverage: ${dayCount} cash-up day(s) included.`);
+  }
+
+  if (totalSales == null) {
+    lines.push("Sales totals were not extracted for some or all days — figures above use available structured fields only.");
+  }
+
+  void question;
+  return lines.join(" ");
+}
+
 /**
  * Deterministic multi-day cash-up answer from aggregated structured facts.
  */
@@ -867,6 +1007,17 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
 } = {}) {
   if (!aggregation) return null;
 
+  const focus = scoreSalesPerformanceQueryFocus(question);
+
+  if (focus === "performance_overview") {
+    return buildPerformanceOverviewAnswer(question, aggregation, {
+      branchLabel,
+      periodLabel,
+      previousAggregation,
+      previousPeriodLabel,
+    });
+  }
+
   if (previousAggregation) {
     const compareAnswer = buildCashUpPeriodCompareAnswer(aggregation, previousAggregation, {
       branchLabel,
@@ -876,7 +1027,6 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
     if (compareAnswer) return compareAnswer;
   }
 
-  const focus = scoreSalesPerformanceQueryFocus(question);
   const {
     totalSales,
     totalGuests,
