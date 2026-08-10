@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "description": "Permanent Ask NAC / Company Intelligence eval seed",
+  "categories_planned": [
+    "date_reasoning",
+    "hijri_calendar",
+    "branch_opening_closure",
+    "impossible_comparisons",
+    "partial_coverage",
+    "cross_brand_scope",
+    "causal_reasoning",
+    "external_context",
+    "source_conflict",
+    "multi_turn",
+    "rbac",
+    "hallucination_traps",
+    "informal_manager_language",
+    "typo_tolerance",
+    "missing_data",
+    "cost_margin_safety",
+    "operations"
+  ],
+  "cases": [
+    {
+      "id": "nl64_01",
+      "question": "Compare the last 7 days with the previous 7 days for NAC Khobar",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_02",
+      "question": "How are we performing month to date in August?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_03",
+      "question": "How did July perform overall?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_04",
+      "question": "What were our strongest and weakest days in the last 30 days?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_05",
+      "question": "What are the biggest operational issues from the last 10 days?",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_06",
+      "question": "How did we do last week?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_07",
+      "question": "How's business been lately?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_08",
+      "question": "Are we doing better than the week before?",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_09",
+      "question": "Was this week good or bad?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_10",
+      "question": "How's August looking so far?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_11",
+      "question": "How was July?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_12",
+      "question": "Compare July with June.",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_13",
+      "question": "Are sales improving or getting worse?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_14",
+      "question": "Give me a quick read on the business.",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_15",
+      "question": "What's the most important thing in the numbers right now?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_16",
+      "question": "Any red flags in sales?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_17",
+      "question": "What changed compared with last week?",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_18",
+      "question": "How are weekends performing?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_19",
+      "question": "Are weekdays getting weaker?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_20",
+      "question": "What was our best day this month?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_21",
+      "question": "What was the worst day?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_22",
+      "question": "Which days are carrying the month?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_23",
+      "question": "Give me the top 3 and bottom 3 days this month.",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_24",
+      "question": "Did we have any unusually bad sales days recently?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_25",
+      "question": "Why was last week shit?",
+      "category": "causal_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_26",
+      "question": "What's going wrong?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_27",
+      "question": "Anything worrying me right now?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_28",
+      "question": "Anything I should be happy about?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_29",
+      "question": "Tell me what I need to know today.",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_30",
+      "question": "Give me the GM version, not the analyst version.",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_31",
+      "question": "If Ahmed asks how we're doing, what do I tell him?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_32",
+      "question": "What would you mention in today's briefing?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_33",
+      "question": "What should management focus on this week?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_34",
+      "question": "Where are we losing money?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_35",
+      "question": "Why are sales down?",
+      "category": "causal_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_36",
+      "question": "What went wrong operationally this week?",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_37",
+      "question": "Any recurring problems in the last 2 weeks?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_38",
+      "question": "What's the team struggling with?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_39",
+      "question": "Any guest complaints I should know about?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_40",
+      "question": "Any maintenance problems lately?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_41",
+      "question": "What problems keep coming back?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_42",
+      "question": "Did anything unusual happen this weekend?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_43",
+      "question": "What operational issues could be hurting sales?",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_44",
+      "question": "Give me the main issues from the logbook this week.",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_45",
+      "question": "Anything from the logbook that management needs to act on?",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_46",
+      "question": "How is Khobar doing?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_47",
+      "question": "How did NAC Khobar do compared with the previous week?",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_48",
+      "question": "How are all the branches doing?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_49",
+      "question": "Is Khobar doing better than Riyadh?",
+      "category": "cross_brand_scope",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_50",
+      "question": "how we looking vs last wk",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_51",
+      "question": "anything bad last few days",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_52",
+      "question": "best sales day recently?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_53",
+      "question": "why was friday weak",
+      "category": "causal_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_54",
+      "question": "quick summary of khobar",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_55",
+      "question": "anything i need to act on",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_56",
+      "question": "sales ok this month?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_57",
+      "question": "july vs june numbers",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_58",
+      "question": "logbook issues last 10 days?",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_59",
+      "question": "are we down on covers?",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_60",
+      "question": "what happnd last weekend operationally",
+      "category": "operations",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_61",
+      "question": "need a pulse check on the branch",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_62",
+      "question": "is august soft so far",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_63",
+      "question": "worst day recently please",
+      "category": "informal_manager_language",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "nl64_64",
+      "question": "compare this week to prior week khobar",
+      "category": "date_reasoning",
+      "legacy_set": "mgmt_nl_64_2026_08_10"
+    },
+    {
+      "id": "timeline_khobar_ramadan_yoy",
+      "question": "Compare last year's Ramadan with this year's Ramadan for Khobar and explain why performance changed.",
+      "category": "impossible_comparisons",
+      "legacy_set": "fabric_foundation",
+      "expect_feasibility": "NOT_ANSWERABLE_AS_REQUESTED"
+    }
+  ]
+}

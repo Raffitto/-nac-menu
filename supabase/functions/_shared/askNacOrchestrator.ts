@@ -9,6 +9,10 @@ import { buildDeterministicAskNacAnswer, branchDisplayName, MAX_BRANCH_ROWS, MAX
 import { narrateWithOpenAi } from "./askNacOpenAiNarrator.ts";
 import { enrichRouteWithManagementPlanner } from "./askNacManagementPlanner.ts";
 import {
+  bootstrapFabricState,
+  buildInfeasibleComparisonAnswer,
+} from "./companyIntelligence/askNacFabricBridge.ts";
+import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
   getFoodicsCategorySales,
@@ -1112,6 +1116,55 @@ export async function processAskNacOnEdge(
     };
   }
 
+  // Company Intelligence Fabric: cheap feasibility/comparability before expensive research.
+  const fabricState = bootstrapFabricState({
+    question: effectiveQuestion,
+    branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
+    threadId: (conversationContext as { threadId?: string } | null)?.threadId || null,
+    deterministicHighConfidence: route.confidence === "high" && !plannerEnrichment.plannerUsed,
+    referenceDate: new Date(),
+  });
+  const infeasibleAnswer = buildInfeasibleComparisonAnswer(fabricState);
+  if (infeasibleAnswer) {
+    return attachResponseMeta({
+      answerType: "feasibility_block",
+      title: "Comparison not valid",
+      directAnswer: infeasibleAnswer,
+      keyMetrics: [],
+      insights: fabricState.feasibility?.suggestedAlternatives || [],
+      recommendations: [],
+      confidence: "high",
+      periodLabel: fabricState.periods.current?.label || null,
+      branchLabel: fabricState.scope.primaryBranchId
+        ? ({ khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" } as Record<string, string>)[
+          fabricState.scope.primaryBranchId
+        ] || fabricState.scope.primaryBranchId
+        : null,
+      intent: route.intent,
+      warnings: fabricState.warnings,
+      missingData: fabricState.feasibility?.reasons || [],
+      managementPlanner: managementPlannerMeta || { used: false },
+      companyIntelligence: {
+        feasibility: fabricState.feasibility?.status || null,
+        comparability: fabricState.comparability?.status || null,
+        budgetTier: fabricState.plan.researchBudgetTier,
+        capabilities: fabricState.plan.capabilities,
+      },
+      serverConnected: true,
+      aiConnected: false,
+      localFallback: false,
+    }, buildAskNacTimingMs({
+      total: Math.round(performance.now() - requestStartedAt),
+      routeIntent: Math.round(performance.now() - routeIntentStartedAt),
+      selectedTool: 0,
+      vaultTool: 0,
+      executiveEvidenceV2: 0,
+      openAiNarration: 0,
+      datasetReuse: 0,
+      knowledgeHealth: 0,
+    }), true);
+  }
+
   const readiness = await assessReadiness(route, supabase, {
     profile: profileHint,
     executiveKind: route.executiveKind,
@@ -1284,6 +1337,13 @@ export async function processAskNacOnEdge(
     managementPlanner: managementPlannerMeta
       ? { ...managementPlannerMeta, timingMs: managementPlannerMs }
       : { used: false, timingMs: managementPlannerMs },
+    companyIntelligence: {
+      feasibility: fabricState.feasibility?.status || null,
+      comparability: fabricState.comparability?.status || null,
+      budgetTier: fabricState.plan.researchBudgetTier,
+      capabilities: fabricState.plan.capabilities,
+      paidModelCallsPerAnswer: fabricState.cost.paidModelCallsPerAnswer,
+    },
     conversationResolution: {
       originalQuestion: prepareResult.originalQuestion,
       resolvedQuestion: effectiveQuestion,
