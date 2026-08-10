@@ -860,23 +860,22 @@
   border: 0;
 }
 
-/* Fullscreen mobile Ask NAC chat (ChatGPT-style) */
+/* Fullscreen mobile Ask NAC chat — page scroll + sticky composer (no internal chat jail) */
 .nac-ask-nac-mobile {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
+  flex: 1 0 auto;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
 }
 
 .nac-ask-nac-mobile__body {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   padding: 0.75rem 0.85rem 0.5rem;
+  padding-bottom: 0.35rem;
 }
 
 .nac-ask-nac-mobile__welcome {
@@ -890,6 +889,9 @@
 
 .nac-ask-nac-mobile__footer {
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(12, 12, 11, 0.98);
   backdrop-filter: blur(12px);

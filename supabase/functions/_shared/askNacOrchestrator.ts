@@ -36,6 +36,7 @@ import {
   isVaultDocumentSummaryQuery,
   parseVaultPeriodFromQuestion,
   parseVaultComparePeriodsFromQuestion,
+  buildPreviousEquivalentVaultPeriod,
   runVaultQueryTool,
   scoreVaultDocumentSearchIntent,
   scoreVaultDocumentSummaryIntent,
@@ -45,7 +46,11 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
-import { scoreSalesPerformanceQueryFocus, isDeliveryPlatformPeriodQuery } from "./vaultSalesPerformanceIntelligence.ts";
+import {
+  scoreSalesPerformanceQueryFocus,
+  isDeliveryPlatformPeriodQuery,
+  isPerformanceOverviewQuery,
+} from "./vaultSalesPerformanceIntelligence.ts";
 import {
   scoreVaultBusinessReasoningIntent,
   resolveWhyVaultCompare,
@@ -248,13 +253,15 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      const period = parseVaultPeriodFromQuestion(q);
+      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
+      // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
+      if (isPerformanceOverviewQuery(q) && (period || vaultCompare)) return 37;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
         return 35;
       }
       if (/\b(cash variance|shortage|overage|any shortage|any overage)\b/.test(q)) return 18;
-      const period = parseVaultPeriodFromQuestion(q);
-      const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       if (CASH_UP_INTENT_SIGNAL.test(q) && period) return 36;
       if (period?.isSingleDay && (/\b(what were sales|how much sales|sales on|revenue on|net sales)\b/.test(q) || CASH_UP_DAY_SALES_SIGNAL.test(q))) {
         return 34;
@@ -573,13 +580,35 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
   const rankChangeDirection = intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE
     ? detectRankChangeDirection(normalized.text)
     : null;
-  const vaultCompare = intent === VAULT_INTENTS.BUSINESS_REASONING
+  let vaultCompare = intent === VAULT_INTENTS.BUSINESS_REASONING
     ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
     : parseVaultComparePeriodsFromQuestion(normalized.text);
-  const vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
+  let vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
+  // Performance overview defaults to previous-equivalent comparison when none was asked explicitly.
+  if (
+    !vaultCompare
+    && intent === ASK_NAC_INTENTS.CASH_UP
+    && isPerformanceOverviewQuery(normalized.text)
+    && vaultPeriod?.startDate
+    && vaultPeriod?.endDate
+  ) {
+    const previous = buildPreviousEquivalentVaultPeriod(vaultPeriod);
+    if (previous?.startDate && previous?.endDate) {
+      vaultCompare = {
+        current: vaultPeriod,
+        previous,
+        periodType: "performance_overview_compare",
+        isComparison: true,
+        autoAttached: true,
+      };
+    }
+  }
+  vaultPeriod = vaultCompare?.current || vaultPeriod;
   const whyMetricFocus = intent === VAULT_INTENTS.BUSINESS_REASONING
     ? detectWhyMetricFocus(normalized.text)
     : null;
+  const performanceOverview = intent === ASK_NAC_INTENTS.CASH_UP
+    && isPerformanceOverviewQuery(normalized.text);
 
   return {
     intent,
@@ -595,6 +624,8 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     vaultPeriod,
     vaultCompare: vaultCompare || null,
     whyMetricFocus,
+    performanceOverview,
+    queryFocus: performanceOverview ? "performance_overview" : null,
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {

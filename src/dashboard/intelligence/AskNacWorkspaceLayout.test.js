@@ -94,6 +94,10 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
       require("path").join(__dirname, "../styles/ask-nac.css"),
       "utf8",
     );
+    const mobileCss = require("fs").readFileSync(
+      require("path").join(__dirname, "../styles/intelligence-mobile.css"),
+      "utf8",
+    );
     expect(css).toMatch(/\.nac-ask-nac-chat--page/);
     expect(css).toMatch(/max-height:\s*none/);
     expect(css).toMatch(/position:\s*sticky/);
@@ -103,6 +107,11 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(css).not.toMatch(/min-height:\s*min\(calc\(100dvh/);
     expect(css).toMatch(/overflow-x:\s*hidden/);
     expect(css).toMatch(/nac-ask-nac-suggestions__track[\s\S]*overflow-x:\s*auto/);
+    // Mobile fullscreen chat body must not keep an internal overflow scroller
+    expect(css).toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow:\s*visible/s);
+    expect(css).not.toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*position:\s*sticky/s);
+    expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*visible/);
 
     const { container } = render(<AskNacTab showVaultPanel={false} />);
     const chat = screen.getByTestId("ask-nac-chat-page");

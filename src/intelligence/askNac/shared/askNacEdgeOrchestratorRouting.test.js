@@ -39,6 +39,11 @@ function routeQuestionViaEdgeOrchestrator(question) {
         intent: route.intent,
         confidence: route.confidence,
         topMatchId: route.debug?.topMatches?.[0]?.id ?? null,
+        performanceOverview: Boolean(route.performanceOverview),
+        queryFocus: route.queryFocus || null,
+        expectedDayCount: route.vaultPeriod?.expectedDayCount ?? null,
+        periodType: route.vaultPeriod?.periodType ?? null,
+        autoCompare: Boolean(route.vaultCompare?.autoAttached),
       }));
     }).catch((err) => {
       console.error(err);
@@ -95,5 +100,18 @@ describe("Ask NAC Edge orchestrator intent routing", () => {
     const route = routeQuestionViaEdgeOrchestrator("why were sales down yesterday");
     expect(route.intent).toBe("vault_business_reasoning");
     expect(route.intent).not.toBe("sales_total");
+  });
+
+  test("production path routes performance overview (not unknown clarification)", () => {
+    const route = routeQuestionViaEdgeOrchestrator(
+      "How did NAC Khobar perform over the last 10 days?",
+    );
+    expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
+    expect(route.intent).not.toBe("unknown");
+    expect(route.confidence).not.toBe("none");
+    expect(route.performanceOverview).toBe(true);
+    expect(route.queryFocus).toBe("performance_overview");
+    expect(route.expectedDayCount).toBe(10);
+    expect(route.autoCompare).toBe(true);
   });
 });

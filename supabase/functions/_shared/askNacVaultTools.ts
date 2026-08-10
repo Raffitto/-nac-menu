@@ -27,6 +27,7 @@ import {
   buildCashUpDeliveryPlatformMetrics,
   buildCashUpPeriodCompareMetrics,
   isDeliveryPlatformPeriodQuery,
+  scoreSalesPerformanceQueryFocus,
   appendCoverageToAggregateAnswer,
   extendedSalesPerformanceMetrics,
   formatManagerStyleAnswer,
@@ -121,6 +122,7 @@ import {
   isVaultRangePeriod,
   isVaultCashUpAnalyticsPeriod,
   isVaultFlexibleRangePeriod,
+  buildPreviousEquivalentVaultPeriod,
   type VaultPeriod,
 } from "./vaultPeriodParser.ts";
 
@@ -135,6 +137,7 @@ export {
   isVaultRangePeriod,
   isVaultCashUpAnalyticsPeriod,
   isVaultFlexibleRangePeriod,
+  buildPreviousEquivalentVaultPeriod,
 };
 
 export const VAULT_INTENTS = {
@@ -2247,12 +2250,15 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     ) || directAnswer;
 
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
-    const metrics: MetricEntry[] = previousAggregation
+    const isPerformanceOverview =
+      Boolean(route.performanceOverview)
+      || scoreSalesPerformanceQueryFocus(question) === "performance_overview";
+    const metrics: MetricEntry[] = previousAggregation && !isPerformanceOverview
       ? buildCashUpPeriodCompareMetrics(aggregation as never, previousAggregation as never)
       : isPlatformQuery
         ? buildCashUpDeliveryPlatformMetrics(aggregation as never, question)
         : [];
-    if (!isPlatformQuery && !previousAggregation) {
+    if (!isPlatformQuery && (!previousAggregation || isPerformanceOverview)) {
     if (aggregation.totalSales != null) {
       metrics.push(metricEntry("Total sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
       if ((aggregation.dayCount as number) > 0) {
@@ -2266,7 +2272,13 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     if (aggregation.totalGuests != null) {
       metrics.push(metricEntry("Total guests", formatNumber(aggregation.totalGuests), { source: "cash_up" }));
     }
-    if (aggregation.totalDeliverySales != null) {
+    if (aggregation.totalOrders != null) {
+      metrics.push(metricEntry("Total orders", formatNumber(aggregation.totalOrders), { source: "cash_up" }));
+    }
+    if (aggregation.averageSpend != null) {
+      metrics.push(metricEntry("Average spend", formatNumber(aggregation.averageSpend), { unit: "SAR", source: "cash_up" }));
+    }
+    if (!isPerformanceOverview && aggregation.totalDeliverySales != null) {
       metrics.push(metricEntry("Total delivery sales", formatNumber(aggregation.totalDeliverySales), { unit: "SAR", source: "cash_up" }));
       if ((aggregation.dayCount as number) > 0) {
         metrics.push(metricEntry(
@@ -2276,13 +2288,15 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
         ));
       }
     }
-    if (aggregation.totalDeliveryOrders != null) {
+    if (!isPerformanceOverview && aggregation.totalDeliveryOrders != null) {
       metrics.push(metricEntry("Total delivery orders", formatNumber(aggregation.totalDeliveryOrders), { source: "cash_up" }));
     }
-    if (aggregation.averageSpend != null) {
-      metrics.push(metricEntry("Average spend", formatNumber(aggregation.averageSpend), { unit: "SAR", source: "cash_up" }));
-    }
     metrics.push(metricEntry("Days included", formatNumber(aggregation.dayCount), { source: "cash_up" }));
+    if (previousAggregation && isPerformanceOverview) {
+      metrics.push(...buildCashUpPeriodCompareMetrics(aggregation as never, previousAggregation as never).filter(
+        (row) => !metrics.some((m) => m.label === row.label),
+      ));
+    }
     }
 
     const platformBreakdown = aggregation.deliveryPlatformBreakdown as Record<string, { sales?: number; orders?: number }> | undefined;
@@ -2309,9 +2323,11 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       answerType: metrics.length ? "metric" : "executive",
       title: isPlatformQuery
         ? `Delivery platform breakdown · ${tool.periodLabel}`
-        : previousAggregation
-          ? `Period comparison · ${tool.periodLabel}`
-          : `Sales performance · ${tool.periodLabel}`,
+        : (route.performanceOverview || scoreSalesPerformanceQueryFocus(question) === "performance_overview")
+          ? `Performance overview · ${tool.periodLabel}`
+          : previousAggregation
+            ? `Period comparison · ${tool.periodLabel}`
+            : `Sales performance · ${tool.periodLabel}`,
       directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
       keyMetrics: metrics,
       insights: [

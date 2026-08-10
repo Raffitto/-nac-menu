@@ -7,6 +7,20 @@
   overflow: hidden;
 }
 
+/* Ask NAC: allow natural document scroll; sticky composer stays reachable */
+.admin-shell--intelligence-fullscreen:has(.nac-intelligence-hub--ask) {
+  height: auto;
+  max-height: none;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.admin-shell--intelligence-fullscreen:has(.nac-intelligence-hub--ask) .admin-content {
+  overflow: visible;
+  flex: 1 0 auto;
+}
+
 .admin-shell--intelligence-fullscreen .admin-bg-glow {
   opacity: 0.35;
 }
@@ -40,14 +54,16 @@
 }
 
 .nac-intelligence-hub--ask {
-  height: 100dvh;
-  max-height: 100dvh;
+  height: auto;
+  max-height: none;
+  min-height: 100dvh;
+  overflow: visible;
 }
 
 .nac-intelligence-hub--ask .nac-intelligence-mobile-main {
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   display: flex;
   flex-direction: column;
