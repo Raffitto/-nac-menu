@@ -222,6 +222,25 @@ export function countCalendarDaysInRange(startDate, endDate) {
   return Math.round((end - start) / 86400000) + 1;
 }
 
+/** Ensure requested-window coverage metadata is always present for matched comparisons. */
+export function enrichCashUpAggregationCoverageMeta(aggregation, startDate, endDate) {
+  if (!aggregation) return aggregation;
+  const expected = Number(aggregation.expectedDayCount)
+    || countCalendarDaysInRange(
+      aggregation.requestedStartDate || startDate,
+      aggregation.requestedEndDate || endDate,
+    )
+    || 0;
+  const dayCount = Number(aggregation.dayCount) || 0;
+  return {
+    ...aggregation,
+    expectedDayCount: expected || null,
+    missingDayCount: expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null),
+    requestedStartDate: aggregation.requestedStartDate || startDate || null,
+    requestedEndDate: aggregation.requestedEndDate || endDate || null,
+  };
+}
+
 export function splitRangeIntoMonthChunks(startDate, endDate) {
   const chunks = [];
   if (!startDate || !endDate || startDate > endDate) return chunks;

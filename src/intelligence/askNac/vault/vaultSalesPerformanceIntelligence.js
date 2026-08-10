@@ -999,6 +999,18 @@ function averageDailyMetric(total, dayCount) {
   return Number(total) / Number(dayCount);
 }
 
+function resolveExpectedDayCount(aggregation) {
+  if (!aggregation) return null;
+  if (aggregation.expectedDayCount) return Number(aggregation.expectedDayCount);
+  const start = aggregation.requestedStartDate;
+  const end = aggregation.requestedEndDate;
+  if (!start || !end) return null;
+  const startMs = new Date(`${start}T12:00:00`).getTime();
+  const endMs = new Date(`${end}T12:00:00`).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return Math.round((endMs - startMs) / 86400000) + 1;
+}
+
 /**
  * Build a coverage-aware current vs previous comparison.
  * Partial windows never headline-compare unequal day totals.
@@ -1008,7 +1020,7 @@ export function buildMatchedCoverageComparison(current, previous) {
     return { mode: "unavailable", reason: "missing_aggregation", likeForLike: false };
   }
 
-  const expected = current.expectedDayCount || null;
+  const expected = resolveExpectedDayCount(current);
   const currentDays = current.dayCount || 0;
   const previousDays = previous.dayCount || 0;
   const isPartial = expected != null && currentDays > 0 && currentDays < expected;
@@ -1119,7 +1131,7 @@ export function buildPerformanceOverviewAnswer(question = "", aggregation, {
     return `No structured performance facts are available for ${branchLabel} over ${periodLabel}.`;
   }
 
-  const expected = expectedDayCount || null;
+  const expected = resolveExpectedDayCount(aggregation) || expectedDayCount || null;
   const isPartial = expected != null && dayCount > 0 && dayCount < expected;
   const lines = [];
 

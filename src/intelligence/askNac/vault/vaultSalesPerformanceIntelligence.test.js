@@ -10,6 +10,7 @@ import {
   isPerformanceOverviewQuery,
   scoreSalesPerformanceQueryFocus,
 } from "./vaultSalesPerformanceIntelligence";
+import { enrichCashUpAggregationCoverageMeta } from "./vaultCashUpAggregation";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
 import { buildSpecificUnknownMessage } from "../conversation/missingDataMessages";
 
@@ -351,6 +352,116 @@ describe("vaultSalesPerformanceIntelligence", () => {
     });
     expect(compareAnswer).toMatch(/like-for-like 8-day/i);
     expect(compareAnswer).not.toMatch(/-8\.4%/);
+  });
+
+  test("Edge-shaped aggregation without expectedDayCount still uses matched coverage in final answer", () => {
+    // Exact production failure shape: observed dayCounts can both be 8, while requested window is 10.
+    // Without coverage meta, buildMatchedCoverageComparison used to take mode=full and emit down 8.4%.
+    const makeDay = (date, sales, guests = 270, orders = 110) => ({
+      date,
+      totalSales: sales,
+      totalGuests: guests,
+      totalOrders: orders,
+    });
+
+    const rawCurrent = {
+      totalSales: 147254.783,
+      totalGuests: 2191,
+      totalOrders: 879,
+      averageSpend: 67.209,
+      dayCount: 8,
+      // intentionally omit expectedDayCount — Edge aggregate historically dropped this
+      dailyBreakdown: [
+        makeDay("2026-08-01", 18000),
+        makeDay("2026-08-02", 19000),
+        makeDay("2026-08-03", 18500),
+        makeDay("2026-08-04", 17000),
+        makeDay("2026-08-05", 20000),
+        makeDay("2026-08-06", 19500),
+        makeDay("2026-08-07", 17254.783),
+        makeDay("2026-08-08", 18000),
+      ],
+    };
+    // Previous window has 10 observed days totaling the production previous figure.
+    const previousDaily = [
+      makeDay("2026-07-21", 16000, 230, 90),
+      makeDay("2026-07-22", 16000, 230, 92),
+      makeDay("2026-07-23", 16100, 231, 93),
+      makeDay("2026-07-24", 16000, 230, 91),
+      makeDay("2026-07-25", 16200, 232, 94),
+      makeDay("2026-07-26", 16000, 230, 92),
+      makeDay("2026-07-27", 16100, 231, 93),
+      makeDay("2026-07-28", 16091.304, 228, 91),
+      makeDay("2026-07-29", 16100, 234, 92),
+      makeDay("2026-07-30", 16100, 234, 92),
+    ];
+    const fullPreviousTotal = previousDaily.reduce((sum, row) => sum + row.totalSales, 0);
+    expect(fullPreviousTotal).toBeCloseTo(160691.304, 3);
+
+    // Production bug shape: both sides reported dayCount=8 and expectedDayCount was missing,
+    // so comparison took mode=full against the full previous total carried on the object.
+    const rawPrevious = {
+      totalSales: fullPreviousTotal,
+      totalGuests: 2300,
+      totalOrders: 920,
+      averageSpend: fullPreviousTotal / 2300,
+      dayCount: 8, // misleading observed count without coverage meta
+      dailyBreakdown: previousDaily,
+    };
+
+    const broken = buildMatchedCoverageComparison(rawCurrent, rawPrevious);
+    expect(broken.mode).toBe("full");
+    const brokenAnswer = buildPerformanceOverviewAnswer(
+      "How did NAC Khobar perform over the last 10 days?",
+      rawCurrent,
+      {
+        branchLabel: "Khobar",
+        periodLabel: "last 10 days vs previous 10 days",
+        previousAggregation: rawPrevious,
+        previousPeriodLabel: "previous 10 days",
+      },
+    );
+    expect(brokenAnswer).toMatch(/\bdown 8\.4%/i);
+
+    const current = enrichCashUpAggregationCoverageMeta(rawCurrent, "2026-07-31", "2026-08-09");
+    const previous = enrichCashUpAggregationCoverageMeta(
+      { ...rawPrevious, dayCount: 10 },
+      "2026-07-21",
+      "2026-07-30",
+    );
+    expect(current.expectedDayCount).toBe(10);
+    expect(current.requestedStartDate).toBe("2026-07-31");
+
+    const matched = buildMatchedCoverageComparison(current, previous);
+    expect(matched.mode).toBe("matched");
+    expect(matched.matchedDayCount).toBe(8);
+    expect(matched.previousMatched.totalSales).toBeLessThan(fullPreviousTotal);
+    expect(matched.previousMatched.dayCount).toBe(8);
+    // Average spend is recomputed from matched numerators/denominators, not copied from headline averages.
+    expect(matched.currentMatched.averageSpend).toBeCloseTo(
+      matched.currentMatched.totalSales / matched.currentMatched.totalGuests,
+      3,
+    );
+
+    const answer = buildPerformanceOverviewAnswer(
+      "How did NAC Khobar perform over the last 10 days?",
+      current,
+      {
+        branchLabel: "Khobar",
+        periodLabel: "last 10 days",
+        previousAggregation: previous,
+        previousPeriodLabel: "previous 10 days",
+      },
+    );
+
+    expect(answer).toMatch(/8 available days of the requested 10-day window/i);
+    expect(answer).toMatch(/like-for-like 8-day basis/i);
+    expect(answer).toMatch(/2 current-period days are not yet available/i);
+    expect(answer).toMatch(/vs .*SAR\)/);
+    expect(answer).not.toMatch(/\bdown 8\.4%/i);
+    expect(answer).not.toMatch(/Compared with previous 10 days: down/i);
+    // Headline must use matched previous subset, not the full 10-day previous total.
+    expect(answer).not.toMatch(/160,691(?:\.304)?/);
   });
 
   test("explicit previous-period compare still routes for overview language", () => {

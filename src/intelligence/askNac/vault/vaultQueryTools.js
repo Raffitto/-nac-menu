@@ -20,6 +20,7 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
   shouldSkipDailyBreakdownForRange,
   shouldUseChunkedCashUpFetch,
@@ -704,6 +705,9 @@ async function fetchCashUpRangeBundle(
       includeDailyBreakdown: resolvedDailyBreakdown,
     });
   }
+
+  // Always attach requested-window coverage meta so matched comparisons can activate on Edge/client.
+  aggregation = enrichCashUpAggregationCoverageMeta(aggregation, startDate, endDate);
 
   const resolvedFactsByDate = factsByDate
     ?? (resolvedDailyBreakdown

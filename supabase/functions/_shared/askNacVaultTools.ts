@@ -77,6 +77,7 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
   shouldSkipDailyBreakdownForRange,
   shouldUseChunkedCashUpFetch,
@@ -1382,6 +1383,9 @@ async function fetchCashUpRangeBundle(
     });
   }
 
+  // Always attach requested-window coverage meta so matched comparisons can activate on Edge.
+  aggregation = enrichCashUpAggregationCoverageMeta(aggregation, startDate, endDate) as Record<string, unknown>;
+
   const resolvedFactsByDate = factsByDate
     ?? (resolvedDailyBreakdown
       ? groupCashUpFactsByBusinessDate((factsResult.facts as Record<string, unknown>[]) || [])
@@ -2235,12 +2239,19 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
     const question = resolveRouteQuestion(route);
     const previousAggregation = tool.previousAggregation as Record<string, unknown> | null | undefined;
     const previousPeriodLabel = (tool.vaultCompare as { previous?: { label?: string } } | null)?.previous?.label || null;
+    // Prefer the current window label — compare tool periodLabel is "current vs previous".
+    const currentPeriodLabel = String(
+      (tool.vaultCompare as { current?: { label?: string } } | null)?.current?.label
+      || (route?.vaultPeriod as { label?: string } | undefined)?.label
+      || tool.periodLabel
+      || "the period",
+    );
 
     const coverageAssessment = assessPeriodCoverage({
       requestedPeriod: (route?.vaultPeriod as { startDate?: string; endDate?: string; label?: string; periodType?: string }) || {
         startDate: tool?.startDate as string | undefined,
         endDate: tool?.endDate as string | undefined,
-        label: tool?.periodLabel as string | undefined,
+        label: currentPeriodLabel,
         periodType: (route?.vaultPeriod as { periodType?: string })?.periodType,
       },
       aggregation: aggregation as never,
@@ -2249,7 +2260,7 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
 
     let directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation as never, {
       branchLabel: String(tool.branchLabel || "Network"),
-      periodLabel: String(tool.periodLabel || "the period"),
+      periodLabel: currentPeriodLabel,
       previousAggregation: (previousAggregation as never) || null,
       previousPeriodLabel,
     });
@@ -2333,13 +2344,13 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? "metric" : "executive",
       title: isPlatformQuery
-        ? `Delivery platform breakdown · ${tool.periodLabel}`
+        ? `Delivery platform breakdown · ${currentPeriodLabel}`
         : (route.performanceOverview || scoreSalesPerformanceQueryFocus(question) === "performance_overview")
-          ? `Performance overview · ${tool.periodLabel}`
+          ? `Performance overview · ${currentPeriodLabel}`
           : previousAggregation
-            ? `Period comparison · ${tool.periodLabel}`
-            : `Sales performance · ${tool.periodLabel}`,
-      directAnswer: directAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
+            ? `Period comparison · ${currentPeriodLabel}`
+            : `Sales performance · ${currentPeriodLabel}`,
+      directAnswer: directAnswer || `Cash-up aggregation for ${currentPeriodLabel}.`,
       keyMetrics: metrics,
       insights: [
         ...(isPlatformQuery

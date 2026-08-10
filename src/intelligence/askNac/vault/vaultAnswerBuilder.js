@@ -270,12 +270,19 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     const question = resolveRouteQuestion(route);
     const previousAggregation = tool.previousAggregation || null;
     const previousPeriodLabel = tool.vaultCompare?.previous?.label || null;
+    // Prefer the current window label — compare tool periodLabel is "current vs previous".
+    const currentPeriodLabel = String(
+      tool.vaultCompare?.current?.label
+      || route?.vaultPeriod?.label
+      || tool.periodLabel
+      || "the period",
+    );
 
     const coverageAssessment = assessPeriodCoverage({
       requestedPeriod: route?.vaultPeriod || {
         startDate: tool?.startDate,
         endDate: tool?.endDate,
-        label: tool?.periodLabel,
+        label: currentPeriodLabel,
         periodType: route?.vaultPeriod?.periodType,
       },
       aggregation,
@@ -284,7 +291,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
 
     let resolvedAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
-      periodLabel: tool.periodLabel,
+      periodLabel: currentPeriodLabel,
       previousAggregation,
       previousPeriodLabel,
     });
@@ -292,7 +299,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       resolvedAnswer,
       question,
       aggregation,
-      route?.vaultPeriod || { label: tool.periodLabel, periodType: route?.vaultPeriod?.periodType },
+      route?.vaultPeriod || { label: currentPeriodLabel, periodType: route?.vaultPeriod?.periodType },
     );
 
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
@@ -365,13 +372,13 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? ANSWER_TYPES.METRIC : ANSWER_TYPES.EXECUTIVE,
       title: isPlatformQuery
-        ? `Delivery platform breakdown · ${tool.periodLabel}`
+        ? `Delivery platform breakdown · ${currentPeriodLabel}`
         : (route.performanceOverview || scoreSalesPerformanceQueryFocus(question) === "performance_overview")
-          ? `Performance overview · ${tool.periodLabel}`
+          ? `Performance overview · ${currentPeriodLabel}`
           : previousAggregation
-            ? `Period comparison · ${tool.periodLabel}`
-            : `Sales performance · ${tool.periodLabel}`,
-      directAnswer: resolvedAnswer || `Cash-up aggregation for ${tool.periodLabel}.`,
+            ? `Period comparison · ${currentPeriodLabel}`
+            : `Sales performance · ${currentPeriodLabel}`,
+      directAnswer: resolvedAnswer || `Cash-up aggregation for ${currentPeriodLabel}.`,
       keyMetrics: metrics,
       insights: [
         ...(isPlatformQuery

@@ -113,6 +113,10 @@ export type CashUpRangeAggregation = {
   totalDeliverySales: number | null;
   totalDeliveryOrders: number | null;
   dayCount: number;
+  expectedDayCount?: number;
+  missingDayCount?: number;
+  requestedStartDate?: string | null;
+  requestedEndDate?: string | null;
   dailyBreakdown: Array<{
     date: string;
     totalSales: number | null;
@@ -134,6 +138,29 @@ export type CashUpRangeAggregation = {
   topPlatformBySales: string | null;
   topPlatformByOrders: string | null;
 };
+
+/** Ensure requested-window coverage metadata is always present for matched comparisons. */
+export function enrichCashUpAggregationCoverageMeta(
+  aggregation: Record<string, unknown> | CashUpRangeAggregation | null | undefined,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
+  if (!aggregation) return aggregation;
+  const expected = Number(aggregation.expectedDayCount)
+    || countCalendarDaysInRange(
+      (aggregation.requestedStartDate as string) || startDate,
+      (aggregation.requestedEndDate as string) || endDate,
+    )
+    || 0;
+  const dayCount = Number(aggregation.dayCount) || 0;
+  return {
+    ...aggregation,
+    expectedDayCount: expected || null,
+    missingDayCount: expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null),
+    requestedStartDate: aggregation.requestedStartDate || startDate || null,
+    requestedEndDate: aggregation.requestedEndDate || endDate || null,
+  };
+}
 
 export function countCalendarDaysInRange(startDate?: string | null, endDate?: string | null) {
   if (!startDate || !endDate) return 0;
@@ -265,6 +292,10 @@ export function aggregateCashUpFactsOverRange({
     ? dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date)
     : dates.filter((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders") != null);
 
+  const expectedDayCount = countCalendarDaysInRange(startDate, endDate);
+  const dayCount = dates.length;
+  const missingDayCount = expectedDayCount > 0 ? Math.max(0, expectedDayCount - dayCount) : 0;
+
   return {
     totalSales,
     totalGuests,
@@ -272,7 +303,11 @@ export function aggregateCashUpFactsOverRange({
     averageSpend,
     totalDeliverySales,
     totalDeliveryOrders,
-    dayCount: dates.length,
+    dayCount,
+    expectedDayCount,
+    missingDayCount,
+    requestedStartDate: startDate || null,
+    requestedEndDate: endDate || null,
     dailyBreakdown,
     salesCoverageStart: salesDates[0] || null,
     salesCoverageEnd: salesDates[salesDates.length - 1] || null,
