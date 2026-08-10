@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import IntelligenceTabPanels from "./IntelligenceTabPanels";
 
 jest.mock("./AskNacTab", () => () => <div>Ask NAC panel</div>);
+jest.mock("./KnowledgeTab", () => () => <div data-testid="intelligence-knowledge-tab">Knowledge panel</div>);
 jest.mock("./SalesIntelligenceHub", () => () => <div>Sales panel</div>);
 jest.mock("./MenuIntelligence", () => () => <div>Menu panel</div>);
 jest.mock("./CompetitiveReputationWatch", () => () => <div>Competitors panel</div>);
@@ -12,9 +13,15 @@ jest.mock("./VisualIntelligenceEngine", () => () => <div>Visual panel</div>);
 jest.mock("../RestaurantIntelligence", () => () => <div>Staff reviews panel</div>);
 
 describe("IntelligenceTabPanels taxonomy", () => {
-  test("Ask NAC remains unchanged", () => {
+  test("Ask NAC remains unchanged and does not mount Knowledge", () => {
     render(<IntelligenceTabPanels activeTab="ask" />);
     expect(screen.getByText("Ask NAC panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("intelligence-knowledge-tab")).not.toBeInTheDocument();
+  });
+
+  test("Knowledge subview renders Company Knowledge", async () => {
+    render(<IntelligenceTabPanels activeTab="knowledge" />);
+    expect(await screen.findByTestId("intelligence-knowledge-tab")).toBeInTheDocument();
   });
 
   test("Operations exposes merged operational views", async () => {

@@ -77,6 +77,7 @@ export const INTELLIGENCE_TAB_PERMISSIONS = {
   operations: PERMISSIONS.VIEW_INTELLIGENCE,
   commercial: PERMISSIONS.VIEW_INTELLIGENCE,
   market: PERMISSIONS.VIEW_INTELLIGENCE,
+  knowledge: PERMISSIONS.VIEW_INTELLIGENCE,
   /** Legacy module ids — still honored via normalizeIntelligenceTabId */
   visual: PERMISSIONS.VIEW_INTELLIGENCE,
   restaurant: PERMISSIONS.VIEW_INTELLIGENCE,

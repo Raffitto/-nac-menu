@@ -30,6 +30,7 @@ describe("mobile intelligence navigation", () => {
       "operations",
       "commercial",
       "market",
+      "knowledge",
     ]);
   });
 });
@@ -62,7 +63,7 @@ describe("resolveAskNacSuggestions mobile-first", () => {
     ).toEqual([]);
   });
 
-  test("desktop keeps post-chat suggestion chips", () => {
+  test("desktop hides suggestion chips after conversation begins", () => {
     const result = resolveAskNacSuggestions({
       mobileFirst: false,
       maxSuggestions: 8,
@@ -70,7 +71,7 @@ describe("resolveAskNacSuggestions mobile-first", () => {
       allPrompts,
       mobilePrompts,
     });
-    expect(result).toHaveLength(8);
+    expect(result).toEqual([]);
   });
 });
 

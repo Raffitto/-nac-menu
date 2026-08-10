@@ -9,6 +9,7 @@ import OperationsInsights from "./OperationsInsights";
 const ExecutiveCommandCenter = lazy(() => import("./ExecutiveCommandCenter"));
 const VisualIntelligenceEngine = lazy(() => import("./VisualIntelligenceEngine"));
 const RestaurantIntelligence = lazy(() => import("../RestaurantIntelligence"));
+const KnowledgeTab = lazy(() => import("./KnowledgeTab"));
 
 function ViewFallback({ label }) {
   return (
@@ -39,17 +40,25 @@ export default function IntelligenceTabPanels({
 }) {
   if (activeTab === "ask") {
     return (
-      <div className="nac-intelligence-panel">
+      <div className="nac-intelligence-panel nac-intelligence-panel--ask" data-testid="intelligence-ask-panel">
         <AskNacTab
           initialQuestion={askNacPrefill}
           prefillSeed={askNacPrefillSeed}
           onInitialQuestionConsumed={onAskNacPrefillConsumed}
           mobileFirst={askNacMobileFirst}
-          showVaultPanel={!askNacMobileFirst}
+          showVaultPanel={false}
           maxSuggestions={askNacMobileFirst ? 3 : 8}
           onMobileNavigate={onMobileNavigate}
         />
       </div>
+    );
+  }
+
+  if (activeTab === "knowledge") {
+    return (
+      <Suspense fallback={<ViewFallback label="Loading Company Knowledge…" />}>
+        <KnowledgeTab />
+      </Suspense>
     );
   }
 

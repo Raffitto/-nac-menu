@@ -66,7 +66,7 @@ export function resizeComposerTextarea(textarea, maxHeight = COMPOSER_MAX_HEIGHT
   textarea.style.height = `${Math.max(next, COMPOSER_MIN_HEIGHT_PX)}px`;
 }
 
-/** Suggestion chips — mobile collapses after first message; desktop keeps post-chat chips. */
+/** Suggestion chips — compact helpers for empty state; hide once conversation begins. */
 export function resolveAskNacSuggestions({
   mobileFirst = false,
   maxSuggestions = 8,
@@ -75,10 +75,10 @@ export function resolveAskNacSuggestions({
   mobilePrompts = [],
 }) {
   if (messageCount > 0) {
-    return mobileFirst ? [] : allPrompts.slice(0, maxSuggestions);
+    return [];
   }
   if (mobileFirst) {
     return mobilePrompts.slice(0, maxSuggestions);
   }
-  return allPrompts;
+  return allPrompts.slice(0, maxSuggestions);
 }

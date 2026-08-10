@@ -8,12 +8,13 @@ import {
 } from "./navigation";
 
 describe("intelligence navigation", () => {
-  test("exposes four primary manager-facing tabs", () => {
+  test("exposes five primary manager-facing tabs including Knowledge", () => {
     expect(INTELLIGENCE_TABS.map((tab) => tab.id)).toEqual([
       "ask",
       "operations",
       "commercial",
       "market",
+      "knowledge",
     ]);
   });
 
@@ -34,6 +35,8 @@ describe("intelligence navigation", () => {
     expect(normalizeIntelligenceTabId("commercial")).toBe("commercial");
     expect(normalizeIntelligenceTabId("market")).toBe("market");
     expect(normalizeIntelligenceTabId("ask")).toBe("ask");
+    expect(normalizeIntelligenceTabId("knowledge")).toBe("knowledge");
+    expect(normalizeIntelligenceTabId("vault")).toBe("knowledge");
   });
 
   test("defaults empty tab to ask", () => {
@@ -92,6 +95,7 @@ describe("intelligence navigation", () => {
         "Go to Operations",
         "Go to Commercial",
         "Go to Market",
+        "Go to Knowledge",
         "Go to Sales",
         "Go to Menu",
         "Go to Competitors",

@@ -69,7 +69,7 @@ export default function AskNacTab({
   prefillSeed = 0,
   onInitialQuestionConsumed,
   mobileFirst = false,
-  showVaultPanel = true,
+  showVaultPanel = false,
   maxSuggestions = 8,
   onMobileNavigate,
 }) {
@@ -259,64 +259,70 @@ export default function AskNacTab({
   }
 
   const showEmptyState = messages.length === 0 && !loading;
+  const inConversation = messages.length > 0 || loading;
 
   return (
-    <div className="nac-ask-nac-tab">
-      <header className="nac-glass-panel nac-ask-nac-hero">
-        <div className="nac-ask-nac-hero__top">
-          <div>
-            <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
-            <h2>Ask NAC</h2>
-            <p className="nac-ask-nac-subtitle">
-              Answers come from verified Supabase metrics only — never guessed. OpenAI (when connected
-              on the server) may explain structured facts returned by internal tools.
-            </p>
-          </div>
-          <div className="nac-ask-nac-hero__actions">
-            {messages.length ? (
-              <button
-                type="button"
-                className="nac-ask-nac-new-chat"
-                onClick={clearChat}
-                disabled={loading}
-                aria-label="Start a new chat"
+    <div className="nac-ask-nac-tab nac-ask-nac-workspace" data-testid="ask-nac-workspace">
+      <div className="nac-ask-nac-workspace__column">
+        <header
+          className={`nac-glass-panel nac-ask-nac-hero${inConversation ? " nac-ask-nac-hero--compact" : ""}`.trim()}
+        >
+          <div className="nac-ask-nac-hero__top">
+            <div>
+              <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
+              <h2>Ask NAC</h2>
+              {!inConversation ? (
+                <p className="nac-ask-nac-subtitle">
+                  Answers come from verified Supabase metrics and Company Knowledge — never guessed.
+                </p>
+              ) : null}
+            </div>
+            <div className="nac-ask-nac-hero__actions">
+              {messages.length ? (
+                <button
+                  type="button"
+                  className="nac-ask-nac-new-chat"
+                  onClick={clearChat}
+                  disabled={loading}
+                  aria-label="Start a new chat"
+                >
+                  <MessageSquarePlus size={16} aria-hidden />
+                  <span>New chat</span>
+                </button>
+              ) : null}
+              <div
+                className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
+                title={statusBadge.label}
               >
-                <MessageSquarePlus size={16} aria-hidden />
-                <span>New chat</span>
-              </button>
-            ) : null}
-            <div
-              className={`nac-ask-nac-server-status nac-ask-nac-server-status--${statusBadge.tone}`}
-              title={statusBadge.label}
-            >
-              {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
-              <span>{statusBadge.label}</span>
+                {statusBadge.tone === "local" ? <ServerOff size={16} /> : <Server size={16} />}
+                <span>{statusBadge.label}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {!isSupabaseConfigured() ? (
-          <p className="nac-ask-nac-config-warn">Supabase is not configured — metric queries will not run.</p>
-        ) : null}
-      </header>
+          {!isSupabaseConfigured() ? (
+            <p className="nac-ask-nac-config-warn">Supabase is not configured — metric queries will not run.</p>
+          ) : null}
+        </header>
 
-      <section className="nac-glass-panel nac-ask-nac-chat">
-        {showEmptyState ? (
-          <div className="nac-ask-nac-empty nac-ask-nac-empty--chat">
-            <Sparkles size={20} aria-hidden />
-            <p>
-              Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
-              comparison, Foodics sales, and Data Vault operational reports. Press Enter to send.
-            </p>
-          </div>
-        ) : null}
+        <section className="nac-ask-nac-chat nac-ask-nac-chat--page" data-testid="ask-nac-chat-page">
+          {showEmptyState ? (
+            <div className="nac-ask-nac-empty nac-ask-nac-empty--chat">
+              <Sparkles size={20} aria-hidden />
+              <p>
+                Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
+                comparison, Foodics sales, and uploaded operational reports. Press Enter to send.
+              </p>
+            </div>
+          ) : null}
 
-        <AskNacMessageList
-          messages={messages}
-          loading={loading}
-          filters={filters}
-          scrollAnchorRef={scrollAnchorRef}
-        />
+          <AskNacMessageList
+            messages={messages}
+            loading={loading}
+            filters={filters}
+            scrollAnchorRef={scrollAnchorRef}
+          />
+        </section>
 
         <AskNacComposer
           value={draft}
@@ -327,7 +333,7 @@ export default function AskNacTab({
           inputRef={inputRef}
           placeholder={composerPlaceholder}
         />
-      </section>
+      </div>
 
       {showVaultPanel ? <AskNacDataVaultPanel session={session} /> : null}
     </div>

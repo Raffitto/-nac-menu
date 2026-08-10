@@ -17,6 +17,7 @@ export const INTELLIGENCE_TABS = [
   { id: "operations", label: "Operations" },
   { id: "commercial", label: "Commercial" },
   { id: "market", label: "Market" },
+  { id: "knowledge", label: "Knowledge" },
 ];
 
 /** Secondary tabs under each primary area (only where real views map). */
@@ -57,6 +58,9 @@ export const INTELLIGENCE_TAB_ALIASES = {
   menu: "commercial",
   visual: "market",
   competitive: "market",
+  vault: "knowledge",
+  "company-knowledge": "knowledge",
+  "data-vault": "knowledge",
 };
 
 /** Legacy raw id → secondary destination under the mapped primary. */
@@ -117,6 +121,7 @@ export const INTELLIGENCE_NAV_COMMANDS = [
   { id: "operations", label: "Go to Operations", primary: "operations", secondary: null },
   { id: "commercial", label: "Go to Commercial", primary: "commercial", secondary: null },
   { id: "market", label: "Go to Market", primary: "market", secondary: null },
+  { id: "knowledge", label: "Go to Knowledge", primary: "knowledge", secondary: null },
   { id: "sales", label: "Go to Sales", primary: "commercial", secondary: "sales" },
   { id: "menu", label: "Go to Menu", primary: "commercial", secondary: "menu" },
   { id: "competitors", label: "Go to Competitors", primary: "market", secondary: "competitors" },
