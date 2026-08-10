@@ -831,107 +831,7 @@ function formatSignedPct(value: number | null | undefined) {
   return `${sign}${Math.abs(n).toFixed(1)}%`;
 }
 
-type CompareAggregation = {
-  totalSales?: number | null;
-  totalGuests?: number | null;
-  averageSpend?: number | null;
-  totalDeliverySales?: number | null;
-  totalDeliveryOrders?: number | null;
-  dayCount?: number;
-};
-
-export function buildCashUpPeriodCompareAnswer(
-  aggregation: CompareAggregation,
-  previousAggregation: CompareAggregation,
-  {
-    branchLabel = "Network",
-    periodLabel = "the period",
-    previousPeriodLabel = "the previous period",
-  }: { branchLabel?: string; periodLabel?: string; previousPeriodLabel?: string } = {},
-) {
-  const currentSales = aggregation.totalSales;
-  const previousSales = previousAggregation.totalSales;
-  if (currentSales == null || previousSales == null) {
-    return `${branchLabel}: insufficient cash-up data to compare ${periodLabel}.`;
-  }
-  const salesDelta = Number(currentSales) - Number(previousSales);
-  const salesPct = previousSales ? ((salesDelta / Number(previousSales)) * 100) : null;
-  const lines = [
-    `${branchLabel} sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`,
-    `Current: ${formatCurrency(currentSales)} (${aggregation.dayCount || 0} cash-up day(s)).`,
-    `Previous: ${formatCurrency(previousSales)} (${previousAggregation.dayCount || 0} cash-up day(s)).`,
-    `Sales delta: ${formatSignedDelta(salesDelta)}${salesPct != null ? ` (${formatSignedPct(salesPct)})` : ""}.`,
-  ];
-  if (aggregation.totalGuests != null && previousAggregation.totalGuests != null) {
-    lines.push(`Guest delta: ${formatSignedDelta(Number(aggregation.totalGuests) - Number(previousAggregation.totalGuests), "")}.`);
-  }
-  if (aggregation.averageSpend != null && previousAggregation.averageSpend != null) {
-    lines.push(`Average spend delta: ${formatSignedDelta(Number(aggregation.averageSpend) - Number(previousAggregation.averageSpend))}.`);
-  }
-  if (aggregation.totalDeliverySales != null && previousAggregation.totalDeliverySales != null) {
-    lines.push(`Delivery sales delta: ${formatSignedDelta(Number(aggregation.totalDeliverySales) - Number(previousAggregation.totalDeliverySales))}.`);
-  }
-  if (aggregation.totalDeliveryOrders != null && previousAggregation.totalDeliveryOrders != null) {
-    lines.push(`Delivery orders delta: ${formatSignedDelta(Number(aggregation.totalDeliveryOrders) - Number(previousAggregation.totalDeliveryOrders), "")}.`);
-  }
-  if (aggregation.dayCount !== previousAggregation.dayCount) {
-    lines.push(`Coverage note: current period includes ${aggregation.dayCount || 0} cash-up day(s) vs ${previousAggregation.dayCount || 0} in the comparison period.`);
-  }
-  return lines.join("\n");
-}
-
-export function appendCoverageToAggregateAnswer(
-  baseAnswer: string | null,
-  question = "",
-  aggregation: { dayCount?: number } | null,
-  requestedPeriod: { label?: string; periodType?: string; startDate?: string; endDate?: string } | null,
-) {
-  if (!baseAnswer || !aggregation) return baseAnswer;
-  const coverage = assessPeriodCoverage({ requestedPeriod, aggregation });
-  const coverageLines = buildCoverageAnswerLines(coverage);
-  if (!coverageLines.length) return baseAnswer;
-
-  const forbiddenSilentJune = /\bthis year\b|\bytd\b|\byear.to.date\b/i.test(String(question));
-  if (forbiddenSilentJune && requestedPeriod?.periodType === "year_to_date" && (aggregation.dayCount || 0) > 0) {
-    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
-  }
-  if (coverage.completeness === "partial" || coverage.completeness === "unavailable") {
-    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
-  }
-  if (coverage.confidenceExplanation) {
-    return `${baseAnswer}\n\n${coverageLines[coverageLines.length - 1]}`;
-  }
-  return baseAnswer;
-}
-
-export function buildCashUpPeriodCompareMetrics(aggregation: CompareAggregation, previousAggregation: CompareAggregation) {
-  const metrics: ReturnType<typeof metricEntry>[] = [];
-  if (aggregation.totalSales != null) metrics.push(metricEntry("Current period sales", formatNumber(aggregation.totalSales), { unit: "SAR", source: "cash_up" }));
-  if (previousAggregation.totalSales != null) metrics.push(metricEntry("Comparison period sales", formatNumber(previousAggregation.totalSales), { unit: "SAR", source: "cash_up" }));
-  if (aggregation.totalSales != null && previousAggregation.totalSales != null) {
-    const delta = Number(aggregation.totalSales) - Number(previousAggregation.totalSales);
-    const pct = previousAggregation.totalSales ? ((delta / Number(previousAggregation.totalSales)) * 100) : null;
-    metrics.push(metricEntry("Sales delta", formatSignedDelta(delta), { source: "cash_up" }));
-    if (pct != null) metrics.push(metricEntry("Sales change", formatSignedPct(pct), { source: "cash_up" }));
-  }
-  if (aggregation.totalGuests != null && previousAggregation.totalGuests != null) {
-    metrics.push(metricEntry("Guest delta", formatSignedDelta(Number(aggregation.totalGuests) - Number(previousAggregation.totalGuests), ""), { source: "cash_up" }));
-  }
-  if (aggregation.averageSpend != null && previousAggregation.averageSpend != null) {
-    metrics.push(metricEntry("Average spend delta", formatSignedDelta(Number(aggregation.averageSpend) - Number(previousAggregation.averageSpend)), { unit: "SAR", source: "cash_up" }));
-  }
-  if (aggregation.totalDeliverySales != null && previousAggregation.totalDeliverySales != null) {
-    metrics.push(metricEntry("Delivery sales delta", formatSignedDelta(Number(aggregation.totalDeliverySales) - Number(previousAggregation.totalDeliverySales)), { unit: "SAR", source: "cash_up" }));
-  }
-  if (aggregation.totalDeliveryOrders != null && previousAggregation.totalDeliveryOrders != null) {
-    metrics.push(metricEntry("Delivery orders delta", formatSignedDelta(Number(aggregation.totalDeliveryOrders) - Number(previousAggregation.totalDeliveryOrders), ""), { source: "cash_up" }));
-  }
-  metrics.push(metricEntry("Current period days", formatNumber(aggregation.dayCount ?? null), { source: "cash_up" }));
-  metrics.push(metricEntry("Comparison period days", formatNumber(previousAggregation.dayCount ?? null), { source: "cash_up" }));
-  return metrics;
-}
-
-function deriveTrafficSpendInterpretationForOverview(
+function deriveTrafficSpendInterpretation(
   current: Record<string, unknown> = {},
   previous: Record<string, unknown> = {},
 ) {
@@ -975,12 +875,222 @@ function deriveTrafficSpendInterpretationForOverview(
   return null;
 }
 
-export function pickStrongestWeakestSalesDays(
-  dailyBreakdown: { date?: string; totalSales?: number | null }[] = [],
+function deriveRecommendedAction(interpretation: string | null = null) {
+  if (!interpretation) return null;
+  if (/spend-driven/i.test(interpretation)) {
+    return "Review upsell execution, add-on placement, and premium item mix before blaming traffic.";
+  }
+  if (/traffic-driven/i.test(interpretation)) {
+    return "Focus on traffic drivers — reservations, walk-in conversion, and local demand signals.";
+  }
+  if (/ticket size/i.test(interpretation)) {
+    return "Check average check trends by daypart and whether discounting increased.";
+  }
+  if (/delivery helped offset/i.test(interpretation)) {
+    return "Protect delivery SLA and platform promos while addressing dine-in softness.";
+  }
+  return null;
+}
+
+type DailyCompareRow = {
+  date?: string;
+  totalSales?: number | null;
+  totalGuests?: number | null;
+  totalOrders?: number | null;
+  totalDeliverySales?: number | null;
+  totalDeliveryOrders?: number | null;
+};
+
+type CompareAggregation = {
+  totalSales?: number | null;
+  totalGuests?: number | null;
+  totalOrders?: number | null;
+  averageSpend?: number | null;
+  totalDeliverySales?: number | null;
+  totalDeliveryOrders?: number | null;
+  dayCount?: number;
+  expectedDayCount?: number;
+  missingDayCount?: number;
+  requestedStartDate?: string | null;
+  requestedEndDate?: string | null;
+  dailyBreakdown?: DailyCompareRow[];
+};
+
+export function buildCashUpPeriodCompareAnswer(aggregation, previousAggregation, {
+  branchLabel = "Network",
+  periodLabel = "the period",
+  previousPeriodLabel = "the previous period",
+} = {}) {
+  if (!aggregation || !previousAggregation) return null;
+
+  const comparison = buildMatchedCoverageComparison(aggregation, previousAggregation);
+  if (comparison.mode === "unavailable") {
+    const lines = [
+      `${branchLabel}: current coverage is ${aggregation.dayCount || 0}`
+        + `${aggregation.expectedDayCount ? ` of ${aggregation.expectedDayCount}` : ""} days, `
+        + "so the full-period comparison is not yet like-for-like.",
+    ];
+    if (comparison.currentAvgDailySales != null && comparison.previousAvgDailySales != null) {
+      lines.push(
+        `Available-day average sales: ${formatCurrency(comparison.currentAvgDailySales)}/day `
+          + `vs ${formatCurrency(comparison.previousAvgDailySales)}/day previously.`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  const current = comparison.mode === "matched" ? comparison.currentMatched : aggregation;
+  const previous = comparison.mode === "matched" ? comparison.previousMatched : previousAggregation;
+  const currentSales = current.totalSales;
+  const previousSales = previous.totalSales;
+  if (currentSales == null || previousSales == null) {
+    return `${branchLabel}: insufficient cash-up data to compare ${periodLabel}.`;
+  }
+
+  const salesDelta = Number(currentSales) - Number(previousSales);
+  const salesPct = previousSales ? ((salesDelta / Number(previousSales)) * 100) : null;
+  const lines = [
+    comparison.mode === "matched"
+      ? `${branchLabel} like-for-like ${comparison.matchedDayCount}-day sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`
+      : `${branchLabel} sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`,
+    `Current: ${formatCurrency(currentSales)} (${current.dayCount} cash-up day(s)).`,
+    `Previous: ${formatCurrency(previousSales)} (${previous.dayCount} cash-up day(s)).`,
+    `Sales delta: ${formatSignedDelta(salesDelta)}${salesPct != null ? ` (${formatSignedPct(salesPct)})` : ""}.`,
+  ];
+
+  if (current.totalGuests != null && previous.totalGuests != null) {
+    const guestDelta = Number(current.totalGuests) - Number(previous.totalGuests);
+    lines.push(`Guest delta: ${formatSignedDelta(guestDelta, "")}.`);
+  }
+
+  if (current.averageSpend != null && previous.averageSpend != null) {
+    const spendDelta = Number(current.averageSpend) - Number(previous.averageSpend);
+    lines.push(`Average spend delta: ${formatSignedDelta(spendDelta)}.`);
+  }
+
+  if (current.totalDeliverySales != null && previous.totalDeliverySales != null) {
+    const deliveryDelta = Number(current.totalDeliverySales) - Number(previous.totalDeliverySales);
+    lines.push(`Delivery sales delta: ${formatSignedDelta(deliveryDelta)}.`);
+  }
+
+  if (current.totalDeliveryOrders != null && previous.totalDeliveryOrders != null) {
+    const orderDelta = Number(current.totalDeliveryOrders) - Number(previous.totalDeliveryOrders);
+    lines.push(`Delivery orders delta: ${formatSignedDelta(orderDelta, "")}.`);
+  }
+
+  if (comparison.mode === "matched" && comparison.missingCurrentDayCount > 0) {
+    lines.push(
+      `${comparison.missingCurrentDayCount} current-period day(s) are not yet available, so the final requested-period result may change.`,
+    );
+  }
+
+  const interpretation = deriveTrafficSpendInterpretation(current, previous);
+  if (interpretation) {
+    lines.push(`Interpretation: ${interpretation}`);
+    const action = deriveRecommendedAction(interpretation);
+    if (action) lines.push(`Recommended action: ${action}`);
+  }
+
+  return lines.join("\n");
+}
+
+
+export function appendCoverageToAggregateAnswer(
+  baseAnswer: string | null,
+  question = "",
+  aggregation: { dayCount?: number } | null,
+  requestedPeriod: { label?: string; periodType?: string; startDate?: string; endDate?: string } | null,
 ) {
-  const withSales = (dailyBreakdown || []).filter(
-    (row) => row?.totalSales != null && Number.isFinite(Number(row.totalSales)),
-  );
+  if (!baseAnswer || !aggregation) return baseAnswer;
+  const coverage = assessPeriodCoverage({ requestedPeriod, aggregation });
+  const coverageLines = buildCoverageAnswerLines(coverage);
+  if (!coverageLines.length) return baseAnswer;
+
+  const forbiddenSilentJune = /\bthis year\b|\bytd\b|\byear.to.date\b/i.test(String(question));
+  if (forbiddenSilentJune && requestedPeriod?.periodType === "year_to_date" && (aggregation.dayCount || 0) > 0) {
+    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
+  }
+  if (coverage.completeness === "partial" || coverage.completeness === "unavailable") {
+    return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
+  }
+  if (coverage.confidenceExplanation) {
+    return `${baseAnswer}\n\n${coverageLines[coverageLines.length - 1]}`;
+  }
+  return baseAnswer;
+}
+
+export function buildCashUpPeriodCompareMetrics(aggregation, previousAggregation) {
+  if (!aggregation || !previousAggregation) return [];
+  const comparison = buildMatchedCoverageComparison(aggregation, previousAggregation);
+  const metrics = [];
+
+  if (comparison.mode === "unavailable") {
+    metrics.push(metricEntry("Comparison status", "Not like-for-like", {
+      source: "cash_up",
+      note: comparison.reason || "partial_coverage",
+    }));
+    metrics.push(metricEntry("Current period days", formatNumber(aggregation.dayCount), { source: "cash_up" }));
+    metrics.push(metricEntry("Comparison period days", formatNumber(previousAggregation.dayCount), { source: "cash_up" }));
+    if (comparison.currentAvgDailySales != null) {
+      metrics.push(metricEntry("Current available-day avg sales", formatNumber(comparison.currentAvgDailySales), { unit: "SAR", source: "cash_up" }));
+    }
+    if (comparison.previousAvgDailySales != null) {
+      metrics.push(metricEntry("Previous available-day avg sales", formatNumber(comparison.previousAvgDailySales), { unit: "SAR", source: "cash_up" }));
+    }
+    return metrics;
+  }
+
+  const current = comparison.mode === "matched" ? comparison.currentMatched : aggregation;
+  const previous = comparison.mode === "matched" ? comparison.previousMatched : previousAggregation;
+
+  if (current.totalSales != null) {
+    metrics.push(metricEntry(
+      comparison.mode === "matched" ? "Like-for-like current sales" : "Current period sales",
+      formatNumber(current.totalSales),
+      { unit: "SAR", source: "cash_up" },
+    ));
+  }
+  if (previous.totalSales != null) {
+    metrics.push(metricEntry(
+      comparison.mode === "matched" ? "Like-for-like previous sales" : "Comparison period sales",
+      formatNumber(previous.totalSales),
+      { unit: "SAR", source: "cash_up" },
+    ));
+  }
+  if (current.totalSales != null && previous.totalSales != null) {
+    const delta = Number(current.totalSales) - Number(previous.totalSales);
+    const pct = previous.totalSales ? ((delta / Number(previous.totalSales)) * 100) : null;
+    metrics.push(metricEntry("Sales delta", formatSignedDelta(delta), { source: "cash_up" }));
+    if (pct != null) metrics.push(metricEntry("Sales change", formatSignedPct(pct), { source: "cash_up" }));
+  }
+  if (current.totalGuests != null && previous.totalGuests != null) {
+    metrics.push(metricEntry("Guest delta", formatSignedDelta(Number(current.totalGuests) - Number(previous.totalGuests), ""), { source: "cash_up" }));
+  }
+  if (current.averageSpend != null && previous.averageSpend != null) {
+    metrics.push(metricEntry("Average spend delta", formatSignedDelta(Number(current.averageSpend) - Number(previous.averageSpend)), { unit: "SAR", source: "cash_up" }));
+  }
+  if (current.totalDeliverySales != null && previous.totalDeliverySales != null) {
+    metrics.push(metricEntry("Delivery sales delta", formatSignedDelta(Number(current.totalDeliverySales) - Number(previous.totalDeliverySales)), { unit: "SAR", source: "cash_up" }));
+  }
+  if (current.totalDeliveryOrders != null && previous.totalDeliveryOrders != null) {
+    metrics.push(metricEntry("Delivery orders delta", formatSignedDelta(Number(current.totalDeliveryOrders) - Number(previous.totalDeliveryOrders), ""), { source: "cash_up" }));
+  }
+  metrics.push(metricEntry(
+    comparison.mode === "matched" ? "Matched days" : "Current period days",
+    formatNumber(current.dayCount),
+    { source: "cash_up" },
+  ));
+  metrics.push(metricEntry(
+    comparison.mode === "matched" ? "Observed current days" : "Comparison period days",
+    formatNumber(comparison.mode === "matched" ? aggregation.dayCount : previous.dayCount),
+    { source: "cash_up" },
+  ));
+  return metrics;
+}
+
+
+export function pickStrongestWeakestSalesDays(dailyBreakdown = []) {
+  const withSales = (dailyBreakdown || []).filter((row) => row?.totalSales != null && Number.isFinite(Number(row.totalSales)));
   if (!withSales.length) return { strongest: null, weakest: null };
   let strongest = withSales[0];
   let weakest = withSales[0];
@@ -991,40 +1101,156 @@ export function pickStrongestWeakestSalesDays(
   return { strongest, weakest };
 }
 
+function calendarDayOffset(startDate, date) {
+  if (!startDate || !date) return null;
+  const start = new Date(`${startDate}T12:00:00`);
+  const day = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(day.getTime())) return null;
+  return Math.round((day.getTime() - start.getTime()) / 86400000);
+}
+
+function sumDailyField(rows, key) {
+  const values = (rows || []).map((row) => row?.[key]).filter((v) => v != null && Number.isFinite(Number(v)));
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + Number(value), 0);
+}
+
+function aggregateMatchedDailyRows(rows = []) {
+  const totalSales = sumDailyField(rows, "totalSales");
+  const totalGuests = sumDailyField(rows, "totalGuests");
+  const totalOrders = sumDailyField(rows, "totalOrders");
+  const totalDeliverySales = sumDailyField(rows, "totalDeliverySales");
+  const totalDeliveryOrders = sumDailyField(rows, "totalDeliveryOrders");
+  let averageSpend = null;
+  if (totalSales != null && totalGuests != null && totalGuests > 0) {
+    averageSpend = totalSales / totalGuests;
+  }
+  return {
+    totalSales,
+    totalGuests,
+    totalOrders,
+    averageSpend,
+    totalDeliverySales,
+    totalDeliveryOrders,
+    dayCount: rows.length,
+    dailyBreakdown: rows,
+  };
+}
+
+function averageDailyMetric(total, dayCount) {
+  if (total == null || !dayCount) return null;
+  return Number(total) / Number(dayCount);
+}
+
+/**
+ * Build a coverage-aware current vs previous comparison.
+ * Partial windows never headline-compare unequal day totals.
+ */
+export function buildMatchedCoverageComparison(current, previous) {
+  if (!current || !previous) {
+    return { mode: "unavailable", reason: "missing_aggregation", likeForLike: false };
+  }
+
+  const expected = current.expectedDayCount || null;
+  const currentDays = current.dayCount || 0;
+  const previousDays = previous.dayCount || 0;
+  const isPartial = expected != null && currentDays > 0 && currentDays < expected;
+  const dayMismatch = currentDays > 0 && previousDays > 0 && currentDays !== previousDays;
+  const needsMatch = isPartial || dayMismatch;
+
+  const avgPair = {
+    currentAvgDailySales: averageDailyMetric(current.totalSales, currentDays),
+    previousAvgDailySales: averageDailyMetric(previous.totalSales, previousDays),
+    currentObservedDayCount: currentDays,
+    previousObservedDayCount: previousDays,
+    expectedDayCount: expected,
+    missingCurrentDayCount: expected != null ? Math.max(0, expected - currentDays) : null,
+  };
+
+  if (!needsMatch) {
+    return {
+      mode: "full",
+      likeForLike: true,
+      current,
+      previous,
+      ...avgPair,
+    };
+  }
+
+  const currentBreakdown = current.dailyBreakdown || [];
+  const previousBreakdown = previous.dailyBreakdown || [];
+  const currentStart = current.requestedStartDate;
+  const previousStart = previous.requestedStartDate;
+
+  if (!currentBreakdown.length || !previousBreakdown.length || !currentStart || !previousStart) {
+    return {
+      mode: "unavailable",
+      reason: "missing_daily_breakdown",
+      likeForLike: false,
+      isPartial: true,
+      ...avgPair,
+    };
+  }
+
+  const previousByOffset = new Map();
+  for (const row of previousBreakdown) {
+    const offset = calendarDayOffset(previousStart, row.date);
+    if (offset == null) continue;
+    previousByOffset.set(offset, row);
+  }
+
+  const matchedCurrent = [];
+  const matchedPrevious = [];
+  for (const row of currentBreakdown) {
+    // Never invent zeros for missing current days — only pair observed sales days.
+    if (row?.totalSales == null || !Number.isFinite(Number(row.totalSales))) continue;
+    const offset = calendarDayOffset(currentStart, row.date);
+    if (offset == null) continue;
+    const previousRow = previousByOffset.get(offset);
+    if (!previousRow || previousRow.totalSales == null || !Number.isFinite(Number(previousRow.totalSales))) {
+      continue;
+    }
+    matchedCurrent.push(row);
+    matchedPrevious.push(previousRow);
+  }
+
+  if (!matchedCurrent.length) {
+    return {
+      mode: "unavailable",
+      reason: "no_matched_days",
+      likeForLike: false,
+      isPartial: true,
+      ...avgPair,
+    };
+  }
+
+  return {
+    mode: "matched",
+    likeForLike: true,
+    isPartial: true,
+    matchedDayCount: matchedCurrent.length,
+    currentMatched: aggregateMatchedDailyRows(matchedCurrent),
+    previousMatched: aggregateMatchedDailyRows(matchedPrevious),
+    ...avgPair,
+  };
+}
+
 /**
  * Management-first performance overview from cash-up period aggregation.
  */
-export function buildPerformanceOverviewAnswer(
-  question = "",
-  aggregation: {
-    totalSales?: number | null;
-    totalGuests?: number | null;
-    totalOrders?: number | null;
-    averageSpend?: number | null;
-    dayCount?: number;
-    expectedDayCount?: number;
-    missingDayCount?: number;
-    dailyBreakdown?: { date?: string; totalSales?: number | null }[];
-  } | null,
-  {
-    branchLabel = "Network",
-    periodLabel = "the period",
-    previousAggregation = null,
-    previousPeriodLabel = null,
-  }: {
-    branchLabel?: string;
-    periodLabel?: string;
-    previousAggregation?: CompareAggregation | null;
-    previousPeriodLabel?: string | null;
-  } = {},
-) {
+export function buildPerformanceOverviewAnswer(question = "", aggregation, {
+  branchLabel = "Network",
+  periodLabel = "the period",
+  previousAggregation = null,
+  previousPeriodLabel = null,
+} = {}) {
   if (!aggregation) return null;
   const {
     totalSales,
     totalGuests,
     totalOrders,
     averageSpend,
-    dayCount = 0,
+    dayCount,
     expectedDayCount,
     missingDayCount,
     dailyBreakdown = [],
@@ -1036,41 +1262,92 @@ export function buildPerformanceOverviewAnswer(
     return `No structured performance facts are available for ${branchLabel} over ${periodLabel}.`;
   }
 
-  const lines: string[] = [];
+  const expected = expectedDayCount || null;
+  const isPartial = expected != null && dayCount > 0 && dayCount < expected;
+  const lines = [];
+
   if (totalSales != null) {
-    const avgSales = formatAveragePerDay(totalSales, dayCount);
-    lines.push(
-      `${branchLabel} generated ${formatCurrency(totalSales)} in sales over ${periodLabel}`
-        + `${avgSales ? ` (${avgSales} avg/day)` : ""}.`,
-    );
+    if (isPartial) {
+      lines.push(
+        `${branchLabel} recorded ${formatCurrency(totalSales)} across ${dayCount} available days of the requested ${expected}-day window.`,
+      );
+    } else {
+      const avgSales = formatAveragePerDay(totalSales, dayCount);
+      lines.push(
+        `${branchLabel} generated ${formatCurrency(totalSales)} in sales over ${periodLabel}`
+          + `${avgSales ? ` (${avgSales} avg/day)` : ""}.`,
+      );
+    }
   } else if (totalGuests != null) {
-    lines.push(`${branchLabel} recorded ${formatNumber(totalGuests)} guests over ${periodLabel}.`);
+    lines.push(
+      isPartial
+        ? `${branchLabel} recorded ${formatNumber(totalGuests)} guests across ${dayCount} available days of the requested ${expected}-day window.`
+        : `${branchLabel} recorded ${formatNumber(totalGuests)} guests over ${periodLabel}.`,
+    );
   } else {
     lines.push(`${branchLabel} performance overview for ${periodLabel}:`);
   }
 
-  const kpiBits: string[] = [];
+  const kpiBits = [];
   if (totalGuests != null) kpiBits.push(`${formatNumber(totalGuests)} guests`);
   if (totalOrders != null) kpiBits.push(`${formatNumber(totalOrders)} orders`);
   if (averageSpend != null) kpiBits.push(`${formatCurrency(averageSpend)} avg spend`);
   if (kpiBits.length) lines.push(`Key KPIs: ${kpiBits.join(" · ")}.`);
 
-  if (previousAggregation?.totalSales != null && totalSales != null) {
-    const delta = Number(totalSales) - Number(previousAggregation.totalSales);
-    const pct = previousAggregation.totalSales
-      ? ((delta / Number(previousAggregation.totalSales)) * 100)
-      : null;
-    const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-    lines.push(
-      `Compared with ${previousPeriodLabel || "the previous equivalent period"}: `
-        + `${direction}${pct != null ? ` ${Math.abs(pct).toFixed(1)}%` : ""} `
-        + `(${formatSignedDelta(delta)} vs ${formatCurrency(previousAggregation.totalSales)}).`,
-    );
-    const interpretation = deriveTrafficSpendInterpretationForOverview(
-      aggregation as Record<string, unknown>,
-      previousAggregation as Record<string, unknown>,
-    );
-    if (interpretation) lines.push(interpretation);
+  if (previousAggregation) {
+    const comparison = buildMatchedCoverageComparison(aggregation, previousAggregation);
+    if (comparison.mode === "full" && comparison.current?.totalSales != null && comparison.previous?.totalSales != null) {
+      const delta = Number(comparison.current.totalSales) - Number(comparison.previous.totalSales);
+      const pct = comparison.previous.totalSales
+        ? ((delta / Number(comparison.previous.totalSales)) * 100)
+        : null;
+      const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+      lines.push(
+        `Compared with ${previousPeriodLabel || "the previous equivalent period"}: `
+          + `${direction}${pct != null ? ` ${Math.abs(pct).toFixed(1)}%` : ""} `
+          + `(${formatSignedDelta(delta)} vs ${formatCurrency(comparison.previous.totalSales)}).`,
+      );
+      const interpretation = deriveTrafficSpendInterpretation(comparison.current, comparison.previous);
+      if (interpretation) lines.push(interpretation);
+    } else if (comparison.mode === "matched") {
+      const cur = comparison.currentMatched;
+      const prev = comparison.previousMatched;
+      if (cur?.totalSales != null && prev?.totalSales != null) {
+        const delta = Number(cur.totalSales) - Number(prev.totalSales);
+        const pct = prev.totalSales ? ((delta / Number(prev.totalSales)) * 100) : null;
+        const direction = delta > 0 ? "above" : delta < 0 ? "below" : "level with";
+        lines.push(
+          `On a like-for-like ${comparison.matchedDayCount}-day basis, sales were `
+            + `${pct != null ? `${Math.abs(pct).toFixed(1)}% ${direction}` : direction} `
+            + `the corresponding previous-period days `
+            + `(${formatCurrency(cur.totalSales)} vs ${formatCurrency(prev.totalSales)}).`,
+        );
+        if (cur.averageSpend != null && prev.averageSpend != null) {
+          lines.push(
+            `Like-for-like average spend: ${formatCurrency(cur.averageSpend)} vs ${formatCurrency(prev.averageSpend)}.`,
+          );
+        }
+        const interpretation = deriveTrafficSpendInterpretation(cur, prev);
+        if (interpretation) lines.push(interpretation);
+      }
+      if (comparison.missingCurrentDayCount > 0) {
+        const missing = comparison.missingCurrentDayCount;
+        lines.push(
+          `${missing} current-period day${missing === 1 ? "" : "s"} `
+            + `${missing === 1 ? "is" : "are"} not yet available, so the final ${expected}-day result may change.`,
+        );
+      }
+    } else if (comparison.mode === "unavailable") {
+      lines.push(
+        `Current coverage is ${dayCount} of ${expected || "the requested"} days, so the full-period comparison is not yet like-for-like.`,
+      );
+      if (comparison.currentAvgDailySales != null && comparison.previousAvgDailySales != null) {
+        lines.push(
+          `Available-day average sales: ${formatCurrency(comparison.currentAvgDailySales)}/day `
+            + `vs ${formatCurrency(comparison.previousAvgDailySales)}/day in the previous window.`,
+        );
+      }
+    }
   } else if ((dailyBreakdown || []).filter((d) => d.totalSales != null).length >= 3) {
     const first = dailyBreakdown.find((d) => d.totalSales != null);
     const last = [...dailyBreakdown].reverse().find((d) => d.totalSales != null);
@@ -1091,13 +1368,14 @@ export function buildPerformanceOverviewAnswer(
     );
   }
 
-  const expected = expectedDayCount || null;
   if (expected && dayCount < expected) {
-    lines.push(
-      `Coverage: ${dayCount} of ${expected} requested day(s) have cash-up facts`
-        + `${missingDayCount ? ` (${missingDayCount} missing)` : ""}.`,
-    );
-  } else if (dayCount) {
+    if (!previousAggregation) {
+      lines.push(
+        `Coverage: ${dayCount} of ${expected} requested day(s) have cash-up facts`
+          + `${missingDayCount ? ` (${missingDayCount} missing)` : ""}.`,
+      );
+    }
+  } else if (dayCount && !isPartial) {
     lines.push(`Coverage: ${dayCount} cash-up day(s) included.`);
   }
 
@@ -1108,6 +1386,10 @@ export function buildPerformanceOverviewAnswer(
   void question;
   return lines.join(" ");
 }
+
+/**
+ * Deterministic multi-day cash-up answer from aggregated structured facts.
+ */
 
 export function buildCashUpPeriodAggregateAnswer(
   question = "",

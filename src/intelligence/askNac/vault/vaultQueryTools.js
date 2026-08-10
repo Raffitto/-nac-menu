@@ -499,18 +499,29 @@ export async function getVaultCashUpFactsOverRange(supabase, context = {}) {
   const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
 
   if (vaultCompare?.current && vaultCompare?.previous) {
+    // Keep daily rows for short windows so partial-period comparisons can match like-for-like days.
+    const currentIncludeDaily = !shouldSkipDailyBreakdownForRange(
+      vaultCompare.current.startDate,
+      vaultCompare.current.endDate,
+      vaultCompare.current.periodType,
+    );
+    const previousIncludeDaily = !shouldSkipDailyBreakdownForRange(
+      vaultCompare.previous.startDate,
+      vaultCompare.previous.endDate,
+      vaultCompare.previous.periodType,
+    );
     const currentResult = await fetchCashUpRangeBundle(supabase, context, {
       startDate: vaultCompare.current.startDate,
       endDate: vaultCompare.current.endDate,
       vaultPeriod: vaultCompare.current,
-      includeDailyBreakdown: false,
+      includeDailyBreakdown: currentIncludeDaily,
       includeCoverage: false,
     });
     const previousResult = await fetchCashUpRangeBundle(supabase, context, {
       startDate: vaultCompare.previous.startDate,
       endDate: vaultCompare.previous.endDate,
       vaultPeriod: vaultCompare.previous,
-      includeDailyBreakdown: false,
+      includeDailyBreakdown: previousIncludeDaily,
       includeCoverage: false,
     });
 
