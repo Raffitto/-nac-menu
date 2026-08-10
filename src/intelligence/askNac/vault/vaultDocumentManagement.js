@@ -14,6 +14,7 @@ export const VAULT_BULK_REINDEX_MAX = 50;
 export const VAULT_JUNK_FILE_PATTERNS = [
   /^verify-.*\.(txt|csv)$/i,
   /^folder-verify\./i,
+  /^compiler-stage-/i,
   /^ck1-/i,
   /^p\.txt$/i,
   /^test[-_.]/i,

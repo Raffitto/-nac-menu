@@ -22,6 +22,14 @@ import {
   fetchBulkImportBatchStatus,
 } from "../intelligence/askNac/vault/vaultBulkIngestion";
 import { fetchCoverageDashboardData } from "../intelligence/askNac/vault/vaultCoverageDashboard";
+import {
+  averageBranchCoveragePercent,
+  formatCoveragePercentLabel,
+  formatStatusCount,
+  KNOWLEDGE_TIMESTAMP_LABELS,
+  latestTimestamp,
+  resolveKnowledgeContentUpdatedAt,
+} from "../intelligence/askNac/vault/vaultKnowledgeStatusDisplay";
 import { sanitizeDriveApiResponse } from "./vaultDriveSecrets";
 import {
   archiveVaultDocument,
@@ -51,7 +59,16 @@ export {
   vaultCanDeleteDocuments,
   vaultCanManageDocuments,
   isVaultJunkFilename,
+  averageBranchCoveragePercent,
+  formatCoveragePercentLabel,
+  formatStatusCount,
+  KNOWLEDGE_TIMESTAMP_LABELS,
+  latestTimestamp,
+  resolveKnowledgeContentUpdatedAt,
 };
+
+/** Default page size for Company Knowledge registry list (bounded fetch). */
+export const VAULT_REGISTRY_PAGE_SIZE = 50;
 
 function driveOAuthRedirectUri() {
   if (typeof window === "undefined") return "";
@@ -138,33 +155,51 @@ export function enrichVaultFileRow(row) {
  * @param {{ limit?: number }} opts
  */
 export async function listVaultFiles(supabase, {
-  limit = 100,
+  limit = VAULT_REGISTRY_PAGE_SIZE,
+  offset = 0,
   status = "active",
   includeRelations = false,
 } = {}) {
   if (!supabase) {
-    return { files: [], error: "Supabase not configured" };
+    return { files: [], error: "Supabase not configured", hasMore: false, limit, offset };
   }
+
+  const safeLimit = Math.max(1, Math.min(Number(limit) || VAULT_REGISTRY_PAGE_SIZE, 100));
+  const safeOffset = Math.max(0, Number(offset) || 0);
+  const from = safeOffset;
+  const to = safeOffset + safeLimit - 1;
 
   let query = supabase
     .from("ask_nac_files")
     .select(includeRelations ? LIST_SELECT_WITH_RELATIONS : LIST_SELECT)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .order("created_at", { ascending: false });
 
   if (status) query = query.eq("status", status);
 
-  const { data, error } = await query;
+  const { data, error } = await query.range(from, to);
 
   if (error) {
-    return { files: [], error: error.message };
+    return { files: [], error: error.message, hasMore: false, limit: safeLimit, offset: safeOffset };
   }
 
-  return { files: (data || []).map(enrichVaultFileRow), error: null };
+  const files = (data || []).map(enrichVaultFileRow);
+  return {
+    files,
+    error: null,
+    hasMore: files.length === safeLimit,
+    limit: safeLimit,
+    offset: safeOffset,
+  };
+}
+
+function countOrNull(result) {
+  if (result?.error) return { value: null, error: result.error.message || String(result.error) };
+  return { value: Number(result?.count || 0), error: null };
 }
 
 /**
  * Lightweight knowledge status aggregates — never scans the full chunk corpus client-side.
+ * Partial success is allowed: one failed count must not invent zeros for others.
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  */
 export async function fetchVaultKnowledgeStats(supabase) {
@@ -173,21 +208,23 @@ export async function fetchVaultKnowledgeStats(supabase) {
   }
 
   try {
-    const [stored, searchable, parsed, chunks, latest] = await Promise.all([
-      supabase
-        .from("ask_nac_files")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "active"),
+    const [stored, searchable, structured, chunks, latest] = await Promise.all([
       supabase
         .from("ask_nac_files")
         .select("id", { count: "exact", head: true })
         .eq("status", "active")
-        .eq("searchable", true),
+        .not("original_filename", "ilike", "compiler-stage-%"),
       supabase
         .from("ask_nac_files")
         .select("id", { count: "exact", head: true })
         .eq("status", "active")
-        .gt("chunk_count", 0),
+        .eq("searchable", true)
+        .not("original_filename", "ilike", "compiler-stage-%"),
+      // Structured facts coverage rows (not search chunks) — cheap head count.
+      supabase
+        .from("ask_nac_data_coverage")
+        .select("id", { count: "exact", head: true })
+        .gt("fact_count", 0),
       supabase
         .from("ask_nac_document_chunks")
         .select("id", { count: "exact", head: true }),
@@ -200,34 +237,57 @@ export async function fetchVaultKnowledgeStats(supabase) {
         .maybeSingle(),
     ]);
 
-    const firstError =
-      stored.error || searchable.error || parsed.error || chunks.error || latest.error;
-    if (firstError) {
-      return { ok: false, error: firstError.message, stats: null };
+    const documentsStored = countOrNull(stored);
+    const searchableFiles = countOrNull(searchable);
+    const reportsParsed = countOrNull(structured);
+    const totalChunks = countOrNull(chunks);
+    const latestError = latest.error?.message || null;
+    const lastUpdated = latestError
+      ? null
+      : resolveKnowledgeContentUpdatedAt(latest.data || {});
+
+    const errors = [
+      documentsStored.error,
+      searchableFiles.error,
+      reportsParsed.error,
+      totalChunks.error,
+      latestError,
+    ].filter(Boolean);
+
+    const hasAnyCount =
+      documentsStored.value != null
+      || searchableFiles.value != null
+      || reportsParsed.value != null
+      || totalChunks.value != null;
+
+    if (!hasAnyCount) {
+      return { ok: false, error: errors[0] || "Knowledge stats unavailable", stats: null };
     }
 
-    const documentsStored = Number(stored.count || 0);
-    const searchableFiles = Number(searchable.count || 0);
-    const reportsParsed = Number(parsed.count || 0);
-    const totalChunks = Number(chunks.count || 0);
-    const lastUpdated =
-      latest.data?.searchable_at || latest.data?.updated_at || latest.data?.created_at || null;
+    const storedN = documentsStored.value;
+    const searchableN = searchableFiles.value;
+    const chunksN = totalChunks.value;
+
+    let searchIndexLabel = "Unavailable";
+    if (searchableN != null && chunksN != null) {
+      searchIndexLabel =
+        searchableN > 0
+          ? `${searchableN} searchable · ${chunksN} chunks`
+          : storedN > 0
+            ? "Registered · not searchable yet"
+            : "Empty";
+    }
 
     return {
       ok: true,
-      error: null,
+      error: errors.length ? errors[0] : null,
       stats: {
-        documentsStored,
-        reportsParsed,
-        searchableFiles,
-        totalChunks,
+        documentsStored: documentsStored.value,
+        reportsParsed: reportsParsed.value,
+        searchableFiles: searchableFiles.value,
+        totalChunks: totalChunks.value,
         lastUpdated,
-        searchIndexLabel:
-          searchableFiles > 0
-            ? `${searchableFiles} searchable · ${totalChunks} chunks`
-            : documentsStored > 0
-              ? "Registered · not searchable yet"
-              : "Empty",
+        searchIndexLabel,
       },
     };
   } catch (err) {

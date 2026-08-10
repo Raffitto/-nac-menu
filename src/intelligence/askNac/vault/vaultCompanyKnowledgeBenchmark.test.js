@@ -210,6 +210,7 @@ describe("document management junk detection", () => {
     expect(isVaultJunkFilename("verify-upload.csv")).toBe(true);
     expect(isVaultJunkFilename("ck1-prod-sample.txt")).toBe(true);
     expect(isVaultJunkFilename("p.txt")).toBe(true);
+    expect(isVaultJunkFilename("compiler-stage-verify-1782333466189.txt")).toBe(true);
     expect(isVaultJunkFilename("13_June_NAC_Khobar_Logbook.docx.pdf")).toBe(false);
   });
 });

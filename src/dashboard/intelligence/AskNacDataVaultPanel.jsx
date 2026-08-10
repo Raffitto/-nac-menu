@@ -48,6 +48,13 @@ import {
   formatVaultDocumentManagementRow,
   vaultCanManageDocuments,
   vaultCanDeleteDocuments,
+  isVaultJunkFilename,
+  VAULT_REGISTRY_PAGE_SIZE,
+  averageBranchCoveragePercent,
+  formatCoveragePercentLabel,
+  formatStatusCount,
+  KNOWLEDGE_TIMESTAMP_LABELS,
+  latestTimestamp,
 } from "../../lib/askNacVaultApi";
 import {
   VAULT_DEPARTMENTS,
@@ -223,10 +230,14 @@ export default function AskNacDataVaultPanel({ session }) {
   const [bulkProgress, setBulkProgress] = useState(null);
   const [uploadQueue, setUploadQueue] = useState([]);
   const [coverageData, setCoverageData] = useState(null);
+  const [coverageAvailable, setCoverageAvailable] = useState(false);
   const [, setCoverageAttempted] = useState(false);
   const [registryAttempted, setRegistryAttempted] = useState(false);
   const [registryUnavailable, setRegistryUnavailable] = useState(false);
+  const [statsUnavailable, setStatsUnavailable] = useState(false);
   const [registryAggregate, setRegistryAggregate] = useState(null);
+  const [registryHasMore, setRegistryHasMore] = useState(false);
+  const [registryLoadingMore, setRegistryLoadingMore] = useState(false);
   const [statusNotice, setStatusNotice] = useState("");
   const [driveStatus, setDriveStatus] = useState(null);
   const [driveFolderId, setDriveFolderId] = useState("");
@@ -286,20 +297,25 @@ export default function AskNacDataVaultPanel({ session }) {
   );
 
   const documentManagementRows = useMemo(
-    () => files.map((row) => ({
-      ...formatVaultDocumentManagementRow(row),
-      title: row.title || row.original_filename,
-    })),
+    () => files
+      .filter((row) => !isVaultJunkFilename(row.original_filename || row.title || ""))
+      .map((row) => ({
+        ...formatVaultDocumentManagementRow(row),
+        title: row.title || row.original_filename,
+      })),
     [files],
   );
 
   const knowledgeStats = useMemo(() => {
     const foldersRegistered = (driveStatus?.folders || []).length;
     const connectedSources = driveStatus?.connected ? 1 : 0;
-    const branchScores = ["khobar", "riyadh", "jeddah"].map((id) => coverageData?.[id]?.overallScore ?? 0);
-    const coveragePct = branchScores.length
-      ? Math.round(branchScores.reduce((a, b) => a + b, 0) / branchScores.length)
-      : 0;
+    const coveragePct = averageBranchCoveragePercent(coverageData || {}, {
+      available: coverageAvailable,
+    });
+    const coverageLabel = formatCoveragePercentLabel({
+      available: coverageAvailable,
+      score: coveragePct,
+    });
 
     if (registryAggregate) {
       return {
@@ -309,15 +325,18 @@ export default function AskNacDataVaultPanel({ session }) {
         connectedSources,
         lastUpdated: registryAggregate.lastUpdated,
         coveragePct,
+        coverageLabel,
+        coverageAvailable,
         searchIndexLabel: registryAggregate.searchIndexLabel,
         searchableFiles: registryAggregate.searchableFiles,
         totalChunks: registryAggregate.totalChunks,
         registryUnavailable: false,
+        statsUnavailable: false,
       };
     }
 
-    // Fallback from loaded page only when aggregates unavailable — never invent zeros on failure.
-    if (registryUnavailable) {
+    // Never invent zeros when aggregate/status queries failed.
+    if (statsUnavailable || registryUnavailable) {
       return {
         documentsStored: null,
         reportsParsed: null,
@@ -325,14 +344,20 @@ export default function AskNacDataVaultPanel({ session }) {
         connectedSources,
         lastUpdated: null,
         coveragePct,
+        coverageLabel,
+        coverageAvailable,
         searchIndexLabel: "Unavailable",
         searchableFiles: null,
         totalChunks: null,
-        registryUnavailable: true,
+        registryUnavailable,
+        statsUnavailable: true,
       };
     }
 
-    const documentsStored = files.length;
+    // Page-local fallback only when aggregates never loaded but list succeeded.
+    const documentsStored = files.filter(
+      (row) => !isVaultJunkFilename(row.original_filename || row.title || ""),
+    ).length;
     const reportsParsed = files.filter((row) => {
       const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
       return (
@@ -341,8 +366,9 @@ export default function AskNacDataVaultPanel({ session }) {
       );
     }).length;
     const lastUpdated = files.reduce((latest, row) => {
-      if (!row.created_at) return latest;
-      return !latest || row.created_at > latest ? row.created_at : latest;
+      const ts = row.searchable_at || row.updated_at || row.created_at;
+      if (!ts) return latest;
+      return !latest || ts > latest ? ts : latest;
     }, null);
     const searchIndex = computeVaultSearchIndexStats(files);
     return {
@@ -352,20 +378,25 @@ export default function AskNacDataVaultPanel({ session }) {
       connectedSources,
       lastUpdated,
       coveragePct,
+      coverageLabel,
+      coverageAvailable,
       searchIndexLabel: searchIndex.label,
       searchableFiles: searchIndex.searchableFiles,
       totalChunks: searchIndex.totalChunks,
       registryUnavailable: false,
+      statsUnavailable: false,
     };
-  }, [files, driveStatus, coverageData, registryAggregate, registryUnavailable]);
+  }, [files, driveStatus, coverageData, coverageAvailable, registryAggregate, registryUnavailable, statsUnavailable]);
 
-  const driveLastSyncAt = useMemo(() => {
+  const driveLastScheduledCheckAt = useMemo(() => {
     const folders = driveStatus?.folders || [];
     if (!folders.length) return driveStatus?.connection?.connected_at || null;
-    return folders.reduce((latest, folder) => {
-      if (!folder.last_sync_at) return latest;
-      return !latest || folder.last_sync_at > latest ? folder.last_sync_at : latest;
-    }, null);
+    return latestTimestamp(folders.map((folder) => folder.last_sync_at));
+  }, [driveStatus]);
+
+  const driveLastSuccessfulIngestAt = useMemo(() => {
+    const folders = driveStatus?.folders || [];
+    return latestTimestamp(folders.map((folder) => folder.last_ingest_at));
   }, [driveStatus]);
 
   const driveSyncStats = useMemo(
@@ -424,7 +455,11 @@ export default function AskNacDataVaultPanel({ session }) {
 
     try {
       const [listResult, statsResult, staff] = await Promise.all([
-        listVaultFiles(supabase, { limit: 100, includeRelations: false }),
+        listVaultFiles(supabase, {
+          limit: VAULT_REGISTRY_PAGE_SIZE,
+          offset: 0,
+          includeRelations: false,
+        }),
         fetchVaultKnowledgeStats(supabase),
         fetchVaultStaffRole(supabase),
       ]);
@@ -434,31 +469,69 @@ export default function AskNacDataVaultPanel({ session }) {
         setSchemaReady(false);
         setError("Data Vault schema not applied yet. Run the Supabase migration.");
         setRegistryUnavailable(true);
-      } else if (listError || !statsResult.ok) {
-        setSchemaReady(true);
-        setRegistryUnavailable(true);
-        setStatusNotice("Knowledge registry unavailable · Retry");
-        // Keep prior files / aggregates — never fall back to a false zero registry.
-        if (!listError && listResult.files) setFiles(listResult.files);
+        setStatsUnavailable(true);
       } else {
         setSchemaReady(true);
-        setError("");
-        setStatusNotice("");
-        setRegistryUnavailable(false);
-        setFiles(listResult.files || []);
-        setRegistryAggregate(statsResult.stats);
+        // List and stats fail independently — never invent zeros from either failure.
+        if (listError) {
+          setRegistryUnavailable(true);
+          setStatusNotice("Knowledge registry unavailable · Retry");
+        } else {
+          setRegistryUnavailable(false);
+          setFiles(listResult.files || []);
+          setRegistryHasMore(Boolean(listResult.hasMore));
+          setError("");
+        }
+
+        if (statsResult.ok && statsResult.stats) {
+          setStatsUnavailable(false);
+          setRegistryAggregate(statsResult.stats);
+          if (!listError) setStatusNotice("");
+        } else {
+          setStatsUnavailable(true);
+          setRegistryAggregate(null);
+          setStatusNotice((prev) => prev || "Knowledge counts unavailable · Retry");
+        }
       }
 
       setVaultRole(staff?.role ?? null);
     } catch {
       setSchemaReady(true);
       setRegistryUnavailable(true);
+      setStatsUnavailable(true);
       setStatusNotice("Knowledge registry unavailable · Retry");
     } finally {
       setLoading(false);
       setRegistryAttempted(true);
     }
   }, []);
+
+  const loadMoreRegistry = useCallback(async () => {
+    if (!supabase || registryLoadingMore || !registryHasMore) return;
+    setRegistryLoadingMore(true);
+    try {
+      const result = await listVaultFiles(supabase, {
+        limit: VAULT_REGISTRY_PAGE_SIZE,
+        offset: files.length,
+        includeRelations: false,
+      });
+      if (result.error) {
+        setNotice(result.error);
+        return;
+      }
+      setFiles((prev) => {
+        const seen = new Set(prev.map((row) => row.id));
+        const next = [...prev];
+        for (const row of result.files || []) {
+          if (!seen.has(row.id)) next.push(row);
+        }
+        return next;
+      });
+      setRegistryHasMore(Boolean(result.hasMore));
+    } finally {
+      setRegistryLoadingMore(false);
+    }
+  }, [files.length, registryHasMore, registryLoadingMore]);
 
   useEffect(() => {
     loadRegistry();
@@ -467,17 +540,23 @@ export default function AskNacDataVaultPanel({ session }) {
   const loadCoverage = useCallback(async () => {
     if (!supabase) {
       setCoverageAttempted(true);
+      setCoverageAvailable(false);
       return;
     }
     try {
       const result = await fetchCoverageDashboardData(supabase);
-      setCoverageData(result.branches || {});
-      if (result.error) {
-        setCoverageData({});
+      if (result.available && !result.error) {
+        setCoverageData(result.branches || {});
+        setCoverageAvailable(true);
+      } else {
+        // Keep prior successful coverage if any; never coerce failure to 0%.
+        setCoverageAvailable(false);
+        setCoverageData(null);
         setStatusNotice((prev) => prev || "Coverage summary unavailable — showing counts only.");
       }
     } catch {
-      setCoverageData({});
+      setCoverageAvailable(false);
+      setCoverageData(null);
       setStatusNotice((prev) => prev || "Coverage summary unavailable — showing counts only.");
     } finally {
       setCoverageAttempted(true);
@@ -1622,8 +1701,12 @@ export default function AskNacDataVaultPanel({ session }) {
                         <dd>{driveEmail || "Google account"}</dd>
                       </div>
                       <div>
-                        <dt>Last automatic sync</dt>
-                        <dd>{formatLastSync(driveLastSyncAt)}</dd>
+                        <dt>{KNOWLEDGE_TIMESTAMP_LABELS.lastScheduledCheck}</dt>
+                        <dd>{formatLastSync(driveLastScheduledCheckAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>{KNOWLEDGE_TIMESTAMP_LABELS.lastSuccessfulIngest}</dt>
+                        <dd>{formatLastSync(driveLastSuccessfulIngestAt)}</dd>
                       </div>
                       <div>
                         <dt>Next sync</dt>
@@ -1813,13 +1896,18 @@ export default function AskNacDataVaultPanel({ session }) {
                   <div className="nac-vault-stat-card">
                     <span className="nac-vault-stat-card__label">Documents Stored</span>
                     <strong className="nac-vault-stat-card__value">
-                      {knowledgeStats.registryUnavailable ? "—" : knowledgeStats.documentsStored}
+                      {formatStatusCount(knowledgeStats.documentsStored, {
+                        unavailable: knowledgeStats.statsUnavailable,
+                      })}
                     </strong>
                   </div>
                   <div className="nac-vault-stat-card">
-                    <span className="nac-vault-stat-card__label">Reports Parsed</span>
+                    <span className="nac-vault-stat-card__label">Structured reports</span>
                     <strong className="nac-vault-stat-card__value">
-                      {knowledgeStats.registryUnavailable ? "—" : knowledgeStats.reportsParsed}
+                      {formatStatusCount(knowledgeStats.reportsParsed, {
+                        unavailable: knowledgeStats.statsUnavailable
+                          || knowledgeStats.reportsParsed == null,
+                      })}
                     </strong>
                   </div>
                   <div
@@ -1839,14 +1927,14 @@ export default function AskNacDataVaultPanel({ session }) {
                     <strong className="nac-vault-stat-card__value">{knowledgeStats.connectedSources}</strong>
                   </div>
                   <div className="nac-vault-stat-card">
-                    <span className="nac-vault-stat-card__label">Last updated</span>
+                    <span className="nac-vault-stat-card__label">{KNOWLEDGE_TIMESTAMP_LABELS.lastContentUpdate}</span>
                     <strong className="nac-vault-stat-card__value nac-vault-stat-card__value--text">
                       {formatLastUpdated(knowledgeStats.lastUpdated)}
                     </strong>
                   </div>
                   <div className="nac-vault-stat-card nac-vault-stat-card--highlight">
                     <span className="nac-vault-stat-card__label">Knowledge coverage</span>
-                    <strong className="nac-vault-stat-card__value">{knowledgeStats.coveragePct}%</strong>
+                    <strong className="nac-vault-stat-card__value">{knowledgeStats.coverageLabel}</strong>
                   </div>
                 </div>
               </>
@@ -1889,20 +1977,28 @@ export default function AskNacDataVaultPanel({ session }) {
               <div className="nac-ask-vault__coverage-grid">
                 {["khobar", "riyadh", "jeddah"].map((branchId) => {
                   const branch = coverageData?.[branchId];
+                  const branchLabelText = formatCoveragePercentLabel({
+                    available: coverageAvailable,
+                    score: branch?.overallScore,
+                  });
                   return (
                     <div key={branchId} className="nac-ask-vault__coverage-card">
                       <div className="nac-ask-vault__coverage-head">
                         <span>{branchDashboardName(branchId)}</span>
-                        <strong>{branch?.overallScore ?? 0}%</strong>
+                        <strong>{branchLabelText}</strong>
                       </div>
-                      <ul>
-                        {(branch?.categories || []).slice(0, 6).map((cat) => (
-                          <li key={cat.key} className={`is-${cat.status}`}>
-                            <span>{cat.label}</span>
-                            <span>{cat.score}%</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {coverageAvailable ? (
+                        <ul>
+                          {(branch?.categories || []).slice(0, 6).map((cat) => (
+                            <li key={cat.key} className={`is-${cat.status}`}>
+                              <span>{cat.label}</span>
+                              <span>{cat.score}%</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="nac-ask-vault__hint">Coverage unavailable</p>
+                      )}
                     </div>
                   );
                 })}
@@ -2176,7 +2272,7 @@ export default function AskNacDataVaultPanel({ session }) {
                           <th scope="col">Uploaded</th>
                           <th scope="col">Searchable</th>
                           <th scope="col">Chunks</th>
-                          <th scope="col">Parsed</th>
+                          <th scope="col">Structured</th>
                           <th scope="col">Last indexed</th>
                           <th scope="col">Actions</th>
                         </tr>
@@ -2244,6 +2340,22 @@ export default function AskNacDataVaultPanel({ session }) {
                     </table>
                   </div>
 
+                  {registryHasMore ? (
+                    <div className="nac-vault-doc-mgmt__toolbar">
+                      <button
+                        type="button"
+                        className="nac-ask-vault__refresh"
+                        onClick={loadMoreRegistry}
+                        disabled={registryLoadingMore}
+                      >
+                        {registryLoadingMore ? (
+                          <Loader2 size={14} className="nac-bi-spin" />
+                        ) : null}
+                        {registryLoadingMore ? "Loading…" : "Load more documents"}
+                      </button>
+                    </div>
+                  ) : null}
+
                   {confirmArchiveId ? (
                     <div className="nac-vault-doc-mgmt__confirm" role="dialog" aria-modal="true">
                       <p>Archive this document? It will be removed from search but kept for audit.</p>
@@ -2294,80 +2406,97 @@ export default function AskNacDataVaultPanel({ session }) {
                   ) : null}
                 </>
               ) : (
-                <ul className="nac-ask-vault__files">
-                  {files.map((row) => {
-                    const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
-                    const mgmt = formatVaultDocumentManagementRow(row);
-                    return (
-                    <li key={row.id} className="nac-ask-vault__file-card">
-                      <div className="nac-ask-vault__file-title-row">
-                        <div className="nac-ask-vault__file-title">{row.title || row.original_filename}</div>
-                        <div className="nac-vault-tier-badges">
-                          <span className={`nac-vault-tier-badge is-${tier.tier}`}>{tier.label}</span>
-                          {!tier.searchable ? (
-                            <span className="nac-vault-tier-badge is-search-pending">
-                              Search index: {tier.searchableLabel}
+                <>
+                  <ul className="nac-ask-vault__files">
+                    {documentManagementRows.map((mgmt) => {
+                      const row = files.find((f) => f.id === mgmt.id) || {};
+                      const tier = row.knowledgeTier || computeVaultKnowledgeTier(row);
+                      return (
+                      <li key={mgmt.id} className="nac-ask-vault__file-card">
+                        <div className="nac-ask-vault__file-title-row">
+                          <div className="nac-ask-vault__file-title">{row.title || row.original_filename}</div>
+                          <div className="nac-vault-tier-badges">
+                            <span className={`nac-vault-tier-badge is-${tier.tier}`}>{tier.label}</span>
+                            {!tier.searchable ? (
+                              <span className="nac-vault-tier-badge is-search-pending">
+                                Search index: {tier.searchableLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="nac-ask-vault__file-meta">
+                          <span>{branchLabel(row)}</span>
+                          <span>{row.department}</span>
+                          <span>{row.report_type}</span>
+                          <span>{row.data_layer}</span>
+                          <span>{row.sensitivity_level}</span>
+                        </div>
+                        <div className="nac-ask-vault__parse-grid">
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Parsing</span>
+                            <span className={`nac-ask-vault__status ${statusClass(row.parsingStatus)}`}>
+                              {VAULT_INGESTION_STATUS_LABELS[row.parsingStatus] || row.parsingStatus}
                             </span>
-                          ) : null}
+                          </div>
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Structured</span>
+                            <span>{mgmt.parsed ? "Yes" : "No"}</span>
+                          </div>
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Search</span>
+                            <span className={`nac-ask-vault__status ${tier.searchable ? "is-completed" : "is-registered"}`}>
+                              {mgmt.searchable
+                                ? `Yes (${mgmt.chunkCount} chunks)`
+                                : "No"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Last indexed</span>
+                            <span>{formatDate(mgmt.lastIndexedAt)}</span>
+                          </div>
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Uploaded</span>
+                            <span>{formatDate(row.created_at)}</span>
+                          </div>
+                          <div>
+                            <span className="nac-ask-vault__parse-label">Confidence</span>
+                            <span>{formatConfidence(row.parserConfidence)}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="nac-ask-vault__file-meta">
-                        <span>{branchLabel(row)}</span>
-                        <span>{row.department}</span>
-                        <span>{row.report_type}</span>
-                        <span>{row.data_layer}</span>
-                        <span>{row.sensitivity_level}</span>
-                      </div>
-                      <div className="nac-ask-vault__parse-grid">
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Parsing</span>
-                          <span className={`nac-ask-vault__status ${statusClass(row.parsingStatus)}`}>
-                            {VAULT_INGESTION_STATUS_LABELS[row.parsingStatus] || row.parsingStatus}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Parsed</span>
-                          <span>{mgmt.parsed ? "Yes" : "No"}</span>
-                        </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Search</span>
-                          <span className={`nac-ask-vault__status ${tier.searchable ? "is-completed" : "is-registered"}`}>
-                            {mgmt.searchable
-                              ? `Yes (${mgmt.chunkCount} chunks)`
-                              : "No"}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Last indexed</span>
-                          <span>{formatDate(mgmt.lastIndexedAt)}</span>
-                        </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Uploaded</span>
+                        {row.needsMapping ? (
+                          <span className="nac-ask-vault__needs-mapping">Needs mapping</span>
+                        ) : null}
+                        {row.parseWarning ? (
+                          <p className="nac-ask-vault__parse-warn" role="status">
+                            <AlertCircle size={14} aria-hidden />
+                            {row.parseWarning}
+                          </p>
+                        ) : null}
+                        <div className="nac-ask-vault__file-foot">
                           <span>{formatDate(row.created_at)}</span>
+                          <span>{row.original_filename}</span>
+                          <span>{row.readinessStatus || "registered"}</span>
                         </div>
-                        <div>
-                          <span className="nac-ask-vault__parse-label">Confidence</span>
-                          <span>{formatConfidence(row.parserConfidence)}</span>
-                        </div>
-                      </div>
-                      {row.needsMapping ? (
-                        <span className="nac-ask-vault__needs-mapping">Needs mapping</span>
-                      ) : null}
-                      {row.parseWarning ? (
-                        <p className="nac-ask-vault__parse-warn" role="status">
-                          <AlertCircle size={14} aria-hidden />
-                          {row.parseWarning}
-                        </p>
-                      ) : null}
-                      <div className="nac-ask-vault__file-foot">
-                        <span>{formatDate(row.created_at)}</span>
-                        <span>{row.original_filename}</span>
-                        <span>{row.readinessStatus || "registered"}</span>
-                      </div>
-                    </li>
-                    );
-                  })}
-                </ul>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                  {registryHasMore ? (
+                    <div className="nac-vault-doc-mgmt__toolbar">
+                      <button
+                        type="button"
+                        className="nac-ask-vault__refresh"
+                        onClick={loadMoreRegistry}
+                        disabled={registryLoadingMore}
+                      >
+                        {registryLoadingMore ? (
+                          <Loader2 size={14} className="nac-bi-spin" />
+                        ) : null}
+                        {registryLoadingMore ? "Loading…" : "Load more documents"}
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </CollapsibleSection>

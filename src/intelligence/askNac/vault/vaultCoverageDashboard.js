@@ -85,32 +85,33 @@ export function computeBranchCoverageSummary(coverageRows = [], factsSummary = {
   return byBranch;
 }
 
+/**
+ * Lightweight coverage dashboard fetch.
+ * Intentionally avoids scanning ask_nac_structured_facts (statement-timeout risk at scale).
+ * Reviews category scores from coverage readiness/fact_count only.
+ */
 export async function fetchCoverageDashboardData(supabase) {
-  if (!supabase) return { branches: {}, error: "Supabase not configured" };
+  if (!supabase) {
+    return { branches: {}, available: false, error: "Supabase not configured" };
+  }
 
   const { data: coverage, error: coverageError } = await supabase
     .from("ask_nac_data_coverage")
     .select("branch_id,report_type,readiness_status,fact_count,last_ingested_at,period_start,period_end")
-    .eq("brand_wide", false);
+    .eq("brand_wide", false)
+    .limit(5000);
 
   if (coverageError) {
-    return { branches: {}, error: coverageError.message };
+    return {
+      branches: {},
+      available: false,
+      error: coverageError.message,
+    };
   }
 
-  const { data: facts } = await supabase
-    .from("ask_nac_structured_facts")
-    .select("branch_id,metric_key")
-    .in("branch_id", VAULT_BRANCH_IDS);
-
-  const factsSummary = {};
-  (facts || []).forEach((row) => {
-    if (!factsSummary[row.branch_id]) factsSummary[row.branch_id] = {};
-    factsSummary[row.branch_id][row.metric_key] =
-      (factsSummary[row.branch_id][row.metric_key] || 0) + 1;
-  });
-
   return {
-    branches: computeBranchCoverageSummary(coverage || [], factsSummary),
+    branches: computeBranchCoverageSummary(coverage || [], {}),
+    available: true,
     error: null,
   };
 }

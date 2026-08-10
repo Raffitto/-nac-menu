@@ -373,7 +373,8 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(driveFunction).toMatch(/CONNECTION_REQUIRED/);
     expect(scheduledIngest).toMatch(/connection_required/);
     expect(panel).toMatch(/CONNECTION REQUIRED/);
-    expect(panel).toMatch(/Last automatic sync/);
+    expect(panel).toMatch(/KNOWLEDGE_TIMESTAMP_LABELS\.lastScheduledCheck/);
+    expect(panel).toMatch(/KNOWLEDGE_TIMESTAMP_LABELS\.lastSuccessfulIngest/);
     expect(panel).toMatch(/Next sync/);
     expect(panel).toMatch(/formatRiyadhSchedule/);
   });

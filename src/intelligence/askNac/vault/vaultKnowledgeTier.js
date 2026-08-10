@@ -12,7 +12,7 @@ export const VAULT_KNOWLEDGE_TIER = Object.freeze({
 
 export const VAULT_KNOWLEDGE_TIER_LABELS = Object.freeze({
   stored: "Stored",
-  parsed: "Parsed",
+  parsed: "Structured",
   searchable: "Searchable",
   ask_nac_ready: "Ask-NAC-ready",
 });
