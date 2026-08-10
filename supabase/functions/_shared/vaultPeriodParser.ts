@@ -559,7 +559,7 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   }
 
   const monthCompare = q.match(
-    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus|with|against|compared to)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
   );
   if (monthCompare) {
     const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);

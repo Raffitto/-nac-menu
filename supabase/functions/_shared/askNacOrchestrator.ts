@@ -7,6 +7,7 @@ import { fetchAskNacMenuMetrics } from "./askNacMenuMetrics.ts";
 import { MONTH_HOURS } from "./mtdHybridMerge.ts";
 import { buildDeterministicAskNacAnswer, branchDisplayName, MAX_BRANCH_ROWS, MAX_STAFF_ROWS, periodLabelFromHours } from "./askNacEdgeAnswerBuilder.ts";
 import { narrateWithOpenAi } from "./askNacOpenAiNarrator.ts";
+import { enrichRouteWithManagementPlanner } from "./askNacManagementPlanner.ts";
 import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
@@ -1082,6 +1083,35 @@ export async function processAskNacOnEdge(
       },
     };
   }
+
+  // Management planner: model understands natural language; deterministic tools stay authoritative.
+  // Invoked only for unknown/low-confidence routes or Foodics hijacks of management questions.
+  let managementPlannerMeta: Record<string, unknown> | null = null;
+  const plannerStartedAt = performance.now();
+  const plannerEnrichment = await enrichRouteWithManagementPlanner(
+    route as unknown as Record<string, unknown>,
+    effectiveQuestion,
+    {
+      branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
+      conversationContext: conversationContext as Record<string, unknown> | null,
+      filters: { branch: (mergedFilters.branch as string | null) || null },
+      referenceDate: new Date(),
+    },
+  );
+  const managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
+  if (plannerEnrichment.plannerUsed) {
+    route = plannerEnrichment.route as typeof route;
+    managementPlannerMeta = {
+      used: true,
+      source: plannerEnrichment.plannerSource,
+      applied: plannerEnrichment.applied,
+      planIntent: plannerEnrichment.plan?.intent || null,
+      metricFamily: plannerEnrichment.plan?.metric_family || null,
+      timeExpression: plannerEnrichment.plan?.time?.expression || null,
+      needsClarification: Boolean(plannerEnrichment.plan?.needs_clarification),
+    };
+  }
+
   const readiness = await assessReadiness(route, supabase, {
     profile: profileHint,
     executiveKind: route.executiveKind,
@@ -1093,7 +1123,8 @@ export async function processAskNacOnEdge(
   let foodicsPeriod = route.foodicsPeriod;
   let periodWarnings: string[] = [];
 
-  if (isFoodicsDataIntent(route.intent)) {
+  // After planner rewrite, do not chase Foodics for commercial management questions.
+  if (isFoodicsDataIntent(route.intent) && !managementPlannerMeta?.applied) {
     const fallback = await resolveFoodicsPeriodWithFallback(supabase, {
       question: effectiveQuestion,
       filters: mergedFilters,
@@ -1250,6 +1281,9 @@ export async function processAskNacOnEdge(
     cashUpProductionTrace,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
+    managementPlanner: managementPlannerMeta
+      ? { ...managementPlannerMeta, timingMs: managementPlannerMs }
+      : { used: false, timingMs: managementPlannerMs },
     conversationResolution: {
       originalQuestion: prepareResult.originalQuestion,
       resolvedQuestion: effectiveQuestion,
