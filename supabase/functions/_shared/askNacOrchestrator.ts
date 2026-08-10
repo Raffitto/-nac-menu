@@ -257,6 +257,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
       if (isPerformanceOverviewQuery(q) && (period || vaultCompare)) return 37;
+      // Explicit compare / day-ranking always prefer structured cash-up over Foodics/unknown.
+      if (vaultCompare || scoreSalesPerformanceQueryFocus(q) === "period_compare") return 38;
+      if (scoreSalesPerformanceQueryFocus(q) === "day_ranking" && period) return 37;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
         return 35;
@@ -609,6 +612,12 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     : null;
   const performanceOverview = intent === ASK_NAC_INTENTS.CASH_UP
     && isPerformanceOverviewQuery(normalized.text);
+  const salesQueryFocus = intent === ASK_NAC_INTENTS.CASH_UP
+    ? (performanceOverview
+      ? "performance_overview"
+      : (scoreSalesPerformanceQueryFocus(normalized.text)
+        || (vaultCompare ? "period_compare" : null)))
+    : null;
 
   return {
     intent,
@@ -625,7 +634,7 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     vaultCompare: vaultCompare || null,
     whyMetricFocus,
     performanceOverview,
-    queryFocus: performanceOverview ? "performance_overview" : null,
+    queryFocus: salesQueryFocus,
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
@@ -1113,6 +1122,8 @@ export async function processAskNacOnEdge(
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
       vaultCompare: route.vaultCompare,
+      performanceOverview: route.performanceOverview,
+      queryFocus: route.queryFocus,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,

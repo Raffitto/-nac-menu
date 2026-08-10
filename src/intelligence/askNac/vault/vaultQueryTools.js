@@ -16,6 +16,7 @@ import {
   CASH_UP_STRUCTURED_METRIC_KEYS,
   CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS,
   CASH_UP_FACTS_QUERY_LIMIT,
+  scoreSalesPerformanceQueryFocus,
 } from "./vaultSalesPerformanceIntelligence";
 import {
   aggregateCashUpFactsOverRange,
@@ -829,13 +830,17 @@ export async function searchOperationalReviewDocuments(supabase, context = {}) {
   const scopedBranch = resolveBranch(context);
   const reportTypes = ["daily_logbook", "reception_daily_report"];
 
+  const hasRequestedPeriod = Boolean(context.vaultPeriod?.startDate && context.vaultPeriod?.endDate);
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
     vaultPeriod: context.vaultPeriod || null,
     reportTypes,
-    preferRecent: /\b(latest|recent|this month|this week)\b/i.test(context.question || ""),
+    preferRecent: hasRequestedPeriod
+      || /\b(latest|recent|this month|this week|last\s+\d+\s+days?)\b/i.test(context.question || ""),
+    // Time-bounded operational questions must not relax into out-of-window historical logbooks.
+    strictMetadata: hasRequestedPeriod,
     mapRow: (row, terms) => mapVaultChunkRow(row, terms),
   });
 
@@ -848,6 +853,8 @@ export async function searchOperationalReviewDocuments(supabase, context = {}) {
     groupedFindings: grouped,
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    periodLabel: context.vaultPeriod?.label || null,
+    vaultPeriod: context.vaultPeriod || null,
     vaultSources: [...new Map(result.matches.map((m) => [m.fileId, {
       fileId: m.fileId,
       title: m.fileTitle,
@@ -1030,10 +1037,20 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       const question = String(context.question || "").toLowerCase();
       const vaultPeriod = context.vaultPeriod || {};
       const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
+      const queryFocus = String(context.queryFocus || "");
+      const performanceOverview = Boolean(context.performanceOverview);
+      const hasResolvedWindow = Boolean(vaultPeriod?.startDate || vaultCompare?.current?.startDate);
+      const forcePeriodPath = hasResolvedWindow
+        || performanceOverview
+        || ["performance_overview", "period_compare", "day_ranking"].includes(queryFocus)
+        || scoreSalesPerformanceQueryFocus(String(context.question || "")) != null;
       try {
         if (
-          (!vaultPeriod?.startDate && !vaultCompare?.current?.startDate)
-          || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+          !forcePeriodPath
+          && (
+            (!vaultPeriod?.startDate && !vaultCompare?.current?.startDate)
+            || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+          )
         ) {
           return await getLatestVaultCashUpFacts(supabase, context);
         }

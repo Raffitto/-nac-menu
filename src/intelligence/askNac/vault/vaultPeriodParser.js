@@ -503,6 +503,18 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBoundsFromToken(monthBeforeOps[1], monthBeforeOps[2], referenceDate);
   }
 
+  // Management performance phrasing: "How did July perform overall?", "How was July?"
+  const performanceMonth = q.match(
+    new RegExp(
+      `\\b(?:how (?:did|was|is)|perform(?:ed|ance)?|overall|business)\\b[^?]*\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`,
+    ),
+  ) || q.match(
+    new RegExp(`\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:perform(?:ed|ance)?|overall|sales|results?)\\b`),
+  );
+  if (performanceMonth) {
+    return monthBoundsFromToken(performanceMonth[1], performanceMonth[2], referenceDate);
+  }
+
   return null;
 }
 
@@ -515,8 +527,11 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
 
   const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs|versus|against|with|compared to)\s+(.+)$/);
   if (customSplit) {
+    const previousFragment = String(customSplit[2] || "")
+      .replace(/\bfor\s+(nac\s+)?(khobar|riyadh|jeddah|branch|network)\b.*$/i, "")
+      .trim();
     const current = parseFlexiblePeriodFragment(customSplit[1], referenceDate);
-    const previous = parseFlexiblePeriodFragment(customSplit[2], referenceDate);
+    const previous = parseFlexiblePeriodFragment(previousFragment || customSplit[2], referenceDate);
     if (current && previous) {
       return {
         current: { ...current, label: current.label || formatRangeLabel(current.startDate, current.endDate) },
@@ -544,7 +559,7 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   }
 
   const compareN = q.match(
-    /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs|versus|compared to|against)\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
+    /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs|versus|compared to|against|with)\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
   ) || q.match(
     /\bcompare\b.*\b(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
   );

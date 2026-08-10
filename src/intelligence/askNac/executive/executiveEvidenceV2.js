@@ -230,10 +230,18 @@ function detectMissingInformation(gathered, { tool, intent } = {}) {
   if (!(gathered.structuredFacts?.daily_briefing?.length)) {
     missing.push({ label: "Daily briefing for this period", reason: "No daily briefing workbooks indexed for the period." });
   }
-  if (!(gathered.structuredFacts?.daily_logbook?.length)) {
+  const hasLogbookEvidence = Boolean(gathered.structuredFacts?.daily_logbook?.length)
+    || Boolean(tool?.matches?.length)
+    || Boolean(tool?.groupedFindings?.length)
+    || (gathered.historicalDashboards || []).some((row) => /logbook|daily_logbook/i.test(String(row.reportType || row.report_type || "")));
+  if (!hasLogbookEvidence) {
     missing.push({ label: "Daily logbook entries", reason: "No logbook structured facts for the period." });
   }
-  if (!(gathered.historicalDashboards?.length) && !coverageTypes.has("weekly_dashboard")) {
+  if (
+    !(gathered.historicalDashboards?.length)
+    && !coverageTypes.has("weekly_dashboard")
+    && intent !== ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY
+  ) {
     missing.push({ label: "Historical weekly dashboards", reason: "No weekly dashboard files searchable in the vault." });
   }
 
@@ -253,7 +261,33 @@ function detectMissingInformation(gathered, { tool, intent } = {}) {
   return missing.slice(0, 8);
 }
 
-export function computeSourceComposition(gathered = {}, evidenceMap = {}) {
+export function computeSourceComposition(gathered = {}, evidenceMap = {}, { intent = null } = {}) {
+  // Quantitative commercial answers: honest primary/supporting labels, not chunk-count percentages.
+  if (intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY && gathered.aggregation?.dayCount) {
+    const composition = [
+      {
+        source: "Cash Up structured facts",
+        sourceType: "cash_up",
+        count: Number(gathered.aggregation.dayCount || 1),
+        percent: 100,
+        role: "primary",
+      },
+    ];
+    const supportCount = (gathered.historicalDashboards || []).length
+      + (gathered.operatorMemory || []).length
+      + (gathered.branchMemory || []).length;
+    if (supportCount > 0) {
+      composition.push({
+        source: "Logbook / historical context",
+        sourceType: "supporting_context",
+        count: supportCount,
+        percent: 0,
+        role: "supporting",
+      });
+    }
+    return { composition, totalHits: composition.length, counts: { cash_up: 1 }, qualitative: true };
+  }
+
   const weighted = [];
 
   for (const [reportType, facts] of Object.entries(gathered.structuredFacts || {})) {
@@ -281,7 +315,7 @@ export function computeSourceComposition(gathered = {}, evidenceMap = {}) {
     }))
     .sort((a, b) => b.percent - a.percent);
 
-  return { composition, totalHits: total, counts };
+  return { composition, totalHits: total, counts, qualitative: false };
 }
 
 export function assessExecutiveConfidence({ evidenceMap, sourceComposition, baseConfidence = CONFIDENCE_LEVELS.MEDIUM }) {
@@ -374,6 +408,18 @@ export function formatImprovementSection(suggestions = [], confidence) {
 }
 
 export function formatSourceCompositionDiagnostics(sourceComposition = {}) {
+  if (sourceComposition.qualitative) {
+    const primary = (sourceComposition.composition || []).find((row) => row.role === "primary");
+    const supporting = (sourceComposition.composition || []).filter((row) => row.role === "supporting");
+    const text = `Primary: ${primary?.source || "Cash Up structured facts"}`
+      + (supporting.length
+        ? `\nSupporting context: ${supporting.map((row) => row.source).join("; ")}`
+        : "");
+    return {
+      answerSourceComposition: sourceComposition.composition || [],
+      answerSourceCompositionText: text,
+    };
+  }
   const lines = (sourceComposition.composition || []).map((row) => `${row.percent}% ${row.source}`);
   return {
     answerSourceComposition: sourceComposition.composition || [],
@@ -406,6 +452,7 @@ function enrichExecutiveResponse(response, payload) {
     executiveConfidence,
     pendingSessionId,
     awaitingInput,
+    intent = null,
   } = payload;
 
   const compositionDiag = formatSourceCompositionDiagnostics(sourceComposition);
@@ -418,14 +465,21 @@ function enrichExecutiveResponse(response, payload) {
   if (disclosure.missing?.length) disclosureLines.push(`Missing: ${disclosure.missing.slice(0, 4).join("; ")}`);
 
   const followUp = followUpQuestions[0];
-  const directAnswerParts = [
-    stringifyDirectAnswer(response.directAnswer),
-    "",
-    evidenceSection,
-    disclosureLines.length ? `\nDisclosure:\n${disclosureLines.map((l) => `• ${l}`).join("\n")}` : "",
-    improvementSection,
-    compositionDiag.answerSourceCompositionText,
-  ].filter(Boolean);
+  const keepEvidenceInDirectAnswer = intent !== ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY;
+  const directAnswerParts = keepEvidenceInDirectAnswer
+    ? [
+      stringifyDirectAnswer(response.directAnswer),
+      "",
+      evidenceSection,
+      disclosureLines.length ? `\nDisclosure:\n${disclosureLines.map((l) => `• ${l}`).join("\n")}` : "",
+      improvementSection,
+      compositionDiag.answerSourceCompositionText,
+    ].filter(Boolean)
+    : [
+      stringifyDirectAnswer(response.directAnswer),
+      "",
+      compositionDiag.answerSourceCompositionText,
+    ].filter(Boolean);
 
   const recommendations = [...(response.recommendations || [])];
   if (followUp?.prompt && executiveConfidence !== CONFIDENCE_LEVELS.HIGH) {
@@ -485,7 +539,7 @@ export async function applyExecutiveIntelligenceV2({
     : emptyGathered();
 
   const evidenceMap = buildExecutiveEvidenceMapV2(gathered, { tool, intent: route?.intent });
-  const sourceComposition = computeSourceComposition(gathered, evidenceMap);
+  const sourceComposition = computeSourceComposition(gathered, evidenceMap, { intent: route?.intent });
   const executiveConfidence = assessExecutiveConfidence({
     evidenceMap,
     sourceComposition,
@@ -543,5 +597,6 @@ export async function applyExecutiveIntelligenceV2({
     executiveConfidence,
     pendingSessionId,
     awaitingInput,
+    intent: route?.intent,
   });
 }

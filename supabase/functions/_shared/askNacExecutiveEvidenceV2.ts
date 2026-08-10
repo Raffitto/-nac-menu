@@ -107,8 +107,17 @@ function buildEvidenceMap(gathered: Record<string, unknown>, intent: string) {
   }));
   const missingInformation: Array<{ label: string; fieldKey?: string }> = [];
   if (!(sf?.daily_briefing as unknown[])?.length) missingInformation.push({ label: "Daily briefing for this period" });
-  if (!(sf?.daily_logbook as unknown[])?.length) missingInformation.push({ label: "Daily logbook entries" });
-  if (!historicalPatterns.length) missingInformation.push({ label: "Historical weekly dashboards" });
+  const hasLogbookChunks = [
+    ...((gathered.historicalDashboards as Record<string, unknown>[]) || []),
+    ...(((gathered as { matches?: Record<string, unknown>[] }).matches) || []),
+  ].some((row) => /logbook|daily_logbook/i.test(String(row.reportType || row.report_type || row.sourceType || "")));
+  const toolMatches = ((gathered as { toolMatches?: unknown[] }).toolMatches) || [];
+  if (!(sf?.daily_logbook as unknown[])?.length && !hasLogbookChunks && !toolMatches.length) {
+    missingInformation.push({ label: "Daily logbook entries" });
+  }
+  if (!historicalPatterns.length && intent !== VAULT_INTENTS.CASH_UP) {
+    missingInformation.push({ label: "Historical weekly dashboards" });
+  }
   if (intent === VAULT_INTENTS.WEEKLY_DASHBOARD || intent === VAULT_INTENTS.PROVIDE_MANUAL_INPUT) {
     missingInformation.push({ label: "7Rooms covers", fieldKey: "seven_rooms_covers" });
     missingInformation.push({ label: "Reservation count", fieldKey: "reservation_count" });
@@ -124,7 +133,30 @@ function buildEvidenceMap(gathered: Record<string, unknown>, intent: string) {
   };
 }
 
-function computeComposition(gathered: Record<string, unknown>) {
+function computeComposition(gathered: Record<string, unknown>, intent = "") {
+  const aggregation = gathered.aggregation as { dayCount?: number } | null;
+  const isQuantitativeCashUp = intent === VAULT_INTENTS.CASH_UP && Boolean(aggregation?.dayCount);
+
+  // Quantitative commercial answers: honest primary/supporting labels, not chunk-count percentages.
+  if (isQuantitativeCashUp) {
+    const composition = [
+      { source: "Cash Up structured facts", sourceType: "cash_up", count: Number(aggregation?.dayCount || 1), percent: 100, role: "primary" },
+    ];
+    const supportCount = ((gathered.historicalDashboards as unknown[]) || []).length
+      + ((gathered.operatorMemory as unknown[]) || []).length
+      + ((gathered.branchMemory as unknown[]) || []).length;
+    if (supportCount > 0) {
+      composition.push({
+        source: "Logbook / historical context",
+        sourceType: "supporting_context",
+        count: supportCount,
+        percent: 0,
+        role: "supporting",
+      });
+    }
+    return { composition, totalHits: composition.length, qualitative: true };
+  }
+
   const sf = gathered.structuredFacts as Record<string, unknown[]>;
   const counts: Record<string, number> = {};
   for (const [k, rows] of Object.entries(sf || {})) counts[k] = (rows as unknown[]).length;
@@ -132,7 +164,6 @@ function computeComposition(gathered: Record<string, unknown>) {
   counts.branch_memory = ((gathered.branchMemory as unknown[]) || []).length;
   counts.weekly_dashboard = ((gathered.historicalDashboards as unknown[]) || []).length;
   counts.manual_input = ((gathered.manualInputs as unknown[]) || []).length;
-  const aggregation = gathered.aggregation as { dayCount?: number } | null;
   if (aggregation?.dayCount) counts.cash_up = (counts.cash_up || 0) + 1;
 
   let total = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -155,7 +186,7 @@ function computeComposition(gathered: Record<string, unknown>) {
     .filter(([, c]) => c > 0)
     .map(([k, c]) => ({ source: labels[k] || k, sourceType: k, count: c, percent: Math.round((c / total) * 100) }))
     .sort((a, b) => b.percent - a.percent);
-  return { composition, totalHits: total };
+  return { composition, totalHits: total, qualitative: false };
 }
 
 function formatEvidenceSection(map: Record<string, unknown>) {
@@ -199,17 +230,27 @@ export async function applyExecutiveIntelligenceV2({
     });
   }
 
+  // Carry operational-review chunk matches into missing-info detection.
+  (gathered as { toolMatches?: unknown[] }).toolMatches = (tool?.matches as unknown[]) || [];
+
   const evidenceMap = buildEvidenceMap(gathered, intent);
-  const sourceComposition = computeComposition(gathered);
+  const sourceComposition = computeComposition(gathered, intent);
   const missingCount = (evidenceMap.missingInformation as unknown[]).length;
   const executiveConfidence = missingCount >= 4 ? CONFIDENCE.LOW : missingCount >= 2 ? CONFIDENCE.MEDIUM : (response.confidence as string) || CONFIDENCE.MEDIUM;
 
   const improvement = (evidenceMap.missingInformation as Array<{ label: string }>).map((m) => m.label).slice(0, 5);
   improvement.push("Guest feedback reports");
 
-  const compositionText = sourceComposition.composition.length
-    ? `Answer source composition:\n${sourceComposition.composition.map((r) => `${r.percent}% ${r.source}`).join("\n")}`
-    : "Answer source composition: insufficient multi-source evidence.";
+  const compositionText = sourceComposition.qualitative
+    ? `Primary: ${sourceComposition.composition.find((r) => r.role === "primary")?.source || "Cash Up structured facts"}`
+      + (sourceComposition.composition.some((r) => r.role === "supporting")
+        ? `\nSupporting context: ${sourceComposition.composition.filter((r) => r.role === "supporting").map((r) => r.source).join("; ")}`
+        : "")
+    : sourceComposition.composition.length
+      ? `Answer source composition:\n${sourceComposition.composition.map((r) => `${r.percent}% ${r.source}`).join("\n")}`
+      : "Answer source composition: insufficient multi-source evidence.";
+
+  const keepEvidenceInDirectAnswer = intent !== VAULT_INTENTS.CASH_UP;
 
   let followUpPrompt = "";
   if (executiveConfidence === CONFIDENCE.LOW && (intent === VAULT_INTENTS.WEEKLY_DASHBOARD || missingCount >= 3)) {
@@ -248,10 +289,8 @@ export async function applyExecutiveIntelligenceV2({
   const recommendations = [...((response.recommendations as string[]) || [])];
   if (followUpPrompt) recommendations.unshift(followUpPrompt);
 
-  return {
-    ...response,
-    directAnswer: [
-      stringifyDirectAnswer(response.directAnswer),
+  const managerFacingExtras = keepEvidenceInDirectAnswer
+    ? [
       "",
       formatEvidenceSection(evidenceMap),
       disclosure.known.length || disclosure.missing.length
@@ -259,6 +298,18 @@ export async function applyExecutiveIntelligenceV2({
         : "",
       improvement.length ? `\nConfidence: ${executiveConfidence}\n\nAdditional information that would improve this answer:\n${improvement.map((s) => `• ${s}`).join("\n")}` : "",
       compositionText,
+    ]
+    : [
+      // Quantitative cash-up: keep source priority label only; dump evidence into diagnostics.
+      "",
+      compositionText,
+    ];
+
+  return {
+    ...response,
+    directAnswer: [
+      stringifyDirectAnswer(response.directAnswer),
+      ...managerFacingExtras,
     ].filter(Boolean).join("\n"),
     confidence: executiveConfidence,
     recommendations,
@@ -269,7 +320,8 @@ export async function applyExecutiveIntelligenceV2({
       ...(response.diagnostics as Record<string, unknown> || {}),
       executiveIntelligenceV2: true,
       evidenceMap,
-      sourceComposition,
+      sourceComposition: sourceComposition.composition,
+      disclosure,
       answerSourceComposition: sourceComposition.composition,
       answerSourceCompositionText: compositionText,
     },

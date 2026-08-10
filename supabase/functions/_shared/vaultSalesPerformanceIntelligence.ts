@@ -158,6 +158,10 @@ export function isPerformanceOverviewQuery(question = "") {
   if (/\b(waiter|waitress|server|employee|staff member|google maps)\b/.test(q)) return false;
   if (/\bwhich branch\b.*\b(perform|performing|best|winning)\b/.test(q)) return false;
   if (/\b(performing best|performing better|best overall|location is winning)\b/.test(q)) return false;
+  // Strongest/weakest day ranking is a dedicated focus, not a full KPI overview.
+  if (/\b(strongest|weakest|best|worst|highest[- ]performing|lowest[- ]performing|top[- ]performing)\b.{0,48}\bdays?\b/.test(q)) {
+    return false;
+  }
 
   if (/\b(performance overview|business overview|branch overview)\b/.test(q)) return true;
   if (/\b(give me|show me|provide)\b.{0,24}\boverview\b/.test(q)) return true;
@@ -169,6 +173,11 @@ export function isPerformanceOverviewQuery(question = "") {
     return true;
   }
   if (
+    /\bhow (did|was|is)\b.{0,24}\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(q)
+  ) {
+    return true;
+  }
+  if (
     /\bhow (was|were)\b.{0,40}\b(week|month|days?)\b/.test(q)
     && /\b(business|sales|branch|khobar|riyadh|jeddah|perform|doing|overview)\b/.test(q)
   ) {
@@ -177,11 +186,24 @@ export function isPerformanceOverviewQuery(question = "") {
   return false;
 }
 
+function isDayRankingPerformanceQuery(question = "") {
+  const q = String(question || "").toLowerCase();
+  if (!q) return false;
+  if (/\b(strongest and weakest|best and worst|highest and lowest)\b.{0,40}\bdays?\b/.test(q)) return true;
+  if (/\b(strongest|weakest|best|worst|highest[- ]performing|lowest[- ]performing|top[- ]performing)\b.{0,48}\bdays?\b/.test(q)) {
+    return true;
+  }
+  if (/\b(highest|lowest|top|best|worst)\b.{0,24}\b(sales|revenue)\b.{0,24}\bdays?\b/.test(q)) return true;
+  if (/\b(highest|lowest)\b.{0,16}\bsales day\b/.test(q)) return true;
+  return false;
+}
+
 export function scoreSalesPerformanceQueryFocus(question = "") {
   const q = String(question || "").toLowerCase();
   if (/\b(compare|compared|vs|versus)\b.*\btop\b/.test(q) || /\btop\b.*\b(compare|compared|vs|versus|between|two months)\b/.test(q)) {
     return null;
   }
+  if (isDayRankingPerformanceQuery(question)) return "day_ranking";
   if (isPerformanceOverviewQuery(question)) return "performance_overview";
   if (scoreDeliveryPlatformQueryFocus(q)) return "delivery_platform";
   if (parseVaultComparePeriodsFromQuestion(question)) return "period_compare";
@@ -1025,9 +1047,14 @@ export function buildCashUpPeriodCompareMetrics(aggregation, previousAggregation
   const metrics = [];
 
   if (comparison.mode === "unavailable") {
+    const reasonNote = comparison.reason === "missing_daily_breakdown"
+      ? "Daily sales breakdown not available for like-for-like matching"
+      : comparison.reason === "no_matched_days"
+        ? "No overlapping sales days available for like-for-like matching"
+        : "Partial coverage — full-period comparison not yet like-for-like";
     metrics.push(metricEntry("Comparison status", "Not like-for-like", {
       source: "cash_up",
-      note: comparison.reason || "partial_coverage",
+      note: reasonNote,
     }));
     metrics.push(metricEntry("Current period days", formatNumber(aggregation.dayCount), { source: "cash_up" }));
     metrics.push(metricEntry("Comparison period days", formatNumber(previousAggregation.dayCount), { source: "cash_up" }));
@@ -1088,6 +1115,35 @@ export function buildCashUpPeriodCompareMetrics(aggregation, previousAggregation
   return metrics;
 }
 
+
+/**
+ * Manager-facing strongest/weakest sales days for a requested period.
+ */
+export function buildDayRankingAnswer(aggregation, {
+  branchLabel = "Network",
+  periodLabel = "the period",
+} = {}) {
+  if (!aggregation) return null;
+  const dayCount = Number(aggregation.dayCount || 0);
+  const breakdown = aggregation.dailyBreakdown || [];
+  const { strongest, weakest } = pickStrongestWeakestSalesDays(breakdown);
+  if (!strongest || !weakest) {
+    if (!dayCount) {
+      return `No structured sales days are available for ${branchLabel} over ${periodLabel}.`;
+    }
+    return `${branchLabel} has ${dayCount} cash-up day(s) for ${periodLabel}, but daily sales ranking could not be computed.`;
+  }
+  const lines = [
+    `${branchLabel} strongest and weakest sales days over ${periodLabel} (${dayCount} cash-up day(s) included):`,
+    `Strongest day: ${strongest.date} (${formatCurrency(strongest.totalSales)}).`,
+    `Weakest day: ${weakest.date} (${formatCurrency(weakest.totalSales)}).`,
+  ];
+  const expected = resolveExpectedDayCount(aggregation);
+  if (expected != null && dayCount < expected) {
+    lines.push(`Coverage: ${dayCount} of ${expected} requested days — ranking uses available cash-up days only.`);
+  }
+  return lines.join(" ");
+}
 
 export function pickStrongestWeakestSalesDays(dailyBreakdown = []) {
   const withSales = (dailyBreakdown || []).filter((row) => row?.totalSales != null && Number.isFinite(Number(row.totalSales)));
@@ -1436,6 +1492,10 @@ export function buildCashUpPeriodAggregateAnswer(
 
   const focus = scoreSalesPerformanceQueryFocus(question);
 
+  if (focus === "day_ranking") {
+    return buildDayRankingAnswer(aggregation, { branchLabel, periodLabel });
+  }
+
   if (focus === "performance_overview") {
     return buildPerformanceOverviewAnswer(question, aggregation, {
       branchLabel,
@@ -1445,7 +1505,7 @@ export function buildCashUpPeriodAggregateAnswer(
     });
   }
 
-  if (previousAggregation) {
+  if (previousAggregation || focus === "period_compare") {
     const compareAnswer = buildCashUpPeriodCompareAnswer(aggregation, previousAggregation, {
       branchLabel,
       periodLabel,
