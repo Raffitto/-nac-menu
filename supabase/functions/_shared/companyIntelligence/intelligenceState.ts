@@ -30,7 +30,20 @@ export type PeriodState = {
   requestedSemantics: string | null;
 };
 
+export type FabricStage =
+  | "INITIALIZED"
+  | "SCOPED"
+  | "TEMPORAL_RESOLVED"
+  | "FEASIBILITY_CHECKED"
+  | "PLANNED"
+  | "EXECUTING"
+  | "EVIDENCE_READY"
+  | "SYNTHESIZED"
+  | "VERIFIED"
+  | "COMPLETE";
+
 export type CompanyIntelligenceState = {
+  stage: FabricStage;
   request: {
     originalQuestion: string;
     normalizedQuestion: string;
@@ -62,6 +75,7 @@ export function createCompanyIntelligenceState(input: {
   conversation?: StructuredConversationState | null;
 }): CompanyIntelligenceState {
   return {
+    stage: "INITIALIZED",
     request: {
       originalQuestion: String(input.originalQuestion || ""),
       normalizedQuestion: String(input.normalizedQuestion || input.originalQuestion || ""),

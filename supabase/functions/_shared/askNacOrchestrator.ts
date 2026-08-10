@@ -9,9 +9,10 @@ import { buildDeterministicAskNacAnswer, branchDisplayName, MAX_BRANCH_ROWS, MAX
 import { narrateWithOpenAi } from "./askNacOpenAiNarrator.ts";
 import { enrichRouteWithManagementPlanner } from "./askNacManagementPlanner.ts";
 import {
-  bootstrapFabricState,
-  buildInfeasibleComparisonAnswer,
-} from "./companyIntelligence/askNacFabricBridge.ts";
+  isManagementIntelligenceQuestion,
+  runCompanyIntelligenceOrchestration,
+} from "./companyIntelligence/orchestrationSpine.ts";
+import type { StructuredConversationState } from "./companyIntelligence/conversationState.ts";
 import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
@@ -1088,9 +1089,106 @@ export async function processAskNacOnEdge(
     };
   }
 
-  // Management planner: model understands natural language; deterministic tools stay authoritative.
-  // Invoked only for unknown/low-confidence routes or Foodics hijacks of management questions.
+  // Company Intelligence Fabric spine — authoritative path for management-intelligence questions.
   let managementPlannerMeta: Record<string, unknown> | null = null;
+  let managementPlannerMs = 0;
+
+  const useFabricSpine = isManagementIntelligenceQuestion(effectiveQuestion, {
+    intent: route.intent,
+    confidence: route.confidence,
+    branchMention: route.branchMention,
+  });
+
+  if (useFabricSpine) {
+    const spineStartedAt = performance.now();
+    const priorConversation = (conversationContext as {
+      fabricConversation?: StructuredConversationState;
+    } | null)?.fabricConversation || null;
+
+    const spine = await runCompanyIntelligenceOrchestration({
+      question: effectiveQuestion,
+      branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
+      threadId: (conversationContext as { threadId?: string } | null)?.threadId || null,
+      conversation: priorConversation,
+      referenceDate: new Date(),
+      legacyRoute: {
+        intent: route.intent,
+        confidence: route.confidence,
+        branchMention: route.branchMention,
+      },
+      // Edge still uses mock-capable executor until vault adapter is injected per-capability;
+      // production vault tools remain available via legacy path for non-spine intents.
+      mode: Deno.env.get("ASK_NAC_PLANNER_MODE") === "heuristic" ? "heuristic" : "auto",
+    });
+    managementPlannerMs = Math.round(performance.now() - spineStartedAt);
+    managementPlannerMeta = {
+      used: Boolean(spine.state.cost.plannerUsed),
+      source: spine.state.cost.modelProvider,
+      applied: true,
+      planIntent: spine.state.plan.goal,
+      capabilities: spine.state.plan.capabilities,
+      stage: spine.state.stage,
+    };
+
+    const branchLabel = spine.state.scope.primaryBranchId
+      ? ({ khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" } as Record<string, string>)[
+        spine.state.scope.primaryBranchId
+      ] || spine.state.scope.primaryBranchId
+      : null;
+
+    return attachResponseMeta({
+      answerType: spine.answerType,
+      title: spine.answerType === "feasibility_block" ? "Comparison not valid" : "Ask NAC",
+      directAnswer: spine.answerText,
+      keyMetrics: spine.keyMetrics,
+      insights: spine.insights,
+      recommendations: [],
+      confidence: spine.state.answer.verified ? "high" : "medium",
+      periodLabel: spine.state.periods.current?.label
+        || (spine.state.periods.current
+          ? `${spine.state.periods.current.startDate}–${spine.state.periods.current.endDate}`
+          : null),
+      branchLabel,
+      intent: route.intent,
+      warnings: spine.state.warnings,
+      missingData: spine.state.feasibility?.reasons || [],
+      evidence: spine.state.evidence,
+      claims: spine.state.claims,
+      managementPlanner: managementPlannerMeta,
+      companyIntelligence: {
+        authoritative: true,
+        stage: spine.state.stage,
+        feasibility: spine.state.feasibility?.status || null,
+        comparability: spine.state.comparability?.status || null,
+        comparisonMethod: spine.state.comparability?.recommendedMethod || null,
+        budgetTier: spine.state.plan.researchBudgetTier,
+        capabilities: spine.state.plan.capabilities,
+        toolsExecuted: spine.toolsExecuted,
+        paidModelCallsPerAnswer: spine.paidModelCalls,
+        deterministicRouteUsed: spine.state.cost.deterministicRouteUsed,
+        verifierOk: spine.state.cost.verifierOk,
+        coverage: spine.state.coverage,
+      },
+      nextContext: {
+        ...((conversationContext || {}) as Record<string, unknown>),
+        fabricConversation: spine.nextConversation,
+      },
+      serverConnected: true,
+      aiConnected: spine.paidModelCalls > 0,
+      localFallback: Boolean(spine.state.cost.cloudEscalationReason),
+    }, buildAskNacTimingMs({
+      total: Math.round(performance.now() - requestStartedAt),
+      routeIntent: Math.round(spineStartedAt - routeIntentStartedAt),
+      selectedTool: managementPlannerMs,
+      vaultTool: 0,
+      executiveEvidenceV2: 0,
+      openAiNarration: 0,
+      datasetReuse: 0,
+      knowledgeHealth: 0,
+    }), true);
+  }
+
+  // Legacy non-management path: keep planner enrichment for Foodics hijacks outside spine.
   const plannerStartedAt = performance.now();
   const plannerEnrichment = await enrichRouteWithManagementPlanner(
     route as unknown as Record<string, unknown>,
@@ -1102,7 +1200,7 @@ export async function processAskNacOnEdge(
       referenceDate: new Date(),
     },
   );
-  const managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
+  managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
   if (plannerEnrichment.plannerUsed) {
     route = plannerEnrichment.route as typeof route;
     managementPlannerMeta = {
@@ -1114,55 +1212,6 @@ export async function processAskNacOnEdge(
       timeExpression: plannerEnrichment.plan?.time?.expression || null,
       needsClarification: Boolean(plannerEnrichment.plan?.needs_clarification),
     };
-  }
-
-  // Company Intelligence Fabric: cheap feasibility/comparability before expensive research.
-  const fabricState = bootstrapFabricState({
-    question: effectiveQuestion,
-    branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
-    threadId: (conversationContext as { threadId?: string } | null)?.threadId || null,
-    deterministicHighConfidence: route.confidence === "high" && !plannerEnrichment.plannerUsed,
-    referenceDate: new Date(),
-  });
-  const infeasibleAnswer = buildInfeasibleComparisonAnswer(fabricState);
-  if (infeasibleAnswer) {
-    return attachResponseMeta({
-      answerType: "feasibility_block",
-      title: "Comparison not valid",
-      directAnswer: infeasibleAnswer,
-      keyMetrics: [],
-      insights: fabricState.feasibility?.suggestedAlternatives || [],
-      recommendations: [],
-      confidence: "high",
-      periodLabel: fabricState.periods.current?.label || null,
-      branchLabel: fabricState.scope.primaryBranchId
-        ? ({ khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" } as Record<string, string>)[
-          fabricState.scope.primaryBranchId
-        ] || fabricState.scope.primaryBranchId
-        : null,
-      intent: route.intent,
-      warnings: fabricState.warnings,
-      missingData: fabricState.feasibility?.reasons || [],
-      managementPlanner: managementPlannerMeta || { used: false },
-      companyIntelligence: {
-        feasibility: fabricState.feasibility?.status || null,
-        comparability: fabricState.comparability?.status || null,
-        budgetTier: fabricState.plan.researchBudgetTier,
-        capabilities: fabricState.plan.capabilities,
-      },
-      serverConnected: true,
-      aiConnected: false,
-      localFallback: false,
-    }, buildAskNacTimingMs({
-      total: Math.round(performance.now() - requestStartedAt),
-      routeIntent: Math.round(performance.now() - routeIntentStartedAt),
-      selectedTool: 0,
-      vaultTool: 0,
-      executiveEvidenceV2: 0,
-      openAiNarration: 0,
-      datasetReuse: 0,
-      knowledgeHealth: 0,
-    }), true);
   }
 
   const readiness = await assessReadiness(route, supabase, {
@@ -1338,11 +1387,13 @@ export async function processAskNacOnEdge(
       ? { ...managementPlannerMeta, timingMs: managementPlannerMs }
       : { used: false, timingMs: managementPlannerMs },
     companyIntelligence: {
-      feasibility: fabricState.feasibility?.status || null,
-      comparability: fabricState.comparability?.status || null,
-      budgetTier: fabricState.plan.researchBudgetTier,
-      capabilities: fabricState.plan.capabilities,
-      paidModelCallsPerAnswer: fabricState.cost.paidModelCallsPerAnswer,
+      authoritative: false,
+      stage: null,
+      feasibility: null,
+      comparability: null,
+      budgetTier: null,
+      capabilities: [],
+      paidModelCallsPerAnswer: 0,
     },
     conversationResolution: {
       originalQuestion: prepareResult.originalQuestion,

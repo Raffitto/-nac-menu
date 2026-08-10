@@ -29,10 +29,12 @@ export function normalizeBranchId(raw: unknown): BranchId | null {
   if (raw == null) return null;
   const v = String(raw).toLowerCase().trim();
   if (!v || v === "all" || v === "network") return null;
-  if (v.includes("khobar")) return "khobar";
-  if (v.includes("riyadh")) return "riyadh";
-  if (v.includes("jeddah")) return "jeddah";
-  return KNOWN_BRANCHES.has(v) ? v : v;
+  // Only accept explicit branch tokens — never treat a full question as a branch id.
+  if (/\b(khobar|al khobar)\b/.test(v) || v === "khobar") return "khobar";
+  if (/\briyadh\b/.test(v) || v === "riyadh") return "riyadh";
+  if (/\bjeddah\b/.test(v) || v === "jeddah") return "jeddah";
+  if (KNOWN_BRANCHES.has(v)) return v;
+  return null;
 }
 
 export function createIntelligenceScope(input: {

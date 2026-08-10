@@ -10,6 +10,11 @@ export type IntelligenceTelemetry = {
   budgetTier: ResearchBudgetTier | null;
   deterministicRouteUsed: boolean;
   plannerUsed: boolean;
+  plannerCallCount: number;
+  synthesisCallCount: number;
+  critiqueModelCallCount: number;
+  localModelCalls: number;
+  cloudModelCalls: number;
   modelProvider: ModelProviderId | null;
   modelName: string | null;
   promptTokens: number | null;
@@ -20,6 +25,7 @@ export type IntelligenceTelemetry = {
   cloudEscalationReason: string | null;
   verifierOk: boolean | null;
   paidModelCallsPerAnswer: number;
+  maxPaidCallsPerAnswer: number;
 };
 
 export function createEmptyTelemetry(): IntelligenceTelemetry {
@@ -28,6 +34,11 @@ export function createEmptyTelemetry(): IntelligenceTelemetry {
     budgetTier: null,
     deterministicRouteUsed: false,
     plannerUsed: false,
+    plannerCallCount: 0,
+    synthesisCallCount: 0,
+    critiqueModelCallCount: 0,
+    localModelCalls: 0,
+    cloudModelCalls: 0,
     modelProvider: null,
     modelName: null,
     promptTokens: null,
@@ -38,6 +49,7 @@ export function createEmptyTelemetry(): IntelligenceTelemetry {
     cloudEscalationReason: null,
     verifierOk: null,
     paidModelCallsPerAnswer: 0,
+    maxPaidCallsPerAnswer: 2,
   };
 }
 

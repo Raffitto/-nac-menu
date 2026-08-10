@@ -39,12 +39,50 @@ export type ManagementPlan = {
   scope: { branch: string | null };
   time: { expression: string | null };
   metric_family: "commercial" | "operational" | "mixed" | "cost" | "unknown";
+  /** Semantic capabilities (preferred planning vocabulary). */
+  capabilities?: string[];
   operations: Array<{ tool: string; purpose: string; optional?: boolean }>;
   comparison: { requested: boolean; type: string | null };
   needs_clarification: boolean;
   clarification_prompt?: string | null;
   confidence?: "high" | "medium" | "low";
 };
+
+const INTENT_TO_CAPABILITIES: Record<ManagementIntent, string[]> = {
+  performance_overview: ["commercial.performance", "commercial.compare"],
+  period_compare: ["commercial.compare", "commercial.performance"],
+  trend_analysis: ["commercial.trend", "commercial.compare"],
+  day_ranking: ["commercial.rank_days"],
+  operational_review: ["operations.review"],
+  issue_detection: ["commercial.performance", "commercial.compare", "commercial.rank_days", "operations.review"],
+  briefing_summary: ["commercial.performance", "operations.review"],
+  management_summary: ["commercial.performance", "operations.review"],
+  branch_compare: ["company.scope_compare"],
+  cost_margin: ["cost.margin_analysis", "commercial.performance"],
+  factual_lookup: ["commercial.performance"],
+  unsupported: [],
+};
+
+const TOOL_TO_CAPABILITY: Record<string, string> = {
+  cash_up_performance: "commercial.performance",
+  cash_up_compare: "commercial.compare",
+  cash_up_day_ranking: "commercial.rank_days",
+  operational_evidence: "operations.review",
+  branch_compare: "company.scope_compare",
+};
+
+export function deriveCapabilitiesFromPlan(plan: Pick<ManagementPlan, "intent" | "operations" | "comparison" | "capabilities">): string[] {
+  if (Array.isArray(plan.capabilities) && plan.capabilities.length) {
+    return plan.capabilities.slice(0, 6);
+  }
+  const caps = [...(INTENT_TO_CAPABILITIES[plan.intent] || [])];
+  for (const op of plan.operations || []) {
+    const c = TOOL_TO_CAPABILITY[op.tool];
+    if (c && !caps.includes(c)) caps.push(c);
+  }
+  if (plan.comparison?.requested && !caps.includes("commercial.compare")) caps.push("commercial.compare");
+  return caps.slice(0, 6);
+}
 
 const ALLOWED_TOOLS = new Set([
   "cash_up_performance",
@@ -88,7 +126,7 @@ export function validateManagementPlan(raw: unknown): ManagementPlan | null {
   const branchRaw = scopeObj.branch == null ? null : String(scopeObj.branch).toLowerCase();
   const branch = branchRaw && ["khobar", "riyadh", "jeddah"].includes(branchRaw) ? branchRaw : null;
 
-  return {
+  const draft: ManagementPlan = {
     intent: intent as ManagementIntent,
     scope: { branch },
     time: { expression: timeObj.expression == null ? null : String(timeObj.expression) },
@@ -106,6 +144,11 @@ export function validateManagementPlan(raw: unknown): ManagementPlan | null {
       ? (String(obj.confidence) as "high" | "medium" | "low")
       : "medium",
   };
+  const capsRaw = Array.isArray(obj.capabilities)
+    ? obj.capabilities.map((c) => String(c)).filter(Boolean)
+    : [];
+  draft.capabilities = capsRaw.length ? capsRaw.slice(0, 6) : deriveCapabilitiesFromPlan(draft);
+  return draft;
 }
 
 /** Broad management commercial language — not product/waiter Foodics lookups. */
@@ -124,7 +167,7 @@ export function looksLikeManagementCommercialQuestion(question = "") {
 export function looksLikeOperationalManagementQuestion(question = "") {
   const q = String(question || "").toLowerCase();
   return /\b(operational(?:ly)?|logbook|complaint|maintenance|struggling|recurring|issues?|problems?)\b/.test(q)
-    && !/\b(hurting sales|sales down|losing money|act on|briefing|worrying)\b/.test(q);
+    && !/\b(act on|briefing|worrying)\b/.test(q);
 }
 
 export function shouldInvokeManagementPlanner(
@@ -215,7 +258,7 @@ export function planManagementQuestionHeuristic(
     || /\bimportant thing\b.*\bnumbers?\b/.test(q)
     || /\bnumbers?\b.*\bright now\b/.test(q);
 
-  const wantsIssue = /\b(going wrong|went wrong|shit|red flags?|losing money|what'?s wrong|problems?|weak)\b/.test(q)
+  const wantsIssue = /\b(going wrong|went wrong|shit|red flags?|losing money|what'?s wrong|problems?|weak|sales down|why are sales|hurting sales)\b/.test(q)
     && !/\boperational(?:ly)?\b/.test(q);
 
   const wantsOverview = /\b(business|performing|performance|looking|lately|quick read|pulse|overview|summary|covers?|how('?s| is| are| did| was) we|how is khobar|how did nac|how are (we|all)|branches doing)\b/.test(q)
@@ -226,8 +269,13 @@ export function planManagementQuestionHeuristic(
   const wantsNetworkOverview = /\b(all (the )?branches|every branch|network)\b/.test(q)
     && /\b(doing|performance|how are|overview|summary)\b/.test(q);
 
+  const withCaps = (plan: ManagementPlan): ManagementPlan => ({
+    ...plan,
+    capabilities: deriveCapabilitiesFromPlan(plan),
+  });
+
   if (wantsBranchCompare || wantsNetworkOverview) {
-    return {
+    return withCaps({
       intent: "branch_compare",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "last_7_days" },
@@ -236,11 +284,11 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: true, type: "cross_branch" },
       needs_clarification: false,
       confidence: "medium",
-    };
+    });
   }
 
   if (wantsDayRank) {
-    return {
+    return withCaps({
       intent: "day_ranking",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "this_month" },
@@ -249,11 +297,11 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: false, type: null },
       needs_clarification: false,
       confidence: "high",
-    };
+    });
   }
 
   if (wantsCompare) {
-    return {
+    return withCaps({
       intent: "period_compare",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "last_week" },
@@ -265,11 +313,11 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: true, type: "previous_equivalent_period" },
       needs_clarification: false,
       confidence: "high",
-    };
+    });
   }
 
   if (/\blosing money|margin|cost control|food cost\b/.test(q)) {
-    return {
+    return withCaps({
       intent: "cost_margin",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "this_month" },
@@ -278,12 +326,12 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: false, type: null },
       needs_clarification: false,
       confidence: "medium",
-    };
+    });
   }
 
   // Briefing / issue before generic ops so "act on" / "worrying" stay management summaries.
   if (wantsBriefing || wantsIssue) {
-    return {
+    return withCaps({
       intent: wantsBriefing ? "briefing_summary" : "issue_detection",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || (/\btoday\b/.test(q) ? "today" : "last_7_days") },
@@ -295,11 +343,11 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: /\blast week|week before|improving|worse|changed\b/.test(q), type: "previous_equivalent_period" },
       needs_clarification: false,
       confidence: "medium",
-    };
+    });
   }
 
   if (wantsOps) {
-    return {
+    return withCaps({
       intent: "operational_review",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "last_7_days" },
@@ -308,11 +356,11 @@ export function planManagementQuestionHeuristic(
       comparison: { requested: false, type: null },
       needs_clarification: false,
       confidence: "medium",
-    };
+    });
   }
 
   if (wantsOverview || timeExpr) {
-    return {
+    return withCaps({
       intent: "performance_overview",
       scope: { branch: normalizedBranch },
       time: { expression: timeExpr || "last_14_days" },
@@ -327,10 +375,10 @@ export function planManagementQuestionHeuristic(
       },
       needs_clarification: false,
       confidence: "medium",
-    };
+    });
   }
 
-  return {
+  return withCaps({
     intent: "unsupported",
     scope: { branch: normalizedBranch },
     time: { expression: null },
@@ -340,7 +388,7 @@ export function planManagementQuestionHeuristic(
     needs_clarification: true,
     clarification_prompt: "Ask about sales performance, day ranking, period comparison, or operational issues for a branch and time range.",
     confidence: "low",
-  };
+  });
 }
 
 function plannerSystemPrompt() {
@@ -349,8 +397,10 @@ function plannerSystemPrompt() {
     "Output JSON only. Do not answer the business question. Do not invent numbers or dates.",
     "Choose ONE intent from: " + MANAGEMENT_INTENTS.join(", ") + ".",
     "metric_family: commercial | operational | mixed | cost | unknown.",
-    "operations.tool must be one of: cash_up_performance, cash_up_compare, cash_up_day_ranking, operational_evidence, branch_compare, none.",
-    "Max 4 operations. Prefer Cash Up for commercial performance. Foodics is legacy external evidence only — never primary for branch performance.",
+    "capabilities must be semantic ids such as commercial.performance, commercial.compare, commercial.rank_days, operations.review, company.scope_compare, cost.margin_analysis.",
+    "Do NOT emit SQL, RPC names, or database table names.",
+    "operations.tool may mirror capabilities via: cash_up_performance, cash_up_compare, cash_up_day_ranking, operational_evidence, branch_compare, none.",
+    "Max 4 capabilities/operations. Prefer Cash Up for commercial performance. Foodics is legacy external evidence only — never primary for branch performance.",
     "time.expression should be a semantic token such as last_week, this_week, this_month, august_mtd, named_month:july, last_14_days, previous_week_compare, today — not ISO dates.",
     "needs_clarification=true only when branch/time/metric are truly unsafe to assume.",
     "Understand informal language (lately, looking so far, shit week, act on, pulse check) as management intent.",

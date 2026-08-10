@@ -163,6 +163,26 @@ export function createTemporalIntelligenceService(): TemporalIntelligenceService
       const ramadan = resolveRamadanCompare(question, referenceDate);
       if (ramadan) return ramadan;
 
+      const q = String(question || "").toLowerCase();
+      if (/\b(lately|recently|these days|last few days)\b/.test(q)) {
+        const cmp = parseVaultComparePeriodsFromQuestion(
+          "last 14 days vs previous 14 days",
+          referenceDate,
+        );
+        const range = toRange(cmp?.current || parseVaultPeriodFromQuestion("last 14 days", referenceDate));
+        if (range) {
+          return {
+            status: "resolved",
+            expression: "last_14_days",
+            range,
+            compareRange: toRange(cmp?.previous || null),
+            calendarSystem: "gregorian",
+            capability: "calendar.resolve_period",
+            reasons: ["semantic_recent_default"],
+          };
+        }
+      }
+
       const compare = parseVaultComparePeriodsFromQuestion(question, referenceDate);
       if (compare?.current?.startDate && compare?.previous?.startDate) {
         return {

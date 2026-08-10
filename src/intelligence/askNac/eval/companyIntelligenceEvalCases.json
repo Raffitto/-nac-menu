@@ -411,6 +411,31 @@
       "category": "impossible_comparisons",
       "legacy_set": "fabric_foundation",
       "expect_feasibility": "NOT_ANSWERABLE_AS_REQUESTED"
+    },
+    {
+      "id": "arch_ramadan_khobar",
+      "question": "Compare last year's Ramadan sales with this year's Ramadan sales for Khobar.",
+      "category": "impossible_comparisons",
+      "legacy_set": "fabric_spine_v1",
+      "expect_feasibility": "NOT_ANSWERABLE_AS_REQUESTED"
+    },
+    {
+      "id": "arch_followup_june",
+      "question": "And June?",
+      "category": "multi_turn",
+      "legacy_set": "fabric_spine_v1"
+    },
+    {
+      "id": "arch_cost_margin",
+      "question": "Where are we losing money?",
+      "category": "cost_margin_safety",
+      "legacy_set": "fabric_spine_v1"
+    },
+    {
+      "id": "arch_partial_coverage",
+      "question": "Compare the last 10 days with the previous 10 days",
+      "category": "partial_coverage",
+      "legacy_set": "fabric_spine_v1"
     }
   ]
 }
