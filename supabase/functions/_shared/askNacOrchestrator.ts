@@ -558,11 +558,18 @@ function isMissingDataIntent(intent: string) {
   ].includes(intent as typeof ASK_NAC_INTENTS[keyof typeof ASK_NAC_INTENTS]);
 }
 
-export function routeIntent(question: string, options: { fallbackHours?: number; documentContext?: Record<string, unknown> | null } = {}) {
+export function routeIntent(question: string, options: {
+  fallbackHours?: number;
+  documentContext?: Record<string, unknown> | null;
+  referenceDate?: Date;
+} = {}) {
   const normalized = normalizeAskNacQuestionEdge(question);
   const q = normalized.text.trim().toLowerCase();
   const period = parseAskNacPeriod(normalized.text, options.fallbackHours ?? 24);
   const branchMention = parseAskNacBranch(normalized.text);
+  const referenceDate = options.referenceDate instanceof Date && !Number.isNaN(options.referenceDate.getTime())
+    ? options.referenceDate
+    : new Date();
 
   if (!q) {
     return {
@@ -591,9 +598,9 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     ? detectRankChangeDirection(normalized.text)
     : null;
   let vaultCompare = intent === VAULT_INTENTS.BUSINESS_REASONING
-    ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
-    : parseVaultComparePeriodsFromQuestion(normalized.text);
-  let vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
+    ? (resolveWhyVaultCompare(normalized.text, referenceDate) || parseVaultComparePeriodsFromQuestion(normalized.text, referenceDate))
+    : parseVaultComparePeriodsFromQuestion(normalized.text, referenceDate);
+  let vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text, referenceDate);
   // Performance overview defaults to previous-equivalent comparison when none was asked explicitly.
   if (
     !vaultCompare
