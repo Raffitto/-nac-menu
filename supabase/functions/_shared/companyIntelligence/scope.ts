@@ -37,7 +37,7 @@ export function normalizeBranchId(raw: unknown): BranchId | null {
   return null;
 }
 
-export function createIntelligenceScope(input: {
+type ScopeInput = {
   companyId?: CompanyId | null;
   brandId?: BrandId | null;
   branchIds?: Array<BranchId | null | undefined>;
@@ -45,11 +45,31 @@ export function createIntelligenceScope(input: {
   role?: string | null;
   allowedBranchIds?: BranchId[];
   canSeeNetwork?: boolean;
-} = {}): IntelligenceScope {
-  const normalized = (input.branchIds || [])
+  /** Already-built scope (nested access) — must not drop canSeeNetwork on re-wrap. */
+  access?: Partial<RoleAccessScope> | null;
+};
+
+/** Accept flat builder fields or an already-built IntelligenceScope. */
+export function coerceScopeBuilderInput(input: ScopeInput | IntelligenceScope | null | undefined = {}): ScopeInput {
+  const raw = (input || {}) as ScopeInput & Partial<IntelligenceScope>;
+  const nested = raw.access && typeof raw.access === "object" ? raw.access : null;
+  return {
+    companyId: raw.companyId,
+    brandId: raw.brandId,
+    branchIds: raw.branchIds,
+    primaryBranchId: raw.primaryBranchId,
+    role: nested?.role ?? raw.role,
+    allowedBranchIds: nested?.allowedBranchIds ?? raw.allowedBranchIds,
+    canSeeNetwork: nested?.canSeeNetwork ?? raw.canSeeNetwork,
+  };
+}
+
+export function createIntelligenceScope(input: ScopeInput | IntelligenceScope = {}): IntelligenceScope {
+  const flat = coerceScopeBuilderInput(input);
+  const normalized = (flat.branchIds || [])
     .map((b) => normalizeBranchId(b))
     .filter(Boolean) as BranchId[];
-  const primary = normalizeBranchId(input.primaryBranchId)
+  const primary = normalizeBranchId(flat.primaryBranchId)
     || (normalized.length === 1 ? normalized[0] : null);
 
   const branchIds = primary && !normalized.includes(primary)
@@ -59,14 +79,14 @@ export function createIntelligenceScope(input: {
       : (primary ? [primary] : []);
 
   return {
-    companyId: String(input.companyId || DEFAULT_COMPANY_ID),
-    brandId: String(input.brandId || DEFAULT_BRAND_ID),
+    companyId: String(flat.companyId || DEFAULT_COMPANY_ID),
+    brandId: String(flat.brandId || DEFAULT_BRAND_ID),
     branchIds,
     primaryBranchId: primary,
     access: {
-      role: input.role || null,
-      allowedBranchIds: input.allowedBranchIds || ["khobar", "riyadh", "jeddah"],
-      canSeeNetwork: Boolean(input.canSeeNetwork),
+      role: flat.role || null,
+      allowedBranchIds: flat.allowedBranchIds || ["khobar", "riyadh", "jeddah"],
+      canSeeNetwork: Boolean(flat.canSeeNetwork),
     },
   };
 }
@@ -94,7 +114,38 @@ export type AccessProfileHint = {
   branchScope?: string | null;
   allBranches?: boolean | null;
   allowedBranchIds?: Array<string | null | undefined> | null;
+  /** Runtime aliases observed from staff tables / older clients. */
+  primary_branch_id?: string | null;
+  primaryBranchId?: string | null;
+  branch_id?: string | null;
+  branch_scope?: string | null;
+  all_branches?: boolean | null;
+  vault_role?: string | null;
+  vaultRole?: string | null;
 };
+
+/** Normalize client profileHint + server staff row field-name variants. */
+export function normalizeAccessProfileHint(profile?: AccessProfileHint | null): AccessProfileHint | null {
+  if (!profile || typeof profile !== "object") return null;
+  const role = profile.role || profile.vaultRole || profile.vault_role || null;
+  const branchScope = profile.branchScope
+    ?? profile.branch_scope
+    ?? profile.primaryBranchId
+    ?? profile.primary_branch_id
+    ?? profile.branch_id
+    ?? null;
+  const allBranches = profile.allBranches ?? profile.all_branches ?? null;
+  return {
+    role,
+    branchScope: branchScope == null ? null : String(branchScope),
+    allBranches: allBranches == null ? null : Boolean(allBranches),
+    allowedBranchIds: profile.allowedBranchIds || null,
+    primary_branch_id: profile.primary_branch_id ?? null,
+    primaryBranchId: profile.primaryBranchId ?? null,
+    vault_role: profile.vault_role ?? null,
+    vaultRole: profile.vaultRole ?? null,
+  };
+}
 
 /**
  * Resolve Fabric/Ask NAC branch scope from authenticated access + optional explicit mention.
@@ -108,9 +159,10 @@ export function resolveAuthorizedIntelligenceScope(input: {
   scope: IntelligenceScope;
   unauthorizedBranch: BranchId | null;
 } {
-  const canSeeNetwork = Boolean(input.profile?.allBranches);
-  const profilePrimary = normalizeBranchId(input.profile?.branchScope);
-  const allowedFromProfile = (input.profile?.allowedBranchIds || [])
+  const profile = normalizeAccessProfileHint(input.profile);
+  const canSeeNetwork = Boolean(profile?.allBranches);
+  const profilePrimary = normalizeBranchId(profile?.branchScope);
+  const allowedFromProfile = (profile?.allowedBranchIds || [])
     .map((b) => normalizeBranchId(b))
     .filter(Boolean) as BranchId[];
 
@@ -142,7 +194,7 @@ export function resolveAuthorizedIntelligenceScope(input: {
           branchIds: [],
           allowedBranchIds,
           canSeeNetwork,
-          role: input.profile?.role || null,
+          role: profile?.role || null,
         }),
         unauthorizedBranch: mentioned,
       };
@@ -153,7 +205,7 @@ export function resolveAuthorizedIntelligenceScope(input: {
         branchIds: [mentioned],
         allowedBranchIds,
         canSeeNetwork,
-        role: input.profile?.role || null,
+        role: profile?.role || null,
       }),
       unauthorizedBranch: null,
     };
@@ -171,7 +223,7 @@ export function resolveAuthorizedIntelligenceScope(input: {
       branchIds: candidate ? [candidate] : [],
       allowedBranchIds,
       canSeeNetwork,
-      role: input.profile?.role || null,
+      role: profile?.role || null,
     }),
     unauthorizedBranch: null,
   };
