@@ -18,6 +18,8 @@ export type ModelGatewayConfig = {
   reasonProvider: ModelProviderId;
   synthesizeProvider: ModelProviderId;
   cloudEnabled: boolean;
+  /** Opt-in only. Production must not call loopback Ollama unless explicitly enabled. */
+  localEnabled: boolean;
   maxPaidCallsPerAnswer: number;
   localBaseUrl?: string | null;
   localModel?: string | null;
@@ -58,11 +60,18 @@ function envGet(key: string): string | undefined {
 }
 
 export function loadModelGatewayConfig(): ModelGatewayConfig {
+  const fastProvider = (envGet("MODEL_GATEWAY_FAST_PROVIDER") as ModelProviderId) || "openai";
+  const reasonProvider = (envGet("MODEL_GATEWAY_REASON_PROVIDER") as ModelProviderId) || "openai";
+  const synthesizeProvider = (envGet("MODEL_GATEWAY_SYNTHESIZE_PROVIDER") as ModelProviderId) || "openai";
+  const localRequested = [fastProvider, reasonProvider, synthesizeProvider]
+    .includes("openai_compatible_local");
   return {
-    fastProvider: (envGet("MODEL_GATEWAY_FAST_PROVIDER") as ModelProviderId) || "openai",
-    reasonProvider: (envGet("MODEL_GATEWAY_REASON_PROVIDER") as ModelProviderId) || "openai",
-    synthesizeProvider: (envGet("MODEL_GATEWAY_SYNTHESIZE_PROVIDER") as ModelProviderId) || "openai",
+    fastProvider,
+    reasonProvider,
+    synthesizeProvider,
     cloudEnabled: envGet("MODEL_GATEWAY_CLOUD_ENABLED") !== "false",
+    // Default OFF in production. Enable only via explicit env or provider selection.
+    localEnabled: envGet("MODEL_GATEWAY_LOCAL_ENABLED") === "true" || localRequested,
     maxPaidCallsPerAnswer: Number(envGet("MODEL_GATEWAY_MAX_PAID_CALLS") || 2),
     localBaseUrl: envGet("MODEL_GATEWAY_LOCAL_BASE_URL") || "http://127.0.0.1:11434/v1",
     localModel: envGet("MODEL_GATEWAY_LOCAL_MODEL") || "local-reasoner",
@@ -248,24 +257,40 @@ function providerForRole(config: ModelGatewayConfig, role: ModelRole): ModelProv
 
 export function createModelGateway(
   adapters: Partial<Record<ModelProviderId, ModelAdapter>> = {},
-  config: ModelGatewayConfig = loadModelGatewayConfig(),
+  configOverrides: Partial<ModelGatewayConfig> = {},
 ): ModelGateway {
+  const config: ModelGatewayConfig = { ...loadModelGatewayConfig(), ...configOverrides };
+  if (
+    !config.localEnabled
+    && [config.fastProvider, config.reasonProvider, config.synthesizeProvider]
+      .includes("openai_compatible_local")
+  ) {
+    config.localEnabled = true;
+  }
   const registry: Partial<Record<ModelProviderId, ModelAdapter>> = {
     openai: adapters.openai || createOpenAiAdapter(config.openaiModel || "gpt-4o-mini"),
-    openai_compatible_local: adapters.openai_compatible_local
+    ...adapters,
+  };
+  if (config.localEnabled) {
+    registry.openai_compatible_local = adapters.openai_compatible_local
       || createOpenAiCompatibleLocalAdapter({
         baseUrl: config.localBaseUrl,
         model: config.localModel,
-      }),
-    ...adapters,
-  };
+      });
+  } else if (adapters.openai_compatible_local) {
+    // Allow injected test adapters without enabling loopback by default.
+    registry.openai_compatible_local = adapters.openai_compatible_local;
+  }
 
   let paidCallsUsed = 0;
 
   async function run(role: ModelRole, req: Omit<ModelRequest, "role">): Promise<ModelResponse> {
     const preferred = providerForRole(config, role);
     const order: ModelProviderId[] = [preferred];
-    if (preferred !== "openai_compatible_local") order.push("openai_compatible_local");
+    // Never silently fall back to loopback Ollama in production.
+    if (config.localEnabled && preferred !== "openai_compatible_local") {
+      order.push("openai_compatible_local");
+    }
     if (preferred !== "openai" && config.cloudEnabled) order.push("openai");
 
     for (const providerId of order) {
