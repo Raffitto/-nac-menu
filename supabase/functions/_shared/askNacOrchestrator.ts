@@ -14,6 +14,7 @@ import {
 } from "./companyIntelligence/orchestrationSpine.ts";
 import { createVaultCapabilityExecutor } from "./companyIntelligence/vaultCapabilityExecutor.ts";
 import type { StructuredConversationState } from "./companyIntelligence/conversationState.ts";
+import { resolveAuthorizedIntelligenceScope } from "./companyIntelligence/scope.ts";
 import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
@@ -1113,6 +1114,68 @@ export async function processAskNacOnEdge(
       fabricConversation?: StructuredConversationState;
     } | null)?.fabricConversation || null;
 
+    const profileAccess = (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    };
+    const authorizedScope = resolveAuthorizedIntelligenceScope({
+      mentionedBranch: route.branchMention || null,
+      filterBranch: (mergedFilters.branch as string | null) || null,
+      profile: profileAccess,
+    });
+
+    if (authorizedScope.unauthorizedBranch) {
+      const denied = authorizedScope.unauthorizedBranch;
+      const deniedLabel = branchDisplayName(denied);
+      const allowedLabel = authorizedScope.scope.access.allowedBranchIds
+        .map((b) => branchDisplayName(b))
+        .join(", ") || "your assigned branch";
+      return attachResponseMeta({
+        answerType: "feasibility_block",
+        title: "Branch not authorized",
+        directAnswer:
+          `Your access does not include ${deniedLabel}. You can query: ${allowedLabel}.`,
+        keyMetrics: [],
+        insights: [],
+        recommendations: [],
+        confidence: "high",
+        periodLabel: null,
+        branchLabel: null,
+        intent: route.intent,
+        warnings: [`Unauthorized branch scope: ${denied}`],
+        missingData: ["unauthorized_branch"],
+        managementPlanner: { used: false, applied: false, source: "authz" },
+        companyIntelligence: {
+          authoritative: true,
+          stage: "SCOPED",
+          feasibility: "NOT_ANSWERABLE_AS_REQUESTED",
+          unauthorizedBranch: denied,
+        },
+        nextContext: updateConversationContextEdge(
+          (conversationContext || {}) as Record<string, unknown>,
+          {
+            question,
+            resolvedQuestion: effectiveQuestion,
+            response: { intent: route.intent, directAnswer: `Unauthorized branch: ${denied}` },
+          },
+        ),
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+      }, buildAskNacTimingMs({
+        total: Math.round(performance.now() - requestStartedAt),
+        routeIntent: Math.round(spineStartedAt - routeIntentStartedAt),
+        selectedTool: Math.round(performance.now() - spineStartedAt),
+        vaultTool: 0,
+        executiveEvidenceV2: 0,
+        openAiNarration: 0,
+        datasetReuse: 0,
+        knowledgeHealth: 0,
+      }), true);
+    }
+
     const vaultExecutor = createVaultCapabilityExecutor(async ({ vaultIntent, queryFocus, request }) => {
       const vaultPeriod = request.currentPeriod
         ? {
@@ -1158,7 +1221,11 @@ export async function processAskNacOnEdge(
 
     const spine = await runCompanyIntelligenceOrchestration({
       question: effectiveQuestion,
-      branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
+      branchHint: authorizedScope.scope.primaryBranchId
+        || route.branchMention
+        || (mergedFilters.branch as string | null)
+        || null,
+      scope: authorizedScope.scope,
       threadId: (conversationContext as { threadId?: string } | null)?.threadId || null,
       conversation: priorConversation,
       referenceDate: new Date(),
@@ -1240,13 +1307,26 @@ export async function processAskNacOnEdge(
 
   // Legacy non-management path: keep planner enrichment for Foodics hijacks outside spine.
   const plannerStartedAt = performance.now();
+  const legacyAuthorized = resolveAuthorizedIntelligenceScope({
+    mentionedBranch: route.branchMention || null,
+    filterBranch: (mergedFilters.branch as string | null) || null,
+    profile: (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    },
+  });
   const plannerEnrichment = await enrichRouteWithManagementPlanner(
     route as unknown as Record<string, unknown>,
     effectiveQuestion,
     {
-      branchHint: (route.branchMention || mergedFilters.branch || null) as string | null,
+      branchHint: (legacyAuthorized.scope.primaryBranchId
+        || route.branchMention
+        || mergedFilters.branch
+        || null) as string | null,
       conversationContext: conversationContext as Record<string, unknown> | null,
-      filters: { branch: (mergedFilters.branch as string | null) || null },
+      filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
       referenceDate: new Date(),
     },
   );

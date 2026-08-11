@@ -88,3 +88,91 @@ export function assertBranchScopePreserved(
   }
   return { ok: true };
 }
+
+export type AccessProfileHint = {
+  role?: string | null;
+  branchScope?: string | null;
+  allBranches?: boolean | null;
+  allowedBranchIds?: Array<string | null | undefined> | null;
+};
+
+/**
+ * Resolve Fabric/Ask NAC branch scope from authenticated access + optional explicit mention.
+ * Does NOT invent a global Khobar default. Does NOT grant network unless profile allows it.
+ */
+export function resolveAuthorizedIntelligenceScope(input: {
+  mentionedBranch?: string | null;
+  filterBranch?: string | null;
+  profile?: AccessProfileHint | null;
+} = {}): {
+  scope: IntelligenceScope;
+  unauthorizedBranch: BranchId | null;
+} {
+  const canSeeNetwork = Boolean(input.profile?.allBranches);
+  const profilePrimary = normalizeBranchId(input.profile?.branchScope);
+  const allowedFromProfile = (input.profile?.allowedBranchIds || [])
+    .map((b) => normalizeBranchId(b))
+    .filter(Boolean) as BranchId[];
+
+  let allowedBranchIds: BranchId[];
+  if (canSeeNetwork) {
+    allowedBranchIds = allowedFromProfile.length
+      ? allowedFromProfile
+      : ["khobar", "riyadh", "jeddah"];
+  } else if (allowedFromProfile.length) {
+    allowedBranchIds = allowedFromProfile;
+  } else if (profilePrimary) {
+    allowedBranchIds = [profilePrimary];
+  } else {
+    allowedBranchIds = [];
+  }
+
+  const isAllowed = (branch: BranchId | null): boolean => {
+    if (!branch) return false;
+    if (canSeeNetwork) return true;
+    return allowedBranchIds.includes(branch);
+  };
+
+  const mentioned = normalizeBranchId(input.mentionedBranch);
+  if (mentioned) {
+    if (!isAllowed(mentioned)) {
+      return {
+        scope: createIntelligenceScope({
+          primaryBranchId: null,
+          branchIds: [],
+          allowedBranchIds,
+          canSeeNetwork,
+          role: input.profile?.role || null,
+        }),
+        unauthorizedBranch: mentioned,
+      };
+    }
+    return {
+      scope: createIntelligenceScope({
+        primaryBranchId: mentioned,
+        branchIds: [mentioned],
+        allowedBranchIds,
+        canSeeNetwork,
+        role: input.profile?.role || null,
+      }),
+      unauthorizedBranch: null,
+    };
+  }
+
+  const filter = normalizeBranchId(input.filterBranch);
+  // Prefer authorized filter branch, else authenticated primary for single-branch users.
+  const candidate = (filter && isAllowed(filter) ? filter : null)
+    || (!canSeeNetwork && profilePrimary && isAllowed(profilePrimary) ? profilePrimary : null)
+    || (canSeeNetwork && filter ? filter : null);
+
+  return {
+    scope: createIntelligenceScope({
+      primaryBranchId: candidate,
+      branchIds: candidate ? [candidate] : [],
+      allowedBranchIds,
+      canSeeNetwork,
+      role: input.profile?.role || null,
+    }),
+    unauthorizedBranch: null,
+  };
+}

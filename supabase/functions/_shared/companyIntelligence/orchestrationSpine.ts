@@ -47,11 +47,17 @@ import { createModelGateway, loadModelGatewayConfig, type ModelGateway } from ".
 import { verifySynthesizedAnswer } from "./answerVerifier.ts";
 import { estimateOpenAiMiniCostUsd } from "./telemetry.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
-import { normalizeBranchId } from "./scope.ts";
+import {
+  createIntelligenceScope,
+  normalizeBranchId,
+  type IntelligenceScope,
+} from "./scope.ts";
 
 export type OrchestrationOptions = {
   question: string;
   branchHint?: string | null;
+  /** Authoritative authenticated + authorized scope (preferred over branchHint alone). */
+  scope?: IntelligenceScope | null;
   threadId?: string | null;
   conversation?: StructuredConversationState | null;
   referenceDate?: Date;
@@ -241,18 +247,40 @@ export async function runCompanyIntelligenceOrchestration(
   const followUp = resolveFabricFollowUp({
     question: options.question,
     previous: options.conversation || null,
-    branchHint: options.branchHint || options.legacyRoute?.branchMention || null,
+    branchHint: options.scope?.primaryBranchId
+      || options.branchHint
+      || options.legacyRoute?.branchMention
+      || null,
     referenceDate: options.referenceDate,
   });
+
+  // Prefer caller-authorized scope; keep follow-up branch only when it matches access.
+  const authorized = options.scope || null;
+  const followUpBranch = normalizeBranchId(followUp.branchId);
+  const followUpAllowed = followUpBranch
+    ? (authorized
+      ? (authorized.access.canSeeNetwork || authorized.access.allowedBranchIds.includes(followUpBranch))
+      : true)
+    : false;
+  const primaryBranchId = (followUpAllowed && followUpBranch)
+    ? followUpBranch
+    : (authorized?.primaryBranchId || followUpBranch || null);
 
   let state = createCompanyIntelligenceState({
     originalQuestion: options.question,
     normalizedQuestion: followUp.resolvedQuestion,
     threadId: options.threadId || null,
-    scope: {
-      primaryBranchId: followUp.branchId,
-      branchIds: followUp.branchId ? [followUp.branchId] : [],
-    },
+    scope: createIntelligenceScope({
+      primaryBranchId,
+      branchIds: primaryBranchId
+        ? [primaryBranchId]
+        : (authorized?.branchIds || []),
+      allowedBranchIds: authorized?.access.allowedBranchIds,
+      canSeeNetwork: authorized?.access.canSeeNetwork,
+      role: authorized?.access.role,
+      companyId: authorized?.companyId,
+      brandId: authorized?.brandId,
+    }),
     conversation: followUp.conversation,
   });
   state = patchIntelligenceState(state, {
