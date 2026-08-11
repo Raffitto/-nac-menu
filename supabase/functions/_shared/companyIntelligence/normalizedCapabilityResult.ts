@@ -447,12 +447,15 @@ export function normalizeCapabilityResult(input: {
     }));
   }
 
-  // Canonical Cash Up answer shape (keyMetrics + conversationDataset.aggregation)
+  // Canonical Cash Up: raw tools use `aggregation`; built answers use conversationDataset.aggregation.
   const dataset = asObject(raw.conversationDataset);
-  const aggregation = asObject(dataset?.aggregation) || asObject(raw.aggregated);
+  const aggregation = asObject(dataset?.aggregation)
+    || asObject(raw.aggregation)
+    || asObject(raw.aggregated);
   if (aggregation) {
     const aggPairs: Array<[string, unknown, string | null]> = [
       ["net_sales", aggregation.totalSales ?? aggregation.net_sales ?? aggregation.total_sales, "SAR"],
+      ["gross_sales", aggregation.totalGrossSales ?? aggregation.gross_sales ?? aggregation.grossSales, "SAR"],
       ["covers", aggregation.totalGuests ?? aggregation.guest_count ?? aggregation.covers, null],
       ["orders", aggregation.totalOrders ?? aggregation.order_count, null],
       ["avg_spend", aggregation.averageSpend ?? aggregation.avg_per_guest, "SAR"],
@@ -496,27 +499,32 @@ export function normalizeCapabilityResult(input: {
     }));
   }
 
-  // Facts array shapes
-  const facts = Array.isArray(raw.facts) ? raw.facts as Array<Record<string, unknown>> : [];
-  for (const fact of facts.slice(0, 16)) {
-    const key = str(fact.metric_key) || str(fact.key);
-    if (!key) continue;
-    if (metrics.some((m) => m.metricKey === key)) continue;
-    const value = num(fact.metric_value) ?? (fact.value as number | string | null) ?? null;
-    metrics.push(normalizeMetric({
-      metricKey: key,
-      value,
-      unit: str(fact.unit),
-      source,
-      coverage,
-      numerator: num(fact.numerator),
-      denominator: num(fact.denominator),
-    }));
+  // Facts array shapes — only when no period aggregation (avoids first-day masquerade).
+  if (!aggregation) {
+    const facts = Array.isArray(raw.facts) ? raw.facts as Array<Record<string, unknown>> : [];
+    for (const fact of facts.slice(0, 16)) {
+      const key = str(fact.metric_key) || str(fact.key);
+      if (!key) continue;
+      if (metrics.some((m) => m.metricKey === key)) continue;
+      const value = num(fact.metric_value) ?? (fact.value as number | string | null) ?? null;
+      metrics.push(normalizeMetric({
+        metricKey: key,
+        value,
+        unit: str(fact.unit),
+        source,
+        coverage,
+        numerator: num(fact.numerator),
+        denominator: num(fact.denominator),
+      }));
+    }
   }
 
-  const aggregated = asObject(raw.aggregated);
-  if (aggregated) {
-    for (const [key, value] of Object.entries(aggregated)) {
+  const aggregatedExtra = asObject(raw.aggregated) || asObject(raw.aggregation);
+  if (aggregatedExtra) {
+    for (const [key, value] of Object.entries(aggregatedExtra)) {
+      if (["totalSales", "totalGuests", "totalOrders", "averageSpend", "dayCount", "dailyBreakdown", "deliveryPlatformBreakdown"].includes(key)) {
+        continue;
+      }
       if (metrics.some((m) => m.metricKey === key)) continue;
       const n = num(value);
       if (n == null) continue;

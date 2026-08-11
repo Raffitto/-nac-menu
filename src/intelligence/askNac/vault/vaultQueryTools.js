@@ -661,7 +661,7 @@ async function fetchCashUpRangeBundle(
         branch: scopedBranch,
         startDate,
         endDate,
-        includeDailyBreakdown: false,
+        includeDailyBreakdown: Boolean(resolvedDailyBreakdown),
       });
       factsResult = {
         branch: scopedBranch,

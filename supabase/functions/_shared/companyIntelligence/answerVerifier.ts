@@ -139,9 +139,75 @@ export function verifySynthesizedAnswer(input: {
     if (causal.sanitizedText) repaired = causal.sanitizedText;
   }
 
+  const granularity = assessPeriodGranularityCompatibility(input);
+  if (!granularity.ok) {
+    issues.push(...granularity.issues);
+  }
+
   return {
     ok: issues.length === 0,
     issues,
     repairedAnswer: issues.length ? repaired : null,
   };
+}
+
+/**
+ * A single daily observation must not substantiate an unlabeled monthly total.
+ * Evidence day_count / observed coverage must be compatible with the requested period.
+ */
+export function assessPeriodGranularityCompatibility(input: {
+  answerText?: string;
+  period?: DateRange | null;
+  evidence?: EvidenceRecord[];
+  claims?: ClaimRecord[];
+}): { ok: boolean; issues: VerifierIssue[] } {
+  const issues: VerifierIssue[] = [];
+  const period = input.period;
+  if (!period?.startDate || !period?.endDate) return { ok: true, issues };
+
+  const start = new Date(`${period.startDate}T12:00:00Z`);
+  const end = new Date(`${period.endDate}T12:00:00Z`);
+  const requestedDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (requestedDays < 28) return { ok: true, issues };
+
+  const text = String(input.answerText || "");
+  const namesMonth = /\b(january|february|march|april|may|june|july|august|september|october|november|december|month|overall)\b/i.test(text)
+    || Boolean(period.label && /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(period.label));
+  if (!namesMonth) return { ok: true, issues };
+
+  const dayCounts = (input.evidence || [])
+    .filter((e) => /day_count|days_included|observed_days|available_days/i.test(String(e.metricOrEvent || "")))
+    .map((e) => (typeof e.value === "number" ? e.value : Number(e.value)))
+    .filter((n) => Number.isFinite(n));
+  const claimDayCounts = (input.claims || [])
+    .filter((c) => /day_count|days_included/i.test(String(c.metricKey || c.type || "")))
+    .map((c) => c.metricValue)
+    .filter((v): v is number => v != null && Number.isFinite(v));
+
+  const observed = [...dayCounts, ...claimDayCounts];
+  if (!observed.length) {
+    // Detect a single-day evidence period used for an unlabeled monthly total.
+    const evidencePeriods = (input.evidence || [])
+      .map((e) => e.period)
+      .filter((p): p is DateRange => Boolean(p?.startDate && p?.endDate));
+    const allSingleDay = evidencePeriods.length > 0
+      && evidencePeriods.every((p) => p.startDate === p.endDate);
+    if (allSingleDay && !/\bon\s+\d{1,2}\s|on\s+\d{4}-\d{2}-\d{2}|only\s+\d+\s+day/i.test(text)) {
+      issues.push({
+        code: "period_granularity_mismatch",
+        detail: "Daily observation used for unlabeled monthly total claim",
+      });
+    }
+    return { ok: issues.length === 0, issues };
+  }
+
+  const minObserved = Math.min(...observed);
+  if (minObserved <= 1 && !/\bon\s+\d|only\s+1\s+day|1\s+available day/i.test(text)) {
+    issues.push({
+      code: "period_granularity_mismatch",
+      detail: `Requested ~${requestedDays}-day period but evidence day_count=${minObserved}`,
+    });
+  }
+
+  return { ok: issues.length === 0, issues };
 }

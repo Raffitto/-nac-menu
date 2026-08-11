@@ -345,4 +345,175 @@ describe("Commercial evidence + temporal follow-up (v83)", () => {
     expect(out.start).toBe("2026-07-01");
     expect(out.end).toBe("2026-07-31");
   });
+
+  test("11. raw tool.aggregation (not conversationDataset) supplies period totals", () => {
+    const out = run(`
+      const rawTool = {
+        aggregation: {
+          totalSales: 590126.95,
+          totalGuests: 8302,
+          totalOrders: 3506,
+          dayCount: 31,
+          expectedDayCount: 31,
+        },
+        // First-day facts that previously masqueraded as July
+        facts: [
+          { metric_key: "total_sales", metric_value: 26020, period_end: "2026-07-16" },
+          { metric_key: "net_sales", metric_value: 22626.08696, period_end: "2026-07-16" },
+          { metric_key: "guest_count", metric_value: 276, period_end: "2026-07-16" },
+          { metric_key: "order_count", metric_value: 124, period_end: "2026-07-16" },
+        ],
+      };
+      const metrics = mod.createVaultCapabilityExecutor(async () => rawTool);
+      // exercise extract via normalize
+      const normalized = mod.normalizeCapabilityResult({
+        capabilityId: "commercial.performance",
+        implementationTool: "cash_up_performance",
+        ok: true,
+        requestedPeriod: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+        raw: rawTool,
+      });
+      const net = (normalized.metrics || []).find((m) => m.metricKey === "net_sales")?.value;
+      const days = (normalized.metrics || []).find((m) => m.metricKey === "day_count")?.value;
+      return { net, days, keys: (normalized.metrics || []).map((m) => m.metricKey) };
+    `);
+    expect(out.net).toBe(590126.95);
+    expect(out.days).toBe(31);
+    expect(out.net).not.toBe(22626.08696);
+  });
+
+  test("12. 16 July facts alone cannot supply unlabeled July period metrics when aggregation present", () => {
+    const out = run(`
+      const executor = mod.createVaultCapabilityExecutor(async () => ({
+        aggregation: {
+          totalSales: 590126.95,
+          totalGuests: 8302,
+          totalOrders: 3506,
+          dayCount: 31,
+        },
+        facts: [
+          { metric_key: "net_sales", metric_value: 22626.08696, period_end: "2026-07-16" },
+          { metric_key: "guest_count", metric_value: 276, period_end: "2026-07-16" },
+        ],
+      }));
+      const authorized = mod.resolveAuthorizedIntelligenceScope({
+        profile: ${JSON.stringify(clientHint({ authenticated: true, allBranches: true, branchScope: null }))},
+      });
+      const spine = await mod.runCompanyIntelligenceOrchestration({
+        question: "How did July perform overall?",
+        scope: authorized.scope,
+        referenceDate: new Date("2026-08-11T12:00:00Z"),
+        mode: "heuristic",
+        executor,
+      });
+      const net = (spine.keyMetrics || []).map((m) => Number(m.value)).find((v) => v > 100000);
+      return {
+        net,
+        answer: String(spine.answerText || ""),
+        has16JulyMasquerade: (spine.keyMetrics || []).some((m) => Number(m.value) === 22626.08696),
+      };
+    `);
+    expect(out.net).toBe(590126.95);
+    expect(out.has16JulyMasquerade).toBe(false);
+  });
+
+  test("13. monthly claim granularity guard rejects single-day evidence for July", () => {
+    const out = run(`
+      const result = mod.verifySynthesizedAnswer({
+        answerText: "July net sales were 22,626 SAR overall.",
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+        evidence: [
+          {
+            id: "e1",
+            source: "cash_up",
+            sourceAuthority: "CANONICAL_STRUCTURED",
+            domain: "branch_sales",
+            metricOrEvent: "net_sales",
+            value: 22626.08696,
+            textSummary: "16 July net sales",
+            period: { startDate: "2026-07-16", endDate: "2026-07-16" },
+            confidence: "high",
+          },
+        ],
+        claims: [],
+      });
+      return {
+        ok: result.ok,
+        codes: (result.issues || []).map((i) => i.code),
+      };
+    `);
+    expect(out.ok).toBe(false);
+    expect(out.codes).toContain("period_granularity_mismatch");
+  });
+
+  test("14. what about June replaces period only — no commercial.compare", () => {
+    const out = run(`
+      ${EXECUTOR_HELPER}
+      const authorized = mod.resolveAuthorizedIntelligenceScope({
+        profile: ${JSON.stringify(clientHint({ authenticated: true, allBranches: true, branchScope: null }))},
+      });
+      const july = await mod.runCompanyIntelligenceOrchestration({
+        question: "How did July perform overall?",
+        scope: authorized.scope,
+        referenceDate: new Date("2026-08-11T12:00:00Z"),
+        mode: "heuristic",
+        executor,
+      });
+      const before = calls.length;
+      const june = await mod.runCompanyIntelligenceOrchestration({
+        question: "what about June",
+        scope: authorized.scope,
+        conversation: july.nextConversation,
+        referenceDate: new Date("2026-08-11T12:00:00Z"),
+        mode: "heuristic",
+        executor,
+      });
+      const juneCalls = calls.slice(before);
+      return {
+        period: june.state.periods.current,
+        comparison: june.state.periods.comparison,
+        caps: juneCalls.map((c) => c.capability),
+        notes: june.state.request?.normalizedQuestion || june.state.conversation?.previousIntent,
+      };
+    `);
+    expect(out.period.startDate).toBe("2026-06-01");
+    expect(out.period.endDate).toBe("2026-06-30");
+    expect(out.comparison).toBeNull();
+    expect(out.caps).toContain("commercial.performance");
+    expect(out.caps).not.toContain("commercial.compare");
+  });
+
+  test("15. compare it with June attaches comparison intent", () => {
+    const out = run(`
+      ${EXECUTOR_HELPER}
+      const authorized = mod.resolveAuthorizedIntelligenceScope({
+        profile: ${JSON.stringify(clientHint({ authenticated: true, allBranches: true, branchScope: null }))},
+      });
+      const july = await mod.runCompanyIntelligenceOrchestration({
+        question: "How did July perform overall?",
+        scope: authorized.scope,
+        referenceDate: new Date("2026-08-11T12:00:00Z"),
+        mode: "heuristic",
+        executor,
+      });
+      const before = calls.length;
+      const cmp = await mod.runCompanyIntelligenceOrchestration({
+        question: "compare it with June",
+        scope: authorized.scope,
+        conversation: july.nextConversation,
+        referenceDate: new Date("2026-08-11T12:00:00Z"),
+        mode: "heuristic",
+        executor,
+      });
+      const cmpCalls = calls.slice(before);
+      return {
+        current: cmp.state.periods.current,
+        comparison: cmp.state.periods.comparison,
+        caps: cmpCalls.map((c) => c.capability),
+      };
+    `);
+    expect(out.current.startDate).toBe("2026-07-01");
+    expect(out.comparison.startDate).toBe("2026-06-01");
+    expect(out.caps).toContain("commercial.compare");
+  });
 });

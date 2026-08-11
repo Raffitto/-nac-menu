@@ -55,15 +55,27 @@ function pushMetric(
   metrics.push(unit ? { key, value: parsed, unit } : { key, value: parsed });
 }
 
-/** Canonical Cash Up answers expose keyMetrics + conversationDataset.aggregation — not only facts[]. */
+/**
+ * Canonical Cash Up tool results expose period totals on `aggregation`
+ * (raw runQueryTool) or `conversationDataset.aggregation` (built answers).
+ * Never prefer unordered daily `facts[]` when a period aggregate is present —
+ * that made a single day (e.g. 16 July) masquerade as the full month.
+ */
+function resolveToolAggregation(tool: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!tool) return null;
+  const dataset = tool.conversationDataset as Record<string, unknown> | undefined;
+  const candidate = dataset?.aggregation || tool.aggregation || tool.aggregated;
+  return candidate && typeof candidate === "object" ? candidate as Record<string, unknown> : null;
+}
+
 function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: string; value: number | string; unit?: string }> {
   if (!tool) return [];
   const metrics: Array<{ key: string; value: number | string; unit?: string }> = [];
 
-  const dataset = tool.conversationDataset as Record<string, unknown> | undefined;
-  const aggregation = (dataset?.aggregation || tool.aggregated) as Record<string, unknown> | undefined;
-  if (aggregation && typeof aggregation === "object") {
+  const aggregation = resolveToolAggregation(tool);
+  if (aggregation) {
     pushMetric(metrics, "net_sales", aggregation.totalSales ?? aggregation.net_sales ?? aggregation.total_sales, "SAR");
+    pushMetric(metrics, "gross_sales", aggregation.totalGrossSales ?? aggregation.gross_sales ?? aggregation.grossSales, "SAR");
     pushMetric(metrics, "covers", aggregation.totalGuests ?? aggregation.guest_count ?? aggregation.covers);
     pushMetric(metrics, "orders", aggregation.totalOrders ?? aggregation.order_count);
     pushMetric(metrics, "avg_spend", aggregation.averageSpend ?? aggregation.avg_per_guest, "SAR");
@@ -79,10 +91,14 @@ function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: stri
     pushMetric(metrics, key, row.value ?? row.metric_value ?? row.metricValue, unit);
   }
 
-  const facts = Array.isArray(tool.facts) ? tool.facts as Array<Record<string, unknown>> : [];
-  for (const fact of facts.slice(0, 12)) {
-    const key = String(fact.metric_key || fact.metricKey || fact.key || "");
-    pushMetric(metrics, key, fact.metric_value ?? fact.metricValue ?? fact.value, fact.unit ? String(fact.unit) : undefined);
+  // Only fall back to raw facts when no period aggregation is available.
+  // Taking facts[0..] otherwise selects the first business day in range order.
+  if (!aggregation) {
+    const facts = Array.isArray(tool.facts) ? tool.facts as Array<Record<string, unknown>> : [];
+    for (const fact of facts.slice(0, 12)) {
+      const key = String(fact.metric_key || fact.metricKey || fact.key || "");
+      pushMetric(metrics, key, fact.metric_value ?? fact.metricValue ?? fact.value, fact.unit ? String(fact.unit) : undefined);
+    }
   }
 
   if (aggregation && typeof aggregation === "object") {
@@ -106,8 +122,7 @@ function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: stri
 
 function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityExecutionRequest) {
   const cov = (tool?.coverage || tool?.matchedCoverage || null) as Record<string, unknown> | null;
-  const dataset = tool?.conversationDataset as Record<string, unknown> | undefined;
-  const aggregation = (dataset?.aggregation || null) as Record<string, unknown> | null;
+  const aggregation = resolveToolAggregation(tool);
   const expectedFromAgg = typeof aggregation?.expectedDayCount === "number" ? aggregation.expectedDayCount : null;
   const availableFromAgg = typeof aggregation?.dayCount === "number" ? aggregation.dayCount : null;
   if (!cov) {

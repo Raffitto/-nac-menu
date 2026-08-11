@@ -56,7 +56,10 @@ export function shouldUseCashUpRangeRpc({
   periodType?: string;
   includeDailyBreakdown?: boolean;
 }) {
-  if (includeDailyBreakdown) return false;
+  void includeDailyBreakdown;
+  void periodType;
+  // Prefer the server aggregate for any closed range. Fact-scan limits can truncate
+  // a full month (~20+ facts/day) and make the first day look like the period total.
   if (!startDate || !endDate) return false;
-  return periodType === "year_to_date" || includeDailyBreakdown === false;
+  return true;
 }

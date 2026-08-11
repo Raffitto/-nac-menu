@@ -142,8 +142,41 @@ export function resolveFabricFollowUp(input: {
     };
   }
 
+  // Explicit compare follow-up: "compare it with June" / "compare with jan 2026"
+  // Keep the prior period as current; attach the mentioned period as comparison.
+  const compareFocus = q.match(/^(?:compare(?:\s+it)?\s+with|vs|versus)\s+(.+?)\??$/i);
+  if (compareFocus && inherit && prev.activePeriods.current) {
+    const comparison = resolveFollowUpPeriodFocus(compareFocus[1], ref);
+    if (comparison?.startDate && comparison?.endDate) {
+      notes.push("followup_explicit_compare");
+      const current = prev.activePeriods.current;
+      const conversation = updateConversationState(prev, {
+        activeBranchId: branchId || prev.activeBranchId,
+        activeCompanyId: prev.activeCompanyId || "nac_hospitality",
+        activeBrandId: prev.activeBrandId || "nac",
+        activeMetricFamily: metricFamily || "commercial",
+        activeCapabilities: ["commercial.compare", "commercial.performance"],
+        activePeriods: { current, comparison },
+        previousIntent: "period_compare",
+      });
+      const labelA = current.label || current.semantic || "current period";
+      const labelB = comparison.label || comparison.semantic || compareFocus[1];
+      return {
+        usedFollowUp: true,
+        resolvedQuestion: `Compare ${labelA} with ${labelB}`,
+        branchId: conversation.activeBranchId,
+        currentPeriod: current,
+        comparisonPeriod: comparison,
+        metricFamily: conversation.activeMetricFamily,
+        conversation,
+        notes,
+      };
+    }
+  }
+
   // Generic temporal follow-up: "what about June" / "what about jan 2026"
   // Inherit commercial intent/metric/scope; replace ONLY the period dimension.
+  // Do NOT auto-attach comparison — that would force July-vs-June compare.
   // Do NOT require activeBranchId — network-scope conversations must follow up too.
   const focus = extractFollowUpFocus(q);
   if (focus && inherit) {
@@ -156,11 +189,11 @@ export function resolveFabricFollowUp(input: {
         activeBrandId: prev.activeBrandId || "nac",
         activeMetricFamily: metricFamily || "commercial",
         activeCapabilities: prev.activeCapabilities?.length
-          ? prev.activeCapabilities
+          ? prev.activeCapabilities.filter((c) => c !== "commercial.compare")
           : ["commercial.performance"],
         activePeriods: {
           current,
-          comparison: prev.activePeriods.current, // prior period as compare candidate
+          comparison: null,
         },
         previousIntent: previousIntent || "performance_overview",
       });
@@ -169,7 +202,7 @@ export function resolveFabricFollowUp(input: {
         resolvedQuestion: buildInheritedCommercialQuestion(current, focus),
         branchId: conversation.activeBranchId,
         currentPeriod: current,
-        comparisonPeriod: prev.activePeriods.current,
+        comparisonPeriod: null,
         metricFamily: conversation.activeMetricFamily,
         conversation,
         notes,
