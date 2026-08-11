@@ -164,15 +164,23 @@ export function buildInfeasibleComparisonAnswer(state: CompanyIntelligenceState)
   const baselineLabel = baseline?.label || (baseline ? `${baseline.startDate}–${baseline.endDate}` : "the baseline period");
   const currentLabel = current?.label || (current ? `${current.startDate}–${current.endDate}` : "the requested period");
 
-  const openingClause = opening ? ` (opened ${opening})` : "";
+  const openingPretty = opening
+    ? new Date(`${opening}T12:00:00Z`).toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    })
+    : null;
+  const openingClause = openingPretty ? `, ${capitalize(branch)} opened on ${openingPretty}` : "";
   const alts = state.feasibility.suggestedAlternatives.length
-    ? ` Suggested alternatives: ${state.feasibility.suggestedAlternatives.join("; ")}.`
+    ? ` ${state.feasibility.suggestedAlternatives.join("; ")}.`
     : "";
 
   return (
-    `${capitalize(branch)} was not operating during ${baselineLabel}${openingClause}, `
-    + `so a ${baselineLabel} vs ${currentLabel} ${capitalize(branch)} comparison is not valid.`
-    + alts
+    `This comparison is not valid for ${capitalize(branch)} because the branch was not operating during ${baselineLabel}`
+    + `${openingClause}, so there is no branch-specific ${baselineLabel} sales baseline.`
+    + (alts || ` I can show ${currentLabel} performance or compare it with another suitable period instead.`)
   );
 }
 

@@ -3,6 +3,7 @@
  */
 
 import { isDocumentSummaryFollowUp } from "./askNacVaultTools.ts";
+import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
 
@@ -243,6 +244,19 @@ function buildBaseQuestionFromState(state: ReturnType<typeof createEmptyConversa
   return `Show ${metricToPhrase(state.metric)} for ${periodLabel}${branchSuffix}`.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * True when the turn already resolves BOTH current and comparison periods
+ * (e.g. Ramadan YoY). These are primary questions — never rewrite them into
+ * inherited "compare June to previous period" follow-ups.
+ */
+export function isSelfContainedComparisonQuestion(
+  question: string,
+  referenceDate: Date = new Date(),
+): boolean {
+  const resolved = defaultTemporalService.resolveFromQuestion(question, referenceDate);
+  return Boolean(resolved.range?.startDate && resolved.compareRange?.startDate);
+}
+
 function classifyFollowUp(question: string, state: ReturnType<typeof createEmptyConversationState> | null) {
   const q = normalizeQuestion(question).toLowerCase();
   const hasState = Boolean(state?.resolvedQuestion || state?.metric);
@@ -254,6 +268,11 @@ function classifyFollowUp(question: string, state: ReturnType<typeof createEmpty
     return { category: FOLLOW_UP_CATEGORIES.DRILL_DOWN, subCategory: byMatch ? `by_${byMatch[1]}` : "by_day", confidence: hasState ? "known" : "inferred" };
   }
   if (/\b(compare|vs|versus|compared to)\b/.test(q) || /^compare\s+(it|both|them)\b/.test(q)) {
+    // Self-contained dual-period compares (Ramadan YoY, etc.) must not be treated as
+    // conversation follow-ups — rewriting drops the resolved event periods.
+    if (isSelfContainedComparisonQuestion(question)) {
+      return { category: null, subCategory: null, confidence: "missing" };
+    }
     let subCategory = "generic";
     if (/\b(previous|prior)\s+week\b/.test(q)) subCategory = "previous_week";
     if (/\b(last|previous)\s+year\b/.test(q)) subCategory = "last_year";
@@ -321,6 +340,13 @@ function resolveConversationTurn(question: string, context: Record<string, unkno
     };
   }
   if (classification.category === FOLLOW_UP_CATEGORIES.COMPARISON) {
+    if (isSelfContainedComparisonQuestion(original)) {
+      return {
+        resolvedQuestion: original,
+        usedContext: false,
+        resolutionNotes: ["Preserved self-contained comparison; both periods resolved from the question."],
+      };
+    }
     if (classification.subCategory === "branches" || /\bcompare both\b/i.test(original)) {
       const history = state.branchHistory.length >= 2
         ? state.branchHistory.slice(-2)
