@@ -27,6 +27,68 @@ function run(body, env = {}) {
 }
 
 describe("Company Intelligence orchestration spine", () => {
+  test("cloud-off uses local ModelGateway planner when schema-valid (not heuristic-first)", () => {
+    const out = run(`
+      const local = {
+        id: "openai_compatible_local",
+        supports: () => true,
+        complete: async () => ({
+          ok: true,
+          provider: "openai_compatible_local",
+          model: "lab-model",
+          content: JSON.stringify({
+            intent: "performance_overview",
+            metric_family: "commercial",
+            scope: { branch: "khobar" },
+            time: { expression: "last_14_days" },
+            comparison: { requested: true, type: "previous_equivalent_period" },
+            needs_clarification: false,
+            capabilities: ["commercial.performance", "commercial.compare"],
+            operations: [{ tool: "cash_up_performance", purpose: "overview" }],
+          }),
+          paid: false,
+          usage: { promptTokens: 10, completionTokens: 20 },
+        }),
+      };
+      const gateway = mod.createModelGateway(
+        { openai_compatible_local: local },
+        {
+          ...mod.loadModelGatewayConfig(),
+          fastProvider: "openai_compatible_local",
+          reasonProvider: "openai_compatible_local",
+          synthesizeProvider: "openai_compatible_local",
+          cloudEnabled: false,
+          maxPaidCallsPerAnswer: 0,
+          localBaseUrl: "http://127.0.0.1:9/v1",
+          localModel: "lab-model",
+        },
+      );
+      const result = await mod.runCompanyIntelligenceOrchestration({
+        question: "How's business been lately?",
+        branchHint: "khobar",
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "auto",
+        gateway,
+        maxPaidCalls: 0,
+      });
+      return {
+        provider: result.state.cost.modelProvider,
+        goal: result.state.plan.goal,
+        caps: result.state.plan.capabilities,
+        paid: result.paidModelCalls,
+        fallback: result.state.cost.cloudEscalationReason,
+      };
+    `, {
+      MODEL_GATEWAY_CLOUD_ENABLED: "false",
+      MODEL_GATEWAY_FAST_PROVIDER: "openai_compatible_local",
+    });
+    expect(out.provider).toBe("openai_compatible_local");
+    expect(out.goal).toBe("performance_overview");
+    expect(out.caps).toEqual(expect.arrayContaining(["commercial.performance", "commercial.compare"]));
+    expect(out.paid).toBe(0);
+    expect(out.fallback).toBeFalsy();
+  });
+
   test("Ramadan impossible comparison short-circuits with zero tools and zero paid calls", () => {
     const out = run(`
       const result = await mod.runCompanyIntelligenceOrchestration({

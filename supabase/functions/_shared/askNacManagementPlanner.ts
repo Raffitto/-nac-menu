@@ -391,7 +391,7 @@ export function planManagementQuestionHeuristic(
   });
 }
 
-function plannerSystemPrompt() {
+export function buildManagementPlannerSystemPrompt() {
   return [
     "You are the Ask NAC management planner for a multi-branch restaurant group.",
     "Output JSON only. Do not answer the business question. Do not invent numbers or dates.",
@@ -407,14 +407,11 @@ function plannerSystemPrompt() {
   ].join(" ");
 }
 
-async function planManagementQuestionWithOpenAi(
+export function buildManagementPlannerUserPayload(
   question: string,
   context: { branchHint?: string | null; conversationSummary?: string | null } = {},
-): Promise<ManagementPlan | null> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) return null;
-
-  const userPayload = {
+) {
+  return {
     question,
     branchHint: context.branchHint || null,
     conversationSummary: context.conversationSummary || null,
@@ -424,6 +421,27 @@ async function planManagementQuestionWithOpenAi(
       operations_primary: "in_range_logbook",
     },
   };
+}
+
+/** Parse + schema-validate planner JSON from any OpenAI-compatible model content. */
+export function parseManagementPlanFromModelContent(content: string | null | undefined): ManagementPlan | null {
+  if (!content || !String(content).trim()) return null;
+  try {
+    const parsed = JSON.parse(String(content));
+    return validateManagementPlan(parsed);
+  } catch {
+    return null;
+  }
+}
+
+async function planManagementQuestionWithOpenAi(
+  question: string,
+  context: { branchHint?: string | null; conversationSummary?: string | null } = {},
+): Promise<ManagementPlan | null> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) return null;
+
+  const userPayload = buildManagementPlannerUserPayload(question, context);
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -438,7 +456,7 @@ async function planManagementQuestionWithOpenAi(
         max_tokens: PLANNER_MAX_TOKENS,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: plannerSystemPrompt() },
+          { role: "system", content: buildManagementPlannerSystemPrompt() },
           { role: "user", content: JSON.stringify(userPayload) },
         ],
       }),
@@ -446,9 +464,7 @@ async function planManagementQuestionWithOpenAi(
     if (!res.ok) return null;
     const json = await res.json();
     const content = json?.choices?.[0]?.message?.content;
-    if (!content) return null;
-    const parsed = typeof content === "string" ? JSON.parse(content) : content;
-    return validateManagementPlan(parsed);
+    return parseManagementPlanFromModelContent(content);
   } catch {
     return null;
   }

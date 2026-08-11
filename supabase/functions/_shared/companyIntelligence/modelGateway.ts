@@ -156,13 +156,21 @@ export function createOpenAiCompatibleLocalAdapter(options: {
     },
     async complete(req) {
       try {
+        // Local reasoning models often spend tokens on a hidden reasoning channel;
+        // give JSON roles enough completion budget so final content can emit.
+        const maxTokens = req.maxTokens
+          ?? (req.json ? Number(envGet("MODEL_GATEWAY_LOCAL_MAX_TOKENS") || 1600) : 500);
         const res = await fetch(`${baseUrl}/chat/completions`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            // Ollama OpenAI-compatible path accepts any bearer; keeps adapters uniform.
+            Authorization: "Bearer ollama",
+          },
           body: JSON.stringify({
             model,
             temperature: req.temperature ?? 0.1,
-            max_tokens: req.maxTokens ?? 500,
+            max_tokens: maxTokens,
             response_format: req.json ? { type: "json_object" } : undefined,
             messages: [
               { role: "system", content: req.system },
@@ -181,11 +189,26 @@ export function createOpenAiCompatibleLocalAdapter(options: {
           };
         }
         const json = await res.json();
+        const content = json?.choices?.[0]?.message?.content || null;
+        if (!content || !String(content).trim()) {
+          return {
+            ok: false,
+            provider: "openai_compatible_local",
+            model,
+            content: null,
+            paid: false,
+            error: "empty_content",
+            usage: {
+              promptTokens: json?.usage?.prompt_tokens,
+              completionTokens: json?.usage?.completion_tokens,
+            },
+          };
+        }
         return {
           ok: true,
           provider: "openai_compatible_local",
           model,
-          content: json?.choices?.[0]?.message?.content || null,
+          content: String(content),
           paid: false,
           usage: {
             promptTokens: json?.usage?.prompt_tokens,

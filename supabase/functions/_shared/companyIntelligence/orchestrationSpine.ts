@@ -8,6 +8,9 @@ import {
   planManagementQuestionHeuristic,
   looksLikeManagementCommercialQuestion,
   looksLikeOperationalManagementQuestion,
+  buildManagementPlannerSystemPrompt,
+  buildManagementPlannerUserPayload,
+  parseManagementPlanFromModelContent,
 } from "../askNacManagementPlanner.ts";
 import { assessComparability } from "./comparabilityEngine.ts";
 import { assembleClaimsFromEvidence } from "./claimAssembly.ts";
@@ -357,6 +360,9 @@ export async function runCompanyIntelligenceOrchestration(
   let plannerCalls = 0;
   let plannerSource: string | null = null;
   let fallbackReason: string | null = null;
+  let planGoal = "answer_management_question";
+  let planNeedsClarification = false;
+  let planClarificationPrompt: string | null = null;
 
   if (fastPath) {
     capabilities = ["commercial.performance"];
@@ -370,16 +376,52 @@ export async function runCompanyIntelligenceOrchestration(
       },
     });
   } else {
-    // Planner → capabilities (heuristic first when offline / cloud off)
+    // Planner → capabilities
+    // Prefer ModelGateway local when cloud is off (dev lab / company GPU).
+    // Heuristic only for forced offline/heuristic modes, or local schema failure.
     try {
-      if (mode === "heuristic" || mode === "offline" || !cloudEnabled) {
+      if (mode === "heuristic" || mode === "offline") {
         const plan = planManagementQuestionHeuristic(state.request.normalizedQuestion, {
           branchHint: branch,
         });
         capabilities = managementPlanToCapabilities(plan);
         plannerSource = "heuristic";
-        if (!cloudEnabled && mode !== "heuristic") {
-          fallbackReason = "cloud_disabled_heuristic_planner";
+      } else if (!cloudEnabled) {
+        const planRes = await gateway.plan({
+          system: buildManagementPlannerSystemPrompt(),
+          user: JSON.stringify(buildManagementPlannerUserPayload(state.request.normalizedQuestion, {
+            branchHint: branch,
+            conversationSummary: options.conversation
+              ? String((options.conversation as { lastQuestion?: string }).lastQuestion || "")
+              : null,
+          })),
+          json: true,
+          temperature: 0.1,
+        });
+        const localPlan = parseManagementPlanFromModelContent(planRes.content);
+        if (planRes.ok && localPlan) {
+          capabilities = managementPlanToCapabilities(localPlan);
+          plannerSource = planRes.provider || "openai_compatible_local";
+          planGoal = localPlan.intent;
+          planNeedsClarification = localPlan.needs_clarification;
+          planClarificationPrompt = localPlan.clarification_prompt || null;
+          state = patchIntelligenceState(state, {
+            cost: {
+              ...state.cost,
+              plannerUsed: true,
+              modelProvider: planRes.provider,
+              modelName: planRes.model,
+              promptTokens: (state.cost.promptTokens || 0) + (planRes.usage?.promptTokens || 0),
+              completionTokens: (state.cost.completionTokens || 0) + (planRes.usage?.completionTokens || 0),
+            },
+          });
+        } else {
+          const plan = planManagementQuestionHeuristic(state.request.normalizedQuestion, {
+            branchHint: branch,
+          });
+          capabilities = managementPlanToCapabilities(plan);
+          plannerSource = "heuristic";
+          fallbackReason = planRes.error || "local_planner_schema_invalid";
         }
       } else {
         const { plan, source } = await planManagementQuestion(state.request.normalizedQuestion, {
@@ -427,11 +469,11 @@ export async function runCompanyIntelligenceOrchestration(
 
   state = transition(state, "PLANNED", {
     plan: {
-      goal: "answer_management_question",
+      goal: planGoal,
       capabilities,
       researchBudgetTier: budget.tier,
-      needsClarification: false,
-      clarificationPrompt: null,
+      needsClarification: planNeedsClarification,
+      clarificationPrompt: planClarificationPrompt,
     },
     cost: {
       ...state.cost,
@@ -440,7 +482,13 @@ export async function runCompanyIntelligenceOrchestration(
       deterministicRouteUsed: fastPath,
       plannerUsed: !fastPath,
       cloudEscalationReason: fallbackReason,
-      modelProvider: plannerSource === "openai" ? "openai" : plannerSource === "heuristic" ? "none" : null,
+      modelProvider: plannerSource === "openai"
+        ? "openai"
+        : plannerSource === "openai_compatible_local"
+        ? "openai_compatible_local"
+        : plannerSource === "heuristic"
+        ? "none"
+        : plannerSource,
     },
   });
 
@@ -532,12 +580,16 @@ export async function runCompanyIntelligenceOrchestration(
     }
   }
 
-  // Synthesis
+  // Synthesis — cloud when enabled; unpaid local when cloud off but local synth configured.
+  const localUnpaidSynth = gateway.config.synthesizeProvider === "openai_compatible_local"
+    && Boolean(gateway.config.localBaseUrl);
   const preferDeterministic = fastPath
     || budget.tier === 0
     || mode === "offline"
-    || !cloudEnabled
-    || state.cost.paidModelCallsPerAnswer >= maxPaid;
+    || mode === "heuristic"
+    || (!cloudEnabled && !localUnpaidSynth)
+    // Paid budget gates cloud synthesis only; unpaid local may still synthesize.
+    || (cloudEnabled && state.cost.paidModelCallsPerAnswer >= maxPaid);
 
   let answerText = synthesizeDeterministicAnswer({
     question: state.request.normalizedQuestion,
@@ -548,7 +600,7 @@ export async function runCompanyIntelligenceOrchestration(
     claims: state.claims,
     coverage: state.coverage,
     comparability: state.comparability,
-    offlineAnalysis: !cloudEnabled && !fastPath && budget.tier >= 1,
+    offlineAnalysis: !cloudEnabled && !localUnpaidSynth && !fastPath && budget.tier >= 1,
   });
 
   let synthesisCalls = 0;
@@ -556,6 +608,7 @@ export async function runCompanyIntelligenceOrchestration(
     const syn = await gateway.synthesize({
       system: [
         "You are Ask NAC. Write a concise manager answer from verified evidence only.",
+        "Return JSON only: {\"directAnswer\":\"...\"}.",
         "Do not invent numbers, dates, branches, causes, or margins.",
         "Do not use causal verbs unless claim type is VERIFIED_FACT with strong evidence.",
         "Do not mention tools, SQL, or internal labels.",
@@ -579,29 +632,31 @@ export async function runCompanyIntelligenceOrchestration(
         warnings: state.warnings,
       }),
       json: true,
-      maxTokens: 400,
+      maxTokens: Number(
+        (typeof Deno !== "undefined" && Deno.env.get("MODEL_GATEWAY_LOCAL_MAX_TOKENS")) || 1600,
+      ),
     });
     if (syn.ok && syn.content) {
       try {
         const parsed = JSON.parse(syn.content);
         answerText = String(parsed.directAnswer || parsed.answer || answerText);
-        synthesisCalls = syn.paid ? 1 : 0;
-        if (syn.paid) {
-          state = patchIntelligenceState(state, {
-            cost: {
-              ...state.cost,
-              paidModelCallsPerAnswer: state.cost.paidModelCallsPerAnswer + 1,
-              promptTokens: (state.cost.promptTokens || 0) + (syn.usage?.promptTokens || 0),
-              completionTokens: (state.cost.completionTokens || 0) + (syn.usage?.completionTokens || 0),
-              modelProvider: syn.provider,
-              modelName: syn.model,
-              estimatedCostUsd: estimateOpenAiMiniCostUsd(
+        synthesisCalls = 1;
+        state = patchIntelligenceState(state, {
+          cost: {
+            ...state.cost,
+            paidModelCallsPerAnswer: state.cost.paidModelCallsPerAnswer + (syn.paid ? 1 : 0),
+            promptTokens: (state.cost.promptTokens || 0) + (syn.usage?.promptTokens || 0),
+            completionTokens: (state.cost.completionTokens || 0) + (syn.usage?.completionTokens || 0),
+            modelProvider: syn.provider,
+            modelName: syn.model,
+            estimatedCostUsd: syn.paid
+              ? estimateOpenAiMiniCostUsd(
                 (state.cost.promptTokens || 0) + (syn.usage?.promptTokens || 0),
                 (state.cost.completionTokens || 0) + (syn.usage?.completionTokens || 0),
-              ),
-            },
-          });
-        }
+              )
+              : 0,
+          },
+        });
       } catch {
         // keep deterministic
         fallbackReason = fallbackReason || "synthesis_parse_failure";
