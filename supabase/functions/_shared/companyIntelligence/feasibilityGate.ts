@@ -33,6 +33,8 @@ export function assessFeasibility(input: {
   coverage?: CoverageReport | null;
   requiresExternalResearch?: boolean;
   timeline?: BusinessTimelineRegistry;
+  /** When true, non-operating historical window can still yield next-date / forecast answers. */
+  allowPartialWithoutHistorical?: boolean;
 }): FeasibilityResult {
   const timeline = input.timeline || defaultBusinessTimeline;
   const reasons: FeasibilityReasonCode[] = [];
@@ -92,6 +94,24 @@ export function assessFeasibility(input: {
   }
 
   if (reasons.includes("branch_not_operating_in_baseline_period")) {
+    return {
+      status: "NOT_ANSWERABLE_AS_REQUESTED",
+      reasons,
+      detail,
+      suggestedAlternatives,
+    };
+  }
+
+  if (reasons.includes("branch_not_operating_in_current_period")) {
+    if (input.allowPartialWithoutHistorical) {
+      suggestedAlternatives.push("Answer next holiday date and bounded forecast without invalid historical baseline");
+      return {
+        status: "PARTIALLY_ANSWERABLE",
+        reasons,
+        detail,
+        suggestedAlternatives,
+      };
+    }
     return {
       status: "NOT_ANSWERABLE_AS_REQUESTED",
       reasons,

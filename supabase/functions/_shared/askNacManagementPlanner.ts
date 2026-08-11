@@ -67,6 +67,7 @@ const TOOL_TO_CAPABILITY: Record<string, string> = {
   cash_up_performance: "commercial.performance",
   cash_up_compare: "commercial.compare",
   cash_up_day_ranking: "commercial.rank_days",
+  event_forecast: "commercial.forecast",
   operational_evidence: "operations.review",
   branch_compare: "company.scope_compare",
 };
@@ -88,6 +89,7 @@ const ALLOWED_TOOLS = new Set([
   "cash_up_performance",
   "cash_up_compare",
   "cash_up_day_ranking",
+  "event_forecast",
   "operational_evidence",
   "branch_compare",
   "none",
@@ -160,6 +162,7 @@ export function looksLikeManagementCommercialQuestion(question = "") {
   }
   return (
     /\b(business|performing|performance|overview|briefing|management|gm|pulse|read on|looking|lately|recently|improving|worse|red flags?|worrying|happy about|going wrong|act on|focus on|losing money|sales|covers|guests|orders|weekend|weekday|month|week|july|june|august|khobar|riyadh|jeddah)\b/.test(q)
+    || /\b(founding day|foundation day|saudi founding|expect(?:ations?)?|forecast)\b/.test(q)
     || /\b(how('?s| is| are| did| was| were)|are we|give me|tell me|what('?s| is)|why |anything |compare )\b/.test(q)
   );
 }
@@ -240,6 +243,7 @@ export function planManagementQuestionHeuristic(
   const branch = detectBranchMention(q) || (context.branchHint ? String(context.branchHint).toLowerCase() : null);
   const normalizedBranch = branch && ["khobar", "riyadh", "jeddah"].includes(branch) ? branch : null;
   const timeExpr = inferTimeExpression(q);
+  const wantsHolidayEvent = /\b(founding day|foundation day|saudi founding|saudi foundation)\b/.test(q);
 
   const wantsBranchCompare = /\b(better than|vs|versus|compared with|compared to)\b/.test(q)
     && /\b(khobar|riyadh|jeddah)\b/.test(q)
@@ -273,6 +277,37 @@ export function planManagementQuestionHeuristic(
     ...plan,
     capabilities: deriveCapabilitiesFromPlan(plan),
   });
+
+  if (wantsHolidayEvent) {
+    const wantsForecast = /\b(expect|expectation|expectations|forecast|should (we|sales)|look like|next)\b/.test(q);
+    const wantsHolidayCompare = /\b(compare|vs|versus|against)\b/.test(q);
+    const operations: ManagementPlan["operations"] = [
+      { tool: "cash_up_performance", purpose: "historical holiday event window from Cash Up" },
+    ];
+    if (wantsForecast) {
+      operations.push({ tool: "event_forecast", purpose: "bounded next-event expectations" });
+    }
+    return withCaps({
+      intent: wantsHolidayCompare ? "period_compare" : "performance_overview",
+      scope: { branch: normalizedBranch },
+      time: { expression: timeExpr || "saudi_founding_day" },
+      metric_family: "commercial",
+      capabilities: [
+        "calendar.resolve_period",
+        "company.branch_timeline",
+        "commercial.performance",
+        ...(wantsForecast ? ["commercial.forecast"] : []),
+        ...(wantsHolidayCompare ? ["commercial.compare"] : []),
+      ],
+      operations,
+      comparison: {
+        requested: wantsHolidayCompare,
+        type: wantsHolidayCompare ? "same_named_event" : null,
+      },
+      needs_clarification: false,
+      confidence: "high",
+    });
+  }
 
   if (wantsBranchCompare || wantsNetworkOverview) {
     return withCaps({

@@ -24,10 +24,23 @@ export type IntelligencePlan = {
   clarificationPrompt: string | null;
 };
 
+export type EventWindowState = {
+  holidayId: string;
+  convention: string;
+  conventionLabel: string;
+  anchorDate: string;
+  year: number;
+  weekdaySignature: string;
+} | null;
+
 export type PeriodState = {
   current: DateRange | null;
   comparison: DateRange | null;
+  /** Next/future event window used for bounded forecasts. */
+  forecast: DateRange | null;
   requestedSemantics: string | null;
+  eventWindow: EventWindowState;
+  nextHolidayDate: string | null;
 };
 
 export type FabricStage =
@@ -94,7 +107,10 @@ export function createCompanyIntelligenceState(input: {
     periods: {
       current: null,
       comparison: null,
+      forecast: null,
       requestedSemantics: null,
+      eventWindow: null,
+      nextHolidayDate: null,
     },
     comparability: null,
     toolResults: {},
@@ -139,9 +155,18 @@ export function patchIntelligenceState(
         comparison: patch.periods.comparison !== undefined
           ? patch.periods.comparison
           : state.periods.comparison,
+        forecast: patch.periods.forecast !== undefined
+          ? patch.periods.forecast
+          : state.periods.forecast,
         requestedSemantics: patch.periods.requestedSemantics !== undefined
           ? patch.periods.requestedSemantics
           : state.periods.requestedSemantics,
+        eventWindow: patch.periods.eventWindow !== undefined
+          ? patch.periods.eventWindow
+          : state.periods.eventWindow,
+        nextHolidayDate: patch.periods.nextHolidayDate !== undefined
+          ? patch.periods.nextHolidayDate
+          : state.periods.nextHolidayDate,
       }
       : state.periods,
     toolResults: patch.toolResults

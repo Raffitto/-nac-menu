@@ -74,10 +74,15 @@ export function decideResearchBudget(input: {
   }
 
   if (
-    /\b(ramadan|eid|compare last year|deep dive|root cause)\b/.test(q)
+    /\b(ramadan|eid|founding day|foundation day|compare last year|deep dive|root cause)\b/.test(q)
     || input.feasibilityStatus === "REQUIRES_RESEARCH"
+    || (input.capabilities || []).includes("commercial.forecast")
   ) {
-    maxFromCaps = 3;
+    maxFromCaps = Math.max(maxFromCaps, 2) as ResearchBudgetTier;
+    if (/\b(ramadan|eid|compare last year|deep dive|root cause)\b/.test(q)
+      || input.feasibilityStatus === "REQUIRES_RESEARCH") {
+      maxFromCaps = 3;
+    }
     reasons.push("complex_calendar_or_research_request");
   }
 

@@ -351,6 +351,9 @@ function inferSource(capabilityId: CapabilityId, implementationTool: string): st
   if (capabilityId === "company.branch_timeline" || capabilityId === "calendar.resolve_period") {
     return "business_timeline";
   }
+  if (capabilityId === "commercial.forecast" || implementationTool === "event_forecast") {
+    return "event_forecast";
+  }
   if (capabilityId === "cost.margin_analysis") return "cost_control";
   if (capabilityId === "guest.feedback") return "reception";
   if (implementationTool.includes("foodics")) return "foodics";

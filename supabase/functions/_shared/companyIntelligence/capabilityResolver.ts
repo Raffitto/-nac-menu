@@ -6,12 +6,18 @@
 import { CAPABILITY_REGISTRY, type CapabilityId } from "./capabilityRegistry.ts";
 import { buildCoverageReport, type CoverageReport } from "./coverageModel.ts";
 import { createEvidence, type EvidenceRecord } from "./evidenceLedger.ts";
+import {
+  buildEventPerformanceObservation,
+  forecastEventWindow,
+} from "./eventForecast.ts";
+import { resolveEventWindow, resolveHolidayTemporalBundle } from "./holidayCalendar.ts";
 import type { CompanyIntelligenceState } from "./intelligenceState.ts";
 import {
   normalizeCapabilityResult,
   normalizedResultToEvidenceParts,
   type NormalizedCapabilityResult,
 } from "./normalizedCapabilityResult.ts";
+import { defaultBusinessTimeline } from "./businessTimeline.ts";
 import type { DateRange } from "./types.ts";
 
 export type CapabilityExecutionRequest = {
@@ -96,6 +102,8 @@ export function resolveCapabilityImplementation(capability: CapabilityId): {
       return { implementationTool: tool, queryFocus: null, vaultIntent: "vault_operational_review" };
     case "company.scope_compare":
       return { implementationTool: tool, queryFocus: null, vaultIntent: "executive_analysis" };
+    case "commercial.forecast":
+      return { implementationTool: tool, queryFocus: null, vaultIntent: null };
     case "company.branch_timeline":
     case "calendar.resolve_period":
       return { implementationTool: tool, queryFocus: null, vaultIntent: null };
@@ -116,18 +124,136 @@ export async function executeBuiltinCapability(
   state: CompanyIntelligenceState,
 ): Promise<CapabilityExecutionResult | null> {
   if (req.capability === "calendar.resolve_period") {
+    const snippets = [
+      state.periods.current
+        ? `Resolved period ${state.periods.current.startDate}–${state.periods.current.endDate}`
+        : "Period unresolved",
+    ];
+    if (state.periods.eventWindow) {
+      snippets.push(
+        `Event window convention: ${state.periods.eventWindow.conventionLabel} around ${state.periods.eventWindow.anchorDate}`,
+      );
+    }
+    if (state.periods.nextHolidayDate) {
+      snippets.push(`Next holiday date: ${state.periods.nextHolidayDate}`);
+    }
     return {
       capability: req.capability,
       implementationTool: "temporal_service",
       ok: true,
       metrics: [],
-      textSnippets: [
-        state.periods.current
-          ? `Resolved period ${state.periods.current.startDate}–${state.periods.current.endDate}`
-          : "Period unresolved",
-      ],
+      textSnippets: snippets,
       coverage: null,
       raw: { periods: state.periods },
+    };
+  }
+  if (req.capability === "commercial.forecast") {
+    const holidayId = (state.periods.eventWindow?.holidayId || "saudi_founding_day") as "saudi_founding_day";
+    const target = state.periods.forecast
+      ? resolveEventWindow({
+        holidayId,
+        year: Number(String(state.periods.forecast.semantic || state.periods.forecast.startDate || "").match(/20\d{2}/)?.[0]
+          || String(state.periods.nextHolidayDate || "").slice(0, 4)
+          || String(state.periods.forecast.startDate || "").slice(0, 4)),
+      })
+      : resolveHolidayTemporalBundle(req.question)?.nextWindow || null;
+
+    const histWindow = state.periods.eventWindow
+      ? resolveEventWindow({
+        holidayId,
+        year: state.periods.eventWindow.year,
+      })
+      : resolveHolidayTemporalBundle(req.question)?.historicalWindow || null;
+    const histSalesEvidence = state.evidence.find((e) =>
+      e.metricOrEvent === "net_sales" && typeof e.value === "number" && e.source === "cash_up"
+    );
+    const histCovers = state.evidence.find((e) => e.metricOrEvent === "covers" && typeof e.value === "number");
+    const observations = [];
+    if (histWindow && histSalesEvidence) {
+      observations.push(buildEventPerformanceObservation({
+        eventWindow: histWindow,
+        netSales: Number(histSalesEvidence.value),
+        covers: typeof histCovers?.value === "number" ? Number(histCovers.value) : null,
+        coverageRatio: histSalesEvidence.coverage?.coverageRatio ?? 1,
+        source: "cash_up",
+      }));
+    } else if (histWindow) {
+      // No invented observation — empty/null sales keeps forecast honest.
+      observations.push(buildEventPerformanceObservation({
+        eventWindow: histWindow,
+        netSales: null,
+        coverageRatio: 0,
+        source: "cash_up",
+      }));
+    }
+
+    const recentBaseline = (() => {
+      // Prefer recent trading evidence if present; otherwise omit (no fabrication).
+      const recent = state.evidence.find((e) =>
+        e.metricOrEvent === "recent_daily_avg_net_sales" && typeof e.value === "number"
+      );
+      if (!recent || !recent.period) return null;
+      return {
+        label: "recent_comparable_trading",
+        range: recent.period,
+        netSales: null,
+        dailyAverageNetSales: Number(recent.value),
+        coverageRatio: recent.coverage?.coverageRatio ?? null,
+        source: "cash_up",
+        kind: "DERIVED" as const,
+      };
+    })();
+
+    const branchId = req.branchId;
+    const targetOperating = branchId && target
+      ? defaultBusinessTimeline.getOperatingStatus(branchId, target.range)
+      : null;
+
+    const forecast = forecastEventWindow({
+      targetWindow: target,
+      historicalObservations: observations.filter((o) => o.netSales != null),
+      recentBaseline,
+      branchOperatingInTarget: targetOperating ? targetOperating.status === "operating" : true,
+    });
+
+    return {
+      capability: req.capability,
+      implementationTool: "event_forecast",
+      ok: forecast.ok,
+      metrics: [
+        ...(forecast.centralEstimate != null
+          ? [{ key: "forecast_net_sales", value: forecast.centralEstimate, unit: forecast.unit }]
+          : []),
+        { key: "forecast_confidence", value: forecast.confidence },
+        { key: "forecast_method", value: forecast.method },
+        { key: "historical_event_observations", value: forecast.historicalObservationCount },
+      ],
+      textSnippets: [
+        `FORECAST (not observed): method=${forecast.method}; confidence=${forecast.confidence}`,
+        forecast.centralEstimate != null
+          ? `Central estimate ${forecast.centralEstimate} ${forecast.unit}`
+            + (forecast.expectedRange
+              ? ` (range ${forecast.expectedRange.low}–${forecast.expectedRange.high})`
+              : "")
+          : "Insufficient data for a central estimate",
+        ...forecast.assumptions.slice(0, 3),
+        ...forecast.limitations.slice(0, 3),
+        ...forecast.comparabilityNotes,
+        "External factors were not researched and are not included.",
+      ],
+      coverage: buildCoverageReport({
+        domain: "sales",
+        range: target?.range || state.periods.forecast,
+        expectedRecords: forecast.historicalObservationCount || 1,
+        availableRecords: forecast.historicalObservationCount,
+        warnings: forecast.limitations,
+      }),
+      raw: {
+        kind: "FORECAST",
+        forecast,
+        sourceAuthority: "cash_up",
+        shiftPolicy: "foodics_not_shift_segregated",
+      },
     };
   }
   if (req.capability === "company.branch_timeline") {
@@ -210,19 +336,25 @@ export function normalizeCapabilityResultToEvidence(
   const coverage = finalized.coverage || null;
 
   for (const m of normalized.metrics) {
+    const isForecast = result.capability === "commercial.forecast"
+      || String(m.metricKey || "").startsWith("forecast_");
     evidence.push(createEvidence({
-      source: normalized.source,
+      source: isForecast ? "event_forecast" : normalized.source,
       sourceAuthority: normalized.sourceAuthority,
       domain: normalized.source === "logbook" ? "INTERNAL_QUALITATIVE" : "INTERNAL_STRUCTURED",
       companyId: normalized.scope.companyId || state.scope.companyId,
       brandId: normalized.scope.brandId || state.scope.brandId,
       branchId: normalized.scope.branchId || state.scope.primaryBranchId,
-      period: normalized.requestedPeriod || state.periods.current,
+      period: isForecast
+        ? (state.periods.forecast || normalized.requestedPeriod || state.periods.current)
+        : (normalized.requestedPeriod || state.periods.current),
       metricOrEvent: m.metricKey,
       value: m.value,
-      textSummary: `${m.label}=${m.value}${m.unit ? ` ${m.unit}` : ""}`,
+      textSummary: `${isForecast ? "FORECAST " : ""}${m.label}=${m.value}${m.unit ? ` ${m.unit}` : ""}`,
       coverage,
-      confidence: normalized.provenance.ok && !normalized.provenance.skipped ? "high" : "low",
+      confidence: isForecast
+        ? "low"
+        : (normalized.provenance.ok && !normalized.provenance.skipped ? "high" : "low"),
     }));
   }
 

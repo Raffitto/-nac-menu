@@ -18,14 +18,16 @@ export const SOURCE_AUTHORITY_REGISTRY: Record<string, SourceAuthorityRecord> = 
     authority: "CANONICAL_STRUCTURED",
     domain: "branch_sales",
     mayOverrideCanonical: false,
-    notes: "Primary commercial structured metrics",
+    notes:
+      "Primary commercial structured metrics. Physical Cash Up-derived shift checkpoints (~12:00 PM, ~5:00 PM, ~1:15 AM closing differentials) are authoritative for shift-level reasoning; Foodics is not.",
   },
   foodics: {
     sourceId: "foodics",
     authority: "LEGACY_EXTERNAL_EVIDENCE",
     domain: "external_pos",
     mayOverrideCanonical: false,
-    notes: "Legacy external evidence only",
+    notes:
+      "Legacy external evidence only. Foodics reports are NOT shift-segregated and must not be treated as canonical shift segmentation.",
   },
   foodics_menu_engineering_cost: {
     sourceId: "foodics_menu_engineering_cost",
@@ -62,6 +64,13 @@ export const SOURCE_AUTHORITY_REGISTRY: Record<string, SourceAuthorityRecord> = 
     mayOverrideCanonical: false,
     notes: "Structural company facts (openings, closures)",
   },
+  event_forecast: {
+    sourceId: "event_forecast",
+    authority: "UNKNOWN",
+    domain: "commercial_forecast",
+    mayOverrideCanonical: false,
+    notes: "Bounded deterministic forecast estimates — never observed fact",
+  },
 });
 
 export function getSourceAuthority(sourceId: string): SourceAuthorityRecord {
@@ -85,6 +94,32 @@ export function canSourceOverride(
     return false;
   }
   return challenger.mayOverrideCanonical;
+}
+
+/**
+ * Shift segmentation authority policy.
+ * Foodics cumulative reports are not shift-segregated; Cash Up physical process is.
+ */
+export function shiftSegmentationAuthority(): {
+  canonicalSourceId: string;
+  rejectedSourceIds: string[];
+  notes: string[];
+} {
+  return {
+    canonicalSourceId: "cash_up",
+    rejectedSourceIds: ["foodics"],
+    notes: [
+      "foodics_not_shift_segregated",
+      "cash_up_physical_checkpoints_authoritative",
+      "checkpoint_approx_12pm_cumulative",
+      "checkpoint_approx_5pm_minus_12pm",
+      "checkpoint_approx_115am_closing_minus_prior",
+    ],
+  };
+}
+
+export function mayUseSourceForShiftSegmentation(sourceId: string): boolean {
+  return shiftSegmentationAuthority().canonicalSourceId === sourceId;
 }
 
 export function preferCanonicalSource(sourceIds: string[]): string | null {

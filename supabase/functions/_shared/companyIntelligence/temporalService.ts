@@ -7,6 +7,10 @@ import {
   parseVaultComparePeriodsFromQuestion,
   parseVaultPeriodFromQuestion,
 } from "../vaultPeriodParser.ts";
+import {
+  resolveHolidayTemporalBundle,
+  type HolidayTemporalBundle,
+} from "./holidayCalendar.ts";
 import type { DateRange, IsoDate } from "./types.ts";
 
 export type TemporalResolutionStatus = "resolved" | "partial" | "unresolved";
@@ -16,6 +20,17 @@ export type TemporalResolution = {
   expression: string;
   range: DateRange | null;
   compareRange: DateRange | null;
+  forecastRange?: DateRange | null;
+  nextHolidayDate?: IsoDate | null;
+  eventWindow?: {
+    holidayId: string;
+    convention: string;
+    conventionLabel: string;
+    anchorDate: IsoDate;
+    year: number;
+    weekdaySignature: string;
+  } | null;
+  holidayBundle?: HolidayTemporalBundle | null;
   calendarSystem: "gregorian" | "hijri" | "business" | "mixed";
   capability: string;
   reasons: string[];
@@ -103,6 +118,32 @@ function resolveRamadanCompare(question: string, referenceDate: Date): TemporalR
   };
 }
 
+function holidayBundleToResolution(bundle: HolidayTemporalBundle): TemporalResolution {
+  const hist = bundle.historicalWindow;
+  return {
+    status: hist || bundle.nextOccurrence ? "resolved" : "unresolved",
+    expression: bundle.expression,
+    range: bundle.intent.wantsHistoricalPerformance ? bundle.historicalRange : bundle.historicalRange,
+    compareRange: null,
+    forecastRange: bundle.forecastRange,
+    nextHolidayDate: bundle.nextOccurrence?.anchorDate || null,
+    eventWindow: hist
+      ? {
+        holidayId: hist.holidayId,
+        convention: hist.convention,
+        conventionLabel: hist.conventionLabel,
+        anchorDate: hist.anchorDate,
+        year: hist.year,
+        weekdaySignature: hist.weekdayComposition.signature,
+      }
+      : null,
+    holidayBundle: bundle,
+    calendarSystem: "gregorian",
+    capability: "calendar.resolve_period",
+    reasons: bundle.reasons,
+  };
+}
+
 export function createTemporalIntelligenceService(): TemporalIntelligenceService {
   return {
     resolveExpression(expression, referenceDate = new Date()) {
@@ -117,6 +158,16 @@ export function createTemporalIntelligenceService(): TemporalIntelligenceService
           capability: "calendar.resolve_period",
           reasons: ["empty_expression"],
         };
+      }
+
+      const foundingYear = expr.match(/^(?:saudi[_ ]?)?founding[_ ]?day[:\s-]?(\d{4})$/);
+      if (foundingYear || expr === "founding_day" || expr === "saudi_founding_day") {
+        const year = foundingYear
+          ? Number(foundingYear[1])
+          : resolveHolidayTemporalBundle("Founding Day", referenceDate)?.historicalWindow?.year;
+        const q = year ? `Saudi Founding Day ${year}` : "Saudi Founding Day three-day period";
+        const bundle = resolveHolidayTemporalBundle(q, referenceDate);
+        if (bundle) return holidayBundleToResolution(bundle);
       }
 
       const ramadanKey = expr.match(/^ramadan[:\s-]?(\d{4})$/);
@@ -160,6 +211,9 @@ export function createTemporalIntelligenceService(): TemporalIntelligenceService
     },
 
     resolveFromQuestion(question, referenceDate = new Date()) {
+      const holiday = resolveHolidayTemporalBundle(question, referenceDate);
+      if (holiday) return holidayBundleToResolution(holiday);
+
       const ramadan = resolveRamadanCompare(question, referenceDate);
       if (ramadan) return ramadan;
 

@@ -27,6 +27,19 @@ export function assembleClaimsFromEvidence(input: {
           branchId: input.branchId || ev.branchId || null,
           period: input.period || ev.period || null,
         }));
+      } else if (
+        ev.source === "event_forecast"
+        || String(ev.metricOrEvent || "").startsWith("forecast_")
+        || /^FORECAST\b/i.test(ev.textSummary || "")
+      ) {
+        claims.push(createClaim({
+          type: "FORECAST",
+          statement: `Forecast ${ev.metricOrEvent}=${ev.value} (estimate, not observed)`,
+          evidenceIds: [ev.id],
+          metricValue: typeof ev.value === "number" ? ev.value : null,
+          branchId: input.branchId || ev.branchId || null,
+          period: ev.period || input.period || null,
+        }));
       } else {
         claims.push(createClaim({
           type: "VERIFIED_FACT",
@@ -37,6 +50,17 @@ export function assembleClaimsFromEvidence(input: {
           period: input.period || ev.period || null,
         }));
       }
+    } else if (
+      ev.source === "event_forecast"
+      || String(ev.metricOrEvent || "").startsWith("forecast_")
+    ) {
+      claims.push(createClaim({
+        type: "FORECAST",
+        statement: ev.textSummary || "Bounded commercial forecast",
+        evidenceIds: [ev.id],
+        branchId: input.branchId || ev.branchId || null,
+        period: ev.period || input.period || null,
+      }));
     } else if (ev.source === "logbook" && ev.textSummary) {
       claims.push(createClaim({
         type: "VERIFIED_FACT",

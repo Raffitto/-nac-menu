@@ -7,6 +7,7 @@ export type CapabilityId =
   | "commercial.compare"
   | "commercial.trend"
   | "commercial.rank_days"
+  | "commercial.forecast"
   | "operations.review"
   | "operations.recurring_issues"
   | "staff.performance"
@@ -62,6 +63,14 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = O
     implementationTool: "cash_up_day_ranking",
     requiresPaidModel: false,
     defaultBudgetTier: 0,
+  },
+  "commercial.forecast": {
+    id: "commercial.forecast",
+    domain: "COMMERCIAL",
+    description: "Bounded event-window commercial forecast / expectations",
+    implementationTool: "event_forecast",
+    requiresPaidModel: false,
+    defaultBudgetTier: 1,
   },
   "operations.review": {
     id: "operations.review",

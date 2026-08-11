@@ -2,6 +2,11 @@
  * Deterministic comparability engine — LLM must not decide arithmetic comparability.
  */
 
+import {
+  enumerateInclusiveDates,
+  weekdayComposition,
+  weekdayCompositionsMatch,
+} from "./businessCalendar.ts";
 import type { OperatingStatus } from "./businessTimeline.ts";
 import { inclusiveDayCount, type CoverageReport } from "./coverageModel.ts";
 import type { ComparabilityStatus, ComparisonMethod, DateRange } from "./types.ts";
@@ -19,6 +24,11 @@ export type ComparabilityResult = {
   };
   structuralDifferences: string[];
   recommendedMethod: ComparisonMethod;
+  weekdayComposition?: {
+    currentSignature: string | null;
+    comparisonSignature: string | null;
+    match: boolean | null;
+  };
 };
 
 export function assessComparability(input: {
@@ -87,12 +97,28 @@ export function assessComparability(input: {
     reasons.push("period_length_mismatch");
   }
 
+  const currentComp = weekdayComposition(enumerateInclusiveDates(current.startDate, current.endDate));
+  const comparisonComp = weekdayComposition(
+    enumerateInclusiveDates(comparison.startDate, comparison.endDate),
+  );
+  const weekdayMatch = weekdayCompositionsMatch(currentComp, comparisonComp);
+  const weekdayMeta = {
+    currentSignature: currentComp.signature,
+    comparisonSignature: comparisonComp.signature,
+    match: weekdayMatch,
+  };
+  if (!weekdayMatch) {
+    structuralDifferences.push("weekday_composition_mismatch");
+    reasons.push("weekday_composition_differs");
+  }
+
   const curRatio = input.currentCoverage?.coverageRatio;
   const cmpRatio = input.comparisonCoverage?.coverageRatio;
   const partial =
     (curRatio != null && curRatio < 1)
     || (cmpRatio != null && cmpRatio < 1)
-    || structuralDifferences.includes("different_period_lengths");
+    || structuralDifferences.includes("different_period_lengths")
+    || structuralDifferences.includes("weekday_composition_mismatch");
 
   if (curRatio != null && curRatio < 0.5) reasons.push("weak_current_coverage");
   if (cmpRatio != null && cmpRatio < 0.5) reasons.push("weak_comparison_coverage");
@@ -108,19 +134,20 @@ export function assessComparability(input: {
       },
       structuralDifferences,
       recommendedMethod: "none",
+      weekdayComposition: weekdayMeta,
     };
   }
 
   let recommendedMethod: ComparisonMethod = "full_period";
+  const coverageWeak =
+    (curRatio != null && curRatio < 1)
+    || (cmpRatio != null && cmpRatio < 1)
+    || (curRatio != null && curRatio < 0.8)
+    || (cmpRatio != null && cmpRatio < 0.8);
   if (partial) {
-    recommendedMethod = "matched_days";
+    // Coverage gaps prefer matched_days; pure weekday-composition mismatch prefers matched_weekday.
+    recommendedMethod = coverageWeak ? "matched_days" : (!weekdayMatch ? "matched_weekday" : "matched_days");
     reasons.push("use_matched_or_normalized_method");
-  }
-  if (
-    (curRatio != null && curRatio < 0.8)
-    || (cmpRatio != null && cmpRatio < 0.8)
-  ) {
-    recommendedMethod = "matched_days";
   }
 
   return {
@@ -133,5 +160,6 @@ export function assessComparability(input: {
     },
     structuralDifferences,
     recommendedMethod,
+    weekdayComposition: weekdayMeta,
   };
 }

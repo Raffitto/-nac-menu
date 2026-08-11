@@ -15,6 +15,16 @@ export type FollowUpResolution = {
   branchId: string | null;
   currentPeriod: DateRange | null;
   comparisonPeriod: DateRange | null;
+  forecastPeriod?: DateRange | null;
+  nextHolidayDate?: string | null;
+  eventWindow?: {
+    holidayId: string;
+    convention: string;
+    conventionLabel: string;
+    anchorDate: string;
+    year: number;
+    weekdaySignature: string;
+  } | null;
   metricFamily: string | null;
   conversation: StructuredConversationState;
   notes: string[];
@@ -135,8 +145,11 @@ export function resolveFabricFollowUp(input: {
     branchId,
     currentPeriod: temporal.range,
     comparisonPeriod: temporal.compareRange,
+    forecastPeriod: temporal.forecastRange || null,
+    nextHolidayDate: temporal.nextHolidayDate || null,
+    eventWindow: temporal.eventWindow || null,
     metricFamily: "commercial",
     conversation,
-    notes,
+    notes: temporal.holidayBundle ? [...notes, "holiday_event_window_resolved"] : notes,
   };
 }

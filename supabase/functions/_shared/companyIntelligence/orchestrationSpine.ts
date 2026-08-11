@@ -34,6 +34,7 @@ import {
   type FabricStage,
 } from "./intelligenceState.ts";
 import { defaultBusinessTimeline } from "./businessTimeline.ts";
+import { detectHolidayQuestionIntent } from "./holidayCalendar.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import { decideResearchBudget } from "./researchBudget.ts";
 import { validateCapabilityPlan } from "./planValidation.ts";
@@ -90,6 +91,7 @@ const INTENT_CAPABILITIES: Record<string, CapabilityId[]> = {
   branch_compare: ["company.scope_compare"],
   cost_margin: ["cost.margin_analysis", "commercial.performance"],
   factual_lookup: ["commercial.performance"],
+  event_forecast: ["commercial.forecast", "commercial.performance", "calendar.resolve_period"],
   unsupported: [],
 };
 
@@ -97,6 +99,7 @@ const TOOL_TO_CAPABILITY: Record<string, CapabilityId> = {
   cash_up_performance: "commercial.performance",
   cash_up_compare: "commercial.compare",
   cash_up_day_ranking: "commercial.rank_days",
+  event_forecast: "commercial.forecast",
   operational_evidence: "operations.review",
   branch_compare: "company.scope_compare",
 };
@@ -268,7 +271,8 @@ export async function runCompanyIntelligenceOrchestration(
   // Temporal from follow-up or fresh resolution already in followUp
   let currentPeriod = followUp.currentPeriod;
   let comparisonPeriod = followUp.comparisonPeriod;
-  if (!currentPeriod) {
+  const holidayIntent = detectHolidayQuestionIntent(state.request.normalizedQuestion);
+  if (!currentPeriod && !holidayIntent.detected) {
     // Safe default recent window for management language without inventing named calendar periods.
     const fallback = defaultTemporalService.resolveExpression(
       "last_7_days",
@@ -280,7 +284,12 @@ export async function runCompanyIntelligenceOrchestration(
     periods: {
       current: currentPeriod,
       comparison: comparisonPeriod,
-      requestedSemantics: followUp.usedFollowUp ? "conversation_followup" : "question",
+      forecast: followUp.forecastPeriod || null,
+      requestedSemantics: followUp.usedFollowUp
+        ? "conversation_followup"
+        : (holidayIntent.detected ? "holiday_event_window" : "question"),
+      eventWindow: followUp.eventWindow || null,
+      nextHolidayDate: followUp.nextHolidayDate || null,
     },
   });
 
@@ -295,12 +304,19 @@ export async function runCompanyIntelligenceOrchestration(
     ? defaultBusinessTimeline.getOperatingStatus(branch, state.periods.current)
     : null;
 
+  const allowPartialWithoutHistorical = Boolean(
+    holidayIntent.detected
+    && (holidayIntent.wantsForecast || holidayIntent.wantsNextDate)
+    && currentOperating?.status === "not_yet_open",
+  );
+
   const feasibility = assessFeasibility({
     scope: state.scope,
     currentPeriod: state.periods.current,
     comparisonPeriod: state.periods.comparison,
     requiresComparison,
     timeline: defaultBusinessTimeline,
+    allowPartialWithoutHistorical,
   });
 
   const comparability = requiresComparison
@@ -458,6 +474,24 @@ export async function runCompanyIntelligenceOrchestration(
   if (!capabilities.includes("calendar.resolve_period")) {
     capabilities = ["calendar.resolve_period", ...capabilities];
   }
+  if (holidayIntent.detected) {
+    if (!capabilities.includes("company.branch_timeline")) {
+      capabilities = ["company.branch_timeline", ...capabilities];
+    }
+    if (holidayIntent.wantsForecast && !capabilities.includes("commercial.forecast")) {
+      capabilities.push("commercial.forecast");
+    }
+    if (holidayIntent.wantsHistoricalPerformance && !capabilities.includes("commercial.performance")) {
+      capabilities.push("commercial.performance");
+    }
+    // Drop misleading compare when holiday question is forecast/history oriented without YoY compare.
+    if (!requiresComparison) {
+      capabilities = capabilities.filter((c) => c !== "commercial.compare" && c !== "commercial.trend");
+    }
+  }
+  if (feasibility.status === "PARTIALLY_ANSWERABLE" && currentOperating?.status === "not_yet_open") {
+    capabilities = capabilities.filter((c) => c !== "commercial.performance" && c !== "commercial.compare");
+  }
 
   const budget = decideResearchBudget({
     question: state.request.normalizedQuestion,
@@ -596,6 +630,9 @@ export async function runCompanyIntelligenceOrchestration(
     branchId: state.scope.primaryBranchId,
     period: state.periods.current,
     comparisonPeriod: state.periods.comparison,
+    forecastPeriod: state.periods.forecast,
+    nextHolidayDate: state.periods.nextHolidayDate,
+    eventWindow: state.periods.eventWindow,
     evidence: state.evidence,
     claims: state.claims,
     coverage: state.coverage,
@@ -667,6 +704,9 @@ export async function runCompanyIntelligenceOrchestration(
         question: state.request.normalizedQuestion,
         branchId: state.scope.primaryBranchId,
         period: state.periods.current,
+        forecastPeriod: state.periods.forecast,
+        nextHolidayDate: state.periods.nextHolidayDate,
+        eventWindow: state.periods.eventWindow,
         evidence: state.evidence,
         claims: state.claims,
         coverage: state.coverage,

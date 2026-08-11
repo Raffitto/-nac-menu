@@ -38,6 +38,7 @@ export type ComparisonMethod =
 export type ClaimType =
   | "VERIFIED_FACT"
   | "DERIVED_METRIC"
+  | "FORECAST"
   | "SUPPORTED_ASSOCIATION"
   | "PLAUSIBLE_HYPOTHESIS"
   | "UNSUPPORTED";

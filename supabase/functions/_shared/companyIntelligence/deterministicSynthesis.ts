@@ -24,6 +24,13 @@ export function synthesizeDeterministicAnswer(input: {
   branchId: string | null;
   period: DateRange | null;
   comparisonPeriod?: DateRange | null;
+  forecastPeriod?: DateRange | null;
+  nextHolidayDate?: string | null;
+  eventWindow?: {
+    conventionLabel?: string;
+    anchorDate?: string;
+    year?: number;
+  } | null;
   evidence: EvidenceRecord[];
   claims: ClaimRecord[];
   coverage: CoverageReport[];
@@ -33,15 +40,29 @@ export function synthesizeDeterministicAnswer(input: {
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
 
-  const sales = input.evidence.find((e) => e.metricOrEvent === "net_sales" && typeof e.value === "number");
+  const sales = input.evidence.find((e) =>
+    e.metricOrEvent === "net_sales" && typeof e.value === "number" && e.source !== "event_forecast"
+  );
   const covers = input.evidence.find((e) => e.metricOrEvent === "covers" && typeof e.value === "number");
   const delta = input.evidence.find((e) => e.metricOrEvent === "delta_pct" && typeof e.value === "number");
+  const forecastSales = input.evidence.find((e) =>
+    e.metricOrEvent === "forecast_net_sales" && typeof e.value === "number"
+  );
+  const forecastConfidence = input.evidence.find((e) => e.metricOrEvent === "forecast_confidence");
+  const forecastMethod = input.evidence.find((e) => e.metricOrEvent === "forecast_method");
+  const histObs = input.evidence.find((e) => e.metricOrEvent === "historical_event_observations");
   const costMissing = input.claims.some((c) => c.type === "UNSUPPORTED" && /margin|cost/i.test(c.statement));
   const ops = input.evidence.filter((e) => e.source === "logbook").map((e) => e.textSummary).filter(Boolean);
 
   const branch = branchLabel(input.branchId);
   const period = periodLabel(input.period);
   const parts: string[] = [];
+
+  if (input.eventWindow?.conventionLabel && input.eventWindow?.anchorDate) {
+    parts.push(
+      `Using the explicit three-day event window (${input.eventWindow.conventionLabel}) around ${input.eventWindow.anchorDate}.`,
+    );
+  }
 
   if (costMissing && /\b(margin|losing money|food cost)\b/i.test(input.question)) {
     parts.push(
@@ -50,7 +71,9 @@ export function synthesizeDeterministicAnswer(input: {
   }
 
   if (sales) {
-    parts.push(`For ${branch} in ${period}, net sales were ${sales.value} SAR.`);
+    parts.push(
+      `For ${branch} in ${period}, observed Cash Up net sales were ${sales.value} SAR.`,
+    );
   }
   if (covers) {
     parts.push(`Covers were ${covers.value}.`);
@@ -59,7 +82,7 @@ export function synthesizeDeterministicAnswer(input: {
   if (delta && input.comparability?.status !== "not_comparable") {
     const method = input.comparability?.recommendedMethod || "matched_days";
     const direction = Number(delta.value) < 0 ? "down" : Number(delta.value) > 0 ? "up" : "flat";
-    if (input.comparability?.status === "partially_comparable" || method === "matched_days") {
+    if (input.comparability?.status === "partially_comparable" || method === "matched_days" || method === "matched_weekday") {
       parts.push(
         `On a like-for-like (${method}) basis, sales were ${direction} ${Math.abs(Number(delta.value))}%.`,
       );
@@ -68,6 +91,41 @@ export function synthesizeDeterministicAnswer(input: {
     }
   } else if (input.comparability?.status === "not_comparable") {
     parts.push("A percentage comparison is not valid for these periods.");
+  }
+
+  if (input.comparability?.weekdayComposition?.match === false) {
+    parts.push(
+      "Weekday composition differs between the compared windows, so they are not treated as like-for-like.",
+    );
+  }
+
+  if (forecastSales || forecastMethod || /\b(expect|forecast|next founding|next foundation)\b/i.test(input.question)) {
+    if (forecastSales) {
+      parts.push(
+        `FORECAST (estimate, not observed fact): for the next Founding Day window`
+          + (input.forecastPeriod ? ` (${periodLabel(input.forecastPeriod)})` : "")
+          + `, central estimate is ${forecastSales.value} SAR`
+          + (forecastConfidence ? ` with ${forecastConfidence.value} confidence` : "")
+          + (forecastMethod ? ` using method ${forecastMethod.value}` : "")
+          + ".",
+      );
+    } else {
+      parts.push(
+        "FORECAST: insufficient observed same-event history to defend a central sales estimate.",
+      );
+    }
+    if (histObs && Number(histObs.value) <= 1) {
+      parts.push(
+        `Only ${histObs.value} historical Founding Day observation(s) are available for this branch, so confidence is limited.`,
+      );
+    }
+    parts.push(
+      "This forecast does not include weather, local events, economic, or political factors.",
+    );
+  }
+
+  if (input.nextHolidayDate) {
+    parts.push(`The next Saudi Founding Day is ${input.nextHolidayDate}.`);
   }
 
   for (const cov of input.coverage) {

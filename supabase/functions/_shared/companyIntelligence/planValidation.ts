@@ -47,9 +47,12 @@ export function validateCapabilityPlan(
       && !state.periods.current
       && raw !== "company.branch_timeline"
       && raw !== "calendar.resolve_period"
+      && !(raw === "commercial.forecast" && state.periods.forecast)
     ) {
       // Allow timeline/calendar without period; commercial needs period unless infeasible already handled.
-      if (state.feasibility?.status !== "NOT_ANSWERABLE_AS_REQUESTED") {
+      // Forecast may run against periods.forecast when historical current window is unavailable.
+      if (state.feasibility?.status !== "NOT_ANSWERABLE_AS_REQUESTED"
+        && state.feasibility?.status !== "PARTIALLY_ANSWERABLE") {
         rejected.push({ capability: raw, reason: "period_unresolved" });
         continue;
       }

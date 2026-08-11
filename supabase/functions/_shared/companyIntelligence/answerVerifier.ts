@@ -67,6 +67,42 @@ export function verifySynthesizedAnswer(input: {
   if (/\bcanonical foodics\b/i.test(text) || /\bfoodics\b.*\bcanonical\b/i.test(text)) {
     issues.push({ code: "legacy_presented_as_canonical", detail: "Foodics presented as canonical" });
   }
+  if (/\bfoodics\b/i.test(text) && /\bshift\b/i.test(text) && !/\bnot shift-segregated|not shift segregated\b/i.test(text)) {
+    issues.push({
+      code: "foodics_shift_segmentation_claim",
+      detail: "Foodics must not be presented as shift-segregated authority",
+    });
+  }
+
+  const forecastClaims = (input.claims || []).filter((c) => c.type === "FORECAST");
+  if (forecastClaims.length) {
+    const presentsForecastAsFact = /\b(will (be|make|do)|definitely|observed forecast)\b/i.test(text)
+      && !/\b(forecast|estimate|expectation|expected)\b/i.test(text);
+    if (presentsForecastAsFact) {
+      issues.push({
+        code: "forecast_presented_as_observed",
+        detail: "Forecast language must remain estimate/expectation, not observed fact",
+      });
+    }
+  }
+  if (/\bfoodics\b/i.test(text) && /\bshift\b/i.test(text) && !/\bnot\b.*\bshift\b/i.test(text)) {
+    issues.push({
+      code: "foodics_shift_segmentation_claim",
+      detail: "Foodics must not be presented as shift-segregated authority",
+    });
+  }
+
+  const hasForecastClaim = (input.claims || []).some((c) => c.type === "FORECAST");
+  if (hasForecastClaim) {
+    const observesForecast = /\b(observed|were|was)\b[^.]*\bforecast\b/i.test(text)
+      || /\bforecast\b[^.]*\b(were|was)\s+\d/i.test(text);
+    if (observesForecast && !/\bestimate|expectation|not observed\b/i.test(text)) {
+      issues.push({
+        code: "forecast_presented_as_observed",
+        detail: "Forecast figures must not be presented as observed fact",
+      });
+    }
+  }
 
   if (/\bmargin\b|\bfood cost\b/i.test(text) && !input.evidence.some((e) => e.source === "cost_control" || e.metricOrEvent.includes("margin"))) {
     if (/\bmargin (is|was|at)\s+\d/i.test(text)) {

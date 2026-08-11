@@ -43,7 +43,10 @@ export function bootstrapFabricState(input: {
     periods: {
       current: temporal.range,
       comparison: temporal.compareRange,
+      forecast: temporal.forecastRange || null,
       requestedSemantics: temporal.expression,
+      eventWindow: temporal.eventWindow || null,
+      nextHolidayDate: temporal.nextHolidayDate || null,
     },
   });
 
@@ -57,12 +60,20 @@ export function bootstrapFabricState(input: {
     ? defaultBusinessTimeline.getOperatingStatus(branch, temporal.range)
     : null;
 
+  const holidayBundle = temporal.holidayBundle;
+  const allowPartialWithoutHistorical = Boolean(
+    holidayBundle?.intent.detected
+    && (holidayBundle.intent.wantsForecast || holidayBundle.intent.wantsNextDate)
+    && currentOperating?.status === "not_yet_open",
+  );
+
   const feasibility = assessFeasibility({
     scope: state.scope,
     currentPeriod: temporal.range,
     comparisonPeriod: temporal.compareRange,
     requiresComparison,
     timeline: defaultBusinessTimeline,
+    allowPartialWithoutHistorical,
   });
 
   const comparability = requiresComparison
@@ -72,12 +83,28 @@ export function bootstrapFabricState(input: {
       currentOperating,
       comparisonOperating,
     })
-    : null;
+    : (temporal.forecastRange && temporal.range
+      ? assessComparability({
+        current: temporal.forecastRange,
+        comparison: temporal.range,
+        currentOperating: branch
+          ? defaultBusinessTimeline.getOperatingStatus(branch, temporal.forecastRange)
+          : null,
+        comparisonOperating: currentOperating,
+      })
+      : null);
 
   const capabilities: CapabilityId[] = ["calendar.resolve_period", "company.branch_timeline"];
+  if (holidayBundle?.intent.wantsForecast) capabilities.push("commercial.forecast");
   if (requiresComparison) capabilities.push("commercial.compare");
-  else capabilities.push("commercial.performance");
+  else if (!holidayBundle || holidayBundle.intent.wantsHistoricalPerformance) {
+    capabilities.push("commercial.performance");
+  }
   if (/\b(why|logbook|operational)\b/i.test(input.question)) capabilities.push("operations.review");
+  if (feasibility.status === "PARTIALLY_ANSWERABLE" && currentOperating?.status === "not_yet_open") {
+    const idx = capabilities.indexOf("commercial.performance");
+    if (idx >= 0) capabilities.splice(idx, 1);
+  }
 
   const budget = decideResearchBudget({
     question: input.question,
