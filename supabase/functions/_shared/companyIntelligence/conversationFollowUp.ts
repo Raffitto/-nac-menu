@@ -1,6 +1,6 @@
 /**
  * Core short-term conversation follow-up wiring for Fabric.
- * Supports: How was July? → And June? → Why the difference?
+ * Follow-ups modify ONLY dimensions explicitly changed by the user.
  */
 
 import type { StructuredConversationState } from "./conversationState.ts";
@@ -30,7 +30,46 @@ export type FollowUpResolution = {
   notes: string[];
 };
 
-const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december";
+function hasInheritContext(prev: StructuredConversationState): boolean {
+  return Boolean(
+    prev.activePeriods?.current
+    || prev.activeMetricFamily
+    || prev.previousIntent
+    || (prev.activeCapabilities && prev.activeCapabilities.length),
+  );
+}
+
+function extractFollowUpFocus(question: string): string | null {
+  const q = String(question || "").trim();
+  const m = q.match(/^(?:what about|how about|and)\s+(.+?)\??$/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Resolve a follow-up focus ("June", "jan 2026") into a calendar range without phrase-specific hacks. */
+export function resolveFollowUpPeriodFocus(
+  focus: string,
+  referenceDate: Date = new Date(),
+): DateRange | null {
+  const f = String(focus || "").trim();
+  if (!f) return null;
+  const candidates = [
+    `How did ${f} perform overall?`,
+    `How did ${f} perform?`,
+    `How was ${f}?`,
+    `how did ${f} perform`,
+    f,
+  ];
+  for (const candidate of candidates) {
+    const resolved = defaultTemporalService.resolveFromQuestion(candidate, referenceDate);
+    if (resolved.range?.startDate && resolved.range?.endDate) return resolved.range;
+  }
+  return null;
+}
+
+function buildInheritedCommercialQuestion(period: DateRange | null, focus: string): string {
+  const label = period?.label || focus;
+  return `How did ${label} perform overall?`;
+}
 
 export function resolveFabricFollowUp(input: {
   question: string;
@@ -49,48 +88,23 @@ export function resolveFabricFollowUp(input: {
   if (mentioned) branchId = mentioned;
   // Never invent a branch id from free text; keep previous or hint only.
 
-  // "And June?" / "What about June?"
-  const andMonth = ql.match(new RegExp(`^(?:and|what about)\\s+(${MONTHS})\\??$`, "i"));
-  if (andMonth && prev.activeBranchId) {
-    const month = andMonth[1];
-    const temporal = defaultTemporalService.resolveExpression(`named_month:${month}`, ref);
-    // Prefer parse via question form for named months
-    const viaQ = defaultTemporalService.resolveFromQuestion(`How was ${month}?`, ref);
-    const current = viaQ.range || temporal.range;
-    notes.push("followup_and_named_month");
-    const conversation = updateConversationState(prev, {
-      activeBranchId: branchId || prev.activeBranchId,
-      activeCompanyId: prev.activeCompanyId,
-      activeBrandId: prev.activeBrandId,
-      activeMetricFamily: prev.activeMetricFamily || "commercial",
-      activePeriods: {
-        current,
-        comparison: prev.activePeriods.current, // retain prior period as comparison candidate
-      },
-      previousIntent: prev.previousIntent || "performance_overview",
-    });
-    return {
-      usedFollowUp: true,
-      resolvedQuestion: `How was ${month}?`,
-      branchId: conversation.activeBranchId,
-      currentPeriod: current,
-      comparisonPeriod: prev.activePeriods.current,
-      metricFamily: conversation.activeMetricFamily,
-      conversation,
-      notes,
-    };
-  }
+  const inherit = hasInheritContext(prev);
+  const metricFamily = prev.activeMetricFamily || (inherit ? "commercial" : null);
+  const previousIntent = prev.previousIntent || (inherit ? "performance_overview" : null);
 
-  // "Why the difference?"
+  // "Why the difference?" — keep periods, flip to compare intent
   if (/^why the difference\??$/i.test(ql) && prev.activePeriods.current) {
     notes.push("followup_why_difference");
     const current = prev.activePeriods.current;
     const comparison = prev.activePeriods.comparison;
     const conversation = updateConversationState(prev, {
       activeBranchId: branchId || prev.activeBranchId,
-      activeMetricFamily: prev.activeMetricFamily || "commercial",
+      activeMetricFamily: metricFamily || "commercial",
       activePeriods: { current, comparison },
       previousIntent: "period_compare",
+      activeCapabilities: prev.activeCapabilities?.length
+        ? prev.activeCapabilities
+        : ["commercial.compare", "commercial.performance"],
     });
     const labelA = current?.label || current?.semantic || "current period";
     const labelB = comparison?.label || comparison?.semantic || "previous period";
@@ -106,13 +120,15 @@ export function resolveFabricFollowUp(input: {
     };
   }
 
-  // "What about weekends only?"
+  // "What about weekends only?" — filter-only change
   if (/weekend/i.test(ql) && /what about|only/i.test(ql) && prev.activePeriods.current) {
     notes.push("followup_weekend_filter");
     const conversation = updateConversationState(prev, {
       activeBranchId: branchId || prev.activeBranchId,
       filterPatch: { weekendOnly: true },
       activePeriods: prev.activePeriods,
+      activeMetricFamily: metricFamily || "commercial",
+      previousIntent: previousIntent || "performance_overview",
     });
     return {
       usedFollowUp: true,
@@ -126,17 +142,57 @@ export function resolveFabricFollowUp(input: {
     };
   }
 
-  // Fresh question — resolve temporally, keep company/brand if present
+  // Generic temporal follow-up: "what about June" / "what about jan 2026"
+  // Inherit commercial intent/metric/scope; replace ONLY the period dimension.
+  // Do NOT require activeBranchId — network-scope conversations must follow up too.
+  const focus = extractFollowUpFocus(q);
+  if (focus && inherit) {
+    const current = resolveFollowUpPeriodFocus(focus, ref);
+    if (current?.startDate && current?.endDate) {
+      notes.push("followup_period_dimension_only");
+      const conversation = updateConversationState(prev, {
+        activeBranchId: branchId || prev.activeBranchId,
+        activeCompanyId: prev.activeCompanyId || "nac_hospitality",
+        activeBrandId: prev.activeBrandId || "nac",
+        activeMetricFamily: metricFamily || "commercial",
+        activeCapabilities: prev.activeCapabilities?.length
+          ? prev.activeCapabilities
+          : ["commercial.performance"],
+        activePeriods: {
+          current,
+          comparison: prev.activePeriods.current, // prior period as compare candidate
+        },
+        previousIntent: previousIntent || "performance_overview",
+      });
+      return {
+        usedFollowUp: true,
+        resolvedQuestion: buildInheritedCommercialQuestion(current, focus),
+        branchId: conversation.activeBranchId,
+        currentPeriod: current,
+        comparisonPeriod: prev.activePeriods.current,
+        metricFamily: conversation.activeMetricFamily,
+        conversation,
+        notes,
+      };
+    }
+  }
+
+  // Fresh question — resolve temporally; keep company/brand/branch when present
   const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
+  const freshMetric = inherit && !temporal.range && metricFamily
+    ? metricFamily
+    : (metricFamily || "commercial");
   const conversation = updateConversationState(prev, {
     activeCompanyId: prev.activeCompanyId || "nac_hospitality",
     activeBrandId: prev.activeBrandId || "nac",
     activeBranchId: branchId,
-    activeMetricFamily: "commercial",
+    activeMetricFamily: freshMetric,
+    activeCapabilities: temporal.range ? prev.activeCapabilities : prev.activeCapabilities,
     activePeriods: {
       current: temporal.range,
       comparison: temporal.compareRange,
     },
+    previousIntent: temporal.range ? (previousIntent || prev.previousIntent) : prev.previousIntent,
   });
 
   return {
@@ -148,7 +204,7 @@ export function resolveFabricFollowUp(input: {
     forecastPeriod: temporal.forecastRange || null,
     nextHolidayDate: temporal.nextHolidayDate || null,
     eventWindow: temporal.eventWindow || null,
-    metricFamily: "commercial",
+    metricFamily: freshMetric,
     conversation,
     notes: temporal.holidayBundle ? [...notes, "holiday_event_window_resolved"] : notes,
   };

@@ -153,8 +153,14 @@ export function isManagementIntelligenceQuestion(question: string, legacyRoute?:
 function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"]) {
   const q = question.toLowerCase();
   const high = legacyRoute?.confidence === "high";
+  const monthToken =
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/;
+  const namedMonthPerformance = /\bhow\s+(did|was)\b/.test(q)
+    && monthToken.test(q)
+    && /\b(perform|sales|revenue|business|overall)\b/.test(q);
   const simple = /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q)
-    || (high && /\bhow was (january|february|march|april|may|june|july|august)\b/.test(q));
+    || (high && /\bhow was (january|february|march|april|may|june|july|august)\b/.test(q))
+    || namedMonthPerformance;
   return Boolean(simple || (high && /^vault_cash_up_summary$/.test(String(legacyRoute?.intent || ""))
     && !/\bwhy|shit|act on|briefing|lately|ramadan\b/.test(q)));
 }
@@ -300,7 +306,9 @@ export async function runCompanyIntelligenceOrchestration(
   let currentPeriod = followUp.currentPeriod;
   let comparisonPeriod = followUp.comparisonPeriod;
   const holidayIntent = detectHolidayQuestionIntent(state.request.normalizedQuestion);
-  if (!currentPeriod && !holidayIntent.detected) {
+  const looksLikePeriodFollowUp = /^(?:what about|how about|and)\b/i.test(String(options.question || "").trim());
+  // Never collapse unresolved follow-ups into last_7_days — that erases inherited July→June semantics.
+  if (!currentPeriod && !holidayIntent.detected && !(looksLikePeriodFollowUp && options.conversation)) {
     // Safe default recent window for management language without inventing named calendar periods.
     const fallback = defaultTemporalService.resolveExpression(
       "last_7_days",
@@ -399,12 +407,19 @@ export async function runCompanyIntelligenceOrchestration(
     };
   }
 
-  const fastPath = isExplicitFastPath(options.question, options.legacyRoute);
+  const inheritedCommercialFollowUp = Boolean(
+    followUp.usedFollowUp
+    && (followUp.metricFamily === "commercial"
+      || followUp.conversation.activeMetricFamily === "commercial"
+      || String(followUp.conversation.previousIntent || "").includes("performance")
+      || (followUp.conversation.activeCapabilities || []).some((c) => String(c).startsWith("commercial."))),
+  );
+  const fastPath = isExplicitFastPath(options.question, options.legacyRoute) || inheritedCommercialFollowUp;
   let capabilities: CapabilityId[] = [];
   let plannerCalls = 0;
   let plannerSource: string | null = null;
   let fallbackReason: string | null = null;
-  let planGoal = "answer_management_question";
+  let planGoal = inheritedCommercialFollowUp ? "performance_overview" : "answer_management_question";
   let planNeedsClarification = false;
   let planClarificationPrompt: string | null = null;
 
@@ -818,9 +833,17 @@ export async function runCompanyIntelligenceOrchestration(
       current: state.periods.current,
       comparison: state.periods.comparison,
     },
-    activeMetricFamily: followUp.metricFamily || "commercial",
-    activeCapabilities: state.plan.capabilities,
-    previousIntent: state.plan.goal,
+    activeMetricFamily: followUp.metricFamily
+      || state.conversation.activeMetricFamily
+      || (state.plan.capabilities.some((c) => String(c).startsWith("commercial.")) ? "commercial" : null)
+      || "commercial",
+    activeCapabilities: state.plan.capabilities.length
+      ? state.plan.capabilities
+      : (state.conversation.activeCapabilities || []),
+    previousIntent: state.plan.capabilities.includes("commercial.performance")
+      || state.plan.capabilities.includes("commercial.compare")
+      ? "performance_overview"
+      : (state.plan.goal || followUp.conversation.previousIntent || null),
   };
 
   state = transition(state, "VERIFIED", {

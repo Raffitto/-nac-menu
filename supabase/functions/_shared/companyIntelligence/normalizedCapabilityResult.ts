@@ -447,6 +447,55 @@ export function normalizeCapabilityResult(input: {
     }));
   }
 
+  // Canonical Cash Up answer shape (keyMetrics + conversationDataset.aggregation)
+  const dataset = asObject(raw.conversationDataset);
+  const aggregation = asObject(dataset?.aggregation) || asObject(raw.aggregated);
+  if (aggregation) {
+    const aggPairs: Array<[string, unknown, string | null]> = [
+      ["net_sales", aggregation.totalSales ?? aggregation.net_sales ?? aggregation.total_sales, "SAR"],
+      ["covers", aggregation.totalGuests ?? aggregation.guest_count ?? aggregation.covers, null],
+      ["orders", aggregation.totalOrders ?? aggregation.order_count, null],
+      ["avg_spend", aggregation.averageSpend ?? aggregation.avg_per_guest, "SAR"],
+      ["day_count", aggregation.dayCount ?? aggregation.day_count, null],
+    ];
+    for (const [key, value, unit] of aggPairs) {
+      if (metrics.some((m) => m.metricKey === key)) continue;
+      const n = num(value);
+      if (n == null) continue;
+      metrics.push(normalizeMetric({ metricKey: key, value: n, unit, source, coverage }));
+    }
+  }
+  const keyMetrics = Array.isArray(raw.keyMetrics) ? raw.keyMetrics as Array<Record<string, unknown>> : [];
+  for (const row of keyMetrics.slice(0, 16)) {
+    const label = str(row.label);
+    let key = str(row.metricKey) || str(row.metric_key) || str(row.key);
+    if (!key && label) {
+      const l = label.toLowerCase();
+      if (/\bnet sales\b|\btotal sales\b|^sales$/.test(l)) key = "net_sales";
+      else if (/\bguest|\bcover/.test(l)) key = "covers";
+      else if (/avg|average spend|per guest/.test(l)) key = "avg_spend";
+      else if (/\border/.test(l)) key = "orders";
+      else if (/sales change|period change|delta %/.test(l)) key = "delta_pct";
+    }
+    if (!key || metrics.some((m) => m.metricKey === key)) continue;
+    const rawValue = row.value ?? row.metric_value ?? row.metricValue;
+    let value: number | string | null = num(rawValue);
+    if (value == null && typeof rawValue === "string") {
+      const cleaned = rawValue.replace(/[SAR$€£,/\s]/gi, "").replace(/%$/, "").trim();
+      const parsed = Number(cleaned);
+      value = Number.isFinite(parsed) ? parsed : (rawValue.trim() || null);
+    }
+    if (value == null) continue;
+    metrics.push(normalizeMetric({
+      metricKey: key,
+      value,
+      unit: str(row.unit),
+      label: label || null,
+      source,
+      coverage,
+    }));
+  }
+
   // Facts array shapes
   const facts = Array.isArray(raw.facts) ? raw.facts as Array<Record<string, unknown>> : [];
   for (const fact of facts.slice(0, 16)) {
