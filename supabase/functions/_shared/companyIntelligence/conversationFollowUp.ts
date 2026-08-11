@@ -39,10 +39,29 @@ function hasInheritContext(prev: StructuredConversationState): boolean {
   );
 }
 
-function extractFollowUpFocus(question: string): string | null {
+export function extractFollowUpFocus(question: string): string | null {
   const q = String(question || "").trim();
   const m = q.match(/^(?:what about|how about|and)\s+(.+?)\??$/i);
   return m ? m[1].trim() : null;
+}
+
+/**
+ * True when the turn primarily supplies a new temporal period
+ * ("what about Jan 2026", "and March?", "how about April?").
+ * Used so Fabric stays engaged for period-only follow-ups.
+ */
+export function isPeriodOnlyFollowUpTurn(
+  question: string,
+  referenceDate: Date = new Date(),
+): boolean {
+  const q = String(question || "").trim();
+  if (/^(?:compare(?:\s+it)?\s+with|vs|versus)\s+/i.test(q)) {
+    const focus = q.replace(/^(?:compare(?:\s+it)?\s+with|vs|versus)\s+/i, "").replace(/\?+$/, "").trim();
+    return Boolean(resolveFollowUpPeriodFocus(focus, referenceDate)?.startDate);
+  }
+  const focus = extractFollowUpFocus(q);
+  if (!focus) return false;
+  return Boolean(resolveFollowUpPeriodFocus(focus, referenceDate)?.startDate);
 }
 
 /** Resolve a follow-up focus ("June", "jan 2026") into a calendar range without phrase-specific hacks. */

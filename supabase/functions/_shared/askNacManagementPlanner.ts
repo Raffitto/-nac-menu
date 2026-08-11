@@ -154,6 +154,10 @@ export function validateManagementPlan(raw: unknown): ManagementPlan | null {
 }
 
 /** Broad management commercial language — not product/waiter Foodics lookups. */
+/** Any calendar month token (full or abbreviated) — not a month-specific phrase patch. */
+const NAMED_MONTH_TOKEN =
+  /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/;
+
 export function looksLikeManagementCommercialQuestion(question = "") {
   const q = String(question || "").toLowerCase();
   if (!q.trim()) return false;
@@ -161,7 +165,8 @@ export function looksLikeManagementCommercialQuestion(question = "") {
     return false;
   }
   return (
-    /\b(business|performing|performance|overview|briefing|management|gm|pulse|read on|looking|lately|recently|improving|worse|red flags?|worrying|happy about|going wrong|act on|focus on|losing money|sales|covers|guests|orders|weekend|weekday|month|week|july|june|august|khobar|riyadh|jeddah)\b/.test(q)
+    /\b(business|performing|performance|overview|briefing|management|gm|pulse|read on|looking|lately|recently|improving|worse|red flags?|worrying|happy about|going wrong|act on|focus on|losing money|sales|covers|guests|orders|weekend|weekday|month|week|khobar|riyadh|jeddah)\b/.test(q)
+    || NAMED_MONTH_TOKEN.test(q)
     || /\b(founding day|foundation day|saudi founding|expect(?:ations?)?|forecast)\b/.test(q)
     || /\b(how('?s| is| are| did| was| were)|are we|give me|tell me|what('?s| is)|why |anything |compare )\b/.test(q)
   );

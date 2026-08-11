@@ -1102,17 +1102,21 @@ export async function processAskNacOnEdge(
   let managementPlannerMeta: Record<string, unknown> | null = null;
   let managementPlannerMs = 0;
 
+  const priorConversation = (conversationContext as {
+    fabricConversation?: StructuredConversationState;
+  } | null)?.fabricConversation || null;
+
   const useFabricSpine = isManagementIntelligenceQuestion(effectiveQuestion, {
     intent: route.intent,
     confidence: route.confidence,
     branchMention: route.branchMention,
+  }, {
+    priorFabricConversation: priorConversation,
+    referenceDate: new Date(),
   });
 
   if (useFabricSpine) {
     const spineStartedAt = performance.now();
-    const priorConversation = (conversationContext as {
-      fabricConversation?: StructuredConversationState;
-    } | null)?.fabricConversation || null;
 
     const profileAccess = (profileHint || {}) as {
       role?: string | null;

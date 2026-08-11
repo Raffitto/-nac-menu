@@ -25,7 +25,8 @@ import {
 import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
-import { resolveFabricFollowUp } from "./conversationFollowUp.ts";
+import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
+import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import {
   createCompanyIntelligenceState,
@@ -46,7 +47,6 @@ import {
 import { createModelGateway, loadModelGatewayConfig, type ModelGateway } from "./modelGateway.ts";
 import { verifySynthesizedAnswer } from "./answerVerifier.ts";
 import { estimateOpenAiMiniCostUsd } from "./telemetry.ts";
-import type { StructuredConversationState } from "./conversationState.ts";
 import {
   createIntelligenceScope,
   normalizeBranchId,
@@ -134,11 +134,43 @@ export function managementPlanToCapabilities(plan: {
   return uniq.slice(0, 6);
 }
 
-export function isManagementIntelligenceQuestion(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"]) {
+function hasFabricInheritContext(prev?: StructuredConversationState | null): boolean {
+  if (!prev) return false;
+  return Boolean(
+    prev.activePeriods?.current
+    || prev.activeMetricFamily
+    || prev.previousIntent
+    || (prev.activeCapabilities && prev.activeCapabilities.length),
+  );
+}
+
+/**
+ * Gate for entering the Fabric spine.
+ * When a prior Fabric conversation already resolved commercial/ops intent,
+ * a period-only follow-up ("what about jan 2026") must stay on Fabric —
+ * otherwise month+year turns that miss the legacy keyword gate fall to
+ * "Need a clearer metric question".
+ */
+export function isManagementIntelligenceQuestion(
+  question: string,
+  legacyRoute?: OrchestrationOptions["legacyRoute"],
+  options?: {
+    priorFabricConversation?: StructuredConversationState | null;
+    referenceDate?: Date;
+  },
+) {
   const intent = String(legacyRoute?.intent || "");
   if (/^vault_cash_up|^vault_operational|^vault_business_reasoning|^executive_analysis/.test(intent)) {
     return true;
   }
+
+  if (
+    hasFabricInheritContext(options?.priorFabricConversation)
+    && isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
+  ) {
+    return true;
+  }
+
   if (intent === "unknown" || legacyRoute?.confidence === "none" || legacyRoute?.confidence === "low") {
     return looksLikeManagementCommercialQuestion(question)
       || looksLikeOperationalManagementQuestion(question);
