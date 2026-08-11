@@ -10,6 +10,7 @@ import {
   type CapabilityExecutor,
 } from "./capabilityResolver.ts";
 import { buildCoverageReport } from "./coverageModel.ts";
+import { normalizeCapabilityResult } from "./normalizedCapabilityResult.ts";
 
 type LegacyToolRunner = (input: {
   vaultIntent: string;
@@ -105,14 +106,31 @@ export function createVaultCapabilityExecutor(runLegacyTool: LegacyToolRunner): 
         queryFocus: mapping.queryFocus,
         request: req,
       });
+      const coverage = extractCoverage(tool, req);
+      const metrics = extractMetrics(tool);
+      const textSnippets = extractSnippets(tool);
+      const normalized = normalizeCapabilityResult({
+        capabilityId: req.capability,
+        implementationTool: mapping.implementationTool,
+        ok: Boolean(tool),
+        branchId: req.branchId,
+        requestedPeriod: req.currentPeriod,
+        comparisonPeriod: req.comparisonPeriod,
+        methodHint: req.comparabilityMethod,
+        raw: tool,
+        metrics,
+        textSnippets,
+        coverage,
+      });
       return {
         capability: req.capability,
         implementationTool: mapping.implementationTool,
         ok: Boolean(tool),
-        metrics: extractMetrics(tool),
-        textSnippets: extractSnippets(tool),
-        coverage: extractCoverage(tool, req),
+        metrics,
+        textSnippets,
+        coverage,
         raw: tool,
+        normalized,
         error: tool ? null : "empty_tool_result",
       } satisfies CapabilityExecutionResult;
     } catch (err) {

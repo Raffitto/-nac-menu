@@ -296,6 +296,102 @@ describe("Company Intelligence orchestration spine", () => {
     expect(out.deterministic).toBe(true);
   });
 
+  test("paid-call ceiling max 2 and feasibility rejection stays at 0", () => {
+    const out = run(`
+      let calls = 0;
+      const openai = {
+        id: "openai",
+        supports: () => true,
+        complete: async () => {
+          calls += 1;
+          return {
+            ok: true,
+            provider: "openai",
+            model: "gpt-4o-mini",
+            content: JSON.stringify({ directAnswer: "Sales were stable." }),
+            paid: true,
+          };
+        },
+      };
+      const gateway = mod.createModelGateway(
+        { openai },
+        {
+          ...mod.loadModelGatewayConfig(),
+          fastProvider: "openai",
+          reasonProvider: "openai",
+          synthesizeProvider: "openai",
+          cloudEnabled: true,
+          maxPaidCallsPerAnswer: 2,
+        },
+      );
+      const ordinary = await mod.runCompanyIntelligenceOrchestration({
+        question: "How's business been lately?",
+        branchHint: "khobar",
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "auto",
+        gateway,
+        maxPaidCalls: 2,
+      });
+      const blocked = await mod.runCompanyIntelligenceOrchestration({
+        question: "Compare last year's Ramadan sales with this year's for Khobar.",
+        branchHint: "khobar",
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "auto",
+        gateway,
+        maxPaidCalls: 2,
+      });
+      return {
+        ordinaryPaid: ordinary.paidModelCalls,
+        blockedPaid: blocked.paidModelCalls,
+        blockedTools: blocked.toolsExecuted,
+        ceiling: ordinary.state.cost.maxPaidCallsPerAnswer,
+      };
+    `);
+    expect(out.ordinaryPaid).toBeLessThanOrEqual(2);
+    expect(out.blockedPaid).toBe(0);
+    expect(out.blockedTools).toEqual([]);
+  });
+
+  test("multi-turn July→June→difference→weekends retains scope/filters", () => {
+    const out = run(`
+      const t1 = await mod.runCompanyIntelligenceOrchestration({
+        question: "How was July?",
+        branchHint: "khobar",
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "heuristic",
+      });
+      const t2 = await mod.runCompanyIntelligenceOrchestration({
+        question: "And June?",
+        conversation: t1.nextConversation,
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "heuristic",
+      });
+      const t3 = await mod.runCompanyIntelligenceOrchestration({
+        question: "Why the difference?",
+        conversation: t2.nextConversation,
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+        mode: "heuristic",
+      });
+      const t4 = mod.resolveFabricFollowUp({
+        question: "What about weekends only?",
+        previous: t3.nextConversation,
+        referenceDate: new Date("2026-08-10T12:00:00+03:00"),
+      });
+      return {
+        branches: [t1, t2, t3].map((t) => t.state.scope.primaryBranchId),
+        t2HasPeriod: Boolean(t2.state.periods.current),
+        t3Compare: Boolean(t3.state.periods.comparison || t3.state.comparability),
+        weekend: t4.conversation.filters.weekendOnly === true,
+        weekendBranch: t4.branchId,
+      };
+    `);
+    expect(out.branches).toEqual(["khobar", "khobar", "khobar"]);
+    expect(out.t2HasPeriod).toBe(true);
+    expect(out.t3Compare).toBe(true);
+    expect(out.weekend).toBe(true);
+    expect(out.weekendBranch).toBe("khobar");
+  });
+
   test("eval harness still has 64 legacy NL cases plus architecture cases", () => {
     const data = JSON.parse(fs.readFileSync(evalPath, "utf8"));
     const legacy = data.cases.filter((c) => c.legacy_set === "mgmt_nl_64_2026_08_10");

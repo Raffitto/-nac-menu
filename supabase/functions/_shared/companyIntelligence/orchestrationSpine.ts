@@ -15,6 +15,7 @@ import {
   createMockCapabilityExecutor,
   executeBuiltinCapability,
   normalizeCapabilityResultToEvidence,
+  withNormalizedCapabilityResult,
   type CapabilityExecutor,
   type CapabilityExecutionResult,
 } from "./capabilityResolver.ts";
@@ -177,7 +178,8 @@ async function executeCapabilities(
     };
 
     const builtin = await executeBuiltinCapability(req, next);
-    const result = builtin || await executor(req);
+    const rawResult = builtin || await executor(req);
+    const result = withNormalizedCapabilityResult(rawResult, next);
     results.push(result);
     tools.push(result.implementationTool);
 
@@ -195,7 +197,11 @@ async function executeCapabilities(
           ok: result.ok,
           skipped: result.skipped || false,
           skipReason: result.skipReason || null,
-          metrics: result.metrics || [],
+          metrics: result.normalized?.metrics || result.metrics || [],
+          comparison: result.normalized?.comparison || null,
+          coverage: result.normalized?.coverage || null,
+          qualitativeEvidence: result.normalized?.qualitativeEvidence || [],
+          sourceAuthority: result.normalized?.sourceAuthority || null,
         },
       },
       cost: {
@@ -242,6 +248,13 @@ export async function runCompanyIntelligenceOrchestration(
       branchIds: followUp.branchId ? [followUp.branchId] : [],
     },
     conversation: followUp.conversation,
+  });
+  state = patchIntelligenceState(state, {
+    cost: {
+      ...state.cost,
+      maxPaidCallsPerAnswer: maxPaid,
+      paidModelCallsPerAnswer: 0,
+    },
   });
   state = transition(state, "INITIALIZED");
   state = transition(state, "SCOPED", {

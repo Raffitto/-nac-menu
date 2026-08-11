@@ -33,3 +33,4 @@ export * from "./deterministicSynthesis.ts";
 export * from "./conversationFollowUp.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";
+export * from "./normalizedCapabilityResult.ts";

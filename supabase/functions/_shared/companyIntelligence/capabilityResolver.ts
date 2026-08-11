@@ -7,7 +7,11 @@ import { CAPABILITY_REGISTRY, type CapabilityId } from "./capabilityRegistry.ts"
 import { buildCoverageReport, type CoverageReport } from "./coverageModel.ts";
 import { createEvidence, type EvidenceRecord } from "./evidenceLedger.ts";
 import type { CompanyIntelligenceState } from "./intelligenceState.ts";
-import { getSourceAuthority } from "./sourceAuthority.ts";
+import {
+  normalizeCapabilityResult,
+  normalizedResultToEvidenceParts,
+  type NormalizedCapabilityResult,
+} from "./normalizedCapabilityResult.ts";
 import type { DateRange } from "./types.ts";
 
 export type CapabilityExecutionRequest = {
@@ -30,7 +34,42 @@ export type CapabilityExecutionResult = {
   coverage?: CoverageReport | null;
   raw?: Record<string, unknown> | null;
   error?: string | null;
+  /** Canonical shape — preferred by all downstream Fabric stages. */
+  normalized?: NormalizedCapabilityResult | null;
 };
+
+/** Attach/refresh canonical normalized payload on any executor result. */
+export function withNormalizedCapabilityResult(
+  result: CapabilityExecutionResult,
+  state: CompanyIntelligenceState,
+): CapabilityExecutionResult {
+  const normalized = normalizeCapabilityResult({
+    capabilityId: result.capability,
+    implementationTool: result.implementationTool,
+    ok: result.ok,
+    skipped: result.skipped,
+    skipReason: result.skipReason,
+    branchId: state.scope.primaryBranchId,
+    companyId: state.scope.companyId,
+    brandId: state.scope.brandId,
+    requestedPeriod: state.periods.current,
+    comparisonPeriod: state.periods.comparison,
+    methodHint: state.comparability?.recommendedMethod || null,
+    statusHint: state.comparability?.status || null,
+    raw: result.raw || null,
+    metrics: result.metrics,
+    textSnippets: result.textSnippets,
+    coverage: result.coverage || null,
+  });
+  const parts = normalizedResultToEvidenceParts(normalized);
+  return {
+    ...result,
+    metrics: parts.metrics,
+    textSnippets: parts.textSnippets,
+    coverage: parts.coverage,
+    normalized,
+  };
+}
 
 export type CapabilityExecutor = (
   req: CapabilityExecutionRequest,
@@ -163,58 +202,64 @@ export function normalizeCapabilityResultToEvidence(
   result: CapabilityExecutionResult,
   state: CompanyIntelligenceState,
 ): EvidenceRecord[] {
+  const finalized = result.normalized
+    ? result
+    : withNormalizedCapabilityResult(result, state);
+  const normalized = finalized.normalized!;
   const evidence: EvidenceRecord[] = [];
-  const source = result.implementationTool.includes("operational")
-    || result.capability.startsWith("operations.")
-    ? "logbook"
-    : result.capability.startsWith("company.") || result.capability === "calendar.resolve_period"
-      ? "business_timeline"
-      : result.capability.startsWith("research.")
-        ? "web_news"
-        : result.capability === "cost.margin_analysis"
-          ? "cost_control"
-          : "cash_up";
+  const coverage = finalized.coverage || null;
 
-  const authority = getSourceAuthority(source === "cost_control" ? "cash_up" : source).authority;
-  const branchId = state.scope.primaryBranchId;
-  const period = state.periods.current;
-
-  for (const m of result.metrics || []) {
+  for (const m of normalized.metrics) {
     evidence.push(createEvidence({
-      source,
-      sourceAuthority: authority,
-      domain: source === "logbook" ? "INTERNAL_QUALITATIVE" : "INTERNAL_STRUCTURED",
-      companyId: state.scope.companyId,
-      brandId: state.scope.brandId,
-      branchId,
-      period,
-      metricOrEvent: m.key,
-      value: typeof m.value === "number" ? m.value : m.value,
-      textSummary: `${m.key}=${m.value}${m.unit ? ` ${m.unit}` : ""}`,
-      coverage: result.coverage || null,
-      confidence: result.ok && !result.skipped ? "high" : "low",
+      source: normalized.source,
+      sourceAuthority: normalized.sourceAuthority,
+      domain: normalized.source === "logbook" ? "INTERNAL_QUALITATIVE" : "INTERNAL_STRUCTURED",
+      companyId: normalized.scope.companyId || state.scope.companyId,
+      brandId: normalized.scope.brandId || state.scope.brandId,
+      branchId: normalized.scope.branchId || state.scope.primaryBranchId,
+      period: normalized.requestedPeriod || state.periods.current,
+      metricOrEvent: m.metricKey,
+      value: m.value,
+      textSummary: `${m.label}=${m.value}${m.unit ? ` ${m.unit}` : ""}`,
+      coverage,
+      confidence: normalized.provenance.ok && !normalized.provenance.skipped ? "high" : "low",
     }));
   }
 
-  for (const snippet of (result.textSnippets || []).slice(0, 5)) {
+  if (normalized.comparison?.percentChange != null) {
     evidence.push(createEvidence({
-      source,
-      sourceAuthority: authority,
-      domain: source === "logbook" ? "INTERNAL_QUALITATIVE" : source === "web_news" ? "EXTERNAL" : "COMPANY_HISTORICAL",
+      source: normalized.source,
+      sourceAuthority: normalized.sourceAuthority,
+      domain: "INTERNAL_STRUCTURED",
       companyId: state.scope.companyId,
       brandId: state.scope.brandId,
-      branchId,
-      period,
+      branchId: state.scope.primaryBranchId,
+      period: state.periods.current,
+      metricOrEvent: "delta_pct",
+      value: normalized.comparison.percentChange,
+      textSummary: `delta_pct=${normalized.comparison.percentChange}% (${normalized.comparison.mode})`,
+      coverage,
+      confidence: "high",
+    }));
+  }
+
+  for (const q of normalized.qualitativeEvidence.slice(0, 5)) {
+    evidence.push(createEvidence({
+      source: normalized.source,
+      sourceAuthority: normalized.sourceAuthority,
+      domain: normalized.source === "logbook" ? "INTERNAL_QUALITATIVE" : "COMPANY_HISTORICAL",
+      companyId: state.scope.companyId,
+      brandId: state.scope.brandId,
+      branchId: q.branchId || state.scope.primaryBranchId,
+      period: q.periodStart && q.periodEnd
+        ? { startDate: q.periodStart, endDate: q.periodEnd }
+        : state.periods.current,
       metricOrEvent: result.capability,
       value: null,
-      textSummary: String(snippet).slice(0, 400),
-      coverage: result.coverage || null,
-      confidence: result.skipped ? "low" : "medium",
+      textSummary: q.summary,
+      coverage,
+      confidence: q.relevance === "high" ? "high" : "medium",
     }));
-  }
-
-  if (result.coverage) {
-    // coverage attached on metrics; also keep on state via caller
   }
 
   return evidence;

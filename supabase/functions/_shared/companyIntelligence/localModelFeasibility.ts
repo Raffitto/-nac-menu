@@ -71,7 +71,9 @@ export function localModelDownloadDecision(): {
   return {
     downloaded: false,
     reason:
-      "Disk/RAM impact of promising reasoners (~12–17GB+) is unjustified for a contracts-only foundation phase; adapter path is provider-neutral.",
+      "11 Aug 2026: disk ~94% full (~55GB free), mlx-lm/ollama not installed, no OPENAI_API_KEY for cloud baseline. "
+      + "Rejected GPT-OSS 20B (~12GB) and Qwen3-30B-A3B-4bit (~17GB) downloads for this phase. "
+      + "OpenAI-compatible local adapter + mock endpoint used to validate gateway path instead.",
     preferredRuntime: "mlx",
     preferredCandidateId: "gpt-oss-20b-mxfp4",
   };

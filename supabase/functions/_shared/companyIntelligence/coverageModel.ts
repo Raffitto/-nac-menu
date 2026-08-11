@@ -48,7 +48,7 @@ export function buildCoverageReport(input: {
     : null;
 
   const warnings = [...(input.warnings || [])];
-  if (ratio != null && ratio < 0.8) warnings.push("partial_coverage");
+  if (ratio != null && ratio < 1) warnings.push("partial_coverage");
   if (ratio != null && ratio < 0.5) warnings.push("weak_coverage");
 
   return {
