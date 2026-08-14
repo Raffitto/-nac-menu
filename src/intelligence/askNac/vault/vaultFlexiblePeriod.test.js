@@ -8,7 +8,11 @@ import {
   isVaultFlexibleRangePeriod,
   listPeriodDates,
 } from "./vaultPeriodParser";
-import { buildCashUpPeriodAggregateAnswer, buildCashUpPeriodCompareMetrics } from "./vaultSalesPerformanceIntelligence";
+import {
+  buildCashUpPeriodAggregateAnswer,
+  buildCashUpPeriodCompareMetrics,
+  buildMatchedCoverageComparison,
+} from "./vaultSalesPerformanceIntelligence";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
 
 const REF = new Date("2026-06-21T12:00:00");
@@ -155,7 +159,7 @@ describe("custom compare periods", () => {
     expect(normalized?.comparisonPeriod.startDate).toBe("2026-05-01");
   });
 
-  test("compare answer includes sales, guest, and delivery deltas", () => {
+  test("unequal observed days without daily rows do not headline-compare totals", () => {
     const current = {
       totalSales: 100000,
       totalGuests: 1000,
@@ -163,6 +167,10 @@ describe("custom compare periods", () => {
       totalDeliverySales: 10000,
       totalDeliveryOrders: 100,
       dayCount: 10,
+      expectedDayCount: 15,
+      requestedStartDate: "2026-06-01",
+      requestedEndDate: "2026-06-15",
+      dailyBreakdown: [],
     };
     const previous = {
       totalSales: 80000,
@@ -171,22 +179,88 @@ describe("custom compare periods", () => {
       totalDeliverySales: 8000,
       totalDeliveryOrders: 80,
       dayCount: 12,
+      expectedDayCount: 15,
+      requestedStartDate: "2026-05-01",
+      requestedEndDate: "2026-05-15",
+      dailyBreakdown: [],
     };
+
+    const comparison = buildMatchedCoverageComparison(current, previous);
+    expect(comparison.mode).toBe("unavailable");
+    expect(comparison.reason).toBe("missing_daily_breakdown");
+    expect(comparison.expectedDayCount).toBe(15);
+    expect(comparison.currentObservedDayCount).toBe(10);
+    expect(comparison.previousObservedDayCount).toBe(12);
+    expect(comparison.missingCurrentDayCount).toBe(5);
+
     const answer = buildCashUpPeriodAggregateAnswer("compare June 1-15 vs May 1-15", current, {
       branchLabel: "Khobar",
       periodLabel: "1–15 June 2026",
       previousAggregation: previous,
       previousPeriodLabel: "1–15 May 2026",
     });
-    expect(answer).toMatch(/Sales delta/i);
-    expect(answer).toMatch(/Guest delta/i);
-    expect(answer).toMatch(/Delivery sales delta/i);
-    expect(answer).toMatch(/Coverage note/i);
+    expect(answer).toMatch(/not yet like-for-like/i);
+    expect(answer).toMatch(/10 of 15 days/);
+    expect(answer).toMatch(/Available-day average sales/i);
+    expect(answer).not.toMatch(/Sales delta/i);
+    expect(answer).not.toMatch(/Guest delta/i);
 
     const metrics = buildCashUpPeriodCompareMetrics(current, previous);
-    expect(metrics.some((m) => m.label === "Sales delta")).toBe(true);
-    expect(metrics.some((m) => m.label === "Guest delta")).toBe(true);
-    expect(metrics.some((m) => m.label === "Delivery orders delta")).toBe(true);
+    expect(metrics.some((m) => m.label === "Comparison status" && m.value === "Not like-for-like")).toBe(true);
+    expect(metrics.some((m) => m.label === "Current period days" && Number(m.value) === 10)).toBe(true);
+    expect(metrics.some((m) => m.label === "Comparison period days" && Number(m.value) === 12)).toBe(true);
+    expect(metrics.some((m) => m.label === "Sales delta")).toBe(false);
+  });
+
+  test("like-for-like compare uses matched calendar offsets, not raw observed totals", () => {
+    const makeDay = (date, sales, guests = 100) => ({
+      date,
+      totalSales: sales,
+      totalGuests: guests,
+      totalOrders: 40,
+      totalDeliverySales: 1000,
+      totalDeliveryOrders: 10,
+    });
+    const current = {
+      totalSales: 100000,
+      totalGuests: 1000,
+      dayCount: 10,
+      expectedDayCount: 15,
+      requestedStartDate: "2026-06-01",
+      requestedEndDate: "2026-06-15",
+      dailyBreakdown: Array.from({ length: 10 }, (_, i) => makeDay(
+        `2026-06-${String(i + 1).padStart(2, "0")}`,
+        10000,
+      )),
+    };
+    const previous = {
+      totalSales: 120000,
+      totalGuests: 1200,
+      dayCount: 12,
+      expectedDayCount: 15,
+      requestedStartDate: "2026-05-01",
+      requestedEndDate: "2026-05-15",
+      dailyBreakdown: Array.from({ length: 12 }, (_, i) => makeDay(
+        `2026-05-${String(i + 1).padStart(2, "0")}`,
+        8000,
+      )),
+    };
+
+    const comparison = buildMatchedCoverageComparison(current, previous);
+    expect(comparison.mode).toBe("matched");
+    expect(comparison.matchedDayCount).toBe(10);
+    expect(comparison.currentMatched.totalSales).toBe(100000);
+    expect(comparison.previousMatched.totalSales).toBe(80000);
+
+    const answer = buildCashUpPeriodAggregateAnswer("compare June 1-15 vs May 1-15", current, {
+      branchLabel: "Khobar",
+      periodLabel: "1–15 June 2026",
+      previousAggregation: previous,
+      previousPeriodLabel: "1–15 May 2026",
+    });
+    expect(answer).toMatch(/like-for-like 10-day/i);
+    expect(answer).toMatch(/Sales delta/i);
+    expect(answer).not.toMatch(/120,000/);
   });
 });
 

@@ -328,18 +328,26 @@ describe("aggregateCashUpFactsOverRange", () => {
     expect(agg.dayCount).toBe(1);
   });
 
-  test("compare mode skips daily breakdown but keeps totals", () => {
+  test("aggregator can omit dailyBreakdown when asked, without changing totals", () => {
     const facts = buildRangeFacts();
-    const agg = aggregateCashUpFactsOverRange({
+    const factsByDate = groupCashUpFactsByBusinessDate(facts);
+    const withDaily = aggregateCashUpFactsOverRange({
       startDate: "2026-06-14",
       endDate: "2026-06-20",
       branchId: "khobar",
-      factsByDate: groupCashUpFactsByBusinessDate(facts),
+      factsByDate,
+      includeDailyBreakdown: true,
+    });
+    const withoutDaily = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-14",
+      endDate: "2026-06-20",
+      branchId: "khobar",
+      factsByDate,
       includeDailyBreakdown: false,
     });
-    expect(agg.dailyBreakdown).toHaveLength(0);
-    expect(agg.dayCount).toBe(7);
-    expect(agg.totalSales).toBeGreaterThan(0);
+    expect(withoutDaily.dailyBreakdown).toHaveLength(0);
+    expect(withoutDaily.dayCount).toBe(7);
+    expect(withoutDaily.totalSales).toBe(withDaily.totalSales);
   });
 
   test("range query limit scales modestly with span", () => {
@@ -560,10 +568,20 @@ describe("runVaultQueryTool range path", () => {
       filters: { branch: "khobar" },
     });
 
+    const compare = parseVaultComparePeriodsFromQuestion(question, REF);
+    const currentDates = (result.aggregation?.dailyBreakdown || []).map((row) => row.date);
+    const previousDates = (result.previousAggregation?.dailyBreakdown || []).map((row) => row.date);
+
     expect(callLog.filter((entry) => entry.table === "ask_nac_structured_facts")).toHaveLength(2);
     expect(result.facts).toEqual([]);
     expect(result.aggregation?.totalSales).toBeGreaterThan(0);
     expect(result.previousAggregation?.totalSales).toBeGreaterThan(0);
-    expect(result.aggregation?.dailyBreakdown).toEqual([]);
+    expect(currentDates.length).toBeGreaterThan(0);
+    expect(previousDates.length).toBeGreaterThan(0);
+    expect(currentDates.every((date) => date >= compare.current.startDate && date <= compare.current.endDate)).toBe(true);
+    expect(previousDates.every((date) => date >= compare.previous.startDate && date <= compare.previous.endDate)).toBe(true);
+    expect(currentDates.some((date) => previousDates.includes(date))).toBe(false);
+    expect(result.aggregation.dayCount).toBe(currentDates.length);
+    expect(result.previousAggregation.dayCount).toBe(previousDates.length);
   });
 });
