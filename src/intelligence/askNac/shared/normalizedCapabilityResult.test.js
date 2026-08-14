@@ -198,6 +198,92 @@ describe("Normalized capability results", () => {
     expect(out.pctNull).toBeNull();
   });
 
+  test("aggregation + previousAggregation fills matched comparison instead of a null shell", () => {
+    const out = run(`
+      const current = {
+        totalSales: 148335.174,
+        dayCount: 9,
+        expectedDayCount: 10,
+        requestedStartDate: "2026-08-05",
+        requestedEndDate: "2026-08-14",
+        dailyBreakdown: Array.from({ length: 9 }, (_, i) => ({
+          date: "2026-08-" + String(i + 5).padStart(2, "0"),
+          totalSales: 16481.686,
+        })),
+      };
+      const previous = {
+        totalSales: 150000,
+        dayCount: 10,
+        expectedDayCount: 10,
+        requestedStartDate: "2026-07-26",
+        requestedEndDate: "2026-08-04",
+        dailyBreakdown: Array.from({ length: 10 }, (_, i) => {
+          const dt = new Date(Date.UTC(2026, 6, 26 + i));
+          return { date: dt.toISOString().slice(0, 10), totalSales: 15000 };
+        }),
+      };
+      const n = mod.normalizeCapabilityResult({
+        capabilityId: "commercial.compare",
+        implementationTool: "cash_up_compare",
+        branchId: "khobar",
+        requestedPeriod: { startDate: "2026-08-05", endDate: "2026-08-14" },
+        comparisonPeriod: { startDate: "2026-07-26", endDate: "2026-08-04" },
+        methodHint: "matched_weekday",
+        raw: { aggregation: current, previousAggregation: previous },
+      });
+      const avg = mod.normalizeCapabilityResult({
+        capabilityId: "commercial.compare",
+        implementationTool: "cash_up_compare",
+        branchId: "khobar",
+        requestedPeriod: { startDate: "2026-06-01", endDate: "2026-06-15" },
+        comparisonPeriod: { startDate: "2026-05-01", endDate: "2026-05-15" },
+        methodHint: "daily_average",
+        raw: {
+          aggregation: {
+            totalSales: 100000, dayCount: 10, expectedDayCount: 15,
+            requestedStartDate: "2026-06-01", requestedEndDate: "2026-06-15",
+            dailyBreakdown: [],
+          },
+          previousAggregation: {
+            totalSales: 80000, dayCount: 12, expectedDayCount: 15,
+            requestedStartDate: "2026-05-01", requestedEndDate: "2026-05-15",
+            dailyBreakdown: [],
+          },
+        },
+      });
+      const full = mod.normalizeCapabilityResult({
+        capabilityId: "commercial.compare",
+        implementationTool: "cash_up_compare",
+        branchId: "khobar",
+        requestedPeriod: { startDate: "2026-08-01", endDate: "2026-08-10" },
+        comparisonPeriod: { startDate: "2026-07-22", endDate: "2026-07-31" },
+        raw: {
+          aggregation: { totalSales: 200000, dayCount: 10, expectedDayCount: 10, requestedStartDate: "2026-08-01", requestedEndDate: "2026-08-10" },
+          previousAggregation: { totalSales: 100000, dayCount: 10, expectedDayCount: 10, requestedStartDate: "2026-07-22", requestedEndDate: "2026-07-31" },
+        },
+      });
+      return {
+        matched: n.comparison,
+        matchedDelta: n.metrics.find((m) => m.metricKey === "delta_pct")?.value ?? null,
+        avg: avg.comparison,
+        full: full.comparison,
+      };
+    `);
+    expect(out.matched.current.value).toBeCloseTo(148335.174, 3);
+    expect(out.matched.previous.value).toBe(135000);
+    expect(out.matched.matchedDayCount).toBe(9);
+    expect(out.matched.percentChange).toBeCloseTo(((148335.174 - 135000) / 135000) * 100, 5);
+    expect(out.matchedDelta).toBeCloseTo(out.matched.percentChange, 5);
+    expect(out.avg.mode).toBe("daily_average");
+    expect(out.avg.current.value).toBeCloseTo(10000, 5);
+    expect(out.avg.previous.value).toBeCloseTo(80000 / 12, 5);
+    expect(out.avg.percentChange).toBeCloseTo(((10000 - (80000 / 12)) / (80000 / 12)) * 100, 5);
+    expect(out.full.mode).toBe("full_period");
+    expect(out.full.current.value).toBe(200000);
+    expect(out.full.previous.value).toBe(100000);
+    expect(out.full.percentChange).toBe(100);
+  });
+
   test("orchestration stores normalized comparison/coverage in toolResults", () => {
     const out = run(`
       const result = await mod.runCompanyIntelligenceOrchestration({

@@ -13,6 +13,7 @@ import type {
   IsoDate,
   SourceAuthority,
 } from "./types.ts";
+import { buildMatchedCoverageComparison } from "../cashUpMatchedCoverageComparison.ts";
 
 export type NormalizedCoverage = {
   requestedStart: IsoDate | null;
@@ -285,6 +286,101 @@ export function normalizeComparisonFromUnknown(
   };
 }
 
+function signedPercentChange(current: number, previous: number): { delta: number; percentChange: number | null } {
+  const delta = current - previous;
+  if (previous === 0) return { delta, percentChange: null };
+  return { delta, percentChange: (delta / previous) * 100 };
+}
+
+function comparisonHasUsableValues(comparison: NormalizedComparison | null): boolean {
+  if (!comparison) return false;
+  if (comparison.mode === "not_comparable") return true;
+  return comparison.current.value != null
+    && comparison.previous.value != null
+    && (comparison.percentChange != null || comparison.delta != null);
+}
+
+/**
+ * Map vault aggregations onto NormalizedComparison using the existing
+ * coverage-aware Cash Up helper. Never headline-compare unmatched raw totals.
+ */
+export function comparisonFromCashUpAggregations(
+  aggregation: Record<string, unknown>,
+  previousAggregation: Record<string, unknown>,
+  options: {
+    requestedCurrent?: DateRange | null;
+    requestedPrevious?: DateRange | null;
+    methodHint?: string | null;
+  } = {},
+): NormalizedComparison | null {
+  const safe = buildMatchedCoverageComparison(aggregation, previousAggregation) as Record<string, unknown>;
+  const currentStart = options.requestedCurrent?.startDate || null;
+  const currentEnd = options.requestedCurrent?.endDate || null;
+  const previousStart = options.requestedPrevious?.startDate || null;
+  const previousEnd = options.requestedPrevious?.endDate || null;
+  const warnings: string[] = [];
+  if (typeof safe.reason === "string" && safe.reason) warnings.push(String(safe.reason));
+
+  const finish = (
+    mode: NormalizedComparisonMode,
+    currentValue: number,
+    previousValue: number,
+    matchedDayCount: number | null,
+    extraWarnings: string[] = [],
+  ): NormalizedComparison => {
+    const { delta, percentChange } = signedPercentChange(currentValue, previousValue);
+    return {
+      mode,
+      current: { startDate: currentStart, endDate: currentEnd, value: currentValue },
+      previous: { startDate: previousStart, endDate: previousEnd, value: previousValue },
+      matchedDayCount,
+      delta,
+      percentChange,
+      warnings: [...new Set([...warnings, ...extraWarnings])],
+    };
+  };
+
+  if (safe.mode === "matched") {
+    const currentMatched = asObject(safe.currentMatched);
+    const previousMatched = asObject(safe.previousMatched);
+    const currentValue = num(currentMatched?.totalSales);
+    const previousValue = num(previousMatched?.totalSales);
+    if (currentValue == null || previousValue == null) return null;
+    return finish(
+      mapComparabilityMethodToMode(options.methodHint || "matched_days"),
+      currentValue,
+      previousValue,
+      num(safe.matchedDayCount),
+      ["like_for_like"],
+    );
+  }
+
+  if (safe.mode === "full") {
+    const currentFull = asObject(safe.current) || aggregation;
+    const previousFull = asObject(safe.previous) || previousAggregation;
+    const currentValue = num(currentFull.totalSales ?? currentFull.net_sales);
+    const previousValue = num(previousFull.totalSales ?? previousFull.net_sales);
+    if (currentValue == null || previousValue == null) return null;
+    return finish("full_period", currentValue, previousValue, num(currentFull.dayCount), ["like_for_like"]);
+  }
+
+  const currentAvg = num(safe.currentAvgDailySales);
+  const previousAvg = num(safe.previousAvgDailySales);
+  if (currentAvg != null && previousAvg != null) {
+    return finish("daily_average", currentAvg, previousAvg, null, ["daily_average_fallback"]);
+  }
+
+  return {
+    mode: "unavailable",
+    current: { startDate: currentStart, endDate: currentEnd, value: null },
+    previous: { startDate: previousStart, endDate: previousEnd, value: null },
+    matchedDayCount: null,
+    delta: null,
+    percentChange: null,
+    warnings,
+  };
+}
+
 const METRIC_LABELS: Record<string, string> = {
   net_sales: "Net sales",
   total_sales: "Total sales",
@@ -435,6 +531,33 @@ export function normalizeCapabilityResult(input: {
     };
   }
 
+  const isCompareCapability = input.capabilityId === "commercial.compare"
+    || input.capabilityId === "commercial.trend";
+  if (
+    isCompareCapability
+    && input.statusHint !== "not_comparable"
+    && !comparisonHasUsableValues(finalComparison)
+  ) {
+    const dataset = asObject(raw.conversationDataset);
+    const aggregationForCompare = asObject(dataset?.aggregation)
+      || asObject(raw.aggregation)
+      || asObject(raw.aggregated);
+    const previousAggregation = asObject(raw.previousAggregation)
+      || asObject(dataset?.previousAggregation);
+    if (aggregationForCompare && previousAggregation) {
+      const fromAggregations = comparisonFromCashUpAggregations(
+        aggregationForCompare,
+        previousAggregation,
+        {
+          requestedCurrent: input.requestedPeriod,
+          requestedPrevious: input.comparisonPeriod,
+          methodHint: input.methodHint,
+        },
+      );
+      if (fromAggregations) finalComparison = fromAggregations;
+    }
+  }
+
   const metrics: NormalizedMetric[] = [];
   for (const m of looseMetrics) {
     if (m.key === "comparison_method") continue;
@@ -530,6 +653,19 @@ export function normalizeCapabilityResult(input: {
       if (n == null) continue;
       metrics.push(normalizeMetric({ metricKey: key, value: n, source, coverage }));
     }
+  }
+
+  if (
+    finalComparison?.percentChange != null
+    && !metrics.some((m) => m.metricKey === "delta_pct")
+  ) {
+    metrics.push(normalizeMetric({
+      metricKey: "delta_pct",
+      value: finalComparison.percentChange,
+      unit: "%",
+      source,
+      coverage,
+    }));
   }
 
   // Rankings
