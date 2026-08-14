@@ -125,6 +125,69 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(agg.missingDayCount).toBe(0);
   });
 
+  test("explicit from 9 to 13 aug excludes the preceding day from the aggregate", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 9 to 13 aug", ref);
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "net_sales", 999999)],
+      "2026-08-09": [dayFact("2026-08-09", "net_sales", 12617.78)],
+      "2026-08-10": [dayFact("2026-08-10", "net_sales", 12661.74)],
+      "2026-08-11": [dayFact("2026-08-11", "net_sales", 14015.65)],
+      "2026-08-12": [dayFact("2026-08-12", "net_sales", 15460)],
+      "2026-08-13": [dayFact("2026-08-13", "net_sales", 18411.3)],
+      "2026-08-14": [dayFact("2026-08-14", "net_sales", 888888)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: period.startDate,
+      endDate: period.endDate,
+      factsByDate,
+    });
+    expect(period.startDate).toBe("2026-08-09");
+    expect(period.endDate).toBe("2026-08-13");
+    expect(listPeriodDates(period)).toHaveLength(5);
+    expect(agg.expectedDayCount).toBe(5);
+    expect(agg.dayCount).toBe(5);
+    expect(agg.missingDayCount).toBe(0);
+    expect(agg.totalSales).toBeCloseTo(73166.47, 2);
+    expect(agg.dailyBreakdown.map((row) => row.date)).toEqual([
+      "2026-08-09",
+      "2026-08-10",
+      "2026-08-11",
+      "2026-08-12",
+      "2026-08-13",
+    ]);
+    expect(agg.totalSales).not.toBeCloseTo(73166.47 + 999999, 0);
+  });
+
+  test("explicit two-day and single-day ranges do not leak the previous calendar day", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const two = parseVaultPeriodFromQuestion("sales from 12 to 13 aug", ref);
+    const one = parseVaultPeriodFromQuestion("sales from 1 to 1 aug", ref);
+    const factsByDate = {
+      "2026-07-31": [dayFact("2026-07-31", "net_sales", 777777)],
+      "2026-08-01": [dayFact("2026-08-01", "net_sales", 100)],
+      "2026-08-11": [dayFact("2026-08-11", "net_sales", 888888)],
+      "2026-08-12": [dayFact("2026-08-12", "net_sales", 15460)],
+      "2026-08-13": [dayFact("2026-08-13", "net_sales", 18411.3)],
+    };
+    const twoAgg = aggregateCashUpFactsOverRange({
+      startDate: two.startDate,
+      endDate: two.endDate,
+      factsByDate,
+    });
+    const oneAgg = aggregateCashUpFactsOverRange({
+      startDate: one.startDate,
+      endDate: one.endDate,
+      factsByDate,
+    });
+    expect(listPeriodDates(two)).toHaveLength(2);
+    expect(twoAgg.dayCount).toBe(2);
+    expect(twoAgg.totalSales).toBeCloseTo(33871.3, 1);
+    expect(listPeriodDates(one)).toHaveLength(1);
+    expect(oneAgg.dayCount).toBe(1);
+    expect(oneAgg.totalSales).toBe(100);
+  });
+
   test("missing yesterday does not silently fall back to an older canonical day", () => {
     const factsByDate = {
       "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],

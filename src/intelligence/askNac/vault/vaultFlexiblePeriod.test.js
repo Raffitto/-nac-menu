@@ -6,6 +6,7 @@ import {
   parseHalfMonthPhrase,
   isVaultCashUpAnalyticsPeriod,
   isVaultFlexibleRangePeriod,
+  listPeriodDates,
 } from "./vaultPeriodParser";
 import { buildCashUpPeriodAggregateAnswer, buildCashUpPeriodCompareMetrics } from "./vaultSalesPerformanceIntelligence";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
@@ -55,6 +56,48 @@ describe("flexible explicit date ranges", () => {
     const period = parseVaultPeriodFromQuestion("guests from June 1 until June 18", REF);
     expect(period?.startDate).toBe("2026-06-01");
     expect(period?.endDate).toBe("2026-06-18");
+  });
+
+  test("from 9 to 13 aug inherits year and is inclusive of five calendar days", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 9 to 13 aug", ref);
+    expect(period?.startDate).toBe("2026-08-09");
+    expect(period?.endDate).toBe("2026-08-13");
+    expect(listPeriodDates(period)).toHaveLength(5);
+    expect(period?.periodType).toBe("custom_range");
+  });
+
+  test("from 12 to 13 aug is exactly two days", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 12 to 13 aug", ref);
+    expect(period?.startDate).toBe("2026-08-12");
+    expect(period?.endDate).toBe("2026-08-13");
+    expect(listPeriodDates(period)).toHaveLength(2);
+  });
+
+  test("from 1 to 1 aug is exactly one day", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 1 to 1 aug", ref);
+    expect(period?.startDate).toBe("2026-08-01");
+    expect(period?.endDate).toBe("2026-08-01");
+    expect(listPeriodDates(period)).toHaveLength(1);
+    expect(period?.isSingleDay).toBe(true);
+  });
+
+  test("from 1 aug to 13 aug is exactly 13 days", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 1 aug to 13 aug", ref);
+    expect(period?.startDate).toBe("2026-08-01");
+    expect(period?.endDate).toBe("2026-08-13");
+    expect(listPeriodDates(period)).toHaveLength(13);
+  });
+
+  test("from 30 july to 2 aug crosses month end inclusively", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 30 july to 2 aug", ref);
+    expect(period?.startDate).toBe("2026-07-30");
+    expect(period?.endDate).toBe("2026-08-02");
+    expect(listPeriodDates(period)).toHaveLength(4);
   });
 });
 

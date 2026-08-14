@@ -358,6 +358,26 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
+  // "from 9 to 13 aug" / "9 to 13 August" — month only on the end day.
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
+  if (m) {
+    const monthIndex = MONTH_MAP[m[3]];
+    const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
+    const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
+    const endDate = isoDate(year, monthIndex + 1, Number(m[2]));
+    if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
+  }
+
+  // "from 9 to August 13"
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
+  if (m) {
+    const monthIndex = MONTH_MAP[m[2]];
+    const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
+    const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
+    const endDate = isoDate(year, monthIndex + 1, Number(m[3]));
+    if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
+  }
+
   return null;
 }
 

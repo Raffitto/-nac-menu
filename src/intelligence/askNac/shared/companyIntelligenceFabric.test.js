@@ -384,6 +384,20 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.result).toBe(-10);
   });
 
+  test("sales from 9 to 13 aug does not fall back to last 7 days", () => {
+    const out = run(`
+      const resolved = mod.defaultTemporalService.resolveFromQuestion(
+        "sales from 9 to 13 aug",
+        new Date("2026-08-14T16:16:00.000Z"),
+      );
+      return resolved;
+    `);
+    expect(out.status).toBe("resolved");
+    expect(out.range?.startDate).toBe("2026-08-09");
+    expect(out.range?.endDate).toBe("2026-08-13");
+    expect(out.range?.semantic).not.toBe("last_7_days");
+  });
+
   test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
     const out = run(`
       const resolved = mod.defaultTemporalService.resolveFromQuestion(
