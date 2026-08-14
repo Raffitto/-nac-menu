@@ -130,9 +130,26 @@ export function synthesizeDeterministicAnswer(input: {
 
   for (const cov of input.coverage) {
     if (cov.coverageRatio != null && cov.coverageRatio < 1 && cov.expectedRecords != null && cov.availableRecords != null) {
-      parts.push(
-        `I can use ${cov.domain} evidence for ${cov.availableRecords} of the requested ${cov.expectedRecords} records; coverage is incomplete.`,
-      );
+      if (cov.availableRecords === 0) {
+        const requested = input.period?.label
+          || (input.period?.startDate && input.period?.endDate && input.period.startDate === input.period.endDate
+            ? input.period.startDate
+            : period);
+        let msg = `Cash Up for ${requested} is not yet available in the canonical data.`;
+        const latest = cov.freshness && String(cov.freshness);
+        if (
+          latest
+          && latest !== input.period?.startDate
+          && latest !== input.period?.endDate
+        ) {
+          msg += ` The latest completed Cash Up I have is ${latest}.`;
+        }
+        parts.push(msg);
+      } else {
+        parts.push(
+          `I can use ${cov.domain} evidence for ${cov.availableRecords} of the requested ${cov.expectedRecords} records; coverage is incomplete.`,
+        );
+      }
     }
   }
 

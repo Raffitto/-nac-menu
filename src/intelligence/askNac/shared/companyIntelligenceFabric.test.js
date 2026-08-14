@@ -383,4 +383,80 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.ok).toBe(true);
     expect(out.result).toBe(-10);
   });
+
+  test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
+    const out = run(`
+      const resolved = mod.defaultTemporalService.resolveFromQuestion(
+        "what was the sales of yesterday",
+        new Date("2026-08-14T16:16:00.000Z"),
+      );
+      return resolved.range;
+    `);
+    expect(out.startDate).toBe("2026-08-13");
+    expect(out.endDate).toBe("2026-08-13");
+  });
+
+  test("missing yesterday names the date and may offer latest without substituting sales", () => {
+    const out = run(`
+      const period = { startDate: "2026-08-13", endDate: "2026-08-13", label: "13 August 2026" };
+      const missing = mod.synthesizeDeterministicAnswer({
+        question: "what was the sales of yesterday",
+        branchId: "khobar",
+        period,
+        evidence: [],
+        claims: [],
+        coverage: [mod.buildCoverageReport({
+          domain: "sales",
+          range: period,
+          expectedRecords: 1,
+          availableRecords: 0,
+          freshness: "2026-08-08",
+        })],
+      });
+      const missingNoLatest = mod.synthesizeDeterministicAnswer({
+        question: "what was the sales of yesterday",
+        branchId: "khobar",
+        period,
+        evidence: [],
+        claims: [],
+        coverage: [mod.buildCoverageReport({
+          domain: "sales",
+          range: period,
+          expectedRecords: 1,
+          availableRecords: 0,
+        })],
+      });
+      const exact = mod.synthesizeDeterministicAnswer({
+        question: "what was the sales of yesterday",
+        branchId: "khobar",
+        period,
+        evidence: [mod.createEvidence({
+          source: "cash_up",
+          domain: "INTERNAL_STRUCTURED",
+          branchId: "khobar",
+          metricOrEvent: "net_sales",
+          value: 18100,
+          textSummary: "Net sales 18100",
+          period,
+        })],
+        claims: [],
+        coverage: [mod.buildCoverageReport({
+          domain: "sales",
+          range: period,
+          expectedRecords: 1,
+          availableRecords: 1,
+        })],
+      });
+      return { missing, missingNoLatest, exact };
+    `);
+    expect(out.missing).toMatch(/13 August 2026/);
+    expect(out.missing).toMatch(/not yet available in the canonical data/i);
+    expect(out.missing).toMatch(/latest completed Cash Up I have is 2026-08-08/);
+    expect(out.missing).not.toMatch(/0 of the requested 1/);
+    expect(out.missing).not.toMatch(/18100/);
+    expect(out.missingNoLatest).toMatch(/not yet available in the canonical data/i);
+    expect(out.missingNoLatest).not.toMatch(/latest completed/);
+    expect(out.exact).toMatch(/18100/);
+    expect(out.exact).not.toMatch(/not yet available/);
+  });
 });

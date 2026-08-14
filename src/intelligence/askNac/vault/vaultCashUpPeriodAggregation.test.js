@@ -93,6 +93,53 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(today?.endDate).toBe("2026-06-20");
   });
 
+  test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const yesterday = parseVaultPeriodFromQuestion("what was the sales of yesterday", ref);
+    expect(yesterday?.startDate).toBe("2026-08-13");
+    expect(yesterday?.endDate).toBe("2026-08-13");
+    expect(yesterday?.expectedDayCount).toBe(1);
+  });
+
+  test("yesterday after midnight KSA uses Asia/Riyadh calendar, not UTC", () => {
+    const ref = new Date("2026-08-13T22:15:00.000Z");
+    const yesterday = parseVaultPeriodFromQuestion("sales yesterday", ref);
+    const today = parseVaultPeriodFromQuestion("sales today", ref);
+    expect(yesterday?.startDate).toBe("2026-08-13");
+    expect(today?.startDate).toBe("2026-08-14");
+  });
+
+  test("exact yesterday row is returned and another day is not substituted", () => {
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],
+      "2026-08-13": [dayFact("2026-08-13", "total_sales", 18100), dayFact("2026-08-13", "guest_count", 210)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-08-13",
+      endDate: "2026-08-13",
+      factsByDate,
+    });
+    expect(agg.dayCount).toBe(1);
+    expect(agg.totalSales).toBe(18100);
+    expect(agg.totalGuests).toBe(210);
+    expect(agg.missingDayCount).toBe(0);
+  });
+
+  test("missing yesterday does not silently fall back to an older canonical day", () => {
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-08-13",
+      endDate: "2026-08-13",
+      factsByDate,
+    });
+    expect(agg.dayCount).toBe(0);
+    expect(agg.expectedDayCount).toBe(1);
+    expect(agg.missingDayCount).toBe(1);
+    expect(agg.totalSales).toBeNull();
+  });
+
   test("parses this month as month-to-date", () => {
     const period = parseVaultPeriodFromQuestion("guests this month", REF);
     expect(period?.periodType).toBe("this_month");

@@ -121,16 +121,22 @@ function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: stri
 }
 
 function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityExecutionRequest) {
-  const cov = (tool?.coverage || tool?.matchedCoverage || null) as Record<string, unknown> | null;
+  const covRaw = (tool?.coverage || tool?.matchedCoverage || null) as Record<string, unknown> | Record<string, unknown>[] | null;
+  const cov = covRaw && !Array.isArray(covRaw) ? covRaw : null;
   const aggregation = resolveToolAggregation(tool);
   const expectedFromAgg = typeof aggregation?.expectedDayCount === "number" ? aggregation.expectedDayCount : null;
   const availableFromAgg = typeof aggregation?.dayCount === "number" ? aggregation.dayCount : null;
+  const latestCompleted = typeof aggregation?.latestCompletedDate === "string"
+    ? aggregation.latestCompletedDate
+    : null;
+  const freshness = cov?.freshness ? String(cov.freshness) : latestCompleted;
   if (!cov) {
     return buildCoverageReport({
       domain: req.capability.startsWith("operations") ? "logbook" : "sales",
       range: req.currentPeriod,
       expectedRecords: expectedFromAgg,
       availableRecords: availableFromAgg,
+      freshness,
     });
   }
   return buildCoverageReport({
@@ -142,7 +148,7 @@ function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityEx
     availableRecords: typeof cov.availableDays === "number" ? cov.availableDays
       : typeof cov.availableRecords === "number" ? cov.availableRecords
       : availableFromAgg,
-    freshness: cov.freshness ? String(cov.freshness) : null,
+    freshness,
     warnings: Array.isArray(cov.warnings) ? cov.warnings.map(String) : [],
   });
 }

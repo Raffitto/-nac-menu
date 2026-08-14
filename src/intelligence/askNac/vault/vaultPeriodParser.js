@@ -40,6 +40,25 @@ function isoDate(y, m, d) {
   return `${y}-${pad2(m)}-${pad2(d)}`;
 }
 
+const PERIOD_TZ = "Asia/Riyadh";
+
+function calendarYmdInTz(referenceDate, timeZone = PERIOD_TZ) {
+  const d = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (type) => Number(parts.find((p) => p.type === type)?.value || 0);
+  return { year: get("year"), month: get("month"), day: get("day") };
+}
+
+function addCalendarDays(year, month, day, delta) {
+  const dt = new Date(Date.UTC(year, month - 1, day + delta));
+  return { year: dt.getUTCFullYear(), month: dt.getUTCMonth() + 1, day: dt.getUTCDate() };
+}
+
 function shiftLocalDate(referenceDate, dayDelta) {
   const day = new Date(referenceDate);
   day.setDate(day.getDate() + dayDelta);
@@ -373,16 +392,9 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (/\btoday\b/.test(q)) {
-    const iso = isoDate(
-      referenceDate.getFullYear(),
-      referenceDate.getMonth() + 1,
-      referenceDate.getDate(),
-    );
-    const label = formatDayMonthLabel(
-      referenceDate.getFullYear(),
-      referenceDate.getMonth(),
-      referenceDate.getDate(),
-    );
+    const ymd = calendarYmdInTz(referenceDate);
+    const iso = isoDate(ymd.year, ymd.month, ymd.day);
+    const label = formatDayMonthLabel(ymd.year, ymd.month - 1, ymd.day);
     return {
       startDate: iso,
       endDate: iso,
@@ -394,9 +406,10 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (/\byesterday\b/.test(q)) {
-    const day = shiftLocalDate(referenceDate, -1);
-    const iso = isoDate(day.getFullYear(), day.getMonth() + 1, day.getDate());
-    const label = formatDayMonthLabel(day.getFullYear(), day.getMonth(), day.getDate());
+    const today = calendarYmdInTz(referenceDate);
+    const day = addCalendarDays(today.year, today.month, today.day, -1);
+    const iso = isoDate(day.year, day.month, day.day);
+    const label = formatDayMonthLabel(day.year, day.month - 1, day.day);
     return {
       startDate: iso,
       endDate: iso,

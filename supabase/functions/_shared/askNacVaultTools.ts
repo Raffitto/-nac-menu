@@ -569,6 +569,23 @@ export async function getVaultCoverage(
   return result;
 }
 
+async function resolveLatestCompletedCashUpDate(
+  supabase: SupabaseClient,
+  branchId: string | null,
+): Promise<string | null> {
+  let query = supabase
+    .from("ask_nac_data_coverage")
+    .select("period_end")
+    .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .order("period_end", { ascending: false })
+    .limit(1);
+  if (branchId) query = query.eq("branch_id", branchId);
+  const { data, error } = await query;
+  if (error || !data?.[0]?.period_end) return null;
+  return String(data[0].period_end);
+}
+
 export async function getVaultCashUpAggregationFacts(
   supabase: SupabaseClient,
   {
@@ -1425,6 +1442,10 @@ async function fetchCashUpRangeBundle(
 
   if (aggregation.dayCount === 0) {
     warnings.push("No structured cash-up facts matched this date range under your access scope.");
+    const latestCompletedDate = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
+    if (latestCompletedDate && latestCompletedDate !== startDate && latestCompletedDate !== endDate) {
+      aggregation = { ...aggregation, latestCompletedDate };
+    }
   } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(vaultPeriod || null)) {
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
