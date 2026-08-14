@@ -248,6 +248,9 @@ const INTENT_RULES = [
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
       if (isPerformanceOverviewQuery(q) && (period || vaultCompare)) return 37;
+      // Explicit compare / day-ranking always prefer structured cash-up over Foodics/unknown.
+      if (vaultCompare || scoreSalesPerformanceQueryFocus(q) === "period_compare") return 38;
+      if (scoreSalesPerformanceQueryFocus(q) === "day_ranking" && period) return 37;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
         return 35;
@@ -663,9 +666,14 @@ export function routeAskNacIntent(question, options = {}) {
   if (intent === ASK_NAC_INTENTS.VAULT_BUSINESS_REASONING) {
     route.whyMetricFocus = detectWhyMetricFocus(normalized.text);
   }
-  if (intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY && isPerformanceOverviewQuery(normalized.text)) {
-    route.performanceOverview = true;
-    route.queryFocus = "performance_overview";
+  if (intent === ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY) {
+    if (isPerformanceOverviewQuery(normalized.text)) {
+      route.performanceOverview = true;
+      route.queryFocus = "performance_overview";
+    } else {
+      route.queryFocus = scoreSalesPerformanceQueryFocus(normalized.text)
+        || (vaultCompare ? "period_compare" : route.queryFocus || null);
+    }
   }
 
   route.debug.foodicsPeriod = route.foodicsPeriod;

@@ -6,6 +6,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { processAskNacOnEdge } from "../_shared/askNacOrchestrator.ts";
+import { loadAskNacAuthProfileHint } from "../_shared/askNacAuthProfile.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,13 +74,15 @@ Deno.serve(async (req) => {
       }
     }
 
+    const clientProfileHint = body?.profileHint ?? body?.profile ?? null;
+    const authProfile = await loadAskNacAuthProfileHint(supabase, clientProfileHint);
     const answered = await processAskNacOnEdge(supabase, {
       question,
       conversationContext: body?.conversationContext ?? null,
       branch: body?.branch ?? null,
       hours: body?.hours,
       range: body?.range,
-      profileHint: body?.profileHint ?? body?.profile ?? null,
+      profileHint: authProfile.profileHint,
       filters: body?.filters ?? {},
       userEmail: userData.user.email ?? null,
     });
@@ -92,15 +95,32 @@ Deno.serve(async (req) => {
     }
 
     const trace = answered.cashUpProductionTrace as { failurePoint?: string | null } | undefined;
+    const scopeDiag = {
+      role: authProfile.diagnostics.vaultRole || authProfile.profileHint.role || null,
+      allBranches: authProfile.diagnostics.allBranches,
+      primaryBranchId: authProfile.diagnostics.primaryBranchId,
+      allowedBranchIds: authProfile.diagnostics.allowedBranchIds,
+      clientBranchScope: authProfile.diagnostics.clientBranchScope,
+      clientAllBranches: authProfile.diagnostics.clientAllBranches,
+      source: authProfile.diagnostics.source,
+      resolvedBranchLabel: (answered as { branchLabel?: string | null }).branchLabel ?? null,
+      feasibility: (answered as { companyIntelligence?: { feasibility?: string | null } }).companyIntelligence?.feasibility ?? null,
+    };
+    const ci = (responsePayload.companyIntelligence as Record<string, unknown> | undefined) || {};
+    responsePayload.companyIntelligence = {
+      ...ci,
+      scopeDiagnostics: scopeDiag,
+    };
     console.info(
       JSON.stringify({
         fn: "ask-nac",
-        user: userData.user.id,
+        user: String(userData.user.id || "").slice(0, 8),
         intent: answered.intent,
         branch: body?.branch || "network",
         ai: answered.isAiGenerated,
         aiConnected: answered.aiConnected,
         cashUpFailurePoint: trace?.failurePoint ?? null,
+        scope: scopeDiag,
       }),
     );
 

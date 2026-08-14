@@ -6,6 +6,7 @@ import {
 import { parseUploadedFile } from "./parsers/vaultFileAdapter";
 import { sampleFactsForPreview } from "./parsers/vaultIntermediate";
 import { parseCashUpReport } from "./parsers/parseCashUp";
+import { parseCashUpOfficialPdfText } from "./parsers/parseCashUpOfficialPdf";
 import { parseReceptionDailyReport } from "./parsers/parseReceptionDaily";
 import { parseDailyLogbookReport } from "./parsers/parseDailyLogbook";
 import { parseCcmReconciliationReport } from "./parsers/parseCcmReconciliation";
@@ -102,7 +103,54 @@ export async function parseVaultStructuredFile(file, context) {
     };
   }
 
-  const result = parser(extracted.intermediate, context);
+  let result = parser(extracted.intermediate, context);
+
+  // Official monthly Cash Up PDFs (Excel→PDF) need the matrix-aware PDF parser.
+  if (
+    context.reportType === "cash_up"
+    && (extracted.intermediate?.fileType === "pdf" || /\.pdf$/i.test(context.filename || context.originalFilename || ""))
+  ) {
+    const official = parseCashUpOfficialPdfText(extracted.intermediate?.text || "", {
+      branchId: context.branchId,
+      periodMonth: (context.periodStart || "").slice(0, 7) || undefined,
+    });
+    if (official.ok && official.dailyRowCount >= 28) {
+      const confidenceMetaOfficial = explainConfidence(0.9, {
+        coreMatched: 4,
+        coreRequired: 3,
+        warnings: official.warnings || [],
+      });
+      result = {
+        ok: true,
+        branchId: official.branchId || context.branchId,
+        periodStart: official.periodStart,
+        periodEnd: official.periodEnd,
+        facts: (official.facts || []).map((fact) => ({
+          ...fact,
+          file_id: context.fileId,
+          branch_id: official.branchId || context.branchId,
+          brand_wide: Boolean(context.brandWide),
+          department: context.department,
+          report_type: "cash_up",
+          sensitivity_level: context.sensitivityLevel,
+        })),
+        confidence: 0.9,
+        confidenceMeta: confidenceMetaOfficial,
+        warnings: [
+          ...(official.warnings || []),
+          ...(official.qualityIssues || []).map((q) => q.detail || q.code),
+        ],
+        sections: ["official_cash_up_pdf"],
+        stats: {
+          parser: official.parser,
+          dailyRowCount: official.dailyRowCount,
+          qualityIssues: official.qualityIssues,
+          reconciliation: official.reconciliation,
+        },
+      };
+    }
+  }
+
   const preview = buildParsePreview(extracted.intermediate, result, context);
   const confidenceMeta =
     result.confidenceMeta ||

@@ -323,8 +323,13 @@ function resolveBranch(context: Record<string, unknown> = {}): string | null {
   const branchMention = context.branchMention as string | null;
   const filters = context.filters as { branch?: string } | undefined;
   const profile = context.profile as { branchScope?: string; allBranches?: boolean } | undefined;
+  // Prefer explicit question/UI branch before network-wide defaults.
+  const fromMention = normalizeVaultBranch(branchMention);
+  if (fromMention) return fromMention;
+  const fromFilters = normalizeVaultBranch(filters?.branch || (context.branch as string | null));
+  if (fromFilters) return fromFilters;
   if (profile?.branchScope && !profile.allBranches) return normalizeVaultBranch(profile.branchScope);
-  return normalizeVaultBranch(branchMention || filters?.branch || (context.branch as string | null) || null);
+  return null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -564,6 +569,23 @@ export async function getVaultCoverage(
   return result;
 }
 
+async function resolveLatestCompletedCashUpDate(
+  supabase: SupabaseClient,
+  branchId: string | null,
+): Promise<string | null> {
+  let query = supabase
+    .from("ask_nac_data_coverage")
+    .select("period_end")
+    .eq("report_type", "cash_up")
+    .not("period_end", "is", null)
+    .order("period_end", { ascending: false })
+    .limit(1);
+  if (branchId) query = query.eq("branch_id", branchId);
+  const { data, error } = await query;
+  if (error || !data?.[0]?.period_end) return null;
+  return String(data[0].period_end);
+}
+
 export async function getVaultCashUpAggregationFacts(
   supabase: SupabaseClient,
   {
@@ -743,9 +765,21 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       const question = String(context.question || "").toLowerCase();
       const vaultCompare = (context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
         || parseVaultComparePeriodsFromQuestion(String(context.question || ""));
+      const queryFocus = String(context.queryFocus || context.route?.queryFocus || "");
+      const performanceOverview = Boolean(context.performanceOverview || context.route?.performanceOverview);
+      const hasResolvedWindow = Boolean(vaultPeriod?.startDate || vaultCompare?.current?.startDate);
+      // Never silently substitute latest cash-up day when a management window/focus was resolved or intended.
+      const forcePeriodPath = hasResolvedWindow
+        || performanceOverview
+        || ["performance_overview", "period_compare", "day_ranking"].includes(queryFocus)
+        || scoreSalesPerformanceQueryFocus(String(context.question || "")) != null;
       const useLatestPath =
-        (!vaultPeriod?.startDate && !vaultCompare?.current?.startDate)
-        || /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question);
+        !forcePeriodPath
+        && (!vaultPeriod?.startDate && !vaultCompare?.current?.startDate)
+        || (
+          !forcePeriodPath
+          && /\b(latest cash up|summarize.*cash up|what should management know from the cash up)\b/.test(question)
+        );
       const selectedTool = useLatestPath
         ? "getLatestVaultCashUpFacts"
         : (vaultCompare || isVaultCashUpAnalyticsPeriod(vaultPeriod || null))
@@ -1337,7 +1371,7 @@ async function fetchCashUpRangeBundle(
         branch: scopedBranch,
         startDate,
         endDate,
-        includeDailyBreakdown: false,
+        includeDailyBreakdown: Boolean(resolvedDailyBreakdown),
       });
       factsResult = {
         branch: scopedBranch,
@@ -1408,6 +1442,10 @@ async function fetchCashUpRangeBundle(
 
   if (aggregation.dayCount === 0) {
     warnings.push("No structured cash-up facts matched this date range under your access scope.");
+    const latestCompletedDate = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
+    if (latestCompletedDate && latestCompletedDate !== startDate && latestCompletedDate !== endDate) {
+      aggregation = { ...aggregation, latestCompletedDate };
+    }
   } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(vaultPeriod || null)) {
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
@@ -1745,14 +1783,19 @@ export async function searchOperationalReviewDocuments(supabase: SupabaseClient,
   const searchTerms = (context.searchTerms as string) || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
   const reportTypes = ["daily_logbook", "reception_daily_report"];
+  const vaultPeriod = (context.vaultPeriod as VaultPeriod | null) || null;
+  const hasRequestedPeriod = Boolean(vaultPeriod?.startDate && vaultPeriod?.endDate);
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
     searchTerms,
     scopedBranch,
-    vaultPeriod: context.vaultPeriod || null,
+    vaultPeriod,
     reportTypes,
-    preferRecent: /\b(latest|recent|this month|this week)\b/i.test(String(context.question || "")),
+    preferRecent: hasRequestedPeriod
+      || /\b(latest|recent|this month|this week|last\s+\d+\s+days?)\b/i.test(String(context.question || "")),
+    // Time-bounded operational questions must not relax into out-of-window historical logbooks.
+    strictMetadata: hasRequestedPeriod,
     mapRow: (row, terms) => mapVaultChunkMatchRow(row as Record<string, unknown>, terms),
   });
 
@@ -1765,6 +1808,8 @@ export async function searchOperationalReviewDocuments(supabase: SupabaseClient,
     groupedFindings: grouped,
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
+    periodLabel: vaultPeriod?.label || null,
+    vaultPeriod,
     vaultSources: [...new Map(result.matches.map((m) => [m.fileId, {
       fileId: m.fileId,
       title: m.fileTitle,

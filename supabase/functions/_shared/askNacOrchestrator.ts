@@ -7,6 +7,14 @@ import { fetchAskNacMenuMetrics } from "./askNacMenuMetrics.ts";
 import { MONTH_HOURS } from "./mtdHybridMerge.ts";
 import { buildDeterministicAskNacAnswer, branchDisplayName, MAX_BRANCH_ROWS, MAX_STAFF_ROWS, periodLabelFromHours } from "./askNacEdgeAnswerBuilder.ts";
 import { narrateWithOpenAi } from "./askNacOpenAiNarrator.ts";
+import { enrichRouteWithManagementPlanner } from "./askNacManagementPlanner.ts";
+import {
+  isManagementIntelligenceQuestion,
+  runCompanyIntelligenceOrchestration,
+} from "./companyIntelligence/orchestrationSpine.ts";
+import { createVaultCapabilityExecutor } from "./companyIntelligence/vaultCapabilityExecutor.ts";
+import type { StructuredConversationState } from "./companyIntelligence/conversationState.ts";
+import { resolveAuthorizedIntelligenceScope } from "./companyIntelligence/scope.ts";
 import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
@@ -257,6 +265,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
       if (isPerformanceOverviewQuery(q) && (period || vaultCompare)) return 37;
+      // Explicit compare / day-ranking always prefer structured cash-up over Foodics/unknown.
+      if (vaultCompare || scoreSalesPerformanceQueryFocus(q) === "period_compare") return 38;
+      if (scoreSalesPerformanceQueryFocus(q) === "day_ranking" && period) return 37;
       if (scoreSalesPerformanceQueryFocus(q)) return 35;
       if (/\bwhat should management know from\b.*\b(performance|sales|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(q)) {
         return 35;
@@ -548,11 +559,18 @@ function isMissingDataIntent(intent: string) {
   ].includes(intent as typeof ASK_NAC_INTENTS[keyof typeof ASK_NAC_INTENTS]);
 }
 
-export function routeIntent(question: string, options: { fallbackHours?: number; documentContext?: Record<string, unknown> | null } = {}) {
+export function routeIntent(question: string, options: {
+  fallbackHours?: number;
+  documentContext?: Record<string, unknown> | null;
+  referenceDate?: Date;
+} = {}) {
   const normalized = normalizeAskNacQuestionEdge(question);
   const q = normalized.text.trim().toLowerCase();
   const period = parseAskNacPeriod(normalized.text, options.fallbackHours ?? 24);
   const branchMention = parseAskNacBranch(normalized.text);
+  const referenceDate = options.referenceDate instanceof Date && !Number.isNaN(options.referenceDate.getTime())
+    ? options.referenceDate
+    : new Date();
 
   if (!q) {
     return {
@@ -581,9 +599,9 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     ? detectRankChangeDirection(normalized.text)
     : null;
   let vaultCompare = intent === VAULT_INTENTS.BUSINESS_REASONING
-    ? (resolveWhyVaultCompare(normalized.text) || parseVaultComparePeriodsFromQuestion(normalized.text))
-    : parseVaultComparePeriodsFromQuestion(normalized.text);
-  let vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text);
+    ? (resolveWhyVaultCompare(normalized.text, referenceDate) || parseVaultComparePeriodsFromQuestion(normalized.text, referenceDate))
+    : parseVaultComparePeriodsFromQuestion(normalized.text, referenceDate);
+  let vaultPeriod = vaultCompare?.current || parseVaultPeriodFromQuestion(normalized.text, referenceDate);
   // Performance overview defaults to previous-equivalent comparison when none was asked explicitly.
   if (
     !vaultCompare
@@ -609,6 +627,12 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     : null;
   const performanceOverview = intent === ASK_NAC_INTENTS.CASH_UP
     && isPerformanceOverviewQuery(normalized.text);
+  const salesQueryFocus = intent === ASK_NAC_INTENTS.CASH_UP
+    ? (performanceOverview
+      ? "performance_overview"
+      : (scoreSalesPerformanceQueryFocus(normalized.text)
+        || (vaultCompare ? "period_compare" : null)))
+    : null;
 
   return {
     intent,
@@ -625,7 +649,7 @@ export function routeIntent(question: string, options: { fallbackHours?: number;
     vaultCompare: vaultCompare || null,
     whyMetricFocus,
     performanceOverview,
-    queryFocus: performanceOverview ? "performance_overview" : null,
+    queryFocus: salesQueryFocus,
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
@@ -1073,6 +1097,257 @@ export async function processAskNacOnEdge(
       },
     };
   }
+
+  // Company Intelligence Fabric spine — authoritative path for management-intelligence questions.
+  let managementPlannerMeta: Record<string, unknown> | null = null;
+  let managementPlannerMs = 0;
+
+  const priorConversation = (conversationContext as {
+    fabricConversation?: StructuredConversationState;
+  } | null)?.fabricConversation || null;
+
+  const useFabricSpine = isManagementIntelligenceQuestion(effectiveQuestion, {
+    intent: route.intent,
+    confidence: route.confidence,
+    branchMention: route.branchMention,
+  }, {
+    priorFabricConversation: priorConversation,
+    referenceDate: new Date(),
+  });
+
+  if (useFabricSpine) {
+    const spineStartedAt = performance.now();
+
+    const profileAccess = (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    };
+    const authorizedScope = resolveAuthorizedIntelligenceScope({
+      mentionedBranch: route.branchMention || null,
+      filterBranch: (mergedFilters.branch as string | null) || null,
+      profile: profileAccess,
+    });
+
+    if (authorizedScope.unauthorizedBranch) {
+      const denied = authorizedScope.unauthorizedBranch;
+      const deniedLabel = branchDisplayName(denied);
+      const allowedLabel = authorizedScope.scope.access.allowedBranchIds
+        .map((b) => branchDisplayName(b))
+        .join(", ") || "your assigned branch";
+      return attachResponseMeta({
+        answerType: "feasibility_block",
+        title: "Branch not authorized",
+        directAnswer:
+          `Your access does not include ${deniedLabel}. You can query: ${allowedLabel}.`,
+        keyMetrics: [],
+        insights: [],
+        recommendations: [],
+        confidence: "high",
+        periodLabel: null,
+        branchLabel: null,
+        intent: route.intent,
+        warnings: [`Unauthorized branch scope: ${denied}`],
+        missingData: ["unauthorized_branch"],
+        managementPlanner: { used: false, applied: false, source: "authz" },
+        companyIntelligence: {
+          authoritative: true,
+          stage: "SCOPED",
+          feasibility: "NOT_ANSWERABLE_AS_REQUESTED",
+          unauthorizedBranch: denied,
+        },
+        nextContext: updateConversationContextEdge(
+          (conversationContext || {}) as Record<string, unknown>,
+          {
+            question,
+            resolvedQuestion: effectiveQuestion,
+            response: { intent: route.intent, directAnswer: `Unauthorized branch: ${denied}` },
+          },
+        ),
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+      }, buildAskNacTimingMs({
+        total: Math.round(performance.now() - requestStartedAt),
+        routeIntent: Math.round(spineStartedAt - routeIntentStartedAt),
+        selectedTool: Math.round(performance.now() - spineStartedAt),
+        vaultTool: 0,
+        executiveEvidenceV2: 0,
+        openAiNarration: 0,
+        datasetReuse: 0,
+        knowledgeHealth: 0,
+      }), true);
+    }
+
+    const vaultExecutor = createVaultCapabilityExecutor(async ({ vaultIntent, queryFocus, request }) => {
+      const vaultPeriod = request.currentPeriod
+        ? {
+          startDate: request.currentPeriod.startDate,
+          endDate: request.currentPeriod.endDate,
+          label: request.currentPeriod.label || null,
+          periodType: request.currentPeriod.semantic || "fabric_period",
+        }
+        : null;
+      const vaultCompare = request.currentPeriod && request.comparisonPeriod
+        ? {
+          current: {
+            startDate: request.currentPeriod.startDate,
+            endDate: request.currentPeriod.endDate,
+            label: request.currentPeriod.label || null,
+            periodType: request.currentPeriod.semantic || "fabric_period",
+          },
+          previous: {
+            startDate: request.comparisonPeriod.startDate,
+            endDate: request.comparisonPeriod.endDate,
+            label: request.comparisonPeriod.label || null,
+            periodType: request.comparisonPeriod.semantic || "fabric_compare_period",
+          },
+          isComparison: true,
+          autoAttached: true,
+        }
+        : null;
+      return await runQueryTool(supabase, vaultIntent, {
+        question: request.question,
+        branch: request.branchId,
+        branchMention: request.branchId,
+        filters: { ...mergedFilters, branch: request.branchId || mergedFilters.branch },
+        profile: profileHint,
+        vaultPeriod,
+        vaultCompare: queryFocus === "period_compare" || request.capability === "commercial.compare"
+          ? vaultCompare
+          : null,
+        queryFocus,
+        performanceOverview: queryFocus === "performance_overview",
+        userEmail: effectiveUserEmail,
+      }) as Record<string, unknown> | null;
+    });
+
+    const spine = await runCompanyIntelligenceOrchestration({
+      question: effectiveQuestion,
+      branchHint: authorizedScope.scope.primaryBranchId
+        || route.branchMention
+        || (mergedFilters.branch as string | null)
+        || null,
+      scope: authorizedScope.scope,
+      threadId: (conversationContext as { threadId?: string } | null)?.threadId || null,
+      conversation: priorConversation,
+      referenceDate: new Date(),
+      legacyRoute: {
+        intent: route.intent,
+        confidence: route.confidence,
+        branchMention: route.branchMention,
+      },
+      executor: vaultExecutor,
+      mode: Deno.env.get("ASK_NAC_PLANNER_MODE") === "heuristic" ? "heuristic" : "auto",
+    });
+    managementPlannerMs = Math.round(performance.now() - spineStartedAt);
+    managementPlannerMeta = {
+      used: Boolean(spine.state.cost.plannerUsed),
+      source: spine.state.cost.modelProvider,
+      applied: true,
+      planIntent: spine.state.plan.goal,
+      capabilities: spine.state.plan.capabilities,
+      stage: spine.state.stage,
+    };
+
+    const branchLabel = spine.state.scope.primaryBranchId
+      ? ({ khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" } as Record<string, string>)[
+        spine.state.scope.primaryBranchId
+      ] || spine.state.scope.primaryBranchId
+      : null;
+
+    return attachResponseMeta({
+      answerType: spine.answerType,
+      title: spine.answerType === "feasibility_block" ? "Comparison not valid" : "Ask NAC",
+      directAnswer: spine.answerText,
+      keyMetrics: spine.keyMetrics,
+      insights: spine.insights,
+      recommendations: [],
+      confidence: spine.state.answer.verified ? "high" : "medium",
+      periodLabel: spine.state.periods.current?.label
+        || (spine.state.periods.current
+          ? `${spine.state.periods.current.startDate}–${spine.state.periods.current.endDate}`
+          : null),
+      branchLabel,
+      intent: route.intent,
+      warnings: spine.state.warnings,
+      missingData: spine.state.feasibility?.reasons || [],
+      evidence: spine.state.evidence,
+      claims: spine.state.claims,
+      managementPlanner: managementPlannerMeta,
+      companyIntelligence: {
+        authoritative: true,
+        stage: spine.state.stage,
+        feasibility: spine.state.feasibility?.status || null,
+        comparability: spine.state.comparability?.status || null,
+        comparisonMethod: spine.state.comparability?.recommendedMethod || null,
+        budgetTier: spine.state.plan.researchBudgetTier,
+        capabilities: spine.state.plan.capabilities,
+        toolsExecuted: spine.toolsExecuted,
+        paidModelCallsPerAnswer: spine.paidModelCalls,
+        deterministicRouteUsed: spine.state.cost.deterministicRouteUsed,
+        verifierOk: spine.state.cost.verifierOk,
+        coverage: spine.state.coverage,
+      },
+      nextContext: {
+        ...((conversationContext || {}) as Record<string, unknown>),
+        fabricConversation: spine.nextConversation,
+      },
+      serverConnected: true,
+      aiConnected: spine.paidModelCalls > 0,
+      localFallback: Boolean(spine.state.cost.cloudEscalationReason),
+    }, buildAskNacTimingMs({
+      total: Math.round(performance.now() - requestStartedAt),
+      routeIntent: Math.round(spineStartedAt - routeIntentStartedAt),
+      selectedTool: managementPlannerMs,
+      vaultTool: 0,
+      executiveEvidenceV2: 0,
+      openAiNarration: 0,
+      datasetReuse: 0,
+      knowledgeHealth: 0,
+    }), true);
+  }
+
+  // Legacy non-management path: keep planner enrichment for Foodics hijacks outside spine.
+  const plannerStartedAt = performance.now();
+  const legacyAuthorized = resolveAuthorizedIntelligenceScope({
+    mentionedBranch: route.branchMention || null,
+    filterBranch: (mergedFilters.branch as string | null) || null,
+    profile: (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    },
+  });
+  const plannerEnrichment = await enrichRouteWithManagementPlanner(
+    route as unknown as Record<string, unknown>,
+    effectiveQuestion,
+    {
+      branchHint: (legacyAuthorized.scope.primaryBranchId
+        || route.branchMention
+        || mergedFilters.branch
+        || null) as string | null,
+      conversationContext: conversationContext as Record<string, unknown> | null,
+      filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
+      referenceDate: new Date(),
+    },
+  );
+  managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
+  if (plannerEnrichment.plannerUsed) {
+    route = plannerEnrichment.route as typeof route;
+    managementPlannerMeta = {
+      used: true,
+      source: plannerEnrichment.plannerSource,
+      applied: plannerEnrichment.applied,
+      planIntent: plannerEnrichment.plan?.intent || null,
+      metricFamily: plannerEnrichment.plan?.metric_family || null,
+      timeExpression: plannerEnrichment.plan?.time?.expression || null,
+      needsClarification: Boolean(plannerEnrichment.plan?.needs_clarification),
+    };
+  }
+
   const readiness = await assessReadiness(route, supabase, {
     profile: profileHint,
     executiveKind: route.executiveKind,
@@ -1084,7 +1359,8 @@ export async function processAskNacOnEdge(
   let foodicsPeriod = route.foodicsPeriod;
   let periodWarnings: string[] = [];
 
-  if (isFoodicsDataIntent(route.intent)) {
+  // After planner rewrite, do not chase Foodics for commercial management questions.
+  if (isFoodicsDataIntent(route.intent) && !managementPlannerMeta?.applied) {
     const fallback = await resolveFoodicsPeriodWithFallback(supabase, {
       question: effectiveQuestion,
       filters: mergedFilters,
@@ -1113,6 +1389,8 @@ export async function processAskNacOnEdge(
       foodicsCompare: route.foodicsCompare,
       vaultPeriod: route.vaultPeriod,
       vaultCompare: route.vaultCompare,
+      performanceOverview: route.performanceOverview,
+      queryFocus: route.queryFocus,
       rankingBasis: route.rankingBasis,
       topLimit: route.topLimit,
       executiveKind: route.executiveKind,
@@ -1239,6 +1517,18 @@ export async function processAskNacOnEdge(
     cashUpProductionTrace,
     routingConfidence: route.confidence,
     routingDebug: route.debug,
+    managementPlanner: managementPlannerMeta
+      ? { ...managementPlannerMeta, timingMs: managementPlannerMs }
+      : { used: false, timingMs: managementPlannerMs },
+    companyIntelligence: {
+      authoritative: false,
+      stage: null,
+      feasibility: null,
+      comparability: null,
+      budgetTier: null,
+      capabilities: [],
+      paidModelCallsPerAnswer: 0,
+    },
     conversationResolution: {
       originalQuestion: prepareResult.originalQuestion,
       resolvedQuestion: effectiveQuestion,

@@ -93,6 +93,116 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(today?.endDate).toBe("2026-06-20");
   });
 
+  test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const yesterday = parseVaultPeriodFromQuestion("what was the sales of yesterday", ref);
+    expect(yesterday?.startDate).toBe("2026-08-13");
+    expect(yesterday?.endDate).toBe("2026-08-13");
+    expect(yesterday?.expectedDayCount).toBe(1);
+  });
+
+  test("yesterday after midnight KSA uses Asia/Riyadh calendar, not UTC", () => {
+    const ref = new Date("2026-08-13T22:15:00.000Z");
+    const yesterday = parseVaultPeriodFromQuestion("sales yesterday", ref);
+    const today = parseVaultPeriodFromQuestion("sales today", ref);
+    expect(yesterday?.startDate).toBe("2026-08-13");
+    expect(today?.startDate).toBe("2026-08-14");
+  });
+
+  test("exact yesterday row is returned and another day is not substituted", () => {
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],
+      "2026-08-13": [dayFact("2026-08-13", "total_sales", 18100), dayFact("2026-08-13", "guest_count", 210)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-08-13",
+      endDate: "2026-08-13",
+      factsByDate,
+    });
+    expect(agg.dayCount).toBe(1);
+    expect(agg.totalSales).toBe(18100);
+    expect(agg.totalGuests).toBe(210);
+    expect(agg.missingDayCount).toBe(0);
+  });
+
+  test("explicit from 9 to 13 aug excludes the preceding day from the aggregate", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const period = parseVaultPeriodFromQuestion("sales from 9 to 13 aug", ref);
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "net_sales", 999999)],
+      "2026-08-09": [dayFact("2026-08-09", "net_sales", 12617.78)],
+      "2026-08-10": [dayFact("2026-08-10", "net_sales", 12661.74)],
+      "2026-08-11": [dayFact("2026-08-11", "net_sales", 14015.65)],
+      "2026-08-12": [dayFact("2026-08-12", "net_sales", 15460)],
+      "2026-08-13": [dayFact("2026-08-13", "net_sales", 18411.3)],
+      "2026-08-14": [dayFact("2026-08-14", "net_sales", 888888)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: period.startDate,
+      endDate: period.endDate,
+      factsByDate,
+    });
+    expect(period.startDate).toBe("2026-08-09");
+    expect(period.endDate).toBe("2026-08-13");
+    expect(listPeriodDates(period)).toHaveLength(5);
+    expect(agg.expectedDayCount).toBe(5);
+    expect(agg.dayCount).toBe(5);
+    expect(agg.missingDayCount).toBe(0);
+    expect(agg.totalSales).toBeCloseTo(73166.47, 2);
+    expect(agg.dailyBreakdown.map((row) => row.date)).toEqual([
+      "2026-08-09",
+      "2026-08-10",
+      "2026-08-11",
+      "2026-08-12",
+      "2026-08-13",
+    ]);
+    expect(agg.totalSales).not.toBeCloseTo(73166.47 + 999999, 0);
+  });
+
+  test("explicit two-day and single-day ranges do not leak the previous calendar day", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const two = parseVaultPeriodFromQuestion("sales from 12 to 13 aug", ref);
+    const one = parseVaultPeriodFromQuestion("sales from 1 to 1 aug", ref);
+    const factsByDate = {
+      "2026-07-31": [dayFact("2026-07-31", "net_sales", 777777)],
+      "2026-08-01": [dayFact("2026-08-01", "net_sales", 100)],
+      "2026-08-11": [dayFact("2026-08-11", "net_sales", 888888)],
+      "2026-08-12": [dayFact("2026-08-12", "net_sales", 15460)],
+      "2026-08-13": [dayFact("2026-08-13", "net_sales", 18411.3)],
+    };
+    const twoAgg = aggregateCashUpFactsOverRange({
+      startDate: two.startDate,
+      endDate: two.endDate,
+      factsByDate,
+    });
+    const oneAgg = aggregateCashUpFactsOverRange({
+      startDate: one.startDate,
+      endDate: one.endDate,
+      factsByDate,
+    });
+    expect(listPeriodDates(two)).toHaveLength(2);
+    expect(twoAgg.dayCount).toBe(2);
+    expect(twoAgg.totalSales).toBeCloseTo(33871.3, 1);
+    expect(listPeriodDates(one)).toHaveLength(1);
+    expect(oneAgg.dayCount).toBe(1);
+    expect(oneAgg.totalSales).toBe(100);
+  });
+
+  test("missing yesterday does not silently fall back to an older canonical day", () => {
+    const factsByDate = {
+      "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],
+    };
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: "2026-08-13",
+      endDate: "2026-08-13",
+      factsByDate,
+    });
+    expect(agg.dayCount).toBe(0);
+    expect(agg.expectedDayCount).toBe(1);
+    expect(agg.missingDayCount).toBe(1);
+    expect(agg.totalSales).toBeNull();
+  });
+
   test("parses this month as month-to-date", () => {
     const period = parseVaultPeriodFromQuestion("guests this month", REF);
     expect(period?.periodType).toBe("this_month");
@@ -218,18 +328,26 @@ describe("aggregateCashUpFactsOverRange", () => {
     expect(agg.dayCount).toBe(1);
   });
 
-  test("compare mode skips daily breakdown but keeps totals", () => {
+  test("aggregator can omit dailyBreakdown when asked, without changing totals", () => {
     const facts = buildRangeFacts();
-    const agg = aggregateCashUpFactsOverRange({
+    const factsByDate = groupCashUpFactsByBusinessDate(facts);
+    const withDaily = aggregateCashUpFactsOverRange({
       startDate: "2026-06-14",
       endDate: "2026-06-20",
       branchId: "khobar",
-      factsByDate: groupCashUpFactsByBusinessDate(facts),
+      factsByDate,
+      includeDailyBreakdown: true,
+    });
+    const withoutDaily = aggregateCashUpFactsOverRange({
+      startDate: "2026-06-14",
+      endDate: "2026-06-20",
+      branchId: "khobar",
+      factsByDate,
       includeDailyBreakdown: false,
     });
-    expect(agg.dailyBreakdown).toHaveLength(0);
-    expect(agg.dayCount).toBe(7);
-    expect(agg.totalSales).toBeGreaterThan(0);
+    expect(withoutDaily.dailyBreakdown).toHaveLength(0);
+    expect(withoutDaily.dayCount).toBe(7);
+    expect(withoutDaily.totalSales).toBe(withDaily.totalSales);
   });
 
   test("range query limit scales modestly with span", () => {
@@ -450,10 +568,20 @@ describe("runVaultQueryTool range path", () => {
       filters: { branch: "khobar" },
     });
 
+    const compare = parseVaultComparePeriodsFromQuestion(question, REF);
+    const currentDates = (result.aggregation?.dailyBreakdown || []).map((row) => row.date);
+    const previousDates = (result.previousAggregation?.dailyBreakdown || []).map((row) => row.date);
+
     expect(callLog.filter((entry) => entry.table === "ask_nac_structured_facts")).toHaveLength(2);
     expect(result.facts).toEqual([]);
     expect(result.aggregation?.totalSales).toBeGreaterThan(0);
     expect(result.previousAggregation?.totalSales).toBeGreaterThan(0);
-    expect(result.aggregation?.dailyBreakdown).toEqual([]);
+    expect(currentDates.length).toBeGreaterThan(0);
+    expect(previousDates.length).toBeGreaterThan(0);
+    expect(currentDates.every((date) => date >= compare.current.startDate && date <= compare.current.endDate)).toBe(true);
+    expect(previousDates.every((date) => date >= compare.previous.startDate && date <= compare.previous.endDate)).toBe(true);
+    expect(currentDates.some((date) => previousDates.includes(date))).toBe(false);
+    expect(result.aggregation.dayCount).toBe(currentDates.length);
+    expect(result.previousAggregation.dayCount).toBe(previousDates.length);
   });
 });

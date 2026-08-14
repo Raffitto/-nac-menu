@@ -1,4 +1,5 @@
 import { sanitizeErrorMessage } from "./vaultDriveSecrets.ts";
+import { canonicalFactsBehindSource, isUnchangedDriveFile } from "./driveFileChangeDetection.ts";
 import {
   attachCashUpWorkbookFactContext,
   parseCashUpWorkbookFromXlsxBuffer,
@@ -1277,20 +1278,19 @@ async function findExistingDriveFile(admin: SupabaseLike, driveFile: DriveFileWi
   return data || null;
 }
 
-function isSearchableIndexed(existing: any) {
-  return Boolean(existing?.searchable) && Number(existing?.chunk_count || 0) > 0;
+async function loadCoverageFreshness(admin: SupabaseLike, fileId: string) {
+  const { data } = await admin
+    .from("ask_nac_data_coverage")
+    .select("last_ingested_at,period_end,fact_count")
+    .eq("source_file_id", fileId)
+    .maybeSingle();
+  return data || null;
 }
 
-function isUnchanged(existing: any, driveFile: DriveFile) {
-  if (!existing) return false;
-  // Prior extract/index failures leave registry rows that must be retried.
-  if (!isSearchableIndexed(existing)) return false;
-  if (driveFile.md5Checksum && existing.source_external_checksum === driveFile.md5Checksum) return true;
-  if (driveFile.version && existing.source_external_version === String(driveFile.version)) return true;
-  if (driveFile.modifiedTime && existing.external_source_modified_at) {
-    return new Date(driveFile.modifiedTime).getTime() <= new Date(existing.external_source_modified_at).getTime();
-  }
-  return false;
+export { canonicalFactsBehindSource, isUnchangedDriveFile };
+
+function isUnchanged(existing: any, driveFile: DriveFile, coverage: { last_ingested_at?: string | null; period_end?: string | null; fact_count?: number | null } | null = null) {
+  return isUnchangedDriveFile(existing, driveFile, coverage);
 }
 
 async function registerDownloadedDriveFile(
@@ -1474,6 +1474,12 @@ async function completeJob(
   }).eq("id", jobId);
   if (jobError) throw new Error(jobError.message);
 
+  await admin.from("ask_nac_files").update({
+    ...(parseResult.periodStart ? { period_start: parseResult.periodStart } : {}),
+    ...(parseResult.periodEnd ? { period_end: parseResult.periodEnd } : {}),
+    updated_at: nowIso(),
+  }).eq("id", fileId);
+
   await admin.from("ask_nac_data_coverage").update({
     fact_count: factCount,
     readiness_status: readiness,
@@ -1547,8 +1553,9 @@ async function processOneDriveFile(
   }
 
   const existing = await findExistingDriveFile(admin, driveFile, email);
+  const coverage = existing?.id ? await loadCoverageFreshness(admin, String(existing.id)) : null;
   const action = existing ? "changed" : "new";
-  if (!force && isUnchanged(existing, driveFile)) {
+  if (!force && isUnchanged(existing, driveFile, coverage)) {
     counters.skipped_count += 1;
     const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
     await markRunFile(admin, itemId, {
@@ -1580,7 +1587,7 @@ async function processOneDriveFile(
       !force
       && existing?.content_hash
       && existing.content_hash === contentHash
-      && isSearchableIndexed(existing)
+      && !canonicalFactsBehindSource(existing, coverage, driveFile)
     ) {
       counters.skipped_count += 1;
       await markRunFile(admin, itemId, {
@@ -1618,31 +1625,40 @@ async function processOneDriveFile(
       current_file: driveFile.relativePath || driveFile.name,
       current_file_path: driveFile.relativePath || driveFile.name,
     }, counters);
-    const extracted = await extractText(download);
-    counters.extracted_count += 1;
-    await startCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
-    await completeCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
-    const chunks = buildChunks(extracted);
-    await updateRun(admin, runId, {
-      runtime_stage: "indexing_started",
-      current_file: driveFile.relativePath || driveFile.name,
-      current_file_path: driveFile.relativePath || driveFile.name,
-      stats: { chunkPlanCount: chunks.length, extractedChars: extracted.text?.length || 0 },
-    }, counters);
-    const chunkCount = await persistChunks(admin, {
-      fileId: registered.fileId,
-      versionRowId: registered.versionRowId,
-      fileRow: registered.fileRow,
-      chunks,
-    });
-    if (chunkCount > 0) counters.indexed_count += 1;
-    await completeCompilerStage(admin, jobId, "legacy_chunk", { chunkCount });
-    // Flush indexed progress immediately so UI is not stuck on indexing_started during parse.
+
+    const skipTextIndex = isCashUpSpreadsheet(registered.fileRow.report_type, download.extension);
+    let extracted = { text: "", sections: [] as Array<{ label?: string; text?: string }>, warnings: [] as string[] };
+    let chunkCount = 0;
+    if (skipTextIndex) {
+      await startCompilerStage(admin, jobId, "extract", { skipped: "structured_workbook_parse" });
+      await completeCompilerStage(admin, jobId, "extract", { skipped: "structured_workbook_parse" });
+      await completeCompilerStage(admin, jobId, "legacy_chunk", { skipped: "structured_workbook_parse", chunkCount: 0 });
+    } else {
+      extracted = await extractText(download);
+      counters.extracted_count += 1;
+      await startCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
+      await completeCompilerStage(admin, jobId, "extract", { textLength: extracted.text?.length || 0 });
+      const chunks = buildChunks(extracted);
+      await updateRun(admin, runId, {
+        runtime_stage: "indexing_started",
+        current_file: driveFile.relativePath || driveFile.name,
+        current_file_path: driveFile.relativePath || driveFile.name,
+        stats: { chunkPlanCount: chunks.length, extractedChars: extracted.text?.length || 0 },
+      }, counters);
+      chunkCount = await persistChunks(admin, {
+        fileId: registered.fileId,
+        versionRowId: registered.versionRowId,
+        fileRow: registered.fileRow,
+        chunks,
+      });
+      if (chunkCount > 0) counters.indexed_count += 1;
+      await completeCompilerStage(admin, jobId, "legacy_chunk", { chunkCount });
+    }
     await updateRun(admin, runId, {
       runtime_stage: "parsing_started",
       current_file: driveFile.relativePath || driveFile.name,
       current_file_path: driveFile.relativePath || driveFile.name,
-      stats: { chunkCount },
+      stats: { chunkCount, skipTextIndex },
     }, counters);
 
     await startCompilerStage(admin, jobId, "legacy_parse", { reportType: registered.fileRow.report_type });

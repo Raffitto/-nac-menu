@@ -76,13 +76,13 @@ describe("vaultCashUpRangeRpc", () => {
     })).toBe(true);
   });
 
-  test("does not use RPC when daily breakdown required", () => {
+  test("uses RPC for month ranges even when daily breakdown is requested", () => {
     expect(shouldUseCashUpRangeRpc({
       startDate: "2026-06-01",
       endDate: "2026-06-20",
       periodType: "this_month",
       includeDailyBreakdown: true,
-    })).toBe(false);
+    })).toBe(true);
   });
 
   test("maps RPC aggregation row", () => {

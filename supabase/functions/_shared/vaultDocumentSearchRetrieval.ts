@@ -132,6 +132,7 @@ export async function searchVaultDocumentChunks(supabase, {
   vaultPeriod = null,
   reportTypes = [],
   preferRecent = false,
+  strictMetadata = false,
   mapRow,
 }) {
   if (!searchTerms || searchTerms.length < 2) {
@@ -199,7 +200,8 @@ export async function searchVaultDocumentChunks(supabase, {
     searchMethod = rankedMatches.length ? "fallback" : fts.data?.length ? "fts" : "fallback";
   }
 
-  if (!rankedMatches.length && hasMetadataFilters({ vaultPeriod, reportTypes })) {
+  // Strict period/report filters: do not fall back to out-of-window documents.
+  if (!rankedMatches.length && hasMetadataFilters({ vaultPeriod, reportTypes }) && !strictMetadata) {
     const relaxedFts = await runFtsChunkSearch(supabase, { select, searchTerms, scopedBranch });
     if (relaxedFts.error) {
       return {
