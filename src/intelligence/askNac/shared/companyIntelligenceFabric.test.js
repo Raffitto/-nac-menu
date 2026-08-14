@@ -398,6 +398,36 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.range?.semantic).not.toBe("last_7_days");
   });
 
+  test("3 days ago on 14 Aug 2026 Asia/Riyadh is 11 Aug, not last 7 days", () => {
+    const out = run(`
+      const resolved = mod.defaultTemporalService.resolveFromQuestion(
+        "How was the sales 3 days ago",
+        new Date("2026-08-14T16:16:00.000Z"),
+      );
+      const state = mod.bootstrapFabricState({
+        question: "How was the sales 3 days ago",
+        branchHint: "khobar",
+        referenceDate: new Date("2026-08-14T16:16:00.000Z"),
+      });
+      return {
+        status: resolved.status,
+        range: resolved.range,
+        compareRange: resolved.compareRange,
+        current: state.periods.current,
+        comparison: state.periods.comparison,
+        semantics: state.periods.requestedSemantics,
+      };
+    `);
+    expect(out.status).toBe("resolved");
+    expect(out.range?.startDate).toBe("2026-08-11");
+    expect(out.range?.endDate).toBe("2026-08-11");
+    expect(out.range?.semantic).toBe("single_day");
+    expect(out.current?.startDate).toBe("2026-08-11");
+    expect(out.current?.endDate).toBe("2026-08-11");
+    expect(out.current?.semantic).not.toBe("last_7_days");
+    expect(out.comparison).toBeNull();
+  });
+
   test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
     const out = run(`
       const resolved = mod.defaultTemporalService.resolveFromQuestion(

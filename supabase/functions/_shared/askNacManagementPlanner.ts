@@ -232,6 +232,10 @@ function inferTimeExpression(question = ""): string | null {
   if (/\b(last|past)\s+2\s+weeks?\b|\b(last|past)\s+two\s+weeks?\b/.test(q)) return "last_14_days";
   if (/\b(lately|recently|last few days|these days)\b/.test(q)) return "last_14_days";
   if (/\btoday\b/.test(q)) return "today";
+  if (/\byesterday\b/.test(q)) return "yesterday";
+  if (/\b(?:\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago\b/.test(q)) {
+    return "days_ago";
+  }
   if (/\bweekend\b/.test(q)) return "last_weekend";
   return null;
 }
@@ -589,6 +593,12 @@ export function resolvePlannerTimeExpression(
   }
   if (expr === "today") {
     return parseVaultPeriodFromQuestion("today", referenceDate) || fromQuestion;
+  }
+  if (expr === "yesterday") {
+    return parseVaultPeriodFromQuestion("yesterday", referenceDate) || fromQuestion;
+  }
+  if (expr === "days_ago") {
+    return fromQuestion || parseVaultPeriodFromQuestion(question, referenceDate);
   }
   if (expr === "last_14_days" || expr === "lately" || expr === "recently") {
     return parseVaultPeriodFromQuestion("last 14 days", referenceDate) || fromQuestion;

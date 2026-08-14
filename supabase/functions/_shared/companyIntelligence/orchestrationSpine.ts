@@ -363,7 +363,7 @@ export async function runCompanyIntelligenceOrchestration(
 
   const branch = state.scope.primaryBranchId;
   const requiresComparison = Boolean(state.periods.comparison)
-    || /\b(compare|vs|versus|difference|why the difference|last year)\b/i.test(state.request.normalizedQuestion);
+    || /\b(compare|compared|vs|versus|difference|why the difference|last year)\b/i.test(state.request.normalizedQuestion);
 
   const comparisonOperating = branch && state.periods.comparison
     ? defaultBusinessTimeline.getOperatingStatus(branch, state.periods.comparison)

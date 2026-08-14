@@ -59,6 +59,45 @@ function addCalendarDays(year, month, day, delta) {
   return { year: dt.getUTCFullYear(), month: dt.getUTCMonth() + 1, day: dt.getUTCDate() };
 }
 
+const RELATIVE_DAY_WORDS = Object.freeze({
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+});
+
+/** Exact single calendar day N days before Asia/Riyadh today — not a rolling window. */
+function parseRelativeDaysAgoPeriod(q, referenceDate) {
+  const m = String(q || "").toLowerCase().match(
+    /\b(?:(\d{1,3})|(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve))\s+days?\s+ago\b/,
+  );
+  if (!m) return null;
+  const n = m[1] ? Number(m[1]) : RELATIVE_DAY_WORDS[m[2]];
+  if (!Number.isFinite(n) || n < 1) return null;
+  const today = calendarYmdInTz(referenceDate);
+  const day = addCalendarDays(today.year, today.month, today.day, -Math.min(366, n));
+  const iso = isoDate(day.year, day.month, day.day);
+  const label = formatDayMonthLabel(day.year, day.month - 1, day.day);
+  return {
+    startDate: iso,
+    endDate: iso,
+    label,
+    periodType: "single_day",
+    isSingleDay: true,
+    expectedDayCount: 1,
+  };
+}
+
 function shiftLocalDate(referenceDate, dayDelta) {
   const day = new Date(referenceDate);
   day.setDate(day.getDate() + dayDelta);
@@ -439,6 +478,9 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
       expectedDayCount: 1,
     };
   }
+
+  const daysAgo = parseRelativeDaysAgoPeriod(q, referenceDate);
+  if (daysAgo) return daysAgo;
 
   const explicitRange = parseExplicitDateRangeFromText(q, referenceDate);
   if (explicitRange) return explicitRange;

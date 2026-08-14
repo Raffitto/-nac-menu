@@ -109,6 +109,29 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(today?.startDate).toBe("2026-08-14");
   });
 
+  test("N days ago is an exact Asia/Riyadh calendar day, not last N days", () => {
+    const ref = new Date("2026-08-14T16:16:00.000Z");
+    const three = parseVaultPeriodFromQuestion("How was the sales 3 days ago", ref);
+    const two = parseVaultPeriodFromQuestion("what were sales 2 days ago", ref);
+    const five = parseVaultPeriodFromQuestion("sales 5 days ago", ref);
+    const aDay = parseVaultPeriodFromQuestion("sales a day ago", ref);
+    const one = parseVaultPeriodFromQuestion("sales one day ago", ref);
+    const last7 = parseVaultPeriodFromQuestion("sales last 7 days", ref);
+    expect(three).toMatchObject({
+      startDate: "2026-08-11",
+      endDate: "2026-08-11",
+      periodType: "single_day",
+      expectedDayCount: 1,
+    });
+    expect(two?.startDate).toBe("2026-08-12");
+    expect(five?.startDate).toBe("2026-08-09");
+    expect(aDay?.startDate).toBe("2026-08-13");
+    expect(one?.startDate).toBe("2026-08-13");
+    expect(last7?.periodType).toBe("last_7_days");
+    expect(last7?.startDate).toBe("2026-08-08");
+    expect(last7?.endDate).toBe("2026-08-14");
+  });
+
   test("exact yesterday row is returned and another day is not substituted", () => {
     const factsByDate = {
       "2026-08-08": [dayFact("2026-08-08", "total_sales", 16610), dayFact("2026-08-08", "guest_count", 200)],

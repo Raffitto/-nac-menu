@@ -55,6 +55,8 @@ export function isPeriodOnlyFollowUpTurn(
   referenceDate: Date = new Date(),
 ): boolean {
   const q = String(question || "").trim();
+  const selfCompare = defaultTemporalService.resolveFromQuestion(q, referenceDate);
+  if (selfCompare.compareRange?.startDate && selfCompare.range?.startDate) return false;
   if (/^(?:compare(?:\s+it)?\s+with|vs|versus)\s+/i.test(q)) {
     const focus = q.replace(/^(?:compare(?:\s+it)?\s+with|vs|versus)\s+/i, "").replace(/\?+$/, "").trim();
     return Boolean(resolveFollowUpPeriodFocus(focus, referenceDate)?.startDate);
@@ -191,6 +193,35 @@ export function resolveFabricFollowUp(input: {
         notes,
       };
     }
+  }
+
+  // Self-contained dual-period compare in this turn, including
+  // "what about last 10 days compared to the previous 10 days?".
+  // Must run before period-only inherit, which would keep current and drop comparison.
+  const selfContainedCompare = defaultTemporalService.resolveFromQuestion(q, ref);
+  if (selfContainedCompare.range?.startDate && selfContainedCompare.compareRange?.startDate) {
+    notes.push("self_contained_comparison_preserved");
+    const current = selfContainedCompare.range;
+    const comparison = selfContainedCompare.compareRange;
+    const conversation = updateConversationState(prev, {
+      activeBranchId: branchId || prev.activeBranchId,
+      activeCompanyId: prev.activeCompanyId || "nac_hospitality",
+      activeBrandId: prev.activeBrandId || "nac",
+      activeMetricFamily: metricFamily || "commercial",
+      activeCapabilities: ["commercial.compare", "commercial.performance"],
+      activePeriods: { current, comparison },
+      previousIntent: "period_compare",
+    });
+    return {
+      usedFollowUp: inherit,
+      resolvedQuestion: q,
+      branchId: conversation.activeBranchId,
+      currentPeriod: current,
+      comparisonPeriod: comparison,
+      metricFamily: conversation.activeMetricFamily,
+      conversation,
+      notes,
+    };
   }
 
   // Generic temporal follow-up: "what about June" / "what about jan 2026"
