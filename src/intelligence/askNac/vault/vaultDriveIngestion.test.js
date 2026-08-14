@@ -18,6 +18,10 @@ const driveHelper = fs.readFileSync(
   path.join(root, "supabase/functions/_shared/vaultDriveIngestion.ts"),
   "utf8",
 );
+const driveChangeDetection = fs.readFileSync(
+  path.join(root, "supabase/functions/_shared/driveFileChangeDetection.ts"),
+  "utf8",
+);
 const scheduledIngest = fs.readFileSync(
   path.join(root, "supabase/functions/_shared/vaultDriveScheduledIngest.ts"),
   "utf8",
@@ -177,8 +181,8 @@ describe("Google Drive Company Knowledge ingestion", () => {
 
   test("unchanged Drive files are skipped and changed files version/reindex", () => {
     expect(driveHelper).toMatch(/isUnchanged/);
-    expect(driveHelper).toMatch(/isSearchableIndexed/);
-    expect(driveHelper).toMatch(/Prior extract\/index failures leave registry rows that must be retried/);
+    expect(driveChangeDetection).toMatch(/isSearchableIndexed/);
+    expect(driveChangeDetection).toMatch(/Prior extract\/index failures leave registry rows that must be retried/);
     expect(driveHelper).toMatch(/source_external_version/);
     expect(driveHelper).toMatch(/source_external_checksum/);
     expect(driveHelper).toMatch(/createFileVersion/);
@@ -391,6 +395,25 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(cronMigration).toMatch(/reconnect_required/);
     expect(driveFunction).toMatch(/cronUtc: "0 0 \* \* \*"/);
     expect(driveFunction).toMatch(/timezone: "Asia\/Riyadh"/);
+  });
+
+  test("same Drive ID is retried when canonical facts lag source metadata", () => {
+    expect(driveHelper).toMatch(/canonicalFactsBehindSource/);
+    expect(driveHelper).toMatch(/loadCoverageFreshness/);
+    expect(driveChangeDetection).toMatch(/Same Drive ID\/name with a newer revision must reprocess/);
+    expect(driveHelper).toMatch(/isUnchanged\(existing, driveFile, coverage\)/);
+  });
+
+  test("identical downloaded content is not skipped while canonical facts lag", () => {
+    expect(driveHelper).toMatch(/existing\.content_hash === contentHash/);
+    expect(driveHelper).toMatch(/!canonicalFactsBehindSource\(existing, coverage, driveFile\)/);
+    expect(driveHelper).not.toMatch(/isSearchableIndexed\(existing\)/);
+  });
+
+  test("cash-up workbooks parse structured facts without full text chunking", () => {
+    expect(driveHelper).toMatch(/skipTextIndex = isCashUpSpreadsheet/);
+    expect(driveHelper).toMatch(/skipped: "structured_workbook_parse"/);
+    expect(driveHelper).toMatch(/period_end: parseResult.periodEnd/);
   });
 });
 
