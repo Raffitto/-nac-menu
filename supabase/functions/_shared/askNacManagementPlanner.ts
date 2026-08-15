@@ -169,6 +169,8 @@ export function looksLikeManagementCommercialQuestion(question = "") {
     || NAMED_MONTH_TOKEN.test(q)
     || /\b(founding day|foundation day|saudi founding|expect(?:ations?)?|forecast)\b/.test(q)
     || /\b(how('?s| is| are| did| was| were)|are we|give me|tell me|what('?s| is)|why |anything |compare )\b/.test(q)
+    || /\b\d{1,3}\s+days?\s+ago\b/.test(q)
+    || Boolean(parseVaultPeriodFromQuestion(question))
   );
 }
 

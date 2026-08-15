@@ -174,4 +174,15 @@ describe("Ask NAC management planner", () => {
     expect(out.hasCompare).toBe(true);
     expect(out.branch).toBe("khobar");
   });
+
+  test("resolvable relative-day questions are management-commercial without sales keywords", () => {
+    const out = runPlannerScript(`
+      return {
+        ago: mod.looksLikeManagementCommercialQuestion("what about 2 days ago?"),
+        yesterday: mod.looksLikeManagementCommercialQuestion("the day before today"),
+      };
+    `);
+    expect(out.ago).toBe(true);
+    expect(out.yesterday).toBe(true);
+  });
 });
