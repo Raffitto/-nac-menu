@@ -46,6 +46,7 @@ export function synthesizeDeterministicAnswer(input: {
   previousDailyFacts?: NormalizedDailyFact[];
   canonicalMatchedPairs?: CanonicalMatchedPair[];
   analysisIntent?: import("./turnSemantics.ts").AnalysisIntent;
+  responseMode?: import("./turnSemantics.ts").ResponseMode | null;
   openingDate?: string | null;
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
@@ -102,6 +103,7 @@ export function synthesizeDeterministicAnswer(input: {
     previousDailyFacts: input.previousDailyFacts || [],
     judgementQuestion: isSubjectiveJudgementQuestion(input.question),
     analysisIntent: input.analysisIntent || null,
+    responseMode: input.responseMode || null,
     openingDate: input.openingDate || null,
     canonicalMatchedPairs: input.canonicalMatchedPairs || [],
   });

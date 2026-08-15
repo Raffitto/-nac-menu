@@ -217,3 +217,96 @@ describe("RBAC conversation closed on unauthorized branch switch", () => {
     expect(out.b2).toBe("riyadh");
   });
 });
+
+describe("cold-start pronouns stay on Fabric and clarify", () => {
+  test.each([
+    ["What about that?", "What would you like me to look at?"],
+    ["Was that good?", "Which result should I judge?"],
+    ["Compared with that?", "Compare which period to which baseline?"],
+    ["Which days?", "Which period should I look at?"],
+  ])("%s clarifies instead of inheriting", (question, prompt) => {
+    const out = run(`
+      const ref = ${REF};
+      const t = mod.resolveTurnSemantics({ question: ${JSON.stringify(question)}, branchHint: "khobar", referenceDate: ref });
+      return {
+        fabric: mod.isManagementIntelligenceQuestion(${JSON.stringify(question)}, { intent: "unknown", confidence: "none" }, { referenceDate: ref }),
+        clarify: t.ambiguity.needsClarification,
+        kind: t.ambiguity.kind,
+        prompt: t.ambiguity.prompt,
+        mode: t.responseMode,
+      };
+    `);
+    expect(out.fabric).toBe(true);
+    expect(out.clarify).toBe(true);
+    expect(out.kind).toBe("missing_referent");
+    expect(out.prompt).toBe(prompt);
+    expect(out.mode).toBe("clarification");
+  });
+
+  test("follow-up What about that? inherits current subject", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "How was yesterday?", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "What about that?", previous: t1.conversation, referenceDate: ref });
+      return {
+        clarify: t2.ambiguity.needsClarification,
+        period: t2.period?.startDate,
+        branch: t2.scope.branchId,
+        notes: t2.notes,
+        fabric: mod.isManagementIntelligenceQuestion("What about that?", { intent: "unknown", confidence: "none" }, { priorFabricConversation: t1.conversation, referenceDate: ref }),
+      };
+    `);
+    expect(out.clarify).toBe(false);
+    expect(out.period).toBe("2026-08-14");
+    expect(out.branch).toBe("khobar");
+    expect(out.fabric).toBe(true);
+    expect(out.notes).toContain("pronoun_inherited_current_subject");
+  });
+});
+
+describe("action, numbers-only, explain, and shorthand", () => {
+  test("what should I watch stays Fabric action", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "How are we doing this month?", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "What should I watch?", previous: t1.conversation, referenceDate: ref });
+      return { intent: t2.analysisIntent, mode: t2.responseMode, fabric: mod.isFabricManagedTurn("What should I watch?") };
+    `);
+    expect(out.intent).toBe("action");
+    expect(out.mode).toBe("action_priority");
+    expect(out.fabric).toBe(true);
+  });
+
+  test("just the numbers and explain keep current subject", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "How were covers yesterday?", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "Just the numbers", previous: t1.conversation, referenceDate: ref });
+      const t3 = mod.resolveTurnSemantics({ question: "Explain", previous: t2.conversation, referenceDate: ref });
+      return {
+        nMetric: t2.metric, nPeriod: t2.period?.startDate, nMode: t2.responseMode, nClarify: t2.ambiguity.needsClarification,
+        eMetric: t3.metric, ePeriod: t3.period?.startDate, eMode: t3.responseMode,
+      };
+    `);
+    expect(out.nMetric).toBe("covers");
+    expect(out.nPeriod).toBe("2026-08-14");
+    expect(out.nMode).toBe("numbers_only");
+    expect(out.nClarify).toBe(false);
+    expect(out.eMetric).toBe("covers");
+    expect(out.eMode).toBe("detailed_explanation");
+  });
+
+  test("not sales, covers and same for Riyadh", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "How were sales yesterday?", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "not sales, covers", previous: t1.conversation, referenceDate: ref });
+      const t3 = mod.resolveTurnSemantics({ question: "same for Riyadh", previous: t2.conversation, referenceDate: ref });
+      return { m2: t2.metric, p2: t2.period?.startDate, b3: t3.scope.branchId, m3: t3.metric };
+    `);
+    expect(out.m2).toBe("covers");
+    expect(out.p2).toBe("2026-08-14");
+    expect(out.b3).toBe("riyadh");
+    expect(out.m3).toBe("covers");
+  });
+});

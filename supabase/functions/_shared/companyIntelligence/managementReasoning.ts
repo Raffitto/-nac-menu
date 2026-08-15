@@ -32,6 +32,13 @@ import {
   validateAnswerCoherence,
 } from "./managementCoherence.ts";
 import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
+import { extractResponseMode, type ResponseMode } from "./turnSemantics.ts";
+import {
+  classifyCalendarCoverage,
+  formatThroughPeriod,
+  isCurrentIncompleteDay,
+  latestCompletedBusinessDay,
+} from "./calendarCompletion.ts";
 
 export type RelationshipType =
   | "volume_led_decline"
@@ -88,6 +95,7 @@ export type ManagementReasoning = {
   deltaPct?: number | null;
   coverageIncomplete?: boolean;
   branchId?: string | null;
+  responseMode?: ResponseMode | null;
 };
 
 function numEvidence(evidence: EvidenceRecord[], key: string): number | null {
@@ -290,9 +298,6 @@ function comparisonMethodNote(input: {
   const mag = magnitudePhrase(input.deltaPct);
   const label = input.primaryLabel;
   const mode = input.comparisonMode || input.comparability?.recommendedMethod || "";
-  const obs = input.coverage?.availableRecords;
-  const exp = input.coverage?.expectedRecords;
-  const partial = obs != null && exp != null && exp > 0 && obs < exp;
 
   if (dir === "flat") {
     return `${label} ${metricCopula(label)} ${mag || "effectively unchanged"} versus the previous period (${pct}).`;
@@ -309,31 +314,62 @@ function comparisonMethodNote(input: {
     || input.comparability?.recommendedMethod === "matched_weekday"
   ) {
     let text = `${label} ${metricCopula(label)} ${upDown} ${pct} on a like-for-like matched-day basis.`;
-    if (partial && obs != null && exp != null) text += ` Coverage is ${obs}/${exp} days.`;
     return text;
   }
   return `${label} ${metricCopula(label)} ${upDown} ${pct} versus the previous period.`;
 }
 
+function isUnavailableCoverageNote(text: string | null | undefined): boolean {
+  return /not (?:yet )?available|not available yet/i.test(String(text || ""));
+}
+
 function coverageNote(coverage: CoverageReport[] | undefined, period: DateRange | null, depth: AnswerDepth): string | null {
   if (!coverage?.length) return null;
   const cov = coverage.find((c) => c.coverageRatio != null && c.coverageRatio < 1) || coverage[0];
-  if (!cov || cov.coverageRatio == null || cov.coverageRatio >= 1) return null;
+  if (!cov) return null;
+  const cal = classifyCalendarCoverage({
+    requestedStart: period?.startDate || cov.requestedStart,
+    requestedEnd: period?.endDate || cov.requestedEnd,
+    observedDays: cov.availableRecords,
+  });
+  if (cal.status === "today_incomplete" || (isCurrentIncompleteDay(period?.startDate) && period?.startDate === period?.endDate && (cov.availableRecords || 0) === 0)) {
+    return `Today's completed Cash Up is not available yet. The latest completed business day is ${formatManagerDate(latestCompletedBusinessDay())}.`;
+  }
   if (cov.availableRecords === 0) {
-    const requested = period?.label
-      || (period?.startDate && period?.endDate && period.startDate === period.endDate
-        ? period.startDate
-        : (period ? `${period.startDate}–${period.endDate}` : "the requested day"));
+    const requested = periodLabel(period);
     let msg = `Cash Up for ${requested} is not yet available in the canonical data.`;
     const latest = cov.freshness && String(cov.freshness);
     if (latest && latest !== period?.startDate && latest !== period?.endDate) {
-      msg += ` The latest completed Cash Up I have is ${latest}.`;
+      msg += ` The latest completed Cash Up I have is ${formatManagerDate(latest)}.`;
     }
     return msg;
   }
   if (depth === "fact" && cov.expectedRecords === 1) return null;
-  if (cov.expectedRecords != null && cov.availableRecords != null) {
-    return `Coverage is ${cov.availableRecords}/${cov.expectedRecords} days.`;
+  let expectedCompleted = cov.expectedRecords;
+  const available = cov.availableRecords;
+  if (
+    expectedCompleted != null
+    && cal.expectedCompletedDays != null
+    && cal.currentIncompleteDays > 0
+    && expectedCompleted === cal.expectedCompletedDays + cal.currentIncompleteDays
+  ) {
+    expectedCompleted = cal.expectedCompletedDays;
+  }
+  if (expectedCompleted != null && available != null && available < expectedCompleted) {
+    const missing = expectedCompleted - available;
+    if (cal.status === "includes_incomplete_today" && missing <= (cal.currentIncompleteDays || 0)) {
+      return null;
+    }
+    if (expectedCompleted <= 14 && missing > 0) {
+      return `Coverage is ${available}/${expectedCompleted} completed days.`;
+    }
+    return `Coverage is complete through ${formatManagerDate(cal.completedThrough)} except for ${missing} completed ${missing === 1 ? "day" : "days"}.`;
+  }
+  if (cal.status === "includes_incomplete_today" && (cal.missingCompletedDays || 0) === 0) {
+    return null;
+  }
+  if (cal.status === "missing_completed_days" && cal.missingCompletedDays) {
+    return `Coverage is complete through ${formatManagerDate(cal.completedThrough)} except for ${cal.missingCompletedDays} completed ${cal.missingCompletedDays === 1 ? "day" : "days"}.`;
   }
   return null;
 }
@@ -389,6 +425,8 @@ function buildRankingText(input: {
         && (r.direction === input.ranking || r.direction === "unknown"))
       .map((r) => ({ date: r.date, value: r.value, label: r.label }));
   }
+  const completedThrough = latestCompletedBusinessDay();
+  rows = rows.filter((d) => !d.date || d.date <= completedThrough);
   if (!rows.length) return null;
   rows.sort((a, b) => input.ranking === "bottom"
     ? Number(a.value) - Number(b.value)
@@ -403,9 +441,21 @@ function buildRankingText(input: {
     return `${date}: ${formatRankValue(metricKey, row.value)}`;
   }).join("; ");
   let text = `${heading}: ${list}.`;
-  const cov = input.coverage;
-  if (cov?.expectedRecords != null && cov.availableRecords != null && cov.availableRecords < cov.expectedRecords) {
-    text += ` Ranking uses ${cov.availableRecords} of ${cov.expectedRecords} requested days.`;
+  const through = formatThroughPeriod(input.coverage ? {
+    startDate: input.coverage.requestedStart,
+    endDate: input.coverage.requestedEnd,
+    label: null,
+  } : null);
+  if (through) {
+    text = `${input.ranking === "bottom" ? "Weakest" : "Best"} completed ${label} days in ${through}: ${list}.`;
+  }
+  const cal = classifyCalendarCoverage({
+    requestedStart: input.coverage?.requestedStart,
+    requestedEnd: input.coverage?.requestedEnd,
+    observedDays: input.coverage?.availableRecords,
+  });
+  if (cal.status === "missing_completed_days" && cal.missingCompletedDays) {
+    text += ` ${cal.missingCompletedDays} completed ${cal.missingCompletedDays === 1 ? "day is" : "days are"} missing from the canonical set.`;
   }
   return text;
 }
@@ -464,6 +514,10 @@ function branchLabel(branchId: string | null | undefined) {
 }
 
 function periodLabel(period: DateRange | null | undefined) {
+  const through = formatThroughPeriod(period || null);
+  if (through && (period?.semantic === "this_month" || /to date|this month|mtd/i.test(String(period?.label || "")))) {
+    return through;
+  }
   return formatManagerPeriod(period);
 }
 
@@ -498,6 +552,7 @@ export function reasonAboutCommercialEvidence(input: {
   analysisIntent?: AnalysisIntent;
   openingDate?: string | null;
   canonicalMatchedPairs?: CanonicalMatchedPair[];
+  responseMode?: ResponseMode | null;
 }): ManagementReasoning {
   const snap = extractCommercialSnapshot(input.evidence);
   const metric = input.primaryMetric || "commercial";
@@ -508,12 +563,15 @@ export function reasonAboutCommercialEvidence(input: {
   const comparisonIntent = Boolean(input.comparisonIntent || input.comparisonPeriod || input.comparability);
   const broad = isBroadManagementQuestion(input.question, metric);
   const analysisIntent = input.analysisIntent ?? extractAnalysisIntent(input.question);
+  const responseMode = input.responseMode || extractResponseMode(input.question);
 
   let depth: AnswerDepth = "fact";
   if (missing) depth = "fact";
   else if (ranking) depth = "ranking";
+  else if (responseMode === "numbers_only") depth = exactDay ? "fact" : "metric_fact";
   else if (judgement || analysisIntent === "judgement" || analysisIntent === "anomaly") depth = "judgement";
-  else if (analysisIntent === "why" || analysisIntent === "stands_out" || analysisIntent === "trend" || analysisIntent === "contributors" || analysisIntent === "breadth" || analysisIntent === "action") depth = comparisonIntent ? "comparison" : "overview";
+  else if (analysisIntent === "action") depth = "overview";
+  else if (analysisIntent === "why" || analysisIntent === "stands_out" || analysisIntent === "trend" || analysisIntent === "contributors" || analysisIntent === "breadth") depth = comparisonIntent ? "comparison" : "overview";
   else if (comparisonIntent) depth = "comparison";
   else if (broad || metric === "commercial") depth = exactDay ? "fact" : "overview";
   else if (metric !== "sales" && metric !== "commercial") depth = "metric_fact";
@@ -608,7 +666,7 @@ export function reasonAboutCommercialEvidence(input: {
 
   let judgementOffer: string | null = null;
   const driverRel = relationships.find((r) => r.type !== "flat_insignificant") || null;
-  const diagnostic = (!missing && (judgement || analysisIntent || broad))
+  const diagnostic = (!missing && responseMode !== "numbers_only" && (judgement || analysisIntent || broad))
     ? diagnoseCommercialPerformance({
       question: input.question,
       analysisIntent,
@@ -657,8 +715,13 @@ export function reasonAboutCommercialEvidence(input: {
     comparisonIntent,
     ranking: Boolean(ranking),
     deltaPct: delta,
-    coverageIncomplete: Boolean(salesCoverage && salesCoverage.availableRecords != null && salesCoverage.expectedRecords != null && salesCoverage.availableRecords < salesCoverage.expectedRecords),
+    coverageIncomplete: Boolean(salesCoverage && classifyCalendarCoverage({
+      requestedStart: salesCoverage.requestedStart,
+      requestedEnd: salesCoverage.requestedEnd,
+      observedDays: salesCoverage.availableRecords,
+    }).status === "missing_completed_days"),
     branchId: input.branchId,
+    responseMode,
   };
 }
 
@@ -671,10 +734,14 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
   causalNote?: string | null;
   offline?: boolean;
 } = {}): string {
+  if (reasoning.responseMode === "numbers_only") {
+    const compact = [reasoning.headline, ...(reasoning.supporting || []).slice(0, 2)].filter(Boolean);
+    return compact.join(" ") || "Verified structured evidence for this question is limited or unavailable.";
+  }
   const parts: string[] = [];
   if (extras.eventPreface) parts.push(extras.eventPreface);
   if (extras.costMissing) parts.push(extras.costMissing);
-  if (reasoning.coverageContext && /not yet available/.test(reasoning.coverageContext) && !reasoning.headline) {
+  if (reasoning.coverageContext && isUnavailableCoverageNote(reasoning.coverageContext) && !reasoning.headline) {
     parts.push(reasoning.coverageContext);
   } else {
     if (reasoning.rankingText) parts.push(reasoning.rankingText);
@@ -689,9 +756,10 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
     } else if (reasoning.judgementOffer && reasoning.depth === "judgement") {
       parts.push(reasoning.judgementOffer);
     } else if (reasoning.headline) parts.push(reasoning.headline);
-    const skipSupportForAnalyst = Boolean(reasoning.analystSentences?.length)
-      && (reasoning.depth === "judgement" || ["trend", "why", "contributors", "breadth", "anomaly"].includes(String(reasoning.analysisIntent || "")));
-    if (!reasoning.rankingText && reasoning.depth !== "metric_fact" && reasoning.depth !== "judgement" && !skipSupportForAnalyst) {
+    const skipSupportForAnalyst = reasoning.responseMode !== "detailed_explanation"
+      && Boolean(reasoning.analystSentences?.length)
+      && (reasoning.depth === "judgement" || ["trend", "why", "contributors", "breadth", "anomaly", "action", "stands_out"].includes(String(reasoning.analysisIntent || "")));
+    if (!reasoning.rankingText && reasoning.depth !== "metric_fact" && reasoning.depth !== "judgement" && !skipSupportForAnalyst && !(reasoning.depth === "comparison" && reasoning.comparisonContext)) {
       for (const s of reasoning.supporting) parts.push(s);
     }
     if ((reasoning.analystSentences || []).length && reasoning.depth !== "judgement" && !skipSupportForAnalyst) {
@@ -700,7 +768,7 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
       }
     }
     const analystCoversCompare = (reasoning.analystSentences || []).some((s) => /versus|above the average|below the|previous (?:four|three|comparable)|elapsed/i.test(s));
-    if (reasoning.comparisonContext && !analystCoversCompare && reasoning.depth !== "judgement") {
+    if (reasoning.comparisonContext && !analystCoversCompare && reasoning.depth !== "judgement" && reasoning.analysisIntent !== "action") {
       parts.push(reasoning.comparisonContext);
     }
     if (reasoning.relationships.length && (reasoning.depth === "comparison" || reasoning.depth === "overview") && !reasoning.analystSentences.length) {
@@ -708,7 +776,7 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
       if (rel && rel.type !== "flat_insignificant") parts.push(rel.statement);
     }
     if (reasoning.groupingText) parts.push(reasoning.groupingText);
-    if (reasoning.coverageContext && !/not yet available/.test(reasoning.coverageContext || "")) {
+    if (reasoning.coverageContext && !isUnavailableCoverageNote(reasoning.coverageContext)) {
       if (reasoning.depth !== "fact" || (reasoning.comparisonContext && /Coverage is/.test(reasoning.comparisonContext))) {
         if (!reasoning.comparisonContext || !/Coverage is/.test(reasoning.comparisonContext)) {
           parts.push(reasoning.coverageContext);
@@ -717,15 +785,18 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
         parts.push(reasoning.coverageContext);
       }
     }
-    if (reasoning.coverageContext && /not yet available/.test(reasoning.coverageContext) && reasoning.headline) {
+    if (reasoning.coverageContext && isUnavailableCoverageNote(reasoning.coverageContext) && reasoning.headline) {
       parts.push(reasoning.coverageContext);
     }
   }
-  const max = depthLimit(
+  let max = depthLimit(
     reasoning.analysisIntent || null,
     Boolean(reasoning.ranking),
     Boolean(reasoning.comparisonIntent) || reasoning.depth === "comparison",
   );
+  if (reasoning.responseMode === "detailed_explanation") max = Math.max(max, 6);
+  if (reasoning.responseMode === "action_priority") max = Math.min(max, 3);
+  if (reasoning.responseMode === "concise_follow_up") max = Math.min(max, 2);
   const cleaned = dedupeSentences(parts, max);
   if (extras.forecast) cleaned.push(extras.forecast);
   if (extras.holiday) cleaned.push(extras.holiday);

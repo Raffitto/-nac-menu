@@ -165,8 +165,9 @@ export function depthLimit(intent: AnalysisIntent, ranking: boolean, comparison:
   if (ranking) return 2;
   if (intent === "judgement" || intent === "anomaly") return 2;
   if (intent === "why" || intent === "contributors" || intent === "breadth") return 4;
-  if (intent === "stands_out" || intent === "action") return 4;
+  if (intent === "stands_out") return 4;
+  if (intent === "action") return 3;
   if (intent === "trend") return 2;
-  if (comparison) return 3;
+  if (comparison) return 4;
   return 3;
 }

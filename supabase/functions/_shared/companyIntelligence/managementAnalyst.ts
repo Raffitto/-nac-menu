@@ -28,6 +28,7 @@ import {
   combineAnomalyAndTrend,
   formatCalibratedJudgement,
 } from "./managementCoherence.ts";
+import { latestCompletedBusinessDay } from "./calendarCompletion.ts";
 
 export const HISTORY_LOOKBACK_DAYS = 56;
 export const SAME_WEEKDAY_SAMPLE_TARGET = 4;
@@ -544,7 +545,7 @@ function anomalyForDay(
   return { class: klass, z, sampleSize: dist.length, text };
 }
 
-function computeTrend(
+export function computeTrend(
   history: NormalizedDailyFact[],
   key: MetricFactKey,
   openingDate: string | null,
@@ -562,40 +563,67 @@ function computeTrend(
         : "There isn't enough completed daily history yet to describe a trend.",
     };
   }
-  const asOf = endDate || rows[rows.length - 1]?.date || null;
+  const yesterday = latestCompletedBusinessDay();
+  const asOfRaw = endDate || rows[rows.length - 1]?.date || null;
+  const asOf = asOfRaw && asOfRaw > yesterday ? yesterday : asOfRaw;
   if (!asOf) {
     return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
   }
+  rows = rows.filter((f) => f.date <= asOf);
+  if (weekdayOnly != null) {
+    const recent = rows.slice(-TREND_HALF_WINDOW);
+    const prior = rows.slice(-TREND_HALF_WINDOW * 2, -TREND_HALF_WINDOW);
+    if (prior.length < 5 || recent.length < 5) {
+      return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
+    }
+    const recentAvg = mean(recent.map((r) => factValue(r, key)!));
+    const priorAvg = mean(prior.map((r) => factValue(r, key)!));
+    const pct = percentDelta(recentAvg, priorAvg);
+    if (pct == null) return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
+    const label = `${WEEKDAY_NAME(weekdayOnly)}s`;
+    if (Math.abs(pct) < TREND_NOISE_PCT) {
+      return { class: "broadly_flat", text: `${label} have been broadly flat over the recent completed days.` };
+    }
+    const pctText = formatPercent(Math.abs(pct));
+    if (pct > 0) {
+      return { class: "upward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.` };
+    }
+    return { class: "downward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.` };
+  }
   const recentStart = addIsoDays(asOf, -(TREND_HALF_WINDOW - 1));
-  const calendarRecent = weekdayOnly != null
-    ? rows.slice(-TREND_HALF_WINDOW)
-    : rows.filter((r) => r.date >= recentStart && r.date <= asOf);
-  const priorEnd = weekdayOnly != null ? null : addIsoDays(recentStart, -1);
-  const priorStart = priorEnd ? addIsoDays(priorEnd, -(TREND_HALF_WINDOW - 1)) : null;
-  const recent = weekdayOnly != null ? calendarRecent : calendarRecent;
-  const prior = weekdayOnly != null
-    ? rows.slice(-TREND_HALF_WINDOW * 2, -TREND_HALF_WINDOW)
-    : rows.filter((r) => priorStart && priorEnd && r.date >= priorStart && r.date <= priorEnd);
+  const priorEnd = addIsoDays(recentStart, -1);
+  const priorStart = addIsoDays(priorEnd, -(TREND_HALF_WINDOW - 1));
+  const byDate = new Map(rows.map((r) => [r.date, r]));
+  const pairs: Array<{ recent: NormalizedDailyFact; prior: NormalizedDailyFact }> = [];
+  const missingHighVolume: string[] = [];
+  for (let i = 0; i < TREND_HALF_WINDOW; i++) {
+    const recentDate = addIsoDays(recentStart, i);
+    const priorDate = addIsoDays(priorStart, i);
+    const recentRow = byDate.get(recentDate);
+    const priorRow = byDate.get(priorDate);
+    if (!recentRow || factValue(recentRow, key) == null || !priorRow || factValue(priorRow, key) == null) {
+      if (isKsaWeekendIso(recentDate)) missingHighVolume.push(recentDate);
+      continue;
+    }
+    pairs.push({ recent: recentRow, prior: priorRow });
+  }
   const expectedRecent = TREND_HALF_WINDOW;
-  const coverageRatio = weekdayOnly != null ? 1 : (expectedRecent ? recent.length / expectedRecent : 1);
-  const thinCoverage = coverageRatio < 0.85;
-  if (prior.length < 5 || recent.length < 5) {
+  const thinCoverage = pairs.length / expectedRecent < 0.85 || missingHighVolume.length > 0;
+  if (pairs.length < 5) {
     return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
   }
-  const recentAvg = mean(recent.map((r) => factValue(r, key)!));
-  const priorAvg = mean(prior.map((r) => factValue(r, key)!));
+  const recentAvg = mean(pairs.map((p) => factValue(p.recent, key)!));
+  const priorAvg = mean(pairs.map((p) => factValue(p.prior, key)!));
   const pct = percentDelta(recentAvg, priorAvg);
   if (pct == null) return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
-  const signs = recent.map((r, i) => {
-    const prev = prior[Math.min(i, prior.length - 1)];
-    const d = (factValue(r, key) || 0) - (factValue(prev, key) || 0);
-    return d;
-  });
+  const signs = pairs.map((p) => (factValue(p.recent, key) || 0) - (factValue(p.prior, key) || 0));
   const up = signs.filter((s) => s > 0).length;
   const down = signs.filter((s) => s < 0).length;
-  const label = weekdayOnly != null ? `${WEEKDAY_NAME(weekdayOnly)}s` : metricName(key === "avg_spend" ? "avg_spend" : key === "covers" ? "covers" : "sales");
+  const label = metricName(key === "avg_spend" ? "avg_spend" : key === "covers" ? "covers" : "sales");
   const coverageNote = thinCoverage
-    ? ` Observed days only cover ${recent.length} of ${expectedRecent} calendar days in the latest window, so this is not a full-week claim.`
+    ? (missingHighVolume.length
+      ? " Observed comparable days are running in this direction, but a high-volume weekday is missing, so treat the direction as provisional."
+      : ` Observed comparable days only cover ${pairs.length} of ${expectedRecent} calendar days, so treat the direction as provisional.`)
     : "";
   if (Math.abs(pct) < TREND_NOISE_PCT) {
     if (up >= 5 || down >= 5) {
@@ -615,15 +643,15 @@ function computeTrend(
     return {
       class: "upward",
       text: thinCoverage
-        ? `Observed days are trending higher (${pctText} vs the prior comparable window), but only ${recent.length} of ${expectedRecent} days are available.`
-        : `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.`,
+        ? `Observed comparable days are running higher (${pctText} vs the prior comparable window), but coverage is incomplete, so treat the direction as provisional.`
+        : `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest comparable ${pairs.length} completed days averaged about ${pctText} above the prior window.`,
     };
   }
   return {
     class: "downward",
     text: thinCoverage
-      ? `Observed days are trending lower (${pctText} vs the prior comparable window), but only ${recent.length} of ${expectedRecent} days are available.`
-      : `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.`,
+      ? `Observed comparable days are running lower (${pctText} vs the prior comparable window), but coverage is incomplete, so treat the direction as provisional.`
+      : `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest comparable ${pairs.length} completed days averaged about ${pctText} below the prior window.`,
   };
 }
 
@@ -935,17 +963,21 @@ export function diagnoseCommercialPerformance(input: {
 
   let investigation: string | null = null;
   if (intent === "action") {
+    const days = contributors.slice(0, 2).map((c) => formatManagerDate(c.date)).join(" and ");
     if (driver && /covers|volume|traffic/i.test(driver) && /stable|spend per guest/i.test(driver)) {
-      investigation = "The issue to investigate is traffic rather than spend: covers moved while spend per guest was stable. Review the weakest contributing days first.";
+      investigation = `The main thing to watch is cover volume. Covers moved while spend per guest was stable${days ? `, with the largest gaps on ${days}` : ""}.`;
     } else if (driver && /spend per guest/i.test(driver)) {
-      investigation = "The issue to investigate is spend per guest rather than traffic. Review the days with the largest spend gaps first.";
+      investigation = `The main thing to watch is spend per guest rather than traffic${days ? `, starting with ${days}` : ""}.`;
+    } else if (breadth.class === "concentrated" && days) {
+      investigation = `The main thing to watch is concentrated day weakness on ${days}.`;
+    } else if (trend.class === "downward") {
+      investigation = "The main thing to watch is the recent downward trend in the requested metric.";
+    } else if (driver) {
+      investigation = `The main thing to watch is the measurable commercial gap: ${driver}`;
+    } else if (input.snap.sales_delta_pct != null && Math.abs(input.snap.sales_delta_pct) >= MAGNITUDE_FLAT_PCT) {
+      investigation = `The main thing to watch is the ${input.snap.sales_delta_pct < 0 ? "decline" : "increase"} versus the comparison period.`;
     } else {
-      investigation = whyText
-        ? "Use those measurable gaps as the first operational review points; I cannot prescribe a fix from Cash Up facts alone."
-        : "I can point to measurable commercial gaps only; I cannot prescribe an operational fix from the available evidence.";
-    }
-    if (contributors.length) {
-      investigation += ` Start with ${contributors.map((c) => formatManagerDate(c.date)).join(" and ")}.`;
+      investigation = "There isn't a single material commercial gap to escalate from the available Cash Up evidence.";
     }
   }
 

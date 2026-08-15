@@ -103,7 +103,7 @@ describe("management conversation scenarios", () => {
     expect(out.allowed).toEqual(["khobar"]);
   });
 
-  test("ambiguous compare follow-up does not invent a baseline", () => {
+  test("compare June after July uses June as the baseline rather than inventing a third period", () => {
     const out = run(`
       const t1 = mod.resolveTurnSemantics({
         question: "How were sales in July?",
@@ -120,11 +120,14 @@ describe("management conversation scenarios", () => {
       return {
         type: t2.answerType,
         text: t2.answerText,
-        compare: t2.state.periods.comparison,
+        compare: t2.state.periods.comparison?.startDate,
         current: t2.state.periods.current?.startDate,
+        clarify: t2.state.plan?.needsClarification,
       };
     `);
-    expect(out.type).toBe("clarification");
-    expect(out.text).toMatch(/to what/i);
+    expect(out.clarify).toBeFalsy();
+    expect(out.current).toBe("2026-07-01");
+    expect(out.compare).toBe("2026-06-01");
+    expect(out.type).not.toBe("feasibility_block");
   });
 });

@@ -45,7 +45,11 @@ export {
   extractCommercialMetric,
   isSubjectiveJudgementTurn,
   extractAnalysisIntent,
+  isFabricManagedTurn,
+  extractResponseMode,
+  isBarePronounTurn,
 } from "./turnSemantics.ts";
+export * from "./calendarCompletion.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";
 export * from "./normalizedCapabilityResult.ts";

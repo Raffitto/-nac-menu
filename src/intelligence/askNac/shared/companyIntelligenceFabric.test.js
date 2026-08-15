@@ -493,9 +493,9 @@ describe("Company Intelligence Fabric foundation", () => {
       });
       return { missing, missingNoLatest, exact };
     `);
-    expect(out.missing).toMatch(/13 August 2026/);
+    expect(out.missing).toMatch(/13 August/);
     expect(out.missing).toMatch(/not yet available in the canonical data/i);
-    expect(out.missing).toMatch(/latest completed Cash Up I have is 2026-08-08/);
+    expect(out.missing).toMatch(/latest completed Cash Up I have is Saturday, 8 August/);
     expect(out.missing).not.toMatch(/0 of the requested 1/);
     expect(out.missing).not.toMatch(/18100/);
     expect(out.missingNoLatest).toMatch(/not yet available in the canonical data/i);

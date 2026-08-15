@@ -576,3 +576,40 @@ describe("semantics: analysis intents and routing", () => {
     expect(out.fabric).toBe(true);
   });
 });
+
+describe("action-turn composition", () => {
+  test("what should I pay attention to does not dump the metric bundle", () => {
+    const out = run(`
+      ${HELPER}
+      const august = [];
+      for (let d = 1; d <= 14; d++) {
+        august.push(fact("2026-08-" + String(d).padStart(2, "0"), 18000, 250, 100));
+      }
+      const july = [];
+      for (let d = 1; d <= 14; d++) {
+        july.push(fact("2026-07-" + String(d).padStart(2, "0"), 22000, 320, 110));
+      }
+      return synth("What should I pay attention to?", {
+        period: mtd,
+        analysisIntent: "action",
+        sales: 18000 * 14,
+        covers: 250 * 14,
+        expected: 14,
+        available: 14,
+        dailyFacts: august,
+        historyDailyFacts: [...july, ...august],
+        previousDailyFacts: july,
+        comparisonIntent: true,
+        comparisonPeriod: { startDate: "2026-07-01", endDate: "2026-07-14", label: "1–14 July" },
+        evidence: [
+          ev("net_sales", 18000 * 14, mtd), ev("previous_net_sales", 22000 * 14),
+          ev("covers", 250 * 14, mtd), ev("previous_covers", 320 * 14),
+          ev("orders", 100 * 14, mtd), ev("previous_orders", 110 * 14),
+          ev("avg_spend", 72, mtd), ev("previous_avg_spend", 68.75),
+        ],
+      });
+    `);
+    expect(out).toMatch(/main thing to watch/i);
+    expect(out).not.toMatch(/Covers were \d|Orders were \d|Average spend was/i);
+  });
+});

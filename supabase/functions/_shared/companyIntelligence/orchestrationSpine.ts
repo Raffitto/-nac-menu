@@ -26,7 +26,7 @@ import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
 import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
-import { extractCommercialMetric, extractAnalysisIntent, hasComparisonIntent, isSubjectiveJudgementTurn } from "./turnSemantics.ts";
+import { extractCommercialMetric, extractAnalysisIntent, hasComparisonIntent, isSubjectiveJudgementTurn, isFabricManagedTurn } from "./turnSemantics.ts";
 import { HISTORY_LOOKBACK_DAYS } from "./managementAnalyst.ts";
 import { isBroadManagementQuestion } from "./managementReasoning.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
@@ -213,6 +213,8 @@ export function isManagementIntelligenceQuestion(
     referenceDate?: Date;
   },
 ) {
+  const q = String(question || "").trim();
+  if (isFabricManagedTurn(q)) return true;
   const intent = String(legacyRoute?.intent || "");
   if (/^vault_cash_up|^vault_operational|^vault_business_reasoning|^executive_analysis/.test(intent)) {
     return true;
@@ -844,6 +846,7 @@ export async function runCompanyIntelligenceOrchestration(
     previousDailyFacts: extras.previousDailyFacts,
     canonicalMatchedPairs: extras.matchedPairs,
     analysisIntent: followUp.semantics?.analysisIntent || null,
+    responseMode: followUp.semantics?.responseMode || null,
     openingDate: state.scope.primaryBranchId
       ? defaultBusinessTimeline.getOpeningDate(state.scope.primaryBranchId)
       : null,
