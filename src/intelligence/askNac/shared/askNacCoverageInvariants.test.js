@@ -106,6 +106,28 @@ describe("coverage calendar invariants", () => {
     expect(out.text).not.toMatch(/1 missing/i);
   });
 
+  test("C2. full-month expected count does not treat the rest of August as missing", () => {
+    const out = run(`
+      const period = { startDate: "2026-08-01", endDate: "2026-08-31", label: "August 2026", semantic: "this_month" };
+      return mod.synthesizeDeterministicAnswer({
+        question: "How did this month compare with last month?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-14", label: "August through 14 August", semantic: "this_month" },
+        comparisonPeriod: { startDate: "2026-07-01", endDate: "2026-07-14", label: "1–14 July" },
+        comparisonIntent: true,
+        primaryMetric: "covers",
+        evidence: [
+          mod.createEvidence({ source: "cash_up", domain: "INTERNAL_STRUCTURED", branchId: "khobar", metricOrEvent: "covers", value: 3594, textSummary: "covers", period }),
+          mod.createEvidence({ source: "cash_up", domain: "INTERNAL_STRUCTURED", branchId: "khobar", metricOrEvent: "previous_covers", value: 3828, textSummary: "prev", period }),
+        ],
+        claims: [],
+        coverage: [mod.buildCoverageReport({ domain: "sales", range: period, expectedRecords: 31, availableRecords: 14 })],
+      });
+    `);
+    expect(out).not.toMatch(/except for 17/);
+    expect(out).not.toMatch(/14\/15/);
+  });
+
   test("D. historical missing completed day is disclosed", () => {
     const out = run(`
       const ref = ${REF};

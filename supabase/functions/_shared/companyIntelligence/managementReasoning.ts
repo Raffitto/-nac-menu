@@ -347,12 +347,7 @@ function coverageNote(coverage: CoverageReport[] | undefined, period: DateRange 
   if (depth === "fact" && cov.expectedRecords === 1) return null;
   let expectedCompleted = cov.expectedRecords;
   const available = cov.availableRecords;
-  if (
-    expectedCompleted != null
-    && cal.expectedCompletedDays != null
-    && cal.currentIncompleteDays > 0
-    && expectedCompleted === cal.expectedCompletedDays + cal.currentIncompleteDays
-  ) {
+  if (cal.expectedCompletedDays != null && expectedCompleted != null && expectedCompleted > cal.expectedCompletedDays) {
     expectedCompleted = cal.expectedCompletedDays;
   }
   if (expectedCompleted != null && available != null && available < expectedCompleted) {
