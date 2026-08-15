@@ -48,6 +48,8 @@ export type CommerceFocus =
   | "freshness"
   | "health"
   | "data_used"
+  | "trust"
+  | "reconciliation"
   | "attention"
   | null;
 

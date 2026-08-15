@@ -13,6 +13,7 @@ import { createEmptyConversationState, updateConversationState } from "./convers
 import { normalizeBranchId } from "./scope.ts";
 import { addIsoDays, formatManagerDate, formatManagerPeriod, isoWeekdayIndex } from "./managementPresentation.ts";
 import { completedThroughDate, formatThroughPeriod } from "./calendarCompletion.ts";
+import { extractCommerceFocus, isCommerceManagementTurn, type CommerceFocus } from "./commerce/intent.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import type { DateRange } from "./types.ts";
@@ -75,6 +76,7 @@ export type TurnSemantics = {
   ranking: "top" | "bottom" | null;
   rankingCount: number | null;
   analysisIntent: AnalysisIntent;
+  commerceFocus: CommerceFocus;
   responseMode: ResponseMode;
   inheritedFromConversation: TurnDimensionFlags;
   explicitInCurrentTurn: TurnDimensionFlags;
@@ -345,6 +347,7 @@ export function isFabricManagedTurn(question: string): boolean {
   if (/^(?:and\s+)?(?:the\s+)?(worst|best|top|bottom)\??$/i.test(q)) return true;
   if (/\b(best|worst|top|bottom)\s+\d/i.test(q)) return true;
   if (/\b(best|worst|top|bottom)\b/i.test(q) && /\bdays?\b/i.test(q)) return true;
+  if (isCommerceManagementTurn(q)) return true;
   return false;
 }
 
@@ -380,6 +383,7 @@ export function resolveTurnSemantics(input: {
   const dropComparison = DROP_COMPARISON_RE.test(q);
   const subjective = isSubjectiveJudgementTurn(q);
   let analysisIntent = extractAnalysisIntent(q);
+  const commerceFocus = extractCommerceFocus(q);
   const responseModeRequest = extractResponseMode(q);
   const barePronoun = isBarePronounTurn(q);
   const rankingInstead = Boolean(
@@ -550,6 +554,14 @@ export function resolveTurnSemantics(input: {
   if (inherit && barePronoun && period) {
     notes.push("pronoun_inherited_current_subject");
   }
+  if (inherit && barePronoun && !analysisIntent && prev.activeAnalysisIntent) {
+    analysisIntent = prev.activeAnalysisIntent as AnalysisIntent;
+    notes.push("pronoun_inherits_diagnostic");
+  }
+  if (inherit && responseModeRequest === "detailed_explanation" && !analysisIntent && prev.activeAnalysisIntent) {
+    analysisIntent = prev.activeAnalysisIntent as AnalysisIntent;
+    notes.push("explain_expands_current_subject");
+  }
 
   if (
     period
@@ -609,6 +621,13 @@ export function resolveTurnSemantics(input: {
         : BARE_JUDGEMENT_RE.test(q)
           ? "Which result should I judge?"
           : "What would you like me to look at?";
+  } else if (
+    !inherit
+    && analysisIntent === "action"
+    && !explicitPeriod
+  ) {
+    ambiguityKind = "underspecified_follow_up";
+    clarificationPrompt = "Which period should I look at?";
   } else if (notes.includes("previous_one_unresolved")) {
     ambiguityKind = "missing_referent";
     clarificationPrompt = "Which previous result should I use?";
@@ -705,6 +724,7 @@ export function resolveTurnSemantics(input: {
       comparison: comparisonPeriod,
     },
     previousIntent: intent,
+    activeAnalysisIntent: analysisIntent || (inherit ? prev.activeAnalysisIntent : null),
     activeRanking: ranking || (inherit && !explicitPeriod && !correction ? prev.activeRanking : null),
     activeRankingCount: (ranking || (inherit && !explicitPeriod && !correction ? prev.activeRanking : null))
       ? (rankingCount || prev.activeRankingCount || 1)
@@ -737,6 +757,7 @@ export function resolveTurnSemantics(input: {
     ranking,
     rankingCount: ranking ? (rankingCount || 1) : null,
     analysisIntent,
+    commerceFocus,
     responseMode,
     inheritedFromConversation,
     explicitInCurrentTurn: explicit,

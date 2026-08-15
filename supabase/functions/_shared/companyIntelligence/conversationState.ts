@@ -23,6 +23,7 @@ export type StructuredConversationState = {
   previousIntent: string | null;
   activeRanking: "top" | "bottom" | null;
   activeRankingCount: number | null;
+  activeAnalysisIntent: string | null;
 };
 
 export function createEmptyConversationState(): StructuredConversationState {
@@ -40,6 +41,7 @@ export function createEmptyConversationState(): StructuredConversationState {
     previousIntent: null,
     activeRanking: null,
     activeRankingCount: null,
+    activeAnalysisIntent: null,
   };
 }
 
@@ -75,6 +77,7 @@ export function updateConversationState(
     previousIntent: patch.previousIntent ?? base.previousIntent,
     activeRanking: patch.activeRanking !== undefined ? patch.activeRanking : base.activeRanking,
     activeRankingCount: patch.activeRankingCount !== undefined ? patch.activeRankingCount : base.activeRankingCount,
+    activeAnalysisIntent: patch.activeAnalysisIntent !== undefined ? patch.activeAnalysisIntent : base.activeAnalysisIntent,
   };
 }
 

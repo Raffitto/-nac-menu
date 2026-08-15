@@ -132,22 +132,45 @@ const script = `
     );
     const comparison = mod.compareServiceMix(mix, julyMix);
     const itemRows = mod.itemMix(sessions, "revenue").slice(0, 25);
+    const joinPct = mod.joinRate(dineIn, basket);
+    const uniqueProducts = new Set(basket.map((i) => i.productId).filter(Boolean));
+    const mappedProducts = new Set(basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).map((i) => i.productId).filter(Boolean));
+    const mappedItemRows = basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).length;
+    const revenue = basket.reduce((s, i) => s + Number(i.netAmount || 0), 0);
+    const mappedRevenue = basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).reduce((s, i) => s + Number(i.netAmount || 0), 0);
+    const qualityDims = mod.computeQuality({
+      uniqueProducts: uniqueProducts.size,
+      mappedProducts: mappedProducts.size,
+      itemRows: basket.length,
+      mappedItemRows,
+      revenue,
+      mappedRevenue,
+      sessions: sessions.length,
+      unclassifiedSessions: mix.byArchetype.unclassified.sessions,
+      joinPct,
+    });
+    const batchId = process.env.COMMERCE_BATCH_ID || ("commerce_batch_" + branch + "_" + periodEnd.replace(/-/g, "") + "_" + Date.now().toString(36));
     const evidence = mod.buildEvidenceSummary({
       dataThrough: periodEnd,
       sessionsAnalyzed: sessions.length,
-      mappingQuality: mix.unclassifiedRate == null ? null : 1 - mix.unclassifiedRate,
+      mappingQuality: qualityDims.confidentlyClassifiedSessionPct,
+      quality: qualityDims,
       sourceFreshness: mix.unclassifiedRate != null && mix.unclassifiedRate < 0.35 ? "ready" : "warning",
       coverage: periodStart + " to " + periodEnd,
-      lineage: mod.createLineage({ acquisitionModes: ["authenticated_read"] }),
+      lineage: mod.createLineage({
+        acquisitionModes: ["authenticated_read_fallback"],
+        rawBatchIds: [batchId],
+      }),
+      batchId,
     });
     const quality = mod.evaluatePublicationQuality({
-      joinRate: mod.joinRate(dineIn, basket),
+      joinRate: joinPct,
       duplicateRate: mod.duplicateRate(dineIn.map((o) => o.sourceOrderId)),
       schemaValid: true,
       unclassifiedSessionRate: mix.unclassifiedRate,
     });
     process.stdout.write(JSON.stringify({
-      mix, comparison, itemRows, evidence, quality,
+      mix, comparison, itemRows, evidence, quality, qualityDims, batchId, joinPct,
       sessionCount: sessions.length, orderCount: dineIn.length, itemCount: basket.length,
       archetypes: Object.fromEntries(Object.entries(mix.byArchetype).map(([k, v]) => [k, v.sessions])),
     }));
@@ -179,9 +202,12 @@ const snapRes = await fetch(`${url}/rest/v1/commerce_published_snapshots`, {
     mix: computed.mix,
     comparison: computed.comparison,
     item_mix: computed.itemRows,
-    mapping_quality: { unclassifiedRate: computed.mix.unclassifiedRate },
+    mapping_quality: {
+      unclassifiedRate: computed.mix.unclassifiedRate,
+      ...computed.qualityDims,
+    },
     evidence_summary: computed.evidence,
-    lineage: computed.evidence.lineage,
+    lineage: { ...computed.evidence.lineage, batchId: computed.batchId },
   }),
 });
 if (!snapRes.ok) throw new Error(`snapshot ${snapRes.status} ${await snapRes.text()}`);
@@ -201,8 +227,10 @@ for (const dataset of ["orders", "order_items", "commerce_sessions", "session_mi
       source_mode: "authenticated_read",
       quality: {
         unclassifiedRate: computed.mix.unclassifiedRate,
+        ...computed.qualityDims,
         officialAsyncMailbox: "incomplete",
         provenance: "authenticated_read_fallback",
+        batchId: computed.batchId,
       },
     }),
   });
@@ -211,6 +239,7 @@ for (const dataset of ["orders", "order_items", "commerce_sessions", "session_mi
 
 console.log(JSON.stringify({
   published: true,
+  batchId: computed.batchId,
   sessions: computed.sessionCount,
   orders: computed.orderCount,
   items: computed.itemCount,
@@ -219,4 +248,6 @@ console.log(JSON.stringify({
   foodContaining: computed.mix.foodContainingShare,
   dessertConversion: computed.mix.dessertConversion,
   unclassified: computed.mix.unclassifiedRate,
+  quality: computed.qualityDims,
+  covers: computed.mix.totalCovers,
 }, null, 2));

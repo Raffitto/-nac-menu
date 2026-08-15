@@ -7,8 +7,12 @@ import type { CommerceFocus } from "./types.ts";
 export function extractCommerceFocus(question: string): CommerceFocus {
   const q = String(question || "").toLowerCase().replace(/\s+/g, " ").trim();
   if (!q) return null;
+  if (/\b(can i trust|trust this result|should i trust)\b/.test(q)) return "trust";
+  if (/\b(why are sales different|different from the foodics|foodics check total|cash up vs foodics|reconcile)\b/.test(q)) {
+    return "reconciliation";
+  }
   if (/\b(what data did you use|is this data fresh)\b/.test(q)) return "data_used";
-  if (/\b(is (?:my |the )?foodics data (?:healthy|fresh|up to date)|foodics data healthy)\b/.test(q)) {
+  if (/\b(is (?:my |the )?(?:foodics )?data (?:healthy|fresh|up to date)|foodics data healthy)\b/.test(q)) {
     return "health";
   }
   if (/\b(dine-in guests?|guests were in dessert-focused)\b/.test(q)) return "guest_weighted";
@@ -50,5 +54,7 @@ export function requiresDineInSessionEvidence(focus: CommerceFocus): boolean {
     && focus !== "rank_items"
     && focus !== "freshness"
     && focus !== "health"
-    && focus !== "data_used";
+    && focus !== "data_used"
+    && focus !== "trust"
+    && focus !== "reconciliation";
 }

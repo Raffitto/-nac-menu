@@ -57,7 +57,7 @@ export function synthesizeDeterministicAnswer(input: {
     if (input.publishedCommerce?.mix?.totalSessions) {
       return answerPublishedCommerce(input.commerceFocus, input.publishedCommerce);
     }
-    if (input.commerceFocus === "health" || input.commerceFocus === "freshness" || input.commerceFocus === "data_used") {
+    if (input.commerceFocus === "health" || input.commerceFocus === "freshness" || input.commerceFocus === "data_used" || input.commerceFocus === "trust" || input.commerceFocus === "reconciliation") {
       if (input.publishedCommerce?.health || input.publishedCommerce?.evidence) {
         return answerPublishedCommerce(input.commerceFocus, input.publishedCommerce);
       }

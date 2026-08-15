@@ -38,7 +38,7 @@ export const CAPABILITY_REQUIREMENTS: Record<string, CapabilityRequirement> = {
 export function requirementsForFocus(focus: CommerceFocus): CapabilityRequirement | null {
   if (focus === "item_mix" || focus === "rank_items") return CAPABILITY_REQUIREMENTS["commerce.item_mix"];
   if (focus === "dessert_conversion") return CAPABILITY_REQUIREMENTS["commerce.dessert_conversion"];
-  if (focus === "freshness" || focus === "health" || focus === "data_used") return null;
+  if (focus === "freshness" || focus === "health" || focus === "data_used" || focus === "trust" || focus === "reconciliation") return null;
   if (!focus) return null;
   return CAPABILITY_REQUIREMENTS["commerce.session_mix"];
 }

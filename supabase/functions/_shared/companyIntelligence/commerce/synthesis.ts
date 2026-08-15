@@ -5,8 +5,10 @@
 
 import { ARCHETYPE_LABELS } from "./archetypes.ts";
 import { averageCheck, itemMix } from "./metrics.ts";
-import { dataUsedAnswer, freshnessAnswer, type EvidenceSummary } from "./lineage.ts";
+import { dataUsedAnswer, freshnessAnswer, trustAnswer, type EvidenceSummary } from "./lineage.ts";
+import type { SalesReconciliation } from "./reconciliation.ts";
 import type { CommerceFocus, MixComparison, ServiceMixResult, TableArchetype } from "./types.ts";
+import type { CommerceQuality } from "./quality.ts";
 
 export function formatShare(share: number | null): string {
   if (share == null) return "unavailable";
@@ -80,8 +82,10 @@ export type PublishedCommerce = {
     itemsStatus?: string;
     publicationStatus?: string;
     mappingQuality?: number | null;
+    quality?: CommerceQuality | null;
     error?: string | null;
   } | null;
+  reconciliation?: SalesReconciliation | null;
 };
 
 export function dessertFocusedAnswer(mix: ServiceMixResult): string {
@@ -131,10 +135,49 @@ export function attentionAnswer(mix: ServiceMixResult, cmp?: MixComparison | nul
   return parts.join(" ");
 }
 
+export function reconciliationAnswer(row: SalesReconciliation | null | undefined): string {
+  if (!row || row.coverage === "missing" || row.coverage === "foodics_only") {
+    return (
+      "Cash Up remains the headline sales authority. Foodics commerce is the order/session/basket authority. "
+      + "A paired Cash Up net_sales row was not available for this comparison window."
+    );
+  }
+  if (row.coverage === "cash_up_only") {
+    return (
+      `Cash Up net sales are ${row.cashUpSales}. Foodics completed-order totals were not paired for ${row.businessDate}. `
+      + "These sources are not interchangeable."
+    );
+  }
+  const cash = row.cashUpSales != null ? row.cashUpSales.toFixed(2) : "n/a";
+  const foodics = row.foodicsSales != null ? row.foodicsSales.toFixed(2) : "n/a";
+  const delta = row.absoluteDifference != null ? row.absoluteDifference.toFixed(2) : "n/a";
+  const pct = row.percentageDifference != null ? `${row.percentageDifference.toFixed(2)}%` : "n/a";
+  return (
+    `Sales differ because they measure different things. Cash Up (headline management authority) is ${cash}. `
+    + `Foodics completed-order subtotal (ex-VAT comparison basis) is ${foodics} `
+    + `(delta ${delta}, ${pct}). `
+    + (row.foodicsIncVat != null ? `Foodics tax-inclusive check total is ${row.foodicsIncVat.toFixed(2)}. ` : "")
+    + `${row.note} Health: ${row.health}.`
+  );
+}
+
 export function answerPublishedCommerce(focus: CommerceFocus, published: PublishedCommerce): string {
   const mix = published.mix;
   if (focus === "data_used" && published.evidence) return dataUsedAnswer(published.evidence);
-  if ((focus === "health" || focus === "freshness") && published.health) return freshnessAnswer(published.health);
+  if (focus === "trust" && published.evidence) return trustAnswer(published.evidence);
+  if (focus === "reconciliation") return reconciliationAnswer(published.reconciliation);
+  if ((focus === "health" || focus === "freshness") && published.health) {
+    return freshnessAnswer({ ...published.health, quality: published.health.quality || published.evidence?.quality || null });
+  }
+  if (focus === "full_service") {
+    const avg = averageCheck(mix.byArchetype.full_service);
+    return (
+      `Full-service average check was ${avg != null ? `SAR ${avg.toFixed(2)}` : "unavailable"} `
+      + `across ${mix.byArchetype.full_service.sessions} sessions `
+      + `(${formatShare(mix.fullServiceShare)} of ${mix.totalSessions} completed dine-in sessions) `
+      + `for ${mix.branchId} ${mix.periodStart} to ${mix.periodEnd}.`
+    );
+  }
   if (focus === "dessert_focused") return dessertFocusedAnswer(mix);
   if (focus === "food_containing") return foodContainingAnswer(mix);
   if (focus === "dessert_conversion") return conversionAnswer(mix);

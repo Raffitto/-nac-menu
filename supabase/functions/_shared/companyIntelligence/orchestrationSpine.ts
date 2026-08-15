@@ -567,8 +567,8 @@ export async function runCompanyIntelligenceOrchestration(
   const commerceFocus = followUp.semantics?.commerceFocus || null;
   const published = options.publishedCommerce || null;
   const publishedReady = Boolean(published?.mix?.totalSessions)
-    || ((commerceFocus === "health" || commerceFocus === "freshness" || commerceFocus === "data_used")
-      && Boolean(published?.health || published?.evidence));
+    || ((commerceFocus === "health" || commerceFocus === "freshness" || commerceFocus === "data_used" || commerceFocus === "trust" || commerceFocus === "reconciliation")
+      && Boolean(published?.health || published?.evidence || published?.reconciliation));
   if (commerceFocus && publishedReady && published) {
     const text = answerPublishedCommerce(commerceFocus, options.publishedCommerce);
     state = transition(state, "COMPLETE", {
