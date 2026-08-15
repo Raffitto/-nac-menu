@@ -51,6 +51,7 @@ type CommercialSnap = {
   previous_covers: number | null;
   previous_orders: number | null;
   previous_avg_spend: number | null;
+  sales_delta_pct?: number | null;
 };
 
 export type AnomalyClass =
@@ -514,7 +515,12 @@ function anomalyForDay(
   const med = median(dist);
   if (med == null) return null;
   const z = modifiedZ(value, med, mad(dist, med));
-  const klass = classifyZ(z);
+  let klass = classifyZ(z);
+  const pctVsMed = percentDelta(value, med);
+  if (dist.length < ANOMALY_MIN_SAMPLE) {
+    if (pctVsMed == null || Math.abs(pctVsMed) < 12) klass = Math.abs(pctVsMed || 0) >= 5 ? "mildly_unusual" : "normal";
+    else if (Math.abs(pctVsMed) < 20) klass = "materially_unusual";
+  }
   const weekday = isoWeekdayName(target.date);
   const vs = useWeekday ? `recent ${weekday}s` : "recent completed days";
   let text: string;
@@ -582,9 +588,9 @@ function computeTrend(
   }
   const pctText = formatPercent(Math.abs(pct));
   if (pct > 0) {
-    return { class: "upward", text: `${label} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.` };
+    return { class: "upward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.` };
   }
-  return { class: "downward", text: `${label} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.` };
+  return { class: "downward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.` };
 }
 
 function WEEKDAY_NAME(idx: number): string {
@@ -626,6 +632,7 @@ function matchDays(
 function computeBreadthAndContributors(
   pairs: Array<{ current: NormalizedDailyFact; previous: NormalizedDailyFact; delta: number }>,
   key: MetricFactKey,
+  headlineDeltaPct?: number | null,
 ): {
   breadth: { class: BreadthClass; text: string | null };
   contributors: ContributorRow[];
@@ -639,6 +646,18 @@ function computeBreadthAndContributors(
     };
   }
   const net = pairs.reduce((s, p) => s + p.delta, 0);
+  if (
+    headlineDeltaPct != null
+    && !isEffectivelyFlat(headlineDeltaPct)
+    && Math.sign(net) !== 0
+    && Math.sign(net) !== Math.sign(headlineDeltaPct)
+  ) {
+    return {
+      breadth: { class: "insufficient", text: null },
+      contributors: [],
+      contributorText: null,
+    };
+  }
   const signed = pairs.map((p) => {
     const prev = factValue(p.previous, key);
     const pct = percentDelta(factValue(p.current, key), prev);
@@ -793,7 +812,11 @@ export function diagnoseCommercialPerformance(input: {
     : previousDailyFacts;
   const matchMode = benchType === "elapsed_prior" ? "day_of_month" : "index";
   const pairs = matchDays(currentRows, previousRows, key, matchMode);
-  const { breadth, contributors, contributorText } = computeBreadthAndContributors(pairs, key);
+  const { breadth, contributors, contributorText } = computeBreadthAndContributors(
+    pairs,
+    key,
+    input.snap.sales_delta_pct ?? benchmark.deltaPct,
+  );
 
   const copula = metricCopula(label);
   let judgement: string | null = null;

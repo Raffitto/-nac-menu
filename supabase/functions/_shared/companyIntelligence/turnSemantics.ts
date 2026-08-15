@@ -11,7 +11,7 @@ import {
 } from "../vaultPeriodParser.ts";
 import { createEmptyConversationState, updateConversationState } from "./conversationState.ts";
 import { normalizeBranchId } from "./scope.ts";
-import { addIsoDays, isoWeekdayIndex } from "./managementPresentation.ts";
+import { addIsoDays, formatManagerDate, isoWeekdayIndex } from "./managementPresentation.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import type { DateRange } from "./types.ts";
@@ -204,7 +204,7 @@ function lastCompletedWeekdayRange(name: string, referenceDate: Date): DateRange
   let d = addIsoDays(today, -1);
   for (let i = 0; i < 7; i++) {
     if (isoWeekdayIndex(d) === want) {
-      return { startDate: d, endDate: d, label: `${name[0].toUpperCase()}${name.slice(1).toLowerCase()}`, semantic: "single_day" };
+      return { startDate: d, endDate: d, label: formatManagerDate(d), semantic: "single_day" };
     }
     d = addIsoDays(d, -1);
   }
