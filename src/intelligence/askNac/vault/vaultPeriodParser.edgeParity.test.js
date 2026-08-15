@@ -23,7 +23,7 @@ describe("Ask NAC edge period parser parity", () => {
     const src = fs.readFileSync(EDGE_PARSER, "utf8");
     expect(src).toMatch(/export function listPeriodDates/);
     expect(src).toMatch(/last\/past N days/);
-    expect(src).toMatch(/\\blast\\s\+month\\b/);
+    expect(src).toMatch(/\(last\|previous\)\\s\+month\\b/);
     expect(src).toMatch(/\\btoday\\b/);
     expect(src).toMatch(/compareN/);
     expect(src).toMatch(/isRollingDayPeriodType/);

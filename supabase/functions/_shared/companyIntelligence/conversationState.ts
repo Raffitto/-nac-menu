@@ -14,6 +14,8 @@ export type StructuredConversationState = {
     comparison: DateRange | null;
   };
   activeMetricFamily: string | null;
+  /** Specific commercial metric when known (sales, covers, orders, avg_spend). */
+  activeMetric: string | null;
   activeCapabilities: CapabilityId[];
   filters: Record<string, string | number | boolean | null>;
   evidenceRefs: string[];
@@ -28,6 +30,7 @@ export function createEmptyConversationState(): StructuredConversationState {
     activeBranchId: null,
     activePeriods: { current: null, comparison: null },
     activeMetricFamily: null,
+    activeMetric: null,
     activeCapabilities: [],
     filters: {},
     evidenceRefs: [],
@@ -48,10 +51,15 @@ export function updateConversationState(
     activeBrandId: patch.activeBrandId ?? base.activeBrandId,
     activeBranchId: patch.activeBranchId ?? base.activeBranchId,
     activePeriods: {
-      current: patch.activePeriods?.current ?? base.activePeriods.current,
-      comparison: patch.activePeriods?.comparison ?? base.activePeriods.comparison,
+      current: patch.activePeriods && "current" in patch.activePeriods
+        ? patch.activePeriods.current ?? null
+        : base.activePeriods.current,
+      comparison: patch.activePeriods && "comparison" in patch.activePeriods
+        ? patch.activePeriods.comparison ?? null
+        : base.activePeriods.comparison,
     },
     activeMetricFamily: patch.activeMetricFamily ?? base.activeMetricFamily,
+    activeMetric: patch.activeMetric ?? base.activeMetric,
     activeCapabilities: patch.activeCapabilities ?? base.activeCapabilities,
     filters: {
       ...base.filters,

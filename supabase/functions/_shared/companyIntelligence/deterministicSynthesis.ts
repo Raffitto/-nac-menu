@@ -19,6 +19,59 @@ function periodLabel(period: DateRange | null | undefined) {
   return period.label || `${period.startDate}–${period.endDate}`;
 }
 
+function formatSar(value: number): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const abs = Math.abs(n);
+  if (abs >= 1000) {
+    const k = n / 1000;
+    const rounded = Math.abs(k - Math.round(k)) < 0.05 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, "");
+    return `SAR ${rounded}k`;
+  }
+  return `${n} SAR`;
+}
+
+function num(evidence: EvidenceRecord[] , key: string): number | null {
+  const hit = evidence.find((e) => e.metricOrEvent === key && typeof e.value === "number");
+  return hit && typeof hit.value === "number" ? Number(hit.value) : null;
+}
+
+function pctDelta(current: number | null, previous: number | null): number | null {
+  if (current == null || previous == null || previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
+function crossMetricInterpretation(input: {
+  salesDelta: number | null;
+  coversDelta: number | null;
+  spendDelta: number | null;
+}): string | null {
+  const s = input.salesDelta;
+  const c = input.coversDelta;
+  const p = input.spendDelta;
+  if (s == null || c == null) return null;
+  const salesDown = s < -1;
+  const salesUp = s > 1;
+  const coversDown = c < -1;
+  const coversUp = c > 1;
+  const spendStable = p == null || Math.abs(p) < 2;
+  const spendUp = p != null && p > 2;
+  const spendDown = p != null && p < -2;
+  if (salesDown && coversDown && spendStable) {
+    return "The decline is primarily associated with fewer covers rather than spend per guest.";
+  }
+  if ((s == null || Math.abs(s) < 2) && coversDown && spendUp) {
+    return "Higher spend per guest offset weaker traffic.";
+  }
+  if (salesUp && coversDown && spendUp) {
+    return "Sales increased while covers fell, with higher average spend more than offsetting weaker traffic.";
+  }
+  if (salesDown && coversUp && spendDown) {
+    return "Traffic held or increased, so the sales decline is associated with lower spend per guest.";
+  }
+  return null;
+}
+
 export function synthesizeDeterministicAnswer(input: {
   question: string;
   branchId: string | null;
@@ -45,6 +98,9 @@ export function synthesizeDeterministicAnswer(input: {
   );
   const covers = input.evidence.find((e) => e.metricOrEvent === "covers" && typeof e.value === "number");
   const delta = input.evidence.find((e) => e.metricOrEvent === "delta_pct" && typeof e.value === "number");
+  const prevCovers = num(input.evidence, "previous_covers");
+  const avgSpend = num(input.evidence, "avg_spend");
+  const prevSpend = num(input.evidence, "previous_avg_spend");
   const forecastSales = input.evidence.find((e) =>
     e.metricOrEvent === "forecast_net_sales" && typeof e.value === "number"
   );
@@ -82,13 +138,23 @@ export function synthesizeDeterministicAnswer(input: {
   if (delta && input.comparability?.status !== "not_comparable") {
     const method = input.comparability?.recommendedMethod || "matched_days";
     const direction = Number(delta.value) < 0 ? "down" : Number(delta.value) > 0 ? "up" : "flat";
+    const mag = Math.abs(Number(delta.value));
+    const magText = mag >= 1 ? `about ${mag.toFixed(1)}%` : `${mag}%`;
     if (input.comparability?.status === "partially_comparable" || method === "matched_days" || method === "matched_weekday") {
       parts.push(
-        `On a like-for-like (${method}) basis, sales were ${direction} ${Math.abs(Number(delta.value))}%.`,
+        `${branch} generated ${formatSar(Number(sales?.value || 0))} over ${period}, ${direction} ${magText} versus the comparable previous period on a like-for-like (${method}) basis.`,
       );
     } else {
-      parts.push(`Compared with the prior period, sales were ${direction} ${Math.abs(Number(delta.value))}%.`);
+      parts.push(`Compared with the prior period, sales were ${direction} ${magText}.`);
     }
+    const coversDelta = pctDelta(typeof covers?.value === "number" ? Number(covers.value) : null, prevCovers);
+    const spendDelta = pctDelta(avgSpend, prevSpend);
+    const interp = crossMetricInterpretation({
+      salesDelta: Number(delta.value),
+      coversDelta,
+      spendDelta,
+    });
+    if (interp) parts.push(interp);
   } else if (input.comparability?.status === "not_comparable") {
     parts.push("A percentage comparison is not valid for these periods.");
   }

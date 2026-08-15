@@ -122,7 +122,7 @@ export function assessFeasibility(input: {
 
   if (reasons.includes("scope_ambiguous") || reasons.includes("comparison_period_missing") || reasons.includes("period_unresolved")) {
     return {
-      status: reasons.includes("scope_ambiguous") ? "REQUIRES_CLARIFICATION" : "NOT_ANSWERABLE_AS_REQUESTED",
+      status: "REQUIRES_CLARIFICATION",
       reasons,
       detail,
       suggestedAlternatives,

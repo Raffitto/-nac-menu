@@ -1,0 +1,428 @@
+/**
+ * Canonical turn semantics for Ask NAC Fabric.
+ * Parse the current turn once, then merge with conversation.
+ * Explicit current-turn meaning always outranks inherited context.
+ */
+
+import {
+  buildPreviousEquivalentVaultPeriod,
+  parseVaultComparePeriodsFromQuestion,
+  parseVaultPeriodFromQuestion,
+} from "../vaultPeriodParser.ts";
+import { createEmptyConversationState, updateConversationState } from "./conversationState.ts";
+import { normalizeBranchId } from "./scope.ts";
+import { defaultTemporalService } from "./temporalService.ts";
+import type { StructuredConversationState } from "./conversationState.ts";
+import type { DateRange } from "./types.ts";
+
+export type CommercialMetric =
+  | "sales"
+  | "covers"
+  | "orders"
+  | "avg_spend"
+  | "delivery"
+  | "dine_in";
+
+export type AmbiguityKind =
+  | "missing_comparison_baseline"
+  | "underspecified_follow_up"
+  | "unsupported_capability";
+
+export type TurnDimensionFlags = {
+  metric: boolean;
+  period: boolean;
+  branch: boolean;
+  comparison: boolean;
+};
+
+export type TurnSemantics = {
+  intent: string | null;
+  metric: CommercialMetric | "commercial";
+  scope: { branchId: string | null };
+  period: DateRange | null;
+  comparisonPeriod: DateRange | null;
+  comparisonIntent: boolean;
+  eventWindow: TemporalEventWindow | null;
+  ranking: "top" | "bottom" | null;
+  inheritedFromConversation: TurnDimensionFlags;
+  explicitInCurrentTurn: TurnDimensionFlags;
+  ambiguity: {
+    needsClarification: boolean;
+    kind: AmbiguityKind | null;
+    prompt: string | null;
+  };
+  usedFollowUp: boolean;
+  resolvedQuestion: string;
+  notes: string[];
+  conversation: StructuredConversationState;
+  forecastPeriod?: DateRange | null;
+  nextHolidayDate?: string | null;
+};
+
+type TemporalEventWindow = {
+  holidayId: string;
+  convention: string;
+  conventionLabel: string;
+  anchorDate: string;
+  year: number;
+  weekdaySignature: string;
+};
+
+const COMPARISON_INTENT_RE =
+  /\b(?:compared?\s+(?:with|to)|compare(?:\s+it)?(?:\s+(?:with|to))?|versus|vs\.?|against|better or worse than|difference from|change versus|up or down from|how does that compare)\b/i;
+
+const FOLLOW_UP_PREFIX_RE = /^(?:what about|how about|and|same for|actually|instead)\s+/i;
+const CORRECTION_RE = /\b(?:actually|no,?\s+i meant|instead|rather)\b/i;
+
+export function hasComparisonIntent(question: string): boolean {
+  const q = String(question || "");
+  if (/^why the difference\??$/i.test(q.trim())) return true;
+  return COMPARISON_INTENT_RE.test(q);
+}
+
+export function extractCommercialMetric(question: string): CommercialMetric | null {
+  const q = String(question || "").toLowerCase();
+  if (/\b(average spend|avg spend|spend per guest|average check|avg_spend)\b/.test(q)) return "avg_spend";
+  if (/\b(covers?|guests?|guest count)\b/.test(q)) return "covers";
+  if (/\border(?:s| count)?\b/.test(q)) return "orders";
+  if (/\bdine[-\s]?in\b/.test(q)) return "dine_in";
+  if (/\bdeliver(?:y|ies)\b/.test(q)) return "delivery";
+  if (/\b(sales?|revenue|takings)\b/.test(q)) return "sales";
+  return null;
+}
+
+export function extractFollowUpFocus(question: string): string | null {
+  const q = String(question || "").trim();
+  const m = q.match(/^(?:what about|how about|and|same for)\s+(.+?)\??$/i);
+  return m ? m[1].trim() : null;
+}
+
+function toRange(period: { startDate?: string; endDate?: string; label?: string; periodType?: string } | null | undefined): DateRange | null {
+  if (!period?.startDate || !period?.endDate) return null;
+  return {
+    startDate: period.startDate,
+    endDate: period.endDate,
+    label: period.label || null,
+    semantic: period.periodType || null,
+  };
+}
+
+function metricWord(metric: CommercialMetric | "commercial" | null): string {
+  if (metric === "covers") return "covers";
+  if (metric === "orders") return "orders";
+  if (metric === "avg_spend") return "average spend";
+  if (metric === "delivery") return "delivery sales";
+  if (metric === "dine_in") return "dine-in sales";
+  return "sales";
+}
+
+function reconstructQuestion(input: {
+  metric: CommercialMetric | "commercial";
+  period: DateRange | null;
+  comparisonPeriod: DateRange | null;
+  comparisonIntent: boolean;
+  branchId: string | null;
+  original: string;
+}): string {
+  const metric = metricWord(input.metric);
+  const period = input.period?.label || input.period?.semantic || null;
+  const compare = input.comparisonPeriod?.label || input.comparisonPeriod?.semantic || null;
+  const branch = input.branchId
+    ? ` for ${input.branchId[0].toUpperCase()}${input.branchId.slice(1)}`
+    : "";
+  if (input.comparisonIntent && period && compare) {
+    return `Compare ${metric} in ${period} with ${compare}${branch}`;
+  }
+  if (period) return `How were ${metric} in ${period}${branch}?`;
+  return input.original;
+}
+
+export function resolveFollowUpPeriodFocus(
+  focus: string,
+  referenceDate: Date = new Date(),
+): DateRange | null {
+  const f = String(focus || "").trim();
+  if (!f) return null;
+  const candidates = [
+    f,
+    `How did ${f} perform overall?`,
+    `How was ${f}?`,
+    `sales ${f}`,
+  ];
+  for (const candidate of candidates) {
+    const resolved = defaultTemporalService.resolveFromQuestion(candidate, referenceDate);
+    if (resolved.range?.startDate && resolved.range?.endDate) return resolved.range;
+    const parsed = toRange(parseVaultPeriodFromQuestion(candidate, referenceDate));
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function isPeriodOnlyFollowUpTurn(
+  question: string,
+  referenceDate: Date = new Date(),
+): boolean {
+  const q = String(question || "").trim();
+  const self = parseVaultComparePeriodsFromQuestion(q, referenceDate);
+  if (self?.current?.startDate && self?.previous?.startDate) return false;
+  if (/^(?:compare(?:\s+it)?\s+(?:with|to)|vs|versus|compared with|compared to)\s+/i.test(q)) {
+    const compareFocus = q.replace(/^(?:compare(?:\s+it)?\s+(?:with|to)|vs|versus|compared with|compared to)\s+/i, "").replace(/\?+$/, "").trim();
+    return Boolean(resolveFollowUpPeriodFocus(compareFocus, referenceDate)?.startDate);
+  }
+  const focus = extractFollowUpFocus(q);
+  if (!focus) return false;
+  if (hasComparisonIntent(focus)) return false;
+  if (extractCommercialMetric(focus) && !resolveFollowUpPeriodFocus(focus, referenceDate)) return false;
+  return Boolean(resolveFollowUpPeriodFocus(focus, referenceDate)?.startDate);
+}
+
+function extractRanking(question: string): "top" | "bottom" | null {
+  const q = String(question || "").toLowerCase();
+  if (/\b(top|strongest|best|highest)\b/.test(q)) return "top";
+  if (/\b(bottom|weakest|worst|lowest)\b/.test(q)) return "bottom";
+  return null;
+}
+
+function hasInheritContext(prev: StructuredConversationState): boolean {
+  return Boolean(
+    prev.activePeriods?.current
+    || prev.activeMetric
+    || prev.activeMetricFamily
+    || prev.previousIntent
+    || (prev.activeCapabilities && prev.activeCapabilities.length),
+  );
+}
+
+export function resolveTurnSemantics(input: {
+  question: string;
+  previous?: StructuredConversationState | null;
+  branchHint?: string | null;
+  referenceDate?: Date;
+}): TurnSemantics {
+  const prev = input.previous || createEmptyConversationState();
+  const q = String(input.question || "").trim();
+  const ref = input.referenceDate || new Date();
+  const notes: string[] = [];
+  const inherit = hasInheritContext(prev);
+
+  const explicitMetric = extractCommercialMetric(q);
+  const mentionedBranch = normalizeBranchId(q);
+  const ranking = extractRanking(q);
+  const comparisonIntentExplicit = hasComparisonIntent(q);
+  const correction = CORRECTION_RE.test(q);
+  const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction);
+
+  const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
+  const selfCompare = parseVaultComparePeriodsFromQuestion(q, ref);
+  let explicitPeriod = toRange(selfCompare?.current) || temporal.range || toRange(parseVaultPeriodFromQuestion(q, ref));
+  let explicitCompare = toRange(selfCompare?.previous) || temporal.compareRange || null;
+
+  const compareFocusMatch = q.match(
+    /(?:compare(?:\s+it)?\s+(?:with|to)|compared\s+(?:with|to)|versus|vs\.?|against)\s+(.+?)\??$/i,
+  );
+  const comparisonFollowUpOnly = Boolean(
+    comparisonIntentExplicit
+    && inherit
+    && prev.activePeriods.current
+    && (compareFocusMatch || /^compared?\b/i.test(q))
+    && !selfCompare?.previous
+  );
+  if (comparisonFollowUpOnly && !temporal.compareRange && !selfCompare?.previous) {
+    explicitPeriod = null;
+  }
+
+  if (comparisonIntentExplicit && !explicitPeriod && !comparisonFollowUpOnly) {
+    const remainder = q.replace(COMPARISON_INTENT_RE, " ").replace(/\s+/g, " ").trim();
+    explicitPeriod = resolveFollowUpPeriodFocus(remainder, ref);
+  }
+
+  const focus = extractFollowUpFocus(q);
+  if (focus && !explicitPeriod) {
+    const focusPeriod = resolveFollowUpPeriodFocus(focus, ref);
+    if (focusPeriod && !extractCommercialMetric(focus)) {
+      explicitPeriod = focusPeriod;
+      notes.push("followup_period_from_focus");
+    }
+  }
+
+  if (comparisonIntentExplicit && !explicitCompare) {
+    const fragment = compareFocusMatch?.[1] || focus;
+    if (fragment) {
+      if (/\b(month before|previous month|prior month)\b/i.test(fragment) && (explicitPeriod || prev.activePeriods.current)) {
+        explicitCompare = toRange(
+          buildPreviousEquivalentVaultPeriod(explicitPeriod || prev.activePeriods.current),
+        );
+        notes.push("comparison_previous_equivalent");
+      } else {
+        const resolved = resolveFollowUpPeriodFocus(fragment, ref);
+        if (resolved) {
+          explicitCompare = resolved;
+          notes.push("followup_explicit_compare");
+        }
+      }
+    }
+  }
+
+  if (/^why the difference\??$/i.test(q) && prev.activePeriods.current) {
+    notes.push("followup_why_difference");
+  }
+
+  const explicit: TurnDimensionFlags = {
+    metric: Boolean(explicitMetric),
+    period: Boolean(explicitPeriod),
+    branch: Boolean(mentionedBranch),
+    comparison: Boolean(explicitCompare) || (comparisonIntentExplicit && Boolean(explicitCompare || prev.activePeriods.current)),
+  };
+
+  let metric: CommercialMetric | "commercial" =
+    explicitMetric || (prev.activeMetric as CommercialMetric) || (inherit ? (prev.activeMetricFamily as CommercialMetric | "commercial") || "commercial" : "commercial");
+  if (!explicitMetric && inherit && prev.activeMetric) metric = prev.activeMetric as CommercialMetric;
+
+  let branchId = mentionedBranch || normalizeBranchId(input.branchHint) || prev.activeBranchId || null;
+  let period = explicitPeriod || (inherit ? prev.activePeriods.current : null);
+  let comparisonPeriod: DateRange | null = null;
+  let comparisonIntent = comparisonIntentExplicit || Boolean(explicitCompare);
+
+  if (explicitCompare) {
+    comparisonPeriod = explicitCompare;
+    if (!explicitPeriod && prev.activePeriods.current) {
+      period = prev.activePeriods.current;
+      notes.push("comparison_keeps_prior_current");
+    }
+  } else if (comparisonIntentExplicit && inherit && prev.activePeriods.current && prev.activePeriods.comparison && !explicitPeriod) {
+    period = prev.activePeriods.current;
+    comparisonPeriod = prev.activePeriods.comparison;
+    notes.push("comparison_inherited_pair");
+  } else if (explicitPeriod) {
+    comparisonPeriod = null;
+  } else if (inherit && !correction) {
+    comparisonPeriod = prev.activePeriods.comparison;
+  }
+
+  if (correction && explicitPeriod) {
+    comparisonPeriod = explicitCompare;
+    notes.push("explicit_period_replaces_inherited");
+  }
+
+  if (/weekend/i.test(q) && /what about|only/i.test(q) && prev.activePeriods.current) {
+    notes.push("followup_weekend_filter");
+    period = prev.activePeriods.current;
+    comparisonPeriod = prev.activePeriods.comparison;
+  }
+
+  const inheritedFromConversation: TurnDimensionFlags = {
+    metric: !explicit.metric && inherit && Boolean(prev.activeMetric || prev.activeMetricFamily),
+    period: !explicit.period && inherit && Boolean(prev.activePeriods.current),
+    branch: !explicit.branch && inherit && Boolean(prev.activeBranchId),
+    comparison: !explicitCompare && comparisonIntent && inherit && Boolean(prev.activePeriods.comparison || prev.activePeriods.current),
+  };
+
+  let ambiguityKind: AmbiguityKind | null = null;
+  let clarificationPrompt: string | null = null;
+
+  if (comparisonIntent && period && !comparisonPeriod && !selfCompare) {
+    ambiguityKind = "missing_comparison_baseline";
+    clarificationPrompt = `Compare ${period.label || "that period"} to what?`;
+  } else if (
+    inherit
+    && followUpShape
+    && !explicit.metric
+    && !explicit.period
+    && !explicit.branch
+    && !comparisonIntent
+    && !/^why the difference/i.test(q)
+    && !/weekend/i.test(q)
+  ) {
+    ambiguityKind = "underspecified_follow_up";
+    clarificationPrompt = "Which metric, period, or branch should I apply that to?";
+  } else if (
+    comparisonIntent
+    && !period
+    && !comparisonPeriod
+    && !inherit
+  ) {
+    ambiguityKind = "missing_comparison_baseline";
+    clarificationPrompt = "Compare which period to which baseline?";
+  }
+
+  const usedFollowUp = inherit && (
+    followUpShape
+    || inheritedFromConversation.metric
+    || inheritedFromConversation.period
+    || inheritedFromConversation.branch
+    || comparisonIntent
+    || notes.includes("followup_why_difference")
+  );
+
+  const intent = comparisonIntent
+    ? "period_compare"
+    : (ranking ? "day_ranking" : (prev.previousIntent || (inherit ? "performance_overview" : "performance_overview")));
+
+  const preserveOriginal = Boolean(
+    temporal.eventWindow
+    || temporal.holidayBundle
+    || /\b(ramadan|founding day|foundation day|eid|forecast|expect)\b/i.test(q)
+  );
+  const resolvedQuestion = preserveOriginal
+    ? q
+    : reconstructQuestion({
+      metric,
+      period,
+      comparisonPeriod,
+      comparisonIntent,
+      branchId,
+      original: q,
+    });
+
+  const capabilities = comparisonIntent
+    ? ["commercial.compare", "commercial.performance"]
+    : (prev.activeCapabilities?.length && !explicitPeriod
+      ? prev.activeCapabilities.filter((c) => (comparisonIntent ? true : c !== "commercial.compare"))
+      : ["commercial.performance"]);
+
+  const conversation = updateConversationState(prev, {
+    activeBranchId: branchId,
+    activeCompanyId: prev.activeCompanyId || "nac_hospitality",
+    activeBrandId: prev.activeBrandId || "nac",
+    activeMetricFamily: metric === "covers" || metric === "orders" || metric === "avg_spend" || metric === "delivery"
+      ? "commercial"
+      : (metric || prev.activeMetricFamily || "commercial"),
+    activeMetric: explicitMetric || prev.activeMetric || metric,
+    activeCapabilities: comparisonIntent
+      ? ["commercial.compare", "commercial.performance"]
+      : capabilities,
+    activePeriods: {
+      current: period,
+      comparison: comparisonPeriod,
+    },
+    previousIntent: intent,
+    filterPatch: notes.includes("followup_weekend_filter") ? { weekendOnly: true } : undefined,
+  });
+
+  if (temporal.holidayBundle) notes.push("holiday_event_window_resolved");
+  if (selfCompare?.current && selfCompare?.previous) notes.push("self_contained_comparison_preserved");
+
+  return {
+    intent,
+    metric,
+    scope: { branchId },
+    period,
+    comparisonPeriod,
+    comparisonIntent,
+    eventWindow: temporal.eventWindow || null,
+    ranking,
+    inheritedFromConversation,
+    explicitInCurrentTurn: explicit,
+    ambiguity: {
+      needsClarification: Boolean(ambiguityKind),
+      kind: ambiguityKind,
+      prompt: clarificationPrompt,
+    },
+    usedFollowUp,
+    resolvedQuestion,
+    notes,
+    conversation,
+    forecastPeriod: temporal.forecastRange || null,
+    nextHolidayDate: temporal.nextHolidayDate || null,
+  };
+}

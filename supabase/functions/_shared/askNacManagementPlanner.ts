@@ -208,34 +208,12 @@ function detectBranchMention(question = "") {
 }
 
 function inferTimeExpression(question = ""): string | null {
+  const parsed = parseVaultPeriodFromQuestion(question, new Date());
+  if (parsed?.periodType) return parsed.periodType;
   const q = String(question || "").toLowerCase();
-  if (/\b(month to date|mtd|so far this month|looking so far)\b/.test(q) && /\baugust\b/.test(q)) {
-    return "august_mtd";
-  }
-  if (/\b(month to date|mtd|so far)\b/.test(q) && /\b(this month|august|current month)\b/.test(q)) {
-    return "this_month";
-  }
-  if (/\baugust\b/.test(q) && /\b(so far|looking|mtd|month to date)\b/.test(q)) return "august_mtd";
-  if (/\bthis month\b/.test(q)) return "this_month";
-  if (/\blast month\b/.test(q)) return "last_month";
-  if (/\b(july|june|may|april|march|february|january|august|september|october|november|december)\b/.test(q)) {
-    const m = q.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/);
-    return m ? `named_month:${m[1]}` : null;
-  }
+  if (/\b(month to date|mtd|so far this month)\b/.test(q)) return "this_month";
   if (/\b(week before|prior week|previous week|week before that)\b/.test(q)) return "previous_week_compare";
-  if (/\b(this week|current week)\b/.test(q)) return "this_week";
-  if (/\blast week\b/.test(q)) return "last_week";
-  if (/\b(last|past)\s+(\d{1,3})\s+days?\b/.test(q)) {
-    const m = q.match(/\b(last|past)\s+(\d{1,3})\s+days?\b/);
-    return m ? `last_${m[2]}_days` : "last_7_days";
-  }
-  if (/\b(last|past)\s+2\s+weeks?\b|\b(last|past)\s+two\s+weeks?\b/.test(q)) return "last_14_days";
   if (/\b(lately|recently|last few days|these days)\b/.test(q)) return "last_14_days";
-  if (/\btoday\b/.test(q)) return "today";
-  if (/\byesterday\b/.test(q)) return "yesterday";
-  if (/\b(?:\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+days?\s+ago\b/.test(q)) {
-    return "days_ago";
-  }
   if (/\bweekend\b/.test(q)) return "last_weekend";
   return null;
 }

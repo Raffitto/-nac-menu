@@ -26,6 +26,8 @@ import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
 import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
+import { hasComparisonIntent } from "./turnSemantics.ts";
+import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import {
@@ -182,19 +184,18 @@ export function isManagementIntelligenceQuestion(
     || looksLikeOperationalManagementQuestion(question);
 }
 
-function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"]) {
+function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"], referenceDate?: Date) {
   const q = question.toLowerCase();
   const high = legacyRoute?.confidence === "high";
-  const monthToken =
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/;
-  const namedMonthPerformance = /\bhow\s+(did|was)\b/.test(q)
-    && monthToken.test(q)
-    && /\b(perform|sales|revenue|business|overall)\b/.test(q);
-  const simple = /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q)
-    || (high && /\bhow was (january|february|march|april|may|june|july|august)\b/.test(q))
-    || namedMonthPerformance;
+  const diagnostic = /\b(why|shit|act on|briefing|lately|ramadan|founding|foundation|forecast|expect|operational|complaint)\b/.test(q);
+  if (diagnostic && !(high && /^vault_cash_up_summary$/.test(String(legacyRoute?.intent || "")))) {
+    return false;
+  }
+  const parsedPeriod = parseVaultPeriodFromQuestion(question, referenceDate || new Date());
+  const simple = Boolean(parsedPeriod)
+    || /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q);
   return Boolean(simple || (high && /^vault_cash_up_summary$/.test(String(legacyRoute?.intent || ""))
-    && !/\bwhy|shit|act on|briefing|lately|ramadan\b/.test(q)));
+    && !diagnostic));
 }
 
 function metricKeyMetrics(state: CompanyIntelligenceState) {
@@ -337,10 +338,13 @@ export async function runCompanyIntelligenceOrchestration(
   // Temporal from follow-up or fresh resolution already in followUp
   let currentPeriod = followUp.currentPeriod;
   let comparisonPeriod = followUp.comparisonPeriod;
-  const holidayIntent = detectHolidayQuestionIntent(state.request.normalizedQuestion);
-  const looksLikePeriodFollowUp = /^(?:what about|how about|and)\b/i.test(String(options.question || "").trim());
+  const holidayIntent = detectHolidayQuestionIntent(
+    state.request.originalQuestion || state.request.normalizedQuestion,
+  );
+  const looksLikePeriodFollowUp = followUp.usedFollowUp
+    || isPeriodOnlyFollowUpTurn(String(options.question || "").trim(), options.referenceDate || new Date());
   // Never collapse unresolved follow-ups into last_7_days — that erases inherited July→June semantics.
-  if (!currentPeriod && !holidayIntent.detected && !(looksLikePeriodFollowUp && options.conversation)) {
+  if (!currentPeriod && !holidayIntent.detected && !(looksLikePeriodFollowUp && options.conversation) && !followUp.usedFollowUp) {
     // Safe default recent window for management language without inventing named calendar periods.
     const fallback = defaultTemporalService.resolveExpression(
       "last_7_days",
@@ -363,7 +367,8 @@ export async function runCompanyIntelligenceOrchestration(
 
   const branch = state.scope.primaryBranchId;
   const requiresComparison = Boolean(state.periods.comparison)
-    || /\b(compare|compared|vs|versus|difference|why the difference|last year)\b/i.test(state.request.normalizedQuestion);
+    || Boolean(followUp.semantics?.comparisonIntent)
+    || hasComparisonIntent(options.question);
 
   const comparisonOperating = branch && state.periods.comparison
     ? defaultBusinessTimeline.getOperatingStatus(branch, state.periods.comparison)
@@ -439,6 +444,46 @@ export async function runCompanyIntelligenceOrchestration(
     };
   }
 
+  if (
+    followUp.ambiguity?.needsClarification
+    || feasibility.status === "REQUIRES_CLARIFICATION"
+  ) {
+    const text = followUp.ambiguity?.prompt
+      || feasibility.detail[0]
+      || "I need a bit more detail to answer that safely.";
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified: true },
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "clarification",
+      },
+      plan: {
+        ...state.plan,
+        goal: "clarify",
+        capabilities: [],
+        researchBudgetTier: 0,
+        needsClarification: true,
+        clarificationPrompt: text,
+      },
+    });
+    return {
+      state,
+      answerText: text,
+      answerType: "clarification",
+      keyMetrics: [],
+      insights: feasibility.suggestedAlternatives || [],
+      nextConversation: state.conversation,
+      toolsExecuted: [],
+      paidModelCalls: 0,
+    };
+  }
+
   const inheritedCommercialFollowUp = Boolean(
     followUp.usedFollowUp
     && (followUp.metricFamily === "commercial"
@@ -446,7 +491,8 @@ export async function runCompanyIntelligenceOrchestration(
       || String(followUp.conversation.previousIntent || "").includes("performance")
       || (followUp.conversation.activeCapabilities || []).some((c) => String(c).startsWith("commercial."))),
   );
-  const fastPath = isExplicitFastPath(options.question, options.legacyRoute) || inheritedCommercialFollowUp;
+  const fastPath = isExplicitFastPath(options.question, options.legacyRoute, options.referenceDate)
+    || inheritedCommercialFollowUp;
   let capabilities: CapabilityId[] = [];
   let plannerCalls = 0;
   let plannerSource: string | null = null;

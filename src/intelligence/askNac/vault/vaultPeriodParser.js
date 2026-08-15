@@ -78,11 +78,14 @@ const RELATIVE_DAY_WORDS = Object.freeze({
 
 /** Exact single calendar day N days before Asia/Riyadh today — not a rolling window. */
 function parseRelativeDaysAgoPeriod(q, referenceDate) {
-  const m = String(q || "").toLowerCase().match(
-    /\b(?:(\d{1,3})|(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve))\s+days?\s+ago\b/,
-  );
-  if (!m) return null;
-  const n = m[1] ? Number(m[1]) : RELATIVE_DAY_WORDS[m[2]];
+  const couple = String(q || "").toLowerCase().match(/\ba\s+couple\s+of\s+days?\s+ago\b/);
+  const m = couple
+    ? null
+    : String(q || "").toLowerCase().match(
+      /\b(?:(\d{1,3})|(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve))\s+days?\s+ago\b/,
+    );
+  if (!m && !couple) return null;
+  const n = couple ? 2 : (m[1] ? Number(m[1]) : RELATIVE_DAY_WORDS[m[2]]);
   if (!Number.isFinite(n) || n < 1) return null;
   const today = calendarYmdInTz(referenceDate);
   const day = addCalendarDays(today.year, today.month, today.day, -Math.min(366, n));
@@ -219,16 +222,65 @@ export function listPeriodDates(period) {
 }
 
 function previousCalendarWeekBounds(referenceDate) {
-  const end = shiftLocalDate(referenceDate, -referenceDate.getDay());
-  const start = shiftLocalDate(end, -6);
+  return sundayWeekBounds(referenceDate, "previous_complete");
+}
+
+function ymdWeekdaySundayFirst(ymd) {
+  return new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day)).getUTCDay();
+}
+
+function sundayWeekBounds(referenceDate, mode) {
+  const today = calendarYmdInTz(referenceDate);
+  const dow = ymdWeekdaySundayFirst(today);
+  const thisStart = addCalendarDays(today.year, today.month, today.day, -dow);
+  if (mode === "current_to_date") {
+    const startDate = isoDate(thisStart.year, thisStart.month, thisStart.day);
+    const endDate = isoDate(today.year, today.month, today.day);
+    return {
+      startDate,
+      endDate,
+      label: "this week",
+      periodType: "this_week",
+      isSingleDay: startDate === endDate,
+      isWeek: true,
+      isRange: startDate !== endDate,
+      expectedDayCount: listPeriodDates({ startDate, endDate }).length,
+    };
+  }
+  const prevEnd = addCalendarDays(thisStart.year, thisStart.month, thisStart.day, -1);
+  const prevStart = addCalendarDays(prevEnd.year, prevEnd.month, prevEnd.day, -6);
+  const startDate = isoDate(prevStart.year, prevStart.month, prevStart.day);
+  const endDate = isoDate(prevEnd.year, prevEnd.month, prevEnd.day);
   return {
-    startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
-    endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+    startDate,
+    endDate,
     label: "previous week",
     periodType: "previous_week",
     isSingleDay: false,
     isWeek: true,
     isRange: true,
+    expectedDayCount: 7,
+  };
+}
+
+function quarterIndex(monthIndex0) {
+  return Math.floor(monthIndex0 / 3);
+}
+
+function quarterBounds(year, quarter) {
+  const startMonth = (quarter - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const lastDay = new Date(Date.UTC(year, endMonth, 0)).getUTCDate();
+  const startDate = isoDate(year, startMonth, 1);
+  const endDate = isoDate(year, endMonth, lastDay);
+  return {
+    startDate,
+    endDate,
+    label: `Q${quarter} ${year}`,
+    periodType: "quarter",
+    isSingleDay: false,
+    isRange: true,
+    expectedDayCount: listPeriodDates({ startDate, endDate }).length,
   };
 }
 
@@ -392,12 +444,39 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
   }
 
   // "from 9 to August 13"
-  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|[–—-])\\s+${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const monthIndex = MONTH_MAP[m[2]];
     const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
     const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
     const endDate = isoDate(year, monthIndex + 1, Number(m[3]));
+    if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
+  }
+
+  m = q.match(new RegExp(`\\bbetween\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+and\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
+  if (m) {
+    const monthIndex = MONTH_MAP[m[3]];
+    const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
+    const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
+    const endDate = isoDate(year, monthIndex + 1, Number(m[2]));
+    if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
+  }
+
+  m = q.match(new RegExp(`\\bfrom\\s+(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through)\\s+(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+${MONTH_PATTERN})?(?:\\s+(20\\d{2}))?`));
+  if (m) {
+    const monthIndex = m[3] ? MONTH_MAP[m[3]] : calendarYmdInTz(referenceDate).month - 1;
+    const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
+    const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
+    const endDate = isoDate(year, monthIndex + 1, Number(m[2]));
+    if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
+  }
+
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s*[–—-]\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
+  if (m) {
+    const monthIndex = MONTH_MAP[m[3]];
+    const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
+    const startDate = isoDate(year, monthIndex + 1, Number(m[1]));
+    const endDate = isoDate(year, monthIndex + 1, Number(m[2]));
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
@@ -423,7 +502,10 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  if (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to)\b/.test(q)) {
+  if (
+    (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to|compared with)\b/.test(q))
+    || /\b(vs\.?|versus|compared with|compared to|against)\b/.test(q)
+  ) {
     const compare = parseVaultComparePeriodsFromQuestion(question, referenceDate);
     if (compare?.current) return compare.current;
   }
@@ -442,15 +524,23 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
   }
 
-  if (/\bprevious\s+week\b/.test(q)) {
-    return previousCalendarWeekBounds(referenceDate);
+  const firstNDays = q.match(/\bfirst\s+(\d{1,3})\s+days?\b/);
+  if (firstNDays) {
+    const n = Math.min(31, Math.max(1, Number(firstNDays[1])));
+    const y = referenceDate.getFullYear();
+    const m = referenceDate.getMonth();
+    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    const endDay = Math.min(n, lastDay);
+    const startDate = isoDate(y, m + 1, 1);
+    const endDate = isoDate(y, m + 1, endDay);
+    return buildCustomRangePeriod(startDate, endDate, `first ${n} days`, "first_n_days");
   }
 
-  if (/\blast\s+week\b/.test(q)) {
-    return rollingRange(referenceDate, 7, { endOffset: -1, label: "last week", periodType: "last_week" });
+  if (/\b(previous\s+(?:complete\s+)?week|last\s+week|past\s+week)\b/.test(q)) {
+    return { ...previousCalendarWeekBounds(referenceDate), periodType: /\blast\s+week\b/.test(q) ? "last_week" : "previous_week", label: /\blast\s+week\b/.test(q) ? "last week" : "previous week" };
   }
 
-  if (/\btoday\b/.test(q)) {
+  if (/\btoday\b/.test(q) && !/\bday\s+before\s+today\b/.test(q)) {
     const ymd = calendarYmdInTz(referenceDate);
     const iso = isoDate(ymd.year, ymd.month, ymd.day);
     const label = formatDayMonthLabel(ymd.year, ymd.month - 1, ymd.day);
@@ -464,7 +554,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     };
   }
 
-  if (/\byesterday\b/.test(q)) {
+  if (/\byesterday\b|\bthe\s+day\s+before\s+today\b|\bday\s+before\s+today\b/.test(q)) {
     const today = calendarYmdInTz(referenceDate);
     const day = addCalendarDays(today.year, today.month, today.day, -1);
     const iso = isoDate(day.year, day.month, day.day);
@@ -521,9 +611,29 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthToDateBounds(referenceDate);
   }
 
-  if (/\blast\s+month\b/.test(q)) {
+  if (/\b(last|previous)\s+month\b/.test(q)) {
     const shifted = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
     return monthBounds(shifted.getFullYear(), shifted.getMonth());
+  }
+
+  const namedQuarter = q.match(/\b(?:q|quarter\s*)([1-4])\s*(20\d{2})\b/) || q.match(/\b(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter(?:\s+(20\d{2}))?\b/);
+  if (namedQuarter) {
+    const word = { first: 1, "1st": 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4 };
+    const qn = word[namedQuarter[1]] || Number(namedQuarter[1]);
+    const year = namedQuarter[2] ? Number(namedQuarter[2]) : referenceDate.getFullYear();
+    if (qn >= 1 && qn <= 4) return quarterBounds(year, qn);
+  }
+  if (/\b(last|previous)\s+quarter\b/.test(q)) {
+    const idx = quarterIndex(referenceDate.getMonth());
+    const prevQ = idx === 0 ? 4 : idx;
+    const year = idx === 0 ? referenceDate.getFullYear() - 1 : referenceDate.getFullYear();
+    return quarterBounds(year, prevQ);
+  }
+  if (/\b(this quarter|quarter to date|qtd)\b/.test(q)) {
+    const qn = quarterIndex(referenceDate.getMonth()) + 1;
+    const full = quarterBounds(referenceDate.getFullYear(), qn);
+    const endDate = isoDate(referenceDate.getFullYear(), referenceDate.getMonth() + 1, referenceDate.getDate());
+    return { ...full, endDate, label: `Q${qn} ${referenceDate.getFullYear()} (to date)`, periodType: "quarter_to_date" };
   }
 
   if (/\b(this year|year to date|year-to-date|ytd)\b/.test(q)) {
@@ -541,11 +651,38 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     };
   }
 
-  if (/\b(this week|current week|past week)\b/.test(q)) {
+  if (/\b(last|previous)\s+year\b/.test(q)) {
+    const y = referenceDate.getFullYear() - 1;
     return {
-      ...rollingRange(referenceDate, 7, { label: "this week", periodType: "this_week" }),
-      isWeek: true,
+      startDate: isoDate(y, 1, 1),
+      endDate: isoDate(y, 12, 31),
+      label: String(y),
+      periodType: "last_year",
+      isSingleDay: false,
+      isRange: true,
     };
+  }
+
+  const bareYear = q.match(/\b(20\d{2})\b/);
+  const hasMonthToken = new RegExp(`\\b${MONTH_PATTERN}\\b`).test(q);
+  if (
+    !hasMonthToken
+    && bareYear
+    && /^(?:sales |how (?:were|was|did).*)?(?:in |for |during )?\s*20\d{2}\s*\??$/.test(q.replace(/^(what about|how about|and)\s+/i, ""))
+  ) {
+    const y = Number(bareYear[1]);
+    return {
+      startDate: isoDate(y, 1, 1),
+      endDate: isoDate(y, 12, 31),
+      label: String(y),
+      periodType: "named_year",
+      isSingleDay: false,
+      isRange: true,
+    };
+  }
+
+  if (/\b(this week|current week|week to date|wtd)\b/.test(q)) {
+    return sundayWeekBounds(referenceDate, "current_to_date");
   }
 
   const monthOnly = q.match(
@@ -590,6 +727,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return monthBoundsFromToken(performanceMonth[1], performanceMonth[2], referenceDate);
   }
 
+  const stripped = q
+    .replace(/[?!.]+$/g, "")
+    .replace(/^(?:what about|how about|and|actually|instead)\s+/i, "")
+    .replace(/^(?:in|for|during)\s+/i, "")
+    .trim();
+  const bareMonth = stripped.match(new RegExp(`^${MONTH_PATTERN}(?:\\s+(20\\d{2}))?$`));
+  if (bareMonth) {
+    return monthBoundsFromToken(bareMonth[1], bareMonth[2], referenceDate);
+  }
+
   return null;
 }
 
@@ -600,7 +747,7 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs|versus|against|with|compared to)\s+(.+)$/);
+  const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs\.?|versus|against|with|compared with|compared to)\s+(.+)$/);
   if (customSplit) {
     const previousFragment = String(customSplit[2] || "")
       .replace(/\bfor\s+(nac\s+)?(khobar|riyadh|jeddah|branch|network)\b.*$/i, "")
@@ -618,7 +765,7 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   }
 
   const monthCompare = q.match(
-    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus|with|against|compared to)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs\\.?|versus|with|against|compared with|compared to)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
   );
   if (monthCompare) {
     const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);
@@ -634,10 +781,11 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   }
 
   const compareN = q.match(
-    /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs|versus|compared to|against|with)\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
+    /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs\.?|versus|compared with|compared to|against|with)\b.*\b(?:the\s+)?(?:\1\s+)?(previous|prior|preceding|before that)\b/,
   ) || q.match(
     /\bcompare\b.*\b(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(previous|prior|preceding)\s+\1\s+days?\b/,
-  );
+  )
+    || q.match(/\b(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(?:versus|vs\.?|against)\b.*\b(?:the\s+)?(?:\1\s+)?(?:days?\s+)?before that\b/);
   if (compareN) {
     const n = Math.min(366, Math.max(1, Number(compareN[1])));
     const current = rollingRange(referenceDate, n, {
@@ -650,6 +798,15 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
       periodType: `previous_${n}_days`,
     });
     return { current, previous, isComparison: true };
+  }
+
+  const vsParts = q.split(/\s+(?:vs\.?|versus|compared with|compared to|against)\s+/);
+  if (vsParts.length === 2) {
+    const current = parseVaultPeriodFromQuestion(vsParts[0], referenceDate) || parseFlexiblePeriodFragment(vsParts[0], referenceDate);
+    const previous = parseVaultPeriodFromQuestion(vsParts[1], referenceDate) || parseFlexiblePeriodFragment(vsParts[1], referenceDate);
+    if (current?.startDate && previous?.startDate) {
+      return { current, previous, periodType: "semantic_compare", isComparison: true };
+    }
   }
 
   return null;
@@ -729,6 +886,11 @@ const CASH_UP_ANALYTICS_PERIOD_TYPES = new Set([
   "custom_range",
   "first_half",
   "second_half",
+  "quarter",
+  "quarter_to_date",
+  "last_year",
+  "named_year",
+  "first_n_days",
 ]);
 
 function isRollingDayPeriodType(periodType) {

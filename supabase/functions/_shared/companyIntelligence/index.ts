@@ -34,6 +34,11 @@ export * from "./capabilityResolver.ts";
 export * from "./claimAssembly.ts";
 export * from "./deterministicSynthesis.ts";
 export * from "./conversationFollowUp.ts";
+export {
+  resolveTurnSemantics,
+  hasComparisonIntent,
+  extractCommercialMetric,
+} from "./turnSemantics.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";
 export * from "./normalizedCapabilityResult.ts";
