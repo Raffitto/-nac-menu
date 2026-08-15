@@ -105,7 +105,7 @@ describe("Commercial evidence + temporal follow-up (v83)", () => {
     expect(out.reasons).not.toContain("scope_ambiguous");
     expect(out.hasNetSales).toBe(true);
     expect(out.unavailable).toBe(false);
-    expect(out.answer).toMatch(/412345|Cash Up net sales/i);
+    expect(out.answer).toMatch(/412,?345|Cash Up net sales/i);
   });
 
   test("2. Khobar staff July → same capability with Khobar scope", () => {

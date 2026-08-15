@@ -30,6 +30,7 @@ import { hasComparisonIntent } from "./turnSemantics.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
+import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
 import {
   createCompanyIntelligenceState,
   patchIntelligenceState,
@@ -114,6 +115,24 @@ const TOOL_TO_CAPABILITY: Record<string, CapabilityId> = {
 
 function transition(state: CompanyIntelligenceState, stage: FabricStage, patch: Partial<CompanyIntelligenceState> = {}) {
   return patchIntelligenceState(state, { ...patch, stage });
+}
+
+function collectRankingsAndFacts(state: CompanyIntelligenceState): {
+  rankings: NormalizedRanking[];
+  dailyFacts: NormalizedDailyFact[];
+  comparisonMode: string | null;
+} {
+  const rankings: NormalizedRanking[] = [];
+  const dailyFacts: NormalizedDailyFact[] = [];
+  let comparisonMode: string | null = null;
+  for (const row of Object.values(state.toolResults || {})) {
+    const tr = row as Record<string, unknown>;
+    if (Array.isArray(tr.rankings)) rankings.push(...tr.rankings as NormalizedRanking[]);
+    if (Array.isArray(tr.dailyFacts)) dailyFacts.push(...tr.dailyFacts as NormalizedDailyFact[]);
+    const comparison = tr.comparison as { mode?: string } | null;
+    if (!comparisonMode && comparison?.mode) comparisonMode = comparison.mode;
+  }
+  return { rankings, dailyFacts, comparisonMode };
 }
 
 export function managementPlanToCapabilities(plan: {
@@ -253,6 +272,8 @@ async function executeCapabilities(
           coverage: result.normalized?.coverage || null,
           qualitativeEvidence: result.normalized?.qualitativeEvidence || [],
           sourceAuthority: result.normalized?.sourceAuthority || null,
+          rankings: result.normalized?.rankings || [],
+          dailyFacts: result.normalized?.dailyFacts || [],
         },
       },
       cost: {
@@ -746,7 +767,8 @@ export async function runCompanyIntelligenceOrchestration(
     // Paid budget gates cloud synthesis only; unpaid local may still synthesize.
     || (cloudEnabled && state.cost.paidModelCallsPerAnswer >= maxPaid);
 
-  let answerText = synthesizeDeterministicAnswer({
+  const extras = collectRankingsAndFacts(state);
+  const synthesisInput = {
     question: state.request.normalizedQuestion,
     branchId: state.scope.primaryBranchId,
     period: state.periods.current,
@@ -758,8 +780,17 @@ export async function runCompanyIntelligenceOrchestration(
     claims: state.claims,
     coverage: state.coverage,
     comparability: state.comparability,
+    comparisonMode: extras.comparisonMode,
+    primaryMetric: followUp.semantics?.metric || null,
+    ranking: followUp.semantics?.ranking || null,
+    rankingCount: followUp.semantics?.rankingCount || null,
+    comparisonIntent: Boolean(followUp.semantics?.comparisonIntent),
+    rankings: extras.rankings,
+    dailyFacts: extras.dailyFacts,
     offlineAnalysis: !cloudEnabled && !localUnpaidSynth && !fastPath && budget.tier >= 1,
-  });
+  };
+
+  let answerText = synthesizeDeterministicAnswer(synthesisInput);
 
   let synthesisCalls = 0;
   if (!preferDeterministic && budget.tier >= 1) {
@@ -822,16 +853,7 @@ export async function runCompanyIntelligenceOrchestration(
     } else if (!syn.ok) {
       fallbackReason = fallbackReason || syn.error || "synthesis_provider_failure";
       answerText = synthesizeDeterministicAnswer({
-        question: state.request.normalizedQuestion,
-        branchId: state.scope.primaryBranchId,
-        period: state.periods.current,
-        forecastPeriod: state.periods.forecast,
-        nextHolidayDate: state.periods.nextHolidayDate,
-        eventWindow: state.periods.eventWindow,
-        evidence: state.evidence,
-        claims: state.claims,
-        coverage: state.coverage,
-        comparability: state.comparability,
+        ...synthesisInput,
         offlineAnalysis: true,
       });
     }
@@ -915,13 +937,20 @@ export async function runCompanyIntelligenceOrchestration(
       || state.conversation.activeMetricFamily
       || (state.plan.capabilities.some((c) => String(c).startsWith("commercial.")) ? "commercial" : null)
       || "commercial",
+    activeMetric: followUp.semantics?.metric
+      || followUp.conversation.activeMetric
+      || state.conversation.activeMetric,
+    activeRanking: followUp.semantics ? followUp.semantics.ranking : (followUp.conversation.activeRanking ?? null),
+    activeRankingCount: followUp.semantics
+      ? followUp.semantics.rankingCount
+      : (followUp.conversation.activeRankingCount ?? null),
     activeCapabilities: state.plan.capabilities.length
       ? state.plan.capabilities
       : (state.conversation.activeCapabilities || []),
-    previousIntent: state.plan.capabilities.includes("commercial.performance")
-      || state.plan.capabilities.includes("commercial.compare")
-      ? "performance_overview"
-      : (state.plan.goal || followUp.conversation.previousIntent || null),
+    previousIntent: followUp.semantics?.intent
+      || followUp.conversation.previousIntent
+      || state.plan.goal
+      || null,
   };
 
   state = transition(state, "VERIFIED", {

@@ -70,6 +70,21 @@ export type NormalizedRanking = {
   unit: string | null;
 };
 
+export type NormalizedDailyFact = {
+  date: IsoDate;
+  net_sales: number | null;
+  covers: number | null;
+  orders: number | null;
+  avg_spend: number | null;
+};
+
+export type CommercialMetricBundle = {
+  net_sales: number | null;
+  covers: number | null;
+  orders: number | null;
+  avg_spend: number | null;
+};
+
 export type NormalizedQualitativeEvidence = {
   id: string;
   summary: string;
@@ -95,6 +110,7 @@ export type NormalizedCapabilityResult = {
   metrics: NormalizedMetric[];
   comparison: NormalizedComparison | null;
   rankings: NormalizedRanking[];
+  dailyFacts: NormalizedDailyFact[];
   qualitativeEvidence: NormalizedQualitativeEvidence[];
   warnings: string[];
   provenance: {
@@ -379,6 +395,124 @@ export function comparisonFromCashUpAggregations(
     percentChange: null,
     warnings,
   };
+}
+
+function pickCommercialBundle(agg: Record<string, unknown> | null | undefined): CommercialMetricBundle {
+  const net_sales = num(agg?.totalSales ?? agg?.net_sales ?? agg?.total_sales);
+  const covers = num(agg?.totalGuests ?? agg?.guest_count ?? agg?.covers);
+  const orders = num(agg?.totalOrders ?? agg?.order_count);
+  const avg_spend = num(agg?.averageSpend ?? agg?.avg_per_guest)
+    ?? (net_sales != null && covers && covers > 0 ? net_sales / covers : null);
+  return { net_sales, covers, orders, avg_spend };
+}
+
+/**
+ * Current/previous commercial bundle using the same matched-coverage helper as sales comparison.
+ */
+export function commercialBundleFromCashUpAggregations(
+  aggregation: Record<string, unknown>,
+  previousAggregation: Record<string, unknown>,
+): {
+  mode: string;
+  current: CommercialMetricBundle;
+  previous: CommercialMetricBundle;
+  matchedDayCount: number | null;
+} | null {
+  const safe = buildMatchedCoverageComparison(aggregation, previousAggregation) as Record<string, unknown>;
+  if (safe.mode === "matched") {
+    return {
+      mode: "matched",
+      current: pickCommercialBundle(asObject(safe.currentMatched)),
+      previous: pickCommercialBundle(asObject(safe.previousMatched)),
+      matchedDayCount: num(safe.matchedDayCount),
+    };
+  }
+  if (safe.mode === "full") {
+    return {
+      mode: "full",
+      current: pickCommercialBundle(asObject(safe.current) || aggregation),
+      previous: pickCommercialBundle(asObject(safe.previous) || previousAggregation),
+      matchedDayCount: num((asObject(safe.current) || aggregation).dayCount),
+    };
+  }
+  const currentDays = num(aggregation.dayCount) || 0;
+  const previousDays = num(previousAggregation.dayCount) || 0;
+  const current = pickCommercialBundle(aggregation);
+  const previous = pickCommercialBundle(previousAggregation);
+  if (!currentDays || !previousDays) return null;
+  return {
+    mode: String(safe.mode || "daily_average"),
+    current: {
+      net_sales: num(safe.currentAvgDailySales) ?? (current.net_sales != null ? current.net_sales / currentDays : null),
+      covers: current.covers != null ? current.covers / currentDays : null,
+      orders: current.orders != null ? current.orders / currentDays : null,
+      avg_spend: current.avg_spend,
+    },
+    previous: {
+      net_sales: num(safe.previousAvgDailySales) ?? (previous.net_sales != null ? previous.net_sales / previousDays : null),
+      covers: previous.covers != null ? previous.covers / previousDays : null,
+      orders: previous.orders != null ? previous.orders / previousDays : null,
+      avg_spend: previous.avg_spend,
+    },
+    matchedDayCount: null,
+  };
+}
+
+function dailyFactsFromBreakdown(breakdown: unknown): NormalizedDailyFact[] {
+  if (!Array.isArray(breakdown)) return [];
+  const out: NormalizedDailyFact[] = [];
+  for (const row of breakdown.slice(0, 62) as Array<Record<string, unknown>>) {
+    const date = str(row.date) || str(row.business_date);
+    if (!date) continue;
+    const net_sales = num(row.totalSales ?? row.net_sales ?? row.sales);
+    const covers = num(row.totalGuests ?? row.covers ?? row.guest_count);
+    const orders = num(row.totalOrders ?? row.orders ?? row.order_count);
+    const avg_spend = num(row.averageSpend ?? row.avg_spend)
+      ?? (net_sales != null && covers && covers > 0 ? net_sales / covers : null);
+    out.push({ date, net_sales, covers, orders, avg_spend });
+  }
+  return out;
+}
+
+function rankingsFromDailyFacts(facts: NormalizedDailyFact[]): NormalizedRanking[] {
+  const rankings: NormalizedRanking[] = [];
+  const specs: Array<{ metricKey: string; unit: string | null; pick: (f: NormalizedDailyFact) => number | null }> = [
+    { metricKey: "net_sales", unit: "SAR", pick: (f) => f.net_sales },
+    { metricKey: "covers", unit: null, pick: (f) => f.covers },
+    { metricKey: "orders", unit: null, pick: (f) => f.orders },
+    { metricKey: "avg_spend", unit: "SAR", pick: (f) => f.avg_spend },
+  ];
+  for (const spec of specs) {
+    const rows = facts
+      .map((f) => ({ date: f.date, value: spec.pick(f) }))
+      .filter((r) => r.value != null && Number.isFinite(Number(r.value))) as Array<{ date: string; value: number }>;
+    if (!rows.length) continue;
+    const top = [...rows].sort((a, b) => b.value - a.value).slice(0, 5);
+    const bottom = [...rows].sort((a, b) => a.value - b.value).slice(0, 5);
+    top.forEach((row, idx) => {
+      rankings.push({
+        rank: idx + 1,
+        direction: "top",
+        date: row.date,
+        label: null,
+        metricKey: spec.metricKey,
+        value: row.value,
+        unit: spec.unit,
+      });
+    });
+    bottom.forEach((row, idx) => {
+      rankings.push({
+        rank: idx + 1,
+        direction: "bottom",
+        date: row.date,
+        label: null,
+        metricKey: spec.metricKey,
+        value: row.value,
+        unit: spec.unit,
+      });
+    });
+  }
+  return rankings;
 }
 
 const METRIC_LABELS: Record<string, string> = {
@@ -668,6 +802,43 @@ export function normalizeCapabilityResult(input: {
     }));
   }
 
+  const previousAggregation = asObject(raw.previousAggregation)
+    || asObject(asObject(raw.conversationDataset)?.previousAggregation);
+  if (aggregation && previousAggregation) {
+    const bundle = commercialBundleFromCashUpAggregations(aggregation, previousAggregation);
+    if (bundle) {
+      const prevPairs: Array<[string, number | null, string | null]> = [
+        ["previous_net_sales", bundle.previous.net_sales, "SAR"],
+        ["previous_covers", bundle.previous.covers, null],
+        ["previous_orders", bundle.previous.orders, null],
+        ["previous_avg_spend", bundle.previous.avg_spend, "SAR"],
+      ];
+      for (const [key, value, unit] of prevPairs) {
+        if (metrics.some((m) => m.metricKey === key) || value == null) continue;
+        metrics.push(normalizeMetric({ metricKey: key, value, unit, source, coverage }));
+      }
+      const deltaPairs: Array<[string, number | null, number | null]> = [
+        ["covers_delta_pct", bundle.current.covers, bundle.previous.covers],
+        ["orders_delta_pct", bundle.current.orders, bundle.previous.orders],
+        ["avg_spend_delta_pct", bundle.current.avg_spend, bundle.previous.avg_spend],
+      ];
+      for (const [key, currentValue, previousValue] of deltaPairs) {
+        if (metrics.some((m) => m.metricKey === key)) continue;
+        const { percentChange } = currentValue != null && previousValue != null
+          ? signedPercentChange(currentValue, previousValue)
+          : { percentChange: null };
+        if (percentChange == null) continue;
+        metrics.push(normalizeMetric({ metricKey: key, value: percentChange, unit: "%", source, coverage }));
+      }
+    }
+  }
+
+  const dailyFacts = dailyFactsFromBreakdown(
+    aggregation?.dailyBreakdown
+    || asObject(raw.conversationDataset)?.dailyBreakdown
+    || raw.dailyBreakdown,
+  );
+
   // Rankings
   const rankings: NormalizedRanking[] = [];
   const rankRows = Array.isArray(raw.dayRanking)
@@ -686,10 +857,13 @@ export function normalizeCapabilityResult(input: {
       date: str(row.date) || str(row.business_date),
       label: str(row.label) || str(row.dayName),
       metricKey: str(row.metricKey) || str(row.metric_key) || "net_sales",
-      value: num(row.value) ?? num(row.net_sales) ?? num(row.sales),
+      value: num(row.value) ?? num(row.net_sales) ?? num(row.sales) ?? num(row.totalGuests),
       unit: str(row.unit) || "SAR",
     });
   });
+  if (!rankings.length && dailyFacts.length) {
+    rankings.push(...rankingsFromDailyFacts(dailyFacts));
+  }
 
   const qualitativeEntries: Array<Record<string, unknown>> = [];
   if (Array.isArray(raw.documents)) qualitativeEntries.push(...raw.documents as Array<Record<string, unknown>>);
@@ -734,6 +908,7 @@ export function normalizeCapabilityResult(input: {
     metrics,
     comparison: finalComparison,
     rankings,
+    dailyFacts,
     qualitativeEvidence,
     warnings: [...new Set(warnings)],
     provenance: {

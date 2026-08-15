@@ -1,5 +1,6 @@
 /**
  * Deterministic templated synthesis for simple answers + offline degradation.
+ * Composes structured management reasoning; does not rediscover metric math in prose.
  */
 
 import type { ClaimRecord, EvidenceRecord } from "./evidenceLedger.ts";
@@ -7,70 +8,13 @@ import type { ComparabilityResult } from "./comparabilityEngine.ts";
 import type { CoverageReport } from "./coverageModel.ts";
 import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
-
-function branchLabel(branchId: string | null | undefined) {
-  if (!branchId) return "the branch";
-  return ({ khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" } as Record<string, string>)[branchId]
-    || branchId;
-}
-
-function periodLabel(period: DateRange | null | undefined) {
-  if (!period) return "the requested period";
-  return period.label || `${period.startDate}–${period.endDate}`;
-}
-
-function formatSar(value: number): string {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return String(value);
-  const abs = Math.abs(n);
-  if (abs >= 1000) {
-    const k = n / 1000;
-    const rounded = Math.abs(k - Math.round(k)) < 0.05 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, "");
-    return `SAR ${rounded}k`;
-  }
-  return `${n} SAR`;
-}
-
-function num(evidence: EvidenceRecord[] , key: string): number | null {
-  const hit = evidence.find((e) => e.metricOrEvent === key && typeof e.value === "number");
-  return hit && typeof hit.value === "number" ? Number(hit.value) : null;
-}
-
-function pctDelta(current: number | null, previous: number | null): number | null {
-  if (current == null || previous == null || previous === 0) return null;
-  return ((current - previous) / Math.abs(previous)) * 100;
-}
-
-function crossMetricInterpretation(input: {
-  salesDelta: number | null;
-  coversDelta: number | null;
-  spendDelta: number | null;
-}): string | null {
-  const s = input.salesDelta;
-  const c = input.coversDelta;
-  const p = input.spendDelta;
-  if (s == null || c == null) return null;
-  const salesDown = s < -1;
-  const salesUp = s > 1;
-  const coversDown = c < -1;
-  const coversUp = c > 1;
-  const spendStable = p == null || Math.abs(p) < 2;
-  const spendUp = p != null && p > 2;
-  const spendDown = p != null && p < -2;
-  if (salesDown && coversDown && spendStable) {
-    return "The decline is primarily associated with fewer covers rather than spend per guest.";
-  }
-  if ((s == null || Math.abs(s) < 2) && coversDown && spendUp) {
-    return "Higher spend per guest offset weaker traffic.";
-  }
-  if (salesUp && coversDown && spendUp) {
-    return "Sales increased while covers fell, with higher average spend more than offsetting weaker traffic.";
-  }
-  if (salesDown && coversUp && spendDown) {
-    return "Traffic held or increased, so the sales decline is associated with lower spend per guest.";
-  }
-  return null;
-}
+import type { CommercialMetric } from "./turnSemantics.ts";
+import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
+import {
+  composeReasonedAnswer,
+  isSubjectiveJudgementQuestion,
+  reasonAboutCommercialEvidence,
+} from "./managementReasoning.ts";
 
 export function synthesizeDeterministicAnswer(input: {
   question: string;
@@ -88,19 +32,18 @@ export function synthesizeDeterministicAnswer(input: {
   claims: ClaimRecord[];
   coverage: CoverageReport[];
   comparability?: ComparabilityResult | null;
+  comparisonMode?: string | null;
   offlineAnalysis?: boolean;
   infeasibleText?: string | null;
+  primaryMetric?: CommercialMetric | "commercial" | null;
+  ranking?: "top" | "bottom" | null;
+  rankingCount?: number | null;
+  comparisonIntent?: boolean;
+  rankings?: NormalizedRanking[];
+  dailyFacts?: NormalizedDailyFact[];
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
 
-  const sales = input.evidence.find((e) =>
-    e.metricOrEvent === "net_sales" && typeof e.value === "number" && e.source !== "event_forecast"
-  );
-  const covers = input.evidence.find((e) => e.metricOrEvent === "covers" && typeof e.value === "number");
-  const delta = input.evidence.find((e) => e.metricOrEvent === "delta_pct" && typeof e.value === "number");
-  const prevCovers = num(input.evidence, "previous_covers");
-  const avgSpend = num(input.evidence, "avg_spend");
-  const prevSpend = num(input.evidence, "previous_avg_spend");
   const forecastSales = input.evidence.find((e) =>
     e.metricOrEvent === "forecast_net_sales" && typeof e.value === "number"
   );
@@ -110,133 +53,61 @@ export function synthesizeDeterministicAnswer(input: {
   const costMissing = input.claims.some((c) => c.type === "UNSUPPORTED" && /margin|cost/i.test(c.statement));
   const ops = input.evidence.filter((e) => e.source === "logbook").map((e) => e.textSummary).filter(Boolean);
 
-  const branch = branchLabel(input.branchId);
-  const period = periodLabel(input.period);
-  const parts: string[] = [];
-
-  if (input.eventWindow?.conventionLabel && input.eventWindow?.anchorDate) {
-    parts.push(
-      `Using the explicit three-day event window (${input.eventWindow.conventionLabel}) around ${input.eventWindow.anchorDate}.`,
-    );
+  function periodLabel(period: DateRange | null | undefined) {
+    if (!period) return "the requested period";
+    return period.label || `${period.startDate}–${period.endDate}`;
   }
 
-  if (costMissing && /\b(margin|losing money|food cost)\b/i.test(input.question)) {
-    parts.push(
-      `Canonical cost/margin data is unavailable for ${branch}, so I cannot determine where margin is being lost from sales alone.`,
-    );
-  }
-
-  if (sales) {
-    parts.push(
-      `For ${branch} in ${period}, observed Cash Up net sales were ${sales.value} SAR.`,
-    );
-  }
-  if (covers) {
-    parts.push(`Covers were ${covers.value}.`);
-  }
-
-  if (delta && input.comparability?.status !== "not_comparable") {
-    const method = input.comparability?.recommendedMethod || "matched_days";
-    const direction = Number(delta.value) < 0 ? "down" : Number(delta.value) > 0 ? "up" : "flat";
-    const mag = Math.abs(Number(delta.value));
-    const magText = mag >= 1 ? `about ${mag.toFixed(1)}%` : `${mag}%`;
-    if (input.comparability?.status === "partially_comparable" || method === "matched_days" || method === "matched_weekday") {
-      parts.push(
-        `${branch} generated ${formatSar(Number(sales?.value || 0))} over ${period}, ${direction} ${magText} versus the comparable previous period on a like-for-like (${method}) basis.`,
-      );
-    } else {
-      parts.push(`Compared with the prior period, sales were ${direction} ${magText}.`);
-    }
-    const coversDelta = pctDelta(typeof covers?.value === "number" ? Number(covers.value) : null, prevCovers);
-    const spendDelta = pctDelta(avgSpend, prevSpend);
-    const interp = crossMetricInterpretation({
-      salesDelta: Number(delta.value),
-      coversDelta,
-      spendDelta,
-    });
-    if (interp) parts.push(interp);
-  } else if (input.comparability?.status === "not_comparable") {
-    parts.push("A percentage comparison is not valid for these periods.");
-  }
-
-  if (input.comparability?.weekdayComposition?.match === false) {
-    parts.push(
-      "Weekday composition differs between the compared windows, so they are not treated as like-for-like.",
-    );
-  }
-
+  let forecastText: string | null = null;
   if (forecastSales || forecastMethod || /\b(expect|forecast|next founding|next foundation)\b/i.test(input.question)) {
     if (forecastSales) {
-      parts.push(
+      forecastText =
         `FORECAST (estimate, not observed fact): for the next Founding Day window`
-          + (input.forecastPeriod ? ` (${periodLabel(input.forecastPeriod)})` : "")
-          + `, central estimate is ${forecastSales.value} SAR`
-          + (forecastConfidence ? ` with ${forecastConfidence.value} confidence` : "")
-          + (forecastMethod ? ` using method ${forecastMethod.value}` : "")
-          + ".",
-      );
+        + (input.forecastPeriod ? ` (${periodLabel(input.forecastPeriod)})` : "")
+        + `, central estimate is ${forecastSales.value} SAR`
+        + (forecastConfidence ? ` with ${forecastConfidence.value} confidence` : "")
+        + (forecastMethod ? ` using method ${forecastMethod.value}` : "")
+        + ".";
     } else {
-      parts.push(
-        "FORECAST: insufficient observed same-event history to defend a central sales estimate.",
-      );
+      forecastText = "FORECAST: insufficient observed same-event history to defend a central sales estimate.";
     }
     if (histObs && Number(histObs.value) <= 1) {
-      parts.push(
-        `Only ${histObs.value} historical Founding Day observation(s) are available for this branch, so confidence is limited.`,
-      );
+      forecastText += ` Only ${histObs.value} historical Founding Day observation(s) are available for this branch, so confidence is limited.`;
     }
-    parts.push(
-      "This forecast does not include weather, local events, economic, or political factors.",
-    );
+    forecastText += " This forecast does not include weather, local events, economic, or political factors.";
   }
 
-  if (input.nextHolidayDate) {
-    parts.push(`The next Saudi Founding Day is ${input.nextHolidayDate}.`);
-  }
+  const reasoning = reasonAboutCommercialEvidence({
+    question: input.question,
+    branchId: input.branchId,
+    period: input.period,
+    comparisonPeriod: input.comparisonPeriod,
+    evidence: input.evidence,
+    coverage: input.coverage,
+    comparability: input.comparability,
+    comparisonMode: input.comparisonMode || input.comparability?.recommendedMethod || null,
+    primaryMetric: input.primaryMetric || null,
+    ranking: input.ranking || null,
+    rankingCount: input.rankingCount || null,
+    comparisonIntent: input.comparisonIntent,
+    rankings: input.rankings || [],
+    dailyFacts: input.dailyFacts || [],
+    judgementQuestion: isSubjectiveJudgementQuestion(input.question),
+  });
 
-  for (const cov of input.coverage) {
-    if (cov.coverageRatio != null && cov.coverageRatio < 1 && cov.expectedRecords != null && cov.availableRecords != null) {
-      if (cov.availableRecords === 0) {
-        const requested = input.period?.label
-          || (input.period?.startDate && input.period?.endDate && input.period.startDate === input.period.endDate
-            ? input.period.startDate
-            : period);
-        let msg = `Cash Up for ${requested} is not yet available in the canonical data.`;
-        const latest = cov.freshness && String(cov.freshness);
-        if (
-          latest
-          && latest !== input.period?.startDate
-          && latest !== input.period?.endDate
-        ) {
-          msg += ` The latest completed Cash Up I have is ${latest}.`;
-        }
-        parts.push(msg);
-      } else {
-        parts.push(
-          `I can use ${cov.domain} evidence for ${cov.availableRecords} of the requested ${cov.expectedRecords} records; coverage is incomplete.`,
-        );
-      }
-    }
-  }
-
-  if (ops.length) {
-    parts.push(`In-period logbooks mention: ${ops[0]}`);
-    if (/\bwhy|cause|shit|wrong\b/i.test(input.question)) {
-      parts.push(allowedInferenceWording());
-    }
-  }
-
-  if (!parts.length) {
-    parts.push(
-      `Verified structured evidence for ${branch} in ${period} is limited or unavailable for this question.`,
-    );
-  }
-
-  if (input.offlineAnalysis) {
-    parts.push(
-      "Natural-language analysis is unavailable in offline mode; showing verified retrieved data only.",
-    );
-  }
-
-  return parts.join(" ");
+  return composeReasonedAnswer(reasoning, {
+    eventPreface: input.eventWindow?.conventionLabel && input.eventWindow?.anchorDate
+      ? `Using the explicit three-day event window (${input.eventWindow.conventionLabel}) around ${input.eventWindow.anchorDate}.`
+      : null,
+    costMissing: costMissing && /\b(margin|losing money|food cost)\b/i.test(input.question)
+      ? `Canonical cost/margin data is unavailable for ${input.branchId || "the branch"}, so I cannot determine where margin is being lost from sales alone.`
+      : null,
+    forecast: forecastText,
+    holiday: input.nextHolidayDate ? `The next Saudi Founding Day is ${input.nextHolidayDate}.` : null,
+    ops: ops.length ? `In-period logbooks mention: ${ops[0]}` : null,
+    causalNote: ops.length && /\bwhy|cause|shit|wrong\b/i.test(input.question)
+      ? allowedInferenceWording()
+      : null,
+    offline: Boolean(input.offlineAnalysis),
+  });
 }

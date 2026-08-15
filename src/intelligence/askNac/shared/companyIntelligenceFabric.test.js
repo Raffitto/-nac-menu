@@ -500,7 +500,7 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.missing).not.toMatch(/18100/);
     expect(out.missingNoLatest).toMatch(/not yet available in the canonical data/i);
     expect(out.missingNoLatest).not.toMatch(/latest completed/);
-    expect(out.exact).toMatch(/18100/);
+    expect(out.exact).toMatch(/18,100|18100/);
     expect(out.exact).not.toMatch(/not yet available/);
   });
 });

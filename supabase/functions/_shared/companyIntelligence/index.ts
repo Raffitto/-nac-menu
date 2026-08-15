@@ -33,6 +33,8 @@ export * from "./planValidation.ts";
 export * from "./capabilityResolver.ts";
 export * from "./claimAssembly.ts";
 export * from "./deterministicSynthesis.ts";
+export * from "./managementPresentation.ts";
+export * from "./managementReasoning.ts";
 export * from "./conversationFollowUp.ts";
 export {
   resolveTurnSemantics,

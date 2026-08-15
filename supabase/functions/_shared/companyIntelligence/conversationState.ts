@@ -21,6 +21,8 @@ export type StructuredConversationState = {
   evidenceRefs: string[];
   hypothesisRefs: string[];
   previousIntent: string | null;
+  activeRanking: "top" | "bottom" | null;
+  activeRankingCount: number | null;
 };
 
 export function createEmptyConversationState(): StructuredConversationState {
@@ -36,6 +38,8 @@ export function createEmptyConversationState(): StructuredConversationState {
     evidenceRefs: [],
     hypothesisRefs: [],
     previousIntent: null,
+    activeRanking: null,
+    activeRankingCount: null,
   };
 }
 
@@ -69,6 +73,8 @@ export function updateConversationState(
     evidenceRefs: patch.evidenceRefs ?? base.evidenceRefs,
     hypothesisRefs: patch.hypothesisRefs ?? base.hypothesisRefs,
     previousIntent: patch.previousIntent ?? base.previousIntent,
+    activeRanking: patch.activeRanking !== undefined ? patch.activeRanking : base.activeRanking,
+    activeRankingCount: patch.activeRankingCount !== undefined ? patch.activeRankingCount : base.activeRankingCount,
   };
 }
 

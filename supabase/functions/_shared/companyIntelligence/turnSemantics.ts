@@ -26,7 +26,8 @@ export type CommercialMetric =
 export type AmbiguityKind =
   | "missing_comparison_baseline"
   | "underspecified_follow_up"
-  | "unsupported_capability";
+  | "unsupported_capability"
+  | "missing_ranking_metric";
 
 export type TurnDimensionFlags = {
   metric: boolean;
@@ -44,6 +45,7 @@ export type TurnSemantics = {
   comparisonIntent: boolean;
   eventWindow: TemporalEventWindow | null;
   ranking: "top" | "bottom" | null;
+  rankingCount: number | null;
   inheritedFromConversation: TurnDimensionFlags;
   explicitInCurrentTurn: TurnDimensionFlags;
   ambiguity: {
@@ -183,6 +185,20 @@ function extractRanking(question: string): "top" | "bottom" | null {
   return null;
 }
 
+function extractRankingCount(question: string): number {
+  const q = String(question || "");
+  const numbered = q.match(/\b(?:top|best|worst|bottom)\s+(\d{1,2})\b/i)
+    || q.match(/\b(\d{1,2})\s+(?:best|worst|highest|lowest)\b/i);
+  if (numbered) return Math.min(10, Math.max(1, Number(numbered[1])));
+  if (/\b(best|worst|highest|lowest|top|bottom)\b.{0,24}\bdays\b/i.test(q)) return 3;
+  return 1;
+}
+
+export function isSubjectiveJudgementTurn(question: string): boolean {
+  return /\b((?:was|is) that (?:good|bad|strong|weak|normal)|are we doing (?:well|badly|ok|okay|poorly)|was (?:yesterday|that) (?:good|strong|weak)|is this better|is that normal)\b/i
+    .test(String(question || ""));
+}
+
 function hasInheritContext(prev: StructuredConversationState): boolean {
   return Boolean(
     prev.activePeriods?.current
@@ -207,10 +223,35 @@ export function resolveTurnSemantics(input: {
 
   const explicitMetric = extractCommercialMetric(q);
   const mentionedBranch = normalizeBranchId(q);
-  const ranking = extractRanking(q);
+  const rankingExplicit = extractRanking(q);
+  let ranking: "top" | "bottom" | null = rankingExplicit;
+  let rankingCount = rankingExplicit ? extractRankingCount(q) : null;
   const comparisonIntentExplicit = hasComparisonIntent(q);
   const correction = CORRECTION_RE.test(q);
-  const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction);
+  const subjective = isSubjectiveJudgementTurn(q);
+  const rankingInstead = Boolean(
+    inherit
+    && prev.activeRanking
+    && explicitMetric
+    && /\b(instead|by covers|by sales|by orders|by spend)\b/i.test(q)
+    && !rankingExplicit,
+  );
+  const rankingFlip = Boolean(
+    inherit
+    && prev.activeRanking
+    && /^(?:and\s+)?(?:the\s+)?(worst|best|top|bottom)\??$/i.test(q),
+  );
+  if (rankingInstead) {
+    ranking = prev.activeRanking;
+    rankingCount = prev.activeRankingCount || 1;
+    notes.push("ranking_inherited_metric_switch");
+  }
+  if (rankingFlip) {
+    ranking = rankingExplicit || prev.activeRanking;
+    rankingCount = extractRankingCount(q) || prev.activeRankingCount || 1;
+    notes.push("ranking_direction_follow_up");
+  }
+  const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction || ranking || rankingInstead || rankingFlip);
 
   const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
   const selfCompare = parseVaultComparePeriodsFromQuestion(q, ref);
@@ -248,7 +289,9 @@ export function resolveTurnSemantics(input: {
   if (comparisonIntentExplicit && !explicitCompare) {
     const fragment = compareFocusMatch?.[1] || focus;
     if (fragment) {
-      if (/\b(month before|previous month|prior month)\b/i.test(fragment) && (explicitPeriod || prev.activePeriods.current)) {
+      if (/\b(month before|previous month|prior month|previous period|(?:the\s+)?(?:previous|prior)\s+\d+(?:\s+days?)?)\b/i.test(fragment)
+        && (explicitPeriod || prev.activePeriods.current)
+      ) {
         explicitCompare = toRange(
           buildPreviousEquivalentVaultPeriod(explicitPeriod || prev.activePeriods.current),
         );
@@ -297,6 +340,10 @@ export function resolveTurnSemantics(input: {
     comparisonPeriod = null;
   } else if (inherit && !correction) {
     comparisonPeriod = prev.activePeriods.comparison;
+    if (comparisonPeriod) {
+      comparisonIntent = true;
+      notes.push("comparison_preserved_on_metric_or_branch_follow_up");
+    }
   }
 
   if (correction && explicitPeriod) {
@@ -324,12 +371,24 @@ export function resolveTurnSemantics(input: {
     ambiguityKind = "missing_comparison_baseline";
     clarificationPrompt = `Compare ${period.label || "that period"} to what?`;
   } else if (
+    ranking
+    && !explicitMetric
+    && !inherit
+    && metric === "commercial"
+  ) {
+    ambiguityKind = "missing_ranking_metric";
+    clarificationPrompt = period
+      ? "Best day by sales, covers, or another metric?"
+      : "Best day by sales, covers, or another metric — and for which period?";
+  } else if (
     inherit
     && followUpShape
     && !explicit.metric
     && !explicit.period
     && !explicit.branch
     && !comparisonIntent
+    && !ranking
+    && !subjective
     && !/^why the difference/i.test(q)
     && !/weekend/i.test(q)
   ) {
@@ -354,9 +413,16 @@ export function resolveTurnSemantics(input: {
     || notes.includes("followup_why_difference")
   );
 
+  if (ranking && !explicitMetric && inherit && (metric === "commercial" || !explicitMetric)) {
+    metric = (prev.activeMetric as CommercialMetric) && prev.activeMetric !== "commercial"
+      ? prev.activeMetric as CommercialMetric
+      : "sales";
+    notes.push("ranking_defaults_to_sales");
+  }
+
   const intent = comparisonIntent
     ? "period_compare"
-    : (ranking ? "day_ranking" : (prev.previousIntent || (inherit ? "performance_overview" : "performance_overview")));
+    : (ranking ? "day_ranking" : (subjective ? (prev.previousIntent || "performance_overview") : (prev.previousIntent && !explicitMetric && !explicitPeriod ? prev.previousIntent : "performance_overview")));
 
   const preserveOriginal = Boolean(
     temporal.eventWindow
@@ -396,6 +462,8 @@ export function resolveTurnSemantics(input: {
       comparison: comparisonPeriod,
     },
     previousIntent: intent,
+    activeRanking: ranking,
+    activeRankingCount: ranking ? (rankingCount || 1) : null,
     filterPatch: notes.includes("followup_weekend_filter") ? { weekendOnly: true } : undefined,
   });
 
@@ -411,6 +479,7 @@ export function resolveTurnSemantics(input: {
     comparisonIntent,
     eventWindow: temporal.eventWindow || null,
     ranking,
+    rankingCount: ranking ? (rankingCount || 1) : null,
     inheritedFromConversation,
     explicitInCurrentTurn: explicit,
     ambiguity: {

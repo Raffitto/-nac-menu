@@ -284,6 +284,47 @@ describe("Normalized capability results", () => {
     expect(out.full.percentChange).toBe(100);
   });
 
+  test("previous commercial metrics and daily facts are normalized from aggregations", () => {
+    const out = run(`
+      const n = mod.normalizeCapabilityResult({
+        capabilityId: "commercial.compare",
+        implementationTool: "cash_up_compare",
+        branchId: "khobar",
+        requestedPeriod: { startDate: "2026-08-01", endDate: "2026-08-10" },
+        comparisonPeriod: { startDate: "2026-07-22", endDate: "2026-07-31" },
+        raw: {
+          aggregation: {
+            totalSales: 200000, totalGuests: 2000, totalOrders: 800, averageSpend: 100,
+            dayCount: 10, expectedDayCount: 10,
+            requestedStartDate: "2026-08-01", requestedEndDate: "2026-08-10",
+            dailyBreakdown: [
+              { date: "2026-08-01", totalSales: 30000, totalGuests: 300, totalOrders: 80 },
+              { date: "2026-08-02", totalSales: 10000, totalGuests: 90, totalOrders: 40 },
+            ],
+          },
+          previousAggregation: {
+            totalSales: 100000, totalGuests: 1800, totalOrders: 900, averageSpend: 55.56,
+            dayCount: 10, expectedDayCount: 10,
+            requestedStartDate: "2026-07-22", requestedEndDate: "2026-07-31",
+          },
+        },
+      });
+      const keys = n.metrics.map((m) => m.metricKey);
+      return {
+        keys,
+        prevCovers: n.metrics.find((m) => m.metricKey === "previous_covers")?.value,
+        coversDelta: n.metrics.find((m) => m.metricKey === "covers_delta_pct")?.value,
+        daily: n.dailyFacts.length,
+        topSales: n.rankings.find((r) => r.direction === "top" && r.metricKey === "net_sales")?.date,
+      };
+    `);
+    expect(out.keys).toEqual(expect.arrayContaining(["previous_covers", "previous_orders", "previous_avg_spend", "covers_delta_pct"]));
+    expect(out.prevCovers).toBe(1800);
+    expect(out.coversDelta).toBeCloseTo(((2000 - 1800) / 1800) * 100, 5);
+    expect(out.daily).toBe(2);
+    expect(out.topSales).toBe("2026-08-01");
+  });
+
   test("orchestration stores normalized comparison/coverage in toolResults", () => {
     const out = run(`
       const result = await mod.runCompanyIntelligenceOrchestration({
