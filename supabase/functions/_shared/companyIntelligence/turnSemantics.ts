@@ -23,6 +23,18 @@ export type CommercialMetric =
   | "delivery"
   | "dine_in";
 
+export type AnalysisIntent =
+  | "judgement"
+  | "anomaly"
+  | "trend"
+  | "why"
+  | "stands_out"
+  | "contributors"
+  | "breadth"
+  | "action"
+  | "weekend"
+  | null;
+
 export type AmbiguityKind =
   | "missing_comparison_baseline"
   | "underspecified_follow_up"
@@ -46,6 +58,7 @@ export type TurnSemantics = {
   eventWindow: TemporalEventWindow | null;
   ranking: "top" | "bottom" | null;
   rankingCount: number | null;
+  analysisIntent: AnalysisIntent;
   inheritedFromConversation: TurnDimensionFlags;
   explicitInCurrentTurn: TurnDimensionFlags;
   ambiguity: {
@@ -194,9 +207,42 @@ function extractRankingCount(question: string): number {
   return 1;
 }
 
+export function isSubjectiveJudgementPhrase(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  if (/\b(top|best|worst|highest|lowest)\s+\d/.test(q) && /\bdays?\b/.test(q)) return false;
+  return /\b((?:was|is) that (?:a )?(?:good|bad|strong|weak|normal|unusual)|are we doing (?:well|badly|ok|okay|poorly)|was (?:yesterday|today|that) (?:good|strong|weak|bad|normal|unusual)|is this (?:week|month|better|normal|strong|weak|good|bad|unusual)|(?:is|was) this month (?:good|strong|weak|bad)|are we underperforming|was (?:this )?(?:friday|saturday|sunday|monday|tuesday|wednesday|thursday) (?:good|strong|weak|bad|normal)|good so far|was .{0,20} (?:good|bad|strong|weak)(?:\?|$)|is (?:this|that) (?:a )?good|strong month|weak month)\b/i
+    .test(q);
+}
+
+export function extractAnalysisIntent(question: string): AnalysisIntent {
+  const q = String(question || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (!q) return null;
+  if (/\bwhat should i (?:do|look at|pay attention to|focus on|investigate)\b/.test(q)
+    || /\bwhat should we (?:do|look at|focus on)\b/.test(q)
+  ) return "action";
+  if (/\b(what stands out|anything unusual|what matters|key takeaways|management view|what changed|tell me what matters|give me the (?:management )?view)\b/.test(q)) {
+    return "stands_out";
+  }
+  if (/\b(which days? (?:hurt|dragged|drove|explain)|what dragged|what is dragging|dragging us down|what drove|where did the (?:decline|increase|drop) come from|contributors?)\b/.test(q)) {
+    return "contributors";
+  }
+  if (/\b(one bad day|broad(?:-based)?|concentrated|spread across|most of the (?:decline|drop|increase))\b/.test(q)) {
+    return "breadth";
+  }
+  if (/\b(trend(?:ing)?|improving|getting (?:worse|weaker|stronger)|deteriorat|falling|moving)\b/.test(q)
+    || /\bare (?:sales|covers|weekends?|fridays?|saturdays?) (?:getting|trending)\b/.test(q)
+  ) return "trend";
+  if (/\b(unusual|outlier|anomal)\b/.test(q) || /\bnormal for\b/.test(q) || /\bis this normal\b/.test(q) || /\bwas (?:that|it|yesterday) normal\b/.test(q)) {
+    return "anomaly";
+  }
+  if (/\bwhy\b/.test(q)) return "why";
+  if (/\bweekend\b/.test(q) && /\bweekday/.test(q)) return "weekend";
+  if (isSubjectiveJudgementPhrase(q)) return "judgement";
+  return null;
+}
+
 export function isSubjectiveJudgementTurn(question: string): boolean {
-  return /\b((?:was|is) that (?:good|bad|strong|weak|normal)|are we doing (?:well|badly|ok|okay|poorly)|was (?:yesterday|that) (?:good|strong|weak)|is this better|is that normal)\b/i
-    .test(String(question || ""));
+  return isSubjectiveJudgementPhrase(question);
 }
 
 function hasInheritContext(prev: StructuredConversationState): boolean {
@@ -229,6 +275,7 @@ export function resolveTurnSemantics(input: {
   const comparisonIntentExplicit = hasComparisonIntent(q);
   const correction = CORRECTION_RE.test(q);
   const subjective = isSubjectiveJudgementTurn(q);
+  const analysisIntent = extractAnalysisIntent(q);
   const rankingInstead = Boolean(
     inherit
     && prev.activeRanking
@@ -251,7 +298,7 @@ export function resolveTurnSemantics(input: {
     rankingCount = extractRankingCount(q) || prev.activeRankingCount || 1;
     notes.push("ranking_direction_follow_up");
   }
-  const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction || ranking || rankingInstead || rankingFlip);
+  const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction || ranking || rankingInstead || rankingFlip || analysisIntent);
 
   const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
   const selfCompare = parseVaultComparePeriodsFromQuestion(q, ref);
@@ -389,6 +436,7 @@ export function resolveTurnSemantics(input: {
     && !comparisonIntent
     && !ranking
     && !subjective
+    && !analysisIntent
     && !/^why the difference/i.test(q)
     && !/weekend/i.test(q)
   ) {
@@ -411,6 +459,7 @@ export function resolveTurnSemantics(input: {
     || inheritedFromConversation.branch
     || comparisonIntent
     || notes.includes("followup_why_difference")
+    || Boolean(analysisIntent)
   );
 
   if (ranking && !explicitMetric && inherit && (metric === "commercial" || !explicitMetric)) {
@@ -428,6 +477,7 @@ export function resolveTurnSemantics(input: {
     temporal.eventWindow
     || temporal.holidayBundle
     || isSubjectiveJudgementTurn(q)
+    || Boolean(analysisIntent)
     || ranking
     || /\b(ramadan|founding day|foundation day|eid|forecast|expect)\b/i.test(q)
   );
@@ -482,6 +532,7 @@ export function resolveTurnSemantics(input: {
     eventWindow: temporal.eventWindow || null,
     ranking,
     rankingCount: ranking ? (rankingCount || 1) : null,
+    analysisIntent,
     inheritedFromConversation,
     explicitInCurrentTurn: explicit,
     ambiguity: {

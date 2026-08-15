@@ -11,6 +11,8 @@ import {
 } from "./capabilityResolver.ts";
 import { buildCoverageReport } from "./coverageModel.ts";
 import { normalizeCapabilityResult } from "./normalizedCapabilityResult.ts";
+import { defaultBusinessTimeline } from "./businessTimeline.ts";
+import { addIsoDays, maxIsoDate } from "./managementPresentation.ts";
 
 type LegacyToolRunner = (input: {
   vaultIntent: string;
@@ -192,7 +194,43 @@ export function createVaultCapabilityExecutor(runLegacyTool: LegacyToolRunner): 
         vaultIntent: mapping.vaultIntent,
         queryFocus: mapping.queryFocus,
         request: req,
-      });
+      }) as Record<string, unknown> | null;
+      if (
+        tool
+        && req.capability === "commercial.performance"
+        && req.historyLookbackDays
+        && req.currentPeriod?.startDate
+        && req.currentPeriod.endDate
+      ) {
+        const opening = (req.branchId
+          ? defaultBusinessTimeline.getOpeningDate(req.branchId as "khobar" | "riyadh" | "jeddah")
+          : null) || "2020-01-01";
+        const histStart = maxIsoDate(opening, addIsoDays(req.currentPeriod.endDate, -Number(req.historyLookbackDays)));
+        if (histStart < req.currentPeriod.startDate) {
+          const histReq = {
+            ...req,
+            currentPeriod: {
+              startDate: histStart,
+              endDate: req.currentPeriod.endDate,
+              label: `lookback ${histStart}–${req.currentPeriod.endDate}`,
+              semantic: "analyst_history_lookback",
+            },
+            comparisonPeriod: null,
+            historyLookbackDays: null,
+          };
+          const histTool = await runLegacyTool({
+            vaultIntent: mapping.vaultIntent,
+            queryFocus: mapping.queryFocus,
+            request: histReq,
+          });
+          const histAgg = histTool && typeof histTool === "object"
+            ? ((histTool as Record<string, unknown>).aggregation
+              || (histTool as Record<string, unknown>).aggregated
+              || null)
+            : null;
+          if (histAgg) tool.historyAggregation = histAgg;
+        }
+      }
       const coverage = extractCoverage(tool, req);
       const metrics = extractMetrics(tool);
       const textSnippets = extractSnippets(tool);

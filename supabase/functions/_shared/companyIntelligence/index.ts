@@ -35,12 +35,14 @@ export * from "./claimAssembly.ts";
 export * from "./deterministicSynthesis.ts";
 export * from "./managementPresentation.ts";
 export * from "./managementReasoning.ts";
+export * from "./managementAnalyst.ts";
 export * from "./conversationFollowUp.ts";
 export {
   resolveTurnSemantics,
   hasComparisonIntent,
   extractCommercialMetric,
   isSubjectiveJudgementTurn,
+  extractAnalysisIntent,
 } from "./turnSemantics.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";

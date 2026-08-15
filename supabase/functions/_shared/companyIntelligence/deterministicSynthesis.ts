@@ -41,6 +41,10 @@ export function synthesizeDeterministicAnswer(input: {
   comparisonIntent?: boolean;
   rankings?: NormalizedRanking[];
   dailyFacts?: NormalizedDailyFact[];
+  historyDailyFacts?: NormalizedDailyFact[];
+  previousDailyFacts?: NormalizedDailyFact[];
+  analysisIntent?: import("./turnSemantics.ts").AnalysisIntent;
+  openingDate?: string | null;
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
 
@@ -92,7 +96,11 @@ export function synthesizeDeterministicAnswer(input: {
     comparisonIntent: input.comparisonIntent,
     rankings: input.rankings || [],
     dailyFacts: input.dailyFacts || [],
+    historyDailyFacts: input.historyDailyFacts || [],
+    previousDailyFacts: input.previousDailyFacts || [],
     judgementQuestion: isSubjectiveJudgementQuestion(input.question),
+    analysisIntent: input.analysisIntent || null,
+    openingDate: input.openingDate || null,
   });
 
   return composeReasonedAnswer(reasoning, {

@@ -27,6 +27,7 @@ export type CapabilityExecutionRequest = {
   comparisonPeriod: DateRange | null;
   comparabilityMethod: string | null;
   question: string;
+  historyLookbackDays?: number | null;
 };
 
 export type CapabilityExecutionResult = {

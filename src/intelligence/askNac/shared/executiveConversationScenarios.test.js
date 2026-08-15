@@ -106,9 +106,9 @@ describe("Scenario 2: July ranking chain", () => {
     expect(out.t3.ranking).toBe("top");
     expect(out.t4.ranking).toBe("bottom");
     expect(out.t4.metric).toBe("covers");
-    expect(out.a2).toMatch(/2026-07-12/);
-    expect(out.a3).toMatch(/2026-07-18/);
-    expect(out.a4).toMatch(/2026-07-04/);
+    expect(out.a2).toMatch(/Sunday, 12 July/);
+    expect(out.a3).toMatch(/Saturday, 18 July/);
+    expect(out.a4).toMatch(/Saturday, 4 July/);
     expect(out.a3).not.toMatch(/net sales were/i);
   });
 });
@@ -188,7 +188,7 @@ describe("previous-period follow-up after an exact day", () => {
 });
 
 describe("Scenario 6: was that good?", () => {
-  test("does not invent a baseline after a simple yesterday fact", () => {
+  test("uses a defensible weekday benchmark rather than inventing a target", () => {
     const out = run(`
       const ref = ${REF};
       const t1 = mod.resolveTurnSemantics({ question: "How did we perform yesterday?", branchHint: "khobar", referenceDate: ref });
@@ -207,12 +207,14 @@ describe("Scenario 6: was that good?", () => {
         coverage: [mod.buildCoverageReport({ domain: "sales", range: period, expectedRecords: 1, availableRecords: 1 })],
         primaryMetric: t2.metric,
         comparisonIntent: t2.comparisonIntent,
+        openingDate: "2025-04-27",
       });
-      return { compare: t2.comparisonIntent, a2, period: period.startDate };
+      return { compare: t2.comparisonIntent, a2, period: period.startDate, intent: t2.analysisIntent };
     `);
     expect(out.compare).toBe(false);
+    expect(out.intent).toBe("judgement");
     expect(out.a2).toMatch(/23,836\.52|23\.8k|23836/);
-    expect(out.a2).toMatch(/compare/i);
+    expect(out.a2).toMatch(/Friday history|previous four Fridays|isn't enough comparable/i);
     expect(out.a2).not.toMatch(/because/i);
     expect(out.a2).not.toMatch(/good performance/i);
   });

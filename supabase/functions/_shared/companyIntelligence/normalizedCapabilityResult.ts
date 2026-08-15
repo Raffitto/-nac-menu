@@ -111,6 +111,8 @@ export type NormalizedCapabilityResult = {
   comparison: NormalizedComparison | null;
   rankings: NormalizedRanking[];
   dailyFacts: NormalizedDailyFact[];
+  historyDailyFacts: NormalizedDailyFact[];
+  previousDailyFacts: NormalizedDailyFact[];
   qualitativeEvidence: NormalizedQualitativeEvidence[];
   warnings: string[];
   provenance: {
@@ -461,7 +463,7 @@ export function commercialBundleFromCashUpAggregations(
 function dailyFactsFromBreakdown(breakdown: unknown): NormalizedDailyFact[] {
   if (!Array.isArray(breakdown)) return [];
   const out: NormalizedDailyFact[] = [];
-  for (const row of breakdown.slice(0, 62) as Array<Record<string, unknown>>) {
+  for (const row of breakdown.slice(0, 90) as Array<Record<string, unknown>>) {
     const date = str(row.date) || str(row.business_date);
     if (!date) continue;
     const net_sales = num(row.totalSales ?? row.net_sales ?? row.sales);
@@ -838,6 +840,14 @@ export function normalizeCapabilityResult(input: {
     || asObject(raw.conversationDataset)?.dailyBreakdown
     || raw.dailyBreakdown,
   );
+  const previousDailyFacts = dailyFactsFromBreakdown(
+    asObject(raw.previousAggregation)?.dailyBreakdown
+    || asObject(asObject(raw.conversationDataset)?.previousAggregation)?.dailyBreakdown,
+  );
+  const historyDailyFacts = dailyFactsFromBreakdown(
+    asObject(raw.historyAggregation)?.dailyBreakdown
+    || asObject(asObject(raw.conversationDataset)?.historyAggregation)?.dailyBreakdown,
+  );
 
   // Rankings
   const rankings: NormalizedRanking[] = [];
@@ -909,6 +919,8 @@ export function normalizeCapabilityResult(input: {
     comparison: finalComparison,
     rankings,
     dailyFacts,
+    historyDailyFacts,
+    previousDailyFacts,
     qualitativeEvidence,
     warnings: [...new Set(warnings)],
     provenance: {

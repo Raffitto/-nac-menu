@@ -7,18 +7,24 @@ import type { EvidenceRecord } from "./evidenceLedger.ts";
 import type { ComparabilityResult } from "./comparabilityEngine.ts";
 import type { CoverageReport } from "./coverageModel.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
-import type { CommercialMetric } from "./turnSemantics.ts";
+import type { CommercialMetric, AnalysisIntent } from "./turnSemantics.ts";
+import { extractAnalysisIntent, isSubjectiveJudgementPhrase } from "./turnSemantics.ts";
 import type { DateRange } from "./types.ts";
 import {
   MAGNITUDE_FLAT_PCT,
   directionWord,
   formatCount,
+  formatManagerDate,
   formatMoney,
   formatPercent,
   isEffectivelyFlat,
+  isoWeekdayName,
+  isKsaWeekendIso,
   magnitudePhrase,
+  metricCopula,
   percentDelta,
 } from "./managementPresentation.ts";
+import { diagnoseCommercialPerformance } from "./managementAnalyst.ts";
 
 export type RelationshipType =
   | "volume_led_decline"
@@ -68,6 +74,7 @@ export type ManagementReasoning = {
   rankingText: string | null;
   judgementOffer: string | null;
   groupingText: string | null;
+  analystSentences: string[];
 };
 
 function numEvidence(evidence: EvidenceRecord[], key: string): number | null {
@@ -275,11 +282,11 @@ function comparisonMethodNote(input: {
   const partial = obs != null && exp != null && exp > 0 && obs < exp;
 
   if (dir === "flat") {
-    return `${label} were ${mag || "effectively unchanged"} versus the previous period (${pct}).`;
+    return `${label} ${metricCopula(label)} ${mag || "effectively unchanged"} versus the previous period (${pct}).`;
   }
   const upDown = dir === "up" ? "up" : "down";
   if (mode === "daily_average" || input.comparability?.recommendedMethod === "daily_average") {
-    return `${label} were ${upDown} ${pct} based on average observed days, because the windows are not fully like-for-like.`;
+    return `${label} ${metricCopula(label)} ${upDown} ${pct} based on average observed days, because the windows are not fully like-for-like.`;
   }
   if (
     mode === "matched_days"
@@ -288,11 +295,11 @@ function comparisonMethodNote(input: {
     || input.comparability?.recommendedMethod === "matched_days"
     || input.comparability?.recommendedMethod === "matched_weekday"
   ) {
-    let text = `${label} were ${upDown} ${pct} on a like-for-like matched-day basis.`;
+    let text = `${label} ${metricCopula(label)} ${upDown} ${pct} on a like-for-like matched-day basis.`;
     if (partial && obs != null && exp != null) text += ` Coverage is ${obs}/${exp} days.`;
     return text;
   }
-  return `${label} were ${upDown} ${pct} versus the previous period.`;
+  return `${label} ${metricCopula(label)} ${upDown} ${pct} versus the previous period.`;
 }
 
 function coverageNote(coverage: CoverageReport[] | undefined, period: DateRange | null, depth: AnswerDepth): string | null {
@@ -319,15 +326,11 @@ function coverageNote(coverage: CoverageReport[] | undefined, period: DateRange 
 }
 
 function weekdayName(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][dt.getUTCDay()];
+  return isoWeekdayName(iso);
 }
 
 function isKsaWeekend(iso: string): boolean {
-  const [y, m, d] = iso.split("-").map(Number);
-  const day = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return day === 5 || day === 6;
+  return isKsaWeekendIso(iso);
 }
 
 function rankingMetricKey(metric: CommercialMetric | "commercial" | null | undefined): string {
@@ -383,7 +386,7 @@ function buildRankingText(input: {
     ? (count === 1 ? `Weakest ${label} day` : `Weakest ${count} ${label} days`)
     : (count === 1 ? `Strongest ${label} day` : `Strongest ${count} ${label} days`);
   const list = picked.map((row, i) => {
-    const date = row.date || row.label || `rank ${i + 1}`;
+    const date = row.date ? formatManagerDate(row.date) : (row.label || `rank ${i + 1}`);
     return `${date}: ${formatRankValue(metricKey, row.value)}`;
   }).join("; ");
   let text = `${heading}: ${list}.`;
@@ -453,8 +456,7 @@ function periodLabel(period: DateRange | null | undefined) {
 }
 
 export function isSubjectiveJudgementQuestion(question: string): boolean {
-  return /\b((?:was|is) that (?:good|bad|strong|weak|normal)|are we doing (?:well|badly|ok|okay|poorly)|was (?:yesterday|that) (?:good|strong|weak)|is this better|is that normal)\b/i
-    .test(String(question || ""));
+  return isSubjectiveJudgementPhrase(question);
 }
 
 export function isBroadManagementQuestion(question: string, metric: CommercialMetric | "commercial"): boolean {
@@ -478,7 +480,11 @@ export function reasonAboutCommercialEvidence(input: {
   comparisonIntent?: boolean;
   rankings?: NormalizedRanking[];
   dailyFacts?: NormalizedDailyFact[];
+  historyDailyFacts?: NormalizedDailyFact[];
+  previousDailyFacts?: NormalizedDailyFact[];
   judgementQuestion?: boolean;
+  analysisIntent?: AnalysisIntent;
+  openingDate?: string | null;
 }): ManagementReasoning {
   const snap = extractCommercialSnapshot(input.evidence);
   const metric = input.primaryMetric || "commercial";
@@ -488,11 +494,13 @@ export function reasonAboutCommercialEvidence(input: {
   const ranking = input.ranking || null;
   const comparisonIntent = Boolean(input.comparisonIntent || input.comparisonPeriod || input.comparability);
   const broad = isBroadManagementQuestion(input.question, metric);
+  const analysisIntent = input.analysisIntent ?? extractAnalysisIntent(input.question);
 
   let depth: AnswerDepth = "fact";
   if (missing) depth = "fact";
   else if (ranking) depth = "ranking";
-  else if (judgement) depth = "judgement";
+  else if (judgement || analysisIntent === "judgement" || analysisIntent === "anomaly") depth = "judgement";
+  else if (analysisIntent === "why" || analysisIntent === "stands_out" || analysisIntent === "trend" || analysisIntent === "contributors" || analysisIntent === "breadth" || analysisIntent === "action") depth = comparisonIntent ? "comparison" : "overview";
   else if (comparisonIntent) depth = "comparison";
   else if (broad || metric === "commercial") depth = exactDay ? "fact" : "overview";
   else if (metric !== "sales" && metric !== "commercial") depth = "metric_fact";
@@ -502,7 +510,7 @@ export function reasonAboutCommercialEvidence(input: {
   const period = periodLabel(input.period);
   const exact = exactDay;
   const primaryValue = formatPrimaryValue(metric === "commercial" ? "sales" : metric, snap, exact);
-  const relationshipsRaw = (!missing && (comparisonIntent || depth === "overview" || depth === "comparison"))
+  const relationshipsRaw = (!missing && (comparisonIntent || depth === "overview" || depth === "comparison" || Boolean(analysisIntent)))
     ? deriveCommercialRelationships(snap)
     : [];
   const relationships = relationshipsRaw.filter((rel) => {
@@ -586,20 +594,38 @@ export function reasonAboutCommercialEvidence(input: {
     : null;
 
   let judgementOffer: string | null = null;
-  if (judgement && !comparisonIntent) {
-    const fact = primaryValue
-      ? `${period} was ${primaryValue}${snap.covers != null && primaryMetricKey(metric) === "net_sales" ? ` from ${formatCount(snap.covers, "covers")}` : ""}.`
-      : `${period} is known from Cash Up.`;
-    judgementOffer = `${fact} I can compare it with the previous same weekday, a recent average, or another period if you want.`;
+  const driverRel = relationships.find((r) => r.type !== "flat_insignificant") || null;
+  const diagnostic = (!missing && (judgement || analysisIntent || broad))
+    ? diagnoseCommercialPerformance({
+      question: input.question,
+      analysisIntent,
+      branchId: input.branchId,
+      period: input.period,
+      comparisonPeriod: input.comparisonPeriod,
+      comparisonIntent,
+      primaryMetric: metric,
+      snap,
+      dailyFacts: input.dailyFacts || [],
+      historyDailyFacts: input.historyDailyFacts || [],
+      previousDailyFacts: input.previousDailyFacts || [],
+      openingDate: input.openingDate || null,
+      driverStatement: driverRel?.statement || null,
+    })
+    : null;
+
+  if (judgement && diagnostic?.sentences.length) {
+    judgementOffer = diagnostic.sentences[0];
   } else if (judgement && comparisonIntent && delta != null) {
     const mag = magnitudePhrase(delta);
     const pct = formatPercent(Math.abs(delta));
+    const label = metricLabel(metric);
     judgementOffer = mag
-      ? `Versus the available baseline, ${metricLabel(metric)} were ${mag} (${directionWord(delta) === "flat" ? pct : `${directionWord(delta)} ${pct}`}).`
+      ? `Versus the available baseline, ${label} ${metricCopula(label)} ${mag} (${directionWord(delta) === "flat" ? pct : `${directionWord(delta)} ${pct}`}).`
       : null;
   }
 
   const covNote = coverageNote(input.coverage, input.period, depth);
+  const analystSentences = diagnostic?.sentences || [];
 
   return {
     primaryMetric: metric,
@@ -612,6 +638,7 @@ export function reasonAboutCommercialEvidence(input: {
     rankingText,
     judgementOffer,
     groupingText,
+    analystSentences,
   };
 }
 
@@ -631,13 +658,28 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
     parts.push(reasoning.coverageContext);
   } else {
     if (reasoning.rankingText) parts.push(reasoning.rankingText);
-    else if (reasoning.judgementOffer && reasoning.depth === "judgement") parts.push(reasoning.judgementOffer);
-    else if (reasoning.headline) parts.push(reasoning.headline);
+    else if ((reasoning.analystSentences || []).length && (reasoning.depth === "judgement" || reasoning.judgementOffer)) {
+      if (reasoning.headline && reasoning.depth === "judgement") parts.push(reasoning.headline);
+      for (const s of reasoning.analystSentences || []) {
+        if (s && !parts.some((p) => p.includes(s) || s.includes(p))) parts.push(s);
+      }
+    } else if (reasoning.judgementOffer && reasoning.depth === "judgement") {
+      if (reasoning.headline) parts.push(reasoning.headline);
+      parts.push(reasoning.judgementOffer);
+    } else if (reasoning.headline) parts.push(reasoning.headline);
     if (!reasoning.rankingText && reasoning.depth !== "metric_fact" && reasoning.depth !== "judgement") {
       for (const s of reasoning.supporting) parts.push(s);
     }
-    if (reasoning.comparisonContext) parts.push(reasoning.comparisonContext);
-    if (reasoning.relationships.length && (reasoning.depth === "comparison" || reasoning.depth === "overview")) {
+    if ((reasoning.analystSentences || []).length && reasoning.depth !== "judgement") {
+      for (const s of reasoning.analystSentences || []) {
+        if (s && !parts.some((p) => p.includes(s) || s.includes(p))) parts.push(s);
+      }
+    }
+    const analystCoversCompare = (reasoning.analystSentences || []).some((s) => /versus|above the average|below the|previous (?:four|three|comparable)|elapsed/i.test(s));
+    if (reasoning.comparisonContext && !analystCoversCompare && reasoning.depth !== "judgement") {
+      parts.push(reasoning.comparisonContext);
+    }
+    if (reasoning.relationships.length && (reasoning.depth === "comparison" || reasoning.depth === "overview") && !reasoning.analystSentences.length) {
       const rel = reasoning.relationships.find((r) => r.type !== "flat_insignificant") || reasoning.relationships[0];
       if (rel && rel.type !== "flat_insignificant") parts.push(rel.statement);
     }

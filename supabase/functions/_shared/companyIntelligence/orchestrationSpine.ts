@@ -26,7 +26,9 @@ import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
 import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
-import { extractCommercialMetric, hasComparisonIntent, isSubjectiveJudgementTurn } from "./turnSemantics.ts";
+import { extractCommercialMetric, extractAnalysisIntent, hasComparisonIntent, isSubjectiveJudgementTurn } from "./turnSemantics.ts";
+import { HISTORY_LOOKBACK_DAYS } from "./managementAnalyst.ts";
+import { isBroadManagementQuestion } from "./managementReasoning.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
@@ -120,19 +122,43 @@ function transition(state: CompanyIntelligenceState, stage: FabricStage, patch: 
 function collectRankingsAndFacts(state: CompanyIntelligenceState): {
   rankings: NormalizedRanking[];
   dailyFacts: NormalizedDailyFact[];
+  historyDailyFacts: NormalizedDailyFact[];
+  previousDailyFacts: NormalizedDailyFact[];
   comparisonMode: string | null;
 } {
   const rankings: NormalizedRanking[] = [];
-  const dailyFacts: NormalizedDailyFact[] = [];
+  const dailyMap = new Map<string, NormalizedDailyFact>();
+  const historyMap = new Map<string, NormalizedDailyFact>();
+  const previousMap = new Map<string, NormalizedDailyFact>();
   let comparisonMode: string | null = null;
   for (const row of Object.values(state.toolResults || {})) {
     const tr = row as Record<string, unknown>;
     if (Array.isArray(tr.rankings)) rankings.push(...tr.rankings as NormalizedRanking[]);
-    if (Array.isArray(tr.dailyFacts)) dailyFacts.push(...tr.dailyFacts as NormalizedDailyFact[]);
+    if (Array.isArray(tr.dailyFacts)) {
+      for (const fact of tr.dailyFacts as NormalizedDailyFact[]) {
+        if (fact?.date) dailyMap.set(fact.date, fact);
+      }
+    }
+    if (Array.isArray(tr.historyDailyFacts)) {
+      for (const fact of tr.historyDailyFacts as NormalizedDailyFact[]) {
+        if (fact?.date) historyMap.set(fact.date, fact);
+      }
+    }
+    if (Array.isArray(tr.previousDailyFacts)) {
+      for (const fact of tr.previousDailyFacts as NormalizedDailyFact[]) {
+        if (fact?.date) previousMap.set(fact.date, fact);
+      }
+    }
     const comparison = tr.comparison as { mode?: string } | null;
     if (!comparisonMode && comparison?.mode) comparisonMode = comparison.mode;
   }
-  return { rankings, dailyFacts, comparisonMode };
+  return {
+    rankings,
+    dailyFacts: [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    historyDailyFacts: [...historyMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    previousDailyFacts: [...previousMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    comparisonMode,
+  };
 }
 
 export function managementPlanToCapabilities(plan: {
@@ -190,6 +216,7 @@ export function isManagementIntelligenceQuestion(
     && (
       isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
       || isSubjectiveJudgementTurn(question)
+      || Boolean(extractAnalysisIntent(question))
       || Boolean(extractCommercialMetric(question))
       || hasComparisonIntent(question)
       || /^(?:what about|how about|and\b|average spend|covers\??|orders\??|was that|is that)/i.test(String(question || "").trim())
@@ -212,10 +239,13 @@ export function isManagementIntelligenceQuestion(
 function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"], referenceDate?: Date) {
   const q = question.toLowerCase();
   const high = legacyRoute?.confidence === "high";
-  const diagnostic = /\b(why|shit|act on|briefing|lately|ramadan|founding|foundation|forecast|expect|operational|complaint)\b/.test(q);
+  const analyst = extractAnalysisIntent(question);
+  const holidayish = /\b(ramadan|founding|foundation|forecast|expect|operational|complaint)\b/.test(q);
+  const diagnostic = /\b(shit|act on|briefing|lately)\b/.test(q) || holidayish;
   if (diagnostic && !(high && /^vault_cash_up_summary$/.test(String(legacyRoute?.intent || "")))) {
     return false;
   }
+  if (analyst && !holidayish) return true;
   const parsedPeriod = parseVaultPeriodFromQuestion(question, referenceDate || new Date());
   const simple = Boolean(parsedPeriod)
     || /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q);
@@ -251,6 +281,14 @@ async function executeCapabilities(
       comparisonPeriod: next.periods.comparison,
       comparabilityMethod: next.comparability?.recommendedMethod || null,
       question: next.request.normalizedQuestion,
+      historyLookbackDays: capability === "commercial.performance"
+        && (
+          Boolean(extractAnalysisIntent(next.request.originalQuestion || next.request.normalizedQuestion))
+          || isSubjectiveJudgementTurn(next.request.originalQuestion || next.request.normalizedQuestion)
+          || isBroadManagementQuestion(next.request.originalQuestion || next.request.normalizedQuestion, "commercial")
+        )
+        ? HISTORY_LOOKBACK_DAYS
+        : null,
     };
 
     const builtin = await executeBuiltinCapability(req, next);
@@ -280,6 +318,8 @@ async function executeCapabilities(
           sourceAuthority: result.normalized?.sourceAuthority || null,
           rankings: result.normalized?.rankings || [],
           dailyFacts: result.normalized?.dailyFacts || [],
+          historyDailyFacts: result.normalized?.historyDailyFacts || [],
+          previousDailyFacts: result.normalized?.previousDailyFacts || [],
         },
       },
       cost: {
@@ -793,6 +833,12 @@ export async function runCompanyIntelligenceOrchestration(
     comparisonIntent: Boolean(followUp.semantics?.comparisonIntent),
     rankings: extras.rankings,
     dailyFacts: extras.dailyFacts,
+    historyDailyFacts: extras.historyDailyFacts,
+    previousDailyFacts: extras.previousDailyFacts,
+    analysisIntent: followUp.semantics?.analysisIntent || null,
+    openingDate: state.scope.primaryBranchId
+      ? defaultBusinessTimeline.getOpeningDate(state.scope.primaryBranchId)
+      : null,
     offlineAnalysis: !cloudEnabled && !localUnpaidSynth && !fastPath && budget.tier >= 1,
   };
 

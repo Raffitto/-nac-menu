@@ -83,3 +83,58 @@ export function directionWord(percentChange: number | null | undefined): "up" | 
   if (percentChange == null || isEffectivelyFlat(percentChange)) return "flat";
   return Number(percentChange) > 0 ? "up" : "down";
 }
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+export function parseIsoUtc(iso: string): Date | null {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+}
+
+export function addIsoDays(iso: string, days: number): string {
+  const dt = parseIsoUtc(iso);
+  if (!dt) return iso;
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+export function maxIsoDate(a: string, b: string): string {
+  return a >= b ? a : b;
+}
+
+export function isoWeekdayIndex(iso: string): number | null {
+  const dt = parseIsoUtc(iso);
+  return dt ? dt.getUTCDay() : null;
+}
+
+export function isoWeekdayName(iso: string): string {
+  const idx = isoWeekdayIndex(iso);
+  return idx == null ? "" : WEEKDAYS[idx];
+}
+
+export function isKsaWeekendIso(iso: string): boolean {
+  const idx = isoWeekdayIndex(iso);
+  return idx === 5 || idx === 6;
+}
+
+/** Manager-facing date: Friday, 1 August */
+export function formatManagerDate(iso: string | null | undefined): string {
+  if (!iso) return "the requested day";
+  const dt = parseIsoUtc(iso);
+  if (!dt) return iso;
+  const weekday = WEEKDAYS[dt.getUTCDay()];
+  const day = dt.getUTCDate();
+  const month = MONTHS[dt.getUTCMonth()];
+  return `${weekday}, ${day} ${month}`;
+}
+
+export function metricCopula(label: string): "was" | "were" {
+  const l = String(label || "").toLowerCase();
+  if (/\b(spend|average check|aov)\b/.test(l)) return "was";
+  return "were";
+}
