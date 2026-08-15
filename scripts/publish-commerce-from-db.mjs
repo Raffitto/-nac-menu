@@ -4,7 +4,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createClient } from "@supabase/supabase-js";
 import { execFileSync } from "node:child_process";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
@@ -32,27 +31,27 @@ if (!url || !key) {
   console.error("Missing Supabase service role env");
   process.exit(1);
 }
-const admin = createClient(url, key, { auth: { persistSession: false } });
+const headers = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" };
 
 const branch = process.argv[2] || "khobar";
 const periodStart = process.argv[3] || "2026-07-01";
 const periodEnd = process.argv[4] || "2026-08-14";
 const fabricPath = path.join(root, "supabase/functions/_shared/companyIntelligence/index.ts");
 
-async function fetchAll(table) {
+async function fetchAll(table, orderCol) {
   const rows = [];
   let from = 0;
   const histStart = periodStart <= "2026-07-01" ? periodStart : "2026-07-01";
   while (true) {
-    const { data, error } = await admin.from(table)
-      .select("*")
-      .eq("branch_id", branch)
-      .gte("business_date", histStart)
-      .lte("business_date", periodEnd)
-      .range(from, from + 999);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < 1000) break;
+    const to = from + 999;
+    const res = await fetch(
+      `${url}/rest/v1/${table}?branch_id=eq.${branch}&business_date=gte.${histStart}&business_date=lte.${periodEnd}&select=*&order=${orderCol}.asc`,
+      { headers: { ...headers, Range: `${from}-${to}` } },
+    );
+    if (!res.ok) throw new Error(`${table} ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    rows.push(...data);
+    if (data.length < 1000) break;
     from += 1000;
   }
   return rows;
@@ -101,8 +100,8 @@ function itemFromRow(r) {
 
 const tmp = path.join(os.tmpdir(), `nac-commerce-${Date.now()}.json`);
 fs.writeFileSync(tmp, JSON.stringify({
-  orders: (await fetchAll("commerce_orders")).map(orderFromRow),
-  items: (await fetchAll("commerce_order_items")).map(itemFromRow),
+  orders: (await fetchAll("commerce_orders", "source_order_id")).map(orderFromRow),
+  items: (await fetchAll("commerce_order_items", "source_order_item_id")).map(itemFromRow),
   branch,
   periodStart,
   periodEnd,
@@ -167,34 +166,47 @@ if (!computed.quality.ok || !computed.quality.sessionMixReady) {
   process.exit(2);
 }
 
-const { error } = await admin.from("commerce_published_snapshots").insert({
-  source: "foodics",
-  branch_id: branch,
-  period_start: periodStart,
-  period_end: periodEnd,
-  capability_set: "commerce.session_mix",
-  status: "published",
-  mix: computed.mix,
-  comparison: computed.comparison,
-  item_mix: computed.itemRows,
-  mapping_quality: { unclassifiedRate: computed.mix.unclassifiedRate },
-  evidence_summary: computed.evidence,
-  lineage: computed.evidence.lineage,
+const snapRes = await fetch(`${url}/rest/v1/commerce_published_snapshots`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({
+    source: "foodics",
+    branch_id: branch,
+    period_start: periodStart,
+    period_end: periodEnd,
+    capability_set: "commerce.session_mix",
+    status: "published",
+    mix: computed.mix,
+    comparison: computed.comparison,
+    item_mix: computed.itemRows,
+    mapping_quality: { unclassifiedRate: computed.mix.unclassifiedRate },
+    evidence_summary: computed.evidence,
+    lineage: computed.evidence.lineage,
+  }),
 });
-if (error) throw error;
+if (!snapRes.ok) throw new Error(`snapshot ${snapRes.status} ${await snapRes.text()}`);
 
 for (const dataset of ["orders", "order_items", "commerce_sessions", "session_mix", "item_mix", "product_mapping"]) {
-  await admin.from("commerce_dataset_freshness").upsert({
-    source: "foodics",
-    dataset,
-    branch_id: branch,
-    data_through: periodEnd,
-    complete_through: new Date().toISOString(),
-    last_success_at: new Date().toISOString(),
-    status: "ready",
-    source_mode: "authenticated_read",
-    quality: { unclassifiedRate: computed.mix.unclassifiedRate },
+  const res = await fetch(`${url}/rest/v1/commerce_dataset_freshness`, {
+    method: "POST",
+    headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({
+      source: "foodics",
+      dataset,
+      branch_id: branch,
+      data_through: periodEnd,
+      complete_through: new Date().toISOString(),
+      last_success_at: new Date().toISOString(),
+      status: dataset === "orders" || dataset === "order_items" || dataset === "commerce_sessions" ? "ready" : "ready",
+      source_mode: "authenticated_read",
+      quality: {
+        unclassifiedRate: computed.mix.unclassifiedRate,
+        officialAsyncMailbox: "incomplete",
+        provenance: "authenticated_read_fallback",
+      },
+    }),
   });
+  if (!res.ok) throw new Error(`freshness ${dataset} ${res.status} ${await res.text()}`);
 }
 
 console.log(JSON.stringify({

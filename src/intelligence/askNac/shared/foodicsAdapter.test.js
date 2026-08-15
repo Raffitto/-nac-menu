@@ -70,6 +70,18 @@ describe("Foodics console order adapter", () => {
     expect(out.archetype).toBe("dessert_only");
   });
 
+  test("NAC dessert section maps Cookies without sweet-name guessing", () => {
+    const out = run(`
+      const mapped = mod.mapFromMenuCatalog("prod-cookies", "Cookies", [
+        { id: "menu-cookies", name: "Crushed Milk Chocolate Cookies", categorySlug: "desserts", sectionName: "Desserts" },
+        { id: "menu-cookies-brunch", name: "Crushed Milk Chocolate Cookies", categorySlug: "brunch", sectionName: "Sweets" },
+      ]);
+      return { family: mod.mapCanonicalFamily(mapped), menu: mapped.canonicalMenuItemId };
+    `);
+    expect(out.family).toBe("dessert");
+    expect(out.menu).toBeTruthy();
+  });
+
   test("re-adapting the same order keeps stable keys", () => {
     const out = run(`
       const payload = ${JSON.stringify(fixture)};

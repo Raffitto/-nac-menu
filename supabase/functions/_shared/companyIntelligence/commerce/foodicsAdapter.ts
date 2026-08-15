@@ -12,13 +12,13 @@ import type {
   OrderType,
 } from "./types.ts";
 
-/** Observed Foodics console numeric statuses. */
+/** Observed Foodics console numeric statuses. 6 and 7 seen in Khobar July/Aug; not mapped until labeled. */
 export const FOODICS_STATUS = {
   ACTIVE: 2,
   DONE: 4,
 } as const;
 
-/** Observed Foodics console numeric types. */
+/** Observed Foodics console numeric types. 2 and 4 seen rarely; not mapped until labeled. */
 export const FOODICS_TYPE = {
   DINE_IN: 1,
 } as const;
