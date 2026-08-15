@@ -217,6 +217,7 @@ export function shouldSkipDailyBreakdownForRange(
   endDate?: string | null,
   periodType?: string | null,
 ) {
+  if (periodType === "analyst_history_lookback") return false;
   if (periodType === "year_to_date") return true;
   return countCalendarDaysInRange(startDate, endDate) > 31;
 }

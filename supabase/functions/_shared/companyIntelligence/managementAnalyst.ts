@@ -824,7 +824,37 @@ export function diagnoseCommercialPerformance(input: {
       : null;
   }
 
-  const driver = input.driverStatement || null;
+  const driverFromEvidence = input.driverStatement || null;
+  let driver = driverFromEvidence;
+  if (!driver && exactDay && input.period?.startDate && (intent === "why" || intent === "judgement" || intent === "action" || intent === "stands_out")) {
+    const coverRows = sameWeekdaySample(history, input.period.startDate, "covers", openingDate);
+    const spendRows = sameWeekdaySample(history, input.period.startDate, "avg_spend", openingDate);
+    const coverAvg = mean(coverRows.map((r) => factValue(r, "covers")).filter((v): v is number => v != null));
+    const spendAvg = mean(spendRows.map((r) => factValue(r, "avg_spend")).filter((v): v is number => v != null));
+    const coversDelta = percentDelta(input.snap.covers, coverAvg);
+    const spendDelta = percentDelta(input.snap.avg_spend, spendAvg);
+    if (coversDelta != null && spendDelta != null) {
+      const coversDown = coversDelta < -MAGNITUDE_FLAT_PCT;
+      const coversUp = coversDelta > MAGNITUDE_FLAT_PCT;
+      const coversFlat = coversDelta == null || isEffectivelyFlat(coversDelta);
+      const spendFlat = isEffectivelyFlat(spendDelta);
+      const spendDown = spendDelta < -MAGNITUDE_FLAT_PCT;
+      const spendUp = spendDelta > MAGNITUDE_FLAT_PCT;
+      if (coversDown && spendFlat) {
+        driver = "The sales result is primarily associated with fewer covers versus recent same weekdays; spend per guest was broadly stable.";
+      } else if (coversFlat && spendDown) {
+        driver = "The weaker result is mainly associated with lower spend per guest rather than traffic versus recent same weekdays.";
+      } else if (coversUp && spendFlat) {
+        driver = "The strength came mainly from covers versus recent same weekdays.";
+      } else if (coversFlat && spendUp) {
+        driver = "The strength came mainly from spend per guest versus recent same weekdays.";
+      } else if (coversDown && spendUp) {
+        driver = "Higher spend per guest partly offset weaker cover volume versus recent same weekdays.";
+      } else if (coversUp && spendDown) {
+        driver = "Traffic held or increased versus recent same weekdays, so any sales softness is associated with lower spend per guest.";
+      }
+    }
+  }
 
   let oneOffVsSustained: string | null = null;
   if (

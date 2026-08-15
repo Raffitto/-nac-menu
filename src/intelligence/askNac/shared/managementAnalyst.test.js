@@ -126,6 +126,20 @@ describe("A. default benchmark selection", () => {
 });
 
 describe("B. explicit baseline precedence", () => {
+  test("compared with normal Fridays is same-weekday, not a missing baseline", () => {
+    const out = run(`
+      const t = mod.resolveTurnSemantics({
+        question: "How was Friday compared with normal Fridays?",
+        branchHint: "khobar",
+        referenceDate: ${REF},
+      });
+      return { compare: t.comparisonIntent, clarify: t.ambiguity.needsClarification, analysis: t.analysisIntent, period: t.period?.startDate };
+    `);
+    expect(out.clarify).toBe(false);
+    expect(out.compare).toBe(false);
+    expect(out.period).toBeTruthy();
+  });
+
   test("compared with last Friday beats default weekday average", () => {
     const out = run(`
       ${HELPER}

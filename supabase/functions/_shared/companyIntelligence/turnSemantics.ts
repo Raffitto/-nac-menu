@@ -11,6 +11,7 @@ import {
 } from "../vaultPeriodParser.ts";
 import { createEmptyConversationState, updateConversationState } from "./conversationState.ts";
 import { normalizeBranchId } from "./scope.ts";
+import { addIsoDays, isoWeekdayIndex } from "./managementPresentation.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import type { DateRange } from "./types.ts";
@@ -92,6 +93,9 @@ const CORRECTION_RE = /\b(?:actually|no,?\s+i meant|instead|rather)\b/i;
 export function hasComparisonIntent(question: string): boolean {
   const q = String(question || "");
   if (/^why the difference\??$/i.test(q.trim())) return true;
+  if (/\b(?:compared?\s+(?:with|to)|versus|vs\.?|against)\s+normal\s+(?:fridays?|saturdays?|sundays?|mondays?|tuesdays?|wednesdays?|thursdays?|weekdays?|weekends?)\b/i.test(q)) {
+    return false;
+  }
   return COMPARISON_INTENT_RE.test(q);
 }
 
@@ -191,6 +195,22 @@ export function isPeriodOnlyFollowUpTurn(
   return Boolean(resolveFollowUpPeriodFocus(focus, referenceDate)?.startDate);
 }
 
+function lastCompletedWeekdayRange(name: string, referenceDate: Date): DateRange | null {
+  const want = {
+    sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+  }[String(name || "").toLowerCase()];
+  if (want == null) return null;
+  const today = referenceDate.toISOString().slice(0, 10);
+  let d = addIsoDays(today, -1);
+  for (let i = 0; i < 7; i++) {
+    if (isoWeekdayIndex(d) === want) {
+      return { startDate: d, endDate: d, label: `${name[0].toUpperCase()}${name.slice(1).toLowerCase()}`, semantic: "single_day" };
+    }
+    d = addIsoDays(d, -1);
+  }
+  return null;
+}
+
 function extractRanking(question: string): "top" | "bottom" | null {
   const q = String(question || "").toLowerCase();
   if (/\b(top|strongest|best|highest)\b/.test(q)) return "top";
@@ -232,7 +252,7 @@ export function extractAnalysisIntent(question: string): AnalysisIntent {
   if (/\b(trend(?:ing)?|improving|getting (?:worse|weaker|stronger)|deteriorat|falling|moving)\b/.test(q)
     || /\bare (?:sales|covers|weekends?|fridays?|saturdays?) (?:getting|trending)\b/.test(q)
   ) return "trend";
-  if (/\b(unusual|outlier|anomal)\b/.test(q) || /\bnormal for\b/.test(q) || /\bis this normal\b/.test(q) || /\bwas (?:that|it|yesterday) normal\b/.test(q)) {
+  if (/\b(unusual|outlier|anomal)\b/.test(q) || /\bnormal for\b/.test(q) || /\bis this normal\b/.test(q) || /\bwas (?:that|it|yesterday) normal\b/.test(q) || /\bnormal (?:fridays?|saturdays?|sundays?|mondays?|weekdays?)\b/.test(q)) {
     return "anomaly";
   }
   if (/\bwhy\b/.test(q)) return "why";
@@ -330,6 +350,13 @@ export function resolveTurnSemantics(input: {
     if (focusPeriod && !extractCommercialMetric(focus)) {
       explicitPeriod = focusPeriod;
       notes.push("followup_period_from_focus");
+    }
+  }
+  if (!explicitPeriod && (analysisIntent === "anomaly" || analysisIntent === "judgement" || /\bhow (?:was|were|is)\s+(this\s+)?(friday|saturday|sunday|monday|tuesday|wednesday|thursday)\b/i.test(q))) {
+    const weekdayOnly = q.match(/\b(this\s+)?(friday|saturday|sunday|monday|tuesday|wednesday|thursday)s?\b/i);
+    if (weekdayOnly && !/\bthis month\b/i.test(q) && !/\blast \d+ days\b/i.test(q)) {
+      explicitPeriod = lastCompletedWeekdayRange(weekdayOnly[2], ref);
+      if (explicitPeriod) notes.push("weekday_named_period");
     }
   }
 

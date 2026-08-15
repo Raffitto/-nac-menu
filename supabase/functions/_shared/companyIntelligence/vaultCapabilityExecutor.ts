@@ -222,12 +222,8 @@ export function createVaultCapabilityExecutor(runLegacyTool: LegacyToolRunner): 
             vaultIntent: mapping.vaultIntent,
             queryFocus: mapping.queryFocus,
             request: histReq,
-          });
-          const histAgg = histTool && typeof histTool === "object"
-            ? ((histTool as Record<string, unknown>).aggregation
-              || (histTool as Record<string, unknown>).aggregated
-              || null)
-            : null;
+          }) as Record<string, unknown> | null;
+          const histAgg = resolveToolAggregation(histTool);
           if (histAgg) tool.historyAggregation = histAgg;
         }
       }
