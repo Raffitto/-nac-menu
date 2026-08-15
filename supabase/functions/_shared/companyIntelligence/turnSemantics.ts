@@ -427,6 +427,8 @@ export function resolveTurnSemantics(input: {
   const preserveOriginal = Boolean(
     temporal.eventWindow
     || temporal.holidayBundle
+    || isSubjectiveJudgementTurn(q)
+    || ranking
     || /\b(ramadan|founding day|foundation day|eid|forecast|expect)\b/i.test(q)
   );
   const resolvedQuestion = preserveOriginal

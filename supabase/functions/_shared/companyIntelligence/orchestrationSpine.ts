@@ -775,7 +775,7 @@ export async function runCompanyIntelligenceOrchestration(
 
   const extras = collectRankingsAndFacts(state);
   const synthesisInput = {
-    question: state.request.normalizedQuestion,
+    question: state.request.originalQuestion || state.request.normalizedQuestion,
     branchId: state.scope.primaryBranchId,
     period: state.periods.current,
     comparisonPeriod: state.periods.comparison,

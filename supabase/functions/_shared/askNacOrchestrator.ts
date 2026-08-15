@@ -1224,7 +1224,7 @@ export async function processAskNacOnEdge(
     });
 
     const spine = await runCompanyIntelligenceOrchestration({
-      question: effectiveQuestion,
+      question: prepareResult.originalQuestion || effectiveQuestion,
       branchHint: authorizedScope.scope.primaryBranchId
         || route.branchMention
         || (mergedFilters.branch as string | null)
