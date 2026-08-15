@@ -1,0 +1,59 @@
+{
+  "data": {
+    "id": "78aeffe9-589d-4e95-92c4-47e9e4fd3661",
+    "reference": 718249,
+    "check_number": 192901,
+    "number": 26,
+    "type": 1,
+    "source": 1,
+    "status": 4,
+    "guests": 2,
+    "business_date": "2026-08-15",
+    "subtotal_price": 89.56522,
+    "discount_amount": 0,
+    "total_price": 103,
+    "opened_at": "2026-08-15 17:51:22",
+    "closed_at": "2026-08-15 18:32:30",
+    "original_order": null,
+    "branch": { "id": "9ea9dd6c-2a2a-4a8e-8160-89ecb56e4958", "name": "NAC Al Khobar" },
+    "table": { "id": "a078a97e-c37f-4c96-9d02-f698dd6f9618", "name": "take away 40", "section": { "name": "Take Away" } },
+    "products": [
+      {
+        "id": "a2829e63-7ef4-4f3f-8ee9-a9869ccfea65",
+        "quantity": 1,
+        "unit_price": 62,
+        "total_price": 62,
+        "discount_amount": 0,
+        "status": 3,
+        "product": { "id": "973550dc-f5c8-4bc2-a0df-e5f294c7f14f", "name": "Cookies", "is_non_revenue": false }
+      },
+      {
+        "id": "a2829e63-7efa-442b-899c-835206a4438f",
+        "quantity": 1,
+        "unit_price": 17,
+        "total_price": 17,
+        "discount_amount": 0,
+        "status": 3,
+        "product": { "id": "9edc6edc-b6cb-4d01-88df-a693829694e5", "name": "Sparkling Water-SM", "is_non_revenue": false }
+      },
+      {
+        "id": "a2829e63-7efe-46a3-b802-cbc6d85fbef2",
+        "quantity": 1,
+        "unit_price": 24,
+        "total_price": 24,
+        "discount_amount": 0,
+        "status": 3,
+        "product": { "id": "976fc5e0-dd79-45ce-b38f-390e09facb59", "name": "Still Water", "is_non_revenue": false }
+      },
+      {
+        "id": "a2829e63-7f02-4cfb-99ab-2485137cfad8",
+        "quantity": 1,
+        "unit_price": 0,
+        "total_price": 0,
+        "discount_amount": 0,
+        "status": 3,
+        "product": { "id": "978b9ea9-1300-4d3f-a1b1-168380300cc7", "name": "****************************", "is_non_revenue": false }
+      }
+    ]
+  }
+}

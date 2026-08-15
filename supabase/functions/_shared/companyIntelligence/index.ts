@@ -50,6 +50,7 @@ export {
   isBarePronounTurn,
 } from "./turnSemantics.ts";
 export * from "./calendarCompletion.ts";
+export * from "./commerce/index.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";
 export * from "./normalizedCapabilityResult.ts";

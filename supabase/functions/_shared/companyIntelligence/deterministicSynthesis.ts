@@ -11,6 +11,7 @@ import { allowedInferenceWording } from "./causalPolicy.ts";
 import type { CommercialMetric } from "./turnSemantics.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
 import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
+import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
 import {
   composeReasonedAnswer,
   isSubjectiveJudgementQuestion,
@@ -47,9 +48,22 @@ export function synthesizeDeterministicAnswer(input: {
   canonicalMatchedPairs?: CanonicalMatchedPair[];
   analysisIntent?: import("./turnSemantics.ts").AnalysisIntent;
   responseMode?: import("./turnSemantics.ts").ResponseMode | null;
+  commerceFocus?: import("./commerce/types.ts").CommerceFocus;
+  publishedCommerce?: PublishedCommerce | null;
   openingDate?: string | null;
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
+  if (input.commerceFocus) {
+    if (input.publishedCommerce?.mix?.totalSessions) {
+      return answerPublishedCommerce(input.commerceFocus, input.publishedCommerce);
+    }
+    if (input.commerceFocus === "health" || input.commerceFocus === "freshness" || input.commerceFocus === "data_used") {
+      if (input.publishedCommerce?.health || input.publishedCommerce?.evidence) {
+        return answerPublishedCommerce(input.commerceFocus, input.publishedCommerce);
+      }
+    }
+    return missingSessionEvidenceAnswer();
+  }
 
   const forecastSales = input.evidence.find((e) =>
     e.metricOrEvent === "forecast_net_sales" && typeof e.value === "number"

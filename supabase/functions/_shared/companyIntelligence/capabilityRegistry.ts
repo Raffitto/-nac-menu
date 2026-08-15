@@ -19,7 +19,15 @@ export type CapabilityId =
   | "calendar.resolve_period"
   | "research.historical_weather"
   | "research.external_events"
-  | "analytics.safe_compute";
+  | "analytics.safe_compute"
+  | "commerce.session_mix"
+  | "commerce.attachment"
+  | "commerce.item_mix"
+  | "commerce.rank_items"
+  | "commerce.basket_relationship"
+  | "commerce.compare_mix"
+  | "commerce.branch_decomposition"
+  | "commerce.opportunity_model";
 
 export type CapabilityDefinition = {
   id: CapabilityId;
@@ -167,6 +175,70 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = O
     implementationTool: "safe_analytics",
     requiresPaidModel: false,
     defaultBudgetTier: 2,
+  },
+  "commerce.session_mix": {
+    id: "commerce.session_mix",
+    domain: "COMMERCE",
+    description: "Dine-in session archetype mix",
+    implementationTool: "commerce_session_mix",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.attachment": {
+    id: "commerce.attachment",
+    domain: "COMMERCE",
+    description: "Item/category attachment to sessions",
+    implementationTool: "commerce_attachment",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.item_mix": {
+    id: "commerce.item_mix",
+    domain: "COMMERCE",
+    description: "Item and category mix from order items",
+    implementationTool: "commerce_item_mix",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.rank_items": {
+    id: "commerce.rank_items",
+    domain: "COMMERCE",
+    description: "Rank items by units or revenue",
+    implementationTool: "commerce_item_mix",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.basket_relationship": {
+    id: "commerce.basket_relationship",
+    domain: "COMMERCE",
+    description: "Basket co-occurrence",
+    implementationTool: "commerce_attachment",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.compare_mix": {
+    id: "commerce.compare_mix",
+    domain: "COMMERCE",
+    description: "Compare session mix across periods",
+    implementationTool: "commerce_session_mix",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.branch_decomposition": {
+    id: "commerce.branch_decomposition",
+    domain: "COMMERCE",
+    description: "Decompose commercial gaps into volume/mix/spend",
+    implementationTool: "commerce_decomposition",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.opportunity_model": {
+    id: "commerce.opportunity_model",
+    domain: "COMMERCE",
+    description: "Modeled opportunity estimates from mix/volume scenarios",
+    implementationTool: "commerce_opportunity",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
   },
 }) as Record<CapabilityId, CapabilityDefinition>;
 

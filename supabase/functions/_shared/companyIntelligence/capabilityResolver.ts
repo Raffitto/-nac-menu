@@ -114,6 +114,15 @@ export function resolveCapabilityImplementation(capability: CapabilityId): {
       return { implementationTool: tool, queryFocus: null, vaultIntent: "vault_reception" };
     case "staff.performance":
       return { implementationTool: tool, queryFocus: null, vaultIntent: null };
+    case "commerce.session_mix":
+    case "commerce.compare_mix":
+    case "commerce.attachment":
+    case "commerce.item_mix":
+    case "commerce.rank_items":
+    case "commerce.basket_relationship":
+    case "commerce.branch_decomposition":
+    case "commerce.opportunity_model":
+      return { implementationTool: tool, queryFocus: "commerce_session", vaultIntent: null };
     default:
       return { implementationTool: tool, queryFocus: null, vaultIntent: null };
   }

@@ -32,6 +32,8 @@ import { isBroadManagementQuestion } from "./managementReasoning.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
+import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
+import { requiresDineInSessionEvidence } from "./commerce/intent.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
 import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 import {
@@ -78,6 +80,7 @@ export type OrchestrationOptions = {
   /** Force heuristic planner / no cloud synthesize. */
   mode?: "auto" | "heuristic" | "offline";
   maxPaidCalls?: number;
+  publishedCommerce?: PublishedCommerce | null;
 };
 
 export type OrchestrationResult = {
@@ -104,6 +107,7 @@ const INTENT_CAPABILITIES: Record<string, CapabilityId[]> = {
   cost_margin: ["cost.margin_analysis", "commercial.performance"],
   factual_lookup: ["commercial.performance"],
   event_forecast: ["commercial.forecast", "commercial.performance", "calendar.resolve_period"],
+  commerce_session: ["commerce.session_mix", "commerce.compare_mix"],
   unsupported: [],
 };
 
@@ -560,6 +564,80 @@ export async function runCompanyIntelligenceOrchestration(
     };
   }
 
+  const commerceFocus = followUp.semantics?.commerceFocus || null;
+  const published = options.publishedCommerce || null;
+  const publishedReady = Boolean(published?.mix?.totalSessions)
+    || ((commerceFocus === "health" || commerceFocus === "freshness" || commerceFocus === "data_used")
+      && Boolean(published?.health || published?.evidence));
+  if (commerceFocus && publishedReady && published) {
+    const text = answerPublishedCommerce(commerceFocus, options.publishedCommerce);
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified: true },
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "commerce_session",
+      },
+      plan: {
+        ...state.plan,
+        goal: "commerce_session",
+        capabilities: ["commerce.session_mix"],
+        researchBudgetTier: 0,
+        needsClarification: false,
+        clarificationPrompt: null,
+      },
+    });
+    return {
+      state,
+      answerText: text,
+      answerType: "commerce",
+      keyMetrics: [],
+      insights: [],
+      nextConversation: state.conversation,
+      toolsExecuted: [],
+      paidModelCalls: 0,
+    };
+  }
+  if (requiresDineInSessionEvidence(commerceFocus)) {
+    const text = missingSessionEvidenceAnswer();
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified: true },
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "commerce_session_unavailable",
+      },
+      plan: {
+        ...state.plan,
+        goal: "commerce_session",
+        capabilities: ["commerce.session_mix"],
+        researchBudgetTier: 0,
+        needsClarification: false,
+        clarificationPrompt: null,
+      },
+    });
+    return {
+      state,
+      answerText: text,
+      answerType: "commerce_unavailable",
+      keyMetrics: [],
+      insights: [],
+      nextConversation: state.conversation,
+      toolsExecuted: [],
+      paidModelCalls: 0,
+    };
+  }
+
   const inheritedCommercialFollowUp = Boolean(
     followUp.usedFollowUp
     && (followUp.metricFamily === "commercial"
@@ -847,6 +925,8 @@ export async function runCompanyIntelligenceOrchestration(
     canonicalMatchedPairs: extras.matchedPairs,
     analysisIntent: followUp.semantics?.analysisIntent || null,
     responseMode: followUp.semantics?.responseMode || null,
+    commerceFocus: followUp.semantics?.commerceFocus || null,
+    publishedCommerce: options.publishedCommerce || null,
     openingDate: state.scope.primaryBranchId
       ? defaultBusinessTimeline.getOpeningDate(state.scope.primaryBranchId)
       : null,

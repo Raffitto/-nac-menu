@@ -29,6 +29,20 @@ export const SOURCE_AUTHORITY_REGISTRY: Record<string, SourceAuthorityRecord> = 
     notes:
       "Legacy external evidence only. Foodics reports are NOT shift-segregated and must not be treated as canonical shift segmentation.",
   },
+  canonical_commerce_sessions: {
+    sourceId: "canonical_commerce_sessions",
+    authority: "CANONICAL_STRUCTURED",
+    domain: "session_mix",
+    mayOverrideCanonical: false,
+    notes: "Published dine-in session archetypes. Does not replace Cash Up headline sales.",
+  },
+  canonical_commerce_order_items: {
+    sourceId: "canonical_commerce_order_items",
+    authority: "CANONICAL_STRUCTURED",
+    domain: "item_mix",
+    mayOverrideCanonical: false,
+    notes: "Published order-item facts after product mapping.",
+  },
   foodics_menu_engineering_cost: {
     sourceId: "foodics_menu_engineering_cost",
     authority: "LEGACY_FOODICS_COMPARISON_ONLY",

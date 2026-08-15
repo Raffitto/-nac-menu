@@ -15,6 +15,7 @@ import {
 import { createVaultCapabilityExecutor } from "./companyIntelligence/vaultCapabilityExecutor.ts";
 import type { StructuredConversationState } from "./companyIntelligence/conversationState.ts";
 import { resolveAuthorizedIntelligenceScope } from "./companyIntelligence/scope.ts";
+import { loadPublishedCommerce } from "./companyIntelligence/commerce/publishedStore.ts";
 import {
   compareFoodicsTopItems,
   getFoodicsBranchSalesComparison,
@@ -1223,6 +1224,8 @@ export async function processAskNacOnEdge(
       }) as Record<string, unknown> | null;
     });
 
+    const publishedCommerce = await loadPublishedCommerce(supabase, authorizedScope.scope.primaryBranchId);
+
     const spine = await runCompanyIntelligenceOrchestration({
       question: prepareResult.originalQuestion || effectiveQuestion,
       branchHint: authorizedScope.scope.primaryBranchId
@@ -1240,6 +1243,7 @@ export async function processAskNacOnEdge(
       },
       executor: vaultExecutor,
       mode: Deno.env.get("ASK_NAC_PLANNER_MODE") === "heuristic" ? "heuristic" : "auto",
+      publishedCommerce,
     });
     managementPlannerMs = Math.round(performance.now() - spineStartedAt);
     managementPlannerMeta = {
