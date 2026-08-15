@@ -181,6 +181,30 @@ describe("combinatorial semantic sample", () => {
   });
 });
 
+describe("month compare after a single day", () => {
+  test("compare with last month after a single day promotes elapsed month", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "How did we do yesterday?", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "What about covers?", previous: t1.conversation, referenceDate: ref });
+      const t3 = mod.resolveTurnSemantics({ question: "Compare with last month", previous: t2.conversation, referenceDate: ref });
+      return {
+        currentStart: t3.period?.startDate,
+        currentEnd: t3.period?.endDate,
+        cmpStart: t3.comparisonPeriod?.startDate,
+        cmpEnd: t3.comparisonPeriod?.endDate,
+        notes: t3.notes,
+        metric: t3.metric,
+      };
+    `);
+    expect(out.metric).toBe("covers");
+    expect(out.currentStart).toBe("2026-08-01");
+    expect(out.currentEnd).toBe("2026-08-14");
+    expect(out.cmpStart).toBe("2026-07-01");
+    expect(out.notes).toContain("month_baseline_promotes_elapsed_current_month");
+  });
+});
+
 describe("RBAC conversation closed on unauthorized branch switch", () => {
   test("Khobar-only profile cannot keep Khobar evidence as Riyadh after switch", () => {
     const out = run(`

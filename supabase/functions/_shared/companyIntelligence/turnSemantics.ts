@@ -11,7 +11,7 @@ import {
 } from "../vaultPeriodParser.ts";
 import { createEmptyConversationState, updateConversationState } from "./conversationState.ts";
 import { normalizeBranchId } from "./scope.ts";
-import { addIsoDays, formatManagerDate, isoWeekdayIndex } from "./managementPresentation.ts";
+import { addIsoDays, formatManagerDate, formatManagerPeriod, isoWeekdayIndex } from "./managementPresentation.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import type { DateRange } from "./types.ts";
@@ -115,6 +115,29 @@ export function extractFollowUpFocus(question: string): string | null {
   const q = String(question || "").trim();
   const m = q.match(/^(?:what about|how about|and|same for)\s+(.+?)\??$/i);
   return m ? m[1].trim() : null;
+}
+
+function isSingleDayRange(range: DateRange | null | undefined): boolean {
+  return Boolean(range?.startDate && range.startDate === range.endDate);
+}
+
+function isCalendarMonthRange(range: DateRange | null | undefined): boolean {
+  if (!range?.startDate || !range?.endDate) return false;
+  if (!range.startDate.endsWith("-01")) return false;
+  const start = new Date(`${range.startDate}T12:00:00Z`);
+  const end = new Date(`${range.endDate}T12:00:00Z`);
+  const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  return days >= 28;
+}
+
+function elapsedMonthThrough(dayIso: string): DateRange {
+  const startDate = `${dayIso.slice(0, 7)}-01`;
+  return {
+    startDate,
+    endDate: dayIso,
+    label: formatManagerPeriod({ startDate, endDate: dayIso }),
+    semantic: "this_month",
+  };
 }
 
 function toRange(period: { startDate?: string; endDate?: string; label?: string; periodType?: string } | null | undefined): DateRange | null {
@@ -407,6 +430,10 @@ export function resolveTurnSemantics(input: {
     if (!explicitPeriod && prev.activePeriods.current) {
       period = prev.activePeriods.current;
       notes.push("comparison_keeps_prior_current");
+    }
+    if (isCalendarMonthRange(comparisonPeriod) && isSingleDayRange(period) && period?.startDate) {
+      period = elapsedMonthThrough(period.startDate);
+      notes.push("month_baseline_promotes_elapsed_current_month");
     }
   } else if (comparisonIntentExplicit && inherit && prev.activePeriods.current && prev.activePeriods.comparison && !explicitPeriod) {
     period = prev.activePeriods.current;
