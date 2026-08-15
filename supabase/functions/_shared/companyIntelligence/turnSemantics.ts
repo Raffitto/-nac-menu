@@ -259,7 +259,7 @@ export function resolveTurnSemantics(input: {
   let explicitCompare = toRange(selfCompare?.previous) || temporal.compareRange || null;
 
   const compareFocusMatch = q.match(
-    /(?:compare(?:\s+it)?\s+(?:with|to)|compared\s+(?:with|to)|versus|vs\.?|against)\s+(.+?)\??$/i,
+    /(?:compare(?:\s+(?:it|that))?\s+(?:with|to)|compared\s+(?:with|to)|versus|vs\.?|against)\s+(.+?)\??$/i,
   );
   const comparisonFollowUpOnly = Boolean(
     comparisonIntentExplicit
@@ -289,7 +289,7 @@ export function resolveTurnSemantics(input: {
   if (comparisonIntentExplicit && !explicitCompare) {
     const fragment = compareFocusMatch?.[1] || focus;
     if (fragment) {
-      if (/\b(month before|previous month|prior month|previous period|(?:the\s+)?(?:previous|prior)\s+\d+(?:\s+days?)?)\b/i.test(fragment)
+      if (/\b(month before|previous month|prior month|previous period|(?:the\s+)?previous(?:\s+one)?|(?:the\s+)?(?:previous|prior)\s+\d+(?:\s+days?)?)\b/i.test(fragment)
         && (explicitPeriod || prev.activePeriods.current)
       ) {
         explicitCompare = toRange(

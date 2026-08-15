@@ -502,9 +502,21 @@ export function reasonAboutCommercialEvidence(input: {
   const period = periodLabel(input.period);
   const exact = exactDay;
   const primaryValue = formatPrimaryValue(metric === "commercial" ? "sales" : metric, snap, exact);
-  const relationships = (!missing && (comparisonIntent || depth === "overview" || depth === "comparison"))
+  const relationshipsRaw = (!missing && (comparisonIntent || depth === "overview" || depth === "comparison"))
     ? deriveCommercialRelationships(snap)
     : [];
+  const relationships = relationshipsRaw.filter((rel) => {
+    if (metric === "covers" && isEffectivelyFlat(snap.covers_delta_pct) && /spend_led|volume_led|offsetting/.test(rel.type)) {
+      return false;
+    }
+    if (metric === "orders" && isEffectivelyFlat(snap.orders_delta_pct) && rel.type.startsWith("order_mix") === false && /spend_led|volume_led/.test(rel.type)) {
+      return false;
+    }
+    if (metric === "avg_spend" && isEffectivelyFlat(snap.avg_spend_delta_pct) && rel.type !== "spend_led_decline" && rel.type !== "spend_led_growth") {
+      return rel.type === "flat_insignificant";
+    }
+    return true;
+  });
 
   let headline: string | null = null;
   if (!missing && primaryValue) {

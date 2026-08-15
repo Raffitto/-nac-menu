@@ -167,6 +167,26 @@ describe("Scenario 5: last 10 days compare then covers", () => {
   });
 });
 
+describe("previous-period follow-up after an exact day", () => {
+  test("compare with the previous period uses the equivalent prior window", () => {
+    const out = run(`
+      const ref = ${REF};
+      const t1 = mod.resolveTurnSemantics({ question: "what were sales yesterday", branchHint: "khobar", referenceDate: ref });
+      const t2 = mod.resolveTurnSemantics({ question: "compare that with the previous period", previous: t1.conversation, referenceDate: ref });
+      return {
+        current: t1.period?.startDate,
+        compare: t2.comparisonPeriod?.startDate,
+        intent: t2.comparisonIntent,
+        amb: t2.ambiguity.needsClarification,
+      };
+    `);
+    expect(out.amb).toBe(false);
+    expect(out.intent).toBe(true);
+    expect(out.compare).toBeTruthy();
+    expect(out.compare).not.toBe(out.current);
+  });
+});
+
 describe("Scenario 6: was that good?", () => {
   test("does not invent a baseline after a simple yesterday fact", () => {
     const out = run(`

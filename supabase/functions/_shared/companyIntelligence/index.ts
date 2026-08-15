@@ -40,6 +40,7 @@ export {
   resolveTurnSemantics,
   hasComparisonIntent,
   extractCommercialMetric,
+  isSubjectiveJudgementTurn,
 } from "./turnSemantics.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";

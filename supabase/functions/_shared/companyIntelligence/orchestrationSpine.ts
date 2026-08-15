@@ -26,7 +26,7 @@ import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
 import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
-import { hasComparisonIntent } from "./turnSemantics.ts";
+import { extractCommercialMetric, hasComparisonIntent, isSubjectiveJudgementTurn } from "./turnSemantics.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
@@ -187,7 +187,13 @@ export function isManagementIntelligenceQuestion(
 
   if (
     hasFabricInheritContext(options?.priorFabricConversation)
-    && isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
+    && (
+      isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
+      || isSubjectiveJudgementTurn(question)
+      || Boolean(extractCommercialMetric(question))
+      || hasComparisonIntent(question)
+      || /^(?:what about|how about|and\b|average spend|covers\??|orders\??|was that|is that)/i.test(String(question || "").trim())
+    )
   ) {
     return true;
   }
