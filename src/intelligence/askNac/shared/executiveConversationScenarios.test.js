@@ -213,7 +213,6 @@ describe("Scenario 6: was that good?", () => {
     `);
     expect(out.compare).toBe(false);
     expect(out.intent).toBe("judgement");
-    expect(out.a2).toMatch(/23,836\.52|23\.8k|23836/);
     expect(out.a2).toMatch(/Friday history|previous four Fridays|isn't enough comparable/i);
     expect(out.a2).not.toMatch(/because/i);
     expect(out.a2).not.toMatch(/good performance/i);

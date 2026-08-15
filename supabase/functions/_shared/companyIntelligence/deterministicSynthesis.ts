@@ -10,6 +10,7 @@ import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
 import type { CommercialMetric } from "./turnSemantics.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
+import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 import {
   composeReasonedAnswer,
   isSubjectiveJudgementQuestion,
@@ -43,6 +44,7 @@ export function synthesizeDeterministicAnswer(input: {
   dailyFacts?: NormalizedDailyFact[];
   historyDailyFacts?: NormalizedDailyFact[];
   previousDailyFacts?: NormalizedDailyFact[];
+  canonicalMatchedPairs?: CanonicalMatchedPair[];
   analysisIntent?: import("./turnSemantics.ts").AnalysisIntent;
   openingDate?: string | null;
 }): string {
@@ -101,6 +103,7 @@ export function synthesizeDeterministicAnswer(input: {
     judgementQuestion: isSubjectiveJudgementQuestion(input.question),
     analysisIntent: input.analysisIntent || null,
     openingDate: input.openingDate || null,
+    canonicalMatchedPairs: input.canonicalMatchedPairs || [],
   });
 
   return composeReasonedAnswer(reasoning, {

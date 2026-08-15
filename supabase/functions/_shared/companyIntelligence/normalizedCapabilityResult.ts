@@ -13,7 +13,10 @@ import type {
   IsoDate,
   SourceAuthority,
 } from "./types.ts";
-import { buildMatchedCoverageComparison } from "../cashUpMatchedCoverageComparison.ts";
+import {
+  buildMatchedCoverageComparison,
+  type CanonicalMatchedPair,
+} from "../cashUpMatchedCoverageComparison.ts";
 
 export type NormalizedCoverage = {
   requestedStart: IsoDate | null;
@@ -44,6 +47,7 @@ export type NormalizedComparison = {
   current: { startDate: IsoDate | null; endDate: IsoDate | null; value: number | null };
   previous: { startDate: IsoDate | null; endDate: IsoDate | null; value: number | null };
   matchedDayCount: number | null;
+  matchedPairs: CanonicalMatchedPair[];
   delta: number | null;
   percentChange: number | null;
   warnings: string[];
@@ -263,6 +267,7 @@ export function normalizeComparisonFromUnknown(
         value: null,
       },
       matchedDayCount: null,
+      matchedPairs: [],
       delta: null,
       percentChange: null,
       warnings: ["not_comparable"],
@@ -278,6 +283,7 @@ export function normalizeComparisonFromUnknown(
     ?? num(obj?.pctChange) ?? num(obj?.changePct);
   const delta = num(obj?.delta) ?? num(obj?.absoluteDelta) ?? num(obj?.deltaAbs);
   const matchedDayCount = num(obj?.matchedDayCount) ?? num(obj?.matchedDays) ?? num(obj?.matched_day_count);
+  const matchedPairs = Array.isArray(obj?.matchedPairs) ? obj!.matchedPairs as CanonicalMatchedPair[] : [];
   const mode = mapComparabilityMethodToMode(
     str(obj?.mode) || str(obj?.method) || options.methodHint,
     options.statusHint,
@@ -298,6 +304,7 @@ export function normalizeComparisonFromUnknown(
       value: num(previousObj.value) ?? num(previousObj.netSales) ?? num(previousObj.total) ?? num(obj?.previousValue),
     },
     matchedDayCount,
+    matchedPairs,
     delta,
     percentChange,
     warnings,
@@ -339,6 +346,7 @@ export function comparisonFromCashUpAggregations(
   const warnings: string[] = [];
   if (typeof safe.reason === "string" && safe.reason) warnings.push(String(safe.reason));
 
+  const matchedPairs = Array.isArray(safe.matchedPairs) ? safe.matchedPairs as CanonicalMatchedPair[] : [];
   const finish = (
     mode: NormalizedComparisonMode,
     currentValue: number,
@@ -352,6 +360,7 @@ export function comparisonFromCashUpAggregations(
       current: { startDate: currentStart, endDate: currentEnd, value: currentValue },
       previous: { startDate: previousStart, endDate: previousEnd, value: previousValue },
       matchedDayCount,
+      matchedPairs,
       delta,
       percentChange,
       warnings: [...new Set([...warnings, ...extraWarnings])],
@@ -393,6 +402,7 @@ export function comparisonFromCashUpAggregations(
     current: { startDate: currentStart, endDate: currentEnd, value: null },
     previous: { startDate: previousStart, endDate: previousEnd, value: null },
     matchedDayCount: null,
+    matchedPairs,
     delta: null,
     percentChange: null,
     warnings,
@@ -419,6 +429,7 @@ export function commercialBundleFromCashUpAggregations(
   current: CommercialMetricBundle;
   previous: CommercialMetricBundle;
   matchedDayCount: number | null;
+  matchedPairs: CanonicalMatchedPair[];
 } | null {
   const safe = buildMatchedCoverageComparison(aggregation, previousAggregation) as Record<string, unknown>;
   if (safe.mode === "matched") {
@@ -427,6 +438,7 @@ export function commercialBundleFromCashUpAggregations(
       current: pickCommercialBundle(asObject(safe.currentMatched)),
       previous: pickCommercialBundle(asObject(safe.previousMatched)),
       matchedDayCount: num(safe.matchedDayCount),
+      matchedPairs: Array.isArray(safe.matchedPairs) ? safe.matchedPairs as CanonicalMatchedPair[] : [],
     };
   }
   if (safe.mode === "full") {
@@ -435,6 +447,7 @@ export function commercialBundleFromCashUpAggregations(
       current: pickCommercialBundle(asObject(safe.current) || aggregation),
       previous: pickCommercialBundle(asObject(safe.previous) || previousAggregation),
       matchedDayCount: num((asObject(safe.current) || aggregation).dayCount),
+      matchedPairs: Array.isArray(safe.matchedPairs) ? safe.matchedPairs as CanonicalMatchedPair[] : [],
     };
   }
   const currentDays = num(aggregation.dayCount) || 0;
@@ -457,6 +470,7 @@ export function commercialBundleFromCashUpAggregations(
       avg_spend: previous.avg_spend,
     },
     matchedDayCount: null,
+    matchedPairs: Array.isArray(safe.matchedPairs) ? safe.matchedPairs as CanonicalMatchedPair[] : [],
   };
 }
 
@@ -655,6 +669,7 @@ export function normalizeCapabilityResult(input: {
         value: null,
       },
       matchedDayCount: coverage?.observedDays ?? null,
+      matchedPairs: [],
       delta: null,
       percentChange: deltaMetric.value,
       warnings: coverage?.warnings || [],

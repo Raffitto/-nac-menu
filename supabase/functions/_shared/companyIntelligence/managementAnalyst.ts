@@ -4,6 +4,8 @@
  */
 
 import type { NormalizedDailyFact } from "./normalizedCapabilityResult.ts";
+import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
+import { pairDailyBreakdownsByOffset } from "../cashUpMatchedCoverageComparison.ts";
 import type { CommercialMetric } from "./turnSemantics.ts";
 import { extractAnalysisIntent, type AnalysisIntent } from "./turnSemantics.ts";
 import type { DateRange } from "./types.ts";
@@ -22,6 +24,10 @@ import {
   metricCopula,
   percentDelta,
 } from "./managementPresentation.ts";
+import {
+  combineAnomalyAndTrend,
+  formatCalibratedJudgement,
+} from "./managementCoherence.ts";
 
 export const HISTORY_LOOKBACK_DAYS = 56;
 export const SAME_WEEKDAY_SAMPLE_TARGET = 4;
@@ -556,8 +562,23 @@ function computeTrend(
         : "There isn't enough completed daily history yet to describe a trend.",
     };
   }
-  const recent = rows.slice(-TREND_HALF_WINDOW);
-  const prior = rows.slice(-TREND_HALF_WINDOW * 2, -TREND_HALF_WINDOW);
+  const asOf = endDate || rows[rows.length - 1]?.date || null;
+  if (!asOf) {
+    return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
+  }
+  const recentStart = addIsoDays(asOf, -(TREND_HALF_WINDOW - 1));
+  const calendarRecent = weekdayOnly != null
+    ? rows.slice(-TREND_HALF_WINDOW)
+    : rows.filter((r) => r.date >= recentStart && r.date <= asOf);
+  const priorEnd = weekdayOnly != null ? null : addIsoDays(recentStart, -1);
+  const priorStart = priorEnd ? addIsoDays(priorEnd, -(TREND_HALF_WINDOW - 1)) : null;
+  const recent = weekdayOnly != null ? calendarRecent : calendarRecent;
+  const prior = weekdayOnly != null
+    ? rows.slice(-TREND_HALF_WINDOW * 2, -TREND_HALF_WINDOW)
+    : rows.filter((r) => priorStart && priorEnd && r.date >= priorStart && r.date <= priorEnd);
+  const expectedRecent = TREND_HALF_WINDOW;
+  const coverageRatio = weekdayOnly != null ? 1 : (expectedRecent ? recent.length / expectedRecent : 1);
+  const thinCoverage = coverageRatio < 0.85;
   if (prior.length < 5 || recent.length < 5) {
     return { class: "insufficient", text: "There isn't enough completed daily history yet to describe a trend." };
   }
@@ -573,148 +594,157 @@ function computeTrend(
   const up = signs.filter((s) => s > 0).length;
   const down = signs.filter((s) => s < 0).length;
   const label = weekdayOnly != null ? `${WEEKDAY_NAME(weekdayOnly)}s` : metricName(key === "avg_spend" ? "avg_spend" : key === "covers" ? "covers" : "sales");
+  const coverageNote = thinCoverage
+    ? ` Observed days only cover ${recent.length} of ${expectedRecent} calendar days in the latest window, so this is not a full-week claim.`
+    : "";
   if (Math.abs(pct) < TREND_NOISE_PCT) {
     if (up >= 5 || down >= 5) {
       /* still small */
     } else {
-      return { class: "broadly_flat", text: `${label} have been broadly flat over the recent completed days.` };
+      return { class: "broadly_flat", text: `${label} have been broadly flat over the recent completed days.${coverageNote}` };
     }
     if (Math.abs(pct) < MAGNITUDE_FLAT_PCT) {
-      return { class: "broadly_flat", text: `${label} have been broadly flat over the recent completed days.` };
+      return { class: "broadly_flat", text: `${label} have been broadly flat over the recent completed days.${coverageNote}` };
     }
   }
   if (Math.abs(pct) < 8 && up >= 3 && down >= 3) {
-    return { class: "noisy", text: `Recent ${label} movement looks like normal day-to-day variation rather than a sustained trend.` };
+    return { class: "noisy", text: `Recent ${label} movement looks like normal day-to-day variation rather than a sustained trend.${coverageNote}` };
   }
   const pctText = formatPercent(Math.abs(pct));
   if (pct > 0) {
-    return { class: "upward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.` };
+    return {
+      class: "upward",
+      text: thinCoverage
+        ? `Observed days are trending higher (${pctText} vs the prior comparable window), but only ${recent.length} of ${expectedRecent} days are available.`
+        : `${label.replace(/^./, (c) => c.toUpperCase())} show an upward trend: the latest ${recent.length} completed days averaged about ${pctText} above the prior ${prior.length}.`,
+    };
   }
-  return { class: "downward", text: `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.` };
+  return {
+    class: "downward",
+    text: thinCoverage
+      ? `Observed days are trending lower (${pctText} vs the prior comparable window), but only ${recent.length} of ${expectedRecent} days are available.`
+      : `${label.replace(/^./, (c) => c.toUpperCase())} show a downward trend: the latest ${recent.length} completed days averaged about ${pctText} below the prior ${prior.length}.`,
+  };
 }
 
 function WEEKDAY_NAME(idx: number): string {
   return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][idx] || "weekday";
 }
 
-function matchDays(
+function pairMetricValues(pair: CanonicalMatchedPair, key: MetricFactKey): { current: number | null; previous: number | null } {
+  if (key === "covers") return { current: pair.currentCovers, previous: pair.previousCovers };
+  if (key === "orders") return { current: pair.currentOrders, previous: pair.previousOrders };
+  if (key === "avg_spend") return { current: pair.currentSpend, previous: pair.previousSpend };
+  return { current: pair.currentSales, previous: pair.previousSales };
+}
+
+function factsToAggregation(facts: NormalizedDailyFact[], period: DateRange | null) {
+  const sorted = [...facts].filter((f) => f?.date).sort((a, b) => a.date.localeCompare(b.date));
+  const start = period?.startDate || sorted[0]?.date || "";
+  return {
+    requestedStartDate: start,
+    startDate: start,
+    requestedEndDate: period?.endDate || sorted[sorted.length - 1]?.date || "",
+    dayCount: sorted.length,
+    dailyBreakdown: sorted.map((f) => ({
+      date: f.date,
+      totalSales: f.net_sales,
+      totalGuests: f.covers,
+      totalOrders: f.orders,
+      averageSpend: f.avg_spend,
+    })),
+  };
+}
+
+function canonicalPairsFromFacts(
   current: NormalizedDailyFact[],
   previous: NormalizedDailyFact[],
-  key: MetricFactKey,
-  mode: "index" | "day_of_month",
-): Array<{ current: NormalizedDailyFact; previous: NormalizedDailyFact; delta: number }> {
-  const curr = [...current].filter((f) => factValue(f, key) != null).sort((a, b) => a.date.localeCompare(b.date));
-  const prev = [...previous].filter((f) => factValue(f, key) != null).sort((a, b) => a.date.localeCompare(b.date));
-  const out: Array<{ current: NormalizedDailyFact; previous: NormalizedDailyFact; delta: number }> = [];
-  if (mode === "day_of_month") {
-    const map = new Map<number, NormalizedDailyFact>();
-    for (const p of prev) map.set(Number(p.date.slice(8, 10)), p);
-    for (const c of curr) {
-      const p = map.get(Number(c.date.slice(8, 10)));
-      if (!p) continue;
-      out.push({ current: c, previous: p, delta: (factValue(c, key) as number) - (factValue(p, key) as number) });
-    }
-    return out;
-  }
-  const n = Math.min(curr.length, prev.length);
-  const cSlice = curr.slice(-n);
-  const pSlice = prev.slice(-n);
-  for (let i = 0; i < n; i++) {
-    out.push({
-      current: cSlice[i],
-      previous: pSlice[i],
-      delta: (factValue(cSlice[i], key) as number) - (factValue(pSlice[i], key) as number),
-    });
-  }
-  return out;
+  currentPeriod: DateRange | null,
+  previousPeriod: DateRange | null,
+): CanonicalMatchedPair[] {
+  return pairDailyBreakdownsByOffset(
+    factsToAggregation(current, currentPeriod),
+    factsToAggregation(previous, previousPeriod),
+  );
 }
 
 function computeBreadthAndContributors(
-  pairs: Array<{ current: NormalizedDailyFact; previous: NormalizedDailyFact; delta: number }>,
+  pairs: CanonicalMatchedPair[],
   key: MetricFactKey,
-  headlineDeltaPct?: number | null,
 ): {
   breadth: { class: BreadthClass; text: string | null };
   contributors: ContributorRow[];
   contributorText: string | null;
+  pairNet: number;
 } {
-  if (pairs.length < BREADTH_MIN_MATCHED) {
+  const metricPairs = pairs.map((p) => {
+    const { current, previous } = pairMetricValues(p, key);
+    if (current == null || previous == null) return null;
+    const pct = percentDelta(current, previous);
+    const delta = current - previous;
+    return { date: p.currentDate, previousDate: p.previousDate, delta, pct, current, previous };
+  }).filter((p): p is NonNullable<typeof p> => Boolean(p));
+
+  if (metricPairs.length < BREADTH_MIN_MATCHED) {
     return {
       breadth: { class: "insufficient", text: null },
       contributors: [],
       contributorText: null,
+      pairNet: metricPairs.reduce((s, p) => s + p.delta, 0),
     };
   }
-  const net = pairs.reduce((s, p) => s + p.delta, 0);
-  if (
-    headlineDeltaPct != null
-    && !isEffectivelyFlat(headlineDeltaPct)
-    && Math.sign(net) !== 0
-    && Math.sign(net) !== Math.sign(headlineDeltaPct)
-  ) {
-    return {
-      breadth: { class: "insufficient", text: null },
-      contributors: [],
-      contributorText: null,
-    };
-  }
-  const signed = pairs.map((p) => {
-    const prev = factValue(p.previous, key);
-    const pct = percentDelta(factValue(p.current, key), prev);
-    if (pct == null || isEffectivelyFlat(pct)) return 0;
+  const net = metricPairs.reduce((s, p) => s + p.delta, 0);
+  const signed = metricPairs.map((p) => {
+    if (p.pct == null || isEffectivelyFlat(p.pct)) return 0;
     return p.delta;
   });
   const downDays = signed.filter((d) => d < 0).length;
   const upDays = signed.filter((d) => d > 0).length;
+  const negatives = metricPairs.filter((p) => p.delta < 0).sort((a, b) => a.delta - b.delta);
+  const positives = metricPairs.filter((p) => p.delta > 0).sort((a, b) => b.delta - a.delta);
+  const grossNeg = Math.abs(negatives.reduce((s, p) => s + p.delta, 0));
+  const grossPos = positives.reduce((s, p) => s + p.delta, 0);
   const dirDays = net < 0 ? downDays : upDays;
-  const share = dirDays / pairs.length;
-  const sorted = [...pairs].sort((a, b) => a.delta - b.delta);
-  const negatives = pairs.filter((p) => p.delta < 0);
-  const positives = pairs.filter((p) => p.delta > 0);
-  const topHurt = (net < 0 ? sorted.slice(0, 2) : [...sorted].reverse().slice(0, 2));
-  const topSum = topHurt.reduce((s, p) => s + p.delta, 0);
-  const posAbs = positives.reduce((s, p) => s + p.delta, 0);
-  const negAbs = Math.abs(negatives.reduce((s, p) => s + p.delta, 0));
-  const offsetting = negAbs > 0 && posAbs / negAbs >= 0.25;
-  const concentrated = Math.abs(net) > 0 && Math.abs(topSum) / Math.abs(net) >= CONCENTRATED_SHARE && share < BROAD_DAY_SHARE;
+  const share = dirDays / metricPairs.length;
+  const topHurt = (net < 0 ? negatives : positives).slice(0, 2);
+  const topAbs = Math.abs(topHurt.reduce((s, p) => s + p.delta, 0));
+  const grossDir = net < 0 ? grossNeg : grossPos;
+  const concentrated = grossDir > 0 && topAbs / grossDir >= CONCENTRATED_SHARE && share < BROAD_DAY_SHARE;
   let breadthClass: BreadthClass = "mixed";
   let breadthText: string | null = null;
-  if (share >= BROAD_DAY_SHARE && !isEffectivelyFlat(percentDelta(net + 1, 1))) {
+  if (share >= BROAD_DAY_SHARE) {
     breadthClass = "broad_based";
     breadthText = net < 0
-      ? `The weakness was broad-based: ${downDays} of ${pairs.length} matched days were down.`
-      : `The strength was broad-based: ${upDays} of ${pairs.length} matched days were up.`;
+      ? `The weakness was broad-based: ${downDays} of ${metricPairs.length} matched days were down.`
+      : `The strength was broad-based: ${upDays} of ${metricPairs.length} matched days were up.`;
   } else if (concentrated) {
     breadthClass = "concentrated";
-    const days = topHurt.map((p) => formatManagerDate(p.current.date)).join(" and ");
+    const days = topHurt.map((p) => formatManagerDate(p.date)).join(" and ");
     breadthText = net < 0
-      ? `Most of the decline came from ${topHurt.length === 1 ? "one unusually weak day" : "a few unusually weak days"} (${days}).`
-      : `Most of the increase came from ${topHurt.length === 1 ? "one unusually strong day" : "a few strong days"} (${days}).`;
+      ? `Most of the gross negative movement came from ${topHurt.length === 1 ? "one unusually weak day" : "a few unusually weak days"} (${days}).`
+      : `Most of the gross positive movement came from ${topHurt.length === 1 ? "one unusually strong day" : "a few strong days"} (${days}).`;
   } else {
-    breadthText = `${downDays} of ${pairs.length} matched days were down and ${upDays} were up.`;
+    breadthClass = "mixed";
+    breadthText = `${downDays} of ${metricPairs.length} matched days were down and ${upDays} were up.`;
   }
 
   const contributors: ContributorRow[] = topHurt.map((p) => ({
-    date: p.current.date,
+    date: p.date,
     delta: p.delta,
-    shareOfMove: !offsetting && Math.abs(net) > 0 ? p.delta / net : null,
+    shareOfMove: grossDir > 0 ? Math.abs(p.delta) / grossDir : null,
   }));
   let contributorText: string | null = null;
-  if (contributors.length) {
-    const bits = contributors.map((c) => {
-      const signed = `${c.delta >= 0 ? "+" : "−"}${formatMetricValue(key, Math.abs(c.delta))}`;
-      return `${formatManagerDate(c.date)} (${signed})`;
-    });
-    const together = contributors.reduce((s, c) => s + c.delta, 0);
-    const togetherShare = !offsetting && Math.abs(net) > 0 ? Math.abs(together) / Math.abs(net) : null;
-    const shareText = togetherShare != null
-      ? `, together accounting for about ${formatPercent(togetherShare * 100)} of the matched-period ${net < 0 ? "decline" : "increase"}`
-      : "";
+  if (contributors.length && grossDir > 0) {
+    const bits = contributors.map((c) => `${formatManagerDate(c.date)} (${c.delta >= 0 ? "+" : "−"}${formatMetricValue(key, Math.abs(c.delta))})`);
+    const togetherAbs = Math.abs(contributors.reduce((s, c) => s + c.delta, 0));
+    const offsetNote = net < 0 && grossPos > 0
+      ? `, partly offset by stronger days elsewhere`
+      : (net > 0 && grossNeg > 0 ? `, partly offset by weaker days elsewhere` : "");
     contributorText = net < 0
-      ? `The largest negative contributors were ${bits.join(" and ")}${shareText}.`
-      : `The largest positive contributors were ${bits.join(" and ")}${shareText}.`;
+      ? `The ${contributors.length === 1 ? "largest negative day gap was" : "largest negative day gaps were"} ${bits.join(" and ")}. Together they accounted for ${formatMetricValue(key, togetherAbs)} of the ${formatMetricValue(key, grossNeg)} gross negative movement${offsetNote}.`
+      : `The ${contributors.length === 1 ? "largest positive day gap was" : "largest positive day gaps were"} ${bits.join(" and ")}. Together they accounted for ${formatMetricValue(key, togetherAbs)} of the ${formatMetricValue(key, grossPos)} gross positive movement${offsetNote}.`;
   }
-  return { breadth: { class: breadthClass, text: breadthText }, contributors, contributorText };
+  return { breadth: { class: breadthClass, text: breadthText }, contributors, contributorText, pairNet: net };
 }
 
 function judgementWord(deltaPct: number | null, intent: AnalysisIntent): string | null {
@@ -754,6 +784,7 @@ export function diagnoseCommercialPerformance(input: {
   previousDailyFacts?: NormalizedDailyFact[];
   openingDate?: string | null;
   driverStatement?: string | null;
+  canonicalMatchedPairs?: CanonicalMatchedPair[];
 }): ManagementDiagnostic {
   const intent = input.analysisIntent ?? extractAnalysisIntent(input.question);
   const metric = input.primaryMetric || "sales";
@@ -810,32 +841,27 @@ export function diagnoseCommercialPerformance(input: {
   const previousRows = priorRange
     ? completedFacts([...history, ...previousDailyFacts], openingDate).filter((d) => inRange(d.date, priorRange))
     : previousDailyFacts;
-  const matchMode = benchType === "elapsed_prior" ? "day_of_month" : "index";
-  const pairs = matchDays(currentRows, previousRows, key, matchMode);
-  const { breadth, contributors, contributorText } = computeBreadthAndContributors(
-    pairs,
-    key,
-    input.snap.sales_delta_pct ?? benchmark.deltaPct,
-  );
+  const pairs = (input.canonicalMatchedPairs && input.canonicalMatchedPairs.length)
+    ? input.canonicalMatchedPairs
+    : canonicalPairsFromFacts(currentRows, previousRows, input.period, priorRange);
+  const { breadth, contributors, contributorText } = computeBreadthAndContributors(pairs, key);
 
   const copula = metricCopula(label);
+  const dayLabel = exactDay && input.period ? formatManagerDate(input.period.startDate) : (input.period?.label || "This period");
   let judgement: string | null = null;
   if (!benchmark.sufficient) {
     judgement = benchmark.insufficientText;
   } else if (benchmark.deltaPct != null && (intent === "judgement" || intent === "anomaly" || !intent)) {
-    const word = judgementWord(benchmark.deltaPct, intent);
-    const pct = formatPercent(Math.abs(benchmark.deltaPct));
-    const dir = directionWord(benchmark.deltaPct);
-    const dayLabel = exactDay && input.period ? formatManagerDate(input.period.startDate) : (input.period?.label || "This period");
-    if (dir === "flat") {
-      judgement = `${dayLabel} ${label} ${copula} in line with ${benchmark.label} (${pct}).`;
-    } else if (word === "strong" || word === "good") {
-      judgement = `Yes. ${dayLabel} ${label} ${copula} ${pct} above ${benchmark.label}.`;
-    } else if (word === "weak") {
-      judgement = `No. ${dayLabel} ${label} ${copula} ${pct} below ${benchmark.label}.`;
-    } else {
-      judgement = `${dayLabel} ${label} ${copula} ${dir} ${pct} versus ${benchmark.label}.`;
-    }
+    judgement = formatCalibratedJudgement({
+      intent: intent || "judgement",
+      label,
+      dayLabel,
+      baselineLabel: benchmark.label,
+      deltaPct: benchmark.deltaPct,
+      anomalyClass: anomaly?.class || null,
+      sufficient: benchmark.sufficient,
+      insufficientText: benchmark.insufficientText,
+    });
   }
 
   let movement: string | null = null;
@@ -879,18 +905,20 @@ export function diagnoseCommercialPerformance(input: {
     }
   }
 
-  let oneOffVsSustained: string | null = null;
-  if (
-    anomaly
-    && (anomaly.class === "weak_outlier" || anomaly.class === "mildly_unusual" || anomaly.class === "materially_unusual")
-    && (trend.class === "broadly_flat" || trend.class === "noisy")
-    && anomaly.class !== "normal"
-  ) {
-    oneOffVsSustained = exactDay && input.period
-      ? `${formatManagerDate(input.period.startDate)} looks more like a one-off versus recent ${isoWeekdayName(input.period.startDate)}s than a sustained deterioration.`
-      : "This looks more like a one-off than a sustained trend.";
-  } else if (anomaly && (anomaly.class === "weak_outlier" || anomaly.class === "mildly_unusual") && trend.class === "downward") {
-    oneOffVsSustained = "The weak day sits on a downward trend, so this looks more like repeated weakness than a one-off.";
+  let oneOffVsSustained: string | null = combineAnomalyAndTrend({
+    anomalyClass: anomaly?.class || null,
+    anomalyText: anomaly?.text || null,
+    trendClass: trend.class,
+    trendText: trend.text,
+    dayLabel: exactDay && input.period ? formatManagerDate(input.period.startDate) : null,
+    weekdayName: exactDay && input.period ? isoWeekdayName(input.period.startDate) : null,
+  });
+  if (!oneOffVsSustained && breadth.class === "concentrated" && (trend.class === "broadly_flat" || trend.class === "noisy")) {
+    oneOffVsSustained = "This looks like concentrated weakness rather than a sustained, broad deterioration.";
+  } else if (!oneOffVsSustained && breadth.class === "broad_based" && trend.class === "downward") {
+    oneOffVsSustained = "Weakness appeared across most comparable days and sits on a downward trend, so this looks sustained rather than a one-off.";
+  } else if (breadth.class === "mixed" && (anomaly?.class === "weak_outlier" || anomaly?.class === "mildly_unusual") && trend.class === "downward") {
+    oneOffVsSustained = "This sits on a downward trend, so it looks like both a notable soft result and broader weakness.";
   }
 
   const invented = /\b(weather|staffing|service quality|marketing|competition|guest sentiment|atmosphere)\b/i.test(input.question);
@@ -946,11 +974,7 @@ export function diagnoseCommercialPerformance(input: {
   const sentences: string[] = [];
   if (intent === "judgement" || intent === "anomaly") {
     if (judgement) sentences.push(judgement);
-    if (intent === "anomaly" && anomaly && !sentences.includes(anomaly.text)) sentences.push(anomaly.text);
-    if (driver && benchmark.sufficient && benchmark.deltaPct != null && !isEffectivelyFlat(benchmark.deltaPct)) {
-      sentences.push(driver);
-    }
-    if (oneOffVsSustained) sentences.push(oneOffVsSustained);
+    if (oneOffVsSustained && intent === "judgement") sentences.push(oneOffVsSustained);
   } else if (intent === "trend") {
     if (trend.text) sentences.push(trend.text);
   } else if (intent === "why") {

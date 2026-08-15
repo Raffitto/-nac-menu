@@ -15,6 +15,7 @@ import {
   directionWord,
   formatCount,
   formatManagerDate,
+  formatManagerPeriod,
   formatMoney,
   formatPercent,
   isEffectivelyFlat,
@@ -25,6 +26,12 @@ import {
   percentDelta,
 } from "./managementPresentation.ts";
 import { diagnoseCommercialPerformance } from "./managementAnalyst.ts";
+import {
+  dedupeSentences,
+  depthLimit,
+  validateAnswerCoherence,
+} from "./managementCoherence.ts";
+import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 
 export type RelationshipType =
   | "volume_led_decline"
@@ -75,6 +82,12 @@ export type ManagementReasoning = {
   judgementOffer: string | null;
   groupingText: string | null;
   analystSentences: string[];
+  analysisIntent?: AnalysisIntent;
+  comparisonIntent?: boolean;
+  ranking?: boolean;
+  deltaPct?: number | null;
+  coverageIncomplete?: boolean;
+  branchId?: string | null;
 };
 
 function numEvidence(evidence: EvidenceRecord[], key: string): number | null {
@@ -451,8 +464,7 @@ function branchLabel(branchId: string | null | undefined) {
 }
 
 function periodLabel(period: DateRange | null | undefined) {
-  if (!period) return "the requested period";
-  return period.label || `${period.startDate}–${period.endDate}`;
+  return formatManagerPeriod(period);
 }
 
 export function isSubjectiveJudgementQuestion(question: string): boolean {
@@ -485,6 +497,7 @@ export function reasonAboutCommercialEvidence(input: {
   judgementQuestion?: boolean;
   analysisIntent?: AnalysisIntent;
   openingDate?: string | null;
+  canonicalMatchedPairs?: CanonicalMatchedPair[];
 }): ManagementReasoning {
   const snap = extractCommercialSnapshot(input.evidence);
   const metric = input.primaryMetric || "commercial";
@@ -610,6 +623,7 @@ export function reasonAboutCommercialEvidence(input: {
       previousDailyFacts: input.previousDailyFacts || [],
       openingDate: input.openingDate || null,
       driverStatement: driverRel?.statement || null,
+      canonicalMatchedPairs: input.canonicalMatchedPairs || [],
     })
     : null;
 
@@ -639,6 +653,12 @@ export function reasonAboutCommercialEvidence(input: {
     judgementOffer,
     groupingText,
     analystSentences,
+    analysisIntent,
+    comparisonIntent,
+    ranking: Boolean(ranking),
+    deltaPct: delta,
+    coverageIncomplete: Boolean(salesCoverage && salesCoverage.availableRecords != null && salesCoverage.expectedRecords != null && salesCoverage.availableRecords < salesCoverage.expectedRecords),
+    branchId: input.branchId,
   };
 }
 
@@ -658,19 +678,23 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
     parts.push(reasoning.coverageContext);
   } else {
     if (reasoning.rankingText) parts.push(reasoning.rankingText);
-    else if ((reasoning.analystSentences || []).length && (reasoning.depth === "judgement" || reasoning.judgementOffer)) {
-      if (reasoning.headline && reasoning.depth === "judgement") parts.push(reasoning.headline);
+    else if ((reasoning.analystSentences || []).length && (
+      reasoning.depth === "judgement"
+      || reasoning.judgementOffer
+      || ["trend", "why", "contributors", "breadth", "stands_out", "action", "anomaly", "weekend"].includes(String(reasoning.analysisIntent || ""))
+    )) {
       for (const s of reasoning.analystSentences || []) {
         if (s && !parts.some((p) => p.includes(s) || s.includes(p))) parts.push(s);
       }
     } else if (reasoning.judgementOffer && reasoning.depth === "judgement") {
-      if (reasoning.headline) parts.push(reasoning.headline);
       parts.push(reasoning.judgementOffer);
     } else if (reasoning.headline) parts.push(reasoning.headline);
-    if (!reasoning.rankingText && reasoning.depth !== "metric_fact" && reasoning.depth !== "judgement") {
+    const skipSupportForAnalyst = Boolean(reasoning.analystSentences?.length)
+      && (reasoning.depth === "judgement" || ["trend", "why", "contributors", "breadth", "anomaly"].includes(String(reasoning.analysisIntent || "")));
+    if (!reasoning.rankingText && reasoning.depth !== "metric_fact" && reasoning.depth !== "judgement" && !skipSupportForAnalyst) {
       for (const s of reasoning.supporting) parts.push(s);
     }
-    if ((reasoning.analystSentences || []).length && reasoning.depth !== "judgement") {
+    if ((reasoning.analystSentences || []).length && reasoning.depth !== "judgement" && !skipSupportForAnalyst) {
       for (const s of reasoning.analystSentences || []) {
         if (s && !parts.some((p) => p.includes(s) || s.includes(p))) parts.push(s);
       }
@@ -697,16 +721,29 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
       parts.push(reasoning.coverageContext);
     }
   }
-  if (extras.forecast) parts.push(extras.forecast);
-  if (extras.holiday) parts.push(extras.holiday);
-  if (extras.ops) parts.push(extras.ops);
-  if (extras.causalNote) parts.push(extras.causalNote);
-  if (!parts.length) {
-    parts.push("Verified structured evidence for this question is limited or unavailable.");
+  const max = depthLimit(
+    reasoning.analysisIntent || null,
+    Boolean(reasoning.ranking),
+    Boolean(reasoning.comparisonIntent) || reasoning.depth === "comparison",
+  );
+  const cleaned = dedupeSentences(parts, max);
+  if (extras.forecast) cleaned.push(extras.forecast);
+  if (extras.holiday) cleaned.push(extras.holiday);
+  if (extras.ops) cleaned.push(extras.ops);
+  if (extras.causalNote) cleaned.push(extras.causalNote);
+  if (!cleaned.length) {
+    cleaned.push("Verified structured evidence for this question is limited or unavailable.");
   }
   if (extras.offline) {
-    parts.push("Natural-language analysis is unavailable in offline mode; showing verified retrieved data only.");
+    cleaned.push("Natural-language analysis is unavailable in offline mode; showing verified retrieved data only.");
   }
-  return parts.join(" ");
+  return validateAnswerCoherence({
+    text: cleaned.join(" "),
+    branchId: reasoning.branchId || null,
+    primaryMetric: reasoning.primaryMetric,
+    deltaPct: reasoning.deltaPct,
+    coverageIncomplete: reasoning.coverageIncomplete,
+    infeasible: Boolean(extras.eventPreface && /not operating|not valid/.test(String(extras.eventPreface))),
+  });
 }
 

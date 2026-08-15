@@ -133,6 +133,37 @@ export function formatManagerDate(iso: string | null | undefined): string {
   return `${weekday}, ${day} ${month}`;
 }
 
+export function formatManagerPeriod(period: {
+  startDate?: string | null;
+  endDate?: string | null;
+  label?: string | null;
+} | null | undefined): string {
+  if (!period) return "the requested period";
+  const start = period.startDate || null;
+  const end = period.endDate || null;
+  if (start && end && start === end) return formatManagerDate(start);
+  if (start && end) {
+    const a = parseIsoUtc(start);
+    const b = parseIsoUtc(end);
+    if (a && b) {
+      const sameMonth = a.getUTCMonth() === b.getUTCMonth() && a.getUTCFullYear() === b.getUTCFullYear();
+      if (sameMonth) {
+        const last = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 0)).getUTCDate();
+        if (a.getUTCDate() === 1 && b.getUTCDate() === last) {
+          return `${MONTHS[a.getUTCMonth()]} ${a.getUTCFullYear()}`;
+        }
+        return `${a.getUTCDate()}–${b.getUTCDate()} ${MONTHS[a.getUTCMonth()]}`;
+      }
+      return `${formatManagerDate(start)} – ${formatManagerDate(end)}`;
+    }
+  }
+  const label = String(period.label || "").trim();
+  const iso = label.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return formatManagerDate(iso[1]);
+  if (label && !/\d{4}-\d{2}-\d{2}/.test(label)) return label;
+  return label || "the requested period";
+}
+
 export function metricCopula(label: string): "was" | "were" {
   const l = String(label || "").toLowerCase();
   if (/\b(spend|average check|aov)\b/.test(l)) return "was";

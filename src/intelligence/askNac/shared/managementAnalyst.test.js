@@ -364,7 +364,7 @@ describe("H. daily contribution ranking", () => {
       });
     `);
     expect(out).toMatch(/Friday, 7 August|Saturday, 8 August/i);
-    expect(out).toMatch(/negative contributors/i);
+    expect(out).toMatch(/negative day gap/i);
   });
 });
 

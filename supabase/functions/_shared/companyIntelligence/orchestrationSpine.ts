@@ -33,6 +33,7 @@ import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
+import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 import {
   createCompanyIntelligenceState,
   patchIntelligenceState,
@@ -125,12 +126,14 @@ function collectRankingsAndFacts(state: CompanyIntelligenceState): {
   historyDailyFacts: NormalizedDailyFact[];
   previousDailyFacts: NormalizedDailyFact[];
   comparisonMode: string | null;
+  matchedPairs: CanonicalMatchedPair[];
 } {
   const rankings: NormalizedRanking[] = [];
   const dailyMap = new Map<string, NormalizedDailyFact>();
   const historyMap = new Map<string, NormalizedDailyFact>();
   const previousMap = new Map<string, NormalizedDailyFact>();
   let comparisonMode: string | null = null;
+  let matchedPairs: CanonicalMatchedPair[] = [];
   for (const row of Object.values(state.toolResults || {})) {
     const tr = row as Record<string, unknown>;
     if (Array.isArray(tr.rankings)) rankings.push(...tr.rankings as NormalizedRanking[]);
@@ -149,8 +152,11 @@ function collectRankingsAndFacts(state: CompanyIntelligenceState): {
         if (fact?.date) previousMap.set(fact.date, fact);
       }
     }
-    const comparison = tr.comparison as { mode?: string } | null;
+    const comparison = tr.comparison as { mode?: string; matchedPairs?: CanonicalMatchedPair[] } | null;
     if (!comparisonMode && comparison?.mode) comparisonMode = comparison.mode;
+    if (!matchedPairs.length && Array.isArray(comparison?.matchedPairs) && comparison.matchedPairs.length) {
+      matchedPairs = comparison.matchedPairs;
+    }
   }
   return {
     rankings,
@@ -158,6 +164,7 @@ function collectRankingsAndFacts(state: CompanyIntelligenceState): {
     historyDailyFacts: [...historyMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
     previousDailyFacts: [...previousMap.values()].sort((a, b) => a.date.localeCompare(b.date)),
     comparisonMode,
+    matchedPairs,
   };
 }
 
@@ -835,6 +842,7 @@ export async function runCompanyIntelligenceOrchestration(
     dailyFacts: extras.dailyFacts,
     historyDailyFacts: extras.historyDailyFacts,
     previousDailyFacts: extras.previousDailyFacts,
+    canonicalMatchedPairs: extras.matchedPairs,
     analysisIntent: followUp.semantics?.analysisIntent || null,
     openingDate: state.scope.primaryBranchId
       ? defaultBusinessTimeline.getOpeningDate(state.scope.primaryBranchId)

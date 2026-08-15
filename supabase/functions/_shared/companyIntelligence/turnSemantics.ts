@@ -88,7 +88,8 @@ const COMPARISON_INTENT_RE =
   /\b(?:compared?\s+(?:with|to)|compare(?:\s+it)?(?:\s+(?:with|to))?|versus|vs\.?|against|better or worse than|difference from|change versus|up or down from|how does that compare)\b/i;
 
 const FOLLOW_UP_PREFIX_RE = /^(?:what about|how about|and|same for|actually|instead)\s+/i;
-const CORRECTION_RE = /\b(?:actually|no,?\s+i meant|instead|rather)\b/i;
+const CORRECTION_RE = /\b(?:actually|no,?\s+i meant|instead|rather|forget(?:ting)?|not that period)\b/i;
+const DROP_COMPARISON_RE = /\b(?:forget(?:ting)?(?:\s+the)?\s+comparison|drop(?:\s+the)?\s+comparison|without(?:\s+the)?\s+comparison|no comparison|just\s+(?:yesterday|today|last week|this week))\b/i;
 
 export function hasComparisonIntent(question: string): boolean {
   const q = String(question || "");
@@ -294,6 +295,7 @@ export function resolveTurnSemantics(input: {
   let rankingCount = rankingExplicit ? extractRankingCount(q) : null;
   const comparisonIntentExplicit = hasComparisonIntent(q);
   const correction = CORRECTION_RE.test(q);
+  const dropComparison = DROP_COMPARISON_RE.test(q);
   const subjective = isSubjectiveJudgementTurn(q);
   const analysisIntent = extractAnalysisIntent(q);
   const rankingInstead = Boolean(
@@ -412,12 +414,18 @@ export function resolveTurnSemantics(input: {
     notes.push("comparison_inherited_pair");
   } else if (explicitPeriod) {
     comparisonPeriod = null;
-  } else if (inherit && !correction) {
+  } else if (inherit && !correction && !dropComparison) {
     comparisonPeriod = prev.activePeriods.comparison;
     if (comparisonPeriod) {
       comparisonIntent = true;
       notes.push("comparison_preserved_on_metric_or_branch_follow_up");
     }
+  }
+
+  if (dropComparison) {
+    comparisonPeriod = null;
+    comparisonIntent = false;
+    notes.push("comparison_explicitly_dropped");
   }
 
   if (correction && explicitPeriod) {
@@ -456,6 +464,16 @@ export function resolveTurnSemantics(input: {
       : "Best day by sales, covers, or another metric — and for which period?";
   } else if (
     inherit
+    && /^(?:what about|how about) (?:that|it|those)\??$/i.test(q)
+    && Boolean(prev.activePeriods.current)
+    && Boolean(prev.activePeriods.comparison)
+    && !analysisIntent
+    && !explicitMetric
+  ) {
+    ambiguityKind = "underspecified_follow_up";
+    clarificationPrompt = "Do you mean the current period, the comparison, or a different metric?";
+  } else if (
+    inherit
     && followUpShape
     && !explicit.metric
     && !explicit.period
@@ -466,6 +484,7 @@ export function resolveTurnSemantics(input: {
     && !analysisIntent
     && !/^why the difference/i.test(q)
     && !/weekend/i.test(q)
+    && !dropComparison
   ) {
     ambiguityKind = "underspecified_follow_up";
     clarificationPrompt = "Which metric, period, or branch should I apply that to?";

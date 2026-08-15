@@ -1,7 +1,21 @@
 /**
  * Coverage-aware Cash Up current vs previous comparison.
  * Partial windows never headline-compare unequal day totals.
+ * Matched pairs are the single comparison population for totals, breadth, and contributors.
  */
+
+export type CanonicalMatchedPair = {
+  currentDate: string;
+  previousDate: string;
+  currentSales: number | null;
+  previousSales: number | null;
+  currentCovers: number | null;
+  previousCovers: number | null;
+  currentOrders: number | null;
+  previousOrders: number | null;
+  currentSpend: number | null;
+  previousSpend: number | null;
+};
 
 function calendarDayOffset(startDate: string, date: string) {
   if (!startDate || !date) return null;
@@ -37,6 +51,68 @@ function aggregateMatchedDailyRows(rows: Array<Record<string, unknown>> = []) {
     dayCount: rows.length,
     dailyBreakdown: rows,
   };
+}
+
+function dailySpend(sales: number | null, covers: number | null): number | null {
+  if (sales == null || covers == null || covers <= 0) return null;
+  return sales / covers;
+}
+
+function numField(row: Record<string, unknown> | null | undefined, ...keys: string[]): number | null {
+  if (!row) return null;
+  for (const key of keys) {
+    const v = row[key];
+    if (v != null && Number.isFinite(Number(v))) return Number(v);
+  }
+  return null;
+}
+
+/** Pair observed days by calendar offset from each period start — the canonical Cash Up match. */
+export function pairDailyBreakdownsByOffset(
+  current: Record<string, unknown> | null | undefined,
+  previous: Record<string, unknown> | null | undefined,
+): CanonicalMatchedPair[] {
+  if (!current || !previous) return [];
+  const currentBreakdown = (current.dailyBreakdown || []) as Array<Record<string, unknown>>;
+  const previousBreakdown = (previous.dailyBreakdown || []) as Array<Record<string, unknown>>;
+  const currentStart = String(current.requestedStartDate || current.startDate || "");
+  const previousStart = String(previous.requestedStartDate || previous.startDate || "");
+  if (!currentBreakdown.length || !previousBreakdown.length || !currentStart || !previousStart) return [];
+
+  const previousByOffset = new Map<number, Record<string, unknown>>();
+  for (const row of previousBreakdown) {
+    const offset = calendarDayOffset(previousStart, String(row.date || ""));
+    if (offset == null) continue;
+    previousByOffset.set(offset, row);
+  }
+
+  const pairs: CanonicalMatchedPair[] = [];
+  for (const row of currentBreakdown) {
+    const currentSales = numField(row, "totalSales", "net_sales", "sales");
+    if (currentSales == null) continue;
+    const offset = calendarDayOffset(currentStart, String(row.date || ""));
+    if (offset == null) continue;
+    const previousRow = previousByOffset.get(offset);
+    const previousSales = numField(previousRow, "totalSales", "net_sales", "sales");
+    if (!previousRow || previousSales == null) continue;
+    const currentCovers = numField(row, "totalGuests", "covers", "guest_count");
+    const previousCovers = numField(previousRow, "totalGuests", "covers", "guest_count");
+    const currentOrders = numField(row, "totalOrders", "orders", "order_count");
+    const previousOrders = numField(previousRow, "totalOrders", "orders", "order_count");
+    pairs.push({
+      currentDate: String(row.date || ""),
+      previousDate: String(previousRow.date || ""),
+      currentSales,
+      previousSales,
+      currentCovers,
+      previousCovers,
+      currentOrders,
+      previousOrders,
+      currentSpend: numField(row, "averageSpend", "avg_spend") ?? dailySpend(currentSales, currentCovers),
+      previousSpend: numField(previousRow, "averageSpend", "avg_spend") ?? dailySpend(previousSales, previousCovers),
+    });
+  }
+  return pairs;
 }
 
 function averageDailyMetric(total: unknown, dayCount: number) {
@@ -77,67 +153,66 @@ export function buildMatchedCoverageComparison(current: Record<string, unknown> 
     missingCurrentDayCount: expected != null ? Math.max(0, expected - currentDays) : null,
   };
 
+  const matchedPairs = pairDailyBreakdownsByOffset(current, previous);
+
   if (!needsMatch) {
     return {
       mode: "full",
       likeForLike: true,
       current,
       previous,
+      matchedPairs,
+      matchedDayCount: matchedPairs.length || currentDays,
       ...avgPair,
     };
   }
 
-  const currentBreakdown = (current.dailyBreakdown || []) as Array<Record<string, unknown>>;
-  const previousBreakdown = (previous.dailyBreakdown || []) as Array<Record<string, unknown>>;
-  const currentStart = current.requestedStartDate as string | undefined;
-  const previousStart = previous.requestedStartDate as string | undefined;
-
-  if (!currentBreakdown.length || !previousBreakdown.length || !currentStart || !previousStart) {
-    return {
-      mode: "unavailable",
-      reason: "missing_daily_breakdown",
-      likeForLike: false,
-      isPartial: true,
-      ...avgPair,
-    };
-  }
-
-  const previousByOffset = new Map<number, Record<string, unknown>>();
-  for (const row of previousBreakdown) {
-    const offset = calendarDayOffset(previousStart, String(row.date || ""));
-    if (offset == null) continue;
-    previousByOffset.set(offset, row);
-  }
-
-  const matchedCurrent: Array<Record<string, unknown>> = [];
-  const matchedPrevious: Array<Record<string, unknown>> = [];
-  for (const row of currentBreakdown) {
-    if (row?.totalSales == null || !Number.isFinite(Number(row.totalSales))) continue;
-    const offset = calendarDayOffset(currentStart, String(row.date || ""));
-    if (offset == null) continue;
-    const previousRow = previousByOffset.get(offset);
-    if (!previousRow || previousRow.totalSales == null || !Number.isFinite(Number(previousRow.totalSales))) {
-      continue;
+  if (!matchedPairs.length) {
+    const currentBreakdown = (current.dailyBreakdown || []) as Array<Record<string, unknown>>;
+    const previousBreakdown = (previous.dailyBreakdown || []) as Array<Record<string, unknown>>;
+    const currentStart = current.requestedStartDate as string | undefined;
+    const previousStart = previous.requestedStartDate as string | undefined;
+    if (!currentBreakdown.length || !previousBreakdown.length || !currentStart || !previousStart) {
+      return {
+        mode: "unavailable",
+        reason: "missing_daily_breakdown",
+        likeForLike: false,
+        isPartial: true,
+        matchedPairs: [],
+        ...avgPair,
+      };
     }
-    matchedCurrent.push(row);
-    matchedPrevious.push(previousRow);
-  }
-
-  if (!matchedCurrent.length) {
     return {
       mode: "unavailable",
       reason: "no_matched_days",
       likeForLike: false,
       isPartial: true,
+      matchedPairs: [],
       ...avgPair,
     };
   }
+
+  const matchedCurrent = matchedPairs.map((p) => ({
+    date: p.currentDate,
+    totalSales: p.currentSales,
+    totalGuests: p.currentCovers,
+    totalOrders: p.currentOrders,
+    averageSpend: p.currentSpend,
+  }));
+  const matchedPrevious = matchedPairs.map((p) => ({
+    date: p.previousDate,
+    totalSales: p.previousSales,
+    totalGuests: p.previousCovers,
+    totalOrders: p.previousOrders,
+    averageSpend: p.previousSpend,
+  }));
 
   return {
     mode: "matched",
     likeForLike: true,
     isPartial: true,
-    matchedDayCount: matchedCurrent.length,
+    matchedDayCount: matchedPairs.length,
+    matchedPairs,
     currentMatched: aggregateMatchedDailyRows(matchedCurrent),
     previousMatched: aggregateMatchedDailyRows(matchedPrevious),
     ...avgPair,
