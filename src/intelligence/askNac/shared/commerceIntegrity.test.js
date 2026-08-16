@@ -174,6 +174,42 @@ describe("commerce trust integrity", () => {
     expect(out.nextRun).toBe(true);
   });
 
+  test("only FULL_CHAIN_PROOF_SUCCESS increments the genuine 5-run counter", () => {
+    const out = run(`
+      const empty = mod.classifyProofRun({
+        sourceDate: "2026-08-15", forbiddenDates: ["2026-08-15"], sourceCompleted: false, sourceNonEmpty: false,
+        liveListCount: 0, liveDetailCalls: 0, acquiredOrders: 0, acquiredItems: 0, rawBytes: 0, checksum: null,
+        representativeOrderId: null, batchId: "x", ingestOk: false, validationPass: false, publicationOk: false, lineageBatchIdsMatch: false,
+      });
+      const checkpointOnly = mod.classifyProofRun({
+        sourceDate: "2026-08-14", sourceCompleted: true, sourceNonEmpty: true,
+        liveListCount: 0, liveDetailCalls: 0, acquiredOrders: 80, acquiredItems: 400, rawBytes: 12, checksum: "abc",
+        representativeOrderId: null, batchId: "b", ingestOk: true, validationPass: true, publicationOk: true, lineageBatchIdsMatch: true,
+      });
+      const full = mod.classifyProofRun({
+        sourceDate: "2026-08-14", sourceCompleted: true, sourceNonEmpty: true,
+        liveListCount: 30, liveDetailCalls: 86, acquiredOrders: 86, acquiredItems: 400, rawBytes: 50000, checksum: "abc",
+        representativeOrderId: "ord-1", batchId: "commerce_batch_khobar_20260814_x", ingestOk: true, validationPass: true, publicationOk: true, lineageBatchIdsMatch: true,
+      });
+      let state = mod.defaultProofState();
+      state = mod.applyQualifiedProofResult(state, empty);
+      const afterEmpty = state.genuineFullChainSuccesses;
+      state = mod.applyQualifiedProofResult(state, checkpointOnly);
+      const afterCk = state.genuineFullChainSuccesses;
+      state = mod.applyQualifiedProofResult(state, full);
+      return { empty, checkpointOnly, full, afterEmpty, afterCk, afterFull: state.genuineFullChainSuccesses };
+    `);
+    expect(out.empty.classification).toBe("INCOMPLETE_SOURCE_PERIOD");
+    expect(out.empty.eligible).toBe(false);
+    expect(out.checkpointOnly.classification).toBe("ACQUISITION_NOT_PROVEN");
+    expect(out.checkpointOnly.eligible).toBe(false);
+    expect(out.full.classification).toBe("FULL_CHAIN_PROOF_SUCCESS");
+    expect(out.full.eligible).toBe(true);
+    expect(out.afterEmpty).toBe(0);
+    expect(out.afterCk).toBe(0);
+    expect(out.afterFull).toBe(1);
+  });
+
   test("Ask NAC evidence answers differentiate freshness, join, mapping, and classification", () => {
     const out = run(`
       const q = mod.computeQuality({

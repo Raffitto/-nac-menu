@@ -189,6 +189,30 @@ if (!computed.quality.ok || !computed.quality.sessionMixReady) {
   process.exit(2);
 }
 
+const existingSnapRes = await fetch(
+  `${url}/rest/v1/commerce_published_snapshots?branch_id=eq.${branch}&status=eq.published&period_end=eq.${periodEnd}&select=mapping_quality,published_at&order=published_at.desc&limit=1`,
+  { headers },
+);
+const existingSnap = existingSnapRes.ok ? (await existingSnapRes.json())[0] : null;
+const existingUnclass = existingSnap?.mapping_quality?.unclassifiedRate;
+if (
+  existingUnclass != null
+  && existingUnclass < 0.05
+  && computed.mix.unclassifiedRate != null
+  && computed.mix.unclassifiedRate >= 0.05
+  && computed.mix.unclassifiedRate > Number(existingUnclass) + 0.03
+) {
+  console.log(JSON.stringify({
+    published: false,
+    reason: "degraded_snapshot_blocked",
+    existingUnclassified: existingUnclass,
+    candidateUnclassified: computed.mix.unclassifiedRate,
+    batchId: computed.batchId,
+    quality: computed.qualityDims,
+  }, null, 2));
+  process.exit(0);
+}
+
 const snapRes = await fetch(`${url}/rest/v1/commerce_published_snapshots`, {
   method: "POST",
   headers,
