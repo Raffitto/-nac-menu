@@ -118,6 +118,13 @@ export function hasComparisonIntent(question: string): boolean {
   if (/\b(?:compared?\s+(?:with|to)|versus|vs\.?|against)\s+normal\s+(?:fridays?|saturdays?|sundays?|mondays?|tuesdays?|wednesdays?|thursdays?|weekdays?|weekends?)\b/i.test(q)) {
     return false;
   }
+  if (
+    COMPARISON_INTENT_RE.test(q)
+    && /\b(guest|weekend|weekday|low-spend|high-spend|basket|food-containing|dessert-focused)\b/i.test(q)
+    && !/\b(last month|this month|last week|this week|previous (?:month|week|year)|last year|\bjan|\bfeb|\bmar|\bapr|\bjun|\bjul|\baug|\bsep|\boct|\bnov|\bdec|january|february|march|april|june|july|august|september|october|november|december)\b/i.test(q)
+  ) {
+    return false;
+  }
   return COMPARISON_INTENT_RE.test(q);
 }
 

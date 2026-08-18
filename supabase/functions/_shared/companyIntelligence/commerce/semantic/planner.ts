@@ -117,8 +117,6 @@ export function looksLikeSemanticCommerceQuestion(question: string): boolean {
 }
 
 function defaultMetric(q: string, calc: CommerceQueryPlan["calculation"]): SemanticMetricId {
-  const aliased = metricByAlias(q);
-  if (aliased) return aliased;
   if (calc === "cooccurrence") return "cooccurrence_rate";
   if (calc === "attach_rate") return "attach_rate";
   if (calc === "lift") return "lift_vs_baseline";
@@ -130,6 +128,8 @@ function defaultMetric(q: string, calc: CommerceQueryPlan["calculation"]): Seman
   if (calc === "spend_buckets") return "high_spend_share";
   if (calc === "pairs") return "cooccurrence_count";
   if (calc === "diagnostic") return "average_check";
+  const aliased = metricByAlias(q);
+  if (aliased) return aliased;
   if (/\bpercentile|median\b/.test(q)) return "median_check";
   if (/\bbasket\b/.test(q)) return "basket_item_count";
   if (/\baverage check\b/.test(q)) return "average_check";

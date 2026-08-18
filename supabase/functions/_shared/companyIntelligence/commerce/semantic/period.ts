@@ -50,7 +50,7 @@ export function clampInclusiveCompleted(input: {
   coverageStart?: string | null;
   coverageEnd?: string | null;
   referenceDate?: Date;
-}): { startDate: string; endDate: string; clampedStart: boolean; clampedEnd: boolean; excludedToday: boolean } {
+}): { startDate: string; endDate: string; clampedStart: boolean; clampedEnd: boolean; excludedToday: boolean; beforeCoverage: boolean } {
   const today = ksaCalendarIso(input.referenceDate || new Date());
   const yesterday = latestCompletedBusinessDay(input.referenceDate || new Date());
   let start = asCalendarDate(input.startDate) || input.startDate;
@@ -60,6 +60,9 @@ export function clampInclusiveCompleted(input: {
   let clampedStart = false;
   let clampedEnd = false;
   let excludedToday = false;
+  if (covStart && end < covStart) {
+    return { startDate: start, endDate: end, clampedStart: false, clampedEnd: false, excludedToday: false, beforeCoverage: true };
+  }
   if (end >= today) {
     end = yesterday;
     excludedToday = true;
@@ -73,11 +76,7 @@ export function clampInclusiveCompleted(input: {
     start = covStart;
     clampedStart = true;
   }
-  if (start > end) {
-    start = end;
-    clampedStart = true;
-  }
-  return { startDate: start, endDate: end, clampedStart, clampedEnd, excludedToday };
+  return { startDate: start, endDate: end, clampedStart, clampedEnd, excludedToday, beforeCoverage: false };
 }
 
 function toRange(period: { startDate?: string; endDate?: string; label?: string | null; periodType?: string; semantic?: string | null } | null): DateRange | null {

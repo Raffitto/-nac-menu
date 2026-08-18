@@ -146,6 +146,12 @@ export function filterOrders(
       const h = wallHour(order.opened_at);
       if (h == null || h < opts.hourGte) return false;
     }
+    if (opts.family) {
+      const basket = itemsBy.get(order.source_order_id) || [];
+      if (opts.family === "beverage") {
+        if (!orderHasFamily(basket, "coffee") && !orderHasFamily(basket, "other_beverage")) return false;
+      } else if (!orderHasFamily(basket, opts.family)) return false;
+    }
     return true;
   });
 }
@@ -278,9 +284,10 @@ export function productLift(
   baseline: SemanticOrder[],
   itemsBy: Map<string, SemanticItem[]>,
   limit: number,
+  opts?: { family?: string | null; excludeName?: string | null },
 ): Array<{ name: string; cohortPenetration: number | null; baselinePenetration: number | null; lift: number | null; cohortOrders: number }> {
-  const cRank = rankProducts(cohort, itemsBy, { limit: 80, mode: "orders" });
-  const bRank = rankProducts(baseline, itemsBy, { limit: 400, mode: "orders" });
+  const cRank = rankProducts(cohort, itemsBy, { limit: 80, mode: "orders", family: opts?.family, excludeName: opts?.excludeName });
+  const bRank = rankProducts(baseline, itemsBy, { limit: 400, mode: "orders", family: opts?.family, excludeName: opts?.excludeName });
   const bMap = new Map(bRank.map((r) => [r.name.toLowerCase(), r]));
   return cRank.map((row) => {
     const base = bMap.get(row.name.toLowerCase());
@@ -369,9 +376,10 @@ export function shareChange(
   itemsByCurrent: Map<string, SemanticItem[]>,
   itemsByPrevious: Map<string, SemanticItem[]>,
   limit: number,
+  opts?: { family?: string | null },
 ): Array<{ name: string; currentShare: number | null; previousShare: number | null; deltaShare: number | null; currentOrders: number }> {
-  const cRank = rankProducts(current, itemsByCurrent, { limit: 200, mode: "orders" });
-  const pRank = rankProducts(previous, itemsByPrevious, { limit: 200, mode: "orders" });
+  const cRank = rankProducts(current, itemsByCurrent, { limit: 200, mode: "orders", family: opts?.family });
+  const pRank = rankProducts(previous, itemsByPrevious, { limit: 200, mode: "orders", family: opts?.family });
   const names = new Set([...cRank, ...pRank].map((r) => r.name.toLowerCase()));
   const cMap = new Map(cRank.map((r) => [r.name.toLowerCase(), r]));
   const pMap = new Map(pRank.map((r) => [r.name.toLowerCase(), r]));

@@ -81,8 +81,15 @@ export function synthesizeSemanticCommerce(input: {
 
   if (plan.calculation === "lift") {
     const lead = topNames(result.ranking, 3);
+    const cohortLabel = plan.seedProduct
+      ? `checks with ${plan.seedProduct}`
+      : plan.cohort?.kind === "spend_gt"
+        ? `checks > ${plan.cohort.value} SAR`
+        : plan.cohort?.kind === "weekend"
+          ? "weekend checks"
+          : "the selected cohort";
     return (
-      `Among ${result.cohortSize || 0} high-value ${branch} checks (${period}), the products most associated versus baseline were ${lead || "none"}. `
+      `Among ${result.cohortSize || 0} ${branch} ${cohortLabel} (${period}), the products most associated versus baseline were ${lead || "none"}. `
       + "Association is not a causal effect."
       + strength
       + map

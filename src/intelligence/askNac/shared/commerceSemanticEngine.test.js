@@ -249,7 +249,14 @@ describe("commerce semantic eval suite", () => {
         coverageEnd: "2026-08-17",
         referenceDate: ref,
       });
-      return { periods, july: july.range, clamp, noShift, today, prec: july.precedence };
+      const before = mod.clampInclusiveCompleted({
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+        coverageStart: "2026-07-01",
+        coverageEnd: "2026-08-17",
+        referenceDate: ref,
+      });
+      return { periods, july: july.range, clamp, noShift, today, before, prec: july.precedence };
     `);
     for (const v of Object.values(out.periods)) {
       expect(String(v)).toMatch(/^2026-08-01\/2026-08-31\/named/);
@@ -261,5 +268,8 @@ describe("commerce semantic eval suite", () => {
     expect(out.noShift.startDate).toBe("2026-07-01");
     expect(out.today.endDate).toBe("2026-08-17");
     expect(out.today.excludedToday).toBe(true);
+    expect(out.before.beforeCoverage).toBe(true);
+    expect(out.before.startDate).toBe("2026-06-01");
+    expect(out.before.endDate).toBe("2026-06-30");
   });
 });

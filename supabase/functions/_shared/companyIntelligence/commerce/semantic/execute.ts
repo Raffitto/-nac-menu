@@ -195,6 +195,15 @@ export async function executeCommercePlan(input: {
     coverageStart: covStart,
     coverageEnd: covEnd,
   });
+  if (completed.beforeCoverage || completed.startDate > completed.endDate) {
+    return {
+      ok: false,
+      limitation: `Canonical commerce for ${branchId} does not cover ${start}–${end}. Coverage is ${covStart || "unknown"}–${covEnd || "unknown"}.`,
+      coverage,
+      evidenceStrength: "unavailable",
+      debug: debug(input.plan, started, branchId, 0, 0, { startDate: start, endDate: end }),
+    };
+  }
   start = completed.startDate;
   end = completed.endDate;
   const clamped = clampPeriod(start, end);
@@ -203,6 +212,15 @@ export async function executeCommercePlan(input: {
 
   const ordersRaw = await input.store.fetchOrders({ branchId, startDate: start, endDate: end });
   const itemsRaw = await input.store.fetchItems({ branchId, startDate: start, endDate: end });
+  if (!ordersRaw.length) {
+    return fail(
+      `Canonical order-level commerce is not available for ${branchId} in ${start}–${end}.`,
+      input.plan,
+      started,
+      branchId,
+      coverage,
+    );
+  }
   const orders = ordersRaw.slice(0, COMMERCE_EXEC_LIMITS.maxOrders).map((o) => ({
     ...o,
     business_date: asCalendarDate(o.business_date) || String(o.business_date).slice(0, 10),
@@ -240,7 +258,7 @@ export async function executeCommercePlan(input: {
       coverageStart: covStart,
       coverageEnd: covEnd,
     });
-    if (prevClamp.startDate <= prevClamp.endDate) {
+    if (!prevClamp.beforeCoverage && prevClamp.startDate <= prevClamp.endDate) {
       const pOrders = await input.store.fetchOrders({ branchId, startDate: prevClamp.startDate, endDate: prevClamp.endDate });
       const pItems = await input.store.fetchItems({ branchId, startDate: prevClamp.startDate, endDate: prevClamp.endDate });
       prevOrders = filterOrders(
@@ -262,7 +280,10 @@ export async function executeCommercePlan(input: {
       limit,
       mode: "orders",
     });
-    const withLift = productLift(cohort, filtered, itemsBy, limit).filter((r) =>
+    const withLift = productLift(cohort, filtered, itemsBy, limit, {
+      family: filt.family,
+      excludeName: input.plan.seedProduct,
+    }).filter((r) =>
       !input.plan.seedProduct || r.name.toLowerCase() !== String(input.plan.seedProduct).toLowerCase(),
     );
     return ok({
@@ -275,7 +296,10 @@ export async function executeCommercePlan(input: {
   }
 
   if (calc === "lift") {
-    const ranked = productLift(cohort.length ? cohort : filtered, filtered, itemsBy, limit);
+    const ranked = productLift(cohort.length ? cohort : filtered, filtered, itemsBy, limit, {
+      family: filt.family,
+      excludeName: input.plan.seedProduct,
+    });
     return ok({ ranking: ranked, cohortSize: (cohort.length ? cohort : filtered).length, baselineSize: filtered.length });
   }
 
@@ -285,7 +309,16 @@ export async function executeCommercePlan(input: {
   }
 
   if (calc === "share_change") {
-    const ranked = shareChange(filtered, prevOrders.length ? prevOrders : baseline, itemsBy, prevOrders.length ? prevItemsBy : itemsBy, limit);
+    if (!prevOrders.length) {
+      return fail(
+        `No comparable canonical commerce coverage exists for ${input.plan.compare?.label || input.plan.compare?.startDate || "the baseline period"}. Share-change is not estimated without an aligned baseline.`,
+        input.plan,
+        started,
+        branchId,
+        coverage,
+      );
+    }
+    const ranked = shareChange(filtered, prevOrders, itemsBy, prevItemsBy, limit, { family: filt.family });
     return ok({ ranking: ranked, cohortSize: filtered.length, baselineSize: prevOrders.length || baseline.length });
   }
 
@@ -315,8 +348,8 @@ export async function executeCommercePlan(input: {
   if (calc === "diagnostic") {
     const vals = filtered.map((o) => Number(o.net_sales) || 0);
     const movers = prevOrders.length
-      ? shareChange(filtered, prevOrders, itemsBy, prevItemsBy, 5)
-      : productLift(applyCohort(filtered, itemsBy, { kind: "spend_gt", value: 300 }), filtered, itemsBy, 5);
+      ? shareChange(filtered, prevOrders, itemsBy, prevItemsBy, 5, { family: filt.family })
+      : productLift(applyCohort(filtered, itemsBy, { kind: "spend_gt", value: 300 }), filtered, itemsBy, 5, { family: filt.family });
     const mix = categoryMix(filtered, itemsBy);
     const buckets = spendBuckets(filtered);
     const dessert = filtered.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "dessert")).length;
@@ -510,6 +543,9 @@ function labelCohort(kind?: string, value?: string | number): string {
   if (kind === "not_has_family") return `without ${value}`;
   if (kind === "contains_product") return `containing ${value}`;
   if (kind === "spend_gt") return `checks > ${value} SAR`;
+  if (kind === "covers_between") return `${value} guest checks`;
+  if (kind === "covers_gte") return `${value}+ guest checks`;
+  if (kind === "covers_lte") return `${value} or fewer guest checks`;
   return String(kind || "cohort");
 }
 
