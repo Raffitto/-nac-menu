@@ -1,128 +1,79 @@
 ---
-taskId: NAC-COMMERCE-0001
+taskId: NAC-COMMERCE-0002
 permission: AUTO
 complexity: HIGH
 deterministic: false
-testBudget: tableMix|commerce|fabric|rbac
+testBudget: commerceStore|edgeWiring|tableMix|fabric|rbac
 deploy: none
 onDemandAllowed: false
 mergeToMain: false
-issuedAt: 2026-08-18T23:26:00+03:00
+issuedAt: 2026-08-18T23:35:36+03:00
 ---
 
-# NAC-COMMERCE-0001 — Canonical Table-Mix Intelligence End-to-End
+# NAC-COMMERCE-0002 — Live Commerce Store Wiring & Real-Data Regression
 
 ## Objective
 
-Deliver one substantial management-intelligence milestone: make Ask NAC answer table/session mix questions from the canonical Foodics commerce data for arbitrary supported periods and branch scopes, deterministically and with evidence.
+Close the highest-leverage gap left by NAC-COMMERCE-0001: prove that Ask NAC's real Edge request path supplies the canonical commerce store on commerce/session turns, then validate the new deterministic table-mix intelligence against existing real Khobar canonical data without deploying production.
 
-This is not a dashboard/UI task and not a Foodics replacement migration. Use the canonical commerce foundation already present.
+This is an integration/proof milestone, not a new analytics engine.
 
-## Business semantics to preserve
+## Required work
 
-The agreed table archetypes are:
-
-- `dessert-only`: desserts, no food, no beverage/coffee requirement beyond current canonical semantics
-- `dessert+coffee`: desserts + coffee/drinks, **no food**
-- `dessert-focused`: `dessert-only + dessert+coffee`; absolutely no food-containing session belongs here
-- `food-only`
-- `food+beverage`
-- `full-service`: food + dessert (with/without beverage as canonical rules define)
-- `food-containing`: `food-only + food+beverage + full-service`
-- `coffee-only` / beverage-only where supported
-- `unclassified` must remain explicit, never silently reassigned
-
-Key management metric: **dessert conversion within food-containing sessions = full-service / food-containing**.
-
-Do not hardcode July/August totals. The engine must compute from canonical sessions/items for the requested period.
-
-## Required capability
-
-For a supported branch + period, produce a deterministic table-mix result containing at minimum:
-
-- completed dine-in session count
-- covers when available
-- revenue when available
-- count/share by archetype
-- dessert-focused share
-- food-containing share
-- dessert-at-all share if derivable without ambiguity
-- dessert conversion within food-containing sessions
-- average check by archetype where revenue exists
-- explicit unclassified count/share
-- data/join coverage diagnostics
-
-Support management questions such as:
-
-- “What % of our tables were dessert tables in July?”
-- “Dessert-focused vs food-containing tables this month”
-- “What was dessert conversion on food tables?”
-- “Compare dessert table mix this month vs last month”
-- branch-scoped variants subject to existing RBAC
-
-## Architecture constraints
-
-1. Reuse existing canonical order/item/table-session data and semantic product/category mapping.
-2. Search the OSS registry first, but do not introduce a framework for NAC-specific restaurant semantics.
-3. Keep Cash Up canonical for headline sales. Commerce revenue is evidence for table/session analysis only and must not silently override Cash Up.
-4. Route through existing Ask NAC Fabric/orchestration/capability patterns; no unrestricted SQL/raw DB agent access.
-5. Preserve RBAC and branch scope.
-6. Preserve existing temporal/follow-up behavior; period-only follow-ups should work if the existing conversation framework supports them.
-7. No fabricated values when coverage is incomplete. Surface coverage/unclassified diagnostics.
-8. Avoid phrase-specific routing. Recognize the semantic intent generically.
-
-## Implementation strategy
-
-First inspect existing commerce canonical/session/archetype code and tests. Reuse or consolidate what exists rather than creating parallel logic.
-
-Prefer a single deterministic capability/aggregator with a stable typed contract that can serve both Ask NAC and future dashboards.
-
-If current archetype logic exists only in scripts/tests, promote it into the appropriate shared intelligence layer.
-
-Add evidence metadata sufficient to explain source period, branch, session coverage, mapped/unmapped rows/products where available.
-
-## Comparison behavior
-
-For explicit compare intent, compute both periods independently using the same semantics and return deltas in percentage points for shares/conversion plus absolute deltas where useful.
-
-Do not infer comparison from a plain single-period question.
+1. Trace the actual Ask NAC Edge entry path into `orchestrationSpine.ts` and determine whether `commerceStore` is supplied on every relevant authenticated commerce turn.
+2. If the live request path does not supply it reliably, add the smallest shared adapter/wiring needed to construct the existing allowlisted `CommerceStore` from the current Supabase/auth context.
+3. Preserve RBAC and branch scope at the adapter boundary. No unrestricted raw SQL/tool access.
+4. Keep Cash Up canonical for headline sales. Canonical commerce remains session/table/item evidence only.
+5. Ensure a commerce question can reach `computeTableMixFromStore` when no published snapshot exists.
+6. Verify period-only follow-ups still inherit commerce/table-mix context through the existing Fabric conversation state where supported.
+7. Exercise real-data regression using existing canonical Khobar July/August records or existing publication/read tooling. Do not mutate production data. Read-only is preferred.
+8. Where the repository already has `publish-commerce-from-db.mjs`, reuse it or its query layer for regression evidence; do not create a parallel ingestion path.
+9. If cheap and clearly reducing duplication, refactor the publish script to call the shared `computeTableMix` implementation rather than maintaining inline archetype aggregation. Do this only if focused and low-risk.
 
 ## Acceptance probes
 
-Use repository fixtures/canonical data where available. At minimum prove deterministic behavior for:
+Prove, with focused tests and read-only verification where available:
 
-1. single-period dessert-focused share
-2. food-containing share
-3. dessert conversion within food-containing
-4. archetype counts sum correctly including unclassified
-5. comparison delta semantics
-6. RBAC branch isolation
-7. missing/incomplete mapping or join coverage is disclosed, not fabricated
-8. Cash Up authority is not changed
-9. existing commercial/Fabric behavior remains green in focused regression tests
+- Edge/Fabric integration passes a real `commerceStore` into orchestration for authorized commerce turns.
+- Branch scope/RBAC cannot be widened by the store adapter.
+- Missing published snapshot still falls back to canonical store computation.
+- Dessert-focused share, food-containing share, and dessert conversion return deterministic answers from canonical sessions.
+- Explicit comparison computes both periods through identical semantics.
+- Period-only follow-up preserves prior commerce intent/metric/branch context where the existing conversation framework allows it.
+- Coverage/unclassified diagnostics survive the Edge path.
+- Cash Up authority for headline sales remains unchanged.
+- Existing commerce/Fabric focused regressions remain green.
+- If real Khobar July/August canonical data is readable, record observed counts/shares as regression evidence in the handoff, but do not hardcode them into production logic.
 
-If live canonical July/Aug data is safely available in existing fixtures/artifacts, verify against known shape but do not encode totals as expected constants unless they are fixture-specific.
+## Architecture constraints
+
+- Reuse `commerce/tableMix.ts`, existing semantic commerce store/query abstractions, existing Supabase client/auth scope, and current publication tooling.
+- Search the OSS registry first only if a generic adapter problem appears; do not add a framework.
+- No unrestricted database-agent access.
+- No duplicated archetype semantics.
+- No phrase-specific routing.
+- No fabricated metrics when rows/mappings are incomplete.
 
 ## Scope discipline
 
 Do not:
 
-- deploy Edge
+- deploy Ask NAC Edge
 - deploy Netlify
 - merge main
-- run broad full-repo tests repeatedly
-- change production data
+- mutate production data
+- add migrations unless absolutely required for compile correctness (prefer none)
 - add paid services/APIs
 - use on-demand Cursor spend
-- rebuild the agent framework
-- touch WhatsApp hosting
-- redesign UI
+- touch WhatsApp
+- rebuild the supervisor/agent framework
+- repeatedly run broad full-repo tests
 
-Use focused tests first. One build at the end only if relevant.
+Use focused tests. Run one relevant build/typecheck at the end if useful.
 
 ## Budget guardrail
 
-Individual Cursor usage percentage is not officially observable. Do not claim precision. Work conservatively; if there is evidence the session is approaching the established ~88–89% soft-stop intent, stop cleanly with a partial handoff rather than spilling to on-demand.
+Individual Cursor usage percentage is not officially observable. Do not claim precision. Respect the conservative ~88–89% soft-stop intent. If evidence suggests the remaining included-model budget is becoming tight, stop cleanly with a partial handoff rather than using on-demand spend.
 
 ## Final handoff
 
@@ -131,16 +82,16 @@ Write `ai-control/LAST_HANDOFF.md`, update `STATE.json` and `CURRENT_STATUS.md`,
 Report:
 
 - PASS / PARTIAL / BLOCKED
-- architecture/capability added or reused
+- actual Edge-to-Fabric commerce-store path discovered
+- wiring added or reused
 - exact files changed
-- supported question families
-- deterministic archetype semantics
-- comparison semantics
-- coverage/evidence behavior
-- RBAC proof
+- RBAC/branch-scope proof
+- canonical-store fallback proof
+- follow-up-context proof
+- real-data regression evidence, if safely readable
 - Cash Up authority proof
 - focused tests and counts
-- build result if run
+- build/typecheck result if run
 - paid calls: 0
 - deploys: none
 - Netlify untouched
