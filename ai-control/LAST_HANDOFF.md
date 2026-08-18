@@ -81,7 +81,7 @@ Also updated: `aiControlProtocol.test.js`, `ossReferenceRegistry.ts`, `docs/arch
 - branch: `release/ask-nac-fabric-founding-day`
 - base HEAD at task start: `a46f83cef85b8ba1a768b5a6370dab02b90e8fa2`
 - handoff commit SHA: `42ada7e64f917c962a38a282b771c816eb45e380` (feature)
-- control plane HEAD: `a038fee9bd3b95e9bf32a6b1148bc74365cd78cc`
+- control plane HEAD: `192451499635028b2527786d16be9f3af2008c1a`
 - GitHub Control Room issue: **#2**
 
 ## Next recommendation
