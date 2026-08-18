@@ -113,42 +113,24 @@ const script = `
   const payload = JSON.parse(fs.readFileSync(${JSON.stringify(tmp)}, "utf8"));
   import(${JSON.stringify(fabricPath)}).then((mod) => {
     const { orders, items, branch, periodStart, periodEnd } = payload;
+    const tableMix = mod.computeTableMix({
+      orders, items, branchId: branch, periodStart, periodEnd, source: "foodics",
+      completedThrough: periodEnd, lastIngestAt: new Date().toISOString(),
+    });
+    const mix = tableMix.mix;
+    const julyEnd = periodEnd.startsWith("2026-08") ? ("2026-07-" + periodEnd.slice(8)) : "2026-07-31";
+    const julyTableMix = mod.computeTableMix({
+      orders, items, branchId: branch, periodStart: "2026-07-01", periodEnd: julyEnd, source: "foodics",
+    });
+    const comparison = mod.compareTableMixPeriods(tableMix, julyTableMix);
     const dineIn = orders.filter((o) => o.orderType === "dine_in" && o.status === "completed"
       && o.businessDate >= periodStart && o.businessDate <= periodEnd && o.branchId === branch);
     const dineIds = new Set(dineIn.map((o) => o.sourceOrderId));
     const basket = items.filter((i) => dineIds.has(i.sourceOrderId));
     const sessions = mod.buildDineInSessions(dineIn, basket);
-    const mix = mod.summarizeServiceMix(sessions, {
-      source: "foodics", branchId: branch, periodStart, periodEnd,
-      completedThrough: periodEnd, lastIngestAt: new Date().toISOString(),
-    });
-    const julyEnd = periodEnd.startsWith("2026-08") ? ("2026-07-" + periodEnd.slice(8)) : "2026-07-31";
-    const julyOrders = orders.filter((o) => o.orderType === "dine_in" && o.status === "completed"
-      && o.businessDate >= "2026-07-01" && o.businessDate <= julyEnd && o.branchId === branch);
-    const julyIds = new Set(julyOrders.map((o) => o.sourceOrderId));
-    const julyMix = mod.summarizeServiceMix(
-      mod.buildDineInSessions(julyOrders, items.filter((i) => julyIds.has(i.sourceOrderId))),
-      { source: "foodics", branchId: branch, periodStart: "2026-07-01", periodEnd: julyEnd },
-    );
-    const comparison = mod.compareServiceMix(mix, julyMix);
     const itemRows = mod.itemMix(sessions, "revenue").slice(0, 25);
-    const joinPct = mod.joinRate(dineIn, basket);
-    const uniqueProducts = new Set(basket.map((i) => i.productId).filter(Boolean));
-    const mappedProducts = new Set(basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).map((i) => i.productId).filter(Boolean));
-    const mappedItemRows = basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).length;
-    const revenue = basket.reduce((s, i) => s + Number(i.netAmount || 0), 0);
-    const mappedRevenue = basket.filter((i) => i.canonicalMenuItemId || (i.canonicalCategory && i.canonicalCategory !== "unclassified")).reduce((s, i) => s + Number(i.netAmount || 0), 0);
-    const qualityDims = mod.computeQuality({
-      uniqueProducts: uniqueProducts.size,
-      mappedProducts: mappedProducts.size,
-      itemRows: basket.length,
-      mappedItemRows,
-      revenue,
-      mappedRevenue,
-      sessions: sessions.length,
-      unclassifiedSessions: mix.byArchetype.unclassified.sessions,
-      joinPct,
-    });
+    const joinPct = tableMix.diagnostics.orderItemJoinRate ?? mod.joinRate(dineIn, basket);
+    const qualityDims = tableMix.diagnostics.quality;
     const batchId = process.env.COMMERCE_BATCH_ID || ("commerce_batch_" + branch + "_" + periodEnd.replace(/-/g, "") + "_" + Date.now().toString(36));
     const evidence = mod.buildEvidenceSummary({
       dataThrough: periodEnd,

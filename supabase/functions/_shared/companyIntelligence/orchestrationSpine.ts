@@ -33,7 +33,7 @@ import { parseVaultPeriodFromQuestion, parseVaultComparePeriodsFromQuestion } fr
 import { updateConversationState, type StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
-import { requiresDineInSessionEvidence } from "./commerce/intent.ts";
+import { extractCommerceFocus, prefersCanonicalTableMix, requiresDineInSessionEvidence } from "./commerce/intent.ts";
 import { computeTableMixFromStore, tableMixToPublishedCommerce } from "./commerce/tableMix.ts";
 import {
   executeCommercePlan,
@@ -700,7 +700,17 @@ export async function runCompanyIntelligenceOrchestration(
     && (commercePeriod.precedence === "named" || commercePeriod.precedence === "relative" || commercePeriod.precedence === "event")
   ) {
     currentPeriod = commercePeriod.range;
-    if (commercePeriod.compareRange) comparisonPeriod = commercePeriod.compareRange;
+    if (commercePeriod.compareRange) {
+      const tableMixFocus = followUp.semantics?.commerceFocus
+        || extractCommerceFocus(askedQuestionEarly)
+        || null;
+      const explicitCompare = Boolean(followUp.comparisonPeriod)
+        || Boolean(followUp.semantics?.comparisonIntent)
+        || hasComparisonIntent(askedQuestionEarly);
+      if (!prefersCanonicalTableMix(tableMixFocus) || explicitCompare) {
+        comparisonPeriod = commercePeriod.compareRange;
+      }
+    }
   }
   if (supervisorGoal === "knowledge_freshness" || supervisorGoal === "coverage_query") {
     currentPeriod = null;
@@ -1046,6 +1056,10 @@ export async function runCompanyIntelligenceOrchestration(
     });
   }
 
+  const commerceFocus = followUp.semantics?.commerceFocus
+    || extractCommerceFocus(askedQuestion)
+    || extractCommerceFocus(followUp.resolvedQuestion)
+    || null;
   const semanticFollow = Boolean(prevSemantic) && (
     isPeriodOnlyFollowUpTurn(askedQuestion, options.referenceDate || new Date())
     || isPeriodOnlyFollowUpTurn(followUp.resolvedQuestion, options.referenceDate || new Date())
@@ -1055,6 +1069,7 @@ export async function runCompanyIntelligenceOrchestration(
   const wantSemantic = Boolean(options.commerceStore)
     && supervisorGoal !== "acquisition_request"
     && !(supervisorBlocksUniversal(supervisorReq) && supervisorReq.requiredDomains[0] === "cash_up")
+    && !prefersCanonicalTableMix(commerceFocus)
     && (
       looksLikeSemanticCommerceQuestion(askedQuestion)
       || looksLikeSemanticCommerceQuestion(followUp.resolvedQuestion)
@@ -1194,7 +1209,6 @@ export async function runCompanyIntelligenceOrchestration(
     });
   }
 
-  const commerceFocus = followUp.semantics?.commerceFocus || null;
   const published = options.publishedCommerce || null;
   const publishedReady = Boolean(published?.mix?.totalSessions)
     || ((commerceFocus === "health" || commerceFocus === "freshness" || commerceFocus === "data_used" || commerceFocus === "trust" || commerceFocus === "reconciliation")
@@ -1255,8 +1269,20 @@ export async function runCompanyIntelligenceOrchestration(
       const capabilities: import("./capabilityRegistry.ts").CapabilityId[] = requiresComparison
         ? ["commerce.compare_mix"]
         : ["commerce.session_mix"];
+      const nextConversation = updateConversationState(state.conversation, {
+        activeMetricFamily: "commerce",
+        previousIntent: "commerce.session",
+        activeBranchId: primaryBranchId,
+        activePeriods: {
+          current: state.periods.current,
+          comparison: state.periods.comparison,
+        },
+        activeCapabilities: capabilities,
+        filterPatch: { commerceFocus: commerceFocus || "" },
+      });
       state = transition(state, "COMPLETE", {
         answer: { text, verified: true },
+        conversation: nextConversation,
         cost: {
           ...state.cost,
           deterministicRouteUsed: true,
@@ -1282,7 +1308,7 @@ export async function runCompanyIntelligenceOrchestration(
         answerType: "commerce",
         keyMetrics: [],
         insights: [],
-        nextConversation: state.conversation,
+        nextConversation,
         toolsExecuted: [],
         paidModelCalls: 0,
       });

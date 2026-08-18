@@ -61,3 +61,16 @@ export function requiresDineInSessionEvidence(focus: CommerceFocus): boolean {
     && focus !== "trust"
     && focus !== "reconciliation";
 }
+
+/** Table-mix aggregator answers these focuses from canonical session rows (not semantic SQL). */
+export function prefersCanonicalTableMix(focus: CommerceFocus): boolean {
+  return focus === "dessert_focused"
+    || focus === "food_containing"
+    || focus === "dessert_conversion"
+    || focus === "basket"
+    || focus === "guest_weighted"
+    || focus === "attention"
+    || focus === "session_mix"
+    || focus === "full_service"
+    || focus === "coffee_only";
+}

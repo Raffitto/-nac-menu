@@ -394,7 +394,7 @@ export function resolveTurnSemantics(input: {
   const dropComparison = DROP_COMPARISON_RE.test(q);
   const subjective = isSubjectiveJudgementTurn(q);
   let analysisIntent = extractAnalysisIntent(q);
-  const commerceFocus = extractCommerceFocus(q);
+  let commerceFocus = extractCommerceFocus(q);
   const responseModeRequest = extractResponseMode(q);
   const barePronoun = isBarePronounTurn(q);
   const rankingInstead = Boolean(
@@ -425,6 +425,10 @@ export function resolveTurnSemantics(input: {
     notes.push("ranking_cloned_with_scope_switch");
   }
   const followUpShape = Boolean(extractFollowUpFocus(q) || FOLLOW_UP_PREFIX_RE.test(q) || comparisonIntentExplicit || correction || ranking || rankingInstead || rankingFlip || analysisIntent || barePronoun || BARE_JUDGEMENT_RE.test(q) || responseModeRequest || /^(covers|spend|orders|sales|good|why|trend)\??$/i.test(q));
+
+  if (!commerceFocus && inherit && followUpShape && prev.filters?.commerceFocus) {
+    commerceFocus = String(prev.filters.commerceFocus) as import("./commerce/types.ts").CommerceFocus;
+  }
 
   const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
   const selfCompare = parseVaultComparePeriodsFromQuestion(q, ref);

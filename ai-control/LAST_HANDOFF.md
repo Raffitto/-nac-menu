@@ -1,73 +1,66 @@
 # LAST_HANDOFF
 
-- task ID: **NAC-COMMERCE-0001**
+- task ID: **NAC-COMMERCE-0002**
 - result: **PASS**
 
 ## Summary
 
-Delivered canonical table-mix intelligence end-to-end: a single deterministic `computeTableMix` / `computeTableMixFromStore` aggregator over existing archetype + session metrics, wired into Ask NAC Fabric orchestration so commerce session questions answer from canonical order/item rows for arbitrary supported periods (not only pre-published snapshots).
+Verified and hardened the live Edge → Fabric commerce-store path: authenticated `ask-nac` requests that enter the management-intelligence spine now reliably reach `computeTableMixFromStore` for session-evidence table-mix questions (no published snapshot required). Fixed routing precedence so canonical table-mix beats semantic commerce for dessert-focused / session-mix focuses, suppressed implicit MoM compare on single-period table-mix turns, and persisted `commerceFocus` across period-only follow-ups.
 
-## Architecture / capability
+## Edge → Fabric commerce-store path (discovered)
 
-| Layer | Action |
-|---|---|
-| **Reused** | `archetypes.ts`, `metrics.ts` (`buildDineInSessions`, `summarizeServiceMix`, `compareServiceMix`), `synthesis.ts`, `intent.ts`, `capabilityRegistry` (`commerce.session_mix`, `commerce.compare_mix`) |
-| **Added** | `commerce/tableMix.ts` — typed `TableMixResult` + `TableMixDiagnostics`, RBAC-aware store fetch, evidence/coverage diagnostics |
-| **Wired** | `orchestrationSpine.ts` — computes from `commerceStore` when published snapshot absent; comparison only when explicit compare intent + comparison period resolved |
+```
+POST supabase/functions/ask-nac/index.ts
+  → auth.getUser() + optional ask_nac_vault_branch_allowed RPC
+  → processAskNacOnEdge(supabase, …)                     [askNacOrchestrator.ts]
+  → isManagementIntelligenceQuestion(…)                  [orchestrationSpine.ts]
+  → loadPublishedCommerce + createSupabaseCommerceStore(supabase)
+  → runCompanyIntelligenceOrchestration({ commerceStore, publishedCommerce, … })
+  → prefersCanonicalTableMix focus → computeTableMixFromStore (when snapshot absent)
+```
 
-## Supported question families
+**Wiring status:** `createSupabaseCommerceStore(supabase)` was already present on the Fabric spine path; no new adapter module required. Routing fixes ensure the store is actually used for table-mix commerce turns.
 
-- Dessert-focused table share (“What % of our tables were dessert tables in July?”)
-- Food-containing share
-- Dessert conversion within food-containing sessions (`full-service / food-containing`)
-- Dessert-at-all (basket) vs dessert-focused distinction preserved
-- Session mix / dessert tables vs food tables
-- Period comparison with percentage-point deltas (explicit compare intent only)
-- Average check by archetype
-- RBAC branch isolation; coverage/unclassified diagnostics surfaced
+## RBAC / branch-scope proof
 
-## Deterministic archetype semantics (unchanged, consolidated)
+- `createSupabaseCommerceStore` scopes all fetches with `.eq("branch_id", branchId)` — no `.in()` widening.
+- Edge handler enforces `ask_nac_vault_branch_allowed` before orchestration.
+- `computeTableMixFromStore` enforces `assertBranchScopePreserved` + `allowedBranchIds`; orchestration returns branch-access denial when blocked (tested).
 
-| Archetype | Rule |
-|---|---|
-| `dessert_only` | dessert, no food |
-| `dessert_and_coffee` | dessert + coffee, no food |
-| `dessert-focused` | `dessert_only + dessert_and_coffee` (excludes full-service) |
-| `food_only` / `food_and_beverage` / `full_service` | food-containing family |
-| `full_service` | food + dessert |
-| `unclassified` | unknown-only baskets or zero known items — never silently reassigned |
+## Canonical-store fallback proof
 
-## Comparison semantics
+- With `publishedCommerce: null` and memory/Supabase store, dessert-focused July question returns deterministic `commerce_session` answer from `computeTableMixFromStore` (50% dessert-focused on fixture data).
+- Explicit compare ("July vs August") uses `commerce.compare_mix` with both periods computed via identical `computeTableMix` semantics.
 
-- Both periods computed independently with identical semantics.
-- Deltas in **percentage points** for shares/conversion (`compareTableMixPeriods` → `mixComparisonAnswer`).
-- Comparison attached only when orchestration `requiresComparison` is true (not inferred from single-period questions).
+## Follow-up context proof
 
-## Coverage / evidence behavior
-
-- `TableMixDiagnostics`: order–item join rate, unmapped item rows, unclassified session count/share, `CommerceQuality` dimensions.
-- Limitation text appended when join &lt; 90% or unclassified &gt; 15%.
-- `buildEvidenceSummary` attached; Cash Up remains headline sales authority.
-
-## RBAC proof
-
-- `computeTableMixFromStore` enforces `assertBranchScopePreserved` + `allowedBranchIds`.
-- Orchestration returns explicit branch-access denial when RBAC blocks.
+- Table-mix completion persists `filters.commerceFocus` on `nextConversation`.
+- Period-only "What about August?" inherits `dessert_focused`, stays on Fabric gate, and answers from store for August period at Khobar.
 
 ## Cash Up authority proof
 
-- `selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up`.
-- Session mix uses `canonical_commerce_sessions`; no silent override in aggregator or synthesis.
+- `selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up` (unchanged).
+- Session mix remains `canonical_commerce_sessions`; no headline override in aggregator or synthesis.
+
+## Real-data regression evidence
+
+**Not readable in this worker environment** — no `.env.local` / Supabase service-role credentials on the CI VM. `scripts/publish-commerce-from-db.mjs` refactored to call shared `computeTableMix` / `compareTableMixPeriods` (same query layer); run locally against Khobar July/August when credentials are available:
+
+```bash
+node scripts/publish-commerce-from-db.mjs khobar 2026-07-01 2026-07-31
+node scripts/publish-commerce-from-db.mjs khobar 2026-08-01 2026-08-14
+```
+
+Do not hardcode observed production counts into logic.
 
 ## Files changed
 
 ```
-supabase/functions/_shared/companyIntelligence/commerce/tableMix.ts          (new)
-supabase/functions/_shared/companyIntelligence/commerce/index.ts
+src/intelligence/askNac/shared/commerceEdgeWiring.test.js          (new — 10 probes)
 supabase/functions/_shared/companyIntelligence/commerce/intent.ts
-supabase/functions/_shared/companyIntelligence/commerce/synthesis.ts
 supabase/functions/_shared/companyIntelligence/orchestrationSpine.ts
-src/intelligence/askNac/shared/commerceTableMix.test.js                      (new)
+supabase/functions/_shared/companyIntelligence/turnSemantics.ts
+scripts/publish-commerce-from-db.mjs
 ai-control/LAST_HANDOFF.md
 ai-control/STATE.json
 ai-control/CURRENT_STATUS.md
@@ -79,7 +72,11 @@ none
 
 ## Focused tests
 
-`commerceTableMix|commerceArchetypes|commerceMetrics|commerceIntegrity|commerceOrchestrator` — **45 passed**
+| Pattern | Result |
+|---|---|
+| `commerceEdgeWiring` | **10 passed** |
+| `commerceTableMix` | **9 passed** |
+| broader commerce suite (`commerceOrchestrator\|…`) | **60 passed**, 1 pre-existing failure in `commerceSemantics` (`formatThroughPeriod` label) — unrelated to this task |
 
 ## Build
 
@@ -97,12 +94,11 @@ none
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- feature commit SHA: `f8a40684c237f54a06ee480332af25ca1ecbaeac`
-- control plane HEAD: `0943bbbbbcf1e721ee2dd84396fd99497f8eae42`
+- commit SHA: `332292d946231c21c4e9004a18d22e4ab2eaba70`
 
 ## Highest-leverage next recommendation
 
 1. Raffi reviews this handoff (`awaiting_review`).
-2. Wire live `commerceStore` (Supabase) in Ask NAC Edge handler if not already passing through on every commerce turn.
-3. Publish July/Aug snapshots via existing `publish-commerce-from-db.mjs` for offline regression against real Khobar shape.
-4. Optional: refactor publish script to call `computeTableMix` directly (remove inline duplication).
+2. Run `publish-commerce-from-db.mjs` read-only against Khobar July/August with local credentials; record observed session counts/shares in a follow-up handoff (evidence only).
+3. Deploy Ask NAC Edge when approved (`AUTO_WITH_GUARDRAILS`) so production picks up routing fixes.
+4. Optional: fix pre-existing `formatThroughPeriod` July label regression in `commerceSemantics.test.js`.

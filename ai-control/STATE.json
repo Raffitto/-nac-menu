@@ -1,11 +1,11 @@
 {
   "protocolVersion": 1,
-  "status": "working",
+  "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "1e7a942aa37be00b11c10506bb15b95184749744",
-  "activeTaskId": "NAC-COMMERCE-0002",
-  "lastCompletedTaskId": "NAC-COMMERCE-0001",
-  "lastUpdatedAt": "2026-08-18T20:35:36.000Z",
+  "headSha": "107409267afc4d1133f938e0859de6f41f3468b0",
+  "activeTaskId": null,
+  "lastCompletedTaskId": "NAC-COMMERCE-0002",
+  "lastUpdatedAt": "2026-08-18T20:48:00.000Z",
   "autonomousMode": true,
   "controlRoomIssue": 2,
   "budgetPolicy": {

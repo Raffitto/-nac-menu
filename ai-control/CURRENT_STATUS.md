@@ -1,21 +1,27 @@
 # NAC Autonomous Engineering Status
 
-**WORKING** (`working`)
+**AWAITING REVIEW** (`awaiting_review`)
 
 | Field | Value |
 |---|---|
-| Active task | `NAC-COMMERCE-0002` |
+| Completed task | `NAC-COMMERCE-0002` |
 | Title | Live Commerce Store Wiring & Real-Data Regression |
+| Result | **PASS** |
 | Branch | `release/ask-nac-fabric-founding-day` |
-| Started | 2026-08-18 ~23:35 Asia/Riyadh |
+| Completed | 2026-08-18 ~23:48 Asia/Riyadh |
 | Prior milestone | `NAC-COMMERCE-0001` — PASS |
 | Budget policy | soft stop ~88–89%; no on-demand |
-| Deployments | none authorized |
+| Deployments | none |
 
-## Current objective
+## Delivered
 
-Trace and close the real Ask NAC Edge → Fabric `commerceStore` integration path, preserve RBAC/Cash Up authority, and validate deterministic table-mix intelligence against existing canonical Khobar data without deploying production.
+- Traced and documented Edge → `processAskNacOnEdge` → `createSupabaseCommerceStore` → `runCompanyIntelligenceOrchestration` path.
+- Fixed routing: `prefersCanonicalTableMix` bypasses semantic commerce; single-period table-mix no longer auto-attaches MoM compare.
+- Period-only follow-ups inherit `commerceFocus` via conversation `filters.commerceFocus`.
+- 10 new `commerceEdgeWiring` acceptance probes + existing `commerceTableMix` (19 total) green.
+- `publish-commerce-from-db.mjs` refactored to shared `computeTableMix` / `compareTableMixPeriods`.
+- Real Khobar July/August counts: **not readable** in CI (no Supabase credentials); local read-only run recommended.
 
 ## Next expected action
 
-GitHub Actions Cursor worker executes `ai-control/NEXT_TASK.md`, writes the handoff, and returns the control plane to `awaiting_review`.
+Supervisor reviews handoff and issues next `NEXT_TASK.md` taskId, or leaves idle.
