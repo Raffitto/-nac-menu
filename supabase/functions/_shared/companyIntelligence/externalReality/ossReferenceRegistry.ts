@@ -144,3 +144,9 @@ export const OSS_REFERENCE_REGISTRY: OssReference[] = [
     nacModule: "externalReality.weather",
   },
 ];
+
+export const CONTROL_PROTOCOL_META = Object.freeze({
+  protocolVersion: 1,
+  validated: true,
+  taskId: "NAC-CTRL-0001",
+});

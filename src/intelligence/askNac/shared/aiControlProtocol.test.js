@@ -34,5 +34,7 @@ describe("NAC AI control protocol", () => {
     expect(oss).toMatch(/adoption: "REJECTED"/);
     expect(oss).toMatch(/name: "Open-Meteo"/);
     expect(oss).toMatch(/adoption: "USE"/);
+    expect(oss).toMatch(/CONTROL_PROTOCOL_META/);
+    expect(oss).toMatch(/validated: true/);
   });
 });

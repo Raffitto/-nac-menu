@@ -1,3 +1,24 @@
 # LAST_HANDOFF
 
-No worker result yet. Waiting for NAC-CTRL-0001.
+- task ID: NAC-CTRL-0001
+- result: **PASS**
+- NAC Autonomous Engineering Loop v1: **PASS** (control plane + deterministic worker + proof). Laptop-off **path is wired**; this proof ran via the repo worker (same script GitHub Actions will invoke with `workflow_dispatch --ref release/ask-nac-fabric-founding-day`). Cursor Cloud Agents (`@cursor` on the Control Room issue) are the preferred laptop-off **model** path and do not need a VPS.
+- External Reality commit SHA: `d0d345f3320e77981b4b1a956317bbf2393d7597`
+- autonomous-control commit SHA: `aa702f23418652832226cf23f9aac031e53a829c`
+- proof changes: `CONTROL_PROTOCOL_META` on OSS registry + protocol test assertion + this handoff
+- branch: `release/ask-nac-fabric-founding-day`
+- GitHub Control Room issue: set after `gh issue create` (STATE.controlRoomIssue)
+- remote worker method: (1) Cursor Cloud Agent via `@cursor` on the Control Room issue — no extra subscription, Raffi laptop not required; (2) GitHub Actions `NAC AI Control Worker` `workflow_dispatch` on this branch — deterministic, no model; (3) optional `CURSOR_API_KEY` repo secret for Cursor CLI in Actions — **not created**, not committed
+- Cursor API key required for this proof: **no**
+- secrets handling: no keys in git; Actions uses `GITHUB_TOKEN` only
+- task protocol: NEXT_TASK.md → worker once → LAST_HANDOFF.md → STATE `awaiting_review`
+- permissions: AUTO / AUTO_WITH_GUARDRAILS / ASK_RAFFI in `ai-control/PERMISSIONS.md`
+- budget governor: start 69% (stated); soft 88; hard intent 90; on-demand false; **individual Cursor Models % is not on a public CLI/API — do not fabricate**
+- tests: `aiControlProtocol|externalRealityEngine` PASS (13)
+- hosted compute usage: Actions not required for this proof (0 extra minutes unless supervisor later dispatches)
+- paid spend: 0
+- deployments: none
+- Netlify: untouched
+- blockers: none for loop v1. Optional Raffi: add `CURSOR_API_KEY` secret only if Actions should spawn Cursor CLI. Glance dashboard near 88–90%.
+- remaining issues: wait for supervisor `NEXT_TASK.md` with a new taskId
+- recommended next step: **do not start another engineering milestone**
