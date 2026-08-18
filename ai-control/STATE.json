@@ -2,7 +2,7 @@
   "protocolVersion": 1,
   "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "1638c8a59f1daa202c24855018aa5392009b9551",
+  "headSha": "f8a40684c237f54a06ee480332af25ca1ecbaeac",
   "activeTaskId": null,
   "lastCompletedTaskId": "NAC-COMMERCE-0001",
   "lastUpdatedAt": "2026-08-18T20:35:00.000Z",
