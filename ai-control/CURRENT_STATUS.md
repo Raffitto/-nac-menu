@@ -1,13 +1,25 @@
 # NAC Autonomous Engineering Status
 
-**WORKING**
+**WAITING FOR RAFFI** (`awaiting_review`)
 
-- Active task: `NAC-COMMS-0001` — Free WhatsApp Engineering Control Bridge Proof
-- Branch: `release/ask-nac-fabric-founding-day`
-- Started: 2026-08-18 22:30 Asia/Riyadh
-- Current stage: task issued; remote Cursor trigger requested
-- Latest control commit: `efb95c729c354bdfcb22e0e8029689e0ebd04587`
-- Tests: pending
-- Next expected action: Cursor remote worker executes `ai-control/NEXT_TASK.md` and writes `LAST_HANDOFF.md`
-- Budget policy: autonomous until conservative 88–89% soft stop; no on-demand
-- Deployments allowed for this task: none
+| Field | Value |
+|---|---|
+| Active task | — (completed `NAC-COMMS-0001`) |
+| Title | Free WhatsApp Engineering Control Bridge Proof |
+| Branch | `release/ask-nac-fabric-founding-day` |
+| Started | 2026-08-18 23:12 Asia/Riyadh |
+| Updated | 2026-08-18 20:20 UTC |
+| Stage | handoff complete — supervisor review |
+| Latest commit | `a32d3b7c2d7f8fcfb6ad7e96aa72a97c5daddb9c` |
+| Tests | `whatsappBridge\|aiControlProtocol` PASS (18) |
+| Build | PASS (`CI=true npm run build`, `npm run build`) |
+| Result | **PASS_WITH_HOSTING_BLOCKER** |
+| Next expected action | Raffi/supervisor reviews `LAST_HANDOFF.md`; issues next `NEXT_TASK.md` or approves hosting decision |
+| Budget policy | soft stop ~88–89%; no on-demand |
+| Deployments | none for this task |
+
+## Bridge verdict (summary)
+
+- Software: **whatsapp-web.js 1.34.7** (Apache-2.0) — recommended
+- Laptop-off 24/7 WhatsApp: **blocked at $0** — see `ai-control/comms/hostingVerdict.js`
+- Engineering worker laptop-off: **Cursor Cloud Agents** on issue #2

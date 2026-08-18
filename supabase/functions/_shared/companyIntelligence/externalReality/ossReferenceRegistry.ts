@@ -143,6 +143,24 @@ export const OSS_REFERENCE_REGISTRY: OssReference[] = [
     why: "No API key, cacheable historical weather. Production commercial path should self-host or keep cache-only; do not use paid customer endpoint.",
     nacModule: "externalReality.weather",
   },
+  {
+    name: "whatsapp-web.js",
+    purpose: "Engineering control WhatsApp bridge (unofficial Web client)",
+    url: "https://github.com/wwebjs/whatsapp-web.js",
+    license: "Apache-2.0",
+    adoption: "EVALUATE",
+    why: "NAC-COMMS-0001 proof: lowest-footprint single-session bridge for ai-control; LocalAuth session persistence. Not Ask NAC product transport.",
+    nacModule: "ai-control/comms",
+  },
+  {
+    name: "wppconnect-server",
+    purpose: "REST WhatsApp bridge (multi-session)",
+    url: "https://github.com/wppconnect-team/wppconnect-server",
+    license: "Apache-2.0",
+    adoption: "REFERENCE ONLY",
+    why: "Viable but heavier than needed for single-controller engineering bridge; prefer whatsapp-web.js unless multi-session REST required.",
+    nacModule: "ai-control/comms (alternative)",
+  },
 ];
 
 export const CONTROL_PROTOCOL_META = Object.freeze({

@@ -1,24 +1,92 @@
 # LAST_HANDOFF
 
-- task ID: NAC-CTRL-0001
-- result: **PASS**
-- NAC Autonomous Engineering Loop v1: **PASS** (control plane + deterministic worker + proof). Laptop-off **path is wired**; this proof ran via the repo worker (same script GitHub Actions will invoke with `workflow_dispatch --ref release/ask-nac-fabric-founding-day`). Cursor Cloud Agents (`@cursor` on the Control Room issue) are the preferred laptop-off **model** path and do not need a VPS.
-- External Reality commit SHA: `d0d345f3320e77981b4b1a956317bbf2393d7597`
-- autonomous-control commit SHA: `aa702f23418652832226cf23f9aac031e53a829c`
-- proof changes: `CONTROL_PROTOCOL_META` on OSS registry + protocol test assertion + this handoff
+- task ID: **NAC-COMMS-0001**
+- result: **PASS_WITH_HOSTING_BLOCKER**
+- WhatsApp control bridge: **PASS_WITH_HOSTING_BLOCKER**
+
+## Recommended OSS
+
+| Field | Value |
+|---|---|
+| Candidate | **whatsapp-web.js** |
+| Package / version | `whatsapp-web.js@1.34.7` |
+| License | Apache-2.0 (commercial self-host OK) |
+| Alternative evaluated | `@wppconnect/server@2.10.0` (Apache-2.0) — REFERENCE ONLY |
+
+**Why whatsapp-web.js over wppconnect-server:** Single-controller engineering bridge needs one WhatsApp Web session, allowlist gate, and GitHub adapter — not a multi-session REST server. Lower implementation footprint; `LocalAuth` session persistence; same send/receive/media capabilities.
+
+## Capabilities proven (adapter layer)
+
+| Capability | Status |
+|---|---|
+| Send (outbound formatting) | PASS — daily handoff summary + blocker/decision request payloads |
+| Receive (inbound normalization) | PASS — QUESTION, STATUS_REQUEST, CHANGE_REQUEST, APPROVAL, REJECTION, ATTACHMENT |
+| Text | PASS |
+| Media / attachment metadata | PASS — filename, mimetype, byteLength; local paths excluded from GitHub artifacts |
+| Session persistence | DOCUMENTED — `LocalAuth` dir outside repo (not wired live in this proof) |
+| Reconnect | DOCUMENTED — library reloads persisted session on process restart |
+| Controller allowlist | PASS — only configured E.164 allowlist; unknown rejected deterministically |
+| GitHub control-plane integration | PASS — `buildGitHubControlArtifact` routes AUTO → artifact, ASK_RAFFI → pending decision, unknown → ignore; references `PERMISSIONS.md` |
+
+## Laptop-off 24/7 zero-cost verdict
+
+**FREE SOFTWARE PROVEN; LAPTOP-OFF 24/7 HOSTING BLOCKED IN FOUNDER-FREE MODE**
+
+| Runtime | Persistent WhatsApp? | $0 recurring? | Notes |
+|---|---|---|---|
+| GitHub Actions | No | Yes | Event-driven; cannot hold Chromium 24/7 |
+| Cursor Cloud Agents | No | Yes | Engineering worker only (`@cursor` on issue #2) |
+| Supabase Edge | No | Yes | Wrong runtime for Puppeteer/WhatsApp Web |
+| Raffi laptop (local Node) | Yes (when on) | Yes | Proof path for send/receive |
+| Future VPS / always-on hardware | Yes | Not $0 without purchase | Cheapest future path if Raffi approves |
+
+**Free persistent host found for WhatsApp bridge:** **none** at $0 with laptop off.
+
+## Security boundaries
+
+- Unknown numbers: no GitHub task changes, no private engineering state leaked
+- `approve` / `reject` / `change`: ASK_RAFFI — recorded, not auto-executed
+- No session credentials, tokens, or QR material in git
+- Controller phone redacted in artifacts (`+966…41` pattern)
+- Allowlist via runtime env `NAC_COMMS_CONTROLLER_E164` (not committed)
+
+## Custom code added
+
+```
+ai-control/comms/
+  allowlist.js, constants.js, phone.js, normalizer.js, outbound.js
+  githubIntegration.js, hostingVerdict.js, ossEvaluation.json
+  index.js, README.md
+src/intelligence/askNac/shared/whatsappBridge.test.js
+```
+
+Also updated: `aiControlProtocol.test.js`, `ossReferenceRegistry.ts`, `docs/architecture/oss-reference-registry.md`
+
+## Tests
+
+`whatsappBridge|aiControlProtocol` — **18 passed**
+
+## Cost / deploy
+
+| Item | Value |
+|---|---|
+| Recurring cost | **0** |
+| Paid API calls | **0** |
+| Deploys | **none** |
+| Netlify | untouched |
+| Migrations | none |
+
+## Branch / commit
+
 - branch: `release/ask-nac-fabric-founding-day`
-- GitHub Control Room issue: **not created** (`gh` unauthenticated). Draft: `ai-control/CONTROL_ROOM_ISSUE.md`. This is the only leftover blocker.
-- remote worker method: (1) Cursor Cloud Agent via `@cursor` on the Control Room issue — no extra subscription, Raffi laptop not required; (2) GitHub Actions `NAC AI Control Worker` `workflow_dispatch` on this branch — deterministic, no model; (3) optional `CURSOR_API_KEY` repo secret for Cursor CLI in Actions — **not created**, not committed
-- Cursor API key required for this proof: **no**
-- secrets handling: no keys in git; Actions uses `GITHUB_TOKEN` only
-- task protocol: NEXT_TASK.md → worker once → LAST_HANDOFF.md → STATE `awaiting_review`
-- permissions: AUTO / AUTO_WITH_GUARDRAILS / ASK_RAFFI in `ai-control/PERMISSIONS.md`
-- budget governor: start 69% (stated); soft 88; hard intent 90; on-demand false; **individual Cursor Models % is not on a public CLI/API — do not fabricate**
-- tests: `aiControlProtocol|externalRealityEngine` PASS (13)
-- hosted compute usage: Actions not required for this proof (0 extra minutes unless supervisor later dispatches)
-- paid spend: 0
-- deployments: none
-- Netlify: untouched
-- blockers: Control Room GitHub issue needs Raffi/ChatGPT `gh` (or GitHub UI) — worker could not call `gh issue create`
-- remaining issues: wait for supervisor `NEXT_TASK.md` with a new taskId after the issue exists
-- recommended next step: create the Control Room issue, then **do not start another engineering milestone** until a new NEXT_TASK
+- base HEAD at task start: `a46f83cef85b8ba1a768b5a6370dab02b90e8fa2`
+- handoff commit SHA: `a32d3b7c2d7f8fcfb6ad7e96aa72a97c5daddb9c`
+- GitHub Control Room issue: **#2**
+
+## Next recommendation
+
+1. Raffi reviews this handoff (`awaiting_review`).
+2. For live WhatsApp proof: run thin `whatsapp-web.js` host locally with `NAC_COMMS_CONTROLLER_E164` and session dir outside repo.
+3. For laptop-off **engineering** (not WhatsApp): continue `@cursor` on issue #2.
+4. For laptop-off **WhatsApp 24/7**: record decision in `RAFFI_DECISIONS.md` — existing always-on hardware vs minimal VPS spend.
+5. Do **not** start the next product milestone until supervisor issues new `NEXT_TASK.md` taskId.

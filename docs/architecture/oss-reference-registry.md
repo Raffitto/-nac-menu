@@ -25,5 +25,7 @@ Do **not** install these projects from this document. Adoption labels:
 | Activepieces CE | Self-hosted automation | https://github.com/activepieces/activepieces | MIT CE (verify paid pieces) | EVALUATE | Ingest jobs later; not a supervisor | scheduler |
 | **OpenClaw** | LLM agent gateway | https://github.com/openclaw/openclaw | MIT | **REJECTED** | 2026.7.1-2 (`0790d9f`) failed as NAC supervisor (tool-arg hallucination, recovery miss). Keep `reasoningSupervisor.ts`. | Ask NAC supervisor |
 | **Open-Meteo** | Historical weather | https://github.com/open-meteo/open-meteo | CC BY 4.0 data; AGPLv3 server; hosted free API is non-commercial | **USE** | Cache-first weather for External Reality v1. Do not use paid customer API. Self-host if production ToS requires. | `externalReality.weather` |
+| whatsapp-web.js | Engineering WhatsApp bridge | https://github.com/wwebjs/whatsapp-web.js | Apache-2.0 | **EVALUATE** | NAC-COMMS proof: single-session ai-control bridge; not Ask NAC transport | `ai-control/comms` |
+| wppconnect-server | REST WhatsApp bridge | https://github.com/wppconnect-team/wppconnect-server | Apache-2.0 | REFERENCE ONLY | Heavier multi-session REST; fallback if REST webhooks needed | `ai-control/comms` alt |
 
 Canonical TypeScript copy: `supabase/functions/_shared/companyIntelligence/externalReality/ossReferenceRegistry.ts`

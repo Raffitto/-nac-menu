@@ -1,0 +1,52 @@
+{
+  "evaluatedAt": "2026-08-18",
+  "taskId": "NAC-COMMS-0001",
+  "order": ["wppconnect-server", "whatsapp-web.js"],
+  "candidates": [
+    {
+      "name": "wppconnect-server",
+      "package": "@wppconnect/server",
+      "version": "2.10.0",
+      "repo": "https://github.com/wppconnect-team/wppconnect-server",
+      "license": "Apache-2.0",
+      "maintenance": "active (npm publish 2026; GitHub ~1000+ stars)",
+      "selfHostable": true,
+      "mandatorySubscription": false,
+      "sendText": true,
+      "receiveText": true,
+      "mediaSupport": true,
+      "sessionPersistence": "token/session files per instance; multi-session REST",
+      "reconnect": "session restore via stored tokens; requires persistent Node process",
+      "securityNotes": "REST API must be firewalled; secret keys for API auth; WhatsApp Web unofficial surface",
+      "footprint": "heavy (Express server, Socket.IO, full REST stack)",
+      "verdict": "viable but heavier than needed for single-controller engineering bridge"
+    },
+    {
+      "name": "whatsapp-web.js",
+      "package": "whatsapp-web.js",
+      "version": "1.34.7",
+      "repo": "https://github.com/wwebjs/whatsapp-web.js",
+      "license": "Apache-2.0",
+      "maintenance": "active (npm 1.34.7 July 2026; large community)",
+      "selfHostable": true,
+      "mandatorySubscription": false,
+      "sendText": true,
+      "receiveText": true,
+      "mediaSupport": true,
+      "sessionPersistence": "LocalAuth / RemoteAuth session dirs; documented reconnect",
+      "reconnect": "reload session from disk on process restart when LocalAuth used",
+      "securityNotes": "Puppeteer/Chromium; session dir is secret-equivalent; unofficial WhatsApp Web; BSUID/username protocol changes tracked in open issues",
+      "footprint": "light adapter (library + optional Chromium); fits tiny NAC comms module",
+      "verdict": "recommended for NAC engineering control bridge proof"
+    }
+  ],
+  "recommended": {
+    "name": "whatsapp-web.js",
+    "package": "whatsapp-web.js",
+    "version": "1.34.7",
+    "license": "Apache-2.0",
+    "whyOverAlternatives": "Single-controller bridge needs one session, allowlist gate, and GitHub adapter — not a multi-tenant REST server. whatsapp-web.js keeps footprint minimal while matching send/receive/media/session needs. wppconnect-server remains valid if NAC later needs multi-session REST + built-in webhooks without custom adapter code."
+  },
+  "licenseAcceptableForCommercial": true,
+  "recurringCost": 0
+}
