@@ -22,6 +22,7 @@ export type CommerceCohort = {
     | "spend_gte"
     | "covers_gte"
     | "covers_lte"
+    | "covers_between"
     | "basket_eq"
     | "basket_gt"
     | "basket_gte"
@@ -48,7 +49,7 @@ export type CommerceQueryPlan = {
   ranking?: { direction: "desc" | "asc"; limit: number };
   cohort?: CommerceCohort | null;
   compareCohort?: CommerceCohort | null;
-  calculation?: "none" | "cooccurrence" | "attach_rate" | "penetration" | "lift" | "cohort_compare" | "distribution";
+  calculation?: "none" | "cooccurrence" | "attach_rate" | "penetration" | "lift" | "cohort_compare" | "distribution" | "share_change" | "contribution" | "percentile" | "spend_buckets" | "pairs" | "diagnostic";
   outputIntent: "value" | "ranking" | "comparison" | "diagnostic" | "distribution" | "limitation";
   seedProduct?: string | null;
   targetFamily?: "food" | "dessert" | "coffee" | "other_beverage" | null;

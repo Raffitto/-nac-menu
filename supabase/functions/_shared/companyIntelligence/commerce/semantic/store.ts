@@ -46,18 +46,47 @@ export function createSupabaseCommerceStore(supabase: Sb): CommerceStore {
         .range(from, to), 20000);
     },
     async fetchCoverage(branchId) {
-      const { data } = await supabase.from("commerce_orders")
-        .select("business_date")
+      const iso = (v: unknown) => {
+        const s = String(v || "");
+        return s.length >= 10 ? s.slice(0, 10) : null;
+      };
+      let startDate: string | null = null;
+      let endDate: string | null = null;
+      const snapStart = await supabase.from("commerce_published_snapshots")
+        .select("period_start")
         .eq("branch_id", branchId)
-        .order("business_date", { ascending: true })
+        .eq("status", "published")
+        .order("period_start", { ascending: true })
         .limit(1);
-      const { data: last } = await supabase.from("commerce_orders")
-        .select("business_date")
+      const snapEnd = await supabase.from("commerce_published_snapshots")
+        .select("period_end")
         .eq("branch_id", branchId)
-        .order("business_date", { ascending: false })
+        .eq("status", "published")
+        .order("period_end", { ascending: false })
         .limit(1);
-      const startDate = data?.[0]?.business_date ? String(data[0].business_date).slice(0, 10) : null;
-      const endDate = last?.[0]?.business_date ? String(last[0].business_date).slice(0, 10) : null;
+      startDate = iso(snapStart.data?.[0]?.period_start);
+      endDate = iso(snapEnd.data?.[0]?.period_end);
+      const { data: fresh } = await supabase.from("commerce_dataset_freshness")
+        .select("data_through")
+        .eq("branch_id", branchId)
+        .eq("dataset", "orders")
+        .limit(1);
+      const through = iso(fresh?.[0]?.data_through);
+      if (through && (!endDate || through > endDate)) endDate = through;
+      if (!startDate || !endDate) {
+        const { data } = await supabase.from("commerce_orders")
+          .select("business_date")
+          .eq("branch_id", branchId)
+          .order("business_date", { ascending: true })
+          .limit(1);
+        const { data: last } = await supabase.from("commerce_orders")
+          .select("business_date")
+          .eq("branch_id", branchId)
+          .order("business_date", { ascending: false })
+          .limit(1);
+        startDate = startDate || iso(data?.[0]?.business_date);
+        endDate = endDate || iso(last?.[0]?.business_date);
+      }
       if (!startDate || !endDate) return null;
       return { branchId, startDate, endDate, ordersStatus: "ready", itemsStatus: "ready" };
     },

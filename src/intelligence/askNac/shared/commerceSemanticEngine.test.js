@@ -195,7 +195,7 @@ describe("commerce semantic executor on fixture", () => {
 describe("commerce semantic eval suite", () => {
   test("eval cases have expected plan fields", () => {
     const cases = JSON.parse(fs.readFileSync(evalPath, "utf8"));
-    expect(cases.length).toBeGreaterThanOrEqual(40);
+    expect(cases.length).toBeGreaterThanOrEqual(100);
     const out = run(`
       const cases = ${JSON.stringify(cases)};
       const results = cases.map((c) => {
@@ -215,17 +215,51 @@ describe("commerce semantic eval suite", () => {
       return { n: results.length, fail: results.filter((r) => !r.ok || !r.calcOk || !r.fieldOk) };
     `);
     expect(out.fail).toEqual([]);
-    expect(out.n).toBeGreaterThanOrEqual(40);
+    expect(out.n).toBeGreaterThanOrEqual(100);
   });
 
-  test("semantic questions enter Fabric instead of unknown metric fallback", () => {
+  test("named month beats last-7 default and clamp stays inclusive", () => {
     const out = run(`
-      return {
-        a: mod.isManagementIntelligenceQuestion("What products are most commonly ordered with Cookies?", { intent: "unknown", confidence: "none" }),
-        b: mod.looksLikeSemanticCommerceQuestion("What is the average check when Rigatoni is ordered?"),
-      };
+      const ref = new Date("2026-08-18T12:00:00+03:00");
+      const forms = ["August", "Aug", "in August", "this August", "August 2026", "for August", "during August", "the month of August", "share of August checks"];
+      const periods = {};
+      for (const q of forms) {
+        const r = mod.resolveCommercePeriod({ question: q, referenceDate: ref });
+        periods[q] = r.range && r.range.startDate + "/" + r.range.endDate + "/" + r.precedence;
+      }
+      const july = mod.resolveCommercePeriod({ question: "Same for July", referenceDate: ref });
+      const clamp = mod.clampInclusiveCompleted({
+        startDate: "2026-07-01",
+        endDate: "2026-07-31",
+        coverageStart: "2026-07-01",
+        coverageEnd: "2026-08-17",
+        referenceDate: ref,
+      });
+      const noShift = mod.clampInclusiveCompleted({
+        startDate: "2026-07-01",
+        endDate: "2026-08-17",
+        coverageStart: "2026-07-01",
+        coverageEnd: "2026-08-17",
+        referenceDate: ref,
+      });
+      const today = mod.clampInclusiveCompleted({
+        startDate: "2026-08-01",
+        endDate: "2026-08-18",
+        coverageStart: "2026-07-01",
+        coverageEnd: "2026-08-17",
+        referenceDate: ref,
+      });
+      return { periods, july: july.range, clamp, noShift, today, prec: july.precedence };
     `);
-    expect(out.a).toBe(true);
-    expect(out.b).toBe(true);
+    for (const v of Object.values(out.periods)) {
+      expect(String(v)).toMatch(/^2026-08-01\/2026-08-31\/named/);
+    }
+    expect(out.july.startDate).toBe("2026-07-01");
+    expect(out.july.endDate).toBe("2026-07-31");
+    expect(out.clamp.startDate).toBe("2026-07-01");
+    expect(out.clamp.endDate).toBe("2026-07-31");
+    expect(out.noShift.startDate).toBe("2026-07-01");
+    expect(out.today.endDate).toBe("2026-08-17");
+    expect(out.today.excludedToday).toBe(true);
   });
 });

@@ -558,6 +558,33 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return { ...previousCalendarWeekBounds(referenceDate), periodType: /\blast\s+week\b/.test(q) ? "last_week" : "previous_week", label: /\blast\s+week\b/.test(q) ? "last week" : "previous week" };
   }
 
+  if (/\blast weekend\b/.test(q)) {
+    const today = calendarYmdInTz(referenceDate);
+    let d = addCalendarDays(today.year, today.month, today.day, -1);
+    while (new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay() !== 6) {
+      d = addCalendarDays(d.year, d.month, d.day, -1);
+    }
+    const sat = isoDate(d.year, d.month, d.day);
+    const fri = addCalendarDays(d.year, d.month, d.day, -1);
+    return {
+      startDate: isoDate(fri.year, fri.month, fri.day),
+      endDate: sat,
+      label: "last weekend",
+      periodType: "last_weekend",
+      isSingleDay: false,
+      isRange: true,
+      expectedDayCount: 2,
+    };
+  }
+
+  const prevN = q.match(/\bprevious\s+(\d{1,3})\s+days?\b/);
+  if (prevN && !/\blast\s+\d/.test(q)) {
+    const n = Math.min(366, Math.max(1, Number(prevN[1])));
+    const last = rollingRange(referenceDate, n, { label: `last ${n} days`, periodType: `last_${n}_days` });
+    const previousEnd = shiftLocalDate(new Date(`${last.startDate}T12:00:00`), -1);
+    return rollingRange(previousEnd, n, { label: `previous ${n} days`, periodType: `previous_${n}_days` });
+  }
+
   if (/\btoday\b/.test(q) && !/\bday\s+before\s+today\b/.test(q)) {
     const ymd = calendarYmdInTz(referenceDate);
     const iso = isoDate(ymd.year, ymd.month, ymd.day);
@@ -612,10 +639,15 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
       return { startDate: iso, endDate: iso, label, periodType: "single_day", isSingleDay: true };
     }
 
+    const monthYear = q.match(new RegExp(`\\b${MONTH_PATTERN}\\s+(20\\d{2})\\b`));
+    if (monthYear) {
+      return monthBoundsFromToken(monthYear[1], monthYear[2], referenceDate);
+    }
+
     const monthDay = q.match(
-      new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`),
+      new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?!\\d)(?:\\s+(20\\d{2}))?`),
     );
-    if (monthDay) {
+    if (monthDay && Number(monthDay[2]) <= 31) {
       const monthIndex = MONTH_MAP[monthDay[1]];
       const day = Number(monthDay[2]);
       const year = resolveYearForMonth(monthIndex, monthDay[3], referenceDate);
@@ -703,6 +735,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
 
   if (/\b(this week|current week|week to date|wtd)\b/.test(q)) {
     return sundayWeekBounds(referenceDate, "current_to_date");
+  }
+
+  const namedMonth = q.match(
+    new RegExp(`\\b(?:(?:for|in|during|of|this|the month of)\\s+)?${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`),
+  );
+  if (namedMonth && !new RegExp(`\\b${MONTH_PATTERN}\\s+\\d{1,2}(?:st|nd|rd|th)?\\b`).test(q)) {
+    const token = String(namedMonth[1] || "");
+    const hasPrep = new RegExp(`\\b(?:for|in|during|of|this|the month of)\\s+${token}\\b`).test(q);
+    if (token === "may" && !hasPrep && !namedMonth[2]) {
+      /* modal "may", not the month */
+    } else {
+      return monthBoundsFromToken(namedMonth[1], namedMonth[2], referenceDate);
+    }
   }
 
   const monthOnly = q.match(
@@ -800,6 +845,17 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     }
   }
 
+  const fromToMonths = q.match(
+    new RegExp(`\\bfrom\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+to\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+  );
+  if (fromToMonths) {
+    const previous = monthBoundsFromToken(fromToMonths[1], fromToMonths[2], referenceDate);
+    const current = monthBoundsFromToken(fromToMonths[3], fromToMonths[4] || fromToMonths[2], referenceDate);
+    if (current && previous) {
+      return { current, previous, periodType: "month_compare", isComparison: true };
+    }
+  }
+
   const compareN = q.match(
     /\b(?:compare\s+)?(?:last|past)\s+(\d{1,3})\s+days?\b.*\b(vs\.?|versus|compared with|compared to|against|with)\b.*\b(?:the\s+)?(?:\1\s+)?(previous|prior|preceding|before that)\b/,
   ) || q.match(
@@ -818,6 +874,24 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
       periodType: `previous_${n}_days`,
     });
     return { current, previous, isComparison: true };
+  }
+
+  if (/\bthis month\b/.test(q) && /\b(last|previous) month\b/.test(q)) {
+    const current = monthToDateBounds(referenceDate);
+    return {
+      current,
+      previous: buildPreviousEquivalentVaultPeriod(current),
+      periodType: "month_compare",
+      isComparison: true,
+    };
+  }
+  if (/\bthis week\b/.test(q) && /\blast week\b/.test(q)) {
+    return {
+      current: sundayWeekBounds(referenceDate, "current_to_date"),
+      previous: { ...previousCalendarWeekBounds(referenceDate), periodType: "last_week", label: "last week" },
+      periodType: "week_compare",
+      isComparison: true,
+    };
   }
 
   const vsParts = q.split(/\s+(?:vs\.?|versus|compared with|compared to|against)\s+/);

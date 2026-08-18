@@ -21,6 +21,7 @@ const TOP_N = /(?:top|biggest|largest|highest)\s+(\d+)/i;
 const WITH_PRODUCT = /(?:ordered with|alongside|together with|go with|goes with|pair(?:ed)? with|with)\s+["']?([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']?/i;
 const WHEN_PRODUCT = /when\s+["']?([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']?\s+is ordered/i;
 const CONTAINING = /(?:containing|contain|that (?:include|included|had|have)|checks? with)\s+["']?([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']?/i;
+const ATTACHED_TO = /(?:attached to|alongside)\s+["']?([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']?/i;
 const SPECIFIC_ITEM = /specific item|a given item/;
 
 function hour24(raw: string, ampm: string | undefined): number {
@@ -44,11 +45,12 @@ const MONTH_TAIL = /\s+in\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|
 function extractProduct(q: string): string | null {
   const quoted = q.match(/["']([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']/);
   if (quoted) return quoted[1].trim();
-  for (const re of [WHEN_PRODUCT, WITH_PRODUCT, CONTAINING]) {
+  for (const re of [WHEN_PRODUCT, ATTACHED_TO, WITH_PRODUCT, CONTAINING]) {
     const m = q.match(re);
     if (m) {
       const name = m[1].trim()
         .replace(MONTH_TAIL, "")
+        .replace(/\s+on\s+(?:high[- ]value|high[- ]spend|big).*$/i, "")
         .replace(/\s+(is ordered|on (?:tables|checks)|but no.*)$/i, "")
         .trim();
       if (/^(dessert|food|coffee|mains?|drinks?|checks?|orders?|guests?|items?|people|the|\d+|at least|more than|only)$/i.test(name)) continue;
@@ -81,20 +83,36 @@ function looksLimitation(q: string): { field: string; reason: string } | null {
   return null;
 }
 
+export function looksLikeCommerceDiagnostic(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  return /\b(what changed|anything unusual|what should i know|how are baskets|baskets looking|operationally|check-size distribution|how was .{0,20}operational)\b/.test(q)
+    || /\bwhat changed (?:this month|in |after )\b/.test(q)
+    || (/\bhow (?:was|were)\b/.test(q)
+      && /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|october|oct|november|nov|december|dec|yesterday|last week|this month|last month)\b/.test(q)
+      && !/\bsales\b/.test(q));
+}
+
+export function looksLikeHeadlinePlusOperational(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  return /\b(sales were|stronger this month|headline)\b/.test(q) && /\b(operational|what changed|baskets?|checks?)\b/.test(q);
+}
+
 export function looksLikeSemanticCommerceQuestion(question: string): boolean {
   const q = String(question || "").toLowerCase();
   if (!q.trim()) return false;
   if (looksLimitation(q)) return true;
-  if (/^(?:only after\b|only desserts?\b|same for\b)/i.test(q.trim())) return true;
+  if (looksLikeCommerceDiagnostic(q) || looksLikeHeadlinePlusOperational(q)) return true;
+  if (/^(?:only after\b|only desserts?\b|same for\b|which one changed)/i.test(q.trim())) return true;
   const composition = /\b(checks?|baskets?|products?|items?|desserts?|drinks?|cookies|rigatoni|dine-in checks?|food-containing|containing dessert)\b/.test(q)
     || /\b(ordered with|association|associated with|attach rate|co-?occur|basket size|biggest checks?|largest checks?|average check when|different products)\b/.test(q);
-  const analytic = /\b(most |common|often|appear|share|percentage|percent|at least|or more|versus|vs\.?|associated|association|after \d|weekend|weekday|biggest|largest|only one|average (?:check|spend) (?:when|on checks))\b/.test(q);
+  const analytic = /\b(most |common|often|appear|share|percentage|percent|at least|or more|versus|vs\.?|associated|association|after \d|weekend|weekday|biggest|largest|only one|average (?:check|spend) (?:when|on checks)|over-index|gained|declined|distribution|percentile|pairs?|together)\b/.test(q);
   if (composition && analytic) return true;
   return (
     /\b(ordered with|alongside|attach rate|co-?occur|basket size|biggest checks?|largest checks?|average check when|checks? (?:above|over)|only one product|more than \d+ items?|share of checks|percentage of checks|ordered together|most associated|high-spend|high value checks?|guest(?:s)? count|dine-in checks?|food-containing|dessert-focused|but no food|but no mains|open\/joined|joined orders|weekend basket|weekday basket|after \d{1,2}|daypart|combinations?|penetration|what do (?:people|guests|customers) order with|products? (?:are )?(?:most )?(?:commonly )?ordered|highest attach|compare weekend)\b/.test(q)
     || /\b(top(?:-|\s)?(?:selling )?products?|top desserts? on checks|most common desserts?)\b/.test(q)
     || /\bwhen [a-z].{1,30} is ordered\b/.test(q)
     || /\b\d+\s*(?:\+|or more)\s*guests?\b/.test(q)
+    || /\b(sell together|big checks|over-index|share from|check-size|90th percentile|low-spend|high-spend baskets)\b/.test(q)
   );
 }
 
@@ -106,6 +124,13 @@ function defaultMetric(q: string, calc: CommerceQueryPlan["calculation"]): Seman
   if (calc === "lift") return "lift_vs_baseline";
   if (calc === "penetration") return "penetration_rate";
   if (calc === "cohort_compare") return "average_check";
+  if (calc === "share_change") return "category_share";
+  if (calc === "contribution") return "revenue";
+  if (calc === "percentile") return "median_check";
+  if (calc === "spend_buckets") return "high_spend_share";
+  if (calc === "pairs") return "cooccurrence_count";
+  if (calc === "diagnostic") return "average_check";
+  if (/\bpercentile|median\b/.test(q)) return "median_check";
   if (/\bbasket\b/.test(q)) return "basket_item_count";
   if (/\baverage check\b/.test(q)) return "average_check";
   if (/\bmedian\b/.test(q)) return "median_check";
@@ -254,7 +279,14 @@ export function planSemanticCommerce(input: {
     if (seedProduct) cohort = { kind: "contains_product", value: seedProduct };
   }
 
-  if (/\battach(?:\s+rate)?\b/.test(qLower)) {
+  if (/\battached to\b/.test(qLower) && seedProduct) {
+    calculation = "cooccurrence";
+    outputIntent = "ranking";
+    entity = "items";
+    dimensions = ["product"];
+    ranking = ranking || { direction: "desc", limit: 10 };
+    cohort = { kind: "contains_product", value: seedProduct };
+  } else if (/\battach(?:\s+rate)?\b/.test(qLower)) {
     calculation = "attach_rate";
     outputIntent = /\bwhich products|highest attach|products have\b/.test(qLower) ? "ranking" : "value";
     entity = outputIntent === "ranking" ? "items" : "sessions";
@@ -358,7 +390,7 @@ export function planSemanticCommerce(input: {
     compareCohort = { kind: "has_family", value: "dessert" };
   }
 
-  if (/\bweekend/.test(qLower) && /\bweekday/.test(qLower) && /\bbasket\b/.test(qLower)) {
+  if (/\bweekend/.test(qLower) && /\bweekday/.test(qLower) && /\b(basket|mix|product)/.test(qLower)) {
     calculation = "cohort_compare";
     outputIntent = "comparison";
     cohort = { kind: "weekend" };
@@ -366,8 +398,32 @@ export function planSemanticCommerce(input: {
     entity = "orders";
   }
 
-  if (/\bhigh-value|high-spend|high value checks|disproportionately ordered on high\b/.test(qLower) && !spendM) {
+  if (/\bguest-count band|by guest count|guest count affect\b/.test(qLower)) {
+    dimensions = ["guest_band"];
+    outputIntent = "distribution";
+    calculation = "distribution";
+  }
+
+  if (/\bhigh-value|high-spend|high value checks|disproportionately ordered on high|big checks\b/.test(qLower) && !spendM) {
     cohort = { kind: "spend_gt", value: 300 };
+    if (calculation === "none") {
+      calculation = "lift";
+      outputIntent = "ranking";
+      entity = "items";
+      dimensions = ["product"];
+      ranking = ranking || { direction: "desc", limit: 10 };
+    }
+  }
+
+  if (/\b(1\s*[–-]\s*2|1 or 2)\s+guest/.test(qLower) && /\b4\s*\+?\s*guest|4 or more guest/.test(qLower)) {
+    cohort = { kind: "covers_between", value: "1-2" };
+    compareCohort = { kind: "covers_gte", value: 4 };
+    calculation = "cohort_compare";
+    outputIntent = "comparison";
+    entity = "orders";
+  }
+
+  if (/\bover-index|unusually common|disproportionately present\b/.test(qLower)) {
     calculation = "lift";
     outputIntent = "ranking";
     entity = "items";
@@ -375,10 +431,82 @@ export function planSemanticCommerce(input: {
     ranking = ranking || { direction: "desc", limit: 10 };
   }
 
-  if (/\bguest-count band|by guest count|guest count affect\b/.test(qLower)) {
-    dimensions = ["guest_band"];
+  if (/\bgained the most share|lost the most share|declined the most|share from\b/.test(qLower)
+    || (/\bwhich products (?:gained|declined|changed)\b/.test(qLower) && input.comparePeriod)) {
+    calculation = "share_change";
+    outputIntent = "ranking";
+    entity = "items";
+    dimensions = ["product"];
+    ranking = ranking || { direction: "desc", limit: 10 };
+  }
+
+  if (/\bcontributed most|what drove|explain the difference|why were weekend\b/.test(qLower)) {
+    calculation = "contribution";
+    outputIntent = "ranking";
+    entity = "items";
+    dimensions = ["product"];
+    ranking = ranking || { direction: "desc", limit: 10 };
+    if (/\bweekend/.test(qLower)) {
+      cohort = { kind: "weekend" };
+      compareCohort = { kind: "weekday" };
+    }
+    if (/\bhigh-value|big checks|high-spend|above 300\b/.test(qLower)) {
+      cohort = { kind: "spend_gt", value: 300 };
+    }
+  }
+
+  if (/\bcheck-size distribution|share of checks fall|spend bands?\b/.test(qLower) || /<100/.test(qLower)) {
+    calculation = "spend_buckets";
     outputIntent = "distribution";
-    calculation = "distribution";
+    entity = "orders";
+  }
+
+  if (/\bmedian\b/.test(qLower) && /\b90th|p90|percentile\b/.test(qLower) || /\bpercentile check\b/.test(qLower)) {
+    calculation = "percentile";
+    outputIntent = "distribution";
+    entity = "orders";
+  }
+
+  if (/\bproduct pairs|sell together|combinations?\b/.test(qLower) && !/\bdessert\+drink|dessert and drink\b/.test(qLower)) {
+    calculation = "pairs";
+    outputIntent = "ranking";
+    entity = "items";
+  }
+
+  if (/\bdessert\+drink|dessert and drink combinations\b/.test(qLower)) {
+    calculation = "pairs";
+    outputIntent = "ranking";
+    entity = "items";
+    addFilter("family", "eq", "dessert");
+  }
+
+  if (/\bfood-containing vs dessert-focused|dessert-focused vs food-containing\b/.test(qLower)) {
+    cohort = { kind: "archetype", value: "food_containing" };
+    compareCohort = { kind: "archetype", value: "dessert_focused" };
+    calculation = "cohort_compare";
+    outputIntent = "comparison";
+  }
+
+  if (/\blow-spend vs high-spend|high-spend vs low-spend|low-spend baskets\b/.test(qLower)) {
+    cohort = { kind: "spend_gt", value: 300 };
+    compareCohort = { kind: "spend_gt", value: 0 };
+    calculation = "cohort_compare";
+    outputIntent = "comparison";
+    entity = "orders";
+  }
+
+  if ((looksLikeHeadlinePlusOperational(q) || looksLikeCommerceDiagnostic(q) || /\bhow are baskets looking\b/.test(qLower))
+    && !["share_change", "lift", "contribution", "spend_buckets", "percentile", "pairs", "cohort_compare", "cooccurrence", "attach_rate", "penetration"].includes(String(calculation))) {
+    calculation = "diagnostic";
+    outputIntent = "diagnostic";
+    entity = "orders";
+  }
+
+  if (/\bwhich one changed the most\b/.test(qLower) && prev) {
+    calculation = "share_change";
+    outputIntent = "ranking";
+    entity = "items";
+    dimensions = ["product"];
   }
 
   if (/\bcompare\b/.test(qLower) && input.comparePeriod) {

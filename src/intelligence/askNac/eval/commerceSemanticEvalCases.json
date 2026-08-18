@@ -1,57 +1,694 @@
 [
-  { "id": "c01", "question": "What products are most commonly ordered with Cookies?", "calculation": "cooccurrence" },
-  { "id": "c02", "question": "What do people order with Rigatoni?", "calculation": "cooccurrence" },
-  { "id": "c03", "question": "What is the average check when Rigatoni is ordered?" },
-  { "id": "c04", "question": "Which products are most associated with checks above 300 SAR?", "calculation": "lift" },
-  { "id": "c05", "question": "What percentage of checks had only one product?", "calculation": "penetration" },
-  { "id": "c06", "question": "What are the 10 biggest checks in August?" },
-  { "id": "c07", "question": "Which products are ordered most often on checks with 4+ guests?" },
-  { "id": "c08", "question": "How many completed dine-in checks had dessert but no food?" },
-  { "id": "c09", "question": "What is the dessert attach rate on food-containing sessions?", "calculation": "attach_rate" },
-  { "id": "c10", "question": "Which products have the highest attach rate to dessert-focused sessions?", "calculation": "attach_rate" },
-  { "id": "c11", "question": "Compare weekend basket size to weekdays.", "calculation": "cohort_compare" },
-  { "id": "c12", "question": "Which physical table number ordered the most Rigatoni?", "expectLimitation": true, "unavailableField": "physical_table_number" },
-  { "id": "c13", "question": "How many open/Joined orders existed?" },
-  { "id": "c14", "question": "What proportion of item rows were moved?", "expectLimitation": true, "unavailableField": "item_moved" },
-  { "id": "c15", "question": "What do guests order together with Cookies?", "calculation": "cooccurrence" },
-  { "id": "c16", "question": "What share of checks contain Cookies?", "calculation": "penetration" },
-  { "id": "c17", "question": "How many checks had more than five items?" },
-  { "id": "c18", "question": "What were the top-selling products after 10 PM?" },
-  { "id": "c19", "question": "Which products are most associated with checks above 400 SAR?", "calculation": "lift" },
-  { "id": "c20", "question": "What percentage of food-containing sessions also ordered dessert?", "calculation": "attach_rate" },
-  { "id": "c21", "question": "Which sessions had coffee and dessert but no mains?" },
-  { "id": "c22", "question": "How does guest count affect average check?", "calculation": "distribution" },
-  { "id": "c23", "question": "Which products are most associated with 4+ guest checks?" },
-  { "id": "c24", "question": "What is the average basket size on weekends versus weekdays?", "calculation": "cohort_compare" },
-  { "id": "c25", "question": "Which products have the highest attach rate to mains?", "calculation": "attach_rate" },
-  { "id": "c26", "question": "How do weekday/weekend baskets differ?", "calculation": "cohort_compare" },
-  { "id": "c27", "question": "Which items are disproportionately ordered on high-value checks?", "calculation": "lift" },
-  { "id": "c28", "question": "Does ordering dessert increase average check?", "calculation": "cohort_compare" },
-  { "id": "c29", "question": "Top desserts ordered after 9pm on weekends by checks with 3+ guests" },
-  { "id": "c30", "question": "What are the largest checks after 10pm?" },
-  { "id": "c31", "question": "Average check when Cookies is ordered" },
-  { "id": "c32", "question": "Products ordered alongside Salad", "calculation": "cooccurrence" },
-  { "id": "c33", "question": "Share of checks containing Rigatoni", "calculation": "penetration" },
-  { "id": "c34", "question": "Checks above 250 SAR associated products", "calculation": "lift" },
-  { "id": "c35", "question": "Basket size on weekends versus weekdays", "calculation": "cohort_compare" },
-  { "id": "c36", "question": "How many checks had only one product?", "calculation": "penetration" },
-  { "id": "c37", "question": "Top products on high-spend checks", "calculation": "lift" },
-  { "id": "c38", "question": "Dessert but no food completed dine-in checks" },
-  { "id": "c39", "question": "Attach rate of dessert on food tables", "calculation": "attach_rate" },
-  { "id": "c40", "question": "Biggest checks this period" },
-  { "id": "c41", "question": "What about after 10pm?", "previousPlan": { "domain": "commerce", "entity": "items", "metric": "item_quantity", "dimensions": ["product"], "filters": [{ "field": "branch", "op": "eq", "value": "khobar" }], "period": { "startDate": "2026-08-01", "endDate": "2026-08-15" }, "ranking": { "direction": "desc", "limit": 10 }, "calculation": "none", "outputIntent": "ranking" } },
-  { "id": "c42", "question": "Only desserts", "previousPlan": { "domain": "commerce", "entity": "items", "metric": "item_quantity", "dimensions": ["product"], "filters": [{ "field": "branch", "op": "eq", "value": "khobar" }], "period": { "startDate": "2026-08-01", "endDate": "2026-08-15" }, "ranking": { "direction": "desc", "limit": 10 }, "calculation": "none", "outputIntent": "ranking" } },
-  { "id": "c43", "question": "Same for July", "previousPlan": { "domain": "commerce", "entity": "items", "metric": "item_quantity", "dimensions": ["product"], "filters": [], "period": { "startDate": "2026-08-01", "endDate": "2026-08-15" }, "calculation": "cooccurrence", "outputIntent": "ranking", "seedProduct": "Cookies" } },
-  { "id": "c44", "question": "Which one has the highest average check?", "previousPlan": { "domain": "commerce", "entity": "orders", "metric": "average_check", "dimensions": ["product"], "filters": [], "period": { "startDate": "2026-08-01", "endDate": "2026-08-15" }, "calculation": "none", "outputIntent": "value" } },
-  { "id": "c45", "question": "Only after 9pm", "previousPlan": { "domain": "commerce", "entity": "items", "metric": "cooccurrence_rate", "dimensions": ["product"], "filters": [], "period": { "startDate": "2026-08-01", "endDate": "2026-08-15" }, "calculation": "cooccurrence", "outputIntent": "ranking", "seedProduct": "Cookies" } },
-  { "id": "c46", "question": "What creator closed the check?", "expectLimitation": true, "unavailableField": "creator" },
-  { "id": "c47", "question": "Top-selling products after 10 PM on weekends" },
-  { "id": "c48", "question": "How many checks had more than 5 items?" },
-  { "id": "c49", "question": "Median check when food is ordered" },
-  { "id": "c50", "question": "Products most often ordered with Espresso", "calculation": "cooccurrence" },
-  { "id": "c51", "question": "Compare July versus August basket size" },
-  { "id": "c52", "question": "What percentage of checks contain a specific item?", "calculation": "penetration" },
-  { "id": "c53", "question": "Coffee and dessert but no mains sessions" },
-  { "id": "c54", "question": "Highest attach products to dessert-focused sessions", "calculation": "attach_rate" },
-  { "id": "c55", "question": "Guest-count band average check distribution", "calculation": "distribution" }
+  {
+    "id": "c01",
+    "question": "What products are most commonly ordered with Cookies?",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c02",
+    "question": "What do people order with Rigatoni?",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c03",
+    "question": "What is the average check when Rigatoni is ordered?"
+  },
+  {
+    "id": "c04",
+    "question": "Which products are most associated with checks above 300 SAR?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c05",
+    "question": "What percentage of checks had only one product?",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c06",
+    "question": "What are the 10 biggest checks in August?"
+  },
+  {
+    "id": "c07",
+    "question": "Which products are ordered most often on checks with 4+ guests?"
+  },
+  {
+    "id": "c08",
+    "question": "How many completed dine-in checks had dessert but no food?"
+  },
+  {
+    "id": "c09",
+    "question": "What is the dessert attach rate on food-containing sessions?",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c10",
+    "question": "Which products have the highest attach rate to dessert-focused sessions?",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c11",
+    "question": "Compare weekend basket size to weekdays.",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c12",
+    "question": "Which physical table number ordered the most Rigatoni?",
+    "expectLimitation": true,
+    "unavailableField": "physical_table_number"
+  },
+  {
+    "id": "c13",
+    "question": "How many open/Joined orders existed?"
+  },
+  {
+    "id": "c14",
+    "question": "What proportion of item rows were moved?",
+    "expectLimitation": true,
+    "unavailableField": "item_moved"
+  },
+  {
+    "id": "c15",
+    "question": "What do guests order together with Cookies?",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c16",
+    "question": "What share of checks contain Cookies?",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c17",
+    "question": "How many checks had more than five items?"
+  },
+  {
+    "id": "c18",
+    "question": "What were the top-selling products after 10 PM?"
+  },
+  {
+    "id": "c19",
+    "question": "Which products are most associated with checks above 400 SAR?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c20",
+    "question": "What percentage of food-containing sessions also ordered dessert?",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c21",
+    "question": "Which sessions had coffee and dessert but no mains?"
+  },
+  {
+    "id": "c22",
+    "question": "How does guest count affect average check?",
+    "calculation": "distribution"
+  },
+  {
+    "id": "c23",
+    "question": "Which products are most associated with 4+ guest checks?"
+  },
+  {
+    "id": "c24",
+    "question": "What is the average basket size on weekends versus weekdays?",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c25",
+    "question": "Which products have the highest attach rate to mains?",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c26",
+    "question": "How do weekday/weekend baskets differ?",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c27",
+    "question": "Which items are disproportionately ordered on high-value checks?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c28",
+    "question": "Does ordering dessert increase average check?",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c29",
+    "question": "Top desserts ordered after 9pm on weekends by checks with 3+ guests"
+  },
+  {
+    "id": "c30",
+    "question": "What are the largest checks after 10pm?"
+  },
+  {
+    "id": "c31",
+    "question": "Average check when Cookies is ordered"
+  },
+  {
+    "id": "c32",
+    "question": "Products ordered alongside Salad",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c33",
+    "question": "Share of checks containing Rigatoni",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c34",
+    "question": "Checks above 250 SAR associated products",
+    "calculation": "lift"
+  },
+  {
+    "id": "c35",
+    "question": "Basket size on weekends versus weekdays",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c36",
+    "question": "How many checks had only one product?",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c37",
+    "question": "Top products on high-spend checks",
+    "calculation": "lift"
+  },
+  {
+    "id": "c38",
+    "question": "Dessert but no food completed dine-in checks"
+  },
+  {
+    "id": "c39",
+    "question": "Attach rate of dessert on food tables",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c40",
+    "question": "Biggest checks this period"
+  },
+  {
+    "id": "c41",
+    "question": "What about after 10pm?",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "item_quantity",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [
+        {
+          "field": "branch",
+          "op": "eq",
+          "value": "khobar"
+        }
+      ],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-15"
+      },
+      "ranking": {
+        "direction": "desc",
+        "limit": 10
+      },
+      "calculation": "none",
+      "outputIntent": "ranking"
+    }
+  },
+  {
+    "id": "c42",
+    "question": "Only desserts",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "item_quantity",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [
+        {
+          "field": "branch",
+          "op": "eq",
+          "value": "khobar"
+        }
+      ],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-15"
+      },
+      "ranking": {
+        "direction": "desc",
+        "limit": 10
+      },
+      "calculation": "none",
+      "outputIntent": "ranking"
+    }
+  },
+  {
+    "id": "c43",
+    "question": "Same for July",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "item_quantity",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-15"
+      },
+      "calculation": "cooccurrence",
+      "outputIntent": "ranking",
+      "seedProduct": "Cookies"
+    }
+  },
+  {
+    "id": "c44",
+    "question": "Which one has the highest average check?",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "orders",
+      "metric": "average_check",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-15"
+      },
+      "calculation": "none",
+      "outputIntent": "value"
+    }
+  },
+  {
+    "id": "c45",
+    "question": "Only after 9pm",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "cooccurrence_rate",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-15"
+      },
+      "calculation": "cooccurrence",
+      "outputIntent": "ranking",
+      "seedProduct": "Cookies"
+    }
+  },
+  {
+    "id": "c46",
+    "question": "What creator closed the check?",
+    "expectLimitation": true,
+    "unavailableField": "creator"
+  },
+  {
+    "id": "c47",
+    "question": "Top-selling products after 10 PM on weekends"
+  },
+  {
+    "id": "c48",
+    "question": "How many checks had more than 5 items?"
+  },
+  {
+    "id": "c49",
+    "question": "Median check when food is ordered"
+  },
+  {
+    "id": "c50",
+    "question": "Products most often ordered with Espresso",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c51",
+    "question": "Compare July versus August basket size"
+  },
+  {
+    "id": "c52",
+    "question": "What percentage of checks contain a specific item?",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c53",
+    "question": "Coffee and dessert but no mains sessions"
+  },
+  {
+    "id": "c54",
+    "question": "Highest attach products to dessert-focused sessions",
+    "calculation": "attach_rate"
+  },
+  {
+    "id": "c55",
+    "question": "Guest-count band average check distribution",
+    "calculation": "distribution"
+  },
+  {
+    "id": "c56",
+    "question": "What share of August checks had at least 3 different products?",
+    "calculation": "penetration"
+  },
+  {
+    "id": "c57",
+    "question": "What about July?",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "orders",
+      "metric": "penetration_rate",
+      "dimensions": [],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "calculation": "penetration",
+      "outputIntent": "value"
+    }
+  },
+  {
+    "id": "c58",
+    "question": "Which products gained the most share from July to August?",
+    "calculation": "share_change"
+  },
+  {
+    "id": "c59",
+    "question": "Which drinks over-index on checks with Cookies?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c60",
+    "question": "What does the August check-size distribution look like?",
+    "calculation": "spend_buckets"
+  },
+  {
+    "id": "c61",
+    "question": "Compare 1-2 guest checks with 4+ guest checks.",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c62",
+    "question": "What changed after 9pm this month?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c63",
+    "question": "Why were weekend baskets larger than weekdays?",
+    "calculation": "contribution"
+  },
+  {
+    "id": "c64",
+    "question": "How was August operationally?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c65",
+    "question": "Sales were stronger this month \u2014 what changed operationally?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c66",
+    "question": "in August",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "item_quantity",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-07-01",
+        "endDate": "2026-07-31"
+      },
+      "calculation": "cooccurrence",
+      "outputIntent": "ranking",
+      "seedProduct": "Cookies"
+    }
+  },
+  {
+    "id": "c67",
+    "question": "Aug"
+  },
+  {
+    "id": "c68",
+    "question": "this August"
+  },
+  {
+    "id": "c69",
+    "question": "for August"
+  },
+  {
+    "id": "c70",
+    "question": "during August"
+  },
+  {
+    "id": "c71",
+    "question": "the month of August"
+  },
+  {
+    "id": "c72",
+    "question": "August 2026"
+  },
+  {
+    "id": "c73",
+    "question": "last month"
+  },
+  {
+    "id": "c74",
+    "question": "this month"
+  },
+  {
+    "id": "c75",
+    "question": "previous month"
+  },
+  {
+    "id": "c76",
+    "question": "Jul"
+  },
+  {
+    "id": "c77",
+    "question": "yesterday"
+  },
+  {
+    "id": "c78",
+    "question": "last 7 days"
+  },
+  {
+    "id": "c79",
+    "question": "past week"
+  },
+  {
+    "id": "c80",
+    "question": "this week"
+  },
+  {
+    "id": "c81",
+    "question": "last week"
+  },
+  {
+    "id": "c82",
+    "question": "last weekend"
+  },
+  {
+    "id": "c83",
+    "question": "Which products over-index on dessert-focused checks?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c84",
+    "question": "Compare low-spend vs high-spend baskets",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c85",
+    "question": "Compare weekend vs weekday product mix",
+    "calculation": "cohort_compare"
+  },
+  {
+    "id": "c86",
+    "question": "Which products declined the most from July to August?",
+    "calculation": "share_change"
+  },
+  {
+    "id": "c87",
+    "question": "What is the median and 90th percentile check?",
+    "calculation": "percentile"
+  },
+  {
+    "id": "c88",
+    "question": "Which product pairs are strongest after controlling for baseline frequency?",
+    "calculation": "pairs"
+  },
+  {
+    "id": "c89",
+    "question": "What items are most attached to Rigatoni on high-value checks?",
+    "calculation": "cooccurrence"
+  },
+  {
+    "id": "c90",
+    "question": "What are the top dessert+drink combinations?",
+    "calculation": "pairs"
+  },
+  {
+    "id": "c91",
+    "question": "Which things sell together?",
+    "calculation": "pairs"
+  },
+  {
+    "id": "c92",
+    "question": "What items matter most for big checks?",
+    "calculation": "lift"
+  },
+  {
+    "id": "c93",
+    "question": "Only desserts.",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "item_quantity",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "calculation": "none",
+      "outputIntent": "ranking"
+    }
+  },
+  {
+    "id": "c94",
+    "question": "after 9pm",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "cooccurrence_rate",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "calculation": "cooccurrence",
+      "outputIntent": "ranking",
+      "seedProduct": "Cookies"
+    }
+  },
+  {
+    "id": "c95",
+    "question": "Same for July",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "cooccurrence_rate",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [
+        {
+          "field": "hour",
+          "op": "gte",
+          "value": 21
+        }
+      ],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "calculation": "cooccurrence",
+      "outputIntent": "ranking",
+      "seedProduct": "Cookies"
+    }
+  },
+  {
+    "id": "c96",
+    "question": "compare with last month",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "orders",
+      "metric": "average_check",
+      "dimensions": [],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "calculation": "none",
+      "outputIntent": "value"
+    }
+  },
+  {
+    "id": "c97",
+    "question": "Which one changed the most?",
+    "previousPlan": {
+      "domain": "commerce",
+      "entity": "items",
+      "metric": "category_share",
+      "dimensions": [
+        "product"
+      ],
+      "filters": [],
+      "period": {
+        "startDate": "2026-08-01",
+        "endDate": "2026-08-17"
+      },
+      "compare": {
+        "startDate": "2026-07-01",
+        "endDate": "2026-07-31"
+      },
+      "calculation": "share_change",
+      "outputIntent": "ranking"
+    }
+  },
+  {
+    "id": "c98",
+    "question": "Which physical table ordered the most cookies?",
+    "expectLimitation": true,
+    "unavailableField": "physical_table_number"
+  },
+  {
+    "id": "c99",
+    "question": "Who closed the check?",
+    "expectLimitation": true,
+    "unavailableField": "creator"
+  },
+  {
+    "id": "c100",
+    "question": "this month vs last month"
+  },
+  {
+    "id": "c101",
+    "question": "last 7 days vs previous 7 days"
+  },
+  {
+    "id": "c102",
+    "question": "How are baskets looking?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c103",
+    "question": "Anything unusual last week?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c104",
+    "question": "What should I know about yesterday?",
+    "calculation": "diagnostic"
+  },
+  {
+    "id": "c105",
+    "question": "Which categories explain the difference between weekends and weekdays?",
+    "calculation": "contribution"
+  }
 ]

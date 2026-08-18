@@ -38,6 +38,32 @@ export function synthesizeSemanticCommerce(input: {
     : "the selected period";
   const branch = result.debug.branchId;
   const map = result.mappingNote ? ` ${result.mappingNote}` : "";
+  const strength = result.evidenceStrength === "directional"
+    ? " Directional only: mapping or cohort size is limited."
+    : result.evidenceStrength === "strong_derived"
+      ? " Derived from order/item composition, not a causal claim."
+      : "";
+
+  if (plan.outputIntent === "diagnostic" && result.diagnostic) {
+    const d = result.diagnostic as Record<string, unknown>;
+    const movers = Array.isArray(d.movers)
+      ? (d.movers as Array<{ name?: string }>).slice(0, 3).map((m) => m.name).filter(Boolean).join(", ")
+      : "";
+    const buckets = Array.isArray(d.buckets)
+      ? (d.buckets as Array<{ name: string; share: number | null }>).map((b) => `${b.name} ${pct(b.share)}`).join("; ")
+      : "";
+    return (
+      `Operational commerce for ${branch} (${period}): ${d.orders} checks, average check ${sar(d.averageCheck as number)}, `
+      + `median ${sar(d.medianCheck as number)}, basket ${d.basketSize != null ? Number(d.basketSize).toFixed(2) : "n/a"} items, `
+      + `${d.covers} covers. High-spend share ${pct(d.highSpendShare as number)}. `
+      + `Dessert-containing ${pct(d.dessertShare as number)}; food-containing ${pct(d.foodShare as number)}. `
+      + (buckets ? `Check-size mix: ${buckets}. ` : "")
+      + (movers ? `Notable movers/over-index: ${movers}. ` : "")
+      + "Headline sales remain Cash Up; this is order/basket evidence only."
+      + strength
+      + map
+    );
+  }
 
   if (plan.calculation === "cooccurrence" && plan.seedProduct) {
     const lead = topNames(result.ranking, 3);
@@ -48,6 +74,7 @@ export function synthesizeSemanticCommerce(input: {
       + (lead ? `The products most often ordered alongside it were ${lead}.` : "No companion products were found.")
       + lift
       + " This is co-occurrence, not a causal effect."
+      + strength
       + map
     );
   }
@@ -57,14 +84,46 @@ export function synthesizeSemanticCommerce(input: {
     return (
       `Among ${result.cohortSize || 0} high-value ${branch} checks (${period}), the products most associated versus baseline were ${lead || "none"}. `
       + "Association is not a causal effect."
+      + strength
       + map
     );
+  }
+
+  if (plan.calculation === "share_change") {
+    const top = (result.ranking || []).slice(0, 3).map((r) => {
+      const d = Number(r.deltaShare);
+      const sign = d >= 0 ? "+" : "";
+      return `${r.name} (${sign}${(d * 100).toFixed(1)} pp)`;
+    }).join("; ");
+    return `Largest product-share changes for ${branch} (${period}): ${top || "none"}. Association only, not a causal effect.${strength}${map}`;
+  }
+
+  if (plan.calculation === "contribution") {
+    const lead = topNames(result.ranking, 3);
+    return `Products contributing most to the contrast for ${branch} (${period}): ${lead || "none"}. This is association, not a causal effect.${strength}${map}`;
+  }
+
+  if (plan.calculation === "spend_buckets") {
+    const parts = (result.ranking || []).map((r) => `${r.name} ${pct(Number(r.share))}`).join("; ");
+    return `Check-size distribution for ${branch} (${period}): ${parts || "none"}.${strength}${map}`;
+  }
+
+  if (plan.calculation === "percentile") {
+    const med = result.ranking?.find((r) => r.name === "median");
+    const p90 = result.ranking?.find((r) => r.name === "p90");
+    return `For ${branch} (${period}), median check was ${sar(Number(med?.net_sales))} and 90th percentile was ${sar(Number(p90?.net_sales))} (${result.cohortSize} checks).${strength}${map}`;
+  }
+
+  if (plan.calculation === "pairs") {
+    const lead = (result.ranking || []).slice(0, 3).map((r) => `${r.name}`).join("; ");
+    return `Strongest product pairs for ${branch} (${period}): ${lead || "none"}. Lift is versus independent baseline frequency, not causation.${strength}${map}`;
   }
 
   if (plan.calculation === "attach_rate" && result.unit === "rate") {
     return (
       `Dessert attach rate on food-containing ${branch} checks (${period}) was ${pct(result.value)} `
       + `(${result.numerator} of ${result.denominator}). This is association within food-containing checks, not a causal effect.`
+      + strength
       + map
     );
   }

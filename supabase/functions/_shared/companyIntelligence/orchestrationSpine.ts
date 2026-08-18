@@ -36,8 +36,10 @@ import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCo
 import { requiresDineInSessionEvidence } from "./commerce/intent.ts";
 import {
   executeCommercePlan,
+  looksLikeHeadlinePlusOperational,
   looksLikeSemanticCommerceQuestion,
   planSemanticCommerce,
+  resolveCommercePeriod,
   synthesizeSemanticCommerce,
   validateSemanticResult,
   type CommerceQueryPlan,
@@ -443,11 +445,19 @@ export async function runCompanyIntelligenceOrchestration(
   const holidayIntent = detectHolidayQuestionIntent(
     state.request.originalQuestion || state.request.normalizedQuestion,
   );
+  const commercePeriod = resolveCommercePeriod({
+    question: String(options.question || ""),
+    referenceDate: options.referenceDate || new Date(),
+    inherited: currentPeriod,
+    inheritedCompare: comparisonPeriod,
+  });
+  if (commercePeriod.range && (commercePeriod.precedence === "named" || commercePeriod.precedence === "relative" || commercePeriod.precedence === "event")) {
+    currentPeriod = commercePeriod.range;
+    if (commercePeriod.compareRange) comparisonPeriod = commercePeriod.compareRange;
+  }
   const looksLikePeriodFollowUp = followUp.usedFollowUp
     || isPeriodOnlyFollowUpTurn(String(options.question || "").trim(), options.referenceDate || new Date());
-  // Never collapse unresolved follow-ups into last_7_days — that erases inherited July→June semantics.
   if (!currentPeriod && !holidayIntent.detected && !(looksLikePeriodFollowUp && options.conversation) && !followUp.usedFollowUp) {
-    // Safe default recent window for management language without inventing named calendar periods.
     const fallback = defaultTemporalService.resolveExpression(
       "last_7_days",
       options.referenceDate || new Date(),
@@ -565,13 +575,14 @@ export async function runCompanyIntelligenceOrchestration(
     const planned = planSemanticCommerce({
       question: askedQuestion || followUp.resolvedQuestion,
       branchId: primaryBranchId,
-      period: followUp.currentPeriod || state.periods.current,
-      comparePeriod: followUp.comparisonPeriod || state.periods.comparison,
+      period: currentPeriod || followUp.currentPeriod || state.periods.current,
+      comparePeriod: comparisonPeriod || followUp.comparisonPeriod || state.periods.comparison,
       previousPlan: prevSemantic,
     });
     const plan = planned.plan;
     let text: string;
     let verified = true;
+    const toolsExecuted = plan ? ["commerce_semantic_query"] : [];
     if (!plan) {
       text = planned.reason || "This commerce question is not supported by the semantic registry.";
     } else if (plan.outputIntent === "limitation" || !planned.ok) {
@@ -580,20 +591,41 @@ export async function runCompanyIntelligenceOrchestration(
       const exec = await executeCommercePlan({ plan, store: options.commerceStore, scope: state.scope });
       const validation = validateSemanticResult(plan, exec);
       text = synthesizeSemanticCommerce({
-        question: followUp.resolvedQuestion,
+        question: askedQuestion || followUp.resolvedQuestion,
         plan,
         result: exec,
         validation: exec.ok ? validation : { ok: true, warnings: validation.warnings },
       });
       verified = exec.ok ? validation.ok : true;
+      if (looksLikeHeadlinePlusOperational(askedQuestion) && options.executor && primaryBranchId) {
+        try {
+          const cash = await options.executor({
+            capability: "commercial.performance",
+            branchId: primaryBranchId,
+            currentPeriod: currentPeriod || state.periods.current,
+            comparisonPeriod: comparisonPeriod || state.periods.comparison,
+            comparabilityMethod: null,
+            question: askedQuestion,
+          });
+          const sales = (cash.metrics || []).find((m) => m.key === "net_sales");
+          toolsExecuted.unshift("cash_up_performance");
+          if (sales && sales.value != null) {
+            text = `Cash Up headline net sales: ${typeof sales.value === "number" ? `SAR ${Number(sales.value).toLocaleString()}` : sales.value}. Operational commerce (not a substitute for headline sales): ${text}`;
+          } else {
+            text = `Headline sales remain Cash Up. Operational commerce: ${text}`;
+          }
+        } catch {
+          text = `Headline sales remain Cash Up. ${text}`;
+        }
+      }
     }
     const nextConversation = updateConversationState(state.conversation, {
       activeMetricFamily: "commerce",
       previousIntent: "commerce.semantic",
       activeSemanticPlan: (plan || prevSemantic) as Record<string, unknown> | null,
       activePeriods: {
-        current: followUp.currentPeriod || state.periods.current,
-        comparison: followUp.comparisonPeriod || state.periods.comparison,
+        current: currentPeriod || followUp.currentPeriod || state.periods.current,
+        comparison: comparisonPeriod || followUp.comparisonPeriod || state.periods.comparison,
       },
     });
     state = transition(state, "COMPLETE", {
@@ -625,7 +657,7 @@ export async function runCompanyIntelligenceOrchestration(
       keyMetrics: [],
       insights: [],
       nextConversation,
-      toolsExecuted: plan ? ["commerce_semantic_query"] : [],
+      toolsExecuted: plan ? toolsExecuted : [],
       paidModelCalls: 0,
     };
   }

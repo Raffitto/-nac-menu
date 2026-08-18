@@ -175,6 +175,11 @@ export function applyCohort(
         return Number(order.covers) >= Number(cohort.value);
       case "covers_lte":
         return order.covers != null && Number(order.covers) <= Number(cohort.value);
+      case "covers_between": {
+        const [lo, hi] = String(cohort.value).split("-").map(Number);
+        const n = Number(order.covers);
+        return Number.isFinite(n) && n >= lo && n <= hi;
+      }
       case "basket_eq":
         return distinctProductCount(basket) === Number(cohort.value);
       case "basket_gt":
@@ -290,6 +295,130 @@ export function productLift(
   }).sort((a, b) => (b.lift || 0) - (a.lift || 0)).slice(0, limit);
 }
 
-export function sessionArchetypeFromBasket(basket: SemanticItem[]): TableArchetype {
-  return classifyTableArchetype(flagsFromItems(basket.map(toCanonicalItem)));
+export function percentile(values: number[], p: number): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const idx = Math.min(s.length - 1, Math.max(0, Math.ceil((p / 100) * s.length) - 1));
+  return s[idx];
+}
+
+export function spendBuckets(orders: SemanticOrder[]): Array<{ name: string; orders: number; share: number | null }> {
+  const bins = [
+    { name: "<100", n: 0 },
+    { name: "100–200", n: 0 },
+    { name: "200–300", n: 0 },
+    { name: ">300", n: 0 },
+  ];
+  for (const order of orders) {
+    const v = Number(order.net_sales) || 0;
+    if (v < 100) bins[0].n += 1;
+    else if (v < 200) bins[1].n += 1;
+    else if (v < 300) bins[2].n += 1;
+    else bins[3].n += 1;
+  }
+  const den = orders.length;
+  return bins.map((b) => ({ name: b.name, orders: b.n, share: ratio(b.n, den) }));
+}
+
+export function categoryMix(
+  orders: SemanticOrder[],
+  itemsBy: Map<string, SemanticItem[]>,
+): Array<{ name: string; revenue: number; share: number | null }> {
+  const map = new Map<string, number>();
+  let total = 0;
+  for (const order of orders) {
+    for (const item of itemsBy.get(order.source_order_id) || []) {
+      const fam = item.canonical_category || "unclassified";
+      const amt = Number(item.net_amount) || 0;
+      map.set(fam, (map.get(fam) || 0) + amt);
+      total += amt;
+    }
+  }
+  return [...map.entries()].map(([name, revenue]) => ({ name, revenue, share: ratio(revenue, total) }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+export function contributionToSpend(
+  cohort: SemanticOrder[],
+  baseline: SemanticOrder[],
+  itemsBy: Map<string, SemanticItem[]>,
+  limit: number,
+): Array<{ name: string; cohortRevenue: number; baselineShare: number | null; cohortShare: number | null; deltaShare: number | null }> {
+  const cRank = rankProducts(cohort, itemsBy, { limit: 80, mode: "revenue" });
+  const bRank = rankProducts(baseline, itemsBy, { limit: 400, mode: "revenue" });
+  const cTot = cRank.reduce((s, r) => s + r.revenue, 0);
+  const bTot = bRank.reduce((s, r) => s + r.revenue, 0);
+  const bMap = new Map(bRank.map((r) => [r.name.toLowerCase(), r]));
+  return cRank.map((row) => {
+    const base = bMap.get(row.name.toLowerCase());
+    const cohortShare = ratio(row.revenue, cTot);
+    const baselineShare = ratio(base?.revenue || 0, bTot);
+    return {
+      name: row.name,
+      cohortRevenue: row.revenue,
+      cohortShare,
+      baselineShare,
+      deltaShare: cohortShare != null && baselineShare != null ? cohortShare - baselineShare : null,
+    };
+  }).sort((a, b) => (b.deltaShare || 0) - (a.deltaShare || 0)).slice(0, limit);
+}
+
+export function shareChange(
+  current: SemanticOrder[],
+  previous: SemanticOrder[],
+  itemsByCurrent: Map<string, SemanticItem[]>,
+  itemsByPrevious: Map<string, SemanticItem[]>,
+  limit: number,
+): Array<{ name: string; currentShare: number | null; previousShare: number | null; deltaShare: number | null; currentOrders: number }> {
+  const cRank = rankProducts(current, itemsByCurrent, { limit: 200, mode: "orders" });
+  const pRank = rankProducts(previous, itemsByPrevious, { limit: 200, mode: "orders" });
+  const names = new Set([...cRank, ...pRank].map((r) => r.name.toLowerCase()));
+  const cMap = new Map(cRank.map((r) => [r.name.toLowerCase(), r]));
+  const pMap = new Map(pRank.map((r) => [r.name.toLowerCase(), r]));
+  return [...names].map((key) => {
+    const c = cMap.get(key);
+    const p = pMap.get(key);
+    const name = c?.name || p?.name || key;
+    const currentShare = c?.penetration ?? ratio(0, current.length);
+    const previousShare = p?.penetration ?? ratio(0, previous.length);
+    return {
+      name,
+      currentShare,
+      previousShare,
+      deltaShare: currentShare != null && previousShare != null ? currentShare - previousShare : null,
+      currentOrders: c?.orders || 0,
+    };
+  }).sort((a, b) => Math.abs(b.deltaShare || 0) - Math.abs(a.deltaShare || 0)).slice(0, limit);
+}
+
+export function strongestPairs(
+  orders: SemanticOrder[],
+  itemsBy: Map<string, SemanticItem[]>,
+  limit: number,
+): Array<{ name: string; orders: number; lift: number | null }> {
+  const pairCounts = new Map<string, { a: string; b: string; n: number }>();
+  const itemOrders = new Map<string, number>();
+  for (const order of orders) {
+    const names = [...new Set((itemsBy.get(order.source_order_id) || [])
+      .filter((i) => i.status !== "void" && i.status !== "cancelled")
+      .map((i) => i.item_name.trim())
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    for (const n of names) itemOrders.set(n, (itemOrders.get(n) || 0) + 1);
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const key = `${names[i]}||${names[j]}`;
+        const row = pairCounts.get(key) || { a: names[i], b: names[j], n: 0 };
+        row.n += 1;
+        pairCounts.set(key, row);
+      }
+    }
+  }
+  const den = orders.length || 1;
+  return [...pairCounts.values()].map((row) => {
+    const pa = (itemOrders.get(row.a) || 0) / den;
+    const pb = (itemOrders.get(row.b) || 0) / den;
+    const pab = row.n / den;
+    const lift = pa && pb ? pab / (pa * pb) : null;
+    return { name: `${row.a} + ${row.b}`, orders: row.n, lift };
+  }).sort((a, b) => (b.lift || 0) - (a.lift || 0)).slice(0, limit);
 }

@@ -2,6 +2,7 @@ export * from "./model.ts";
 export * from "./metrics.ts";
 export * from "./plan.ts";
 export * from "./planner.ts";
+export * from "./period.ts";
 export * from "./operators.ts";
 export * from "./execute.ts";
 export * from "./validate.ts";

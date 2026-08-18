@@ -9,6 +9,8 @@ import type { CommerceQueryPlan } from "./plan.ts";
 import {
   applyCohort,
   basketQty,
+  categoryMix,
+  contributionToSpend,
   distinctProductCount,
   filterOrders,
   guestBand,
@@ -16,13 +18,18 @@ import {
   mean,
   median,
   orderHasFamily,
+  percentile,
   productLift,
   rankProducts,
   ratio,
+  shareChange,
+  spendBuckets,
+  strongestPairs,
   type SemanticItem,
   type SemanticOrder,
   type SemanticSession,
 } from "./operators.ts";
+import { asCalendarDate, clampInclusiveCompleted } from "./period.ts";
 
 export const COMMERCE_EXEC_LIMITS = {
   maxRangeDays: 62,
@@ -62,6 +69,8 @@ export type SemanticExecResult = {
   denominator?: number | null;
   coverage?: CommerceCoverage | null;
   mappingNote?: string | null;
+  evidenceStrength?: "strong_direct" | "strong_derived" | "directional" | "unavailable";
+  diagnostic?: Record<string, unknown> | null;
   debug: {
     planMetric: string;
     calculation: string | null;
@@ -102,7 +111,14 @@ function filtersFromPlan(plan: CommerceQueryPlan) {
 }
 
 function bothCohorts(orders: SemanticOrder[], itemsBy: Map<string, SemanticItem[]>, plan: CommerceQueryPlan) {
-  const a = applyCohort(orders, itemsBy, plan.cohort);
+  let a = applyCohort(orders, itemsBy, plan.cohort);
+  if (
+    plan.seedProduct
+    && (plan.calculation === "cooccurrence" || plan.calculation === "lift")
+    && plan.cohort?.kind !== "contains_product"
+  ) {
+    a = applyCohort(a, itemsBy, { kind: "contains_product", value: plan.seedProduct });
+  }
   let b = orders;
   if (plan.compareCohort) b = applyCohort(orders, itemsBy, plan.compareCohort);
   else if (plan.cohort?.kind === "has_family" && plan.calculation === "cohort_compare") {
@@ -158,30 +174,43 @@ export async function executeCommercePlan(input: {
       return fail("Canonical commerce coverage is unknown for this branch.", input.plan, started, branchId, coverage);
     }
   }
-  let start = input.plan.period?.startDate || coverage?.startDate || "";
-  let end = input.plan.period?.endDate || coverage?.endDate || "";
-  if (coverage?.startDate && start < coverage.startDate) {
-    if (!end || end < coverage.startDate) {
-      return {
-        ok: false,
-        limitation: `Canonical commerce for ${branchId} starts ${coverage.startDate}. ${start} is before ingested coverage.`,
-        coverage,
-        debug: debug(input.plan, started, branchId, 0, 0, { startDate: start, endDate: end }),
-      };
-    }
-    start = coverage.startDate;
+  let start = asCalendarDate(input.plan.period?.startDate) || input.plan.period?.startDate || coverage?.startDate || "";
+  let end = asCalendarDate(input.plan.period?.endDate) || input.plan.period?.endDate || coverage?.endDate || "";
+  start = asCalendarDate(start) || start;
+  end = asCalendarDate(end) || end;
+  const covStart = asCalendarDate(coverage?.startDate) || coverage?.startDate;
+  const covEnd = asCalendarDate(coverage?.endDate) || coverage?.endDate;
+  if (covStart && end && end < covStart) {
+    return {
+      ok: false,
+      limitation: `Canonical commerce for ${branchId} starts ${covStart}. ${start}–${end} is before ingested coverage.`,
+      coverage,
+      evidenceStrength: "unavailable",
+      debug: debug(input.plan, started, branchId, 0, 0, { startDate: start, endDate: end }),
+    };
   }
-  if (coverage?.endDate && end > coverage.endDate) {
-    end = coverage.endDate;
-  }
+  const completed = clampInclusiveCompleted({
+    startDate: start,
+    endDate: end,
+    coverageStart: covStart,
+    coverageEnd: covEnd,
+  });
+  start = completed.startDate;
+  end = completed.endDate;
   const clamped = clampPeriod(start, end);
   start = clamped.startDate;
   end = clamped.endDate;
 
   const ordersRaw = await input.store.fetchOrders({ branchId, startDate: start, endDate: end });
   const itemsRaw = await input.store.fetchItems({ branchId, startDate: start, endDate: end });
-  const orders = ordersRaw.slice(0, COMMERCE_EXEC_LIMITS.maxOrders);
-  const items = itemsRaw.slice(0, COMMERCE_EXEC_LIMITS.maxItems);
+  const orders = ordersRaw.slice(0, COMMERCE_EXEC_LIMITS.maxOrders).map((o) => ({
+    ...o,
+    business_date: asCalendarDate(o.business_date) || String(o.business_date).slice(0, 10),
+  }));
+  const items = itemsRaw.slice(0, COMMERCE_EXEC_LIMITS.maxItems).map((i) => ({
+    ...i,
+    business_date: asCalendarDate(i.business_date) || String(i.business_date).slice(0, 10),
+  }));
   const itemsBy = itemsByOrder(items);
   const filt = filtersFromPlan(input.plan);
   const filtered = filterOrders(orders, itemsBy, filt);
@@ -193,6 +222,38 @@ export async function executeCommercePlan(input: {
 
   const limit = Math.min(input.plan.ranking?.limit || 10, COMMERCE_EXEC_LIMITS.maxRanking);
   const calc = input.plan.calculation || "none";
+  const mappingPct = items.length ? 1 - mappingUnclass / items.length : 1;
+  const evidenceStrength: SemanticExecResult["evidenceStrength"] = !filtered.length
+    ? "unavailable"
+    : mappingPct < 0.7 || (cohort.length > 0 && cohort.length < 20)
+      ? "directional"
+      : (calc === "none" || calc === "penetration" || calc === "percentile" || calc === "spend_buckets")
+        ? "strong_direct"
+        : "strong_derived";
+
+  let prevOrders: SemanticOrder[] = [];
+  let prevItemsBy = itemsBy;
+  if ((calc === "share_change" || calc === "diagnostic") && input.plan.compare?.startDate && input.plan.compare.endDate) {
+    const prevClamp = clampInclusiveCompleted({
+      startDate: input.plan.compare.startDate,
+      endDate: input.plan.compare.endDate,
+      coverageStart: covStart,
+      coverageEnd: covEnd,
+    });
+    if (prevClamp.startDate <= prevClamp.endDate) {
+      const pOrders = await input.store.fetchOrders({ branchId, startDate: prevClamp.startDate, endDate: prevClamp.endDate });
+      const pItems = await input.store.fetchItems({ branchId, startDate: prevClamp.startDate, endDate: prevClamp.endDate });
+      prevOrders = filterOrders(
+        pOrders.slice(0, COMMERCE_EXEC_LIMITS.maxOrders).map((o) => ({ ...o, business_date: asCalendarDate(o.business_date) || String(o.business_date).slice(0, 10) })),
+        itemsByOrder(pItems.slice(0, COMMERCE_EXEC_LIMITS.maxItems)),
+        filt,
+      );
+      prevItemsBy = itemsByOrder(pItems.slice(0, COMMERCE_EXEC_LIMITS.maxItems).map((i) => ({
+        ...i,
+        business_date: asCalendarDate(i.business_date) || String(i.business_date).slice(0, 10),
+      })));
+    }
+  }
 
   if (calc === "cooccurrence") {
     const ranked = rankProducts(cohort, itemsBy, {
@@ -214,8 +275,70 @@ export async function executeCommercePlan(input: {
   }
 
   if (calc === "lift") {
-    const ranked = productLift(cohort, filtered, itemsBy, limit);
-    return ok({ ranking: ranked, cohortSize: cohort.length, baselineSize: filtered.length });
+    const ranked = productLift(cohort.length ? cohort : filtered, filtered, itemsBy, limit);
+    return ok({ ranking: ranked, cohortSize: (cohort.length ? cohort : filtered).length, baselineSize: filtered.length });
+  }
+
+  if (calc === "contribution") {
+    const ranked = contributionToSpend(cohort.length ? cohort : filtered, baseline.length ? baseline : filtered, itemsBy, limit);
+    return ok({ ranking: ranked, cohortSize: (cohort.length ? cohort : filtered).length, baselineSize: (baseline.length ? baseline : filtered).length });
+  }
+
+  if (calc === "share_change") {
+    const ranked = shareChange(filtered, prevOrders.length ? prevOrders : baseline, itemsBy, prevOrders.length ? prevItemsBy : itemsBy, limit);
+    return ok({ ranking: ranked, cohortSize: filtered.length, baselineSize: prevOrders.length || baseline.length });
+  }
+
+  if (calc === "spend_buckets") {
+    const ranking = spendBuckets(filtered);
+    return ok({ ranking, cohortSize: filtered.length, unit: "rate" });
+  }
+
+  if (calc === "percentile") {
+    const vals = filtered.map((o) => Number(o.net_sales) || 0);
+    return ok({
+      value: median(vals),
+      unit: "SAR",
+      label: "median check",
+      ranking: [
+        { name: "median", net_sales: median(vals) },
+        { name: "p90", net_sales: percentile(vals, 90) },
+      ],
+      cohortSize: filtered.length,
+    });
+  }
+
+  if (calc === "pairs") {
+    return ok({ ranking: strongestPairs(cohort.length ? cohort : filtered, itemsBy, limit), cohortSize: (cohort.length ? cohort : filtered).length });
+  }
+
+  if (calc === "diagnostic") {
+    const vals = filtered.map((o) => Number(o.net_sales) || 0);
+    const movers = prevOrders.length
+      ? shareChange(filtered, prevOrders, itemsBy, prevItemsBy, 5)
+      : productLift(applyCohort(filtered, itemsBy, { kind: "spend_gt", value: 300 }), filtered, itemsBy, 5);
+    const mix = categoryMix(filtered, itemsBy);
+    const buckets = spendBuckets(filtered);
+    const dessert = filtered.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "dessert")).length;
+    const food = filtered.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "food")).length;
+    return ok({
+      diagnostic: {
+        orders: filtered.length,
+        averageCheck: mean(vals),
+        medianCheck: median(vals),
+        p90Check: percentile(vals, 90),
+        basketSize: mean(filtered.map((o) => basketQty(itemsBy.get(o.source_order_id) || []))),
+        covers: filtered.reduce((s, o) => s + (Number(o.covers) || 0), 0),
+        highSpendShare: ratio(filtered.filter((o) => (Number(o.net_sales) || 0) > 300).length, filtered.length),
+        dessertShare: ratio(dessert, filtered.length),
+        foodShare: ratio(food, filtered.length),
+        mix: mix.slice(0, 5),
+        buckets,
+        movers: movers.slice(0, 5),
+      },
+      cohortSize: filtered.length,
+      ranking: movers.slice(0, 5),
+    });
   }
 
   if (calc === "attach_rate" && input.plan.entity === "sessions") {
@@ -336,8 +459,10 @@ export async function executeCommercePlan(input: {
       ok: true,
       mappingNote,
       coverage,
+      evidenceStrength,
       debug: debug(input.plan, started, branchId, orders.length, items.length, { startDate: start, endDate: end }),
       ...extra,
+      evidenceStrength: extra.evidenceStrength || evidenceStrength,
     };
   }
 }
