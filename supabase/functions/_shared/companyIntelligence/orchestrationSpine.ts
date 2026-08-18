@@ -30,10 +30,19 @@ import { extractCommercialMetric, extractAnalysisIntent, hasComparisonIntent, is
 import { HISTORY_LOOKBACK_DAYS } from "./managementAnalyst.ts";
 import { isBroadManagementQuestion } from "./managementReasoning.ts";
 import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
-import type { StructuredConversationState } from "./conversationState.ts";
+import { updateConversationState, type StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
 import { requiresDineInSessionEvidence } from "./commerce/intent.ts";
+import {
+  executeCommercePlan,
+  looksLikeSemanticCommerceQuestion,
+  planSemanticCommerce,
+  synthesizeSemanticCommerce,
+  validateSemanticResult,
+  type CommerceQueryPlan,
+  type CommerceStore,
+} from "./commerce/semantic/index.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
 import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 import {
@@ -81,6 +90,7 @@ export type OrchestrationOptions = {
   mode?: "auto" | "heuristic" | "offline";
   maxPaidCalls?: number;
   publishedCommerce?: PublishedCommerce | null;
+  commerceStore?: CommerceStore | null;
 };
 
 export type OrchestrationResult = {
@@ -219,6 +229,7 @@ export function isManagementIntelligenceQuestion(
 ) {
   const q = String(question || "").trim();
   if (isFabricManagedTurn(q)) return true;
+  if (looksLikeSemanticCommerceQuestion(q)) return true;
   const intent = String(legacyRoute?.intent || "");
   if (/^vault_cash_up|^vault_operational|^vault_business_reasoning|^executive_analysis/.test(intent)) {
     return true;
@@ -520,6 +531,84 @@ export async function runCompanyIntelligenceOrchestration(
       insights: feasibility.suggestedAlternatives || [],
       nextConversation: state.conversation,
       toolsExecuted: [],
+      paidModelCalls: 0,
+    };
+  }
+
+  const prevSemantic = (followUp.conversation?.activeSemanticPlan || null) as CommerceQueryPlan | null;
+  const semanticFollow = Boolean(prevSemantic) && (
+    isPeriodOnlyFollowUpTurn(followUp.resolvedQuestion, options.referenceDate || new Date())
+    || /^(?:only |what about|how about|and |same for)/i.test(String(options.question || "").trim())
+    || /\bonly (?:desserts?|after)|after \d|weekends?|july|august\b/i.test(followUp.resolvedQuestion)
+  );
+  const wantSemantic = Boolean(options.commerceStore)
+    && (looksLikeSemanticCommerceQuestion(followUp.resolvedQuestion) || semanticFollow);
+
+  if (wantSemantic && options.commerceStore) {
+    const planned = planSemanticCommerce({
+      question: followUp.resolvedQuestion,
+      branchId: primaryBranchId,
+      period: followUp.currentPeriod || state.periods.current,
+      comparePeriod: followUp.comparisonPeriod || state.periods.comparison,
+      previousPlan: prevSemantic,
+    });
+    const plan = planned.plan;
+    let text: string;
+    let verified = true;
+    if (!plan) {
+      text = planned.reason || "This commerce question is not supported by the semantic registry.";
+    } else if (plan.outputIntent === "limitation" || !planned.ok) {
+      text = planned.reason || plan.unavailable?.reason || "This field is not available in canonical commerce.";
+    } else {
+      const exec = await executeCommercePlan({ plan, store: options.commerceStore, scope: state.scope });
+      const validation = validateSemanticResult(plan, exec);
+      text = synthesizeSemanticCommerce({
+        question: followUp.resolvedQuestion,
+        plan,
+        result: exec,
+        validation: exec.ok ? validation : { ok: true, warnings: validation.warnings },
+      });
+      verified = exec.ok ? validation.ok : true;
+    }
+    const nextConversation = updateConversationState(state.conversation, {
+      activeMetricFamily: "commerce",
+      previousIntent: "commerce.semantic",
+      activeSemanticPlan: (plan || prevSemantic) as Record<string, unknown> | null,
+      activePeriods: {
+        current: followUp.currentPeriod || state.periods.current,
+        comparison: followUp.comparisonPeriod || state.periods.comparison,
+      },
+    });
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified },
+      conversation: nextConversation,
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: verified,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "commerce_semantic",
+      },
+      plan: {
+        ...state.plan,
+        goal: "commerce_semantic",
+        capabilities: ["commerce.semantic_query"],
+        researchBudgetTier: 0,
+        needsClarification: false,
+        clarificationPrompt: null,
+      },
+    });
+    return {
+      state,
+      answerText: text,
+      answerType: plan?.outputIntent === "limitation" ? "unavailable" : "commerce",
+      keyMetrics: [],
+      insights: [],
+      nextConversation,
+      toolsExecuted: plan ? ["commerce_semantic_query"] : [],
       paidModelCalls: 0,
     };
   }

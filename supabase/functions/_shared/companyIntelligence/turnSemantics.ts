@@ -14,6 +14,7 @@ import { normalizeBranchId } from "./scope.ts";
 import { addIsoDays, formatManagerDate, formatManagerPeriod, isoWeekdayIndex } from "./managementPresentation.ts";
 import { completedThroughDate, formatThroughPeriod } from "./calendarCompletion.ts";
 import { extractCommerceFocus, isCommerceManagementTurn, type CommerceFocus } from "./commerce/intent.ts";
+import { looksLikeSemanticCommerceQuestion } from "./commerce/semantic/planner.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import type { DateRange } from "./types.ts";
@@ -348,6 +349,7 @@ export function isFabricManagedTurn(question: string): boolean {
   if (/\b(best|worst|top|bottom)\s+\d/i.test(q)) return true;
   if (/\b(best|worst|top|bottom)\b/i.test(q) && /\bdays?\b/i.test(q)) return true;
   if (isCommerceManagementTurn(q)) return true;
+  if (looksLikeSemanticCommerceQuestion(q)) return true;
   return false;
 }
 

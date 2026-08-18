@@ -27,7 +27,8 @@ export type CapabilityId =
   | "commerce.basket_relationship"
   | "commerce.compare_mix"
   | "commerce.branch_decomposition"
-  | "commerce.opportunity_model";
+  | "commerce.opportunity_model"
+  | "commerce.semantic_query";
 
 export type CapabilityDefinition = {
   id: CapabilityId;
@@ -237,6 +238,14 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = O
     domain: "COMMERCE",
     description: "Modeled opportunity estimates from mix/volume scenarios",
     implementationTool: "commerce_opportunity",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "commerce.semantic_query": {
+    id: "commerce.semantic_query",
+    domain: "COMMERCE",
+    description: "General semantic query over canonical commerce orders/items/sessions",
+    implementationTool: "commerce_semantic_query",
     requiresPaidModel: false,
     defaultBudgetTier: 0,
   },

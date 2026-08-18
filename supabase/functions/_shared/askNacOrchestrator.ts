@@ -1225,6 +1225,7 @@ export async function processAskNacOnEdge(
     });
 
     const publishedCommerce = await loadPublishedCommerce(supabase, authorizedScope.scope.primaryBranchId);
+    const { createSupabaseCommerceStore } = await import("./companyIntelligence/commerce/semantic/store.ts");
 
     const spine = await runCompanyIntelligenceOrchestration({
       question: prepareResult.originalQuestion || effectiveQuestion,
@@ -1244,6 +1245,7 @@ export async function processAskNacOnEdge(
       executor: vaultExecutor,
       mode: Deno.env.get("ASK_NAC_PLANNER_MODE") === "heuristic" ? "heuristic" : "auto",
       publishedCommerce,
+      commerceStore: createSupabaseCommerceStore(supabase),
     });
     managementPlannerMs = Math.round(performance.now() - spineStartedAt);
     managementPlannerMeta = {

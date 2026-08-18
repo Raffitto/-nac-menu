@@ -28,3 +28,4 @@ export * from "./mailboxAdapter.ts";
 export * from "./csvAdapter.ts";
 export * from "./idempotency.ts";
 export * from "./publishedStore.ts";
+export * from "./semantic/index.ts";

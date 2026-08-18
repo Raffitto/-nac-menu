@@ -122,6 +122,7 @@ export function resolveCapabilityImplementation(capability: CapabilityId): {
     case "commerce.basket_relationship":
     case "commerce.branch_decomposition":
     case "commerce.opportunity_model":
+    case "commerce.semantic_query":
       return { implementationTool: tool, queryFocus: "commerce_session", vaultIntent: null };
     default:
       return { implementationTool: tool, queryFocus: null, vaultIntent: null };
