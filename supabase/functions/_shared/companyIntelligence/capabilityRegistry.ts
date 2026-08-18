@@ -157,18 +157,18 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = O
   "research.historical_weather": {
     id: "research.historical_weather",
     domain: "RESEARCH",
-    description: "Historical weather for a geography/period",
+    description: "Historical weather for a geography/period (Open-Meteo, cached, founder-free)",
     implementationTool: "research_weather",
     requiresPaidModel: false,
-    defaultBudgetTier: 3,
+    defaultBudgetTier: 1,
   },
   "research.external_events": {
     id: "research.external_events",
     domain: "RESEARCH",
-    description: "Bounded external/local event research",
+    description: "Bounded calendar/sports/local event context (no paid sports API)",
     implementationTool: "research_external",
-    requiresPaidModel: true,
-    defaultBudgetTier: 3,
+    requiresPaidModel: false,
+    defaultBudgetTier: 1,
   },
   "analytics.safe_compute": {
     id: "analytics.safe_compute",

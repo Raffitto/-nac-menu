@@ -520,6 +520,24 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     });
   }
 
+  const lastNMonths = q.match(/\b(last|past)\s+(\d{1,2})\s+months?\b/);
+  if (lastNMonths) {
+    const n = Math.min(24, Math.max(1, Number(lastNMonths[2])));
+    const end = shiftLocalDate(referenceDate, 0);
+    const start = new Date(end.getFullYear(), end.getMonth() - n, end.getDate());
+    const startDate = isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate());
+    const endDate = isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate());
+    return {
+      startDate,
+      endDate,
+      label: `last ${n} months`,
+      periodType: `last_${n}_months`,
+      isSingleDay: false,
+      isRange: true,
+      expectedDayCount: listPeriodDates({ startDate, endDate }).length,
+    };
+  }
+
   if (/\b(last|past)\s+two\s+weeks?\b/.test(q)) {
     return rollingRange(referenceDate, 14, { label: "last 14 days", periodType: "last_14_days" });
   }
@@ -895,7 +913,8 @@ const CASH_UP_ANALYTICS_PERIOD_TYPES = new Set([
 
 function isRollingDayPeriodType(periodType) {
   return /^last_\d+_days$/.test(periodType || "")
-    || /^previous_\d+_days$/.test(periodType || "");
+    || /^previous_\d+_days$/.test(periodType || "")
+    || /^last_\d+_months$/.test(periodType || "");
 }
 
 export function isVaultCashUpAnalyticsPeriod(period) {

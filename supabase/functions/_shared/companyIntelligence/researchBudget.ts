@@ -48,9 +48,9 @@ export function decideResearchBudget(input: {
   if (input.requiresExternalResearch || /\b(why|explain|research|weather|news|political|economic)\b/.test(q)) {
     reasons.push("external_or_causal_investigation");
     return {
-      tier: 3,
-      label: "deep_research",
-      allowPaidModel: true,
+      tier: 2,
+      label: "investigation",
+      allowPaidModel: false,
       maxInternalTools: 6,
       maxResearchPasses: 1,
       reasons,

@@ -62,7 +62,14 @@ export const SOURCE_AUTHORITY_REGISTRY: Record<string, SourceAuthorityRecord> = 
     authority: "EXTERNAL_CONTEXT",
     domain: "weather",
     mayOverrideCanonical: false,
-    notes: "External context only",
+    notes: "Open-Meteo / cached weather — external context only, never canonical sales",
+  },
+  open_meteo_archive: {
+    sourceId: "open_meteo_archive",
+    authority: "EXTERNAL_CONTEXT",
+    domain: "weather",
+    mayOverrideCanonical: false,
+    notes: "CC BY 4.0 historical weather; association only",
   },
   web_news: {
     sourceId: "web_news",

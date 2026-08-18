@@ -327,9 +327,9 @@ export async function executeBuiltinCapability(
       implementationTool: CAPABILITY_REGISTRY[req.capability].implementationTool,
       ok: true,
       skipped: true,
-      skipReason: "paid_research_disabled",
+      skipReason: "delegated_to_external_reality_engine",
       metrics: [],
-      textSnippets: ["External research is disabled in this phase."],
+      textSnippets: ["External research is executed by External Reality Engine v1 (cached free sources), not this capability stub."],
       coverage: null,
       raw: null,
     };

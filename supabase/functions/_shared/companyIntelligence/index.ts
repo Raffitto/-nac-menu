@@ -18,7 +18,7 @@ export * from "./researchBudget.ts";
 export * from "./sourceAuthority.ts";
 export * from "./coverageModel.ts";
 export * from "./evidenceLedger.ts";
-export * from "./externalResearchBroker.ts";
+export * from "./externalReality/index.ts";
 export * from "./causalPolicy.ts";
 export * from "./safeAnalytics.ts";
 export * from "./evidenceCritic.ts";

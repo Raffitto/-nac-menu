@@ -51,6 +51,7 @@ export function synthesizeDeterministicAnswer(input: {
   commerceFocus?: import("./commerce/types.ts").CommerceFocus;
   publishedCommerce?: PublishedCommerce | null;
   openingDate?: string | null;
+  externalContext?: string | null;
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
   if (input.commerceFocus) {
@@ -135,6 +136,7 @@ export function synthesizeDeterministicAnswer(input: {
     causalNote: ops.length && /\bwhy|cause|shit|wrong\b/i.test(input.question)
       ? allowedInferenceWording()
       : null,
+    externalContext: input.externalContext || null,
     offline: Boolean(input.offlineAnalysis),
   });
 }

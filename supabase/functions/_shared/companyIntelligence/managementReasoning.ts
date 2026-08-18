@@ -727,6 +727,7 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
   holiday?: string | null;
   ops?: string | null;
   causalNote?: string | null;
+  externalContext?: string | null;
   offline?: boolean;
 } = {}): string {
   if (reasoning.responseMode === "numbers_only") {
@@ -797,6 +798,7 @@ export function composeReasonedAnswer(reasoning: ManagementReasoning, extras: {
   if (extras.holiday) cleaned.push(extras.holiday);
   if (extras.ops) cleaned.push(extras.ops);
   if (extras.causalNote) cleaned.push(extras.causalNote);
+  if (extras.externalContext) cleaned.push(extras.externalContext);
   if (!cleaned.length) {
     cleaned.push("Verified structured evidence for this question is limited or unavailable.");
   }

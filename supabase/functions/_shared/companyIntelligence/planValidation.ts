@@ -36,7 +36,7 @@ export function validateCapabilityPlan(
 
     if (
       (raw === "research.external_events" || raw === "research.historical_weather")
-      && (state.plan.researchBudgetTier || 0) < 3
+      && (state.plan.researchBudgetTier || 0) < 1
     ) {
       rejected.push({ capability: raw, reason: "budget_tier_too_low" });
       continue;

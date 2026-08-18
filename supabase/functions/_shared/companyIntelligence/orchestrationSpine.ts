@@ -88,7 +88,12 @@ import {
   type SupervisorGoal,
 } from "./reasoningSupervisor.ts";
 import { formatKnowledgeStateAnswer, latestThroughByReport } from "./knowledgeState.ts";
+import { createEvidence } from "./evidenceLedger.ts";
 import { ksaCalendarIso } from "./calendarCompletion.ts";
+import {
+  runExternalRealityEngine,
+  shouldConsiderExternalReality,
+} from "./externalReality/index.ts";
 import {
   CASH_UP_CHAT_ACQUISITION_BLOCKER,
   commerceCoversPeriod,
@@ -122,6 +127,10 @@ export type OrchestrationOptions = {
   maxPaidCalls?: number;
   publishedCommerce?: PublishedCommerce | null;
   commerceStore?: CommerceStore | null;
+  externalReality?: {
+    weatherDeps?: import("./externalReality/weather.ts").WeatherFetchDeps;
+    localDeps?: import("./externalReality/localEvents.ts").LocalEventDeps;
+  };
 };
 
 export type OrchestrationResult = {
@@ -407,6 +416,61 @@ async function executeCapabilities(
 
 function cashUpMissingFromText(text: string): boolean {
   return /Cash Up for .+ is not yet available|authoritative Cash Up headline|latest completed Cash Up/i.test(text);
+}
+
+async function applyExternalRealityLayer(input: {
+  question: string;
+  goal: SupervisorGoal;
+  branchId: string | null;
+  current: { startDate: string; endDate: string; label?: string | null } | null;
+  comparison: { startDate: string; endDate: string; label?: string | null } | null;
+  evidence: import("./evidenceLedger.ts").EvidenceRecord[];
+  answerText: string;
+  tools: string[];
+  weatherDeps?: import("./externalReality/weather.ts").WeatherFetchDeps;
+  localDeps?: import("./externalReality/localEvents.ts").LocalEventDeps;
+}): Promise<{ answerText: string; tools: string[]; warnings: string[]; extraEvidence: import("./evidenceLedger.ts").EvidenceRecord[] }> {
+  if (!shouldConsiderExternalReality(input.question, input.goal) || !input.current) {
+    return { answerText: input.answerText, tools: input.tools, warnings: [], extraEvidence: [] };
+  }
+  const ext = await runExternalRealityEngine({
+    question: input.question,
+    branchId: input.branchId,
+    current: input.current,
+    comparison: input.comparison,
+    evidence: input.evidence,
+    weatherDeps: input.weatherDeps,
+    localDeps: input.localDeps,
+  });
+  const extraEvidence = ext.findings.flatMap((finding) =>
+    finding.facts.map((fact) =>
+      createEvidence({
+        id: fact.id,
+        source: fact.source,
+        domain: "EXTERNAL",
+        branchId: fact.branchId || input.branchId,
+        period: { startDate: fact.startAt, endDate: fact.endAt },
+        metricOrEvent: fact.metricOrEvent,
+        value: fact.value,
+        textSummary: finding.statement,
+        freshness: fact.fetchedAt,
+        confidence: fact.quality === "high" ? "high" : "medium",
+      })
+    )
+  );
+  const answerText = ext.answerSection
+    ? `${input.answerText} ${ext.answerSection}`.trim()
+    : input.answerText;
+  return {
+    answerText,
+    tools: [...input.tools, ...ext.plan.selectedTools],
+    warnings: [
+      `external_reality:${ext.stoppedBecause}`,
+      `external_calls:${ext.externalCalls}`,
+      `external_paid:${ext.paidCalls}`,
+    ],
+    extraEvidence,
+  };
 }
 
 async function finalizeSpineResult(input: {
@@ -907,6 +971,29 @@ export async function runCompanyIntelligenceOrchestration(
     const text = !valid.ok && uniPlan.unavailable
       ? uniPlan.unavailable.reason
       : synthesizeUniversalManagement(executed);
+    const uniEvidence = executed.evidence.map((e) =>
+      createEvidence({
+        source: e.provenance || "cash_up",
+        domain: e.domain === "commerce" ? "INTERNAL_STRUCTURED" : "INTERNAL_STRUCTURED",
+        branchId: primaryBranchId,
+        period: uniPlan.period,
+        metricOrEvent: e.metric || "value",
+        value: typeof e.value === "number" ? e.value : null,
+        textSummary: String(e.metric || ""),
+      })
+    );
+    const withExternal = await applyExternalRealityLayer({
+      question: askedQuestionEarly,
+      goal: supervisorGoal,
+      branchId: primaryBranchId,
+      current: uniPlan.period || currentPeriod,
+      comparison: uniPlan.compare || comparisonPeriod,
+      evidence: uniEvidence,
+      answerText: text,
+      tools: executed.tools,
+      weatherDeps: options.externalReality?.weatherDeps,
+      localDeps: options.externalReality?.localDeps,
+    });
     const nextConversation = updateConversationState(state.conversation, {
       activeMetricFamily: "universal",
       previousIntent: "universal.management",
@@ -919,7 +1006,7 @@ export async function runCompanyIntelligenceOrchestration(
       filterPatch: weekendOnly ? { weekendOnly: true } : undefined,
     });
     state = transition(state, "COMPLETE", {
-      answer: { text, verified: true },
+      answer: { text: withExternal.answerText, verified: true },
       conversation: nextConversation,
       cost: {
         ...state.cost,
@@ -931,6 +1018,8 @@ export async function runCompanyIntelligenceOrchestration(
         budgetTier: 0,
         requestCategory: "universal_management",
       },
+      warnings: [...state.warnings, ...withExternal.warnings],
+      evidence: [...state.evidence, ...withExternal.extraEvidence],
       plan: {
         ...state.plan,
         goal: uniPlan.intent,
@@ -942,7 +1031,7 @@ export async function runCompanyIntelligenceOrchestration(
     });
     return await finish({
       state,
-      answerText: text,
+      answerText: withExternal.answerText,
       answerType: uniPlan.synthesis === "limitation" ? "unavailable" : "management_intelligence",
       keyMetrics: executed.evidence.filter((e) => typeof e.value === "number").slice(0, 8).map((e) => ({
         label: `${e.domain}.${e.metric}`,
@@ -951,7 +1040,7 @@ export async function runCompanyIntelligenceOrchestration(
       })),
       insights: executed.opportunities.map((o) => o.title),
       nextConversation,
-      toolsExecuted: executed.tools,
+      toolsExecuted: withExternal.tools,
       paidModelCalls: 0,
     });
   }
@@ -1434,6 +1523,32 @@ export async function runCompanyIntelligenceOrchestration(
     }
   }
 
+  let externalContext: string | null = null;
+  if (shouldConsiderExternalReality(askedQuestionEarly, supervisorGoal) && state.periods.current) {
+    const layered = await applyExternalRealityLayer({
+      question: askedQuestionEarly,
+      goal: supervisorGoal,
+      branchId: state.scope.primaryBranchId,
+      current: state.periods.current,
+      comparison: state.periods.comparison,
+      evidence: state.evidence,
+      answerText: "",
+      tools: toolsExecuted,
+      weatherDeps: options.externalReality?.weatherDeps,
+      localDeps: options.externalReality?.localDeps,
+    });
+    externalContext = layered.answerText || null;
+    toolsExecuted = layered.tools;
+    if (layered.extraEvidence.length) {
+      state = patchIntelligenceState(state, {
+        evidence: [...state.evidence, ...layered.extraEvidence],
+        warnings: [...state.warnings, ...layered.warnings],
+      });
+    } else if (layered.warnings.length) {
+      state = patchIntelligenceState(state, { warnings: [...state.warnings, ...layered.warnings] });
+    }
+  }
+
   // Synthesis — cloud when enabled; unpaid local when cloud off but local synth configured.
   const localUnpaidSynth = gateway.config.synthesizeProvider === "openai_compatible_local"
     && Boolean(gateway.config.localBaseUrl);
@@ -1476,6 +1591,7 @@ export async function runCompanyIntelligenceOrchestration(
       ? defaultBusinessTimeline.getOpeningDate(state.scope.primaryBranchId)
       : null,
     offlineAnalysis: !cloudEnabled && !localUnpaidSynth && !fastPath && budget.tier >= 1,
+    externalContext,
   };
 
   let answerText = synthesizeDeterministicAnswer(synthesisInput);

@@ -11,3 +11,8 @@ if (typeof global.TextEncoder === 'undefined') {
 if (typeof global.TextDecoder === 'undefined') {
   global.TextDecoder = TextDecoder;
 }
+
+// External Reality live HTTP is opt-in; unit tests stay offline.
+if (!process.env.NAC_ALLOW_EXTERNAL_FETCH) {
+  process.env.NAC_SKIP_EXTERNAL_FETCH = process.env.NAC_SKIP_EXTERNAL_FETCH || "1";
+}

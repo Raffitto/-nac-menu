@@ -46,9 +46,10 @@ export function critiqueEvidence(input: {
 
   const hasCommercial = evidence.some((e) => e.source === "cash_up" || e.domain === "INTERNAL_STRUCTURED");
   const hasOps = evidence.some((e) => e.source === "logbook" || e.domain === "INTERNAL_QUALITATIVE");
+  const hasExternal = evidence.some((e) => e.domain === "EXTERNAL");
   const causalAsk = /\b(why|cause|caused|explain)\b/.test(q);
 
-  if (causalAsk && hasCommercial && !hasOps) {
+  if (causalAsk && hasCommercial && !hasOps && !hasExternal) {
     gaps.push("causal_question_without_explanatory_evidence");
   }
 
