@@ -7,6 +7,7 @@ testBudget: whatsappBridge|aiControlProtocol
 deploy: none
 onDemandAllowed: false
 mergeToMain: false
+issuedAt: 2026-08-18T23:05:00+03:00
 ---
 
 # NAC-COMMS-0001 — Free WhatsApp Engineering Control Bridge Proof
