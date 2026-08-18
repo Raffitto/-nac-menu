@@ -146,10 +146,6 @@ export function filterOrders(
       const h = wallHour(order.opened_at);
       if (h == null || h < opts.hourGte) return false;
     }
-    if (opts.family) {
-      const basket = itemsBy.get(order.source_order_id) || [];
-      if (!orderHasFamily(basket, opts.family)) return false;
-    }
     return true;
   });
 }

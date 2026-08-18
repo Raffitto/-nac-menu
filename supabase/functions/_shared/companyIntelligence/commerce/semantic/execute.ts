@@ -110,7 +110,11 @@ function bothCohorts(orders: SemanticOrder[], itemsBy: Map<string, SemanticItem[
   } else if (plan.cohort?.kind === "weekend" && plan.compareCohort?.kind === "weekday") {
     b = applyCohort(orders, itemsBy, { kind: "weekday" });
   }
-  if (plan.cohort?.kind === "has_family" && plan.compareCohort?.kind === "not_has_family") {
+  if (
+    plan.cohort?.kind === "has_family"
+    && plan.compareCohort?.kind === "not_has_family"
+    && String(plan.cohort.value) !== String(plan.compareCohort.value)
+  ) {
     return {
       a: a.filter((o) => {
         const basket = itemsBy.get(o.source_order_id) || [];

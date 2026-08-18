@@ -149,8 +149,8 @@ export function planSemanticCommerce(input: {
   };
 
   if (input.branchId) addFilter("branch", "eq", input.branchId);
-  if (/\bweekend\b/.test(qLower) && !/\bweekday/.test(qLower)) addFilter("weekend", "eq", true);
-  if (/\bweekday/.test(qLower) && !/\bweekend\b/.test(qLower)) addFilter("weekend", "eq", false);
+  if (/\bweekends?\b/.test(qLower) && !/\bweekdays?/.test(qLower)) addFilter("weekend", "eq", true);
+  if (/\bweekdays?/.test(qLower) && !/\bweekends?\b/.test(qLower)) addFilter("weekend", "eq", false);
   const hourGte = extractHourGte(q);
   if (hourGte != null) addFilter("hour", "gte", hourGte);
   if (/\bonly desserts?\b|\bonly dessert\b/.test(qLower) || (/\bonly\b/.test(qLower) && /\bdessert/.test(qLower))) {
