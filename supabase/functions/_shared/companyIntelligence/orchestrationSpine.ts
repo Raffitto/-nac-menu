@@ -34,6 +34,7 @@ import { updateConversationState, type StructuredConversationState } from "./con
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
 import { requiresDineInSessionEvidence } from "./commerce/intent.ts";
+import { computeTableMixFromStore, tableMixToPublishedCommerce } from "./commerce/tableMix.ts";
 import {
   executeCommercePlan,
   looksLikeHeadlinePlusOperational,
@@ -1231,6 +1232,95 @@ export async function runCompanyIntelligenceOrchestration(
       toolsExecuted: [],
       paidModelCalls: 0,
     });
+  }
+  if (
+    commerceFocus
+    && requiresDineInSessionEvidence(commerceFocus)
+    && options.commerceStore
+    && state.periods.current
+    && primaryBranchId
+  ) {
+    const computed = await computeTableMixFromStore({
+      store: options.commerceStore,
+      scope: state.scope,
+      period: state.periods.current,
+      comparisonPeriod: requiresComparison ? state.periods.comparison : null,
+    });
+    if (computed.ok && computed.result?.mix.totalSessions) {
+      const publishedFromStore = tableMixToPublishedCommerce(computed.result);
+      let text = answerPublishedCommerce(commerceFocus, publishedFromStore);
+      if (computed.result.diagnostics.limitation) {
+        text = `${text} Coverage note: ${computed.result.diagnostics.limitation}`;
+      }
+      const capabilities: import("./capabilityRegistry.ts").CapabilityId[] = requiresComparison
+        ? ["commerce.compare_mix"]
+        : ["commerce.session_mix"];
+      state = transition(state, "COMPLETE", {
+        answer: { text, verified: true },
+        cost: {
+          ...state.cost,
+          deterministicRouteUsed: true,
+          plannerUsed: false,
+          paidModelCallsPerAnswer: 0,
+          verifierOk: true,
+          latencyMs: Date.now() - started,
+          budgetTier: 0,
+          requestCategory: "commerce_session",
+        },
+        plan: {
+          ...state.plan,
+          goal: "commerce_session",
+          capabilities,
+          researchBudgetTier: 0,
+          needsClarification: false,
+          clarificationPrompt: null,
+        },
+      });
+      return await finish({
+        state,
+        answerText: text,
+        answerType: "commerce",
+        keyMetrics: [],
+        insights: [],
+        nextConversation: state.conversation,
+        toolsExecuted: [],
+        paidModelCalls: 0,
+      });
+    }
+    if (computed.rbacBlocked) {
+      const text = "Your access does not include this branch for commerce session analysis.";
+      state = transition(state, "COMPLETE", {
+        answer: { text, verified: true },
+        cost: {
+          ...state.cost,
+          deterministicRouteUsed: true,
+          plannerUsed: false,
+          paidModelCallsPerAnswer: 0,
+          verifierOk: true,
+          latencyMs: Date.now() - started,
+          budgetTier: 0,
+          requestCategory: "commerce_session_rbac",
+        },
+        plan: {
+          ...state.plan,
+          goal: "commerce_session",
+          capabilities: ["commerce.session_mix"],
+          researchBudgetTier: 0,
+          needsClarification: false,
+          clarificationPrompt: null,
+        },
+      });
+      return await finish({
+        state,
+        answerText: text,
+        answerType: "commerce_unavailable",
+        keyMetrics: [],
+        insights: [],
+        nextConversation: state.conversation,
+        toolsExecuted: [],
+        paidModelCalls: 0,
+      });
+    }
   }
   if (requiresDineInSessionEvidence(commerceFocus)) {
     const text = missingSessionEvidenceAnswer();

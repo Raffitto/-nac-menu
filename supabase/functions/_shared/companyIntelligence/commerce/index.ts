@@ -2,6 +2,7 @@ export * from "./types.ts";
 export * from "./archetypes.ts";
 export * from "./productMapping.ts";
 export * from "./metrics.ts";
+export * from "./tableMix.ts";
 export * from "./opportunity.ts";
 export * from "./decomposition.ts";
 export * from "./synthesis.ts";

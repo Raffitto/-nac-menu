@@ -1,93 +1,107 @@
 # LAST_HANDOFF
 
-- task ID: **NAC-COMMS-0001**
-- result: **PASS_WITH_HOSTING_BLOCKER**
-- WhatsApp control bridge: **PASS_WITH_HOSTING_BLOCKER**
+- task ID: **NAC-COMMERCE-0001**
+- result: **PASS**
 
-## Recommended OSS
+## Summary
 
-| Field | Value |
+Delivered canonical table-mix intelligence end-to-end: a single deterministic `computeTableMix` / `computeTableMixFromStore` aggregator over existing archetype + session metrics, wired into Ask NAC Fabric orchestration so commerce session questions answer from canonical order/item rows for arbitrary supported periods (not only pre-published snapshots).
+
+## Architecture / capability
+
+| Layer | Action |
 |---|---|
-| Candidate | **whatsapp-web.js** |
-| Package / version | `whatsapp-web.js@1.34.7` |
-| License | Apache-2.0 (commercial self-host OK) |
-| Alternative evaluated | `@wppconnect/server@2.10.0` (Apache-2.0) — REFERENCE ONLY |
+| **Reused** | `archetypes.ts`, `metrics.ts` (`buildDineInSessions`, `summarizeServiceMix`, `compareServiceMix`), `synthesis.ts`, `intent.ts`, `capabilityRegistry` (`commerce.session_mix`, `commerce.compare_mix`) |
+| **Added** | `commerce/tableMix.ts` — typed `TableMixResult` + `TableMixDiagnostics`, RBAC-aware store fetch, evidence/coverage diagnostics |
+| **Wired** | `orchestrationSpine.ts` — computes from `commerceStore` when published snapshot absent; comparison only when explicit compare intent + comparison period resolved |
 
-**Why whatsapp-web.js over wppconnect-server:** Single-controller engineering bridge needs one WhatsApp Web session, allowlist gate, and GitHub adapter — not a multi-session REST server. Lower implementation footprint; `LocalAuth` session persistence; same send/receive/media capabilities.
+## Supported question families
 
-## Capabilities proven (adapter layer)
+- Dessert-focused table share (“What % of our tables were dessert tables in July?”)
+- Food-containing share
+- Dessert conversion within food-containing sessions (`full-service / food-containing`)
+- Dessert-at-all (basket) vs dessert-focused distinction preserved
+- Session mix / dessert tables vs food tables
+- Period comparison with percentage-point deltas (explicit compare intent only)
+- Average check by archetype
+- RBAC branch isolation; coverage/unclassified diagnostics surfaced
 
-| Capability | Status |
+## Deterministic archetype semantics (unchanged, consolidated)
+
+| Archetype | Rule |
 |---|---|
-| Send (outbound formatting) | PASS — daily handoff summary + blocker/decision request payloads |
-| Receive (inbound normalization) | PASS — QUESTION, STATUS_REQUEST, CHANGE_REQUEST, APPROVAL, REJECTION, ATTACHMENT |
-| Text | PASS |
-| Media / attachment metadata | PASS — filename, mimetype, byteLength; local paths excluded from GitHub artifacts |
-| Session persistence | DOCUMENTED — `LocalAuth` dir outside repo (not wired live in this proof) |
-| Reconnect | DOCUMENTED — library reloads persisted session on process restart |
-| Controller allowlist | PASS — only configured E.164 allowlist; unknown rejected deterministically |
-| GitHub control-plane integration | PASS — `buildGitHubControlArtifact` routes AUTO → artifact, ASK_RAFFI → pending decision, unknown → ignore; references `PERMISSIONS.md` |
+| `dessert_only` | dessert, no food |
+| `dessert_and_coffee` | dessert + coffee, no food |
+| `dessert-focused` | `dessert_only + dessert_and_coffee` (excludes full-service) |
+| `food_only` / `food_and_beverage` / `full_service` | food-containing family |
+| `full_service` | food + dessert |
+| `unclassified` | unknown-only baskets or zero known items — never silently reassigned |
 
-## Laptop-off 24/7 zero-cost verdict
+## Comparison semantics
 
-**FREE SOFTWARE PROVEN; LAPTOP-OFF 24/7 HOSTING BLOCKED IN FOUNDER-FREE MODE**
+- Both periods computed independently with identical semantics.
+- Deltas in **percentage points** for shares/conversion (`compareTableMixPeriods` → `mixComparisonAnswer`).
+- Comparison attached only when orchestration `requiresComparison` is true (not inferred from single-period questions).
 
-| Runtime | Persistent WhatsApp? | $0 recurring? | Notes |
-|---|---|---|---|
-| GitHub Actions | No | Yes | Event-driven; cannot hold Chromium 24/7 |
-| Cursor Cloud Agents | No | Yes | Engineering worker only (`@cursor` on issue #2) |
-| Supabase Edge | No | Yes | Wrong runtime for Puppeteer/WhatsApp Web |
-| Raffi laptop (local Node) | Yes (when on) | Yes | Proof path for send/receive |
-| Future VPS / always-on hardware | Yes | Not $0 without purchase | Cheapest future path if Raffi approves |
+## Coverage / evidence behavior
 
-**Free persistent host found for WhatsApp bridge:** **none** at $0 with laptop off.
+- `TableMixDiagnostics`: order–item join rate, unmapped item rows, unclassified session count/share, `CommerceQuality` dimensions.
+- Limitation text appended when join &lt; 90% or unclassified &gt; 15%.
+- `buildEvidenceSummary` attached; Cash Up remains headline sales authority.
 
-## Security boundaries
+## RBAC proof
 
-- Unknown numbers: no GitHub task changes, no private engineering state leaked
-- `approve` / `reject` / `change`: ASK_RAFFI — recorded, not auto-executed
-- No session credentials, tokens, or QR material in git
-- Controller phone redacted in artifacts (`+966…41` pattern)
-- Allowlist via runtime env `NAC_COMMS_CONTROLLER_E164` (not committed)
+- `computeTableMixFromStore` enforces `assertBranchScopePreserved` + `allowedBranchIds`.
+- Orchestration returns explicit branch-access denial when RBAC blocks.
 
-## Custom code added
+## Cash Up authority proof
+
+- `selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up`.
+- Session mix uses `canonical_commerce_sessions`; no silent override in aggregator or synthesis.
+
+## Files changed
 
 ```
-ai-control/comms/
-  allowlist.js, constants.js, phone.js, normalizer.js, outbound.js
-  githubIntegration.js, hostingVerdict.js, ossEvaluation.json
-  index.js, README.md
-src/intelligence/askNac/shared/whatsappBridge.test.js
+supabase/functions/_shared/companyIntelligence/commerce/tableMix.ts          (new)
+supabase/functions/_shared/companyIntelligence/commerce/index.ts
+supabase/functions/_shared/companyIntelligence/commerce/intent.ts
+supabase/functions/_shared/companyIntelligence/commerce/synthesis.ts
+supabase/functions/_shared/companyIntelligence/orchestrationSpine.ts
+src/intelligence/askNac/shared/commerceTableMix.test.js                      (new)
+ai-control/LAST_HANDOFF.md
+ai-control/STATE.json
+ai-control/CURRENT_STATUS.md
 ```
 
-Also updated: `aiControlProtocol.test.js`, `ossReferenceRegistry.ts`, `docs/architecture/oss-reference-registry.md`
+## Migrations added
 
-## Tests
+none
 
-`whatsappBridge|aiControlProtocol` — **18 passed**
+## Focused tests
+
+`commerceTableMix|commerceArchetypes|commerceMetrics|commerceIntegrity|commerceOrchestrator` — **45 passed**
+
+## Build
+
+`CI=true npm run build` — **PASS**
 
 ## Cost / deploy
 
 | Item | Value |
 |---|---|
-| Recurring cost | **0** |
 | Paid API calls | **0** |
 | Deploys | **none** |
 | Netlify | untouched |
-| Migrations | none |
+| On-demand Cursor | **not used** |
 
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- base HEAD at task start: `a46f83cef85b8ba1a768b5a6370dab02b90e8fa2`
-- handoff commit SHA: `42ada7e64f917c962a38a282b771c816eb45e380` (feature)
-- control plane HEAD: `192451499635028b2527786d16be9f3af2008c1a`
-- GitHub Control Room issue: **#2**
+- handoff commit SHA: `1638c8a59f1daa202c24855018aa5392009b9551`
 
-## Next recommendation
+## Highest-leverage next recommendation
 
 1. Raffi reviews this handoff (`awaiting_review`).
-2. For live WhatsApp proof: run thin `whatsapp-web.js` host locally with `NAC_COMMS_CONTROLLER_E164` and session dir outside repo.
-3. For laptop-off **engineering** (not WhatsApp): continue `@cursor` on issue #2.
-4. For laptop-off **WhatsApp 24/7**: record decision in `RAFFI_DECISIONS.md` — existing always-on hardware vs minimal VPS spend.
-5. Do **not** start the next product milestone until supervisor issues new `NEXT_TASK.md` taskId.
+2. Wire live `commerceStore` (Supabase) in Ask NAC Edge handler if not already passing through on every commerce turn.
+3. Publish July/Aug snapshots via existing `publish-commerce-from-db.mjs` for offline regression against real Khobar shape.
+4. Optional: refactor publish script to call `computeTableMix` directly (remove inline duplication).

@@ -178,9 +178,21 @@ export function answerPublishedCommerce(focus: CommerceFocus, published: Publish
       + `for ${mix.branchId} ${mix.periodStart} to ${mix.periodEnd}.`
     );
   }
-  if (focus === "dessert_focused") return dessertFocusedAnswer(mix);
-  if (focus === "food_containing") return foodContainingAnswer(mix);
-  if (focus === "dessert_conversion") return conversionAnswer(mix);
+  if (focus === "dessert_focused") {
+    return published.comparison
+      ? `${dessertFocusedAnswer(mix)} ${mixComparisonAnswer(published.comparison)}`
+      : dessertFocusedAnswer(mix);
+  }
+  if (focus === "food_containing") {
+    return published.comparison
+      ? `${foodContainingAnswer(mix)} ${mixComparisonAnswer(published.comparison)}`
+      : foodContainingAnswer(mix);
+  }
+  if (focus === "dessert_conversion") {
+    return published.comparison
+      ? `${conversionAnswer(mix)} ${mixComparisonAnswer(published.comparison)}`
+      : conversionAnswer(mix);
+  }
   if (focus === "basket") return dessertAtAllAnswer(mix);
   if (focus === "guest_weighted") return guestWeightedAnswer(mix);
   if (focus === "attention") return attentionAnswer(mix, published.comparison);

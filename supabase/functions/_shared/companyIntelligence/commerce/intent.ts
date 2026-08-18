@@ -19,6 +19,9 @@ export function extractCommerceFocus(question: string): CommerceFocus {
   if (/\b(what should i pay attention|what should i watch)\b/.test(q) && /\b(table|dessert|foodics|mix)\b/.test(q)) {
     return "attention";
   }
+  if (/\bcompare\b/.test(q) && /\b(table mix|service mix|dessert[- ]focused|food[- ]containing|dessert conversion|dessert tables?)\b/.test(q)) {
+    return "session_mix";
+  }
   if (/\bdessert tables?\b/.test(q) && /\bfood tables?\b/.test(q)) return "session_mix";
   if (/\b(what if|scenario|opportunity|jeddah'?s (?:table|food) mix)\b/.test(q)) return "opportunity";
   if (/\b(why is \w+ (?:lower|behind|weaker)|biggest commercial opportunities|decompose)\b/.test(q)) {
