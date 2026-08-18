@@ -10,7 +10,7 @@
 | Started | 2026-08-18 23:12 Asia/Riyadh |
 | Updated | 2026-08-18 20:20 UTC |
 | Stage | handoff complete — supervisor review |
-| Latest commit | `42ada7e64f917c962a38a282b771c816eb45e380` |
+| Latest commit | `5661565182cd958e372972d1fd3e8b8873749332` |
 | Tests | `whatsappBridge\|aiControlProtocol` PASS (18) |
 | Build | PASS (`CI=true npm run build`, `npm run build`) |
 | Result | **PASS_WITH_HOSTING_BLOCKER** |
