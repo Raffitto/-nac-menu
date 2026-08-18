@@ -1,25 +1,19 @@
 # NAC Autonomous Engineering Status
 
-**WAITING FOR RAFFI** (`awaiting_review`)
+**WORKING** (`working`)
 
 | Field | Value |
 |---|---|
-| Active task | — (completed `NAC-COMMS-0001`) |
-| Title | Free WhatsApp Engineering Control Bridge Proof |
+| Active task | `NAC-COMMERCE-0001` |
+| Title | Canonical Table-Mix Intelligence End-to-End |
 | Branch | `release/ask-nac-fabric-founding-day` |
-| Started | 2026-08-18 23:12 Asia/Riyadh |
-| Updated | 2026-08-18 20:20 UTC |
-| Stage | handoff complete — supervisor review |
-| Latest commit | `192451499635028b2527786d16be9f3af2008c1a` |
-| Tests | `whatsappBridge\|aiControlProtocol` PASS (18) |
-| Build | PASS (`CI=true npm run build`, `npm run build`) |
-| Result | **PASS_WITH_HOSTING_BLOCKER** |
-| Next expected action | Raffi/supervisor reviews `LAST_HANDOFF.md`; issues next `NEXT_TASK.md` or approves hosting decision |
+| Started | 2026-08-18 23:26 Asia/Riyadh |
+| Stage | dispatched to remote Cursor worker |
+| Prior milestone | `NAC-COMMS-0001` — PASS_WITH_HOSTING_BLOCKER |
 | Budget policy | soft stop ~88–89%; no on-demand |
-| Deployments | none for this task |
+| Deployments | none authorized |
+| Next expected action | Worker implements bounded table/session archetype intelligence, focused tests, handoff, then stops in `awaiting_review` |
 
-## Bridge verdict (summary)
+## Objective
 
-- Software: **whatsapp-web.js 1.34.7** (Apache-2.0) — recommended
-- Laptop-off 24/7 WhatsApp: **blocked at $0** — see `ai-control/comms/hostingVerdict.js`
-- Engineering worker laptop-off: **Cursor Cloud Agents** on issue #2
+Turn the already-canonical Foodics order/item/table-session data into deterministic management intelligence that Ask NAC can answer for arbitrary supported periods: dessert-focused vs food-containing tables, dessert conversion within food-containing sessions, covers/revenue/check by archetype, and period/branch comparisons without changing Cash Up headline-sales authority.
