@@ -29,7 +29,7 @@ import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationF
 import { extractCommercialMetric, extractAnalysisIntent, hasComparisonIntent, isSubjectiveJudgementTurn, isFabricManagedTurn } from "./turnSemantics.ts";
 import { HISTORY_LOOKBACK_DAYS } from "./managementAnalyst.ts";
 import { isBroadManagementQuestion } from "./managementReasoning.ts";
-import { parseVaultPeriodFromQuestion } from "../vaultPeriodParser.ts";
+import { parseVaultPeriodFromQuestion, parseVaultComparePeriodsFromQuestion } from "../vaultPeriodParser.ts";
 import { updateConversationState, type StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import { answerPublishedCommerce, missingSessionEvidenceAnswer, type PublishedCommerce } from "./commerce/synthesis.ts";
@@ -75,6 +75,27 @@ import { createModelGateway, loadModelGatewayConfig, type ModelGateway } from ".
 import { verifySynthesizedAnswer } from "./answerVerifier.ts";
 import { estimateOpenAiMiniCostUsd } from "./telemetry.ts";
 import {
+  assessAnswerAdequacy,
+  classifySupervisorGoal,
+  deriveAnswerRequirements,
+  isSupervisorManagedTurn,
+  minimumSufficientCapabilities,
+  relevantWarnings,
+  supervisorBlocksUniversal,
+  buildUnresolvedGoal,
+  type AdequacyResult,
+  type AnswerRequirements,
+  type SupervisorGoal,
+} from "./reasoningSupervisor.ts";
+import { formatKnowledgeStateAnswer, latestThroughByReport } from "./knowledgeState.ts";
+import { ksaCalendarIso } from "./calendarCompletion.ts";
+import {
+  CASH_UP_CHAT_ACQUISITION_BLOCKER,
+  commerceCoversPeriod,
+  formatProvisionalCommerceAnswer,
+  sumCommercePeriod,
+} from "./evidenceRecovery.ts";
+import {
   createIntelligenceScope,
   normalizeBranchId,
   type IntelligenceScope,
@@ -112,6 +133,9 @@ export type OrchestrationResult = {
   nextConversation: StructuredConversationState;
   toolsExecuted: string[];
   paidModelCalls: number;
+  executionVerification?: AdequacyResult["executionVerification"];
+  evidenceCompleteness?: AdequacyResult["evidenceCompleteness"];
+  answerConfidence?: AdequacyResult["answerConfidence"];
 };
 
 const INTENT_CAPABILITIES: Record<string, CapabilityId[]> = {
@@ -220,6 +244,7 @@ function hasFabricInheritContext(prev?: StructuredConversationState | null): boo
     || prev.activeMetricFamily
     || prev.previousIntent
     || prev.activeSemanticPlan
+    || prev.unresolvedGoal
     || (prev.activeCapabilities && prev.activeCapabilities.length),
   );
 }
@@ -240,6 +265,7 @@ export function isManagementIntelligenceQuestion(
   },
 ) {
   const q = String(question || "").trim();
+  if (isSupervisorManagedTurn(q, options?.priorFabricConversation || null)) return true;
   if (isFabricManagedTurn(q)) return true;
   if (looksLikeSemanticCommerceQuestion(q)) return true;
   if (looksLikeUniversalManagementQuestion(q, (options?.priorFabricConversation?.activeUniversalPlan || null) as UniversalQueryPlan | null)) return true;
@@ -379,6 +405,142 @@ async function executeCapabilities(
   return { state: next, results, tools };
 }
 
+function cashUpMissingFromText(text: string): boolean {
+  return /Cash Up for .+ is not yet available|authoritative Cash Up headline|latest completed Cash Up/i.test(text);
+}
+
+async function finalizeSpineResult(input: {
+  result: OrchestrationResult;
+  goal: SupervisorGoal;
+  requirements: AnswerRequirements;
+  previousText?: string | null;
+  commerceStore?: CommerceStore | null;
+  branchId?: string | null;
+  period: { startDate: string; endDate: string; label?: string | null } | null;
+  acquisitionAttempted?: boolean;
+  acquisitionBlocker?: string | null;
+  originalQuestion: string;
+}): Promise<OrchestrationResult> {
+  let text = input.result.answerText;
+  let acquisitionBlocker = input.acquisitionBlocker || null;
+  let actionAttempted = Boolean(input.acquisitionAttempted);
+  let actionSucceeded = false;
+  if (input.goal === "acquisition_request") {
+    actionAttempted = true;
+    acquisitionBlocker = acquisitionBlocker || CASH_UP_CHAT_ACQUISITION_BLOCKER;
+    if (!/cannot create a Cash Up workbook from chat/i.test(text)) {
+      text = `${acquisitionBlocker} ${text}`.trim();
+    }
+  }
+  const wantsHeadlineSales = input.requirements.requiredMetrics.includes("net_sales")
+    || input.goal === "acquisition_request";
+  if (input.goal === "comparison") {
+    const salesEv = input.result.state.evidence.filter((e) => e.metricOrEvent === "net_sales" && e.value != null);
+    const coverEv = input.result.state.evidence.filter((e) => e.metricOrEvent === "covers" && e.value != null);
+    const bits: string[] = [];
+    if (input.requirements.requiredMetrics.includes("net_sales") && !/net sales|SAR\s/i.test(text) && salesEv.length) {
+      bits.push(salesEv.slice(0, 2).map((e) => {
+        const label = e.period?.label || `${e.period?.startDate || ""}–${e.period?.endDate || ""}`;
+        return `Net sales ${label}: SAR ${Number(e.value).toLocaleString("en-US")}`;
+      }).join(". "));
+    }
+    if (input.requirements.requiredMetrics.includes("covers") && coverEv.length > 1 && !/february|previous period/i.test(text)) {
+      bits.push(coverEv.slice(0, 2).map((e) => {
+        const label = e.period?.label || `${e.period?.startDate || ""}–${e.period?.endDate || ""}`;
+        return `Covers ${label}: ${Number(e.value).toLocaleString("en-US")}`;
+      }).join(". "));
+    }
+    if (bits.length) text = `${text} ${bits.join(". ")}`.trim();
+  }
+  const skipRecovery = input.goal === "knowledge_freshness" || input.goal === "coverage_query";
+  const missing = cashUpMissingFromText(text) || /could not assemble enough overlapping/i.test(text);
+
+  if (!skipRecovery && (missing || input.goal === "acquisition_request") && wantsHeadlineSales && input.commerceStore && input.period) {
+    if (input.goal === "acquisition_request") {
+      actionAttempted = true;
+      acquisitionBlocker = acquisitionBlocker || CASH_UP_CHAT_ACQUISITION_BLOCKER;
+    }
+    const cov = input.commerceStore.fetchCoverage && input.branchId
+      ? await input.commerceStore.fetchCoverage(input.branchId)
+      : null;
+    if (commerceCoversPeriod(cov, input.period) || input.goal === "acquisition_request") {
+      const totals = await sumCommercePeriod(input.commerceStore, input.branchId || null, input.period);
+      if (totals.netSales != null || input.goal === "acquisition_request") {
+        const latest = input.result.state.coverage?.find((c) => c.freshness)?.freshness || null;
+        text = formatProvisionalCommerceAnswer({
+          period: input.period,
+          cashUpMissing: true,
+          latestCashUp: latest ? String(latest) : null,
+          netSales: totals.netSales,
+          covers: totals.covers,
+          acquisitionBlocker: input.goal === "acquisition_request" ? acquisitionBlocker : null,
+        });
+        if (totals.netSales != null && input.goal === "acquisition_request") actionSucceeded = true;
+      }
+    }
+  }
+
+  const adequacy = assessAnswerAdequacy({
+    goal: input.goal,
+    requirements: input.requirements,
+    answerText: text,
+    evidenceKeys: input.result.state.evidence.map((e) => e.metricOrEvent),
+    repeatedPrevious: Boolean(input.previousText && text.trim() === String(input.previousText).trim()),
+    actionAttempted,
+    actionSucceeded,
+    acquisitionBlocker,
+  });
+
+  const warnings = relevantWarnings({
+    goal: input.goal,
+    warnings: input.result.state.warnings || [],
+    executedTools: input.result.toolsExecuted || [],
+  });
+
+  const keepUnresolved = adequacy.answerConfidence === "limitation"
+    || adequacy.evidenceCompleteness !== "complete"
+    || !adequacy.ok;
+  const unresolved = keepUnresolved
+    ? buildUnresolvedGoal({
+      question: input.originalQuestion,
+      task: input.goal === "acquisition_request" ? "factual_query" : input.goal,
+      requirements: input.requirements,
+      period: input.period,
+      missing: input.requirements.requiredMetrics.map(String),
+      failureReason: adequacy.reason || acquisitionBlocker,
+      lastAnswerText: text,
+      recovery: [
+        { id: "cash_up_file_ingest", available: false, blocker: CASH_UP_CHAT_ACQUISITION_BLOCKER },
+        { id: "commerce_provisional", available: Boolean(input.commerceStore) },
+      ],
+    })
+    : null;
+
+  const nextConversation = updateConversationState(input.result.nextConversation, {
+    unresolvedGoal: keepUnresolved ? unresolved : null,
+  });
+  const verifiedSubstantive = adequacy.answerConfidence === "high" && adequacy.evidenceCompleteness === "complete";
+  const state = patchIntelligenceState(input.result.state, {
+    warnings,
+    conversation: nextConversation,
+    answer: { text, verified: verifiedSubstantive },
+  });
+  let answerType = input.result.answerType;
+  if (adequacy.answerConfidence === "limitation" || adequacy.evidenceCompleteness === "unavailable") {
+    answerType = "unavailable";
+  }
+  return {
+    ...input.result,
+    state,
+    answerText: text,
+    answerType,
+    nextConversation,
+    executionVerification: adequacy.executionVerification,
+    evidenceCompleteness: adequacy.evidenceCompleteness,
+    answerConfidence: adequacy.answerConfidence,
+  };
+}
+
 export async function runCompanyIntelligenceOrchestration(
   options: OrchestrationOptions,
 ): Promise<OrchestrationResult> {
@@ -405,6 +567,11 @@ export async function runCompanyIntelligenceOrchestration(
       || options.legacyRoute?.branchMention
       || null,
     referenceDate: options.referenceDate,
+  });
+  const askedQuestionEarly = String(options.question || "").trim();
+  const supervisorGoal = classifySupervisorGoal({
+    question: askedQuestionEarly,
+    previous: followUp.conversation,
   });
 
   // Prefer caller-authorized scope; keep follow-up branch only when it matches access.
@@ -461,18 +628,63 @@ export async function runCompanyIntelligenceOrchestration(
     inherited: currentPeriod,
     inheritedCompare: comparisonPeriod,
   });
-  if (commercePeriod.range && (commercePeriod.precedence === "named" || commercePeriod.precedence === "relative" || commercePeriod.precedence === "event")) {
+  if (
+    commercePeriod.range
+    && !followUp.eventWindow
+    && !/\bramadan|founding day|foundation day\b/i.test(askedQuestionEarly)
+    && (commercePeriod.precedence === "named" || commercePeriod.precedence === "relative" || commercePeriod.precedence === "event")
+  ) {
     currentPeriod = commercePeriod.range;
     if (commercePeriod.compareRange) comparisonPeriod = commercePeriod.compareRange;
   }
+  if (supervisorGoal === "knowledge_freshness" || supervisorGoal === "coverage_query") {
+    currentPeriod = null;
+    comparisonPeriod = null;
+  }
+  if (supervisorGoal === "acquisition_request" && followUp.conversation.unresolvedGoal?.period) {
+    currentPeriod = followUp.conversation.unresolvedGoal.period;
+    comparisonPeriod = null;
+  }
+  const skipDefaultWindow = supervisorGoal === "knowledge_freshness"
+    || supervisorGoal === "coverage_query"
+    || supervisorGoal === "acquisition_request";
   const looksLikePeriodFollowUp = followUp.usedFollowUp
     || isPeriodOnlyFollowUpTurn(String(options.question || "").trim(), options.referenceDate || new Date());
-  if (!currentPeriod && !holidayIntent.detected && !(looksLikePeriodFollowUp && options.conversation) && !followUp.usedFollowUp) {
+  if (!currentPeriod && !holidayIntent.detected && !skipDefaultWindow && !(looksLikePeriodFollowUp && options.conversation) && !followUp.usedFollowUp) {
     const fallback = defaultTemporalService.resolveExpression(
       "last_7_days",
       options.referenceDate || new Date(),
     );
     currentPeriod = fallback.range;
+  }
+  const supervisorReqDraft = deriveAnswerRequirements({
+    question: askedQuestionEarly,
+    goal: supervisorGoal,
+    period: currentPeriod,
+    comparePeriod: comparisonPeriod,
+    previous: followUp.conversation,
+    referenceDate: options.referenceDate,
+  });
+  const parsedCompare = parseVaultComparePeriodsFromQuestion(
+    askedQuestionEarly,
+    options.referenceDate || new Date(),
+  );
+  if (
+    parsedCompare?.current
+    && parsedCompare?.previous
+    && !followUp.eventWindow
+    && !/\bramadan|founding day|foundation day\b/i.test(askedQuestionEarly)
+  ) {
+    currentPeriod = parsedCompare.current as typeof currentPeriod;
+    comparisonPeriod = parsedCompare.previous as typeof comparisonPeriod;
+  } else if (
+    !followUp.eventWindow
+    && supervisorReqDraft.periods.length === 1
+    && supervisorGoal !== "knowledge_freshness"
+    && supervisorGoal !== "coverage_query"
+    && !currentPeriod
+  ) {
+    currentPeriod = supervisorReqDraft.periods[0];
   }
   state = transition(state, "TEMPORAL_RESOLVED", {
     periods: {
@@ -488,9 +700,17 @@ export async function runCompanyIntelligenceOrchestration(
   });
 
   const branch = state.scope.primaryBranchId;
-  const requiresComparison = Boolean(state.periods.comparison)
-    || Boolean(followUp.semantics?.comparisonIntent)
-    || hasComparisonIntent(options.question);
+  const requiresComparison = (
+    supervisorGoal === "knowledge_freshness"
+    || supervisorGoal === "coverage_query"
+    || supervisorGoal === "acquisition_request"
+  )
+    ? false
+    : (
+      Boolean(state.periods.comparison)
+      || Boolean(followUp.semantics?.comparisonIntent)
+      || hasComparisonIntent(options.question)
+    );
 
   const comparisonOperating = branch && state.periods.comparison
     ? defaultBusinessTimeline.getOperatingStatus(branch, state.periods.comparison)
@@ -529,6 +749,29 @@ export async function runCompanyIntelligenceOrchestration(
     warnings: [...feasibility.detail, ...(comparability?.reasons || [])],
   });
 
+  const supervisorReq = deriveAnswerRequirements({
+    question: askedQuestionEarly,
+    goal: supervisorGoal,
+    period: currentPeriod,
+    comparePeriod: comparisonPeriod,
+    previous: followUp.conversation,
+    referenceDate: options.referenceDate,
+  });
+  const finish = (result: OrchestrationResult) => finalizeSpineResult({
+    result,
+    goal: supervisorGoal,
+    requirements: supervisorReq,
+    previousText: followUp.conversation.unresolvedGoal?.lastAnswerText || followUp.conversation.unresolvedGoal?.lastFailureReason || null,
+    commerceStore: options.commerceStore || null,
+    branchId: primaryBranchId,
+    period: supervisorReq.periods[0] || currentPeriod,
+    acquisitionAttempted: supervisorGoal === "acquisition_request",
+    acquisitionBlocker: supervisorGoal === "acquisition_request" ? CASH_UP_CHAT_ACQUISITION_BLOCKER : null,
+    originalQuestion: supervisorGoal === "acquisition_request"
+      ? (followUp.conversation.unresolvedGoal?.question || askedQuestionEarly)
+      : askedQuestionEarly,
+  });
+
   // Short-circuit impossible comparisons — zero tool / paid calls
   const infeasible = buildInfeasibleComparisonAnswer(state);
   if (infeasible || feasibility.status === "NOT_ANSWERABLE_AS_REQUESTED") {
@@ -554,7 +797,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: null,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: "feasibility_block",
@@ -563,7 +806,72 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: 0,
+    });
+  }
+
+  if (supervisorGoal === "knowledge_freshness" || supervisorGoal === "coverage_query") {
+    const todayIso = ksaCalendarIso(options.referenceDate || new Date());
+    const coverageWindow = {
+      startDate: "2018-01-01",
+      endDate: todayIso,
+      label: "registered coverage",
+      semantic: "knowledge_registry",
     };
+    state = patchIntelligenceState(state, {
+      periods: { ...state.periods, current: coverageWindow },
+    });
+    const executed = await executeCapabilities(state, ["company.knowledge_state"], executor);
+    state = executed.state;
+    const raw = executed.results[0]?.raw as Record<string, unknown> | undefined;
+    const vaultRows = Array.isArray(raw?.coverage) ? raw.coverage as Array<Record<string, unknown>> : [];
+    const commerceCov = options.commerceStore?.fetchCoverage && primaryBranchId
+      ? await options.commerceStore.fetchCoverage(primaryBranchId)
+      : null;
+    const text = formatKnowledgeStateAnswer({
+      branchId: primaryBranchId,
+      vault: latestThroughByReport(vaultRows),
+      commerceThrough: commerceCov?.endDate || null,
+      commerceStart: commerceCov?.startDate || null,
+      referenceDate: options.referenceDate,
+    });
+    const nextConversation = updateConversationState(state.conversation, {
+      previousIntent: "company.knowledge_state",
+      activeMetricFamily: "knowledge",
+      unresolvedGoal: null,
+    });
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified: true },
+      conversation: nextConversation,
+      periods: { ...state.periods, current: null },
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "knowledge_state",
+      },
+      plan: {
+        ...state.plan,
+        goal: "knowledge_state",
+        capabilities: ["company.knowledge_state"],
+        researchBudgetTier: 0,
+        needsClarification: false,
+        clarificationPrompt: null,
+      },
+    });
+    return await finish({
+      state,
+      answerText: text,
+      answerType: "knowledge_state",
+      keyMetrics: [],
+      insights: [],
+      nextConversation,
+      toolsExecuted: executed.tools,
+      paidModelCalls: 0,
+    });
   }
 
   const prevSemantic = (followUp.conversation?.activeSemanticPlan || null) as CommerceQueryPlan | null;
@@ -572,8 +880,10 @@ export async function runCompanyIntelligenceOrchestration(
   const weekendOnly = Boolean(followUp.conversation?.filters?.weekendOnly)
     || /\bonly weekends?\b/i.test(askedQuestion)
     || Boolean(prevUniversal?.alignment?.includes("weekend"));
-  const wantUniversal = looksLikeUniversalManagementQuestion(askedQuestion, prevUniversal)
-    || looksLikeUniversalManagementQuestion(followUp.resolvedQuestion, prevUniversal);
+  const wantUniversal = !supervisorBlocksUniversal(supervisorReq) && (
+    looksLikeUniversalManagementQuestion(askedQuestion, prevUniversal)
+    || looksLikeUniversalManagementQuestion(followUp.resolvedQuestion, prevUniversal)
+  );
 
   if (wantUniversal) {
     const uniPlan = planUniversalManagement({
@@ -581,7 +891,7 @@ export async function runCompanyIntelligenceOrchestration(
       branchId: primaryBranchId,
       period: currentPeriod || followUp.currentPeriod || state.periods.current,
       comparePeriod: comparisonPeriod || followUp.comparisonPeriod || state.periods.comparison,
-      previousPlan: prevUniversal,
+      previousPlan: supervisorReq.selfContained ? null : prevUniversal,
       weekendOnly,
     });
     if (!uniPlan.commerceSnapshot && prevSemantic) {
@@ -630,7 +940,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: null,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: uniPlan.synthesis === "limitation" ? "unavailable" : "management_intelligence",
@@ -643,7 +953,7 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation,
       toolsExecuted: executed.tools,
       paidModelCalls: 0,
-    };
+    });
   }
 
   const semanticFollow = Boolean(prevSemantic) && (
@@ -653,10 +963,13 @@ export async function runCompanyIntelligenceOrchestration(
     || /\bonly (?:desserts?|after)|after \d|weekends?|july|august\b/i.test(askedQuestion)
   );
   const wantSemantic = Boolean(options.commerceStore)
+    && supervisorGoal !== "acquisition_request"
+    && !(supervisorBlocksUniversal(supervisorReq) && supervisorReq.requiredDomains[0] === "cash_up")
     && (
       looksLikeSemanticCommerceQuestion(askedQuestion)
       || looksLikeSemanticCommerceQuestion(followUp.resolvedQuestion)
       || semanticFollow
+      || (supervisorReq.requiredDomains.length === 1 && supervisorReq.requiredDomains[0] === "commerce")
     );
 
   if (wantSemantic && options.commerceStore) {
@@ -738,7 +1051,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: null,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: plan?.outputIntent === "limitation" ? "unavailable" : "commerce",
@@ -747,12 +1060,13 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation,
       toolsExecuted: plan ? toolsExecuted : [],
       paidModelCalls: 0,
-    };
+    });
   }
 
   if (
-    followUp.ambiguity?.needsClarification
-    || feasibility.status === "REQUIRES_CLARIFICATION"
+    (followUp.ambiguity?.needsClarification || feasibility.status === "REQUIRES_CLARIFICATION")
+    && !supervisorReq.selfContained
+    && supervisorReq.periods.length < 2
   ) {
     const text = followUp.ambiguity?.prompt
       || feasibility.detail[0]
@@ -778,7 +1092,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: text,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: "clarification",
@@ -787,7 +1101,7 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: 0,
-    };
+    });
   }
 
   const commerceFocus = followUp.semantics?.commerceFocus || null;
@@ -818,7 +1132,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: null,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: "commerce",
@@ -827,7 +1141,7 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: 0,
-    };
+    });
   }
   if (requiresDineInSessionEvidence(commerceFocus)) {
     const text = missingSessionEvidenceAnswer();
@@ -852,7 +1166,7 @@ export async function runCompanyIntelligenceOrchestration(
         clarificationPrompt: null,
       },
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: "commerce_unavailable",
@@ -861,7 +1175,7 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: 0,
-    };
+    });
   }
 
   const inheritedCommercialFollowUp = Boolean(
@@ -971,6 +1285,11 @@ export async function runCompanyIntelligenceOrchestration(
     }
   }
 
+  if (supervisorBlocksUniversal(supervisorReq) || supervisorReq.task === "comparison" || supervisorReq.task === "factual_query" || supervisorReq.task === "acquisition_request") {
+    const minCaps = minimumSufficientCapabilities(supervisorReq);
+    if (minCaps.length) capabilities = minCaps;
+  }
+
   // Always include timeline/calendar cheaply for management questions
   if (!capabilities.includes("calendar.resolve_period")) {
     capabilities = ["calendar.resolve_period", ...capabilities];
@@ -1034,7 +1353,7 @@ export async function runCompanyIntelligenceOrchestration(
       answer: { text, verified: true },
       warnings: [...state.warnings, ...validated.reasons],
     });
-    return {
+    return await finish({
       state,
       answerText: text,
       answerType: "plan_rejected",
@@ -1043,7 +1362,7 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: state.cost.paidModelCallsPerAnswer,
-    };
+    });
   }
 
   // Drop expensive research caps always in this phase
@@ -1339,7 +1658,7 @@ export async function runCompanyIntelligenceOrchestration(
   });
   state = transition(state, "COMPLETE");
 
-  return {
+  return await finish({
     state,
     answerText,
     answerType: fastPath ? "deterministic_lookup" : "management_intelligence",
@@ -1348,7 +1667,7 @@ export async function runCompanyIntelligenceOrchestration(
     nextConversation,
     toolsExecuted,
     paidModelCalls: state.cost.paidModelCallsPerAnswer,
-  };
+  });
 }
 
 export { CAPABILITY_REGISTRY, normalizeBranchId };

@@ -14,6 +14,10 @@ export function getMobileTrustSummary(response) {
     return { label: "Verified Data", tone: "verified" };
   }
 
+  if (response.answerConfidence === "limitation" || response.confidence === "none" || response.answerType === "unavailable") {
+    return { label: "Verified limitation", tone: "partial" };
+  }
+
   if (response.answerType === ANSWER_TYPES.MISSING_DATA) {
     return { label: "Partial Data", tone: "partial" };
   }
@@ -68,8 +72,10 @@ export function getTechnicalTrustDetails(response) {
     });
   }
 
-  if (response.confidence) {
-    rows.push({ label: "Confidence", value: `${response.confidence} confidence` });
+  if (response.confidence && response.confidence !== "none" && response.answerConfidence !== "limitation") {
+    rows.push({ label: "Answer confidence", value: `${response.confidence} confidence` });
+  } else if (response.answerConfidence === "limitation" || response.confidence === "none") {
+    rows.push({ label: "Answer confidence", value: "Verified limitation (not a high-confidence result)" });
   }
 
   if (response.intent) {

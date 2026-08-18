@@ -1270,7 +1270,13 @@ export async function processAskNacOnEdge(
       keyMetrics: spine.keyMetrics,
       insights: spine.insights,
       recommendations: [],
-      confidence: spine.state.answer.verified ? "high" : "medium",
+      confidence: spine.answerConfidence === "limitation" || spine.answerConfidence === "low"
+        ? "none"
+        : spine.answerConfidence === "medium"
+          ? "medium"
+          : spine.answerConfidence === "high"
+            ? "high"
+            : (spine.state.answer.verified ? "high" : "medium"),
       periodLabel: spine.state.periods.current?.label
         || (spine.state.periods.current
           ? `${spine.state.periods.current.startDate}–${spine.state.periods.current.endDate}`
@@ -1295,7 +1301,13 @@ export async function processAskNacOnEdge(
         deterministicRouteUsed: spine.state.cost.deterministicRouteUsed,
         verifierOk: spine.state.cost.verifierOk,
         coverage: spine.state.coverage,
+        executionVerification: spine.executionVerification || null,
+        evidenceCompleteness: spine.evidenceCompleteness || null,
+        answerConfidence: spine.answerConfidence || null,
       },
+      executionVerification: spine.executionVerification || null,
+      evidenceCompleteness: spine.evidenceCompleteness || null,
+      answerConfidence: spine.answerConfidence || null,
       nextContext: {
         ...((conversationContext || {}) as Record<string, unknown>),
         fabricConversation: spine.nextConversation,

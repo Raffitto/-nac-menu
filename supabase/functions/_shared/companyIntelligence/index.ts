@@ -39,6 +39,9 @@ export * from "./managementAnalyst.ts";
 export * from "./managementCoherence.ts";
 export { pairDailyBreakdownsByOffset } from "../cashUpMatchedCoverageComparison.ts";
 export * from "./conversationFollowUp.ts";
+export * from "./reasoningSupervisor.ts";
+export * from "./knowledgeState.ts";
+export * from "./evidenceRecovery.ts";
 export {
   resolveTurnSemantics,
   hasComparisonIntent,

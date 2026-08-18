@@ -124,6 +124,8 @@ export function resolveCapabilityImplementation(capability: CapabilityId): {
     case "commerce.opportunity_model":
     case "commerce.semantic_query":
       return { implementationTool: tool, queryFocus: "commerce_session", vaultIntent: null };
+    case "company.knowledge_state":
+      return { implementationTool: tool, queryFocus: null, vaultIntent: "vault_coverage_list" };
     default:
       return { implementationTool: tool, queryFocus: null, vaultIntent: null };
   }
@@ -480,6 +482,17 @@ export function createMockCapabilityExecutor(
           expectedRecords: 7,
           availableRecords: 5,
         }),
+      };
+    }
+    if (req.capability === "company.knowledge_state") {
+      return {
+        capability: req.capability,
+        implementationTool: mapping.implementationTool,
+        ok: true,
+        metrics: [],
+        textSnippets: ["Ask NAC knowledge-state coverage"],
+        coverage: null,
+        raw: { coverage: [] },
       };
     }
     return {

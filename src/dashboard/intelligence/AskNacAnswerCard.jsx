@@ -507,6 +507,8 @@ export default function AskNacAnswerCard({
         <div className="nac-ask-nac-response__meta">
           {response.isAiGenerated ? (
             <span className="nac-ask-nac-badge nac-ask-nac-badge--ai">AI explained</span>
+          ) : response.answerConfidence === "limitation" || response.confidence === "none" || response.answerType === "unavailable" ? (
+            <span className="nac-ask-nac-badge nac-ask-nac-badge--local">Verified limitation</span>
           ) : response.serverConnected && !response.localFallback ? (
             <span className="nac-ask-nac-badge nac-ask-nac-badge--verified">Verified deterministic</span>
           ) : (
@@ -515,7 +517,7 @@ export default function AskNacAnswerCard({
           {response.localFallback ? (
             <span className="nac-ask-nac-badge nac-ask-nac-badge--local">Local fallback</span>
           ) : null}
-          {response.confidence ? (
+          {response.confidence && response.confidence !== "none" && response.answerConfidence !== "limitation" ? (
             <span className="nac-ask-nac-badge">{response.confidence} confidence</span>
           ) : null}
         </div>

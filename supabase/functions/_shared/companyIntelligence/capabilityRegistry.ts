@@ -28,7 +28,8 @@ export type CapabilityId =
   | "commerce.compare_mix"
   | "commerce.branch_decomposition"
   | "commerce.opportunity_model"
-  | "commerce.semantic_query";
+  | "commerce.semantic_query"
+  | "company.knowledge_state";
 
 export type CapabilityDefinition = {
   id: CapabilityId;
@@ -246,6 +247,14 @@ export const CAPABILITY_REGISTRY: Record<CapabilityId, CapabilityDefinition> = O
     domain: "COMMERCE",
     description: "General semantic query over canonical commerce orders/items/sessions",
     implementationTool: "commerce_semantic_query",
+    requiresPaidModel: false,
+    defaultBudgetTier: 0,
+  },
+  "company.knowledge_state": {
+    id: "company.knowledge_state",
+    domain: "META",
+    description: "Per-domain freshness and coverage of Ask NAC knowledge",
+    implementationTool: "knowledge_state",
     requiresPaidModel: false,
     defaultBudgetTier: 0,
   },

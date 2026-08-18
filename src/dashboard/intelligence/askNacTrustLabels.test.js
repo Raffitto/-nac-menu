@@ -6,6 +6,17 @@ import {
 } from "./askNacTrustLabels";
 
 describe("askNacTrustLabels", () => {
+  test("maps limitation answers away from high confidence", () => {
+    expect(
+      getMobileTrustSummary({
+        answerType: "unavailable",
+        answerConfidence: "limitation",
+        confidence: "none",
+        serverConnected: true,
+      }).label,
+    ).toBe("Verified limitation");
+  });
+
   test("maps verified deterministic to Verified Data", () => {
     expect(
       getMobileTrustSummary({

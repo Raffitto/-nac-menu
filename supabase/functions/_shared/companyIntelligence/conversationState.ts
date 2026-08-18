@@ -26,6 +26,16 @@ export type StructuredConversationState = {
   activeAnalysisIntent: string | null;
   activeSemanticPlan: Record<string, unknown> | null;
   activeUniversalPlan: Record<string, unknown> | null;
+  unresolvedGoal: {
+    question: string;
+    task: string;
+    requiredMetrics: string[];
+    period: { startDate: string; endDate: string; label?: string | null } | null;
+    missingRequirements: string[];
+    lastFailureReason: string | null;
+    lastAnswerText?: string | null;
+    candidateRecoveryActions: Array<{ id: string; available: boolean; blocker?: string | null }>;
+  } | null;
 };
 
 export function createEmptyConversationState(): StructuredConversationState {
@@ -46,6 +56,7 @@ export function createEmptyConversationState(): StructuredConversationState {
     activeAnalysisIntent: null,
     activeSemanticPlan: null,
     activeUniversalPlan: null,
+    unresolvedGoal: null,
   };
 }
 
@@ -84,6 +95,7 @@ export function updateConversationState(
     activeAnalysisIntent: patch.activeAnalysisIntent !== undefined ? patch.activeAnalysisIntent : base.activeAnalysisIntent,
     activeSemanticPlan: patch.activeSemanticPlan !== undefined ? patch.activeSemanticPlan : (base.activeSemanticPlan || null),
     activeUniversalPlan: patch.activeUniversalPlan !== undefined ? patch.activeUniversalPlan : (base.activeUniversalPlan || null),
+    unresolvedGoal: patch.unresolvedGoal !== undefined ? patch.unresolvedGoal : (base.unresolvedGoal || null),
   };
 }
 
