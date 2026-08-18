@@ -5,6 +5,7 @@
 import type { CapabilityExecutor } from "../capabilityResolver.ts";
 import { executeBuiltinCapability } from "../capabilityResolver.ts";
 import { executeCommercePlan, type CommerceStore } from "../commerce/semantic/execute.ts";
+import type { CommerceQueryPlan } from "../commerce/semantic/plan.ts";
 import { planSemanticCommerce } from "../commerce/semantic/planner.ts";
 import { synthesizeSemanticCommerce } from "../commerce/semantic/synthesize.ts";
 import { validateSemanticResult } from "../commerce/semantic/validate.ts";
@@ -17,6 +18,25 @@ import type { UniversalEvidence, UniversalEvidenceLeg, UniversalQueryPlan } from
 
 function metricFrom(result: { metrics?: Array<{ key: string; value: number | string; unit?: string }> } | null, key: string) {
   return (result?.metrics || []).find((m) => m.key === key) || null;
+}
+
+function applyUniversalCommerceOperators(commercePlan: CommerceQueryPlan, leg: UniversalEvidenceLeg) {
+  const ops = new Set(leg.operators || []);
+  const family = (leg.filters || []).find((f) => f.field === "family");
+  const weekend = (leg.filters || []).some((f) => f.field === "weekend");
+  if ((ops.has("cohort_compare") || family) && family) {
+    const value = String(family.value);
+    commercePlan.cohort = { kind: "has_family", value };
+    commercePlan.compareCohort = { kind: "not_has_family", value };
+    commercePlan.calculation = "cohort_compare";
+    commercePlan.outputIntent = "comparison";
+    commercePlan.targetFamily = value === "dessert" || value === "food" || value === "coffee" ? value : commercePlan.targetFamily;
+  } else if (weekend) {
+    commercePlan.cohort = { kind: "weekend" };
+  }
+  if (weekend && !(commercePlan.filters || []).some((f) => f.field === "weekend")) {
+    commercePlan.filters = [...(commercePlan.filters || []), { field: "weekend", op: "eq", value: true }];
+  }
 }
 
 function qualityFrom(ok: boolean, skipped?: boolean): UniversalEvidence["quality"] {
@@ -257,8 +277,7 @@ async function executeLeg(input: {
         skipReason: planned.reason || "Commerce plan unavailable.",
       })];
     }
-    const weekend = (input.leg.filters || []).some((f) => f.field === "weekend");
-    if (weekend) commercePlan.cohort = { kind: "weekend" };
+    applyUniversalCommerceOperators(commercePlan, input.leg);
     const exec = await executeCommercePlan({ plan: commercePlan, store: input.commerceStore, scope: input.scope });
     const validation = validateSemanticResult(commercePlan, exec);
     const text = synthesizeSemanticCommerce({

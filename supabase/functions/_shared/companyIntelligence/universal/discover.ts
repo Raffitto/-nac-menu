@@ -80,8 +80,21 @@ export function looksLikeUniversalManagementQuestion(
   return false;
 }
 
-function addLeg(legs: UniversalEvidenceLeg[], domain: DomainId, capability: string, metric?: string, operators?: string[]) {
-  if (legs.some((l) => l.domain === domain)) return;
+function addLeg(
+  legs: UniversalEvidenceLeg[],
+  domain: DomainId,
+  capability: string,
+  metric?: string,
+  operators?: string[],
+  filters?: UniversalEvidenceLeg["filters"],
+) {
+  const existing = legs.find((l) => l.domain === domain);
+  if (existing) {
+    if (operators?.length) existing.operators = [...new Set([...(existing.operators || []), ...operators])];
+    if (filters?.length) existing.filters = [...(existing.filters || []), ...filters];
+    if (metric && !existing.metric) existing.metric = metric;
+    return;
+  }
   if (legs.length >= 4) return;
   const def = DOMAIN_REGISTRY[domain];
   legs.push({
@@ -89,6 +102,7 @@ function addLeg(legs: UniversalEvidenceLeg[], domain: DomainId, capability: stri
     capability: capability || def.queryCapability,
     metric: metric || null,
     operators: operators || [],
+    filters: filters ? [...filters] : [],
   });
 }
 
@@ -130,14 +144,15 @@ export function planUniversalManagement(input: {
   else if (c.menu) intent = "event_before_after";
   else if (c.unusual) intent = "diagnostic";
 
+  const inheritWeekend = Boolean(input.weekendOnly)
+    || Boolean(prev?.alignment?.includes("weekend"))
+    || Boolean(prev?.evidence.some((leg) => (leg.filters || []).some((f) => f.field === "weekend")));
+
   if (prev && intent === "follow_up") {
-    for (const leg of prev.evidence) addLeg(legs, leg.domain, leg.capability, leg.metric || undefined, leg.operators);
-    if (/\bwhat about reviews\b/i.test(qLower)) addLeg(legs, "reviews", "guest.feedback", "review_volume", ["align_periods"]);
-    if (/\bonly weekends?\b/i.test(qLower)) {
-      for (const leg of legs) {
-        leg.filters = [...(leg.filters || []), { field: "weekend", op: "eq", value: true }];
-      }
+    for (const leg of prev.evidence) {
+      addLeg(legs, leg.domain, leg.capability, leg.metric || undefined, leg.operators, leg.filters);
     }
+    if (/\bwhat about reviews\b/i.test(qLower)) addLeg(legs, "reviews", "guest.feedback", "review_volume", ["align_periods"]);
     if (/\bwhat should we do\b/i.test(qLower)) intent = "opportunity";
     if (/^why\??$/i.test(q.trim())) intent = "driver_analysis";
   } else {
@@ -145,7 +160,14 @@ export function planUniversalManagement(input: {
       addLeg(legs, "cash_up", "commercial.performance", "net_sales", ["baseline_comparison", "driver_decomposition"]);
     }
     if (c.whySales || c.unusual || c.opportunity || c.dessert || c.avgCheck || looksLikeHeadlinePlusOperational(q) || c.operational || /\bbasket\b/i.test(qLower)) {
-      addLeg(legs, "commerce", "commerce.semantic_query", "average_check", ["contribution", "diagnostic"]);
+      addLeg(
+        legs,
+        "commerce",
+        "commerce.semantic_query",
+        "average_check",
+        c.dessert ? ["cohort_compare", "association"] : ["contribution", "diagnostic"],
+        c.dessert ? [{ field: "family", op: "eq", value: "dessert" }] : undefined,
+      );
     }
     if (c.reviews) addLeg(legs, "reviews", "guest.feedback", "review_volume", ["association"]);
     if (c.reviews && /\b(weaker|sales|covers|period|weekend|last year|overlap|divergen)\b/i.test(qLower)) {
@@ -178,8 +200,9 @@ export function planUniversalManagement(input: {
     }
   }
 
-  if (input.weekendOnly) {
+  if (inheritWeekend) {
     for (const leg of legs) {
+      if (DOMAIN_REGISTRY[leg.domain].knownUnavailable.includes("weekend_native_filter")) continue;
       if (!(leg.filters || []).some((f) => f.field === "weekend")) {
         leg.filters = [...(leg.filters || []), { field: "weekend", op: "eq", value: true }];
       }
@@ -208,7 +231,7 @@ export function planUniversalManagement(input: {
     period,
     compare,
     evidence: legs,
-    alignment: input.weekendOnly || /\bweekend/.test(qLower) ? ["period", "branch", "weekend"] : ["period", "branch"],
+    alignment: inheritWeekend || /\bweekend/.test(qLower) ? ["period", "branch", "weekend"] : ["period", "branch"],
     synthesis: unavailable && !legs.length ? "limitation" : "management",
     previousPlan: prev,
     event,

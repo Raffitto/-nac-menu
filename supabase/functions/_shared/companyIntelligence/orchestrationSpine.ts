@@ -569,7 +569,9 @@ export async function runCompanyIntelligenceOrchestration(
   const prevSemantic = (followUp.conversation?.activeSemanticPlan || null) as CommerceQueryPlan | null;
   const prevUniversal = (followUp.conversation?.activeUniversalPlan || null) as UniversalQueryPlan | null;
   const askedQuestion = String(options.question || "").trim();
-  const weekendOnly = Boolean(followUp.conversation?.filters?.weekendOnly) || /\bonly weekends?\b/i.test(askedQuestion);
+  const weekendOnly = Boolean(followUp.conversation?.filters?.weekendOnly)
+    || /\bonly weekends?\b/i.test(askedQuestion)
+    || Boolean(prevUniversal?.alignment?.includes("weekend"));
   const wantUniversal = looksLikeUniversalManagementQuestion(askedQuestion, prevUniversal)
     || looksLikeUniversalManagementQuestion(followUp.resolvedQuestion, prevUniversal);
 

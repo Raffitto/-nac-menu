@@ -121,6 +121,46 @@ describe("universal RBAC and conflicts", () => {
     expect(out.reasons.join(" ")).toMatch(/access|RBAC|include/i);
   });
 
+  test("weekend filter inherits across follow-ups and skips Cash Up", () => {
+    const out = run(`
+      const first = mod.planUniversalManagement({
+        question: "Why were sales weaker this month?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+      });
+      const weekends = mod.planUniversalManagement({
+        question: "Only weekends.",
+        branchId: "khobar",
+        previousPlan: first,
+        weekendOnly: true,
+      });
+      const july = mod.planUniversalManagement({
+        question: "Compare with July.",
+        branchId: "khobar",
+        previousPlan: weekends,
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+      });
+      const dessert = mod.planUniversalManagement({
+        question: "Did dessert behavior help or hurt average check?",
+        branchId: "khobar",
+      });
+      const commerce = july.evidence.find((e) => e.domain === "commerce");
+      const cash = july.evidence.find((e) => e.domain === "cash_up");
+      return {
+        alignment: july.alignment,
+        commerceWeekend: (commerce.filters || []).some((f) => f.field === "weekend"),
+        cashWeekend: (cash.filters || []).some((f) => f.field === "weekend"),
+        dessertOps: dessert.evidence.find((e) => e.domain === "commerce")?.operators,
+        dessertFamily: (dessert.evidence.find((e) => e.domain === "commerce")?.filters || []).map((f) => f.field + "=" + f.value),
+      };
+    `);
+    expect(out.alignment).toEqual(expect.arrayContaining(["weekend"]));
+    expect(out.commerceWeekend).toBe(true);
+    expect(out.cashWeekend).toBe(false);
+    expect(out.dessertOps).toEqual(expect.arrayContaining(["cohort_compare"]));
+    expect(out.dessertFamily.join(" ")).toMatch(/family=dessert/);
+  });
+
   test("Cash Up and commerce check totals are not averaged", () => {
     const out = run(`
       const conflicts = mod.detectSourceConflicts([

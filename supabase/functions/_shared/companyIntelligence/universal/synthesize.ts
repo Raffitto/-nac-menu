@@ -43,10 +43,14 @@ export function synthesizeUniversalManagement(exec: UniversalExecution): string 
   const parts: string[] = [];
   if (sales) {
     const d = fmt(delta);
+    const weekendCaveat = exec.plan.alignment.includes("weekend")
+      ? " Cash Up has no native weekend slice, so that headline remains the full selected period; weekend filtering applies to compatible commerce legs."
+      : "";
     parts.push(
       `Cash Up headline net sales for ${branch} (${period}) were ${fmt(sales)}`
       + (d ? ` (${Number(delta?.value) < 0 ? "down" : "up"} ${d} vs the comparison window)` : "")
-      + ".",
+      + "."
+      + weekendCaveat,
     );
   } else if (exec.evidence.some((e) => e.domain === "cash_up" && e.skipped)) {
     parts.push("Cash Up headline sales were not available for this exact request.");
