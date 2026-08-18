@@ -12,10 +12,11 @@ import {
   categoryMix,
   contributionToSpend,
   distinctProductCount,
-  filterOrders,
-  guestBand,
-  itemsByOrder,
-  mean,
+    filterOrders,
+    guestBand,
+    itemsByOrder,
+    matchesWeekend,
+    mean,
   median,
   orderHasFamily,
   percentile,
@@ -269,12 +270,31 @@ export async function executeCommercePlan(input: {
   }));
   const itemsBy = itemsByOrder(items);
   const filt = filtersFromPlan(input.plan);
-  const filtered = filterOrders(orders, itemsBy, filt);
+  if (
+    filt.weekend == null
+    && !splitWeekendWeekday(input.plan)
+    && (
+      (Array.isArray(input.plan.filters) && input.plan.filters.some((f) => f.field === "weekend" && f.value !== false))
+      || input.plan.cohort?.kind === "weekend"
+    )
+  ) {
+    filt.weekend = true;
+  }
+  let filtered = filterOrders(orders, itemsBy, filt);
+  if (filt.weekend != null) {
+    filtered = filtered.filter((order) =>
+      matchesWeekend(String(order.business_date).slice(0, 10), Boolean(filt.weekend))
+    );
+  }
   const { a: cohort, b: baseline } = bothCohorts(filtered, itemsBy, input.plan);
   const mappingUnclass = items.filter((i) => i.canonical_category === "unclassified").length;
-  const mappingNote = items.length && mappingUnclass / items.length > 0.15
+  let mappingNote = items.length && mappingUnclass / items.length > 0.15
     ? `Item mapping: ${((1 - mappingUnclass / items.length) * 100).toFixed(0)}% of item rows have a classified family.`
     : null;
+  if (filt.weekend != null) {
+    const note = `Weekend (Fri–Sat) constraint kept ${filtered.length} of ${orders.length} checks.`;
+    mappingNote = mappingNote ? `${mappingNote} ${note}` : note;
+  }
 
   const limit = Math.min(input.plan.ranking?.limit || 10, COMMERCE_EXEC_LIMITS.maxRanking);
   const calc = input.plan.calculation || "none";

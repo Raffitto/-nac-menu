@@ -382,8 +382,8 @@ describe("universal RBAC and conflicts", () => {
     expect(out.weekendFilter).toBe(true);
     expect(out.alignment).toEqual(expect.arrayContaining(["weekend"]));
     expect(out.snapshotWeekend).toBe(true);
-    expect(String(out.text || "")).toMatch(/\b2\b/);
-    expect(String(out.text || "")).not.toMatch(/\b4\b/);
+    expect(String(out.text || "")).toMatch(/kept 2 of 4 checks/);
+    expect(String(out.text || "")).toMatch(/order_count was 2\b/);
   });
 
   test("Cash Up and commerce check totals are not averaged", () => {
