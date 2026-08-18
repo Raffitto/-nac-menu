@@ -2,6 +2,11 @@ name: NAC AI Control Worker
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/ask-nac-fabric-founding-day
+    paths:
+      - ai-control/NEXT_TASK.md
 
 concurrency:
   group: nac-ai-control
@@ -11,14 +16,17 @@ permissions:
   contents: write
   issues: write
 
+env:
+  CONTROL_BRANCH: release/ask-nac-fabric-founding-day
+
 jobs:
   run-once:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: release/ask-nac-fabric-founding-day
+          ref: ${{ env.CONTROL_BRANCH }}
           fetch-depth: 1
 
       - uses: actions/setup-node@v4
@@ -26,31 +34,62 @@ jobs:
           node-version: "20"
           cache: npm
 
-      - name: Install
+      - name: Read task mode
+        id: task
+        shell: bash
+        run: |
+          DET=$(awk -F': ' '/^deterministic:/ {print $2; exit}' ai-control/NEXT_TASK.md | tr -d '\r')
+          TASK=$(awk -F': ' '/^taskId:/ {print $2; exit}' ai-control/NEXT_TASK.md | tr -d '\r')
+          echo "deterministic=${DET:-false}" >> "$GITHUB_OUTPUT"
+          echo "task_id=${TASK}" >> "$GITHUB_OUTPUT"
+          echo "Task ${TASK}; deterministic=${DET:-false}"
+
+      - name: Install project dependencies
+        if: steps.task.outputs.deterministic == 'true'
         run: |
           if [ -f package-lock.json ]; then npm ci --ignore-scripts; else npm install --ignore-scripts; fi
 
-      - name: Deterministic worker (no model)
+      - name: Run deterministic worker
+        if: steps.task.outputs.deterministic == 'true'
         run: node scripts/ai-control-worker.mjs
 
-      - name: Commit handoff if dirty
+      - name: Install Cursor CLI
+        if: steps.task.outputs.deterministic != 'true'
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
+          "$HOME/.cursor/bin/cursor-agent" --version
+
+      - name: Run Cursor agent task
+        if: steps.task.outputs.deterministic != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          test -n "$CURSOR_API_KEY" || { echo "CURSOR_API_KEY missing"; exit 2; }
+          cursor-agent -p --force --output-format text --model composer-2.5 \
+            "You are the remote implementation worker for NAC. Read ai-control/NEXT_TASK.md, ai-control/STATE.json, ai-control/PERMISSIONS.md, ai-control/DECISIONS.md, and ai-control/PROTOCOL.md before acting. Execute ONLY the current task and respect every scope, cost, security, deployment, and approval boundary. Use focused tests only. Do not merge main, deploy, use paid external services, or spend outside the user's Cursor plan. When complete, update ai-control/LAST_HANDOFF.md, ai-control/STATE.json, and ai-control/CURRENT_STATUS.md and set state to awaiting_review. Do not start a second milestone."
+
+      - name: Commit worker changes
+        shell: bash
         run: |
           git config user.name "nac-ai-control-worker"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ai-control supabase/functions/_shared/companyIntelligence/externalReality/ossReferenceRegistry.ts || true
+          git add -A
           if git diff --cached --quiet; then
-            echo "No control-plane file changes"
+            echo "No worker changes to commit"
           else
-            git commit -m "feat(ai-control): worker handoff for current NEXT_TASK"
-            git push
+            git commit -m "feat(ai-control): complete ${{ steps.task.outputs.task_id }}"
+            git push origin HEAD:${{ env.CONTROL_BRANCH }}
           fi
 
       - name: Control Room comment
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           ISSUE=$(node -e "const s=require('./ai-control/STATE.json'); process.stdout.write(String(s.controlRoomIssue||''))")
-          if [ -z "$ISSUE" ] || [ "$ISSUE" = "null" ]; then echo "No controlRoomIssue yet"; exit 0; fi
+          if [ -z "$ISSUE" ] || [ "$ISSUE" = "null" ]; then exit 0; fi
           SHA=$(git rev-parse HEAD)
-          gh issue comment "$ISSUE" --body "Worker run on \`$SHA\`. See \`ai-control/LAST_HANDOFF.md\`."
+          STATUS=$(node -e "const s=require('./ai-control/STATE.json'); process.stdout.write(String(s.status||'unknown'))")
+          gh issue comment "$ISSUE" --body "NAC worker **${{ steps.task.outputs.task_id }}** finished workflow attempt on \`$SHA\` — state: **$STATUS**. See \`ai-control/LAST_HANDOFF.md\` and \`ai-control/CURRENT_STATUS.md\`."
