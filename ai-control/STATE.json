@@ -2,12 +2,12 @@
   "protocolVersion": 1,
   "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "ea958bf36aa682b6434571d09a8c635a4c190825",
+  "headSha": "4e6640b703af3ebcf22cfdfb2eb20d5090183648",
   "activeTaskId": null,
   "lastCompletedTaskId": "NAC-CTRL-0001",
-  "lastUpdatedAt": "2026-08-18T18:55:00.000Z",
+  "lastUpdatedAt": "2026-08-18T18:56:38.000Z",
   "autonomousMode": true,
-  "controlRoomIssue": null,
+  "controlRoomIssue": 2,
   "budgetPolicy": {
     "cursorModelsStartPercent": 69,
     "softStopPercent": 88,
@@ -23,5 +23,5 @@
     "taskId": null,
     "acquiredAt": null
   },
-  "blocker": "control_room_issue_requires_gh_auth"
+  "blocker": null
 }
