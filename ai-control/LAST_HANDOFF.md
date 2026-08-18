@@ -105,7 +105,7 @@ Covered by `commerceEdgeWiring` period-only follow-up probe (inherits `commerceF
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: *(set after push)*
+- commit SHA: `2f0a09886b965c06ec79557e4ecda75f59f8fccb`
 
 ## Blocker for full PASS
 
