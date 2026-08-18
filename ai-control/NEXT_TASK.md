@@ -7,10 +7,13 @@ testBudget: whatsappBridge|aiControlProtocol
 deploy: none
 onDemandAllowed: false
 mergeToMain: false
-issuedAt: 2026-08-18T23:05:00+03:00
+issuedAt: 2026-08-18T23:12:30+03:00
+retryReason: cursor-cli-install-path-fixed
 ---
 
 # NAC-COMMS-0001 — Free WhatsApp Engineering Control Bridge Proof
+
+Retry note: the prior GitHub Actions attempt failed before Cursor started because the workflow checked `~/.cursor/bin/cursor-agent`, while Cursor's installer placed the CLI on the official `~/.local/bin` path. The workflow is now fixed. Re-run this same task from the beginning; do not assume any implementation work happened in the failed attempt.
 
 ## Objective
 
