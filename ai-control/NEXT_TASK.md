@@ -1,79 +1,82 @@
 ---
-taskId: NAC-COMMERCE-0002
-permission: AUTO
-complexity: HIGH
+taskId: NAC-COMMERCE-0003
+permission: AUTO_WITH_GUARDRAILS
+complexity: MEDIUM
 deterministic: false
-testBudget: commerceStore|edgeWiring|tableMix|fabric|rbac
-deploy: none
+testBudget: commerceSemantics|commerceEdgeWiring|commerceTableMix|fabric|rbac
+deploy: ask-nac-edge-once-if-green
 onDemandAllowed: false
 mergeToMain: false
-issuedAt: 2026-08-18T23:35:36+03:00
+issuedAt: 2026-08-19T00:19:00+03:00
 ---
 
-# NAC-COMMERCE-0002 — Live Commerce Store Wiring & Real-Data Regression
+# NAC-COMMERCE-0003 — Semantic Regression Cleanup + One Production Edge Acceptance
 
 ## Objective
 
-Close the highest-leverage gap left by NAC-COMMERCE-0001: prove that Ask NAC's real Edge request path supplies the canonical commerce store on commerce/session turns, then validate the new deterministic table-mix intelligence against existing real Khobar canonical data without deploying production.
+Turn the two locally proven canonical table-mix milestones into one production-accepted Ask NAC capability with minimal extra work: fix the single pre-existing `formatThroughPeriod` July-label regression if it is truly isolated, run focused commerce/Fabric checks, deploy Ask NAC Edge exactly once, then perform bounded live acceptance for canonical table-mix and authority behavior.
 
-This is an integration/proof milestone, not a new analytics engine.
+This is NOT a broad cleanup or new feature build.
 
 ## Required work
 
-1. Trace the actual Ask NAC Edge entry path into `orchestrationSpine.ts` and determine whether `commerceStore` is supplied on every relevant authenticated commerce turn.
-2. If the live request path does not supply it reliably, add the smallest shared adapter/wiring needed to construct the existing allowlisted `CommerceStore` from the current Supabase/auth context.
-3. Preserve RBAC and branch scope at the adapter boundary. No unrestricted raw SQL/tool access.
-4. Keep Cash Up canonical for headline sales. Canonical commerce remains session/table/item evidence only.
-5. Ensure a commerce question can reach `computeTableMixFromStore` when no published snapshot exists.
-6. Verify period-only follow-ups still inherit commerce/table-mix context through the existing Fabric conversation state where supported.
-7. Exercise real-data regression using existing canonical Khobar July/August records or existing publication/read tooling. Do not mutate production data. Read-only is preferred.
-8. Where the repository already has `publish-commerce-from-db.mjs`, reuse it or its query layer for regression evidence; do not create a parallel ingestion path.
-9. If cheap and clearly reducing duplication, refactor the publish script to call the shared `computeTableMix` implementation rather than maintaining inline archetype aggregation. Do this only if focused and low-risk.
+1. Reproduce the single pre-existing `commerceSemantics` failure mentioned in NAC-COMMERCE-0002.
+2. If the failure is an isolated formatting/label defect, fix the smallest shared semantic/period-formatting code path so the test passes generically. Do not special-case July.
+3. Re-run only focused suites needed to protect:
+   - commerce semantics
+   - commerce Edge wiring
+   - canonical table-mix
+   - Fabric routing/authority
+   - RBAC/branch scope
+4. If focused tests are green and there is no material regression, deploy only the `ask-nac` Edge function once from the current working branch.
+5. Perform bounded read-only live acceptance against Khobar with authenticated existing path. No production writes other than the approved Edge deploy.
 
-## Acceptance probes
+## Live acceptance probes
 
-Prove, with focused tests and read-only verification where available:
+Use natural questions, not test-only handlers. At minimum prove:
 
-- Edge/Fabric integration passes a real `commerceStore` into orchestration for authorized commerce turns.
-- Branch scope/RBAC cannot be widened by the store adapter.
-- Missing published snapshot still falls back to canonical store computation.
-- Dessert-focused share, food-containing share, and dessert conversion return deterministic answers from canonical sessions.
-- Explicit comparison computes both periods through identical semantics.
-- Period-only follow-up preserves prior commerce intent/metric/branch context where the existing conversation framework allows it.
-- Coverage/unclassified diagnostics survive the Edge path.
-- Cash Up authority for headline sales remains unchanged.
-- Existing commerce/Fabric focused regressions remain green.
-- If real Khobar July/August canonical data is readable, record observed counts/shares as regression evidence in the handoff, but do not hardcode them into production logic.
+- `What percentage of tables were dessert-focused in July?`
+- `What about August?` as a period-only follow-up preserves the table-mix focus.
+- `Compare July and August dessert-focused tables.`
+- `What percentage of food-containing tables also ordered dessert?`
+- One headline-sales question still uses Cash Up authority and does NOT swap to Foodics/commerce check totals.
 
-## Architecture constraints
+For table-mix answers, verify:
 
-- Reuse `commerce/tableMix.ts`, existing semantic commerce store/query abstractions, existing Supabase client/auth scope, and current publication tooling.
-- Search the OSS registry first only if a generic adapter problem appears; do not add a framework.
-- No unrestricted database-agent access.
-- No duplicated archetype semantics.
-- No phrase-specific routing.
-- No fabricated metrics when rows/mappings are incomplete.
+- canonical commerce-session source/authority
+- branch = Khobar only
+- requested period is correct
+- unclassified/coverage warnings remain calibrated
+- no fabricated data if coverage is unavailable
 
-## Scope discipline
+## Production discipline
 
-Do not:
+- Ask NAC Edge deploy: at most ONE deploy if acceptance gate is green.
+- No Netlify.
+- No main merge.
+- No migration.
+- No new paid API/model.
+- No on-demand Cursor spend.
+- No WhatsApp work.
+- No unrelated refactors.
+- Do not rerun the full repo suite.
 
-- deploy Ask NAC Edge
-- deploy Netlify
-- merge main
-- mutate production data
-- add migrations unless absolutely required for compile correctness (prefer none)
-- add paid services/APIs
-- use on-demand Cursor spend
-- touch WhatsApp
-- rebuild the supervisor/agent framework
-- repeatedly run broad full-repo tests
+## Failure behavior
 
-Use focused tests. Run one relevant build/typecheck at the end if useful.
+If the semantic test failure is not isolated or the focused gate reveals a broader regression:
+
+- do NOT deploy
+- stop with PARTIAL/BLOCKED handoff
+- state the exact failure and safest next repair
+
+If Edge deploy succeeds but live acceptance exposes a regression:
+
+- do not stack multiple speculative redeploys
+- diagnose once, make one bounded repair only if clearly deterministic and low-risk; otherwise stop and report
 
 ## Budget guardrail
 
-Individual Cursor usage percentage is not officially observable. Do not claim precision. Respect the conservative ~88–89% soft-stop intent. If evidence suggests the remaining included-model budget is becoming tight, stop cleanly with a partial handoff rather than using on-demand spend.
+Individual Cursor usage percentage is not officially observable. Do not claim precision. Respect the conservative 88–89% soft-stop intent and no on-demand spillover. If the remaining included-model budget appears insufficient for a coherent fix+deploy+acceptance unit, stop before deployment and hand off cleanly.
 
 ## Final handoff
 
@@ -82,18 +85,17 @@ Write `ai-control/LAST_HANDOFF.md`, update `STATE.json` and `CURRENT_STATUS.md`,
 Report:
 
 - PASS / PARTIAL / BLOCKED
-- actual Edge-to-Fabric commerce-store path discovered
-- wiring added or reused
-- exact files changed
-- RBAC/branch-scope proof
-- canonical-store fallback proof
-- follow-up-context proof
-- real-data regression evidence, if safely readable
+- semantic regression root cause and generic fix
+- files changed
+- focused test counts
+- Edge version deployed, if any
+- live table-mix results for the acceptance probes
+- follow-up inheritance proof
 - Cash Up authority proof
-- focused tests and counts
-- build/typecheck result if run
-- paid calls: 0
-- deploys: none
-- Netlify untouched
-- branch/commit SHA
+- branch/RBAC proof
+- latency if readily observable
+- paid/on-demand usage: 0
+- Netlify: untouched
+- migration: none
+- commit SHA
 - highest-leverage next recommendation
