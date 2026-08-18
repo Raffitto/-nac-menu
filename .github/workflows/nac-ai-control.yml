@@ -55,10 +55,13 @@ jobs:
 
       - name: Install Cursor CLI
         if: steps.task.outputs.deterministic != 'true'
+        shell: bash
         run: |
           curl https://cursor.com/install -fsS | bash
-          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
-          "$HOME/.cursor/bin/cursor-agent" --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v cursor-agent
+          cursor-agent --version
 
       - name: Run Cursor agent task
         if: steps.task.outputs.deterministic != 'true'
