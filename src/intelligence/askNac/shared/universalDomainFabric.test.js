@@ -56,7 +56,41 @@ describe("universal planner eval", () => {
       const fail = [];
       for (const c of cases) {
         const prev = c.previousDomains
-          ? { intent: "diagnostic", question: "prior", branchScope: ["khobar"], period: null, compare: null, evidence: c.previousDomains.map((d) => ({ domain: d, capability: "commercial.performance" })), alignment: ["period"], synthesis: "management" }
+          ? {
+              intent: "diagnostic",
+              question: "prior",
+              branchScope: ["khobar"],
+              period: c.previousPeriod || { startDate: "2026-08-01", endDate: "2026-08-17", label: "August 2026 (to date)", semantic: "this_month" },
+              compare: c.previousCompare || null,
+              evidence: c.previousDomains.map((d) => ({
+                domain: d,
+                capability: d === "commerce" ? "commerce.semantic_query" : "commercial.performance",
+                filters: [
+                  ...(c.previousWeekend && d !== "cash_up" ? [{ field: "weekend", op: "eq", value: true }] : []),
+                  ...((c.previousFilters || []).filter((f) => d !== "cash_up" || !["weekend", "hour", "family", "product"].includes(f.field))),
+                ],
+                operators: [],
+              })),
+              alignment: c.previousWeekend ? ["period", "branch", "weekend"] : ["period", "branch"],
+              synthesis: "management",
+              commerceSnapshot: (c.previousWeekend || c.previousFilters)
+                ? {
+                  domain: "commerce",
+                  entity: "orders",
+                  metric: "order_count",
+                  dimensions: [],
+                  filters: [
+                    ...(c.previousWeekend ? [{ field: "weekend", op: "eq", value: true }] : []),
+                    ...(c.previousFilters || []),
+                  ],
+                  period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+                  outputIntent: "value",
+                  calculation: "none",
+                  seedProduct: c.expectSeed || null,
+                }
+                : null,
+              unsupportedFilters: c.previousWeekend ? [{ domain: "cash_up", field: "weekend", reason: "Cash Up has no native weekend slice; headline figures remain the full selected period." }] : [],
+            }
           : null;
         const looks = mod.looksLikeUniversalManagementQuestion(c.question, prev);
         if (c.expectNotUniversal) {
@@ -66,8 +100,8 @@ describe("universal planner eval", () => {
         const planned = mod.planUniversalManagement({
           question: c.question,
           branchId: "khobar",
-          period: { startDate: "2026-08-11", endDate: "2026-08-17", label: "last 7 days" },
-          comparePeriod: { startDate: "2026-08-04", endDate: "2026-08-10" },
+          period: c.period || { startDate: "2026-08-11", endDate: "2026-08-17", label: "last 7 days" },
+          comparePeriod: c.omitCompare ? null : (c.comparePeriod || { startDate: "2026-08-04", endDate: "2026-08-10" }),
           previousPlan: prev,
           weekendOnly: Boolean(c.weekend),
         });
@@ -84,6 +118,28 @@ describe("universal planner eval", () => {
         const missing = (c.expectedDomains || []).filter((d) => !got.includes(d));
         if (!looks && !got.length && !planned.unavailable) fail.push({ id: c.id, reason: "not_detected", got });
         else if (missing.length) fail.push({ id: c.id, missing, got, intent: planned.intent });
+        if (c.expectCommerceFilter) {
+          const commerce = planned.evidence.find((e) => e.domain === "commerce");
+          const hit = (commerce?.filters || []).some((f) => f.field === c.expectCommerceFilter.field && String(f.value) === String(c.expectCommerceFilter.value));
+          if (!hit) fail.push({ id: c.id, reason: "missing_commerce_filter", filters: commerce?.filters });
+        }
+        if (c.expectCashUpNoWeekend) {
+          const cash = planned.evidence.find((e) => e.domain === "cash_up");
+          if ((cash?.filters || []).some((f) => f.field === "weekend")) fail.push({ id: c.id, reason: "cash_up_should_not_have_weekend" });
+        }
+        if (c.expectUnsupportedWeekend) {
+          const hit = (planned.unsupportedFilters || []).some((u) => u.domain === "cash_up" && u.field === "weekend");
+          if (!hit) fail.push({ id: c.id, reason: "missing_unsupported_weekend", unsupported: planned.unsupportedFilters });
+        }
+        if (c.expectCompare && !planned.compare) fail.push({ id: c.id, reason: "missing_compare_period" });
+        if (c.expectHourFilter) {
+          const commerce = planned.evidence.find((e) => e.domain === "commerce");
+          const hit = (commerce?.filters || []).some((f) => f.field === "hour" && Number(f.value) === c.expectHourFilter);
+          if (!hit) fail.push({ id: c.id, reason: "missing_hour_filter", filters: commerce?.filters });
+        }
+        if (c.expectSeed && planned.commerceSnapshot && planned.commerceSnapshot.seedProduct !== c.expectSeed) {
+          fail.push({ id: c.id, reason: "seed_not_preserved", seed: planned.commerceSnapshot?.seedProduct });
+        }
       }
       return { n: cases.length, fail };
     `);
@@ -159,6 +215,110 @@ describe("universal RBAC and conflicts", () => {
     expect(out.cashWeekend).toBe(false);
     expect(out.dessertOps).toEqual(expect.arrayContaining(["cohort_compare"]));
     expect(out.dessertFamily.join(" ")).toMatch(/family=dessert/);
+  });
+
+  test("follow-up chains preserve filters and only replace period", () => {
+    const out = run(`
+      const a1 = mod.planSemanticCommerce({
+        question: "Compare weekend vs weekday basket size in August",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17", label: "August" },
+      }).plan;
+      const a2 = mod.planSemanticCommerce({
+        question: "Only after 9pm",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17", label: "August" },
+        previousPlan: a1,
+      }).plan;
+      const a3 = mod.planSemanticCommerce({
+        question: "Same for July",
+        branchId: "khobar",
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+        previousPlan: a2,
+      }).plan;
+      const b1 = mod.planSemanticCommerce({
+        question: "What products are most commonly ordered with Cookies?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+      }).plan;
+      const b2 = mod.planSemanticCommerce({
+        question: "Only weekends",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+        previousPlan: b1,
+      }).plan;
+      const b3 = mod.planSemanticCommerce({
+        question: "Compare with July",
+        branchId: "khobar",
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+        previousPlan: b2,
+      }).plan;
+      const c1 = mod.planUniversalManagement({
+        question: "Why were sales weaker this month?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17", semantic: "this_month" },
+        comparePeriod: null,
+      });
+      const c2 = mod.planUniversalManagement({
+        question: "What about weekends?",
+        branchId: "khobar",
+        previousPlan: c1,
+        period: c1.period,
+      });
+      const c3 = mod.planUniversalManagement({
+        question: "Same for July",
+        branchId: "khobar",
+        previousPlan: c2,
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+      });
+      const d1 = mod.planUniversalManagement({
+        question: "How was August operationally?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+      });
+      const d2 = mod.planUniversalManagement({
+        question: "Only desserts",
+        branchId: "khobar",
+        previousPlan: d1,
+        period: d1.period,
+      });
+      const d3 = mod.planUniversalManagement({
+        question: "Same for July",
+        branchId: "khobar",
+        previousPlan: d2,
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+      });
+      return {
+        aHour: (a3.filters || []).some((f) => f.field === "hour" && Number(f.value) === 21),
+        aWeekend: (a3.filters || []).some((f) => f.field === "weekend") || a3.cohort?.kind === "weekend" || a3.compareCohort?.kind === "weekday",
+        aPeriod: a3.period && a3.period.startDate,
+        bSeed: b3.seedProduct,
+        bWeekend: (b3.filters || []).some((f) => f.field === "weekend"),
+        bPeriod: b3.period && b3.period.startDate,
+        cCompare: Boolean(c1.compare),
+        cWeekend: (c3.evidence.find((e) => e.domain === "commerce")?.filters || []).some((f) => f.field === "weekend"),
+        cCashWeekend: (c3.evidence.find((e) => e.domain === "cash_up")?.filters || []).some((f) => f.field === "weekend"),
+        cJuly: c3.period && c3.period.startDate,
+        cUnsupported: (c3.unsupportedFilters || []).some((u) => u.domain === "cash_up" && u.field === "weekend"),
+        dFamily: (d3.evidence.find((e) => e.domain === "commerce")?.filters || []).some((f) => f.field === "family" && f.value === "dessert"),
+        dJuly: d3.period && d3.period.startDate,
+        dCash: d3.evidence.some((e) => e.domain === "cash_up"),
+      };
+    `);
+    expect(out.aHour).toBe(true);
+    expect(out.aWeekend).toBe(true);
+    expect(out.aPeriod).toBe("2026-07-01");
+    expect(String(out.bSeed).toLowerCase()).toMatch(/cookie/);
+    expect(out.bWeekend).toBe(true);
+    expect(out.bPeriod).toBe("2026-07-01");
+    expect(out.cCompare).toBe(true);
+    expect(out.cWeekend).toBe(true);
+    expect(out.cCashWeekend).toBe(false);
+    expect(out.cJuly).toBe("2026-07-01");
+    expect(out.cUnsupported).toBe(true);
+    expect(out.dFamily).toBe(true);
+    expect(out.dJuly).toBe("2026-07-01");
+    expect(out.dCash).toBe(true);
   });
 
   test("Cash Up and commerce check totals are not averaged", () => {

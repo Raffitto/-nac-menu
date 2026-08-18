@@ -7,6 +7,7 @@ import { metricByAlias, type SemanticMetricId } from "./metrics.ts";
 import type { CommerceCohort, CommercePlanFilter, CommerceQueryPlan } from "./plan.ts";
 import { validateCommercePlan, type PlanValidation } from "./plan.ts";
 import type { DateRange } from "../../types.ts";
+import { isPeriodOnlyFollowUpTurn } from "../../conversationFollowUp.ts";
 
 const HOUR_AFTER = /(?:after|from|past|later than)\s+(\d{1,2})\s*(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?/i;
 const HOUR_BARE = /(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)/i;
@@ -163,6 +164,31 @@ export function planSemanticCommerce(input: {
       unavailable: limitation,
     };
     return validateCommercePlan(plan);
+  }
+
+  if (prev && isPeriodOnlyFollowUpTurn(q)) {
+    const period = input.period
+      ? { startDate: input.period.startDate, endDate: input.period.endDate, label: input.period.label }
+      : prev.period;
+    const compare = input.comparePeriod
+      ? { startDate: input.comparePeriod.startDate, endDate: input.comparePeriod.endDate, label: input.comparePeriod.label }
+      : prev.compare;
+    return validateCommercePlan({
+      ...prev,
+      filters: [...(prev.filters || [])],
+      period,
+      compare: compare || undefined,
+      cohort: prev.cohort,
+      compareCohort: prev.compareCohort,
+      calculation: prev.calculation,
+      outputIntent: prev.outputIntent,
+      ranking: prev.ranking,
+      seedProduct: prev.seedProduct,
+      entity: prev.entity,
+      metric: prev.metric,
+      dimensions: prev.dimensions ? [...prev.dimensions] : [],
+      targetFamily: prev.targetFamily,
+    });
   }
 
   const filters: CommercePlanFilter[] = prev ? [...prev.filters] : [];

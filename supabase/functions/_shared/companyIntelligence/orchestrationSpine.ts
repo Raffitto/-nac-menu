@@ -584,6 +584,9 @@ export async function runCompanyIntelligenceOrchestration(
       previousPlan: prevUniversal,
       weekendOnly,
     });
+    if (!uniPlan.commerceSnapshot && prevSemantic) {
+      uniPlan.commerceSnapshot = prevSemantic;
+    }
     const valid = validateUniversalPlan(uniPlan);
     const executed = await executeUniversalPlan({
       plan: uniPlan,
@@ -598,7 +601,7 @@ export async function runCompanyIntelligenceOrchestration(
       activeMetricFamily: "universal",
       previousIntent: "universal.management",
       activeUniversalPlan: uniPlan as unknown as Record<string, unknown>,
-      activeSemanticPlan: prevSemantic as Record<string, unknown> | null,
+      activeSemanticPlan: (uniPlan.commerceSnapshot || prevSemantic) as Record<string, unknown> | null,
       activePeriods: {
         current: uniPlan.period,
         comparison: uniPlan.compare,

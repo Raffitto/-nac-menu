@@ -825,5 +825,200 @@
       "commerce",
       "reviews"
     ]
+  },
+  {
+    "id": "u101",
+    "question": "Compare with July.",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true },
+    "expectCashUpNoWeekend": true,
+    "expectUnsupportedWeekend": true
+  },
+  {
+    "id": "u102",
+    "question": "Same for July.",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true }
+  },
+  {
+    "id": "u103",
+    "question": "What about weekends?",
+    "previousDomains": ["cash_up", "commerce"],
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true },
+    "expectUnsupportedWeekend": true
+  },
+  {
+    "id": "u104",
+    "question": "Only after 9pm",
+    "previousDomains": ["commerce"],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u105",
+    "question": "Same for July",
+    "previousDomains": ["commerce"],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u106",
+    "question": "Why were sales weaker this month?",
+    "omitCompare": true,
+    "period": { "startDate": "2026-08-01", "endDate": "2026-08-17", "label": "August 2026 (to date)", "semantic": "this_month" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCompare": true,
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u107",
+    "question": "Why did performance change?",
+    "omitCompare": true,
+    "period": { "startDate": "2026-08-01", "endDate": "2026-08-17", "semantic": "this_month" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCompare": true
+  },
+  {
+    "id": "u108",
+    "question": "How is this week going?",
+    "period": { "startDate": "2026-08-16", "endDate": "2026-08-17", "label": "this week", "semantic": "this_week" },
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u109",
+    "question": "Forget weekends",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u110",
+    "question": "Only desserts",
+    "previousDomains": ["cash_up", "commerce"],
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u111",
+    "question": "Same for July",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousFilters": [{ "field": "family", "op": "eq", "value": "dessert" }],
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u112",
+    "question": "What about reviews?",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "expectedDomains": ["cash_up", "commerce", "reviews"],
+    "expectCommerceFilter": { "field": "weekend", "value": true }
+  },
+  {
+    "id": "u113",
+    "question": "Why?",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true }
+  },
+  {
+    "id": "u114",
+    "question": "Compare with July.",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousFilters": [{ "field": "hour", "op": "gte", "value": 21 }],
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectHourFilter": 21
+  },
+  {
+    "id": "u115",
+    "question": "Sales declined this month — why?",
+    "omitCompare": true,
+    "period": { "startDate": "2026-08-01", "endDate": "2026-08-17", "semantic": "this_month" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCompare": true
+  },
+  {
+    "id": "u116",
+    "question": "What about weekends?",
+    "previousDomains": ["reviews", "cash_up"],
+    "expectedDomains": ["reviews", "cash_up"],
+    "expectUnsupportedWeekend": true
+  },
+  {
+    "id": "u117",
+    "question": "Same for July",
+    "previousDomains": ["cash_up", "commerce", "reviews"],
+    "previousWeekend": true,
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce", "reviews"],
+    "expectCommerceFilter": { "field": "weekend", "value": true }
+  },
+  {
+    "id": "u118",
+    "question": "How is this week going versus last week?",
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u119",
+    "question": "Did results improve?",
+    "previousDomains": ["cash_up", "commerce"],
+    "expectedDomains": ["cash_up", "commerce"]
+  },
+  {
+    "id": "u120",
+    "question": "Only after 9pm",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true },
+    "expectHourFilter": 21
+  },
+  {
+    "id": "u121",
+    "question": "Compare with July.",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "previousFilters": [{ "field": "hour", "op": "gte", "value": 21 }],
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true },
+    "expectHourFilter": 21,
+    "expectCashUpNoWeekend": true
+  },
+  {
+    "id": "u122",
+    "question": "What should we do?",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCommerceFilter": { "field": "weekend", "value": true }
+  },
+  {
+    "id": "u123",
+    "question": "Why were sales weaker this week?",
+    "omitCompare": true,
+    "period": { "startDate": "2026-08-16", "endDate": "2026-08-17", "semantic": "this_week" },
+    "expectedDomains": ["cash_up", "commerce"],
+    "expectCompare": true
+  },
+  {
+    "id": "u124",
+    "question": "Which one changed most?",
+    "previousDomains": ["commerce"],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u125",
+    "question": "Forget weekends",
+    "previousDomains": ["cash_up", "commerce"],
+    "previousWeekend": true,
+    "period": { "startDate": "2026-07-01", "endDate": "2026-07-31", "label": "July 2026" },
+    "expectedDomains": ["cash_up", "commerce"]
   }
 ]

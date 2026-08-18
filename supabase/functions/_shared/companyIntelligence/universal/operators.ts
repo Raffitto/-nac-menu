@@ -71,27 +71,30 @@ export function detectSourceConflicts(rows: UniversalEvidence[]): Array<{
 }
 
 export function decomposeDrivers(rows: UniversalEvidence[]): Array<{ driver: string; evidence: string; direction: string }> {
-  const salesDelta = rows.find((r) => r.domain === "cash_up" && r.metric === "delta_pct");
-  const covers = rows.find((r) => r.domain === "cash_up" && r.metric === "covers");
-  const avg = rows.find((r) => r.domain === "cash_up" && r.metric === "avg_spend")
-    || rows.find((r) => r.domain === "commerce" && r.metric === "average_check");
-  const drivers: Array<{ driver: string; evidence: string; direction: string }> = [];
+  const salesDelta = rows.find((r) => r.domain === "cash_up" && r.metric === "delta_pct" && !r.skipped);
+  const covers = rows.find((r) => r.domain === "cash_up" && r.metric === "covers" && !r.skipped);
+  const avg = rows.find((r) => r.domain === "cash_up" && r.metric === "avg_spend" && !r.skipped)
+    || rows.find((r) => r.domain === "commerce" && r.metric === "average_check" && !r.skipped);
+  const mix = rows.find((r) => r.domain === "commerce" && !r.skipped);
+  const reviews = rows.find((r) => r.domain === "reviews" && !r.skipped);
+  const drivers: Array<{ driver: string; evidence: string; direction: string; rank: number }> = [];
   if (salesDelta && typeof salesDelta.value === "number") {
     drivers.push({
       driver: "headline_sales",
       evidence: "cash_up",
       direction: salesDelta.value < 0 ? "down" : salesDelta.value > 0 ? "up" : "flat",
+      rank: 1,
     });
   }
   if (covers && typeof covers.value === "number") {
-    drivers.push({ driver: "covers", evidence: "cash_up", direction: "observed" });
+    drivers.push({ driver: "covers", evidence: "cash_up", direction: "observed", rank: 2 });
   }
   if (avg && typeof avg.value === "number") {
-    drivers.push({ driver: "average_spend_or_check", evidence: avg.domain, direction: "observed" });
+    drivers.push({ driver: "average_spend_or_check", evidence: avg.domain, direction: "observed", rank: 2 });
   }
-  const mix = rows.find((r) => r.domain === "commerce" && (r.metric === "diagnostic" || r.text));
-  if (mix) drivers.push({ driver: "basket_mix", evidence: "commerce", direction: "associated" });
-  return drivers;
+  if (mix) drivers.push({ driver: "basket_mix", evidence: "commerce", direction: "associated", rank: 3 });
+  if (reviews) drivers.push({ driver: "guest_feedback", evidence: "reviews", direction: "partial", rank: 4 });
+  return drivers.sort((a, b) => a.rank - b.rank).map(({ rank: _rank, ...rest }) => rest);
 }
 
 export function scoreOpportunities(rows: UniversalEvidence[]): Array<{

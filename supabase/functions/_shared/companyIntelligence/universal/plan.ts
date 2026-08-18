@@ -2,8 +2,15 @@
  * Multi-domain query plan. Planner selects evidence legs; executors stay deterministic.
  */
 
+import type { CommerceQueryPlan } from "../commerce/semantic/plan.ts";
 import type { DateRange } from "../types.ts";
 import type { DomainId } from "./domainRegistry.ts";
+
+export type UnsupportedDomainFilter = {
+  domain: DomainId;
+  field: string;
+  reason: string;
+};
 
 export type UniversalIntent =
   | "diagnostic"
@@ -35,6 +42,9 @@ export type UniversalQueryPlan = {
   previousPlan?: UniversalQueryPlan | null;
   event?: { name: string; date: string | null; resolved: boolean } | null;
   unavailable?: { field: string; reason: string } | null;
+  unsupportedFilters?: UnsupportedDomainFilter[];
+  commerceSnapshot?: CommerceQueryPlan | null;
+  comparisonMethod?: "matched_days" | "full_period" | "daily_average" | "matched_weekday" | "none" | null;
 };
 
 export type UniversalEvidence = {
@@ -53,6 +63,18 @@ export type UniversalEvidence = {
   text?: string | null;
   skipped?: boolean;
   skipReason?: string | null;
+  comparison?: {
+    currentPeriod: DateRange | null;
+    comparisonPeriod: DateRange | null;
+    currentValue: number | string | null;
+    comparisonValue: number | string | null;
+    delta: number | null;
+    deltaPct: number | null;
+    matchedDays: number | null;
+    comparisonMethod: string | null;
+    coverageAlignment: string | null;
+    warnings: string[];
+  } | null;
 };
 
 export function validateUniversalPlan(plan: UniversalQueryPlan): { ok: boolean; reason?: string } {

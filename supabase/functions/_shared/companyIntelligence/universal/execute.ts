@@ -20,10 +20,31 @@ function metricFrom(result: { metrics?: Array<{ key: string; value: number | str
   return (result?.metrics || []).find((m) => m.key === key) || null;
 }
 
-function applyUniversalCommerceOperators(commercePlan: CommerceQueryPlan, leg: UniversalEvidenceLeg) {
+function applyUniversalCommerceOperators(
+  commercePlan: CommerceQueryPlan,
+  leg: UniversalEvidenceLeg,
+  plan: UniversalQueryPlan,
+) {
   const ops = new Set(leg.operators || []);
-  const family = (leg.filters || []).find((f) => f.field === "family");
-  const weekend = (leg.filters || []).some((f) => f.field === "weekend");
+  for (const filter of leg.filters || []) {
+    if (filter.field === "product" && filter.value) {
+      commercePlan.seedProduct = String(filter.value);
+      continue;
+    }
+    if (!(commercePlan.filters || []).some((f) => f.field === filter.field && f.op === filter.op)) {
+      commercePlan.filters = [...(commercePlan.filters || []), {
+        field: filter.field,
+        op: (filter.op as CommerceQueryPlan["filters"][number]["op"]) || "eq",
+        value: filter.value,
+      }];
+    }
+  }
+  if (plan.alignment.includes("weekend") && !(commercePlan.filters || []).some((f) => f.field === "weekend")) {
+    commercePlan.filters = [...(commercePlan.filters || []), { field: "weekend", op: "eq", value: true }];
+  }
+  const family = (commercePlan.filters || []).find((f) => f.field === "family")
+    || (leg.filters || []).find((f) => f.field === "family");
+  const weekend = (commercePlan.filters || []).some((f) => f.field === "weekend");
   if ((ops.has("cohort_compare") || family) && family) {
     const value = String(family.value);
     commercePlan.cohort = { kind: "has_family", value };
@@ -31,12 +52,17 @@ function applyUniversalCommerceOperators(commercePlan: CommerceQueryPlan, leg: U
     commercePlan.calculation = "cohort_compare";
     commercePlan.outputIntent = "comparison";
     commercePlan.targetFamily = value === "dessert" || value === "food" || value === "coffee" ? value : commercePlan.targetFamily;
-  } else if (weekend) {
-    commercePlan.cohort = { kind: "weekend" };
+  } else if (weekend && commercePlan.cohort?.kind !== "weekday" && commercePlan.compareCohort?.kind !== "weekday") {
+    if (!commercePlan.cohort) commercePlan.cohort = { kind: "weekend" };
   }
-  if (weekend && !(commercePlan.filters || []).some((f) => f.field === "weekend")) {
-    commercePlan.filters = [...(commercePlan.filters || []), { field: "weekend", op: "eq", value: true }];
+}
+
+function cashUpQuestion(plan: UniversalQueryPlan, kind: "performance" | "compare"): string {
+  const period = plan.period?.label || "the selected period";
+  if (kind === "compare" && plan.compare) {
+    return `Compare net sales in ${period} with ${plan.compare.label || "the previous comparable period"}`;
   }
+  return `How were net sales in ${period}?`;
 }
 
 function qualityFrom(ok: boolean, skipped?: boolean): UniversalEvidence["quality"] {
@@ -51,13 +77,14 @@ async function runCapability(
   period: DateRange | null,
   compare: DateRange | null,
   question: string,
+  comparabilityMethod: string | null = null,
 ) {
   const req = {
     capability,
     branchId,
     currentPeriod: period,
     comparisonPeriod: compare,
-    comparabilityMethod: null,
+    comparabilityMethod,
     question,
   };
   const state = createCompanyIntelligenceState({
@@ -93,6 +120,7 @@ function toEvidence(input: {
   skipReason?: string | null;
   text?: string | null;
   warnings?: string[];
+  comparison?: UniversalEvidence["comparison"];
 }): UniversalEvidence {
   const def = DOMAIN_REGISTRY[input.domain];
   return {
@@ -110,6 +138,7 @@ function toEvidence(input: {
     text: input.text || null,
     skipped: input.skipped,
     skipReason: input.skipReason || null,
+    comparison: input.comparison || null,
   };
 }
 
@@ -150,7 +179,16 @@ async function executeLeg(input: {
   }
 
   if (input.leg.domain === "cash_up") {
-    const perf = await runCapability(input.executor, "commercial.performance", branchId, input.plan.period, input.plan.compare, input.plan.question);
+    const perfQ = cashUpQuestion(input.plan, "performance");
+    const perf = await runCapability(
+      input.executor,
+      "commercial.performance",
+      branchId,
+      input.plan.period,
+      input.plan.compare,
+      perfQ,
+      input.plan.comparisonMethod || null,
+    );
     const rows: UniversalEvidence[] = [];
     const sales = metricFrom(perf, "net_sales");
     const covers = metricFrom(perf, "covers");
@@ -167,6 +205,7 @@ async function executeLeg(input: {
         provenance: perf.implementationTool,
         ok: perf.ok,
         text: (perf.textSnippets || [])[0] || null,
+        warnings: input.plan.unsupportedFilters?.filter((u) => u.domain === "cash_up").map((u) => u.reason),
       }));
     }
     if (covers) {
@@ -203,19 +242,58 @@ async function executeLeg(input: {
         ok: perf.ok,
       }));
     }
-    if (input.plan.compare) {
-      const cmp = await runCapability(input.executor, "commercial.compare", branchId, input.plan.period, input.plan.compare, input.plan.question);
+    const wantsCompare = Boolean(input.plan.compare)
+      || input.plan.intent === "driver_analysis"
+      || Boolean(input.plan.comparisonMethod);
+    if (wantsCompare && input.plan.compare) {
+      const cmp = await runCapability(
+        input.executor,
+        "commercial.compare",
+        branchId,
+        input.plan.period,
+        input.plan.compare,
+        cashUpQuestion(input.plan, "compare"),
+        input.plan.comparisonMethod || "matched_days",
+      );
       const delta = metricFrom(cmp, "delta_pct");
-      if (delta) {
+      const normalized = cmp.normalized?.comparison;
+      const deltaPct = typeof normalized?.percentChange === "number"
+        ? normalized.percentChange
+        : (typeof delta?.value === "number" ? Number(delta.value) : null);
+      if (deltaPct != null) {
         rows.push(toEvidence({
           domain: "cash_up",
           metric: "delta_pct",
-          value: delta.value,
+          value: deltaPct,
           unit: "%",
           period: input.plan.period,
           branchId,
           provenance: cmp.implementationTool,
           ok: cmp.ok,
+          comparison: {
+            currentPeriod: input.plan.period,
+            comparisonPeriod: input.plan.compare,
+            currentValue: normalized?.current.value ?? sales?.value ?? null,
+            comparisonValue: normalized?.previous.value ?? null,
+            delta: normalized?.delta ?? null,
+            deltaPct,
+            matchedDays: normalized?.matchedDayCount ?? null,
+            comparisonMethod: normalized?.mode || input.plan.comparisonMethod || "matched_days",
+            coverageAlignment: normalized?.mode || null,
+            warnings: normalized?.warnings || [],
+          },
+        }));
+      } else if (!input.plan.compare) {
+        rows.push(toEvidence({
+          domain: "cash_up",
+          metric: "delta_pct",
+          value: null,
+          period: input.plan.period,
+          branchId,
+          provenance: "commercial.compare",
+          ok: false,
+          skipped: true,
+          skipReason: "Comparison baseline is unavailable for this request.",
         }));
       }
     }
@@ -250,20 +328,33 @@ async function executeLeg(input: {
         skipReason: "Commerce store not attached.",
       })];
     }
+    const inherited = input.plan.commerceSnapshot;
     const planned = planSemanticCommerce({
       question: input.plan.question,
       branchId,
       period: input.plan.period,
       comparePeriod: input.plan.compare,
+      previousPlan: inherited || null,
     });
-    const commercePlan = planned.ok && planned.plan && planned.plan.outputIntent !== "limitation"
-      ? planned.plan
-      : planSemanticCommerce({
-        question: "How was this period operationally?",
-        branchId,
-        period: input.plan.period,
-        comparePeriod: input.plan.compare,
-      }).plan;
+    const commercePlan = inherited
+      ? {
+        ...inherited,
+        period: input.plan.period
+          ? { startDate: input.plan.period.startDate, endDate: input.plan.period.endDate, label: input.plan.period.label }
+          : inherited.period,
+        compare: input.plan.compare
+          ? { startDate: input.plan.compare.startDate, endDate: input.plan.compare.endDate, label: input.plan.compare.label }
+          : inherited.compare,
+      }
+      : planned.ok && planned.plan && planned.plan.outputIntent !== "limitation"
+        ? planned.plan
+        : planSemanticCommerce({
+          question: "How was this period operationally?",
+          branchId,
+          period: input.plan.period,
+          comparePeriod: input.plan.compare,
+          previousPlan: inherited || null,
+        }).plan;
     if (!commercePlan) {
       return [toEvidence({
         domain: "commerce",
@@ -277,7 +368,8 @@ async function executeLeg(input: {
         skipReason: planned.reason || "Commerce plan unavailable.",
       })];
     }
-    applyUniversalCommerceOperators(commercePlan, input.leg);
+    applyUniversalCommerceOperators(commercePlan, input.leg, input.plan);
+    input.plan.commerceSnapshot = commercePlan;
     const exec = await executeCommercePlan({ plan: commercePlan, store: input.commerceStore, scope: input.scope });
     const validation = validateSemanticResult(commercePlan, exec);
     const text = synthesizeSemanticCommerce({

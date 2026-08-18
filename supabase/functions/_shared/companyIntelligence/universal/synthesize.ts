@@ -43,18 +43,26 @@ export function synthesizeUniversalManagement(exec: UniversalExecution): string 
   const parts: string[] = [];
   if (sales) {
     const d = fmt(delta);
-    const weekendCaveat = exec.plan.alignment.includes("weekend")
-      ? " Cash Up has no native weekend slice, so that headline remains the full selected period; weekend filtering applies to compatible commerce legs."
+    const method = delta?.comparison?.comparisonMethod;
+    const matched = delta?.comparison?.matchedDays;
+    const methodNote = method === "matched_days" || method === "matched_weekdays"
+      ? ` on ${matched != null ? `${matched} matched days` : "matched days"}`
       : "";
+    const compareLabel = delta?.comparison?.comparisonPeriod?.label || exec.plan.compare?.label || "the previous comparable period";
     parts.push(
       `Cash Up headline net sales for ${branch} (${period}) were ${fmt(sales)}`
-      + (d ? ` (${Number(delta?.value) < 0 ? "down" : "up"} ${d} vs the comparison window)` : "")
-      + "."
-      + weekendCaveat,
+      + (d ? ` (${Number(delta?.value) < 0 ? "down" : "up"} ${d}${methodNote} vs ${compareLabel})` : "")
+      + ".",
     );
   } else if (exec.evidence.some((e) => e.domain === "cash_up" && e.skipped)) {
-    parts.push("Cash Up headline sales were not available for this exact request.");
+    const skip = exec.evidence.find((e) => e.domain === "cash_up" && e.skipped);
+    parts.push(`Cash Up headline sales were not available for this exact request${skip?.skipReason ? ` (${skip.skipReason})` : ""}. Using the strongest overlapping legs instead.`);
+  } else if (exec.plan.intent === "driver_analysis" && !delta) {
+    parts.push("A matched comparison baseline was not available for Cash Up, so the sales movement cannot be stated as a like-for-like change.");
   }
+
+  const unsupported = [...new Set((exec.plan.unsupportedFilters || []).map((u) => u.reason))];
+  for (const reason of unsupported) parts.push(reason);
 
   if (covers) parts.push(`Cash Up covers were ${fmt(covers)}.`);
   if (avg) parts.push(`Average spend/check evidence was ${fmt(avg)} (${avg.domain === "cash_up" ? "Cash Up avg spend" : "commerce average check"}).`);

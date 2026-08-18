@@ -1,5 +1,6 @@
 export * from "./domainRegistry.ts";
 export * from "./plan.ts";
+export * from "./merge.ts";
 export * from "./discover.ts";
 export * from "./operators.ts";
 export * from "./execute.ts";
