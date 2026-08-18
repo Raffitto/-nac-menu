@@ -94,7 +94,7 @@ none
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: `bd5b458532a84b63ca11accc1ae9156d938e4e5c` (feature: `75977b4646b57e2a3bc2cecf71677e79c41b8960`)
+- commit SHA: `3b2ad4170baab1202eb1c89c5bf564857bfdf625`
 
 ## Highest-leverage next recommendation
 
