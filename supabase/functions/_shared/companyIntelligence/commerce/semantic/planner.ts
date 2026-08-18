@@ -12,7 +12,7 @@ const HOUR_AFTER = /(?:after|from|past|later than)\s+(\d{1,2})\s*(?::(\d{2}))?\s
 const HOUR_BARE = /(\d{1,2})\s*(a\.?m\.?|p\.?m\.?)/i;
 const SPEND = /(?:checks?|orders?|baskets?)\s+(?:above|over|greater than|>\s*)\s*(\d+(?:\.\d+)?)\s*(?:sar)?/i;
 const SPEND2 = /(?:above|over)\s+(\d+(?:\.\d+)?)\s*sar/i;
-const GUESTS = /(\d+)\s*\+?\s*guests?|(?:guest|cover)s?\s*(?:count\s*)?(?:of\s*)?(?:>=|at least|over|more than)?\s*(\d+)/i;
+const GUESTS = /(\d+)\s*\+?\s*guests?|(\d+)\s+or more guests?|(?:guest|cover)s?\s*(?:count\s*)?(?:of\s*)?(?:>=|at least|over|more than)?\s*(\d+)/i;
 const BASKET_EQ = /only one product|single product|one product only|checks? had only one/i;
 const BASKET_GT = /more than\s+(\d+)\s+items?|over\s+(\d+)\s+items?|(\d+)\+\s*items/i;
 const BASKET_GTE = /at least\s+(\d+)\s+items?|(?:with\s+)?(\d+)\s+or more items?/i;
@@ -39,14 +39,20 @@ function extractHourGte(q: string): number | null {
   return null;
 }
 
+const MONTH_TAIL = /\s+in\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s+\d{4})?$/i;
+
 function extractProduct(q: string): string | null {
   const quoted = q.match(/["']([A-Za-z][A-Za-z0-9'&+\- ]{1,40})["']/);
   if (quoted) return quoted[1].trim();
   for (const re of [WHEN_PRODUCT, WITH_PRODUCT, CONTAINING]) {
     const m = q.match(re);
     if (m) {
-      const name = m[1].trim().replace(/\s+(is ordered|on (?:tables|checks)|but no.*)$/i, "");
-      if (/^(dessert|food|coffee|mains?|checks?|orders?|guests?|items?|people|the)$/i.test(name)) continue;
+      const name = m[1].trim()
+        .replace(MONTH_TAIL, "")
+        .replace(/\s+(is ordered|on (?:tables|checks)|but no.*)$/i, "")
+        .trim();
+      if (/^(dessert|food|coffee|mains?|drinks?|checks?|orders?|guests?|items?|people|the|\d+|at least|more than|only)$/i.test(name)) continue;
+      if (/\b(versus|without|at least|or more)\b/i.test(name)) continue;
       return name;
     }
   }
@@ -79,11 +85,16 @@ export function looksLikeSemanticCommerceQuestion(question: string): boolean {
   const q = String(question || "").toLowerCase();
   if (!q.trim()) return false;
   if (looksLimitation(q)) return true;
+  if (/^(?:only after\b|only desserts?\b|same for\b)/i.test(q.trim())) return true;
+  const composition = /\b(checks?|baskets?|products?|items?|desserts?|drinks?|cookies|rigatoni|dine-in checks?|food-containing|containing dessert)\b/.test(q)
+    || /\b(ordered with|association|associated with|attach rate|co-?occur|basket size|biggest checks?|largest checks?|average check when|different products)\b/.test(q);
+  const analytic = /\b(most |common|often|appear|share|percentage|percent|at least|or more|versus|vs\.?|associated|association|after \d|weekend|weekday|biggest|largest|only one|average (?:check|spend) (?:when|on checks))\b/.test(q);
+  if (composition && analytic) return true;
   return (
     /\b(ordered with|alongside|attach rate|co-?occur|basket size|biggest checks?|largest checks?|average check when|checks? (?:above|over)|only one product|more than \d+ items?|share of checks|percentage of checks|ordered together|most associated|high-spend|high value checks?|guest(?:s)? count|dine-in checks?|food-containing|dessert-focused|but no food|but no mains|open\/joined|joined orders|weekend basket|weekday basket|after \d{1,2}|daypart|combinations?|penetration|what do (?:people|guests|customers) order with|products? (?:are )?(?:most )?(?:commonly )?ordered|highest attach|compare weekend)\b/.test(q)
-    || /\b(top(?:-|\s)?(?:selling )?products?|top desserts? on checks)\b/.test(q)
+    || /\b(top(?:-|\s)?(?:selling )?products?|top desserts? on checks|most common desserts?)\b/.test(q)
     || /\bwhen [a-z].{1,30} is ordered\b/.test(q)
-    || /\b4\+ guests|3\+ guests|\d+\+ guests\b/.test(q)
+    || /\b\d+\s*(?:\+|or more)\s*guests?\b/.test(q)
   );
 }
 
@@ -172,7 +183,7 @@ export function planSemanticCommerce(input: {
     ranking = ranking || { direction: "desc", limit: 10 };
   }
 
-  const guestM = q.match(/(\d+)\s*\+\s*guests?|checks? with (\d+)\+?\s*guests?|tables?\/?checks? with (\d+)/i);
+  const guestM = q.match(GUESTS) || q.match(/(\d+)\s*\+\s*guests?|checks? with (\d+)\s+or more guests?|checks? with (\d+)\+?\s*guests?/);
   if (guestM) {
     const n = Number(guestM[1] || guestM[2] || guestM[3]);
     if (Number.isFinite(n)) {
@@ -317,7 +328,7 @@ export function planSemanticCommerce(input: {
     dimensions = [];
   }
 
-  if (/\btop(?:-|\s)?(?:selling )?products?|products? (?:ordered )?most often|top desserts?\b/.test(qLower)
+  if (/\btop(?:-|\s)?(?:selling )?products?|products? (?:ordered |appear )?most often|most common desserts?|common desserts?\b/.test(qLower)
     && calculation === "none" && outputIntent !== "ranking") {
     outputIntent = "ranking";
     entity = "items";

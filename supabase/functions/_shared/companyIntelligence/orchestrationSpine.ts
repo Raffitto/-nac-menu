@@ -208,6 +208,7 @@ function hasFabricInheritContext(prev?: StructuredConversationState | null): boo
     prev.activePeriods?.current
     || prev.activeMetricFamily
     || prev.previousIntent
+    || prev.activeSemanticPlan
     || (prev.activeCapabilities && prev.activeCapabilities.length),
   );
 }
@@ -230,6 +231,16 @@ export function isManagementIntelligenceQuestion(
   const q = String(question || "").trim();
   if (isFabricManagedTurn(q)) return true;
   if (looksLikeSemanticCommerceQuestion(q)) return true;
+  if (
+    options?.priorFabricConversation?.activeSemanticPlan
+    && (
+      isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
+      || /^(?:only |what about|how about|and |same for)/i.test(q)
+      || /\bafter \d|weekends?|july|august\b/i.test(q)
+    )
+  ) {
+    return true;
+  }
   const intent = String(legacyRoute?.intent || "");
   if (/^vault_cash_up|^vault_operational|^vault_business_reasoning|^executive_analysis/.test(intent)) {
     return true;
@@ -536,17 +547,23 @@ export async function runCompanyIntelligenceOrchestration(
   }
 
   const prevSemantic = (followUp.conversation?.activeSemanticPlan || null) as CommerceQueryPlan | null;
+  const askedQuestion = String(options.question || "").trim();
   const semanticFollow = Boolean(prevSemantic) && (
-    isPeriodOnlyFollowUpTurn(followUp.resolvedQuestion, options.referenceDate || new Date())
-    || /^(?:only |what about|how about|and |same for)/i.test(String(options.question || "").trim())
-    || /\bonly (?:desserts?|after)|after \d|weekends?|july|august\b/i.test(followUp.resolvedQuestion)
+    isPeriodOnlyFollowUpTurn(askedQuestion, options.referenceDate || new Date())
+    || isPeriodOnlyFollowUpTurn(followUp.resolvedQuestion, options.referenceDate || new Date())
+    || /^(?:only |what about|how about|and |same for)/i.test(askedQuestion)
+    || /\bonly (?:desserts?|after)|after \d|weekends?|july|august\b/i.test(askedQuestion)
   );
   const wantSemantic = Boolean(options.commerceStore)
-    && (looksLikeSemanticCommerceQuestion(followUp.resolvedQuestion) || semanticFollow);
+    && (
+      looksLikeSemanticCommerceQuestion(askedQuestion)
+      || looksLikeSemanticCommerceQuestion(followUp.resolvedQuestion)
+      || semanticFollow
+    );
 
   if (wantSemantic && options.commerceStore) {
     const planned = planSemanticCommerce({
-      question: followUp.resolvedQuestion,
+      question: askedQuestion || followUp.resolvedQuestion,
       branchId: primaryBranchId,
       period: followUp.currentPeriod || state.periods.current,
       comparePeriod: followUp.comparisonPeriod || state.periods.comparison,

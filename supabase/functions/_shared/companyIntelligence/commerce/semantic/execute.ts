@@ -157,12 +157,15 @@ export async function executeCommercePlan(input: {
   let start = input.plan.period?.startDate || coverage?.startDate || "";
   let end = input.plan.period?.endDate || coverage?.endDate || "";
   if (coverage?.startDate && start < coverage.startDate) {
-    return {
-      ok: false,
-      limitation: `Canonical commerce for ${branchId} starts ${coverage.startDate}. ${start} is before ingested coverage.`,
-      coverage,
-      debug: debug(input.plan, started, branchId, 0, 0, { startDate: start, endDate: end }),
-    };
+    if (!end || end < coverage.startDate) {
+      return {
+        ok: false,
+        limitation: `Canonical commerce for ${branchId} starts ${coverage.startDate}. ${start} is before ingested coverage.`,
+        coverage,
+        debug: debug(input.plan, started, branchId, 0, 0, { startDate: start, endDate: end }),
+      };
+    }
+    start = coverage.startDate;
   }
   if (coverage?.endDate && end > coverage.endDate) {
     end = coverage.endDate;

@@ -350,6 +350,7 @@ export function isFabricManagedTurn(question: string): boolean {
   if (/\b(best|worst|top|bottom)\b/i.test(q) && /\bdays?\b/i.test(q)) return true;
   if (isCommerceManagementTurn(q)) return true;
   if (looksLikeSemanticCommerceQuestion(q)) return true;
+  if (/^(?:only after\b|after \d{1,2}\s*(?:pm|am)?\.?$)/i.test(q)) return true;
   return false;
 }
 
@@ -359,6 +360,7 @@ function hasInheritContext(prev: StructuredConversationState): boolean {
     || prev.activeMetric
     || prev.activeMetricFamily
     || prev.previousIntent
+    || prev.activeSemanticPlan
     || (prev.activeCapabilities && prev.activeCapabilities.length),
   );
 }
@@ -692,6 +694,7 @@ export function resolveTurnSemantics(input: {
     || barePronoun
     || responseModeRequest
     || /\b(ramadan|founding day|foundation day|eid|forecast|expect)\b/i.test(q)
+    || looksLikeSemanticCommerceQuestion(q)
   );
   const resolvedQuestion = preserveOriginal
     ? q
