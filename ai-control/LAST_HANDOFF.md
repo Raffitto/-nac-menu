@@ -97,7 +97,8 @@ none
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- handoff commit SHA: `f8a40684c237f54a06ee480332af25ca1ecbaeac`
+- feature commit SHA: `f8a40684c237f54a06ee480332af25ca1ecbaeac`
+- control plane HEAD: `db517625aa989b3428aad45ba5073cc52e1972c6`
 
 ## Highest-leverage next recommendation
 
