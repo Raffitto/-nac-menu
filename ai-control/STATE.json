@@ -1,0 +1,27 @@
+{
+  "protocolVersion": 1,
+  "status": "idle",
+  "branch": "release/ask-nac-fabric-founding-day",
+  "headSha": "d0d345f3320e77981b4b1a956317bbf2393d7597",
+  "activeTaskId": null,
+  "lastCompletedTaskId": null,
+  "lastUpdatedAt": "2026-08-18T18:50:00+03:00",
+  "autonomousMode": true,
+  "controlRoomIssue": null,
+  "budgetPolicy": {
+    "cursorModelsStartPercent": 69,
+    "softStopPercent": 88,
+    "hardIntentPercent": 90,
+    "onDemandAllowed": false,
+    "individualUsagePercentOfficiallyObservable": false,
+    "usageNote": "Cursor does not expose individual plan usage % via public CLI/API. Do not fabricate precision. Stop conservatively."
+  },
+  "deployPolicy": "no_netlify_no_edge_no_main_merge_unless_NEXT_TASK_AUTO_WITH_GUARDRAILS",
+  "permissionDefault": "AUTO",
+  "lock": {
+    "holder": null,
+    "taskId": null,
+    "acquiredAt": null
+  },
+  "blocker": null
+}
