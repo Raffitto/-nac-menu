@@ -95,19 +95,57 @@ function clampPeriod(start: string, end: string): { startDate: string; endDate: 
   return { startDate: new Date(startMs).toISOString().slice(0, 10), endDate: end, clamped: true };
 }
 
+function filterList(plan: CommerceQueryPlan): CommerceQueryPlan["filters"] {
+  return Array.isArray(plan.filters) ? plan.filters : [];
+}
+
+function splitWeekendWeekday(plan: CommerceQueryPlan): boolean {
+  return plan.cohort?.kind === "weekend" && plan.compareCohort?.kind === "weekday";
+}
+
+/** Presence of a weekend eq-filter means weekend-only unless explicitly false. Cohort kind is a second source. */
+function weekendFlagFromPlan(plan: CommerceQueryPlan): boolean | null {
+  if (splitWeekendWeekday(plan)) return null;
+  const weekend = filterList(plan).find((f) => f.field === "weekend");
+  if (weekend) {
+    if (weekend.value === false || weekend.value === "false" || weekend.value === 0) return false;
+    return true;
+  }
+  if (plan.cohort?.kind === "weekend") return true;
+  if (plan.cohort?.kind === "weekday") return false;
+  return null;
+}
+
+function hourGteFromPlan(plan: CommerceQueryPlan): number | null {
+  const hour = filterList(plan).find((f) => f.field === "hour" && f.op === "gte");
+  if (hour != null && hour.value != null && Number.isFinite(Number(hour.value))) return Number(hour.value);
+  if (plan.cohort?.kind === "hour_gte" && plan.cohort.value != null) return Number(plan.cohort.value);
+  return null;
+}
+
 function filtersFromPlan(plan: CommerceQueryPlan) {
-  const hour = plan.filters.find((f) => f.field === "hour" && f.op === "gte");
-  const weekend = plan.filters.find((f) => f.field === "weekend");
-  const status = plan.filters.find((f) => f.field === "status");
-  const orderType = plan.filters.find((f) => f.field === "order_type");
-  const family = plan.filters.find((f) => f.field === "family");
+  const status = filterList(plan).find((f) => f.field === "status");
+  const orderType = filterList(plan).find((f) => f.field === "order_type");
+  const family = filterList(plan).find((f) => f.field === "family");
   return {
-    hourGte: hour ? Number(hour.value) : null,
-    weekend: weekend ? Boolean(weekend.value) : null,
+    hourGte: hourGteFromPlan(plan),
+    weekend: weekendFlagFromPlan(plan),
     status: status ? (status.value as string | string[]) : (plan.metric === "completed_order_count" ? "completed" : null),
     orderType: orderType ? String(orderType.value) : null,
     family: family ? String(family.value) : (plan.targetFamily && plan.outputIntent === "ranking" ? plan.targetFamily : null),
   };
+}
+
+function constrainedPopulation(
+  plan: CommerceQueryPlan,
+  cohort: SemanticOrder[],
+  filtered: SemanticOrder[],
+): SemanticOrder[] {
+  const kind = plan.cohort?.kind;
+  if (kind && ["weekend", "weekday", "hour_gte", "hour_lt", "has_family", "contains_product"].includes(kind)) {
+    return cohort;
+  }
+  return cohort.length && plan.cohort ? cohort : filtered;
 }
 
 function bothCohorts(orders: SemanticOrder[], itemsBy: Map<string, SemanticItem[]>, plan: CommerceQueryPlan) {
@@ -346,30 +384,31 @@ export async function executeCommercePlan(input: {
   }
 
   if (calc === "diagnostic") {
-    const vals = filtered.map((o) => Number(o.net_sales) || 0);
+    const scoped = constrainedPopulation(input.plan, cohort, filtered);
+    const vals = scoped.map((o) => Number(o.net_sales) || 0);
     const movers = prevOrders.length
-      ? shareChange(filtered, prevOrders, itemsBy, prevItemsBy, 5, { family: filt.family })
-      : productLift(applyCohort(filtered, itemsBy, { kind: "spend_gt", value: 300 }), filtered, itemsBy, 5, { family: filt.family });
-    const mix = categoryMix(filtered, itemsBy);
-    const buckets = spendBuckets(filtered);
-    const dessert = filtered.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "dessert")).length;
-    const food = filtered.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "food")).length;
+      ? shareChange(scoped, prevOrders, itemsBy, prevItemsBy, 5, { family: filt.family })
+      : productLift(applyCohort(scoped, itemsBy, { kind: "spend_gt", value: 300 }), scoped, itemsBy, 5, { family: filt.family });
+    const mix = categoryMix(scoped, itemsBy);
+    const buckets = spendBuckets(scoped);
+    const dessert = scoped.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "dessert")).length;
+    const food = scoped.filter((o) => orderHasFamily(itemsBy.get(o.source_order_id) || [], "food")).length;
     return ok({
       diagnostic: {
-        orders: filtered.length,
+        orders: scoped.length,
         averageCheck: mean(vals),
         medianCheck: median(vals),
         p90Check: percentile(vals, 90),
-        basketSize: mean(filtered.map((o) => basketQty(itemsBy.get(o.source_order_id) || []))),
-        covers: filtered.reduce((s, o) => s + (Number(o.covers) || 0), 0),
-        highSpendShare: ratio(filtered.filter((o) => (Number(o.net_sales) || 0) > 300).length, filtered.length),
-        dessertShare: ratio(dessert, filtered.length),
-        foodShare: ratio(food, filtered.length),
+        basketSize: mean(scoped.map((o) => basketQty(itemsBy.get(o.source_order_id) || []))),
+        covers: scoped.reduce((s, o) => s + (Number(o.covers) || 0), 0),
+        highSpendShare: ratio(scoped.filter((o) => (Number(o.net_sales) || 0) > 300).length, scoped.length),
+        dessertShare: ratio(dessert, scoped.length),
+        foodShare: ratio(food, scoped.length),
         mix: mix.slice(0, 5),
         buckets,
         movers: movers.slice(0, 5),
       },
-      cohortSize: filtered.length,
+      cohortSize: scoped.length,
       ranking: movers.slice(0, 5),
     });
   }
@@ -479,11 +518,12 @@ export async function executeCommercePlan(input: {
     });
   }
 
-  const value = metricOver(cohort.length && input.plan.cohort ? cohort : filtered, itemsBy, input.plan.metric);
+  const scoped = constrainedPopulation(input.plan, cohort, filtered);
+  const value = metricOver(scoped, itemsBy, input.plan.metric);
   return ok({
     value,
     unit: unitFor(input.plan.metric),
-    cohortSize: (cohort.length && input.plan.cohort ? cohort : filtered).length,
+    cohortSize: scoped.length,
     denominator: filtered.length,
   });
 

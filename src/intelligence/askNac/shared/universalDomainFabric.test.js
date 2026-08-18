@@ -321,6 +321,71 @@ describe("universal RBAC and conflicts", () => {
     expect(out.dCash).toBe(true);
   });
 
+  test("period replacement executes weekend-constrained commerce, not the full month", () => {
+    const out = run(`
+      const orders = [
+        { source_order_id: "w1", branch_id: "khobar", business_date: "2026-07-03", opened_at: "2026-07-03T18:00:00+03:00", closed_at: "2026-07-03T19:00:00+03:00", order_type: "dine_in", covers: 2, subtotal: 80, tax: 12, net_sales: 92, status: "completed" },
+        { source_order_id: "w2", branch_id: "khobar", business_date: "2026-07-04", opened_at: "2026-07-04T18:00:00+03:00", closed_at: "2026-07-04T19:00:00+03:00", order_type: "dine_in", covers: 2, subtotal: 80, tax: 12, net_sales: 92, status: "completed" },
+        { source_order_id: "d1", branch_id: "khobar", business_date: "2026-07-06", opened_at: "2026-07-06T18:00:00+03:00", closed_at: "2026-07-06T19:00:00+03:00", order_type: "dine_in", covers: 2, subtotal: 80, tax: 12, net_sales: 92, status: "completed" },
+        { source_order_id: "d2", branch_id: "khobar", business_date: "2026-07-07", opened_at: "2026-07-07T18:00:00+03:00", closed_at: "2026-07-07T19:00:00+03:00", order_type: "dine_in", covers: 2, subtotal: 80, tax: 12, net_sales: 92, status: "completed" },
+      ];
+      const items = orders.map((o, i) => ({
+        source_order_id: o.source_order_id, source_order_item_id: "i" + i, branch_id: "khobar",
+        business_date: o.business_date, product_id: "p", canonical_menu_item_id: "m",
+        item_name: "Salad", canonical_category: "food", quantity: 1, net_amount: 92, status: "completed",
+      }));
+      const store = mod.createMemoryCommerceStore({
+        orders, items,
+        coverage: { branchId: "khobar", startDate: "2026-07-01", endDate: "2026-08-17" },
+      });
+      const scope = mod.createIntelligenceScope({
+        primaryBranchId: "khobar", branchIds: ["khobar"], allowedBranchIds: ["khobar"], canSeeNetwork: false,
+      });
+      const first = mod.planUniversalManagement({
+        question: "Why were sales weaker this month?",
+        branchId: "khobar",
+        period: { startDate: "2026-08-01", endDate: "2026-08-17", label: "August 2026 (to date)", semantic: "this_month" },
+      });
+      first.commerceSnapshot = {
+        domain: "commerce", entity: "orders", metric: "order_count", dimensions: [],
+        filters: [{ field: "branch", op: "eq", value: "khobar" }],
+        period: { startDate: "2026-08-01", endDate: "2026-08-17" },
+        outputIntent: "value", calculation: "none",
+      };
+      const weekends = mod.planUniversalManagement({
+        question: "What about weekends?",
+        branchId: "khobar",
+        previousPlan: first,
+        period: first.period,
+      });
+      const july = mod.planUniversalManagement({
+        question: "Same for July",
+        branchId: "khobar",
+        previousPlan: weekends,
+        period: { startDate: "2026-07-01", endDate: "2026-07-31", label: "July 2026" },
+      });
+      const executed = await mod.executeUniversalPlan({
+        plan: july,
+        scope,
+        executor: mod.createMockCapabilityExecutor(),
+        commerceStore: store,
+      });
+      const commerce = executed.evidence.find((e) => e.domain === "commerce");
+      return {
+        weekendFilter: (july.commerceSnapshot?.filters || []).some((f) => f.field === "weekend"),
+        alignment: july.alignment,
+        text: commerce && commerce.text,
+        value: commerce && commerce.value,
+        snapshotWeekend: (executed.plan.commerceSnapshot?.filters || []).some((f) => f.field === "weekend"),
+      };
+    `);
+    expect(out.weekendFilter).toBe(true);
+    expect(out.alignment).toEqual(expect.arrayContaining(["weekend"]));
+    expect(out.snapshotWeekend).toBe(true);
+    expect(String(out.text || "")).toMatch(/\b2\b/);
+    expect(String(out.text || "")).not.toMatch(/\b4\b/);
+  });
+
   test("Cash Up and commerce check totals are not averaged", () => {
     const out = run(`
       const conflicts = mod.detectSourceConflicts([

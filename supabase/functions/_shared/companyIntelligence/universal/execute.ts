@@ -20,31 +20,67 @@ function metricFrom(result: { metrics?: Array<{ key: string; value: number | str
   return (result?.metrics || []).find((m) => m.key === key) || null;
 }
 
+function cloneCommercePlan(plan: CommerceQueryPlan): CommerceQueryPlan {
+  return {
+    ...plan,
+    filters: (plan.filters || []).map((f) => ({ ...f })),
+    dimensions: [...(plan.dimensions || [])],
+    period: plan.period ? { ...plan.period } : null,
+    compare: plan.compare ? { ...plan.compare } : undefined,
+    cohort: plan.cohort ? { ...plan.cohort } : plan.cohort,
+    compareCohort: plan.compareCohort ? { ...plan.compareCohort } : plan.compareCohort,
+    ranking: plan.ranking ? { ...plan.ranking } : plan.ranking,
+  };
+}
+
+function upsertCommerceFilter(
+  plan: CommerceQueryPlan,
+  field: string,
+  op: CommerceQueryPlan["filters"][number]["op"],
+  value?: CommerceQueryPlan["filters"][number]["value"],
+) {
+  const filters = [...(plan.filters || [])];
+  const idx = filters.findIndex((f) => f.field === field);
+  const next = { field, op, value };
+  if (idx >= 0) filters[idx] = next;
+  else filters.push(next);
+  plan.filters = filters;
+}
+
 function applyUniversalCommerceOperators(
   commercePlan: CommerceQueryPlan,
   leg: UniversalEvidenceLeg,
   plan: UniversalQueryPlan,
 ) {
   const ops = new Set(leg.operators || []);
+  const splitWeekendWeekday = commercePlan.cohort?.kind === "weekend"
+    && commercePlan.compareCohort?.kind === "weekday";
   for (const filter of leg.filters || []) {
     if (filter.field === "product" && filter.value) {
       commercePlan.seedProduct = String(filter.value);
       continue;
     }
-    if (!(commercePlan.filters || []).some((f) => f.field === filter.field && f.op === filter.op)) {
-      commercePlan.filters = [...(commercePlan.filters || []), {
-        field: filter.field,
-        op: (filter.op as CommerceQueryPlan["filters"][number]["op"]) || "eq",
-        value: filter.value,
-      }];
-    }
+    if (filter.field === "weekend" && splitWeekendWeekday) continue;
+    upsertCommerceFilter(
+      commercePlan,
+      filter.field,
+      (filter.op as CommerceQueryPlan["filters"][number]["op"]) || "eq",
+      filter.value,
+    );
   }
-  if (plan.alignment.includes("weekend") && !(commercePlan.filters || []).some((f) => f.field === "weekend")) {
-    commercePlan.filters = [...(commercePlan.filters || []), { field: "weekend", op: "eq", value: true }];
+  const weekendRequested = !splitWeekendWeekday && (
+    plan.alignment.includes("weekend")
+    || (leg.filters || []).some((f) => f.field === "weekend" && f.value !== false)
+    || commercePlan.cohort?.kind === "weekend"
+  );
+  if (weekendRequested) {
+    upsertCommerceFilter(commercePlan, "weekend", "eq", true);
+    if (commercePlan.cohort?.kind !== "weekday" && commercePlan.compareCohort?.kind !== "weekday") {
+      commercePlan.cohort = { kind: "weekend" };
+    }
   }
   const family = (commercePlan.filters || []).find((f) => f.field === "family")
     || (leg.filters || []).find((f) => f.field === "family");
-  const weekend = (commercePlan.filters || []).some((f) => f.field === "weekend");
   if ((ops.has("cohort_compare") || family) && family) {
     const value = String(family.value);
     commercePlan.cohort = { kind: "has_family", value };
@@ -52,17 +88,17 @@ function applyUniversalCommerceOperators(
     commercePlan.calculation = "cohort_compare";
     commercePlan.outputIntent = "comparison";
     commercePlan.targetFamily = value === "dessert" || value === "food" || value === "coffee" ? value : commercePlan.targetFamily;
-  } else if (weekend && commercePlan.cohort?.kind !== "weekday" && commercePlan.compareCohort?.kind !== "weekday") {
-    if (!commercePlan.cohort) commercePlan.cohort = { kind: "weekend" };
   }
 }
 
 function cashUpQuestion(plan: UniversalQueryPlan, kind: "performance" | "compare"): string {
-  const period = plan.period?.label || "the selected period";
-  if (kind === "compare" && plan.compare) {
-    return `Compare net sales in ${period} with ${plan.compare.label || "the previous comparable period"}`;
+  const start = plan.period?.startDate;
+  const end = plan.period?.endDate;
+  const span = start && end ? `${start} to ${end}` : (plan.period?.label || "the selected period");
+  if (kind === "compare" && plan.compare?.startDate && plan.compare.endDate) {
+    return `Compare net sales from ${span} with ${plan.compare.startDate} to ${plan.compare.endDate}`;
   }
-  return `How were net sales in ${period}?`;
+  return `How were net sales from ${span}?`;
 }
 
 function qualityFrom(ok: boolean, skipped?: boolean): UniversalEvidence["quality"] {
@@ -336,7 +372,7 @@ async function executeLeg(input: {
       comparePeriod: input.plan.compare,
       previousPlan: inherited || null,
     });
-    const commercePlan = inherited
+    const rawPlan = inherited
       ? {
         ...inherited,
         period: input.plan.period
@@ -355,7 +391,7 @@ async function executeLeg(input: {
           comparePeriod: input.plan.compare,
           previousPlan: inherited || null,
         }).plan;
-    if (!commercePlan) {
+    if (!rawPlan) {
       return [toEvidence({
         domain: "commerce",
         metric: "average_check",
@@ -368,6 +404,7 @@ async function executeLeg(input: {
         skipReason: planned.reason || "Commerce plan unavailable.",
       })];
     }
+    const commercePlan = cloneCommercePlan(rawPlan);
     applyUniversalCommerceOperators(commercePlan, input.leg, input.plan);
     input.plan.commerceSnapshot = commercePlan;
     const exec = await executeCommercePlan({ plan: commercePlan, store: input.commerceStore, scope: input.scope });

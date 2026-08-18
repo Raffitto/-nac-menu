@@ -176,10 +176,27 @@ function inheritCommerceSnapshot(
   let nextFilters = filters;
   if (changes.weekend === "clear") nextFilters = removeFilter(nextFilters, "weekend");
   if (changes.weekend === "add") nextFilters = upsertFilter(nextFilters, { field: "weekend", op: "eq", value: true });
+  if (
+    changes.weekend !== "clear"
+    && (prev.cohort?.kind === "weekend" || nextFilters.some((f) => f.field === "weekend" && f.value !== false))
+    && prev.compareCohort?.kind !== "weekday"
+  ) {
+    nextFilters = upsertFilter(nextFilters, { field: "weekend", op: "eq", value: true });
+  }
   if (changes.hourGte != null) nextFilters = upsertFilter(nextFilters, { field: "hour", op: "gte", value: changes.hourGte });
   if (changes.family) nextFilters = upsertFilter(nextFilters, { field: "family", op: "eq", value: changes.family });
   if (changes.forget.includes("hour")) nextFilters = removeFilter(nextFilters, "hour");
   if (changes.forget.includes("family")) nextFilters = removeFilter(nextFilters, "family");
+  let cohort = prev.cohort;
+  if (changes.weekend === "clear" && cohort?.kind === "weekend") cohort = null;
+  if (
+    changes.weekend !== "clear"
+    && prev.compareCohort?.kind !== "weekday"
+    && nextFilters.some((f) => f.field === "weekend" && f.value !== false)
+    && (!cohort || cohort.kind === "weekend")
+  ) {
+    cohort = { kind: "weekend" };
+  }
   return {
     ...prev,
     filters: nextFilters,
@@ -190,14 +207,14 @@ function inheritCommerceSnapshot(
       ? { startDate: compare.startDate, endDate: compare.endDate, label: compare.label }
       : prev.compare,
     seedProduct: changes.seedProduct || prev.seedProduct,
-    cohort: prev.cohort,
+    cohort,
     compareCohort: prev.compareCohort,
     calculation: prev.calculation,
     outputIntent: prev.outputIntent,
     ranking: prev.ranking,
     entity: prev.entity,
     metric: prev.metric,
-    dimensions: prev.dimensions,
+    dimensions: prev.dimensions ? [...prev.dimensions] : prev.dimensions,
     targetFamily: changes.family === "dessert" ? "dessert" : prev.targetFamily,
   };
 }
