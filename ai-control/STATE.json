@@ -1,11 +1,11 @@
 {
   "protocolVersion": 1,
-  "status": "working",
+  "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "401403270517932f0c6278822a8503f21143a38c",
-  "activeTaskId": "NAC-COMMERCE-0003",
-  "lastCompletedTaskId": "NAC-COMMERCE-0002",
-  "lastUpdatedAt": "2026-08-18T21:19:00.000Z",
+  "headSha": "pending-rebase",
+  "activeTaskId": null,
+  "lastCompletedTaskId": "NAC-COMMERCE-0003",
+  "lastUpdatedAt": "2026-08-18T21:28:00.000Z",
   "autonomousMode": true,
   "controlRoomIssue": 2,
   "budgetPolicy": {
@@ -23,6 +23,6 @@
     "taskId": null,
     "acquiredAt": null
   },
-  "blocker": null,
-  "lastHandoffResult": "PASS"
+  "blocker": "SUPABASE_ACCESS_TOKEN and ASK_NAC_ACCESS_TOKEN unavailable on worker — Edge deploy and live acceptance deferred to operator",
+  "lastHandoffResult": "PARTIAL"
 }

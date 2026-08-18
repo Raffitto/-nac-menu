@@ -133,6 +133,12 @@ export function formatThroughPeriod(period: DateRange | null | undefined, refere
   const throughDay = throughDt ? throughDt.getUTCDate() : through;
   if (period.startDate === period.endDate) return formatManagerDate(period.startDate);
   if (period.startDate.endsWith("-01") && period.startDate.slice(0, 7) === String(through).slice(0, 7)) {
+    const isPartialMonth = period.semantic === "this_month"
+      || /to date|this month|mtd|through/i.test(String(period.label || ""));
+    if (!isPartialMonth && through === period.endDate) {
+      if (period.label) return period.label;
+      return `${month} ${start.getUTCFullYear()}`;
+    }
     return `${month} through ${throughDay} ${month}`;
   }
   return null;

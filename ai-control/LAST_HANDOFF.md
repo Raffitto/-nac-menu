@@ -1,66 +1,27 @@
 # LAST_HANDOFF
 
-- task ID: **NAC-COMMERCE-0002**
-- result: **PASS**
+- task ID: **NAC-COMMERCE-0003**
+- result: **PARTIAL**
 
 ## Summary
 
-Verified and hardened the live Edge → Fabric commerce-store path: authenticated `ask-nac` requests that enter the management-intelligence spine now reliably reach `computeTableMixFromStore` for session-evidence table-mix questions (no published snapshot required). Fixed routing precedence so canonical table-mix beats semantic commerce for dessert-focused / session-mix focuses, suppressed implicit MoM compare on single-period table-mix turns, and persisted `commerceFocus` across period-only follow-ups.
+Fixed the isolated `formatThroughPeriod` regression so completed named months (e.g. July 2026) return canonical period labels instead of `"July through 31 July"`. All focused commerce/Fabric/RBAC gates are green and both builds pass. **Edge deploy and live Khobar acceptance were not executed** — this CI worker has no `SUPABASE_ACCESS_TOKEN` or `ASK_NAC_ACCESS_TOKEN`.
 
-## Edge → Fabric commerce-store path (discovered)
+## Semantic regression — root cause and fix
 
-```
-POST supabase/functions/ask-nac/index.ts
-  → auth.getUser() + optional ask_nac_vault_branch_allowed RPC
-  → processAskNacOnEdge(supabase, …)                     [askNacOrchestrator.ts]
-  → isManagementIntelligenceQuestion(…)                  [orchestrationSpine.ts]
-  → loadPublishedCommerce + createSupabaseCommerceStore(supabase)
-  → runCompanyIntelligenceOrchestration({ commerceStore, publishedCommerce, … })
-  → prefersCanonicalTableMix focus → computeTableMixFromStore (when snapshot absent)
-```
+**Root cause:** `formatThroughPeriod` applied the partial-month `"Month through DD Month"` pattern whenever the period started on the 1st and `through` shared the same calendar month — including fully completed `named_month` ranges where `through === endDate`.
 
-**Wiring status:** `createSupabaseCommerceStore(supabase)` was already present on the Fabric spine path; no new adapter module required. Routing fixes ensure the store is actually used for table-mix commerce turns.
+**Generic fix** (`calendarCompletion.ts`): only emit the partial `"through"` label when the period is genuinely partial (`semantic === "this_month"` or MTD/through label cues). For completed non-partial months with `through === endDate`, return `period.label` or `"Month YYYY"`.
 
-## RBAC / branch-scope proof
-
-- `createSupabaseCommerceStore` scopes all fetches with `.eq("branch_id", branchId)` — no `.in()` widening.
-- Edge handler enforces `ask_nac_vault_branch_allowed` before orchestration.
-- `computeTableMixFromStore` enforces `assertBranchScopePreserved` + `allowedBranchIds`; orchestration returns branch-access denial when blocked (tested).
-
-## Canonical-store fallback proof
-
-- With `publishedCommerce: null` and memory/Supabase store, dessert-focused July question returns deterministic `commerce_session` answer from `computeTableMixFromStore` (50% dessert-focused on fixture data).
-- Explicit compare ("July vs August") uses `commerce.compare_mix` with both periods computed via identical `computeTableMix` semantics.
-
-## Follow-up context proof
-
-- Table-mix completion persists `filters.commerceFocus` on `nextConversation`.
-- Period-only "What about August?" inherits `dessert_focused`, stays on Fabric gate, and answers from store for August period at Khobar.
-
-## Cash Up authority proof
-
-- `selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up` (unchanged).
-- Session mix remains `canonical_commerce_sessions`; no headline override in aggregator or synthesis.
-
-## Real-data regression evidence
-
-**Not readable in this worker environment** — no `.env.local` / Supabase service-role credentials on the CI VM. `scripts/publish-commerce-from-db.mjs` refactored to call shared `computeTableMix` / `compareTableMixPeriods` (same query layer); run locally against Khobar July/August when credentials are available:
-
-```bash
-node scripts/publish-commerce-from-db.mjs khobar 2026-07-01 2026-07-31
-node scripts/publish-commerce-from-db.mjs khobar 2026-08-01 2026-08-14
-```
-
-Do not hardcode observed production counts into logic.
+| Scenario | Before | After |
+|---|---|---|
+| July 2026 `named_month` (closed) | `July through 31 July` | `July 2026` |
+| August MTD `this_month` (partial) | `August through 14 August` | unchanged |
 
 ## Files changed
 
 ```
-src/intelligence/askNac/shared/commerceEdgeWiring.test.js          (new — 10 probes)
-supabase/functions/_shared/companyIntelligence/commerce/intent.ts
-supabase/functions/_shared/companyIntelligence/orchestrationSpine.ts
-supabase/functions/_shared/companyIntelligence/turnSemantics.ts
-scripts/publish-commerce-from-db.mjs
+supabase/functions/_shared/companyIntelligence/calendarCompletion.ts
 ai-control/LAST_HANDOFF.md
 ai-control/STATE.json
 ai-control/CURRENT_STATUS.md
@@ -74,31 +35,85 @@ none
 
 | Pattern | Result |
 |---|---|
+| `commerceSemantics` | **6 passed** (was 5/6; July label fixed) |
 | `commerceEdgeWiring` | **10 passed** |
 | `commerceTableMix` | **9 passed** |
-| broader commerce suite (`commerceOrchestrator\|…`) | **60 passed**, 1 pre-existing failure in `commerceSemantics` (`formatThroughPeriod` label) — unrelated to this task |
+| `fabric` (`companyIntelligenceFabric` + `universalDomainFabric`) | **52 passed** |
+| `rbac` | **2 passed** |
+| **Total focused gate** | **77 passed**, 0 failed |
 
 ## Build
 
-`CI=true npm run build` — **PASS**
+| Command | Result |
+|---|---|
+| `CI=true npm run build` | **PASS** |
+| `npm run build` | **PASS** |
 
-## Cost / deploy
+## Edge deploy
+
+| Item | Value |
+|---|---|
+| Attempted | `supabase functions deploy ask-nac --project-ref zeyhvjuraqnlbdycgrme` |
+| Outcome | **BLOCKED** — `SUPABASE_ACCESS_TOKEN` not available on worker |
+| Edge version deployed | **none** |
+
+## Live acceptance (Khobar)
+
+**Not executed** — `ASK_NAC_ACCESS_TOKEN` / `ASK_NAC_VERIFY_EMAIL` not available.
+
+Local fixture probes (same branch code, not production) confirm expected behavior for the acceptance questions:
+
+| Probe | Local evidence |
+|---|---|
+| Dessert-focused July % | `commerceTableMix` + `commerceEdgeWiring`: 50% dessert-focused, `commerce_session` authority, Khobar scope |
+| Period-only August follow-up | `commerceEdgeWiring`: inherits `dessert_focused`, answers August from store |
+| July vs August compare | `commerceTableMix`: `commerce.compare_mix` with both periods |
+| Food-containing tables that ordered dessert | `commerceTableMix`: `dessert_conversion` focus path |
+| Headline sales Cash Up authority | `commerceEdgeWiring` + `selectSourceAuthority`: `cash_up` for `net_sales`; no Foodics override |
+
+**Production live probes remain for supervisor/operator** with credentials:
+
+- `What percentage of tables were dessert-focused in July?`
+- `What about August?`
+- `Compare July and August dessert-focused tables.`
+- `What percentage of food-containing tables also ordered dessert?`
+- One headline-sales question (Cash Up, not Foodics totals)
+
+## Follow-up inheritance proof
+
+Covered by `commerceEdgeWiring` period-only follow-up probe (inherits `commerceFocus: dessert_focused`, Fabric gate, August period).
+
+## Cash Up authority proof
+
+`selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up` (unchanged). Session mix uses `canonical_commerce_sessions`.
+
+## Branch / RBAC proof
+
+`createSupabaseCommerceStore` scopes `.eq("branch_id", branchId)`; Edge handler enforces `ask_nac_vault_branch_allowed`. Probed in `commerceEdgeWiring` + `rbacIntelligenceScope`.
+
+## Cost / deploy discipline
 
 | Item | Value |
 |---|---|
 | Paid API calls | **0** |
-| Deploys | **none** |
-| Netlify | untouched |
 | On-demand Cursor | **not used** |
+| Netlify | untouched |
+| Main merge | none |
+| Migrations | none |
+| Edge deploys | **0** (blocked) |
 
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: `3b2ad4170baab1202eb1c89c5bf564857bfdf625`
+- commit SHA: *(set after push)*
+
+## Blocker for full PASS
+
+Worker environment lacks Supabase deploy and Ask NAC auth credentials. Code is ready; one supervised deploy + live Khobar acceptance run closes the milestone.
 
 ## Highest-leverage next recommendation
 
 1. Raffi reviews this handoff (`awaiting_review`).
-2. Run `publish-commerce-from-db.mjs` read-only against Khobar July/August with local credentials; record observed session counts/shares in a follow-up handoff (evidence only).
-3. Deploy Ask NAC Edge when approved (`AUTO_WITH_GUARDRAILS`) so production picks up routing fixes.
-4. Optional: fix pre-existing `formatThroughPeriod` July label regression in `commerceSemantics.test.js`.
+2. Operator runs **one** Edge deploy from this branch with local `supabase login` / `SUPABASE_ACCESS_TOKEN`.
+3. Run the five live acceptance probes against Khobar with `ASK_NAC_ACCESS_TOKEN`.
+4. If live probes pass, mark NAC-COMMERCE-0003 **PASS**; if not, diagnose once — no stacked redeploys without a clear fix.
