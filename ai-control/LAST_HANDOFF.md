@@ -7,7 +7,7 @@
 - autonomous-control commit SHA: `aa702f23418652832226cf23f9aac031e53a829c`
 - proof changes: `CONTROL_PROTOCOL_META` on OSS registry + protocol test assertion + this handoff
 - branch: `release/ask-nac-fabric-founding-day`
-- GitHub Control Room issue: set after `gh issue create` (STATE.controlRoomIssue)
+- GitHub Control Room issue: **not created** (`gh` unauthenticated). Draft: `ai-control/CONTROL_ROOM_ISSUE.md`. This is the only leftover blocker.
 - remote worker method: (1) Cursor Cloud Agent via `@cursor` on the Control Room issue — no extra subscription, Raffi laptop not required; (2) GitHub Actions `NAC AI Control Worker` `workflow_dispatch` on this branch — deterministic, no model; (3) optional `CURSOR_API_KEY` repo secret for Cursor CLI in Actions — **not created**, not committed
 - Cursor API key required for this proof: **no**
 - secrets handling: no keys in git; Actions uses `GITHUB_TOKEN` only
@@ -19,6 +19,6 @@
 - paid spend: 0
 - deployments: none
 - Netlify: untouched
-- blockers: none for loop v1. Optional Raffi: add `CURSOR_API_KEY` secret only if Actions should spawn Cursor CLI. Glance dashboard near 88–90%.
-- remaining issues: wait for supervisor `NEXT_TASK.md` with a new taskId
-- recommended next step: **do not start another engineering milestone**
+- blockers: Control Room GitHub issue needs Raffi/ChatGPT `gh` (or GitHub UI) — worker could not call `gh issue create`
+- remaining issues: wait for supervisor `NEXT_TASK.md` with a new taskId after the issue exists
+- recommended next step: create the Control Room issue, then **do not start another engineering milestone** until a new NEXT_TASK
