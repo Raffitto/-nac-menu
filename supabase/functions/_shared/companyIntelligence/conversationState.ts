@@ -25,6 +25,7 @@ export type StructuredConversationState = {
   activeRankingCount: number | null;
   activeAnalysisIntent: string | null;
   activeSemanticPlan: Record<string, unknown> | null;
+  activeUniversalPlan: Record<string, unknown> | null;
 };
 
 export function createEmptyConversationState(): StructuredConversationState {
@@ -44,6 +45,7 @@ export function createEmptyConversationState(): StructuredConversationState {
     activeRankingCount: null,
     activeAnalysisIntent: null,
     activeSemanticPlan: null,
+    activeUniversalPlan: null,
   };
 }
 
@@ -81,6 +83,7 @@ export function updateConversationState(
     activeRankingCount: patch.activeRankingCount !== undefined ? patch.activeRankingCount : base.activeRankingCount,
     activeAnalysisIntent: patch.activeAnalysisIntent !== undefined ? patch.activeAnalysisIntent : base.activeAnalysisIntent,
     activeSemanticPlan: patch.activeSemanticPlan !== undefined ? patch.activeSemanticPlan : (base.activeSemanticPlan || null),
+    activeUniversalPlan: patch.activeUniversalPlan !== undefined ? patch.activeUniversalPlan : (base.activeUniversalPlan || null),
   };
 }
 

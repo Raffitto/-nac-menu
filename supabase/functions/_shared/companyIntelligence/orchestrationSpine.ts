@@ -45,6 +45,14 @@ import {
   type CommerceQueryPlan,
   type CommerceStore,
 } from "./commerce/semantic/index.ts";
+import {
+  executeUniversalPlan,
+  looksLikeUniversalManagementQuestion,
+  planUniversalManagement,
+  synthesizeUniversalManagement,
+  validateUniversalPlan,
+  type UniversalQueryPlan,
+} from "./universal/index.ts";
 import type { NormalizedDailyFact, NormalizedRanking } from "./normalizedCapabilityResult.ts";
 import type { CanonicalMatchedPair } from "../cashUpMatchedCoverageComparison.ts";
 import {
@@ -130,6 +138,7 @@ const TOOL_TO_CAPABILITY: Record<string, CapabilityId> = {
   event_forecast: "commercial.forecast",
   operational_evidence: "operations.review",
   branch_compare: "company.scope_compare",
+  guest_feedback: "guest.feedback",
 };
 
 function transition(state: CompanyIntelligenceState, stage: FabricStage, patch: Partial<CompanyIntelligenceState> = {}) {
@@ -233,8 +242,9 @@ export function isManagementIntelligenceQuestion(
   const q = String(question || "").trim();
   if (isFabricManagedTurn(q)) return true;
   if (looksLikeSemanticCommerceQuestion(q)) return true;
+  if (looksLikeUniversalManagementQuestion(q, (options?.priorFabricConversation?.activeUniversalPlan || null) as UniversalQueryPlan | null)) return true;
   if (
-    options?.priorFabricConversation?.activeSemanticPlan
+    (options?.priorFabricConversation?.activeSemanticPlan || options?.priorFabricConversation?.activeUniversalPlan)
     && (
       isPeriodOnlyFollowUpTurn(question, options?.referenceDate || new Date())
       || /^(?:only |what about|how about|and |same for)/i.test(q)
@@ -557,7 +567,80 @@ export async function runCompanyIntelligenceOrchestration(
   }
 
   const prevSemantic = (followUp.conversation?.activeSemanticPlan || null) as CommerceQueryPlan | null;
+  const prevUniversal = (followUp.conversation?.activeUniversalPlan || null) as UniversalQueryPlan | null;
   const askedQuestion = String(options.question || "").trim();
+  const weekendOnly = Boolean(followUp.conversation?.filters?.weekendOnly) || /\bonly weekends?\b/i.test(askedQuestion);
+  const wantUniversal = looksLikeUniversalManagementQuestion(askedQuestion, prevUniversal)
+    || looksLikeUniversalManagementQuestion(followUp.resolvedQuestion, prevUniversal);
+
+  if (wantUniversal) {
+    const uniPlan = planUniversalManagement({
+      question: askedQuestion || followUp.resolvedQuestion,
+      branchId: primaryBranchId,
+      period: currentPeriod || followUp.currentPeriod || state.periods.current,
+      comparePeriod: comparisonPeriod || followUp.comparisonPeriod || state.periods.comparison,
+      previousPlan: prevUniversal,
+      weekendOnly,
+    });
+    const valid = validateUniversalPlan(uniPlan);
+    const executed = await executeUniversalPlan({
+      plan: uniPlan,
+      scope: state.scope,
+      executor: options.executor,
+      commerceStore: options.commerceStore,
+    });
+    const text = !valid.ok && uniPlan.unavailable
+      ? uniPlan.unavailable.reason
+      : synthesizeUniversalManagement(executed);
+    const nextConversation = updateConversationState(state.conversation, {
+      activeMetricFamily: "universal",
+      previousIntent: "universal.management",
+      activeUniversalPlan: uniPlan as unknown as Record<string, unknown>,
+      activeSemanticPlan: prevSemantic as Record<string, unknown> | null,
+      activePeriods: {
+        current: uniPlan.period,
+        comparison: uniPlan.compare,
+      },
+      filterPatch: weekendOnly ? { weekendOnly: true } : undefined,
+    });
+    state = transition(state, "COMPLETE", {
+      answer: { text, verified: true },
+      conversation: nextConversation,
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        budgetTier: 0,
+        requestCategory: "universal_management",
+      },
+      plan: {
+        ...state.plan,
+        goal: uniPlan.intent,
+        capabilities: uniPlan.evidence.map((l) => l.capability).filter(isRegisteredCapability),
+        researchBudgetTier: 0,
+        needsClarification: false,
+        clarificationPrompt: null,
+      },
+    });
+    return {
+      state,
+      answerText: text,
+      answerType: uniPlan.synthesis === "limitation" ? "unavailable" : "management_intelligence",
+      keyMetrics: executed.evidence.filter((e) => typeof e.value === "number").slice(0, 8).map((e) => ({
+        label: `${e.domain}.${e.metric}`,
+        value: e.value,
+        source: e.provenance,
+      })),
+      insights: executed.opportunities.map((o) => o.title),
+      nextConversation,
+      toolsExecuted: executed.tools,
+      paidModelCalls: 0,
+    };
+  }
+
   const semanticFollow = Boolean(prevSemantic) && (
     isPeriodOnlyFollowUpTurn(askedQuestion, options.referenceDate || new Date())
     || isPeriodOnlyFollowUpTurn(followUp.resolvedQuestion, options.referenceDate || new Date())

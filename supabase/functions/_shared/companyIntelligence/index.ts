@@ -54,3 +54,4 @@ export * from "./commerce/index.ts";
 export * from "./orchestrationSpine.ts";
 export * from "./vaultCapabilityExecutor.ts";
 export * from "./normalizedCapabilityResult.ts";
+export * from "./universal/index.ts";

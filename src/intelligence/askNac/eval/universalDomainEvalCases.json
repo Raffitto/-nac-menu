@@ -1,0 +1,829 @@
+[
+  {
+    "id": "u01",
+    "question": "Why were sales weaker this month?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u02",
+    "question": "Why did sales fall even though covers increased?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u03",
+    "question": "Covers were higher — why didn't sales improve?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u04",
+    "question": "What changed operationally this week?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u05",
+    "question": "What are the biggest opportunities in Khobar right now?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u06",
+    "question": "Anything unusual in the last 7 days?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u07",
+    "question": "Did dessert behavior help or hurt average check?",
+    "expectedDomains": [
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u08",
+    "question": "How is Khobar doing?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u09",
+    "question": "What should I know today?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u10",
+    "question": "What should management focus on tomorrow?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u11",
+    "question": "Give me the three most important things I should know about Khobar.",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u12",
+    "question": "What looks wrong?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u13",
+    "question": "What improved?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "diagnostic"
+  },
+  {
+    "id": "u14",
+    "question": "Sales were stronger this month — what changed operationally?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u15",
+    "question": "Why did performance change?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u16",
+    "question": "Which guest complaints correlate with weaker periods?",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u17",
+    "question": "Did service complaints rise when weekend covers increased?",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u18",
+    "question": "What about reviews?",
+    "expectedDomains": [
+      "reviews"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u19",
+    "question": "Only weekends.",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "weekend": true
+  },
+  {
+    "id": "u20",
+    "question": "What should we do?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u21",
+    "question": "Why?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u22",
+    "question": "Compare with July.",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u23",
+    "question": "Same for July.",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u24",
+    "question": "Which one matters most?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u25",
+    "question": "What changed after Brownies launched?",
+    "expectedDomains": [],
+    "expectEventUnresolved": true
+  },
+  {
+    "id": "u26",
+    "question": "What changed after our latest menu additions?",
+    "expectedDomains": [],
+    "expectEventUnresolved": true
+  },
+  {
+    "id": "u27",
+    "question": "Did the menu changes improve average check?",
+    "expectedDomains": [
+      "commerce"
+    ],
+    "expectEventUnresolved": true
+  },
+  {
+    "id": "u28",
+    "question": "How were sales in August?",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u29",
+    "question": "What share of August checks had at least 3 different products?",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u30",
+    "question": "Which physical table number ordered the most Rigatoni?",
+    "expectedDomains": [],
+    "expectLimitation": true,
+    "unavailableField": "physical_table_number"
+  },
+  {
+    "id": "u31",
+    "question": "Pull the 7Rooms reservation API feed for tonight",
+    "expectedDomains": [],
+    "expectLimitation": true,
+    "unavailableField": "seven_rooms"
+  },
+  {
+    "id": "u32",
+    "question": "What is the waiter who closed the most checks?",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u33",
+    "question": "Why were sales weaker this week?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u34",
+    "question": "Avg check movement versus last month",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u35",
+    "question": "Mix contribution when sales fell",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u36",
+    "question": "Rating change vs covers last week",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u37",
+    "question": "Service themes vs weekends",
+    "expectedDomains": [
+      "reviews"
+    ]
+  },
+  {
+    "id": "u38",
+    "question": "Anything unusual?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u39",
+    "question": "Biggest opportunity?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u40",
+    "question": "What should we focus on?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u41",
+    "question": "Why didn't sales improve if covers were up?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u42",
+    "question": "Sales down, why?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u43",
+    "question": "Covers up but sales down",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u44",
+    "question": "Reviews versus weaker sales periods",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u45",
+    "question": "Give me everything unusual about Khobar this week",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u46",
+    "question": "How is Riyadh doing?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u47",
+    "question": "Unsupported branch Elgin performance this week",
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u48",
+    "question": "What changed this week?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u49",
+    "question": "Policy change notes after a recorded event",
+    "expectedDomains": [
+      "operations"
+    ]
+  },
+  {
+    "id": "u50",
+    "question": "Why is a branch period infeasible before opening?",
+    "expectedDomains": [
+      "timeline"
+    ],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u51",
+    "question": "Founding Day window versus last year sales",
+    "expectedDomains": [
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u52",
+    "question": "Ramadan 2026 sales vs commerce mix",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u53",
+    "question": "Delivery sales vs dine-in mix this month",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u54",
+    "question": "Weekend basket gap versus weekday performance",
+    "expectedDomains": [
+      "commerce"
+    ]
+  },
+  {
+    "id": "u55",
+    "question": "High covers but falling avg check",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u56",
+    "question": "Rising complaints around a theme in weak sales weeks",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u57",
+    "question": "Dessert attach versus average check",
+    "expectedDomains": [
+      "commerce"
+    ]
+  },
+  {
+    "id": "u58",
+    "question": "What looks wrong in Khobar this month?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u59",
+    "question": "Only Khobar weekends.",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "weekend": true
+  },
+  {
+    "id": "u60",
+    "question": "What about reviews for that week?",
+    "expectedDomains": [
+      "reviews"
+    ],
+    "previousDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u61",
+    "question": "Staffing hours by employee this week",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u62",
+    "question": "Inventory waste SKU dump",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u63",
+    "question": "Correlate reviews with Cash Up when periods do not overlap",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u64",
+    "question": "Jeddah order-grain mix last week",
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u65",
+    "question": "Headline sales and basket evidence contradiction",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u66",
+    "question": "What should management focus on?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u67",
+    "question": "Anything unusual last week?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u68",
+    "question": "How are we doing versus last month?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u69",
+    "question": "Why was weekend spend higher operationally?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u70",
+    "question": "Guest complaints vs sales last 7 days",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u71",
+    "question": "Reservations from 7Rooms live websocket",
+    "expectedDomains": [],
+    "expectLimitation": true,
+    "unavailableField": "seven_rooms"
+  },
+  {
+    "id": "u72",
+    "question": "What changed after a named date cutover we have not registered?",
+    "expectedDomains": [],
+    "expectEventUnresolved": true
+  },
+  {
+    "id": "u73",
+    "question": "Document-recorded opening date for Khobar",
+    "expectedDomains": [
+      "operations"
+    ]
+  },
+  {
+    "id": "u74",
+    "question": "Three most important things about this week",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u75",
+    "question": "Opportunity from low dessert attach",
+    "expectedDomains": [
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u76",
+    "question": "Sales weaker this month with reviews overlay",
+    "expectedDomains": [
+      "cash_up",
+      "commerce",
+      "reviews"
+    ]
+  },
+  {
+    "id": "u77",
+    "question": "Covers from Cash Up versus commerce order covers",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u78",
+    "question": "What improved this month?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u79",
+    "question": "Focus for tomorrow given this week's sales",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u80",
+    "question": "Unusual review/sales divergence last week",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u81",
+    "question": "Before vs after Founding Day operationally",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u82",
+    "question": "Menu item underperforming relative to impressions",
+    "expectedDomains": [
+      "menu",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u83",
+    "question": "Vault policy note plus sales movement",
+    "expectedDomains": [
+      "operations",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u84",
+    "question": "Why were sales weaker?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "driver_analysis"
+  },
+  {
+    "id": "u85",
+    "question": "How is the branch doing this week?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u86",
+    "question": "What should I know about yesterday operationally?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u87",
+    "question": "Biggest opportunities right now",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u88",
+    "question": "Did dessert mix move with average check this month?",
+    "expectedDomains": [
+      "commerce"
+    ]
+  },
+  {
+    "id": "u89",
+    "question": "Compare reviews this week with last week sales",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u90",
+    "question": "Give me a management brief for Khobar",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u91",
+    "question": "Only desserts.",
+    "expectedDomains": [
+      "commerce"
+    ],
+    "previousDomains": [
+      "commerce"
+    ],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u92",
+    "question": "Net sales in August",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u93",
+    "question": "What products are most commonly ordered with Cookies?",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u94",
+    "question": "Incompatible period: reviews last year vs commerce this week",
+    "expectedDomains": [
+      "reviews",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u95",
+    "question": "Missing domain: TikTok ads performance",
+    "expectedDomains": [],
+    "expectNotUniversal": true
+  },
+  {
+    "id": "u96",
+    "question": "Why did sales fall after 9pm this month?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u97",
+    "question": "Anything unusual today?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ]
+  },
+  {
+    "id": "u98",
+    "question": "What should we do about weaker sales?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce"
+    ],
+    "intent": "opportunity"
+  },
+  {
+    "id": "u99",
+    "question": "Which guest complaints correlate with weaker weekends?",
+    "expectedDomains": [
+      "reviews",
+      "cash_up"
+    ]
+  },
+  {
+    "id": "u100",
+    "question": "How is Khobar doing versus last month including reviews?",
+    "expectedDomains": [
+      "cash_up",
+      "commerce",
+      "reviews"
+    ]
+  }
+]
