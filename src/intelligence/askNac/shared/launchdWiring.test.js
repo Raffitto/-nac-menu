@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * NAC-FOODICS-0002: LaunchAgent wiring, install/update, status, proof paths.
  * Does not claim Mac execution from this cloud environment.
  */
@@ -259,6 +262,18 @@ describe("proofEvidence filesystem artifacts", () => {
 describe("schedulerCatchup via nightly entrypoint", () => {
   test("nightly entrypoint calls authenticated bridge, excludes current day, catch-up oldest-first, idempotent rerun", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nac-nightly-"));
+    const stateRoot = path.join(dir, "state");
+    fs.mkdirSync(stateRoot, { recursive: true });
+    fs.writeFileSync(path.join(stateRoot, "watermark.json"), JSON.stringify({
+      schema: "nac-foodics-bridge-state-v1",
+      watermark: { khobar: "2026-08-15" },
+    }));
+    fs.writeFileSync(path.join(stateRoot, "published.json"), JSON.stringify({
+      "khobar:2026-08-15": {
+        businessDate: "2026-08-15", listingCount: 1, listingChecksum: "x", rawChecksum: "y",
+        orderCount: 1, itemCount: 1, sessionCount: 1, runId: "sat",
+      },
+    }));
     const ordersPath = path.join(dir, "orders.json");
     const built = runFabric(`
       return {
@@ -273,7 +288,7 @@ describe("schedulerCatchup via nightly entrypoint", () => {
     }));
     const first = runCli(nightly, [
       `--repo=${root}`,
-      `--state-root=${path.join(dir, "state")}`,
+      `--state-root=${stateRoot}`,
       `--bridge-home=${path.join(dir, "bridge")}`,
       `--source=scripted`,
       `--scripted-orders=${ordersPath}`,
@@ -285,17 +300,17 @@ describe("schedulerCatchup via nightly entrypoint", () => {
     expect(first.invocationSource).toBe("catch-up");
     expect(first.launchdTrigger).toBe("calendar");
     expect(first.currentDayExcluded).toBe(true);
-    expect(first.publishedDates).toEqual(["2026-08-16", "2026-08-17"]);
+    expect(first.publishedDates).toEqual(["2026-08-15", "2026-08-16", "2026-08-17"]);
     expect(first.watermark).toBe("2026-08-17");
     expect(first.mondayOffRecoversOnNextRun).toBe(true);
     expect(first.officialExportStatus).toBe("BLOCKED_EXTERNAL_DEPENDENCY");
     expect(first.states.map((s) => s.date)).toEqual(["2026-08-16", "2026-08-17"]);
-    const last = JSON.parse(fs.readFileSync(path.join(dir, "state/proof/last.json"), "utf8"));
+    const last = JSON.parse(fs.readFileSync(path.join(stateRoot, "proof/last.json"), "utf8"));
     expect(last.invocationSource).toBe("catch-up");
 
     const second = runCli(nightly, [
       `--repo=${root}`,
-      `--state-root=${path.join(dir, "state")}`,
+      `--state-root=${stateRoot}`,
       `--bridge-home=${path.join(dir, "bridge")}`,
       `--source=scripted`,
       `--scripted-orders=${ordersPath}`,
@@ -306,11 +321,11 @@ describe("schedulerCatchup via nightly entrypoint", () => {
     expect(second.states.length).toBeGreaterThan(0);
     expect(second.states.every((s) => s.state === "IDEMPOTENT_NOOP" && s.idempotency === "noop_verified")).toBe(true);
     expect(second.watermark).toBe("2026-08-17");
-    expect(second.publishedDates).toEqual(["2026-08-16", "2026-08-17"]);
+    expect(second.publishedDates).toEqual(["2026-08-15", "2026-08-16", "2026-08-17"]);
 
     const missed = runCli(nightly, [
       `--repo=${root}`,
-      `--state-root=${path.join(dir, "state")}`,
+      `--state-root=${stateRoot}`,
       `--bridge-home=${path.join(dir, "bridge")}`,
       `--source=scripted`,
       `--scripted-orders=${ordersPath}`,
