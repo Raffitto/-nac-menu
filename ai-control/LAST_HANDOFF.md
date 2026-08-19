@@ -135,7 +135,7 @@ none — Netlify untouched; no main merge; no Edge deploy; no paid services.
 
 - control-plane branch: `release/ask-nac-fabric-founding-day`
 - worker branch: `cursor/nac-foodics-0001-41e7`
-- commit SHA: (set after push)
+- commit SHA: `fbb504ee808eddd54cffce695b2c1e8a0ba34061`
 
 ## Highest-leverage next recommendation
 
