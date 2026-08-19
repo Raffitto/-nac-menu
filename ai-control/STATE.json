@@ -2,10 +2,10 @@
   "protocolVersion": 1,
   "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "d21e39f45fb51c4262e1d70a4c0fbf12615bef2a",
-  "activeTaskId": null,
-  "lastCompletedTaskId": "NAC-COMMERCE-0003",
-  "lastUpdatedAt": "2026-08-18T21:28:00.000Z",
+  "headSha": "8013c8a4fafe9ffca82f67fb77680c5398e5eeb7",
+  "activeTaskId": "NAC-FOODICS-0001",
+  "lastCompletedTaskId": "NAC-FOODICS-0001",
+  "lastUpdatedAt": "2026-08-19T14:45:00.000Z",
   "autonomousMode": true,
   "controlRoomIssue": 2,
   "budgetPolicy": {
@@ -23,6 +23,6 @@
     "taskId": null,
     "acquiredAt": null
   },
-  "blocker": "SUPABASE_ACCESS_TOKEN and ASK_NAC_ACCESS_TOKEN unavailable on worker — Edge deploy and live acceptance deferred to operator",
+  "blocker": "Live Foodics session and official export mailbox are unavailable on the cloud worker. Official export chain is BLOCKED_EXTERNAL_DEPENDENCY. Do not fabricate production proofs.",
   "lastHandoffResult": "PARTIAL"
 }

@@ -154,3 +154,41 @@ export function adaptFoodicsConsolePayload(
   const raw = (payload as { data?: Record<string, unknown> }).data || (payload as Record<string, unknown>);
   return adaptFoodicsConsoleOrder(raw, productMap);
 }
+
+/** Deterministic console-order fixture for acquisition tests and dry-runs. */
+export function buildFoodicsConsoleOrder(input: {
+  id: string;
+  businessDate: string;
+  itemNames?: string[];
+  guests?: number;
+  total?: number;
+  status?: number;
+  type?: number;
+  branchName?: string;
+}): Record<string, unknown> {
+  const names = input.itemNames?.length ? input.itemNames : ["Cookies"];
+  const total = input.total ?? names.length * 10;
+  return {
+    id: input.id,
+    type: input.type ?? 1,
+    status: input.status ?? 4,
+    guests: input.guests ?? 2,
+    business_date: input.businessDate,
+    subtotal_price: total,
+    discount_amount: 0,
+    total_price: total,
+    opened_at: `${input.businessDate} 18:00:00`,
+    closed_at: `${input.businessDate} 19:00:00`,
+    branch: { id: "9ea9dd6c-2a2a-4a8e-8160-89ecb56e4958", name: input.branchName || "NAC Al Khobar" },
+    table: { id: `table-${input.id}`, name: "1" },
+    products: names.map((name, index) => ({
+      id: `${input.id}-line-${index}`,
+      quantity: 1,
+      unit_price: 10,
+      total_price: 10,
+      discount_amount: 0,
+      status: 3,
+      product: { id: `${input.id}-prod-${index}`, name, is_non_revenue: false },
+    })),
+  };
+}

@@ -6,13 +6,14 @@
 export const FOODICS_ADAPTER = {
   source: "foodics" as const,
   authority: "LEGACY_EXTERNAL_EVIDENCE" as const,
-  currentlyAutomatedReports: ["sales_by_creator", "menu_engineering"] as const,
+  currentlyAutomatedReports: ["authenticated_orders_list_detail"] as const,
   officialOrderExport: {
     ui: "Orders → Export → Orders | Order Items",
     maxDays: 31,
     listFiltersDoNotApply: true,
     delivery: "async email (export-api/v2/orders and export-api/v2/orders-items)",
     sampleCsvDownloaded: false,
+    status: "BLOCKED_EXTERNAL_DEPENDENCY",
   },
   validatedConsoleOrderResource: {
     getting: "/core-api/getting?url=/orders&id={uuid}",
@@ -30,7 +31,7 @@ export const FOODICS_ADAPTER = {
   canEmitDineInSessions: true,
   branchesObserved: ["khobar"] as const,
   blocker:
-    "Official Orders/Order Items CSV is often async-email. Mailbox polling is an external-access blocker unless IMAP credentials exist. Authenticated console read is the approved fallback and converges on the same RawSourceBatch contract.",
+    "Official Orders/Order Items CSV is BLOCKED_EXTERNAL_DEPENDENCY (async email to foh.khobar@nacriyadh.com; Graph admin consent and IMAP absent). Authenticated console list + per-order detail is the production acquisition path and converges on the same RawSourceBatch contract.",
 };
 
 export const FUTURE_NAC_POS_ADAPTER = {

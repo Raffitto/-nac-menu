@@ -104,7 +104,7 @@ export const OSS_REFERENCE_REGISTRY: OssReference[] = [
     url: "https://github.com/microsoft/playwright",
     license: "Apache-2.0",
     adoption: "EVALUATE",
-    why: "Useful later for bounded acquisition; not for unrestricted browsing from Ask NAC.",
+    why: "Apache-2.0 Playwright/CDP can reuse a Foodics web session to click export, but Orders/Order Items arrive by async email. Mailbox access is blocked (Graph admin consent / no IMAP). Official export chain is BLOCKED_EXTERNAL_DEPENDENCY; authenticated list/detail remains production acquisition.",
     nacModule: "evidence recovery / acquisition",
   },
   {

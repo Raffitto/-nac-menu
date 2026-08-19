@@ -3,12 +3,13 @@
  * Do not fall back to a manual Outlook workflow as architecture.
  */
 
+import { OFFICIAL_EXPORT_CHAIN } from "./officialExportPath.ts";
+
 export const MAILBOX_ADAPTER = {
   implemented: true,
   programmaticallyAvailable: false,
-  blocker:
-    "No IMAP/mailbox credentials are present in the current environment. "
-    + "Export-request matching is implemented; delivery polling is an external-access blocker.",
+  status: OFFICIAL_EXPORT_CHAIN.status,
+  blocker: OFFICIAL_EXPORT_CHAIN.reason,
   pollPolicy: "relevant Foodics export messages only",
 };
 

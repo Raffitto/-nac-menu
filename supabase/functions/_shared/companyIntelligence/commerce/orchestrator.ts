@@ -1,6 +1,7 @@
 import { getDataset, type AcquisitionMode } from "./datasetRegistry.ts";
 import { detectAcquisitionMode } from "./exportRequests.ts";
 import { applyPublicationEvent, canPublishSessions, type PublicationGroup } from "./publication.ts";
+import { planCompletedDayAcquisition } from "./acquisitionEngine.ts";
 
 export type AcquireDecision =
   | { action: "ingest_direct" }
@@ -48,6 +49,23 @@ export function nightlyWindows(input: {
   const startDate = new Date(`${end}T00:00:00.000Z`);
   startDate.setUTCDate(startDate.getUTCDate() - (overlap - 1));
   return [{ start: startDate.toISOString().slice(0, 10), end }];
+}
+
+export function nightlyCatchupDates(input: {
+  asOf: string;
+  publishedDates: string[];
+  watermark?: string | null;
+  epochStart?: string | null;
+  openGaps?: string[];
+}): string[] {
+  return planCompletedDayAcquisition({
+    asOf: input.asOf,
+    publishedDates: input.publishedDates,
+    watermark: input.watermark,
+    epochStart: input.epochStart,
+    openGaps: input.openGaps,
+    requestedSource: "scheduler",
+  }).datesOldestFirst;
 }
 
 export function backfillChunks(from: string, to: string): Array<{ start: string; end: string }> {

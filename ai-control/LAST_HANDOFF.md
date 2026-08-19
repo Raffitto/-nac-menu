@@ -1,95 +1,124 @@
 # LAST_HANDOFF
 
-- task ID: **NAC-COMMERCE-0003**
+- task ID: **NAC-FOODICS-0001**
 - result: **PARTIAL**
 
 ## Summary
 
-Fixed the isolated `formatThroughPeriod` regression so completed named months (e.g. July 2026) return canonical period labels instead of `"July through 31 July"`. All focused commerce/Fabric/RBAC gates are green and both builds pass. **Edge deploy and live Khobar acceptance were not executed** — this CI worker has no `SUPABASE_ACCESS_TOKEN` or `ASK_NAC_ACCESS_TOKEN`.
+Hardened authenticated Foodics completed-day acquisition in-repo: Riyadh calendar safety, oldest-first gap catch-up (including Monday-off), explicit run states, listing/detail completeness, atomic publish, contiguous watermark, checksummed evidence, and one qualified proof increment per business date. Official export/email chain is classified **BLOCKED_EXTERNAL_DEPENDENCY**. Cloud worker could not observe live Foodics or increment production reliability proofs — those remain unfabricated.
 
-## Semantic regression — root cause and fix
+## Architecture chosen
 
-**Root cause:** `formatThroughPeriod` applied the partial-month `"Month through DD Month"` pattern whenever the period started on the 1st and `through` shared the same calendar month — including fully completed `named_month` ranges where `through === endDate`.
+Production source remains **authenticated Foodics list + per-order detail** (`/core-api/listing?url=/orders` + getting/detail), feeding existing NAC canonical orders/items/sessions. Foodics stays a source adapter.
 
-**Generic fix** (`calendarCompletion.ts`): only emit the partial `"through"` label when the period is genuinely partial (`semantic === "this_month"` or MTD/through label cues). For completed non-partial months with `through === endDate`, return `period.label` or `"Month YYYY"`.
+Run states: `DISCOVERED → ACQUIRING → VALIDATED → CANONICALIZED → PUBLISHED`, with `ACQUIRE_FAILED` / `VALIDATE_FAILED` / `CANONICALIZE_FAILED` / `PUBLISH_FAILED` / `INTERRUPTED` retryable, and `IDEMPOTENT_NOOP` for a successful rerun (integrity list/checksum only).
 
-| Scenario | Before | After |
-|---|---|---|
-| July 2026 `named_month` (closed) | `July through 31 July` | `July 2026` |
-| August MTD `this_month` (partial) | `August through 14 August` | unchanged |
+Scheduler semantics: 01:30 Asia/Riyadh. Newest safe date is the previous Riyadh civil date; the current Riyadh date is never acquired. Reliability = eventual catch-up of every completed date after the machine is back, not that 01:30 fires every calendar day.
 
 ## Files changed
 
 ```
-supabase/functions/_shared/companyIntelligence/calendarCompletion.ts
+supabase/functions/_shared/companyIntelligence/commerce/acquisitionCalendar.ts
+supabase/functions/_shared/companyIntelligence/commerce/acquisitionEngine.ts
+supabase/functions/_shared/companyIntelligence/commerce/acquisitionEvidence.ts
+supabase/functions/_shared/companyIntelligence/commerce/officialExportPath.ts
+supabase/functions/_shared/companyIntelligence/commerce/foodicsAdapter.ts
+supabase/functions/_shared/companyIntelligence/commerce/proofRetention.ts
+supabase/functions/_shared/companyIntelligence/commerce/mailboxAdapter.ts
+supabase/functions/_shared/companyIntelligence/commerce/sourceAdapter.ts
+supabase/functions/_shared/companyIntelligence/commerce/orchestrator.ts
+supabase/functions/_shared/companyIntelligence/commerce/index.ts
+supabase/functions/_shared/companyIntelligence/externalReality/ossReferenceRegistry.ts
+docs/architecture/oss-reference-registry.md
+src/intelligence/askNac/shared/foodicsBridge.test.js
+src/intelligence/askNac/shared/aiControlProtocol.test.js
 ai-control/LAST_HANDOFF.md
 ai-control/STATE.json
 ai-control/CURRENT_STATUS.md
 ```
 
-## Migrations added
+## Authenticated Foodics acquisition readiness
 
-none
+**Code: ready.** Deterministic engine covers:
 
-## Focused tests
-
-| Pattern | Result |
+| Requirement | Behavior |
 |---|---|
-| `commerceSemantics` | **6 passed** (was 5/6; July label fixed) |
-| `commerceEdgeWiring` | **10 passed** |
-| `commerceTableMix` | **9 passed** |
-| `fabric` (`companyIntelligenceFabric` + `universalDomainFabric`) | **52 passed** |
-| `rbac` | **2 passed** |
-| **Total focused gate** | **77 passed**, 0 failed |
+| Newest completed Riyadh date | `newestSafeCompletedDate` = yesterday Asia/Riyadh |
+| Current-day exclusion | Never listed, never published |
+| Gap detection | Unpublished completed dates + open failed runs |
+| Oldest-first | Sorted ISO dates, Monday-off included |
+| Listing/detail completeness | Fetch count must match listing; partial → `ACQUIRE_FAILED` |
+| Canonicalize | Existing `adaptFoodicsConsoleOrder` + dine-in sessions |
+| Atomic publish | Orders/items/sessions + watermark together in store |
+| Idempotent rerun | `noop_verified` if listing checksum matches; no second proof |
+| Zero-order day | Publishes empty, watermark may advance, **not** qualified proof |
+| Interrupted recovery | Persists fetched details; resumes remaining IDs |
 
-## Build
+**Live laptop bridge: not executed here.** Existing runtime still lives outside this repo (`foodics-bridge` on the operator laptop). Next operator step is to call `runAuthenticatedFoodicsBridge` from the 01:30 job.
 
-| Command | Result |
-|---|---|
-| `CI=true npm run build` | **PASS** |
-| `npm run build` | **PASS** |
+## Official export-chain status
 
-## Edge deploy
+**BLOCKED_EXTERNAL_DEPENDENCY**
+
+- Destination mailbox: `foh.khobar@nacriyadh.com`
+- Playwright/CDP (Apache-2.0, EVALUATE): can click export in a Foodics web session; cannot retrieve the async email attachment
+- Microsoft Graph delegated mailbox: blocked by admin consent
+- IMAP credentials: absent
+- Outlook AppleScript: not viable
+- No custom mail client built; no Playwright dependency added
+
+Production source stays authenticated list/detail.
+
+## Catch-up and idempotency
+
+- One missed day at 01:30: acquire that completed date
+- Monday-off: next available run backfills all missing completed dates oldest-first (`2026-08-16` then `2026-08-17` when last published is `2026-08-15` and as-of is Tuesday 01:30)
+- Open failed dates remain gaps even if a later date published
+- Watermark is **contiguous complete-through**, not max published date
+- Successful rerun: integrity verification only
+
+## Proof/evidence design
+
+Each run persists an inspectable record: run ID, invocation source, Riyadh start/end, business date, method `authenticated_read`, listing/detail/item counts, SHA-256 checksums, canonical order/item/session counts, previous/new watermark, destination `commerce_orders+commerce_order_items+commerce_sessions`, version `commerce-sessions-v1`, idempotency result, final state. Official-export fields are present and null.
+
+Qualified `FULL_CHAIN_PROOF_SUCCESS` increments at most once per business date. Partial/interrupted/empty/malformed never increment. Historic Aug 14 / Aug 15 proofs are **not** upgraded.
+
+## Reliability counter / assurance (no fabrication)
 
 | Item | Value |
 |---|---|
-| Attempted | `supabase functions deploy ask-nac --project-ref zeyhvjuraqnlbdycgrme` |
-| Outcome | **BLOCKED** — `SUPABASE_ACCESS_TOKEN` not available on worker |
-| Edge version deployed | **none** |
+| Target | 5 qualified unattended completed-date runs |
+| Incremented this task | **0** (no live Foodics session in cloud worker) |
+| Historic Aug 14 / Aug 15 | Preserved at original assurance; not reclassified under the new machine-proof standard |
+| CI fixtures | Prove engine behavior only — not production full-chain proofs |
 
-## Live acceptance (Khobar)
+## Focused tests / build
 
-**Not executed** — `ASK_NAC_ACCESS_TOKEN` / `ASK_NAC_VERIFY_EMAIL` not available.
-
-Local fixture probes (same branch code, not production) confirm expected behavior for the acceptance questions:
-
-| Probe | Local evidence |
+| Pattern | Result |
 |---|---|
-| Dessert-focused July % | `commerceTableMix` + `commerceEdgeWiring`: 50% dessert-focused, `commerce_session` authority, Khobar scope |
-| Period-only August follow-up | `commerceEdgeWiring`: inherits `dessert_focused`, answers August from store |
-| July vs August compare | `commerceTableMix`: `commerce.compare_mix` with both periods |
-| Food-containing tables that ordered dessert | `commerceTableMix`: `dessert_conversion` focus path |
-| Headline sales Cash Up authority | `commerceEdgeWiring` + `selectSourceAuthority`: `cash_up` for `net_sales`; no Foodics override |
+| `foodicsBridge` | **9 passed** |
+| `commerceOrchestrator` | **10 passed** |
+| `commerceIntegrity` | **7 passed** |
+| `foodicsAdapter` | **4 passed** |
+| `aiControlProtocol` | **3 passed** |
+| **Focused gate** | **33 passed**, 0 failed |
+| `CI=true npm run build` | **PASS** |
 
-**Production live probes remain for supervisor/operator** with credentials:
+`npm test --watchAll=false` full-repo was not repeated (task: focused suites only, then one build gate).
 
-- `What percentage of tables were dessert-focused in July?`
-- `What about August?`
-- `Compare July and August dessert-focused tables.`
-- `What percentage of food-containing tables also ordered dessert?`
-- One headline-sales question (Cash Up, not Foodics totals)
+## Deploys
 
-## Follow-up inheritance proof
+none — Netlify untouched; no main merge; no Edge deploy; no paid services.
 
-Covered by `commerceEdgeWiring` period-only follow-up probe (inherits `commerceFocus: dessert_focused`, Fabric gate, August period).
+## Exact external blockers
 
-## Cash Up authority proof
+1. **Live Foodics session / laptop bridge runtime** not available on this cloud worker — cannot produce a qualified production completed-day proof.
+2. **Official export email transport** — `BLOCKED_EXTERNAL_DEPENDENCY` (Graph admin consent / no IMAP).
+3. Prior: `SUPABASE_ACCESS_TOKEN` / `ASK_NAC_ACCESS_TOKEN` still absent (unrelated Edge/live Ask NAC).
 
-`selectSourceAuthority({ commercialMetric: "net_sales" })` → `cash_up` (unchanged). Session mix uses `canonical_commerce_sessions`.
+## Monday-off recovery
 
-## Branch / RBAC proof
-
-`createSupabaseCommerceStore` scopes `.eq("branch_id", branchId)`; Edge handler enforces `ask_nac_vault_branch_allowed`. Probed in `commerceEdgeWiring` + `rbacIntelligenceScope`.
+**In engine: yes.** On the next available `runAuthenticatedFoodicsBridge` invocation, missing completed dates are acquired oldest-first automatically. This is not a claim that the laptop 01:30 launch itself fires while the machine is off.
 
 ## Cost / deploy discipline
 
@@ -99,21 +128,18 @@ Covered by `commerceEdgeWiring` period-only follow-up probe (inherits `commerceF
 | On-demand Cursor | **not used** |
 | Netlify | untouched |
 | Main merge | none |
-| Migrations | none |
-| Edge deploys | **0** (blocked) |
+| Migrations | **none** (used existing commerce tables as the destination contract; durable run store is injected) |
+| Edge deploys | **0** |
 
 ## Branch / commit
 
-- branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: `d21e39f45fb51c4262e1d70a4c0fbf12615bef2a` (fix: `5cc4cb4cb36fc0ad970ee93cab142641ab7e6dbe`)
-
-## Blocker for full PASS
-
-Worker environment lacks Supabase deploy and Ask NAC auth credentials. Code is ready; one supervised deploy + live Khobar acceptance run closes the milestone.
+- control-plane branch: `release/ask-nac-fabric-founding-day`
+- worker branch: `cursor/nac-foodics-0001-41e7`
+- commit SHA: (set after push)
 
 ## Highest-leverage next recommendation
 
 1. Raffi reviews this handoff (`awaiting_review`).
-2. Operator runs **one** Edge deploy from this branch with local `supabase login` / `SUPABASE_ACCESS_TOKEN`.
-3. Run the five live acceptance probes against Khobar with `ASK_NAC_ACCESS_TOKEN`.
-4. If live probes pass, mark NAC-COMMERCE-0003 **PASS**; if not, diagnose once — no stacked redeploys without a clear fix.
+2. Operator wires the existing laptop `foodics-bridge` 01:30 job to `runAuthenticatedFoodicsBridge` (authenticated list/detail only).
+3. After the next completed Riyadh date is acquired unattended, inspect the persisted evidence record — that is the first candidate for a **new** qualified proof under the stricter machine standard. Do not backfill Aug 14/15 as qualified.
+4. Do not spend further cycles on Microsoft Graph / Outlook / custom mail until mailbox access exists.

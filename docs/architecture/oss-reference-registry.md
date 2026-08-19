@@ -20,7 +20,7 @@ Do **not** install these projects from this document. Adoption labels:
 | URY / ERPNext | Restaurant ERP | https://github.com/ury-erp/ury | **AGPL — caution** | REFERENCE ONLY | Would replace NAC ops | ERP |
 | node-escpos | ESC/POS printing | https://github.com/song940/node-escpos | MIT (verify) | EVALUATE | Printing later | printing |
 | ReceiptIO | Receipts | search GitHub | verify upstream | EVALUATE | Receipts later | printing |
-| Playwright MCP | Browser automation | https://github.com/microsoft/playwright | Apache-2.0 | EVALUATE | Bounded acquisition only | evidence recovery |
+| Playwright MCP | Browser automation | https://github.com/microsoft/playwright | Apache-2.0 | EVALUATE | Playwright/CDP can request Foodics UI export but cannot retrieve async email attachments without mailbox access. Official export chain is BLOCKED_EXTERNAL_DEPENDENCY. | evidence recovery |
 | Darts | Time-series forecasting | https://github.com/unit8co/darts | Apache-2.0 | EVALUATE | Optional; NAC has event forecast | commercial.forecast |
 | Activepieces CE | Self-hosted automation | https://github.com/activepieces/activepieces | MIT CE (verify paid pieces) | EVALUATE | Ingest jobs later; not a supervisor | scheduler |
 | **OpenClaw** | LLM agent gateway | https://github.com/openclaw/openclaw | MIT | **REJECTED** | 2026.7.1-2 (`0790d9f`) failed as NAC supervisor (tool-arg hallucination, recovery miss). Keep `reasoningSupervisor.ts`. | Ask NAC supervisor |

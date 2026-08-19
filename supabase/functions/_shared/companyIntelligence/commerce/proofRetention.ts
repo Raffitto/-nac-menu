@@ -20,6 +20,7 @@ export type ProofState = {
   force: ProofForce;
   lastSourceMode: string | null;
   lastSchemaFingerprint: string | null;
+  qualifiedBusinessDates: string[];
 };
 
 export function defaultProofState(): ProofState {
@@ -30,6 +31,7 @@ export function defaultProofState(): ProofState {
     force: null,
     lastSourceMode: "authenticated_read_fallback",
     lastSchemaFingerprint: null,
+    qualifiedBusinessDates: [],
   };
 }
 
@@ -116,12 +118,24 @@ export function applyProofSuccess(state: ProofState): ProofState {
   return applyQualifiedProofResult(state, { eligible: true, classification: "FULL_CHAIN_PROOF_SUCCESS" });
 }
 
-export function applyQualifiedProofResult(state: ProofState, result: { eligible: boolean; classification: ProofClassification }): ProofState {
+export function applyQualifiedProofResult(state: ProofState, result: {
+  eligible: boolean;
+  classification: ProofClassification;
+  businessDate?: string;
+}): ProofState {
   if (!result.eligible || result.classification !== "FULL_CHAIN_PROOF_SUCCESS") {
     return {
       ...state,
       force: state.force === "next-run" ? null : state.force,
       visualEnabled: true,
+      qualifiedBusinessDates: state.qualifiedBusinessDates || [],
+    };
+  }
+  const dates = state.qualifiedBusinessDates || [];
+  if (result.businessDate && dates.includes(result.businessDate)) {
+    return {
+      ...state,
+      force: state.force === "next-run" ? null : state.force,
     };
   }
   const genuineFullChainSuccesses = (state.genuineFullChainSuccesses ?? state.consecutiveSuccesses ?? 0) + 1;
@@ -129,6 +143,7 @@ export function applyQualifiedProofResult(state: ProofState, result: { eligible:
     ...state,
     genuineFullChainSuccesses,
     consecutiveSuccesses: genuineFullChainSuccesses,
+    qualifiedBusinessDates: result.businessDate ? [...dates, result.businessDate] : dates,
     visualEnabled: genuineFullChainSuccesses >= PROOF_SUCCESS_TARGET ? false : true,
     force: state.force === "next-run" ? null : state.force,
   };

@@ -20,7 +20,7 @@ describe("NAC AI control protocol", () => {
 
   test("NEXT_TASK.md carries a taskId", () => {
     const md = fs.readFileSync(path.join(root, "ai-control/NEXT_TASK.md"), "utf8");
-    expect(md).toMatch(/taskId:\s*NAC-(CTRL|COMMS)-/);
+    expect(md).toMatch(/taskId:\s*NAC-(CTRL|COMMS|COMMERCE|FOODICS)-/);
     expect(md).toMatch(/onDemandAllowed:\s*false/);
     expect(md).toMatch(/mergeToMain:\s*false/);
   });
