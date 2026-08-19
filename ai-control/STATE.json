@@ -2,10 +2,10 @@
   "protocolVersion": 1,
   "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "bbfb70dd9b3c3be9a27cf3f3b5bd46300e2be2f2",
+  "headSha": null,
   "activeTaskId": null,
-  "lastCompletedTaskId": "NAC-FOODICS-0001",
-  "lastUpdatedAt": "2026-08-19T14:45:00.000Z",
+  "lastCompletedTaskId": "NAC-FOODICS-0002",
+  "lastUpdatedAt": "2026-08-19T16:30:00.000Z",
   "autonomousMode": true,
   "controlRoomIssue": 2,
   "budgetPolicy": {
@@ -23,6 +23,6 @@
     "taskId": null,
     "acquiredAt": null
   },
-  "blocker": "Live Foodics session and official export mailbox are unavailable on the cloud worker. Official export chain is BLOCKED_EXTERNAL_DEPENDENCY. Do not fabricate production proofs.",
+  "blocker": "Live Foodics session and LaunchAgent execution remain on Raffi's Mac only. Cloud worker prepared repo-side wiring; first unattended qualified proof still requires physical Mac install + live session.",
   "lastHandoffResult": "PARTIAL"
 }

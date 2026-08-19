@@ -1,124 +1,85 @@
 # LAST_HANDOFF
 
-- task ID: **NAC-FOODICS-0001**
+- task ID: **NAC-FOODICS-0002**
 - result: **PARTIAL**
 
 ## Summary
 
-Hardened authenticated Foodics completed-day acquisition in-repo: Riyadh calendar safety, oldest-first gap catch-up (including Monday-off), explicit run states, listing/detail completeness, atomic publish, contiguous watermark, checksummed evidence, and one qualified proof increment per business date. Official export/email chain is classified **BLOCKED_EXTERNAL_DEPENDENCY**. Cloud worker could not observe live Foodics or increment production reliability proofs — those remain unfabricated.
+Repo-side Mac bridge wiring is complete: the 01:30 LaunchAgent now targets `runAuthenticatedFoodicsBridge` through `scripts/foodics-bridge/run.mjs`, with deterministic install/status scripts, stable local proof paths, oldest-first catch-up at login/next-online (`RunAtLoad`), and idempotent published-day handling preserved from `NAC-FOODICS-0001`. Cloud worker did not install or execute the LaunchAgent on Raffi's Mac and could not produce a live qualified production proof.
 
-## Architecture chosen
+## Scheduler entrypoint
 
-Production source remains **authenticated Foodics list + per-order detail** (`/core-api/listing?url=/orders` + getting/detail), feeding existing NAC canonical orders/items/sessions. Foodics stays a source adapter.
-
-Run states: `DISCOVERED → ACQUIRING → VALIDATED → CANONICALIZED → PUBLISHED`, with `ACQUIRE_FAILED` / `VALIDATE_FAILED` / `CANONICALIZE_FAILED` / `PUBLISH_FAILED` / `INTERRUPTED` retryable, and `IDEMPOTENT_NOOP` for a successful rerun (integrity list/checksum only).
-
-Scheduler semantics: 01:30 Asia/Riyadh. Newest safe date is the previous Riyadh civil date; the current Riyadh date is never acquired. Reliability = eventual catch-up of every completed date after the machine is back, not that 01:30 fires every calendar day.
+| | Command |
+|---|---|
+| **Before** | Legacy operator package at `~/Desktop/nac-menu-release/foodics-bridge/` under label `com.nac.foodics-bridge.nightly`. Exact `ProgramArguments` were not versioned in-repo; presumed legacy console scrape path, **not** `runAuthenticatedFoodicsBridge`. |
+| **After** | `node <repo>/scripts/foodics-bridge/run.mjs` (optional `--source scheduler|manual|catch-up`). LaunchAgent `StartCalendarInterval` **01:30** with `RunAtLoad: true` for missed-day catch-up when the Mac returns online. |
 
 ## Files changed
 
 ```
-supabase/functions/_shared/companyIntelligence/commerce/acquisitionCalendar.ts
-supabase/functions/_shared/companyIntelligence/commerce/acquisitionEngine.ts
-supabase/functions/_shared/companyIntelligence/commerce/acquisitionEvidence.ts
-supabase/functions/_shared/companyIntelligence/commerce/officialExportPath.ts
-supabase/functions/_shared/companyIntelligence/commerce/foodicsAdapter.ts
-supabase/functions/_shared/companyIntelligence/commerce/proofRetention.ts
-supabase/functions/_shared/companyIntelligence/commerce/mailboxAdapter.ts
-supabase/functions/_shared/companyIntelligence/commerce/sourceAdapter.ts
-supabase/functions/_shared/companyIntelligence/commerce/orchestrator.ts
+supabase/functions/_shared/companyIntelligence/commerce/localBridgeRuntime.ts
+supabase/functions/_shared/companyIntelligence/commerce/foodicsConsoleSource.ts
+supabase/functions/_shared/companyIntelligence/commerce/localAcquisitionStore.ts
 supabase/functions/_shared/companyIntelligence/commerce/index.ts
-supabase/functions/_shared/companyIntelligence/externalReality/ossReferenceRegistry.ts
-docs/architecture/oss-reference-registry.md
-src/intelligence/askNac/shared/foodicsBridge.test.js
-src/intelligence/askNac/shared/aiControlProtocol.test.js
+scripts/foodics-bridge/lib.mjs
+scripts/foodics-bridge/run.mjs
+scripts/foodics-bridge/install-launchagent.mjs
+scripts/foodics-bridge/status.mjs
+src/intelligence/askNac/shared/launchdWiring.test.js
 ai-control/LAST_HANDOFF.md
 ai-control/STATE.json
 ai-control/CURRENT_STATUS.md
 ```
 
-## Authenticated Foodics acquisition readiness
+## Install / update mechanism
 
-**Code: ready.** Deterministic engine covers:
+`node scripts/foodics-bridge/install-launchagent.mjs`
 
-| Requirement | Behavior |
-|---|---|
-| Newest completed Riyadh date | `newestSafeCompletedDate` = yesterday Asia/Riyadh |
-| Current-day exclusion | Never listed, never published |
-| Gap detection | Unpublished completed dates + open failed runs |
-| Oldest-first | Sorted ISO dates, Monday-off included |
-| Listing/detail completeness | Fetch count must match listing; partial → `ACQUIRE_FAILED` |
-| Canonicalize | Existing `adaptFoodicsConsoleOrder` + dine-in sessions |
-| Atomic publish | Orders/items/sessions + watermark together in store |
-| Idempotent rerun | `noop_verified` if listing checksum matches; no second proof |
-| Zero-order day | Publishes empty, watermark may advance, **not** qualified proof |
-| Interrupted recovery | Persists fetched details; resumes remaining IDs |
+- Validates repo root and node path
+- Creates `~/Library/Application Support/NAC/foodics-bridge/{logs,proofs}` (or `FOODICS_BRIDGE_DATA_DIR`)
+- Writes `~/Library/LaunchAgents/com.nac.foodics-bridge.nightly.plist`
+- Bootstraps/reloads LaunchAgent on macOS only
+- Prints installed command + schedule JSON (repeatable / non-destructive)
 
-**Live laptop bridge: not executed here.** Existing runtime still lives outside this repo (`foodics-bridge` on the operator laptop). Next operator step is to call `runAuthenticatedFoodicsBridge` from the 01:30 job.
+## Status / diagnostic mechanism
 
-## Official export-chain status
+`node scripts/foodics-bridge/status.mjs`
 
-**BLOCKED_EXTERNAL_DEPENDENCY**
+Read-only JSON report: LaunchAgent loaded state (when `launchctl` available), configured 01:30 schedule, installed command, `publishedThrough`/watermark from local `state.json`, next missing completed date, last run/proof when present, session/env readiness. Does not fabricate unavailable fields.
 
-- Destination mailbox: `foh.khobar@nacriyadh.com`
-- Playwright/CDP (Apache-2.0, EVALUATE): can click export in a Foodics web session; cannot retrieve the async email attachment
-- Microsoft Graph delegated mailbox: blocked by admin consent
-- IMAP credentials: absent
-- Outlook AppleScript: not viable
-- No custom mail client built; no Playwright dependency added
+## Proof artifact path and fields
 
-Production source stays authenticated list/detail.
+**Base:** `~/Library/Application Support/NAC/foodics-bridge/proofs/<branch>/<businessDate>/<runId>.json`
 
-## Catch-up and idempotency
+**Fields:** `schema`, `artifactPath`, `branchId`, `invocationSource` (`scheduler` \| `manual` \| `catch-up`), `trigger` (`scheduler` \| `manual` \| `catch-up` \| `login-catch-up`), `command`, `repoRoot`, nested `evidence` (run ID, Riyadh timestamps, listing/detail counts, checksums, watermark, idempotency, final state, qualified flag).
 
-- One missed day at 01:30: acquire that completed date
-- Monday-off: next available run backfills all missing completed dates oldest-first (`2026-08-16` then `2026-08-17` when last published is `2026-08-15` and as-of is Tuesday 01:30)
-- Open failed dates remain gaps even if a later date published
-- Watermark is **contiguous complete-through**, not max published date
-- Successful rerun: integrity verification only
-
-## Proof/evidence design
-
-Each run persists an inspectable record: run ID, invocation source, Riyadh start/end, business date, method `authenticated_read`, listing/detail/item counts, SHA-256 checksums, canonical order/item/session counts, previous/new watermark, destination `commerce_orders+commerce_order_items+commerce_sessions`, version `commerce-sessions-v1`, idempotency result, final state. Official-export fields are present and null.
-
-Qualified `FULL_CHAIN_PROOF_SUCCESS` increments at most once per business date. Partial/interrupted/empty/malformed never increment. Historic Aug 14 / Aug 15 proofs are **not** upgraded.
-
-## Reliability counter / assurance (no fabrication)
-
-| Item | Value |
-|---|---|
-| Target | 5 qualified unattended completed-date runs |
-| Incremented this task | **0** (no live Foodics session in cloud worker) |
-| Historic Aug 14 / Aug 15 | Preserved at original assurance; not reclassified under the new machine-proof standard |
-| CI fixtures | Prove engine behavior only — not production full-chain proofs |
+Supporting files: `state.json`, `last-run.json`, `evidence/<runId>.json`, `logs/nightly.{stdout,stderr}.log`.
 
 ## Focused tests / build
 
 | Pattern | Result |
 |---|---|
 | `foodicsBridge` | **9 passed** |
-| `commerceOrchestrator` | **10 passed** |
-| `commerceIntegrity` | **7 passed** |
-| `foodicsAdapter` | **4 passed** |
+| `launchdWiring` | **9 passed** |
 | `aiControlProtocol` | **3 passed** |
-| **Focused gate** | **33 passed**, 0 failed |
+| **Focused gate** | **21 passed**, 0 failed |
 | `CI=true npm run build` | **PASS** |
 
-`npm test --watchAll=false` full-repo was not repeated (task: focused suites only, then one build gate).
+## Monday-off catch-up
 
-## Deploys
+**Proven at code level: yes.** `runAuthenticatedFoodicsBridge` + local entrypoint retain oldest-first multi-day catch-up (`launchdWiring` + existing `foodicsBridge` tests).
 
-none — Netlify untouched; no main merge; no Edge deploy; no paid services.
+## Physical Mac action remaining
 
-## Exact external blockers
+**Yes — one command on Raffi's Mac after pulling this branch:**
 
-1. **Live Foodics session / laptop bridge runtime** not available on this cloud worker — cannot produce a qualified production completed-day proof.
-2. **Official export email transport** — `BLOCKED_EXTERNAL_DEPENDENCY` (Graph admin consent / no IMAP).
-3. Prior: `SUPABASE_ACCESS_TOKEN` / `ASK_NAC_ACCESS_TOKEN` still absent (unrelated Edge/live Ask NAC).
+```bash
+cd /path/to/nac-menu && node scripts/foodics-bridge/install-launchagent.mjs
+```
 
-## Monday-off recovery
+Prerequisites (not committed): `scripts/foodics-bridge/.env.local` or legacy `~/Desktop/nac-menu-release/foodics-bridge/.env.local` with Supabase service role + Foodics session cookie/token.
 
-**In engine: yes.** On the next available `runAuthenticatedFoodicsBridge` invocation, missing completed dates are acquired oldest-first automatically. This is not a claim that the laptop 01:30 launch itself fires while the machine is off.
+Optional verification: `node scripts/foodics-bridge/status.mjs`
 
 ## Cost / deploy discipline
 
@@ -128,18 +89,15 @@ none — Netlify untouched; no main merge; no Edge deploy; no paid services.
 | On-demand Cursor | **not used** |
 | Netlify | untouched |
 | Main merge | none |
-| Migrations | **none** (used existing commerce tables as the destination contract; durable run store is injected) |
+| Migrations | **none** |
 | Edge deploys | **0** |
+| Production proofs incremented | **0** (no live Foodics session on cloud worker) |
 
 ## Branch / commit
 
-- control-plane branch: `release/ask-nac-fabric-founding-day`
-- worker branch: `cursor/nac-foodics-0001-41e7`
-- commit SHA: `fbb504ee808eddd54cffce695b2c1e8a0ba34061`
+- branch: `release/ask-nac-fabric-founding-day`
+- commit SHA: _(set at push)_
 
-## Highest-leverage next recommendation
+## Highest-leverage next step
 
-1. Raffi reviews this handoff (`awaiting_review`).
-2. Operator wires the existing laptop `foodics-bridge` 01:30 job to `runAuthenticatedFoodicsBridge` (authenticated list/detail only).
-3. After the next completed Riyadh date is acquired unattended, inspect the persisted evidence record — that is the first candidate for a **new** qualified proof under the stricter machine standard. Do not backfill Aug 14/15 as qualified.
-4. Do not spend further cycles on Microsoft Graph / Outlook / custom mail until mailbox access exists.
+After operator runs `install-launchagent.mjs` on the Mac, let the next unattended completed Riyadh date acquire and inspect the proof JSON under `proofs/khobar/<date>/`. That is the first candidate for a new qualified machine proof. Do not reopen official export/email work.
