@@ -66,6 +66,7 @@ export function resolveBridgePaths(input = {}) {
   const stateRoot = path.resolve(
     input.stateRoot
       || env.NAC_FOODICS_STATE_ROOT
+      || env.FOODICS_BRIDGE_DATA_DIR
       || path.join(homedir, "Library", "Application Support", "nac", "foodics-bridge"),
   );
   const launchAgentsDir = path.resolve(
@@ -248,7 +249,13 @@ export function inspectRuntimeReadiness(input = {}) {
   const envFileExists = io.existsSync(envFile);
   const sessionDirExists = io.existsSync(sessionDir);
   const chromeExists = Boolean(chromeProfile && io.existsSync(chromeProfile));
-  const cookieEnv = Boolean(env.FOODICS_CONSOLE_COOKIE || env.FOODICS_AUTHORIZATION);
+  const cookieEnv = Boolean(
+    env.FOODICS_CONSOLE_COOKIE
+    || env.FOODICS_SESSION_COOKIE
+    || env.FOODICS_AUTHORIZATION
+    || env.FOODICS_AUTH_TOKEN
+    || env.FOODICS_AUTH_HEADERS_JSON,
+  );
   const entrypointExists = io.existsSync(paths.entrypointPath);
   const sessionReady = cookieEnv || Boolean(cookieFile) || Boolean(sourceModule) || chromeExists;
   const ready = entrypointExists && sessionReady;

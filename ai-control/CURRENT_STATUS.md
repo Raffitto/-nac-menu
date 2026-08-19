@@ -8,7 +8,7 @@
 | Title | Wire 01:30 Mac Runtime to Authenticated Bridge + First-Proof Readiness |
 | Result | **PASS** (repo-side). Mac LaunchAgent not executed from cloud. |
 | Branch | `release/ask-nac-fabric-founding-day` |
-| Worker branch | `cursor/nac-foodics-0002-f40a` |
+| Worker branch | `cursor/nac-foodics-0002-f40a` (reconciled onto latest release) |
 | Completed | 2026-08-19 ~19:35 Asia/Riyadh |
 | Prior milestone | `NAC-FOODICS-0001` — PARTIAL (no live Foodics in cloud) |
 | Budget policy | soft stop ~88–89%; no on-demand |

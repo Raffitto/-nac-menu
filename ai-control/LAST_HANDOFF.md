@@ -7,6 +7,8 @@
 
 Wired the scheduled local command to `runAuthenticatedFoodicsBridge`. Added a deterministic LaunchAgent install/update path, a read-only status command, and stable proof artifacts that record invocation source (`scheduler` / `manual` / `catch-up`) plus launchd trigger (`calendar` / `run-at-load` / `cli`). Catch-up, current-day exclusion, and idempotent integrity reruns are preserved. Official export/email was not reopened.
 
+Reconciled onto latest `release/ask-nac-fabric-founding-day` (single runtime). A parallel GH-worker tree (`run.mjs` + fabric `localBridgeRuntime.ts`) was folded: canonical entrypoint remains `run-nightly.mjs`; `scripts/foodics-bridge/run.mjs` is a compatibility alias.
+
 ## Scheduler entrypoint before / after
 
 | | Value |

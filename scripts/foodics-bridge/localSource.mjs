@@ -24,6 +24,12 @@ export function loadEnvFile(filePath, into = {}) {
 
 function readCookieHeader(env, bridgeHome) {
   if (env.FOODICS_CONSOLE_COOKIE) return env.FOODICS_CONSOLE_COOKIE;
+  if (env.FOODICS_SESSION_COOKIE) return env.FOODICS_SESSION_COOKIE;
+  if (env.FOODICS_AUTH_TOKEN && !env.FOODICS_AUTHORIZATION) {
+    env.FOODICS_AUTHORIZATION = env.FOODICS_AUTH_TOKEN.startsWith("Bearer ")
+      ? env.FOODICS_AUTH_TOKEN
+      : `Bearer ${env.FOODICS_AUTH_TOKEN}`;
+  }
   const candidates = [
     env.FOODICS_SESSION_FILE,
     path.join(bridgeHome, "session", "cookies.txt"),
@@ -100,6 +106,13 @@ export async function loadLocalAuthenticatedSource(input = {}) {
     accept: "application/json",
     "content-type": "application/json",
   };
+  if (env.FOODICS_AUTH_HEADERS_JSON) {
+    try {
+      Object.assign(headers, JSON.parse(env.FOODICS_AUTH_HEADERS_JSON));
+    } catch {
+      // ignore malformed header JSON; cookie/authorization still apply
+    }
+  }
   if (cookie) headers.cookie = cookie;
   if (authorization) headers.authorization = authorization;
 
