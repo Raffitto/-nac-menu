@@ -117,6 +117,7 @@ Then optionally `node scripts/foodics-bridge/status.mjs`. The existing Foodics s
 
 - control-plane branch: `release/ask-nac-fabric-founding-day`
 - worker branch: `cursor/nac-foodics-0002-f40a`
+- worker SHA: `f454c15fa7de76632a3666ba57ffb45c3b94a282`
 - PR: https://github.com/Raffitto/-nac-menu/pull/3
 
 ## Highest-leverage next recommendation
