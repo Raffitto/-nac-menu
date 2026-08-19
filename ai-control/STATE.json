@@ -2,10 +2,10 @@
   "protocolVersion": 1,
   "status": "awaiting_review",
   "branch": "release/ask-nac-fabric-founding-day",
-  "headSha": "7ad0514916e9a51039235b8415c0168b498c8363",
+  "headSha": "8b25a31e8a54cf7af7565484c3147ad1be5679c2",
   "activeTaskId": null,
   "lastCompletedTaskId": "NAC-FOODICS-0002",
-  "lastUpdatedAt": "2026-08-19T16:30:00.000Z",
+  "lastUpdatedAt": "2026-08-19T18:35:00.000Z",
   "autonomousMode": true,
   "controlRoomIssue": 2,
   "budgetPolicy": {
@@ -23,6 +23,6 @@
     "taskId": null,
     "acquiredAt": null
   },
-  "blocker": "Live Foodics session and LaunchAgent execution remain on Raffi's Mac only. Cloud worker prepared repo-side wiring; first unattended qualified proof still requires physical Mac install + live session.",
-  "lastHandoffResult": "PARTIAL"
+  "blocker": "Physical Mac must run node scripts/foodics-bridge/install-launchagent.mjs. Live Foodics session and official export mailbox are unavailable on the cloud worker. Official export chain remains BLOCKED_EXTERNAL_DEPENDENCY. Do not fabricate production proofs or claim Mac launchd execution.",
+  "lastHandoffResult": "PASS"
 }

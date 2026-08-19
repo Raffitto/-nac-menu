@@ -1,31 +1,38 @@
 # LAST_HANDOFF
 
 - task ID: **NAC-FOODICS-0002**
-- result: **PARTIAL**
+- result: **PASS** (repo-side wiring). Cloud did **not** execute LaunchAgent on Raffi's Mac.
 
 ## Summary
 
-Repo-side Mac bridge wiring is complete: the 01:30 LaunchAgent now targets `runAuthenticatedFoodicsBridge` through `scripts/foodics-bridge/run.mjs`, with deterministic install/status scripts, stable local proof paths, oldest-first catch-up at login/next-online (`RunAtLoad`), and idempotent published-day handling preserved from `NAC-FOODICS-0001`. Cloud worker did not install or execute the LaunchAgent on Raffi's Mac and could not produce a live qualified production proof.
+Wired the scheduled local command to `runAuthenticatedFoodicsBridge`. Added a deterministic LaunchAgent install/update path, a read-only status command, and stable proof artifacts that record invocation source (`scheduler` / `manual` / `catch-up`) plus launchd trigger (`calendar` / `run-at-load` / `cli`). Catch-up, current-day exclusion, and idempotent integrity reruns are preserved. Official export/email was not reopened.
 
-## Scheduler entrypoint
+Reconciled onto latest `release/ask-nac-fabric-founding-day` (single runtime). A parallel GH-worker tree (`run.mjs` + fabric `localBridgeRuntime.ts`) was folded: canonical entrypoint remains `run-nightly.mjs`; `scripts/foodics-bridge/run.mjs` is a compatibility alias.
 
-| | Command |
+## Scheduler entrypoint before / after
+
+| | Value |
 |---|---|
-| **Before** | Legacy operator package at `~/Desktop/nac-menu-release/foodics-bridge/` under label `com.nac.foodics-bridge.nightly`. Exact `ProgramArguments` were not versioned in-repo; presumed legacy console scrape path, **not** `runAuthenticatedFoodicsBridge`. |
-| **After** | `node <repo>/scripts/foodics-bridge/run.mjs` (optional `--source scheduler|manual|catch-up`). LaunchAgent `StartCalendarInterval` **01:30** with `RunAtLoad: true` for missed-day catch-up when the Mac returns online. |
+| Label | `com.nac.foodics-bridge.nightly` (unchanged) |
+| Schedule | 01:30 Asia/Riyadh + `RunAtLoad` (login/next-online catch-up) |
+| **Before** | Out-of-repo laptop `foodics-bridge` nightly job. Exact `ProgramArguments` were **not in git**. |
+| **After** | `node --experimental-strip-types <repo>/scripts/foodics-bridge/run-nightly.mjs --invoked-by=launchd --branch=khobar` |
 
 ## Files changed
 
 ```
-supabase/functions/_shared/companyIntelligence/commerce/localBridgeRuntime.ts
-supabase/functions/_shared/companyIntelligence/commerce/foodicsConsoleSource.ts
-supabase/functions/_shared/companyIntelligence/commerce/localAcquisitionStore.ts
-supabase/functions/_shared/companyIntelligence/commerce/index.ts
-scripts/foodics-bridge/lib.mjs
-scripts/foodics-bridge/run.mjs
+scripts/foodics-bridge/constants.mjs
+scripts/foodics-bridge/launchdWiring.mjs
+scripts/foodics-bridge/filesystemStore.mjs
+scripts/foodics-bridge/localSource.mjs
+scripts/foodics-bridge/engineBridge.mjs
+scripts/foodics-bridge/run-nightly.mjs
 scripts/foodics-bridge/install-launchagent.mjs
 scripts/foodics-bridge/status.mjs
 src/intelligence/askNac/shared/launchdWiring.test.js
+src/intelligence/askNac/shared/foodicsBridge.test.js
+src/intelligence/askNac/shared/aiControlProtocol.test.js
+supabase/functions/_shared/companyIntelligence/commerce/acquisitionEngine.ts
 ai-control/LAST_HANDOFF.md
 ai-control/STATE.json
 ai-control/CURRENT_STATUS.md
@@ -33,53 +40,69 @@ ai-control/CURRENT_STATUS.md
 
 ## Install / update mechanism
 
-`node scripts/foodics-bridge/install-launchagent.mjs`
+```bash
+node scripts/foodics-bridge/install-launchagent.mjs
+```
 
-- Validates repo root and node path
-- Creates `~/Library/Application Support/NAC/foodics-bridge/{logs,proofs}` (or `FOODICS_BRIDGE_DATA_DIR`)
-- Writes `~/Library/LaunchAgents/com.nac.foodics-bridge.nightly.plist`
-- Bootstraps/reloads LaunchAgent on macOS only
-- Prints installed command + schedule JSON (repeatable / non-destructive)
+Validates the entrypoint, creates `0700` log/proof directories, writes `~/Library/LaunchAgents/com.nac.foodics-bridge.nightly.plist` (backup on change), and on macOS bootstraps the agent. Repeat install is a no-op when the plist is unchanged. Proof files are never deleted. Does not require hand-editing plists. Secrets are not written into the plist; `.env.local` / session files stay outside git.
 
 ## Status / diagnostic mechanism
 
-`node scripts/foodics-bridge/status.mjs`
+```bash
+node scripts/foodics-bridge/status.mjs
+```
 
-Read-only JSON report: LaunchAgent loaded state (when `launchctl` available), configured 01:30 schedule, installed command, `publishedThrough`/watermark from local `state.json`, next missing completed date, last run/proof when present, session/env readiness. Does not fabricate unavailable fields.
+Reports: agent loaded state **only if locally observable**, configured schedule, last run/proof if present, watermark, next missing completed date, runtime readiness. Missing session/plist/launchctl is `null` + reason — not fabricated.
 
 ## Proof artifact path and fields
 
-**Base:** `~/Library/Application Support/NAC/foodics-bridge/proofs/<branch>/<businessDate>/<runId>.json`
+Stable root: `~/Library/Application Support/nac/foodics-bridge/` (override `NAC_FOODICS_STATE_ROOT`)
 
-**Fields:** `schema`, `artifactPath`, `branchId`, `invocationSource` (`scheduler` \| `manual` \| `catch-up`), `trigger` (`scheduler` \| `manual` \| `catch-up` \| `login-catch-up`), `command`, `repoRoot`, nested `evidence` (run ID, Riyadh timestamps, listing/detail counts, checksums, watermark, idempotency, final state, qualified flag).
+| Path | Role |
+|---|---|
+| `proof/last.json` | latest inspectable run |
+| `proof/runs/{runId}.json` | per-run record |
+| `proof/dates/{branch}/{YYYY-MM-DD}.json` | per-date record |
+| `proof/by-invocation/{scheduler\|manual\|catch-up}/{runId}.json` | invocation index |
+| `watermark.json` | contiguous published-through |
+| `logs/foodics-bridge.std{out,err}.log` | LaunchAgent logs |
 
-Supporting files: `state.json`, `last-run.json`, `evidence/<runId>.json`, `logs/nightly.{stdout,stderr}.log`.
+Fields include: `schema=nac-foodics-bridge-proof-v1`, `runId`, `invocationSource`, `launchdTrigger`, Riyadh start/end, business date, `authenticated_read`, listing/detail/item counts, SHA-256 checksums, canonical counts, previous/new watermark, destination, version, idempotency, final state, qualified, official-export nulls.
+
+## Catch-up / idempotency
+
+- Monday-off oldest-first remains proven at **code** level (`2026-08-16` then `2026-08-17` when published-through is `2026-08-15` and as-of is Tuesday 01:30).
+- `RunAtLoad` lets a missed 01:30 catch up when the Mac is next online.
+- Current Riyadh date stays excluded.
+- Already-published newest safe date is an integrity `IDEMPOTENT_NOOP`, not a second publication/proof increment.
+
+This is **not** a claim that launchd fired on the Mac.
 
 ## Focused tests / build
 
 | Pattern | Result |
 |---|---|
 | `foodicsBridge` | **9 passed** |
-| `launchdWiring` | **9 passed** |
+| `launchdWiring` (includes schedulerCatchup + proofEvidence) | **9 passed** |
 | `aiControlProtocol` | **3 passed** |
 | **Focused gate** | **21 passed**, 0 failed |
 | `CI=true npm run build` | **PASS** |
 
-## Monday-off catch-up
+Full-repo `npm test --watchAll=false` was not repeated (task: focused suites only, then one build gate). Jest `@jest-environment node` is required in this cloud image because native `canvas` cannot build (missing pixman).
 
-**Proven at code level: yes.** `runAuthenticatedFoodicsBridge` + local entrypoint retain oldest-first multi-day catch-up (`launchdWiring` + existing `foodicsBridge` tests).
+## Deploys
+
+none — Netlify untouched; no main merge; no Edge deploy; no paid services; migrations **none**.
 
 ## Physical Mac action remaining
 
-**Yes — one command on Raffi's Mac after pulling this branch:**
+**Yes — one command**, from the repo checkout on Raffi's Mac (this cloud worker cannot load launchd there):
 
 ```bash
-cd /path/to/nac-menu && node scripts/foodics-bridge/install-launchagent.mjs
+node scripts/foodics-bridge/install-launchagent.mjs
 ```
 
-Prerequisites (not committed): `scripts/foodics-bridge/.env.local` or legacy `~/Desktop/nac-menu-release/foodics-bridge/.env.local` with Supabase service role + Foodics session cookie/token.
-
-Optional verification: `node scripts/foodics-bridge/status.mjs`
+Then optionally `node scripts/foodics-bridge/status.mjs`. The existing Foodics session/profile under `/Users/raffiazarian/Desktop/nac-menu-release/foodics-bridge` is reused (`.env.local` / session files); nothing is committed.
 
 ## Cost / deploy discipline
 
@@ -91,13 +114,17 @@ Optional verification: `node scripts/foodics-bridge/status.mjs`
 | Main merge | none |
 | Migrations | **none** |
 | Edge deploys | **0** |
-| Production proofs incremented | **0** (no live Foodics session on cloud worker) |
 
 ## Branch / commit
 
-- branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: `ee11169603a228a13eda78501e0b40aa1f48ea7c`
+- control-plane branch: `release/ask-nac-fabric-founding-day`
+- worker branch: `cursor/nac-foodics-0002-f40a`
+- worker SHA: `f454c15fa7de76632a3666ba57ffb45c3b94a282`
+- PR: https://github.com/Raffitto/-nac-menu/pull/3
 
-## Highest-leverage next step
+## Highest-leverage next recommendation
 
-After operator runs `install-launchagent.mjs` on the Mac, let the next unattended completed Riyadh date acquire and inspect the proof JSON under `proofs/khobar/<date>/`. That is the first candidate for a new qualified machine proof. Do not reopen official export/email work.
+1. Raffi reviews this handoff (`awaiting_review`) and merges the worker PR into `release/ask-nac-fabric-founding-day` if accepted.
+2. On the Mac, run `node scripts/foodics-bridge/install-launchagent.mjs` once.
+3. After the next unattended completed Riyadh date, inspect `proof/last.json` — that is the first new qualified-proof candidate. Do not backfill Aug 14/15 as qualified.
+4. Do not reopen official export/email.

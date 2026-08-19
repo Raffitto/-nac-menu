@@ -962,8 +962,12 @@ export async function runAuthenticatedFoodicsBridge(input: {
     openGaps: input.store.getOpenGaps(input.branchId),
     requestedSource: input.requestedSource,
   });
+  const dates = [...plan.datesOldestFirst];
+  if (!dates.length && input.store.getPublishedDay(input.branchId, plan.newestSafeCompletedDate)) {
+    dates.push(plan.newestSafeCompletedDate);
+  }
   const results: DateAcquisitionResult[] = [];
-  for (const businessDate of plan.datesOldestFirst) {
+  for (const businessDate of dates) {
     results.push(await acquireCompletedBusinessDate({
       branchId: input.branchId,
       businessDate,

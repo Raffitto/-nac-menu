@@ -1,4 +1,7 @@
 /**
+ * @jest-environment node
+ */
+/**
  * NAC-FOODICS-0001: authenticated completed-day acquisition,
  * catch-up, idempotency, evidence, and official-export classification.
  */
