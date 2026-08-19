@@ -96,7 +96,7 @@ Optional verification: `node scripts/foodics-bridge/status.mjs`
 ## Branch / commit
 
 - branch: `release/ask-nac-fabric-founding-day`
-- commit SHA: _(set at push)_
+- commit SHA: `ee11169603a228a13eda78501e0b40aa1f48ea7c`
 
 ## Highest-leverage next step
 
