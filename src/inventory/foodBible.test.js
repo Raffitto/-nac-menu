@@ -28,7 +28,16 @@ describe("foodBible helpers", () => {
     expect(groups).toHaveLength(3);
     expect(groups.find((group) => group.primaryItem.name_en === "Burrata").placements).toHaveLength(2);
     expect(groups.find((group) => group.primaryItem.name_en === "Big NAC").placements).toHaveLength(2);
-    expect(menuIdentityKey(groups.find((group) => group.primaryItem.name_en === "Latte").primaryItem)).toBe("name:latte");
+    expect(groups.find((group) => group.primaryItem.name_en === "Latte").primaryItem.id).toBe("e");
+  });
+
+  test("dedupeMenuItems merges same-name leftovers split across placement groups", () => {
+    const groups = dedupeMenuItems([
+      { id: "linked", placement_group_id: "pg-1", name_en: "Turkish Eggs", section_id: "s1", sort_order: 1, active: true },
+      { id: "orphan", name_en: "Turkish Eggs", section_id: "s2", sort_order: 2, active: true },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].placements).toHaveLength(2);
   });
 
   test("duplicate menu placements do not inflate the unique kitchen recipe denominator", () => {
@@ -328,6 +337,58 @@ describe("foodBible helpers", () => {
       placements: [{ id: "conch" }],
     });
     expect(pasta).toBeNull();
+  });
+
+  test("maps leftover identities to canonical recipes without inventing dishes", () => {
+    const turkish = findRecipeForMenuIdentity([
+      { id: "r-turk", active: true, name: "TURKISH EGGS, CAJUN BUTTER, PITA", recipeType: "menu_item", menuItemId: "other" },
+    ], { primaryItem: { id: "live", name_en: "Turkish Eggs" }, placements: [{ id: "live" }] });
+    expect(turkish?.id).toBe("r-turk");
+
+    const halloumi = findRecipeForMenuIdentity([
+      { id: "r-hal", active: true, name: "HALLOUMI", recipeType: "menu_item", menuItemId: "other" },
+      { id: "r-fries", active: true, name: "HALLOUMI FRIES, HONEY SRIRACHA", recipeType: "menu_item", menuItemId: "fries" },
+    ], { primaryItem: { id: "live", name_en: "Grilled Halloumi" }, placements: [{ id: "live" }] });
+    expect(halloumi?.id).toBe("r-hal");
+
+    const yogurt = findRecipeForMenuIdentity([
+      { id: "r-yog", active: true, name: "GREEK YOGHURT, HOUSE GRANOLA, RASPBERRY, CARAMEL TOAST", recipeType: "menu_item", menuItemId: "other" },
+    ], { primaryItem: { id: "live", name_en: "Greek Yogurt" }, placements: [{ id: "live" }] });
+    expect(yogurt?.id).toBe("r-yog");
+
+    const popcorn = findRecipeForMenuIdentity([
+      { id: "r-pop", active: true, name: "POPCORN CHICKEN, SPICY MAYO", recipeType: "preparation", menuItemId: null },
+    ], { primaryItem: { id: "live", name_en: "Popcorn Chicken" }, placements: [{ id: "live" }] });
+    expect(popcorn?.id).toBe("r-pop");
+
+    const flamed = findRecipeForMenuIdentity([
+      { id: "r-flm", active: false, name: "FLAMED AUBERGINE, MISO, CRISPY RICE, GREEK YOGURT", recipeType: "menu_item", menuItemId: null, internalName: "fb:20260820:flamed" },
+    ], { primaryItem: { id: "live", name_en: "Flamed Aubergine" }, placements: [{ id: "live" }] });
+    expect(flamed?.id).toBe("r-flm");
+  });
+
+  test("does not auto-map ambiguous or source-missing kitchen identities", () => {
+    expect(findRecipeForMenuIdentity([
+      { id: "r-fried", active: true, name: "2 EGGS ANY STYLE - FRIED", recipeType: "menu_item", menuItemId: "other" },
+    ], { primaryItem: { id: "live", name_en: "2 Eggs Any Style" }, placements: [{ id: "live" }] })).toBeNull();
+
+    expect(findRecipeForMenuIdentity([
+      { id: "r-toast", active: true, name: "AVOCADO TOAST, FETA", recipeType: "menu_item", menuItemId: "a" },
+      { id: "r-salt", active: true, name: "AVOCADO WITH SMOKED SEA SALT", recipeType: "menu_item", menuItemId: "b" },
+    ], { primaryItem: { id: "live", name_en: "Avocado" }, placements: [{ id: "live" }] })).toBeNull();
+
+    expect(findRecipeForMenuIdentity([
+      { id: "r-jack", active: true, name: "SCRAMBLED EGGS, MONTERREY JACK, JALAPEÑO MAYO, BRIOCHE BUN", recipeType: "menu_item", menuItemId: "a" },
+      { id: "r-toast", active: false, name: "SCRAMBLED EGGS ON TOAST", recipeType: "menu_item", menuItemId: null, internalName: "fb:x" },
+    ], { primaryItem: { id: "live", name_en: "Scrambled Eggs" }, placements: [{ id: "live" }] })).toBeNull();
+
+    expect(findRecipeForMenuIdentity([
+      { id: "r-morel", active: true, name: "MOREL PASTA, PARMESAN", recipeType: "menu_item", menuItemId: "x" },
+    ], { primaryItem: { id: "live", name_en: "Conchiglie" }, placements: [{ id: "live" }] })).toBeNull();
+
+    expect(findRecipeForMenuIdentity([
+      { id: "r-plate", active: true, name: "MEDITERRANEAN PLATE", recipeType: "menu_item", menuItemId: "x" },
+    ], { primaryItem: { id: "live", name_en: "Mediterranean Breakfast" }, placements: [{ id: "live" }] })).toBeNull();
   });
 
   test("requiresKitchenRecipe excludes drinks and packaged add-ons but keeps kitchen dishes", () => {
