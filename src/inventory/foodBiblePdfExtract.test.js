@@ -261,6 +261,45 @@ Cooking oil`,
     expect(chicken?.unitConversion || chicken?.canonicalUnit).toBeTruthy();
   });
 
+  test("pairs stacked name / unit / quantity Food Bible columns", () => {
+    const { recipes } = extractFoodBibleRecipesFromPages({
+      sourceFile: "Big NAC V2.pdf",
+      pages: [
+        {
+          page: 1,
+          text: `BIG NAC
+Utensils Used
+Menu Section
+Mains
+Prep Time
+Yield
+1 Pax
+Ingredients
+Unit
+1 Batch
+Notes
+Minced beef
+g
+160
+Burger bun (sesame)
+pc
+1
+Butter unsalted
+g
+10
+1. Season the patty.
+Method`,
+        },
+      ],
+    });
+    const recipe = recipes.find((entry) => /big nac/i.test(entry.sourceTitle));
+    expect(recipe).toBeTruthy();
+    const beef = recipe.ksaIngredients.find((ing) => /minced beef/i.test(ing.ksaOperationalName));
+    expect(beef?.sourceQuantity).toBe(160);
+    expect(beef?.sourceUnit).toBe("g");
+    expect(recipe.ksaIngredients.find((ing) => /burger bun/i.test(ing.ksaOperationalName))?.sourceQuantity).toBe(1);
+  });
+
   test("accepts title-case dish names such as Prawn Rendang", () => {
     const { recipes, rejectedTitles } = extractFoodBibleRecipesFromPages({
       sourceFile: "Prawn Rendang, grilled lemon .pdf",

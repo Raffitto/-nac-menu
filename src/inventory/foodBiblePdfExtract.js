@@ -9,18 +9,30 @@ import {
 } from "./foodBibleKsaAdaptation";
 
 const NOISE_LINE_RE =
-  /^(utensils used\b.*|allergens?:.*|menu section|prep time|cooking time|yield|ingredients(?:\s+unit.*)?|unit(?:\s+1)?(?:\s+batch)?(?:\s+notes)?|method|to serve|critical control|all our products are produced.*|store food at.*|keep raw and.*|when food is prepped.*|frequently wash.*|cook food to.*|always label.*|keep foods covered.*|total|celery mains|alcohol\s*\/.*)$/i;
+  /^(utensils used\b.*|allergens?:.*|menu section|prep time|cooking time|yield|ingredients(?:\s+unit.*)?|unit(?:\s+1)?(?:\s+batch)?(?:\s+notes)?|notes|1 batch|method|to serve|critical control|all our products are produced.*|store food at.*|keep raw and.*|when food is prepped.*|frequently wash.*|cook food to.*|always label.*|keep foods covered.*|total|celery mains|alcohol\s*\/.*)$/i;
 
 const UNIT_RE = /^(g|kg|ml|l|litre|liter|pcs|pc|unit|units|pax)$/i;
 const QTY_ONLY_RE = /^(g|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)\b(.*)$/i;
 const INLINE_ING_RE =
   /^(.+?)\s+(g|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)(?:\s+(.*))?$/i;
+const QTY_NUMBER_RE = /^([0-9]+(?:[.,][0-9]+)?)(?:\s*\/\s*([0-9]+))?$/;
+const INGREDIENT_NOTE_RE =
+  /^(chopped|sliced|diced|grated|finely|roughly|optional|to taste|2 slices|3 slices|2x |3 layers|remove |pre cooked|when reduced)/i;
+const ALLERGEN_LINE_RE = /^(dairy|egg|eggs|gluten|celery|sulphite|sulphites|mustard|nuts|sesame|soya|crustaceans|fish|alcohol)(\s*\/\s*(dairy|egg|eggs|gluten|celery|sulphite|sulphites|mustard|nuts|sesame|soya|crustaceans|fish|alcohol))+$/i;
 const METHOD_START_RE = /^\d+\.\s+/;
 const YIELD_RE = /\b((?:\d+(?:[.,]\d+)?)\s*(?:pax|kg|g|l|ml|units?))\b/i;
 
 function parseNumber(raw) {
   if (raw == null || raw === "") return null;
-  const n = Number(String(raw).replace(",", "."));
+  const text = String(raw).trim();
+  const fraction = text.match(/^([0-9]+)\s*\/\s*([0-9]+)$/);
+  if (fraction) {
+    const den = Number(fraction[2]);
+    if (!den) return null;
+    const n = Number(fraction[1]) / den;
+    return Number.isFinite(n) ? n : null;
+  }
+  const n = Number(text.replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -61,6 +73,7 @@ function isNoiseLine(line) {
   if (!text) return true;
   if (NOISE_LINE_RE.test(text)) return true;
   if (/^allergens?:/i.test(text)) return true;
+  if (ALLERGEN_LINE_RE.test(text)) return true;
   return false;
 }
 
@@ -256,6 +269,14 @@ function extractIngredientSectionLines(lines) {
   return [...preQty, ...out, ...trailingNames];
 }
 
+function looksLikeOperationalText(line) {
+  const text = normalizeFoodBibleText(line);
+  if (!text) return false;
+  if (/^(one slice|place |serve with|on the |on each|each patty|upward side)/i.test(text)) return true;
+  if (text.split(/\s+/).length >= 8 && /\b(patty|plate|side|garnish|serve)\b/i.test(text)) return true;
+  return false;
+}
+
 function looksLikeProse(line) {
   const text = normalizeFoodBibleText(line);
   if (!text) return false;
@@ -293,13 +314,40 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
   const inline = [];
   const orphanQtys = [];
   const orphanNames = [];
+  const stacked = [];
   const issues = [];
+  const pending = [];
+
+  const flushStacked = () => {
+    while (pending.length >= 3
+      && pending[0].kind === "name"
+      && pending[1].kind === "unit"
+      && pending[2].kind === "qty") {
+      const name = pending.shift();
+      const unit = pending.shift();
+      const qty = pending.shift();
+      stacked.push({
+        sourceName: name.sourceName,
+        sourceUnit: unit.sourceUnit,
+        sourceQuantity: qty.sourceQuantity,
+        notes: qty.notes || "",
+        sourceLine: `${name.sourceLine} | ${unit.sourceLine} | ${qty.sourceLine}`,
+        alignment: "STACKED_NAME_UNIT_QTY",
+      });
+    }
+  };
+
   for (const raw of lines) {
     const line = normalizeFoodBibleText(raw);
     if (!line || isNoiseLine(line)) continue;
     if (METHOD_START_RE.test(line)) continue;
-    if (/^critical control|^to serve|^method$/i.test(line)) continue;
-    // Do not drop ingredient names that match the dish title (e.g. Halloumi).
+    if (/^critical control|^to serve|^method$|^notes$|^1 batch$/i.test(line)) continue;
+
+    if (INGREDIENT_NOTE_RE.test(line) && (stacked.length || inline.length)) {
+      const target = stacked[stacked.length - 1] || inline[inline.length - 1];
+      target.notes = [target.notes, line].filter(Boolean).join(" ");
+      continue;
+    }
 
     const qtyOnly = line.match(QTY_ONLY_RE);
     if (qtyOnly) {
@@ -309,6 +357,22 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
         notes: normalizeFoodBibleText(qtyOnly[3] || ""),
         sourceLine: line,
       });
+      continue;
+    }
+
+    if (UNIT_RE.test(line)) {
+      pending.push({ kind: "unit", sourceUnit: line.toLowerCase(), sourceLine: line });
+      flushStacked();
+      continue;
+    }
+
+    const numberOnly = line.match(QTY_NUMBER_RE);
+    if (numberOnly) {
+      const qty = numberOnly[2]
+        ? parseNumber(`${numberOnly[1]}/${numberOnly[2]}`)
+        : parseNumber(numberOnly[1]);
+      pending.push({ kind: "qty", sourceQuantity: qty, notes: "", sourceLine: line });
+      flushStacked();
       continue;
     }
 
@@ -328,7 +392,6 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
       }
     }
 
-    // Plain ingredient name candidates (left column).
     if (
       !looksLikeProse(line) &&
       !FALSE_TITLE_RE.test(line) &&
@@ -343,21 +406,36 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
         line
       )
     ) {
-      orphanNames.push({
-        sourceName: line,
-        sourceLine: line,
+      pending.push({ kind: "name", sourceName: line, sourceLine: line });
+      flushStacked();
+    }
+  }
+  flushStacked();
+
+  for (const token of pending) {
+    if (token.kind === "name") {
+      orphanNames.push({ sourceName: token.sourceName, sourceLine: token.sourceLine });
+    } else if (token.kind === "qty") {
+      orphanQtys.push({
+        sourceUnit: null,
+        sourceQuantity: token.sourceQuantity,
+        notes: token.notes || "",
+        sourceLine: token.sourceLine,
+      });
+    } else if (token.kind === "unit") {
+      issues.push({
+        code: "AMBIGUOUS_UNIT",
+        detail: `Unpaired unit row: ${token.sourceLine}`,
+        category: "parser_unpaired_unit",
       });
     }
   }
 
-  const ingredients = [...inline];
+  const ingredients = [...stacked, ...inline];
 
   if (orphanQtys.length && orphanNames.length) {
     if (orphanQtys.length === orphanNames.length) {
-      // Finished dishes usually list all qty rows then all names (sequential).
-      // Prep cards with inline rows often leave leading/trailing qty+name orphans
-      // where the first qty belongs to the last orphan name (reverse).
-      const useReverse = inline.length > 0;
+      const useReverse = inline.length > 0 || stacked.length > 0;
       const orderedNames = useReverse ? [...orphanNames].reverse() : orphanNames;
       const alignment = useReverse
         ? "CANDIDATE_REVERSE_ORPHAN_PAIR"
@@ -377,26 +455,26 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
       issues.push({
         code: "SOURCE_RECIPE_INCONSISTENCY",
         detail: `Orphan quantity/name pairs require review (count=${orphanQtys.length}, alignment=${useReverse ? "reverse" : "sequential"})`,
+        category: "layout_two_column",
       });
     } else {
       issues.push({
         code: "SOURCE_RECIPE_INCONSISTENCY",
         detail: `Ingredient/quantity count mismatch names=${orphanNames.length} qty=${orphanQtys.length}`,
+        category: "layout_mismatch",
       });
       for (const name of orphanNames) {
-        ingredients.push({
-          sourceName: name.sourceName,
-          sourceQuantity: null,
-          sourceUnit: null,
-          notes: "",
-          sourceLine: name.sourceLine,
-          alignment: "NAME_WITHOUT_QTY",
+        issues.push({
+          code: "AMBIGUOUS_UNIT",
+          detail: `Unpaired name row: ${name.sourceName}`,
+          category: ingredients.length ? "leftover_column_name" : "missing_source_qty",
         });
       }
       for (const qty of orphanQtys) {
         issues.push({
           code: "AMBIGUOUS_UNIT",
           detail: `Unpaired quantity row: ${qty.sourceLine}`,
+          category: "unpaired_qty",
         });
       }
     }
@@ -405,21 +483,25 @@ function parseIngredientCandidates(lines, { cardTitle = null } = {}) {
       issues.push({
         code: "SOURCE_RECIPE_INCONSISTENCY",
         detail: `Quantity without ingredient name: ${qty.sourceLine}`,
+        category: "qty_without_name",
       });
     }
   } else if (!orphanQtys.length && orphanNames.length) {
     for (const name of orphanNames) {
-      ingredients.push({
-        sourceName: name.sourceName,
-        sourceQuantity: null,
-        sourceUnit: null,
-        notes: "",
-        sourceLine: name.sourceLine,
-        alignment: "NAME_WITHOUT_QTY",
-      });
+      if (looksLikeOperationalText(name.sourceName) || ingredients.length) {
+        issues.push({
+          code: "AMBIGUOUS_UNIT",
+          detail: ingredients.length
+            ? `Leftover name after structured rows: ${name.sourceName}`
+            : `Operational text, not a quantity line: ${name.sourceName}`,
+          category: ingredients.length ? "leftover_column_name" : "operational_text",
+        });
+        continue;
+      }
       issues.push({
         code: "AMBIGUOUS_UNIT",
         detail: `Ingredient without quantity: ${name.sourceName}`,
+        category: "missing_source_qty",
       });
     }
   }

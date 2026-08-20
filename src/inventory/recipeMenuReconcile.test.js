@@ -65,12 +65,22 @@ describe("recipeMenuReconcile", () => {
     expect(report.summary.activeMatched).toBe(2);
   });
 
-  test("active live item without a recipe is missing", async () => {
+  test("documented short-title aliases resolve when evidence is unique", () => {
     const report = reconcileRecipesToLiveMenu({
-      liveItems,
-      recipes: [],
+      liveItems: [
+        ...liveItems,
+        { id: "4", name: "Shakshuka", name_en: "Shakshuka", active: true },
+        { id: "5", name: "Brownie, Caramel, Vanilla Ice Cream", name_en: "Brownie, Caramel, Vanilla Ice Cream", active: true },
+        { id: "6", name: "Mushroom Toast", name_en: "Mushroom Toast", active: true },
+      ],
+      recipes: [
+        { recipeKind: "finished", ksaOperationalTitle: "SHAKSHUKA POACHED EGGS FETA ZA ATAR PITA", sourceFile: "shak.pdf" },
+        { recipeKind: "finished", ksaOperationalTitle: "Chocolate brownie with Cookie chunk caramel", sourceFile: "brownie.pdf" },
+        { recipeKind: "finished", ksaOperationalTitle: "Mushroom TOAT hazelnut salt", sourceFile: "toast.pdf" },
+      ],
     });
-    expect(report.summary.activeMissing).toBe(3);
-    expect(report.liveRows.every((row) => row.state === RECONCILE_STATES.ACTIVE_RECIPE_MISSING)).toBe(true);
+    expect(report.liveRows.find((row) => row.liveName === "Shakshuka").state).toBe(RECONCILE_STATES.ACTIVE_MATCHED);
+    expect(report.liveRows.find((row) => /brownie/i.test(row.liveName)).state).toBe(RECONCILE_STATES.ACTIVE_MATCHED);
+    expect(report.liveRows.find((row) => row.liveName === "Mushroom Toast").state).toBe(RECONCILE_STATES.ACTIVE_MATCHED);
   });
 });
