@@ -31,7 +31,7 @@ export function snapshotFromRecipeRecord({
   brand = "NAC",
   generatedAt = new Date().toISOString(),
 } = {}) {
-  const archived = row?.kind === "archived" || row?.guestStatus === "archived" || row?.operationallyActive === false && row?.kind !== "menu_item";
+  const archived = row?.kind === "archived" || row?.guestStatus === "archived" || (row?.operationallyActive === false && row?.kind !== "menu_item");
   const live = row?.guestStatus === "live" && row?.kind === "menu_item";
   return {
     brand,
