@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BookOpen,
   CheckCircle2,
+  Download,
   Loader2,
   Plus,
   Search,
@@ -11,7 +12,15 @@ import {
 import {
   fetchFoodBibleOverview,
   fetchInventoryStaffAccess,
+  fetchCanonicalCostContext,
 } from "../lib/inventoryApi";
+import {
+  currentFoodBibleSnapshots,
+  recipePdfFilename,
+  recipesPdfBytes,
+  snapshotFromRecipeRecord,
+  triggerPdfDownload,
+} from "./recipePdfExport";
 import {
   READINESS,
   READINESS_LABELS,
@@ -24,6 +33,7 @@ import {
   recipeTypeLabel,
 } from "./foodBible";
 import RecipeEditorPanel from "./RecipeEditorPanel";
+import { costTrustLabel, formatSar } from "./costTrust";
 
 const READINESS_FILTERS = [
   { id: "all", label: "All" },
@@ -38,9 +48,15 @@ const MENU_FILTERS = [
   { id: "active", label: "Live on menu" },
   { id: "hidden", label: "Hidden" },
   { id: "sold_out", label: "Sold out" },
+  { id: "archived", label: "Archived recipes" },
 ];
 
-export default function FoodBibleView({ branchId, onOpenIngredients }) {
+export default function FoodBibleView({
+  branchId,
+  onOpenIngredients,
+  initialTarget = null,
+  onInitialTargetHandled,
+}) {
   const [overview, setOverview] = useState(null);
   const [access, setAccess] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +67,9 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
   const [menuFilter, setMenuFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editorTarget, setEditorTarget] = useState(null);
+  const [costAsOf, setCostAsOf] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  const [downloadBusy, setDownloadBusy] = useState("");
 
   const canEditBranch = canManageBranchRecipes(access, branchId);
   const canEditNetwork = canManageNetworkRecipes(access);
@@ -60,22 +79,37 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     setLoading(true);
     setError("");
     try {
-      const [data, staffAccess] = await Promise.all([
-        fetchFoodBibleOverview({ branchId }),
+      const [data, staffAccess, costContext] = await Promise.all([
+        fetchFoodBibleOverview({ branchId, asOf: costAsOf }),
         fetchInventoryStaffAccess(),
+        fetchCanonicalCostContext({ branchId, asOf: `${costAsOf}T23:59:59+03:00` }).catch(() => ({ costByCanonicalId: {} })),
       ]);
-      setOverview(data);
+      setOverview({ ...data, costByCanonicalId: costContext.costByCanonicalId || {} });
       setAccess(staffAccess);
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not load Food Bible."));
     } finally {
       setLoading(false);
     }
-  }, [branchId]);
+  }, [branchId, costAsOf]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!initialTarget?.menuItemId || !(overview?.rows || []).length) return;
+    const row = overview.rows.find(
+      (entry) => entry.menuItemId === initialTarget.menuItemId,
+    );
+    if (row) {
+      setEditorTarget({
+        ...row,
+        suggestedRecipeType: initialTarget.recipeType || "menu_item",
+      });
+    }
+    onInitialTargetHandled?.();
+  }, [initialTarget, overview?.rows, onInitialTargetHandled]);
 
   const categories = useMemo(() => {
     const values = new Set();
@@ -103,6 +137,13 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     needsAttention: 0,
     coveragePct: 0,
   };
+  const costSummary = overview?.costHealth?.summary || {
+    trustedRecipes: 0,
+    incompleteRecipes: 0,
+    productsMissingRecipe: 0,
+    ingredientsMissingOrStaleCost: 0,
+    recipeCoveragePct: 0,
+  };
 
   const openEditor = (row) => {
     setEditorTarget(row);
@@ -116,6 +157,99 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
     setNotice("Recipe saved.");
     closeEditor();
     await refresh();
+  };
+
+  const ingredientById = useMemo(
+    () => new Map((overview?.ingredients || []).map((ingredient) => [ingredient.id, ingredient])),
+    [overview?.ingredients],
+  );
+  const recipeById = useMemo(
+    () => new Map((overview?.recipes || []).map((recipe) => [recipe.id, recipe])),
+    [overview?.recipes],
+  );
+
+  const snapshotForRow = useCallback((row) => snapshotFromRecipeRecord({
+    row,
+    lines: row.lines || overview?.lineGraph?.[row.recipeId] || [],
+    documentation: row.documentation || row.version?.documentation || {},
+    version: row.version,
+    ingredientById,
+    recipeById,
+    generatedAt: new Date().toISOString(),
+  }), [ingredientById, recipeById, overview?.lineGraph]);
+
+  const downloadSnapshots = (snapshots, filename, combined = false) => {
+    if (!snapshots.length) {
+      setError("Select at least one recipe with documented ingredients.");
+      return;
+    }
+    const bytes = recipesPdfBytes(snapshots, {
+      title: combined ? "NAC Food Bible" : snapshots.length > 1 ? "Selected recipes" : snapshots[0].name,
+    });
+    triggerPdfDownload(bytes, filename);
+    setNotice(`Downloaded ${snapshots.length} recipe${snapshots.length === 1 ? "" : "s"}.`);
+  };
+
+  const handleDownloadRow = (row) => {
+    if (!row.recipeId) {
+      setError("This menu item does not have a recipe yet.");
+      return;
+    }
+    downloadSnapshots([snapshotForRow(row)], recipePdfFilename(row.displayName));
+  };
+
+  const handleDownloadSelected = () => {
+    setDownloadBusy("selected");
+    try {
+      const snapshots = filtered
+        .filter((row) => selectedKeys.has(row.identityKey) && row.recipeId)
+        .map(snapshotForRow);
+      downloadSnapshots(snapshots, recipePdfFilename("selected-recipes", { combined: true }), true);
+    } finally {
+      setDownloadBusy("");
+    }
+  };
+
+  const handleDownloadFoodBible = () => {
+    setDownloadBusy("bible");
+    try {
+      const snapshots = currentFoodBibleSnapshots(
+        (overview?.rows || [])
+          .filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId)
+          .map(snapshotForRow),
+      );
+      downloadSnapshots(snapshots, recipePdfFilename("food-bible", { combined: true }), true);
+    } finally {
+      setDownloadBusy("");
+    }
+  };
+
+  const selectable = filtered.filter((row) => row.recipeId);
+  const allFilteredSelected = selectable.length > 0 && selectable.every((row) => selectedKeys.has(row.identityKey));
+
+  const toggleSelect = (key) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        selectable.forEach((row) => next.delete(row.identityKey));
+        return next;
+      });
+      return;
+    }
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      selectable.forEach((row) => next.add(row.identityKey));
+      return next;
+    });
   };
 
 
@@ -154,6 +288,29 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
         </article>
       </div>
 
+      <div className="inv-fb-summary" data-testid="food-bible-cost-health">
+        <article>
+          <strong>{costSummary.trustedRecipes}</strong>
+          <span>Trusted recipe costs</span>
+        </article>
+        <article>
+          <strong>{costSummary.incompleteRecipes}</strong>
+          <span>Incomplete recipe costs</span>
+        </article>
+        <article>
+          <strong>{costSummary.productsMissingRecipe}</strong>
+          <span>Products missing recipe</span>
+        </article>
+        <article>
+          <strong>{costSummary.ingredientsMissingOrStaleCost}</strong>
+          <span>Ingredients missing/stale cost</span>
+        </article>
+        <article>
+          <strong>{costSummary.recipeCoveragePct}%</strong>
+          <span>Cost coverage</span>
+        </article>
+      </div>
+
       <div className="inv-ingredients-toolbar">
         <div className="inv-ingredients-search">
           <Search size={16} aria-hidden="true" />
@@ -166,6 +323,15 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
             data-testid="food-bible-search-input"
           />
         </div>
+        <label className="inv-ingredients-filter">
+          <span>Cost as of</span>
+          <input
+            type="date"
+            value={costAsOf}
+            onChange={(event) => setCostAsOf(event.target.value)}
+            data-testid="food-bible-cost-as-of"
+          />
+        </label>
         <label className="inv-ingredients-filter">
           <span>Recipe status</span>
           <select
@@ -203,6 +369,24 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
             ))}
           </select>
         </label>
+        <button
+          type="button"
+          className="inv-button inv-button--secondary"
+          onClick={handleDownloadSelected}
+          disabled={!selectedKeys.size || Boolean(downloadBusy)}
+          data-testid="download-selected-recipes-button"
+        >
+          <Download size={16} /> Download selected
+        </button>
+        <button
+          type="button"
+          className="inv-button inv-button--secondary"
+          onClick={handleDownloadFoodBible}
+          disabled={Boolean(downloadBusy)}
+          data-testid="download-food-bible-button"
+        >
+          <Download size={16} /> Download Food Bible
+        </button>
         {canEdit ? (
           <button
             type="button"
@@ -259,20 +443,44 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
           <table className="inv-ingredients-table inv-fb-table">
             <thead>
               <tr>
+                <th scope="col">
+                  <label className="inv-ingredients-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all recipes"
+                      data-testid="food-bible-select-all"
+                    />
+                    All
+                  </label>
+                </th>
                 <th scope="col">Menu item / recipe</th>
                 <th scope="col">Category</th>
                 <th scope="col">Recipe status</th>
+                <th scope="col">Cost trust</th>
+                <th scope="col">Cost / portion</th>
                 <th scope="col">Type</th>
                 <th scope="col">Menu status</th>
                 <th scope="col">Yield</th>
                 <th scope="col">Lines</th>
                 <th scope="col">Last updated</th>
-                {canEdit ? <th scope="col"><span className="inv-sr-only">Actions</span></th> : null}
+                <th scope="col"><span className="inv-sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((row) => (
                 <tr key={row.identityKey} data-testid={`food-bible-row-${row.identityKey}`}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedKeys.has(row.identityKey)}
+                      disabled={!row.recipeId}
+                      onChange={() => toggleSelect(row.identityKey)}
+                      aria-label={`Select ${row.displayName}`}
+                      data-testid={`select-recipe-${row.identityKey}`}
+                    />
+                  </td>
                   <td>
                     <strong>{row.displayName}</strong>
                     {row.displayNameAr ? <div className="inv-ingredients-note">{row.displayNameAr}</div> : null}
@@ -288,23 +496,45 @@ export default function FoodBibleView({ branchId, onOpenIngredients }) {
                       {READINESS_LABELS[row.readiness]}
                     </span>
                   </td>
+                  <td>
+                    <span className={`inv-status-pill inv-status-pill--${String(row.costTrustStatus).toLowerCase()}`}>
+                      {costTrustLabel(row.costTrustStatus)} · {row.costCompletenessPct}%
+                    </span>
+                  </td>
+                  <td>
+                    {row.cost?.profitabilityAvailable
+                      ? formatSar(row.cost.costPerSoldPortion ?? row.cost.recipeCost)
+                      : "Unavailable"}
+                  </td>
                   <td>{recipeTypeLabel(row.recipeType)}</td>
                   <td>{row.guestStatus ? guestMenuStatusLabel(row.guestStatus) : "—"}</td>
                   <td>{row.yieldSummary}</td>
                   <td>{row.lineCount}</td>
                   <td>{formatRecipeTimestamp(row.updatedAt)}</td>
-                  {canEdit ? (
-                    <td>
-                      <button
-                        type="button"
-                        className="inv-button inv-button--ghost inv-ingredients-edit"
-                        onClick={() => openEditor(row)}
-                        data-testid={`open-recipe-editor-${row.identityKey}`}
-                      >
-                        {row.recipeId ? "Edit" : "Document"}
-                      </button>
-                    </td>
-                  ) : null}
+                  <td>
+                    <div className="inv-fb-row-actions">
+                      {row.recipeId ? (
+                        <button
+                          type="button"
+                          className="inv-button inv-button--ghost inv-ingredients-edit"
+                          onClick={() => handleDownloadRow(row)}
+                          data-testid={`download-recipe-${row.identityKey}`}
+                        >
+                          Download PDF
+                        </button>
+                      ) : null}
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          className="inv-button inv-button--ghost inv-ingredients-edit"
+                          onClick={() => openEditor(row)}
+                          data-testid={`open-recipe-editor-${row.identityKey}`}
+                        >
+                          {row.recipeId ? "Edit" : "Document"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

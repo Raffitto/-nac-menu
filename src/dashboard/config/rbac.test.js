@@ -35,6 +35,7 @@ describe("NAC OS RBAC", () => {
     test("can access all nav and intelligence surfaces", () => {
       expect(canAccessNav(profile, "branches")).toBe(true);
       expect(canAccessNav(profile, "intelligence")).toBe(true);
+      expect(canAccessNav(profile, "food-bible")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "competitive")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_SYSTEM)).toBe(true);
@@ -117,6 +118,7 @@ describe("NAC OS RBAC", () => {
     test("can access branch operational surfaces", () => {
       expect(canAccessNav(profile, "intelligence")).toBe(true);
       expect(canAccessNav(profile, "reviews")).toBe(true);
+      expect(canAccessNav(profile, "food-bible")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "sales")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_IMPORTS)).toBe(true);
@@ -182,6 +184,7 @@ describe("NAC OS RBAC", () => {
       expect(profile.unmapped).toBe(true);
       expect(allowedBranchIds(profile)).toEqual([]);
       expect(canAccessNav(profile, "intelligence")).toBe(false);
+      expect(canAccessNav(profile, "food-bible")).toBe(false);
     });
   });
 });
