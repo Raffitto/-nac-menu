@@ -36,6 +36,11 @@ describe("foodBibleSourceCardParser", () => {
     expect(quinoa).toMatchObject({ sourceQuantity: 130, sourceUnit: "gram" });
     expect(dressing).toMatchObject({ sourceQuantity: 10, sourceUnit: "gram" });
     expect(tomatoes).toMatchObject({ sourceQuantity: 30, sourceUnit: "gram" });
+    expect(card.ingredients.find((row) => /radish/i.test(row.sourceName))).toMatchObject({ sourceQuantity: 20, sourceUnit: "gram" });
+    expect(card.ingredients.find((row) => /parsley/i.test(row.sourceName))).toMatchObject({ sourceQuantity: 5, sourceUnit: "gram" });
+    expect(card.ingredients.find((row) => /coriander/i.test(row.sourceName))).toMatchObject({ sourceQuantity: 5, sourceUnit: "gram" });
+    expect(card.ingredients.find((row) => /pomegranate/i.test(row.sourceName))).toMatchObject({ sourceQuantity: 20, sourceUnit: "gram" });
+    expect(card.ingredients.find((row) => /maldon/i.test(row.sourceName))).toMatchObject({ sourceQuantity: 2, sourceUnit: "gram" });
     expect(card.ingredients.length).toBeGreaterThanOrEqual(7);
   });
 

@@ -19,6 +19,7 @@ import {
   currentFoodBibleSnapshots,
   recipePdfFilename,
   recipesPdfBytes,
+  fetchHeroImageDataUrl,
   snapshotFromRecipeRecord,
   triggerPdfDownload,
 } from "./recipePdfExport";
@@ -211,6 +212,7 @@ export default function FoodBibleView({
       documentation = bundle?.version?.documentation || documentation;
       version = bundle?.version || version;
     }
+    const imageDataUrl = await fetchHeroImageDataUrl(row.heroImagePath || documentation?.sourcePhotograph?.storagePath);
     return snapshotFromRecipeRecord({
       row,
       lines,
@@ -219,6 +221,7 @@ export default function FoodBibleView({
       ingredientById,
       recipeById,
       generatedAt: new Date().toISOString(),
+      imageDataUrl,
     });
   }, [ingredientById, recipeById, overview?.detailsDeferred]);
 

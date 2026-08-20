@@ -101,6 +101,27 @@ export function snapshotFromExtractedRecipe(recipe, extra = {}) {
   };
 }
 
+export function menuImagePublicUrl(path, supabaseUrl = process.env.REACT_APP_SUPABASE_URL) {
+  if (!path) return "";
+  if (/^https?:/i.test(path)) return path;
+  if (!supabaseUrl) return "";
+  return `${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/menu-images/${path}`;
+}
+
+export async function fetchHeroImageDataUrl(path, fetcher = fetch) {
+  const url = menuImagePublicUrl(path);
+  if (!url || typeof fetcher !== "function") return null;
+  const response = await fetcher(url);
+  if (!response?.ok) return null;
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  const binary = Array.from(buffer, (byte) => String.fromCharCode(byte)).join("");
+  const contentType = response.headers?.get?.("content-type") || "image/png";
+  const encoded = typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(buffer).toString("base64");
+  return `data:${contentType};base64,${encoded}`;
+}
+
 export function currentFoodBibleSnapshots(snapshots = []) {
   return snapshots.filter((snapshot) => snapshot.operationallyActive && !snapshot.archived);
 }
@@ -156,7 +177,9 @@ function drawRecipe(doc, snapshot, startY) {
     try {
       const imgW = 180;
       const imgH = 120;
-      doc.addImage(snapshot.imageDataUrl, "JPEG", pageW - margin - imgW, startY, imgW, imgH);
+      const format = /image\/png/i.test(snapshot.imageDataUrl) ? "PNG" : "JPEG";
+      doc.addImage(snapshot.imageDataUrl, format, pageW - margin - imgW, startY, imgW, imgH);
+      y = Math.max(y, startY + imgH + 12);
     } catch {
       /* skip unreadable images */
     }

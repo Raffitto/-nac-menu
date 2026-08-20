@@ -675,7 +675,6 @@ export function filterFoodBibleRows(rows, {
       row.displayName,
       row.displayNameAr,
       row.recipeName,
-      row.internalName,
       row.categoryName,
       row.placementSummary,
     ].filter(Boolean).join(" "));

@@ -24,8 +24,6 @@ const UNIT_ALIASES = {
   pieces: "each",
   each: "each",
   unit: "each",
-  leaves: "each",
-  leaf: "each",
 };
 
 const SKIP_LINES = new Set([
