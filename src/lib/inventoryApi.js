@@ -7,16 +7,33 @@ import {
   deriveRecipeReadiness,
   findRecipeForMenuIdentity,
   guestMenuStatus,
+  isVerificationFixture,
   mapLineRow,
   mapRecipeRow,
   mapStageRow,
   mapVersionRow,
   normalizeRecipeType,
+  placementLabels,
   READINESS,
-  wouldCreateCycle,
+  requiresKitchenRecipe,
   computeCanonicalLine,
 } from "../inventory/foodBible";
 import { fetchMenuCatalogueForBranch } from "./menuApi";
+
+const FOOD_BIBLE_CATEGORY_SELECT = "id,name_en,name_ar,sort_order,branch_id";
+const FOOD_BIBLE_SECTION_SELECT = "id,category_id,name_en,name_ar,sort_order,branch_id";
+const FOOD_BIBLE_ITEM_SELECT = "id,section_id,name_en,name_ar,sort_order,active,sold_out,hidden_until,placement_group_id,branch_id";
+const FOOD_BIBLE_RECIPE_SELECT = "id,name,normalized_name,name_en,name_ar,internal_name,recipe_type,menu_item_id,placement_group_id,branch_id,output_quantity,output_unit,portion_count,portion_size,portion_unit,active,updated_at,updated_by,created_at";
+const FOOD_BIBLE_VERSION_SELECT = "id,recipe_id,version_number,status,documentation,updated_at";
+const FOOD_BIBLE_INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
+
+const foodBibleOverviewCache = new Map();
+let staffAccessCache = null;
+
+export function clearFoodBibleCaches() {
+  foodBibleOverviewCache.clear();
+  staffAccessCache = null;
+}
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -690,31 +707,76 @@ export async function fetchRecipeUsageCounts(recipeIds = []) {
   return counts;
 }
 
-export async function fetchFoodBibleOverview({ branchId }) {
-  const [{ data: menuData, error: menuError }, recipeRows, ingredientRows] = await Promise.all([
-    fetchMenuCatalogueForBranch({ branchId }),
-    fetchRecipes({ branchId, includeInactive: true }),
-    fetchIngredients({ branchId, includeInactive: true }),
+export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } = {}) {
+  const cacheKey = branchId || "none";
+  if (!forceRefresh) {
+    const cached = foodBibleOverviewCache.get(cacheKey);
+    if (cached) return { ...cached, meta: { ...cached.meta, cacheHit: true } };
+  }
+
+  const timings = {};
+  const mark = async (label, fn) => {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const value = await fn();
+    timings[label] = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started);
+    return value;
+  };
+
+  const waveStarted = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const [
+    { data: menuData, error: menuError },
+    recipeRows,
+    ingredientRows,
+    versionRows,
+  ] = await Promise.all([
+    mark("menuCatalogue", () => fetchMenuCatalogueForBranch({
+      branchId,
+      categorySelect: FOOD_BIBLE_CATEGORY_SELECT,
+      sectionSelect: FOOD_BIBLE_SECTION_SELECT,
+      itemSelect: FOOD_BIBLE_ITEM_SELECT,
+    })),
+    mark("recipes", async () => {
+      const rows = await unwrap(
+        requireClient()
+          .from("inventory_recipes")
+          .select(FOOD_BIBLE_RECIPE_SELECT)
+          .or(`branch_id.is.null,branch_id.eq.${branchId}`)
+          .order("name"),
+        "Fetch recipes",
+      );
+      return rows.map(mapRecipeRow);
+    }),
+    mark("ingredients", async () => {
+      const rows = await unwrap(
+        requireClient()
+          .from("inventory_ingredients")
+          .select(FOOD_BIBLE_INGREDIENT_SELECT)
+          .or(`branch_id.is.null,branch_id.eq.${branchId}`)
+          .order("canonical_name"),
+        "Fetch ingredients",
+      );
+      return rows.map(mapIngredientRow);
+    }),
+    mark("versions", () => unwrap(
+      requireClient()
+        .from("inventory_recipe_versions")
+        .select(FOOD_BIBLE_VERSION_SELECT)
+        .order("version_number", { ascending: false }),
+      "Fetch recipe versions",
+    )),
   ]);
+  timings.parallelWall = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - waveStarted);
   if (menuError) throw new Error(`Fetch menu for Food Bible: ${menuError.message}`);
 
   const recipes = recipeRows.map((recipe) => ({
     ...recipe,
     recipeType: normalizeRecipeType(recipe.recipeType),
   }));
-  const recipeIds = recipes.map((recipe) => recipe.id);
-  const versions = await fetchRecipeVersions(recipeIds);
+  const recipeIds = new Set(recipes.map((recipe) => recipe.id));
+  const versions = (versionRows || []).filter((row) => recipeIds.has(row.recipe_id));
   const versionByRecipe = new Map();
-  for (const recipeId of recipeIds) {
-    versionByRecipe.set(recipeId, mapVersionRow(pickWorkingVersion(versions, recipeId)));
-  }
-  const versionIds = [...versionByRecipe.values()].filter(Boolean).map((version) => version.id);
-  const lineRows = await fetchRecipeLines(versionIds);
-  const linesByVersion = new Map();
-  for (const line of lineRows.map(mapLineRow)) {
-    const bucket = linesByVersion.get(line.recipeVersionId) || [];
-    bucket.push(line);
-    linesByVersion.set(line.recipeVersionId, bucket);
+  for (const recipe of recipes) {
+    versionByRecipe.set(recipe.id, mapVersionRow(pickWorkingVersion(versions, recipe.id)));
   }
 
   const ingredientById = new Map(ingredientRows.map((ingredient) => [ingredient.id, ingredient]));
@@ -724,38 +786,39 @@ export async function fetchFoodBibleOverview({ branchId }) {
   const menuItemById = Object.fromEntries((menuData?.items || []).map((item) => [item.id, item]));
 
   const allLinesByRecipeId = {};
-  for (const recipe of recipes) {
-    const version = versionByRecipe.get(recipe.id);
-    allLinesByRecipeId[recipe.id] = version ? (linesByVersion.get(version.id) || []) : [];
-  }
 
-  const identities = dedupeMenuItems(menuData?.items || []);
+  const identities = dedupeMenuItems(menuData?.items || []).filter((identity) => (
+    !isVerificationFixture(identity.primaryItem?.name_en, identity.primaryItem?.name_ar)
+  ));
   const menuLinkedRecipeIds = new Set();
   const rows = identities.map((identity) => {
     const recipe = findRecipeForMenuIdentity(recipes, identity);
     if (recipe) menuLinkedRecipeIds.add(recipe.id);
     const version = recipe ? versionByRecipe.get(recipe.id) : null;
-    const lines = version ? (linesByVersion.get(version.id) || []) : [];
-    const cycleDetected = recipe
-      ? wouldCreateCycle(recipe.id, null, allLinesByRecipeId)
-      : false;
     const readinessResult = recipe
       ? deriveRecipeReadiness({
         recipe,
         version,
-        lines,
+        lines: [],
+        lineCount: recipe ? 1 : 0,
+        catalogueMode: true,
         ingredientById,
         recipeById,
         menuItem: menuItemById[recipe?.menuItemId || identity.primaryItem.id],
-        cycleDetected,
+        cycleDetected: false,
       })
       : { readiness: READINESS.MISSING, checklist: [], issues: [] };
     const section = sectionById[identity.primaryItem.section_id];
     const category = categoryById[section?.category_id];
+    const displayName = identity.primaryItem.name_en;
+    const categoryName = category?.name_en || "Uncategorised";
+    const kitchen = requiresKitchenRecipe({ name: displayName, categoryName });
+    const fixture = isVerificationFixture(displayName, recipe?.name, recipe?.internalName);
+    const labels = placementLabels(identity.placements, sectionById);
     return {
       kind: "menu_item",
       identityKey: identity.identityKey,
-      displayName: identity.primaryItem.name_en,
+      displayName,
       displayNameAr: identity.primaryItem.name_ar,
       recipeName: recipe?.name || null,
       internalName: recipe?.internalName || null,
@@ -764,32 +827,42 @@ export async function fetchFoodBibleOverview({ branchId }) {
       menuItemId: identity.primaryItem.id,
       placementGroupId: identity.placementGroupId,
       placements: identity.placements,
-      categoryName: category?.name_en || "Uncategorised",
+      placementSummary: labels.join(" · "),
+      categoryName,
       guestStatus: guestMenuStatus(identity.primaryItem),
       readiness: readinessResult.readiness,
-      lineCount: lines.length,
+      lineCount: null,
       yieldSummary: recipe ? `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}` : "—",
       scope: recipe?.scope || "branch",
       updatedAt: recipe?.updatedAt || null,
+      requiresKitchenRecipe: kitchen,
+      isVerificationFixture: fixture,
+      costTrustStatus: null,
+      costCompletenessPct: null,
+      cost: null,
     };
   });
 
   for (const recipe of recipes) {
     if (menuLinkedRecipeIds.has(recipe.id)) continue;
-    if (recipe.recipeType === "menu_item" || recipe.recipeType === "direct_stock") continue;
+    if (isVerificationFixture(recipe.name, recipe.internalName, recipe.nameEn)) continue;
     const version = versionByRecipe.get(recipe.id);
-    const lines = version ? (linesByVersion.get(version.id) || []) : [];
     const readinessResult = deriveRecipeReadiness({
       recipe,
       version,
-      lines,
+      lines: [],
+      lineCount: 1,
+      catalogueMode: true,
       ingredientById,
       recipeById,
       menuItem: recipe.menuItemId ? menuItemById[recipe.menuItemId] : null,
-      cycleDetected: wouldCreateCycle(recipe.id, null, allLinesByRecipeId),
+      cycleDetected: false,
     });
+    const archived = !recipe.active;
+    const isComponent = recipe.recipeType !== "menu_item" && recipe.recipeType !== "direct_stock";
+    if (!archived && !isComponent) continue;
     rows.push({
-      kind: "component",
+      kind: archived ? "archived" : "component",
       identityKey: recipe.id,
       displayName: recipe.name,
       displayNameAr: recipe.nameAr,
@@ -800,27 +873,44 @@ export async function fetchFoodBibleOverview({ branchId }) {
       menuItemId: recipe.menuItemId,
       placementGroupId: recipe.placementGroupId,
       placements: [],
-      categoryName: "Kitchen components",
-      guestStatus: null,
+      placementSummary: "",
+      categoryName: archived ? "Archived recipes" : "Kitchen components",
+      guestStatus: archived ? "hidden" : null,
       readiness: readinessResult.readiness,
-      lineCount: lines.length,
+      lineCount: null,
       yieldSummary: `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}`,
       scope: recipe.scope,
       updatedAt: recipe.updatedAt,
+      requiresKitchenRecipe: false,
+      isVerificationFixture: false,
+      operationallyActive: !archived,
+      costTrustStatus: null,
+      costCompletenessPct: null,
+      cost: null,
     });
   }
 
-  return {
+  const overview = {
     summary: buildFoodBibleSummary(rows),
     rows,
     ingredients: ingredientRows,
     recipes,
     hasActiveIngredients: ingredientRows.some((ingredient) => ingredient.active),
     lineGraph: allLinesByRecipeId,
+    detailsDeferred: true,
+    meta: {
+      timings,
+      requestCount: 6,
+      fetchedAt: new Date().toISOString(),
+      cacheHit: false,
+    },
   };
+  foodBibleOverviewCache.set(cacheKey, overview);
+  return overview;
 }
 
 export async function createRecipe(input) {
+  clearFoodBibleCaches();
   const userId = await currentUserId();
   const branchId = input.scope === "network" ? null : input.branchId;
   const recipeRow = await unwrap(
@@ -866,6 +956,7 @@ export async function createRecipe(input) {
 }
 
 export async function saveRecipeDraft(recipeId, payload) {
+  clearFoodBibleCaches();
   const userId = await currentUserId();
   const client = requireClient();
   const recipePatch = {
@@ -976,6 +1067,7 @@ export async function saveRecipeDraft(recipeId, payload) {
 }
 
 export async function setRecipeActive(recipeId, active) {
+  clearFoodBibleCaches();
   const userId = await currentUserId();
   const row = await unwrap(
     requireClient().from("inventory_recipes").update({
@@ -989,17 +1081,19 @@ export async function setRecipeActive(recipeId, active) {
 }
 
 export async function fetchInventoryStaffAccess() {
+  if (staffAccessCache) return staffAccessCache;
   const client = requireClient();
   const { data: authData, error: authError } = await client.auth.getUser();
   if (authError) throw new Error(`Resolve current user: ${authError.message}`);
   const email = authData?.user?.email?.toLowerCase();
   if (!email) {
-    return {
+    staffAccessCache = {
       email: null,
       vaultRole: null,
       primaryBranchId: null,
       branchIds: [],
     };
+    return staffAccessCache;
   }
 
   const staff = await unwrap(
@@ -1018,12 +1112,13 @@ export async function fetchInventoryStaffAccess() {
     ),
   ];
 
-  return {
+  staffAccessCache = {
     email,
     vaultRole: staff?.vault_role || null,
     primaryBranchId: staff?.primary_branch_id || null,
     branchIds,
   };
+  return staffAccessCache;
 }
 
 export function invoiceLineFingerprint(lines) {

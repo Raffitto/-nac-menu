@@ -13,6 +13,7 @@ import {
   fetchFoodBibleOverview,
   fetchInventoryStaffAccess,
   fetchCanonicalCostContext,
+  fetchRecipeBundle,
 } from "../lib/inventoryApi";
 import {
   currentFoodBibleSnapshots,
@@ -22,18 +23,20 @@ import {
   triggerPdfDownload,
 } from "./recipePdfExport";
 import {
+  CATALOGUE_SCOPES,
   READINESS,
   READINESS_LABELS,
   canManageBranchRecipes,
   canManageNetworkRecipes,
   filterFoodBibleRows,
+  foodBibleCostCell,
   formatRecipeTimestamp,
   friendlyRecipeError,
   guestMenuStatusLabel,
   recipeTypeLabel,
 } from "./foodBible";
 import RecipeEditorPanel from "./RecipeEditorPanel";
-import { costTrustLabel, formatSar } from "./costTrust";
+import { formatSar } from "./costTrust";
 
 const READINESS_FILTERS = [
   { id: "all", label: "All" },
@@ -43,12 +46,12 @@ const READINESS_FILTERS = [
   { id: READINESS.NEEDS_ATTENTION, label: "Needs attention" },
 ];
 
-const MENU_FILTERS = [
-  { id: "all", label: "All menu items" },
-  { id: "active", label: "Live on menu" },
-  { id: "hidden", label: "Hidden" },
-  { id: "sold_out", label: "Sold out" },
-  { id: "archived", label: "Archived recipes" },
+const CATALOGUE_FILTERS = [
+  { id: CATALOGUE_SCOPES.KITCHEN, label: "Live kitchen" },
+  { id: CATALOGUE_SCOPES.COMPONENTS, label: "Prepared components" },
+  { id: CATALOGUE_SCOPES.DRINKS, label: "Drinks / packaged" },
+  { id: CATALOGUE_SCOPES.ARCHIVED, label: "Archived" },
+  { id: CATALOGUE_SCOPES.ALL, label: "All identities" },
 ];
 
 export default function FoodBibleView({
@@ -64,28 +67,37 @@ export default function FoodBibleView({
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [readinessFilter, setReadinessFilter] = useState("all");
-  const [menuFilter, setMenuFilter] = useState("all");
+  const [catalogueFilter, setCatalogueFilter] = useState(CATALOGUE_SCOPES.KITCHEN);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [editorTarget, setEditorTarget] = useState(null);
   const [costAsOf, setCostAsOf] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [downloadBusy, setDownloadBusy] = useState("");
+  const [visibleCount, setVisibleCount] = useState(80);
+  const [narrow, setNarrow] = useState(false);
 
   const canEditBranch = canManageBranchRecipes(access, branchId);
   const canEditNetwork = canManageNetworkRecipes(access);
   const canEdit = canEditBranch || canEditNetwork;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ force = true } = {}) => {
     setLoading(true);
     setError("");
     try {
-      const [data, staffAccess, costContext] = await Promise.all([
-        fetchFoodBibleOverview({ branchId, asOf: costAsOf }),
+      const [data, staffAccess] = await Promise.all([
+        fetchFoodBibleOverview({ branchId, asOf: costAsOf, forceRefresh: force }),
         fetchInventoryStaffAccess(),
-        fetchCanonicalCostContext({ branchId, asOf: `${costAsOf}T23:59:59+03:00` }).catch(() => ({ costByCanonicalId: {} })),
       ]);
-      setOverview({ ...data, costByCanonicalId: costContext.costByCanonicalId || {} });
+      setOverview({ ...data, costByCanonicalId: data.costByCanonicalId || {} });
       setAccess(staffAccess);
+      fetchCanonicalCostContext({ branchId, asOf: `${costAsOf}T23:59:59+03:00` })
+        .then((costContext) => {
+          setOverview((current) => current ? {
+            ...current,
+            costByCanonicalId: costContext.costByCanonicalId || {},
+          } : current);
+        })
+        .catch(() => {});
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not load Food Bible."));
     } finally {
@@ -94,8 +106,21 @@ export default function FoodBibleView({
   }, [branchId, costAsOf]);
 
   useEffect(() => {
-    refresh();
+    refresh({ force: false });
   }, [refresh]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const media = window.matchMedia("(max-width: 760px)");
+    const onChange = () => setNarrow(media.matches);
+    onChange();
+    if (media.addEventListener) media.addEventListener("change", onChange);
+    else media.addListener(onChange);
+    return () => {
+      if (media.removeEventListener) media.removeEventListener("change", onChange);
+      else media.removeListener(onChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (!initialTarget?.menuItemId || !(overview?.rows || []).length) return;
@@ -123,26 +148,33 @@ export default function FoodBibleView({
     () => filterFoodBibleRows(overview?.rows || [], {
       search,
       readiness: readinessFilter,
-      menuVisibility: menuFilter,
       category: categoryFilter,
+      catalogue: catalogueFilter,
     }),
-    [overview?.rows, search, readinessFilter, menuFilter, categoryFilter],
+    [overview?.rows, search, readinessFilter, categoryFilter, catalogueFilter],
   );
+
+  useEffect(() => {
+    setVisibleCount(narrow ? 30 : 80);
+  }, [search, readinessFilter, categoryFilter, catalogueFilter, narrow]);
+
+  const pageSize = narrow ? 30 : 80;
+  const visibleRows = filtered.slice(0, visibleCount);
 
   const summary = overview?.summary || {
     totalMenuItems: 0,
+    liveKitchenItems: 0,
     complete: 0,
+    incomplete: 0,
     inProgress: 0,
     missing: 0,
     needsAttention: 0,
+    mapped: 0,
     coveragePct: 0,
-  };
-  const costSummary = overview?.costHealth?.summary || {
-    trustedRecipes: 0,
-    incompleteRecipes: 0,
-    productsMissingRecipe: 0,
-    ingredientsMissingOrStaleCost: 0,
-    recipeCoveragePct: 0,
+    fullyCosted: 0,
+    partiallyCosted: 0,
+    uncosted: 0,
+    costCoveragePct: 0,
   };
 
   const openEditor = (row) => {
@@ -168,15 +200,26 @@ export default function FoodBibleView({
     [overview?.recipes],
   );
 
-  const snapshotForRow = useCallback((row) => snapshotFromRecipeRecord({
-    row,
-    lines: row.lines || overview?.lineGraph?.[row.recipeId] || [],
-    documentation: row.documentation || row.version?.documentation || {},
-    version: row.version,
-    ingredientById,
-    recipeById,
-    generatedAt: new Date().toISOString(),
-  }), [ingredientById, recipeById, overview?.lineGraph]);
+  const snapshotForRow = useCallback(async (row) => {
+    let lines = row.lines || [];
+    let documentation = row.documentation || row.version?.documentation || {};
+    let version = row.version;
+    if (row.recipeId && (!lines.length || overview?.detailsDeferred)) {
+      const bundle = await fetchRecipeBundle(row.recipeId);
+      lines = bundle?.lines || [];
+      documentation = bundle?.version?.documentation || documentation;
+      version = bundle?.version || version;
+    }
+    return snapshotFromRecipeRecord({
+      row,
+      lines,
+      documentation,
+      version,
+      ingredientById,
+      recipeById,
+      generatedAt: new Date().toISOString(),
+    });
+  }, [ingredientById, recipeById, overview?.detailsDeferred]);
 
   const downloadSnapshots = (snapshots, filename, combined = false) => {
     if (!snapshots.length) {
@@ -190,33 +233,43 @@ export default function FoodBibleView({
     setNotice(`Downloaded ${snapshots.length} recipe${snapshots.length === 1 ? "" : "s"}.`);
   };
 
-  const handleDownloadRow = (row) => {
+  const handleDownloadRow = async (row) => {
     if (!row.recipeId) {
       setError("This menu item does not have a recipe yet.");
       return;
     }
-    downloadSnapshots([snapshotForRow(row)], recipePdfFilename(row.displayName));
+    setDownloadBusy(row.identityKey);
+    try {
+      const snapshot = await snapshotForRow(row);
+      downloadSnapshots([snapshot], recipePdfFilename(row.displayName));
+    } finally {
+      setDownloadBusy("");
+    }
   };
 
-  const handleDownloadSelected = () => {
+  const handleDownloadSelected = async () => {
     setDownloadBusy("selected");
     try {
-      const snapshots = filtered
-        .filter((row) => selectedKeys.has(row.identityKey) && row.recipeId)
-        .map(snapshotForRow);
+      const snapshots = await Promise.all(
+        filtered
+          .filter((row) => selectedKeys.has(row.identityKey) && row.recipeId)
+          .map(snapshotForRow),
+      );
       downloadSnapshots(snapshots, recipePdfFilename("selected-recipes", { combined: true }), true);
     } finally {
       setDownloadBusy("");
     }
   };
 
-  const handleDownloadFoodBible = () => {
+  const handleDownloadFoodBible = async () => {
     setDownloadBusy("bible");
     try {
       const snapshots = currentFoodBibleSnapshots(
-        (overview?.rows || [])
-          .filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId)
-          .map(snapshotForRow),
+        await Promise.all(
+          (overview?.rows || [])
+            .filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId)
+            .map(snapshotForRow),
+        ),
       );
       downloadSnapshots(snapshots, recipePdfFilename("food-bible", { combined: true }), true);
     } finally {
@@ -267,16 +320,16 @@ export default function FoodBibleView({
 
       <div className="inv-fb-summary">
         <article data-testid="food-bible-metric-total">
-          <strong>{summary.totalMenuItems}</strong>
-          <span>Total menu items</span>
+          <strong>{summary.liveKitchenItems ?? summary.totalMenuItems}</strong>
+          <span>Live kitchen items</span>
         </article>
         <article data-testid="food-bible-metric-complete">
           <strong>{summary.complete}</strong>
           <span>Recipe complete</span>
         </article>
         <article data-testid="food-bible-metric-progress">
-          <strong>{summary.inProgress}</strong>
-          <span>In progress</span>
+          <strong>{summary.incomplete ?? summary.inProgress}</strong>
+          <span>Needs attention</span>
         </article>
         <article data-testid="food-bible-metric-missing">
           <strong>{summary.missing}</strong>
@@ -284,29 +337,25 @@ export default function FoodBibleView({
         </article>
         <article data-testid="food-bible-metric-coverage">
           <strong>{summary.coveragePct}%</strong>
-          <span>Coverage</span>
+          <span>Recipe coverage</span>
         </article>
       </div>
 
       <div className="inv-fb-summary" data-testid="food-bible-cost-health">
-        <article>
-          <strong>{costSummary.trustedRecipes}</strong>
-          <span>Trusted recipe costs</span>
+        <article data-testid="food-bible-metric-costed">
+          <strong>{summary.fullyCosted || 0}</strong>
+          <span>Fully costed</span>
         </article>
         <article>
-          <strong>{costSummary.incompleteRecipes}</strong>
-          <span>Incomplete recipe costs</span>
+          <strong>{summary.partiallyCosted || 0}</strong>
+          <span>Partially costed</span>
         </article>
         <article>
-          <strong>{costSummary.productsMissingRecipe}</strong>
-          <span>Products missing recipe</span>
+          <strong>{summary.uncosted ?? summary.liveKitchenItems ?? 0}</strong>
+          <span>Uncosted / missing cost</span>
         </article>
         <article>
-          <strong>{costSummary.ingredientsMissingOrStaleCost}</strong>
-          <span>Ingredients missing/stale cost</span>
-        </article>
-        <article>
-          <strong>{costSummary.recipeCoveragePct}%</strong>
+          <strong>{summary.costCoveragePct || 0}%</strong>
           <span>Cost coverage</span>
         </article>
       </div>
@@ -345,13 +394,13 @@ export default function FoodBibleView({
           </select>
         </label>
         <label className="inv-ingredients-filter">
-          <span>Menu status</span>
+          <span>Catalogue</span>
           <select
-            value={menuFilter}
-            onChange={(event) => setMenuFilter(event.target.value)}
+            value={catalogueFilter}
+            onChange={(event) => setCatalogueFilter(event.target.value)}
             data-testid="food-bible-menu-filter"
           >
-            {MENU_FILTERS.map((filter) => (
+            {CATALOGUE_FILTERS.map((filter) => (
               <option key={filter.id} value={filter.id}>{filter.label}</option>
             ))}
           </select>
@@ -404,7 +453,7 @@ export default function FoodBibleView({
         {!loading && !canEdit ? " · Read-only access" : ""}
       </p>
 
-      {loading ? (
+      {loading && !overview ? (
         <div className="inv-ingredients-state" data-testid="food-bible-loading-state">
           <Loader2 size={22} className="inv-spin" aria-hidden="true" />
           Loading Food Bible…
@@ -458,7 +507,7 @@ export default function FoodBibleView({
                 <th scope="col">Menu item / recipe</th>
                 <th scope="col">Category</th>
                 <th scope="col">Recipe status</th>
-                <th scope="col">Cost trust</th>
+                <th scope="col">Cost status</th>
                 <th scope="col">Cost / portion</th>
                 <th scope="col">Type</th>
                 <th scope="col">Menu status</th>
@@ -469,7 +518,9 @@ export default function FoodBibleView({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row) => (
+              {visibleRows.map((row) => {
+                const costCell = foodBibleCostCell(row);
+                return (
                 <tr key={row.identityKey} data-testid={`food-bible-row-${row.identityKey}`}>
                   <td>
                     <input
@@ -484,7 +535,12 @@ export default function FoodBibleView({
                   <td>
                     <strong>{row.displayName}</strong>
                     {row.displayNameAr ? <div className="inv-ingredients-note">{row.displayNameAr}</div> : null}
-                    {row.placements?.length > 1 ? (
+                    {row.recipeName && row.recipeName !== row.displayName ? (
+                      <div className="inv-ingredients-note">{row.recipeName}</div>
+                    ) : null}
+                    {row.placementSummary ? (
+                      <div className="inv-ingredients-note">{row.placementSummary}</div>
+                    ) : row.placements?.length > 1 ? (
                       <div className="inv-ingredients-note">
                         Appears in {row.placements.length} menu placements
                       </div>
@@ -497,19 +553,17 @@ export default function FoodBibleView({
                     </span>
                   </td>
                   <td>
-                    <span className={`inv-status-pill inv-status-pill--${String(row.costTrustStatus).toLowerCase()}`}>
-                      {costTrustLabel(row.costTrustStatus)} · {row.costCompletenessPct}%
+                    <span className="inv-status-pill inv-status-pill--missing">
+                      {costCell.trust || costCell.label}
                     </span>
                   </td>
                   <td>
-                    {row.cost?.profitabilityAvailable
-                      ? formatSar(row.cost.costPerSoldPortion ?? row.cost.recipeCost)
-                      : "Unavailable"}
+                    {costCell.portion != null ? formatSar(costCell.portion) : "—"}
                   </td>
                   <td>{recipeTypeLabel(row.recipeType)}</td>
                   <td>{row.guestStatus ? guestMenuStatusLabel(row.guestStatus) : "—"}</td>
                   <td>{row.yieldSummary}</td>
-                  <td>{row.lineCount}</td>
+                  <td>{row.lineCount == null ? "—" : row.lineCount}</td>
                   <td>{formatRecipeTimestamp(row.updatedAt)}</td>
                   <td>
                     <div className="inv-fb-row-actions">
@@ -536,9 +590,20 @@ export default function FoodBibleView({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
+          {filtered.length > visibleRows.length ? (
+            <button
+              type="button"
+              className="inv-button inv-button--secondary inv-fb-load-more"
+              onClick={() => setVisibleCount((count) => count + pageSize)}
+              data-testid="food-bible-load-more"
+            >
+              Show more ({filtered.length - visibleRows.length} remaining)
+            </button>
+          ) : null}
         </div>
       )}
 

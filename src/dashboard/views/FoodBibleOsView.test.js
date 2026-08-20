@@ -4,7 +4,7 @@ import FoodBibleOsView from "./FoodBibleOsView";
 import { PlatformFiltersProvider } from "../context/PlatformFiltersContext";
 import { RbacProvider } from "../context/RbacContext";
 import { fetchFoodBibleOverview, fetchInventoryStaffAccess, fetchCanonicalCostContext } from "../../lib/inventoryApi";
-import { READINESS } from "../../inventory/foodBible";
+import { CATALOGUE_SCOPES, READINESS } from "../../inventory/foodBible";
 
 jest.mock("../../lib/inventoryApi", () => ({
   fetchFoodBibleOverview: jest.fn(),
@@ -74,10 +74,7 @@ describe("FoodBibleOsView", () => {
     expect(screen.getByText("Watermelon & Cucumber")).toBeInTheDocument();
     expect(screen.getByText("Conchiglie")).toBeInTheDocument();
     expect(screen.getByTestId("food-bible-row-conchiglie")).toHaveTextContent("Missing recipe");
-    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: "active" } });
-    expect(screen.getByText("Big NAC")).toBeInTheDocument();
-    expect(screen.queryByText("APPLE BIRCHER MUESLI")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: "archived" } });
+    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: CATALOGUE_SCOPES.ARCHIVED } });
     expect(await screen.findByText("APPLE BIRCHER MUESLI")).toBeInTheDocument();
   });
 });
