@@ -359,6 +359,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const scrollable = isScrollableView(adminView);
   const isMobileIntelligence = useMobileIntelligenceLayout();
   const intelligenceFullscreen = isMobileIntelligence && adminView === "intelligence";
+  const isMenuPage = adminView === "menu" || adminView === "menu-manager";
 
   if (isAdminPlatformMode() && session && rbac.profile?.unmapped) {
     return <NacPlatformAccessGate email={rbac.profile.email} />;
@@ -366,7 +367,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
   return (
     <motion.div
-      className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""} ${globalSidebarCollapsed ? "admin-shell--nav-collapsed" : ""}`.trim()}
+      className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""} ${globalSidebarCollapsed ? "admin-shell--nav-collapsed" : ""} ${isMenuPage ? "admin-shell--menu-page" : ""}`.trim()}
       style={scrollable && !intelligenceFullscreen ? { overflow: "auto", minHeight: "100vh" } : undefined}
     >
       <RbacBranchConstraint activeView={adminView} />

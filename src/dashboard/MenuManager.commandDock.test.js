@@ -146,6 +146,7 @@ describe("Menu Manager arrange removal + command dock", () => {
     expect(css).toContain(".mm.has-command-dock .mm-toast");
     expect(css).toContain(".mm-content.has-command-dock");
     expect(css).toContain("safe-area-inset-bottom");
+    expect(css).not.toContain("100dvh");
     expect(manager).toContain("has-command-dock");
   });
 

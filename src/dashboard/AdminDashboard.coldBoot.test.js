@@ -40,4 +40,15 @@ describe("AdminDashboard cold-boot contracts", () => {
     expect(adminSrc).toContain("useKeepAliveNav");
     expect(adminSrc).toContain("admin-keepalive-pane");
   });
+
+  test("marks the Menu Edit page so mobile CSS can use document scroll", () => {
+    const adminCss = fs.readFileSync(
+      path.join(__dirname, "styles", "admin-dashboard.css"),
+      "utf8",
+    );
+    expect(adminSrc).toContain('adminView === "menu" || adminView === "menu-manager"');
+    expect(adminSrc).toContain("admin-shell--menu-page");
+    expect(adminCss).toContain(".admin-shell.admin-shell--menu-page");
+    expect(adminCss).toContain("overflow: visible !important");
+  });
 });
