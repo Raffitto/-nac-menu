@@ -12,6 +12,7 @@ import {
   mapRecipeRow,
   mapStageRow,
   mapVersionRow,
+  menuRecipeLinkKind,
   normalizeRecipeType,
   placementLabels,
   READINESS,
@@ -23,7 +24,7 @@ import { fetchMenuCatalogueForBranch } from "./menuApi";
 const FOOD_BIBLE_CATEGORY_SELECT = "id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_SECTION_SELECT = "id,category_id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_ITEM_SELECT = "id,section_id,name_en,name_ar,sort_order,active,sold_out,hidden_until,placement_group_id,branch_id";
-const FOOD_BIBLE_RECIPE_SELECT = "id,name,normalized_name,name_en,name_ar,internal_name,recipe_type,menu_item_id,placement_group_id,branch_id,output_quantity,output_unit,portion_count,portion_size,portion_unit,active,updated_at,updated_by,created_at";
+const FOOD_BIBLE_RECIPE_SELECT = "id,name,normalized_name,name_en,name_ar,internal_name,recipe_type,menu_item_id,placement_group_id,branch_id,output_quantity,output_unit,portion_count,portion_size,portion_unit,hero_image_path,active,updated_at,updated_by,created_at";
 const FOOD_BIBLE_VERSION_SELECT = "id,recipe_id,version_number,status,documentation,updated_at";
 const FOOD_BIBLE_INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
 
@@ -728,6 +729,7 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
     recipeRows,
     ingredientRows,
     versionRows,
+    lineCountRows,
   ] = await Promise.all([
     mark("menuCatalogue", () => fetchMenuCatalogueForBranch({
       branchId,
@@ -764,6 +766,13 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
         .order("version_number", { ascending: false }),
       "Fetch recipe versions",
     )),
+    mark("lineCounts", () => unwrap(
+      requireClient()
+        .from("inventory_recipe_version_lines")
+        .select("recipe_version_id")
+        .order("recipe_version_id"),
+      "Fetch recipe line counts",
+    )),
   ]);
   timings.parallelWall = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - waveStarted);
   if (menuError) throw new Error(`Fetch menu for Food Bible: ${menuError.message}`);
@@ -785,7 +794,11 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
   const categoryById = Object.fromEntries((menuData?.categories || []).map((category) => [category.id, category]));
   const menuItemById = Object.fromEntries((menuData?.items || []).map((item) => [item.id, item]));
 
-  const allLinesByRecipeId = {};
+  const lineCountByVersion = new Map();
+  for (const row of lineCountRows || []) {
+    const key = row.recipe_version_id;
+    lineCountByVersion.set(key, (lineCountByVersion.get(key) || 0) + 1);
+  }
 
   const identities = dedupeMenuItems(menuData?.items || []).filter((identity) => (
     !isVerificationFixture(identity.primaryItem?.name_en, identity.primaryItem?.name_ar)
@@ -795,12 +808,14 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
     const recipe = findRecipeForMenuIdentity(recipes, identity);
     if (recipe) menuLinkedRecipeIds.add(recipe.id);
     const version = recipe ? versionByRecipe.get(recipe.id) : null;
+    const lineCount = version?.id ? (lineCountByVersion.get(version.id) || 0) : 0;
+    const linkKind = recipe ? menuRecipeLinkKind(recipe, identity) : null;
     const readinessResult = recipe
       ? deriveRecipeReadiness({
         recipe,
         version,
         lines: [],
-        lineCount: recipe ? 1 : 0,
+        lineCount,
         catalogueMode: true,
         ingredientById,
         recipeById,
@@ -825,13 +840,16 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
       recipeType: recipe?.recipeType || "menu_item",
       recipeId: recipe?.id || null,
       menuItemId: identity.primaryItem.id,
+      linkedMenuItemId: recipe?.menuItemId || null,
+      linkKind,
+      heroImagePath: recipe?.heroImagePath || null,
       placementGroupId: identity.placementGroupId,
       placements: identity.placements,
       placementSummary: labels.join(" · "),
       categoryName,
       guestStatus: guestMenuStatus(identity.primaryItem),
       readiness: readinessResult.readiness,
-      lineCount: null,
+      lineCount,
       yieldSummary: recipe ? `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}` : "—",
       scope: recipe?.scope || "branch",
       updatedAt: recipe?.updatedAt || null,
@@ -847,11 +865,12 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
     if (menuLinkedRecipeIds.has(recipe.id)) continue;
     if (isVerificationFixture(recipe.name, recipe.internalName, recipe.nameEn)) continue;
     const version = versionByRecipe.get(recipe.id);
+    const lineCount = version?.id ? (lineCountByVersion.get(version.id) || 0) : 0;
     const readinessResult = deriveRecipeReadiness({
       recipe,
       version,
       lines: [],
-      lineCount: 1,
+      lineCount,
       catalogueMode: true,
       ingredientById,
       recipeById,
@@ -877,7 +896,10 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
       categoryName: archived ? "Archived recipes" : "Kitchen components",
       guestStatus: archived ? "hidden" : null,
       readiness: readinessResult.readiness,
-      lineCount: null,
+      lineCount,
+      linkedMenuItemId: recipe.menuItemId || null,
+      linkKind: recipe.menuItemId ? "menu_item" : "unlinked",
+      heroImagePath: recipe.heroImagePath || null,
       yieldSummary: `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}`,
       scope: recipe.scope,
       updatedAt: recipe.updatedAt,
@@ -896,11 +918,11 @@ export async function fetchFoodBibleOverview({ branchId, forceRefresh = false } 
     ingredients: ingredientRows,
     recipes,
     hasActiveIngredients: ingredientRows.some((ingredient) => ingredient.active),
-    lineGraph: allLinesByRecipeId,
+    lineGraph: {},
     detailsDeferred: true,
     meta: {
       timings,
-      requestCount: 6,
+      requestCount: 7,
       fetchedAt: new Date().toISOString(),
       cacheHit: false,
     },
@@ -978,6 +1000,9 @@ export async function saveRecipeDraft(recipeId, payload) {
   };
   if (payload.scope != null) {
     recipePatch.branch_id = payload.scope === "network" ? null : payload.branchId;
+  }
+  if (payload.heroImagePath !== undefined) {
+    recipePatch.hero_image_path = payload.heroImagePath || null;
   }
   await unwrap(
     client.from("inventory_recipes").update(recipePatch).eq("id", recipeId).select().single(),
@@ -1064,6 +1089,34 @@ export async function saveRecipeDraft(recipeId, payload) {
   }
 
   return fetchRecipeBundle(recipeId);
+}
+
+export async function linkRecipeToMenuItem(recipeId, { menuItemId, placementGroupId = null } = {}) {
+  if (!recipeId || !menuItemId) throw new Error("Choose a menu item to link.");
+  clearFoodBibleCaches();
+  const client = requireClient();
+  const userId = await currentUserId();
+  const others = await unwrap(
+    client.from("inventory_recipes")
+      .select("id,name")
+      .eq("menu_item_id", menuItemId)
+      .neq("id", recipeId)
+      .eq("active", true),
+    "Check existing menu links",
+  );
+  if ((others || []).length) {
+    throw new Error(`“${others[0].name}” is already linked to that menu item. Unlink it first.`);
+  }
+  const row = await unwrap(
+    client.from("inventory_recipes").update({
+      menu_item_id: menuItemId,
+      placement_group_id: placementGroupId,
+      updated_at: new Date().toISOString(),
+      updated_by: userId,
+    }).eq("id", recipeId).select().single(),
+    "Link recipe to menu item",
+  );
+  return mapRecipeRow(row);
 }
 
 export async function setRecipeActive(recipeId, active) {
