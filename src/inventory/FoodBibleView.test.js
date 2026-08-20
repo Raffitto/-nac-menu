@@ -126,6 +126,27 @@ describe("FoodBibleView", () => {
     expect(screen.queryByTestId("food-bible-empty-state")).not.toBeInTheDocument();
   });
 
+  test("shows download actions for recipes", async () => {
+    URL.createObjectURL = jest.fn(() => "blob:recipe");
+    URL.revokeObjectURL = jest.fn();
+    fetchFoodBibleOverview.mockResolvedValue({
+      ...overview,
+      rows: [{
+        ...overview.rows[0],
+        recipeId: "recipe-1",
+        guestStatus: "live",
+        kind: "menu_item",
+        lines: [{ name: "Cream", quantity: 1, unit: "litre", ingredientId: "ing-1" }],
+      }],
+    });
+    render(<FoodBibleView branchId="khobar" />);
+    await screen.findByText("Burrata");
+    expect(screen.getByTestId("download-food-bible-button")).toBeInTheDocument();
+    expect(screen.getByTestId("download-selected-recipes-button")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("download-recipe-menu-1"));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+  });
+
   test("opens recipe editor from a menu row", async () => {
     render(<FoodBibleView branchId="khobar" />);
     await screen.findByText("Burrata");

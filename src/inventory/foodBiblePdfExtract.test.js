@@ -260,4 +260,16 @@ Cooking oil`,
     expect(chicken?.sourceQuantity).toBe(2000);
     expect(chicken?.unitConversion || chicken?.canonicalUnit).toBeTruthy();
   });
+
+  test("accepts title-case dish names such as Prawn Rendang", () => {
+    const { recipes, rejectedTitles } = extractFoodBibleRecipesFromPages({
+      sourceFile: "Prawn Rendang, grilled lemon .pdf",
+      pages: [
+        { page: 1, text: `Prawn Rendang, grilled lemon\nUtensils Used\nAllergens:\nMenu Section\nMAINS\nPrep Time` },
+        { page: 2, text: `Ingredients\nUnit\n1 Batch\nNotes\nGinger root\ng\n26\nPrawns Tiger 16/29\npcs\n6\n1. Stir in the rendang paste.\nMethod` },
+      ],
+    });
+    expect(rejectedTitles).toHaveLength(0);
+    expect(recipes.some((recipe) => /prawn rendang/i.test(recipe.sourceTitle))).toBe(true);
+  });
 });

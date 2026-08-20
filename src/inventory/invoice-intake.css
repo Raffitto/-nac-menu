@@ -535,6 +535,14 @@
 }
 .inv-fb-stage-toolbar { margin-bottom: 8px; }
 .inv-fb-unsaved { margin: 0; color: var(--inv-gold); font-size: 12px; }
+.inv-fb-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.inv-fb-ingredient-search { margin-bottom: 8px; }
+.inv-fb-cost-delta { display: grid; gap: 4px; }
+@media (max-width: 720px) {
+  .inv-fb-editor { width: 100%; max-height: 100dvh; }
+  .inv-fb-grid { grid-template-columns: 1fr; }
+  .inv-fb-row-actions { justify-content: flex-start; }
+}
 
 .inv-operations { max-width: 1540px; margin: 0 auto; }
 .inv-operations-grid {

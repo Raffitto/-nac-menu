@@ -42,3 +42,6 @@ tmp-vault-verify/prod-executive-after-contrast.*
 
 # Local menu exports (not part of repo source)
 menu-selling-prices.csv
+
+# Extracted Food Bible / recipe source artifacts (never commit packages)
+tmp/

@@ -75,6 +75,7 @@ export function guestMenuStatusLabel(status) {
   if (status === "live") return "Live";
   if (status === "hidden") return "Hidden";
   if (status === "sold_out") return "Sold out";
+  if (status === "archived") return "Archived";
   return "Unknown";
 }
 
@@ -432,6 +433,7 @@ export function filterFoodBibleRows(rows, {
     if (menuVisibility === "active" && row.guestStatus !== "live") return false;
     if (menuVisibility === "hidden" && row.guestStatus !== "hidden") return false;
     if (menuVisibility === "sold_out" && row.guestStatus !== "sold_out") return false;
+    if (menuVisibility === "archived" && row.kind !== "archived" && row.guestStatus !== "archived") return false;
     if (!query) return true;
     const haystack = normalizeText([
       row.displayName,

@@ -188,4 +188,15 @@ describe("foodBible helpers", () => {
     ], identity);
     expect(byItem?.id).toBe("r2");
   });
+
+  test("archived filter keeps legacy recipes off the live menu view", () => {
+    const rows = [
+      { kind: "menu_item", displayName: "Big NAC", guestStatus: "live", recipeType: "menu_item" },
+      { kind: "archived", displayName: "Apple Bircher", guestStatus: "archived", recipeType: "menu_item" },
+    ];
+    const live = filterFoodBibleRows(rows, { menuVisibility: "active" });
+    expect(live.map((row) => row.displayName)).toEqual(["Big NAC"]);
+    const archived = filterFoodBibleRows(rows, { menuVisibility: "archived" });
+    expect(archived.map((row) => row.displayName)).toEqual(["Apple Bircher"]);
+  });
 });

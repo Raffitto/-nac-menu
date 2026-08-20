@@ -35,6 +35,7 @@ import {
   yieldSummary,
 } from "./foodBible";
 import { costTrustLabel, formatSar } from "./costTrust";
+import { classifyRecipeCosting, recipeCostDelta, withFoodCostPct } from "./recipeGraph";
 
 function emptyLine() {
   return {
@@ -108,11 +109,19 @@ export default function RecipeEditorPanel({
     documentation: false,
     readiness: true,
   });
+  const [applyNow, setApplyNow] = useState(true);
+  const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [ingredientQuery, setIngredientQuery] = useState("");
   const baselineRef = useRef(snapshotEditor(form, lines, stages, null));
 
   const canEdit = canEditBranch || canEditNetwork;
   const ingredients = useMemo(() => overview?.ingredients || [], [overview?.ingredients]);
   const activeIngredients = ingredients.filter((ingredient) => ingredient.active);
+  const visibleIngredients = activeIngredients.filter((ingredient) => {
+    const query = ingredientQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${ingredient.canonicalName} ${ingredient.normalizedSearchName || ""}`.toLowerCase().includes(query);
+  });
   const componentRecipes = (overview?.recipes || []).filter(
     (recipe) => recipe.recipeType === "preparation" && recipe.active,
   );
@@ -217,6 +226,28 @@ export default function RecipeEditorPanel({
     ),
   }), [bundle, form, lines, ingredientById, recipeById, target, allLinesByRecipeId]);
 
+  const liveCosting = useMemo(() => {
+    const costByIngredientId = {};
+    for (const line of costTrust?.lines || []) {
+      const match = activeIngredients.find((ingredient) => ingredient.canonicalName === line.itemName);
+      const id = line.ingredientId || match?.id;
+      if (!id || line.historicalUnitCost == null || line.historicalUnitCost === "") continue;
+      costByIngredientId[id] = {
+        amount: line.historicalUnitCost,
+        unit: line.normalizedBaseUnit || "each",
+      };
+    }
+    const nestedCostByRecipeId = {};
+    const costing = classifyRecipeCosting({ lines, costByIngredientId, nestedCostByRecipeId });
+    const sellingPrice = target?.placements?.[0]?.price || target?.cost?.sellingPrice;
+    return withFoodCostPct(costing, sellingPrice);
+  }, [costTrust, lines, activeIngredients, target]);
+
+  const costDelta = recipeCostDelta(
+    costTrust?.costPerPortion ?? costTrust?.outputUnitCost,
+    liveCosting.state === "fully costed" ? liveCosting.total : null,
+  );
+
   const isDirty = () => snapshotEditor(form, lines, stages, bundle?.version) !== baselineRef.current;
 
   const requestClose = () => {
@@ -265,8 +296,10 @@ export default function RecipeEditorPanel({
         ingredients: activeIngredients,
         version: bundle?.version,
       };
-      if (bundle?.recipe?.id) {
-        await saveRecipeDraft(bundle.recipe.id, payload);
+      let recipeId = bundle?.recipe?.id;
+      let saved = null;
+      if (recipeId) {
+        saved = await saveRecipeDraft(recipeId, payload);
       } else {
         const created = await createRecipe({
           ...form,
@@ -276,9 +309,17 @@ export default function RecipeEditorPanel({
           placementGroupId: form.placementGroupId || target?.placementGroupId || null,
           documentation: form.documentation,
         });
-        await saveRecipeDraft(created.recipe.id, {
+        recipeId = created.recipe.id;
+        saved = await saveRecipeDraft(recipeId, {
           ...payload,
           version: created.version,
+        });
+      }
+      if (applyNow && saved?.version?.id && saved.version.status === "draft") {
+        await activateRecipeVersion({
+          recipeVersionId: saved.version.id,
+          effectiveFrom: `${effectiveDate}T00:00:00+03:00`,
+          reason: "Save changes — effective now",
         });
       }
       onSaved();
@@ -374,6 +415,37 @@ export default function RecipeEditorPanel({
                 <span>{error}</span>
               </div>
             ) : null}
+
+            <section className="inv-fb-section" data-testid="recipe-cost-delta">
+              <div className="inv-fb-section-heading">
+                <div>
+                  <h3>Recipe cost</h3>
+                  <p>{liveCosting.state}</p>
+                </div>
+              </div>
+              <div className="inv-fb-summary inv-fb-cost-delta">
+                <article>
+                  <strong>{formatSar(costDelta.previous)}</strong>
+                  <span>Previous recipe cost</span>
+                </article>
+                <article>
+                  <strong>{formatSar(costDelta.next)}</strong>
+                  <span>New recipe cost</span>
+                </article>
+                <article>
+                  <strong>
+                    {costDelta.difference == null
+                      ? "Unavailable"
+                      : `${costDelta.difference > 0 ? "+" : ""}${Number(costDelta.difference).toFixed(2)} SAR / serving`}
+                  </strong>
+                  <span>Difference</span>
+                </article>
+                <article>
+                  <strong>{liveCosting.foodCostPct == null ? "Unavailable" : `${Number(liveCosting.foodCostPct).toFixed(1)}%`}</strong>
+                  <span>Theoretical food cost %</span>
+                </article>
+              </div>
+            </section>
 
             {costTrust ? (
               <section className="inv-fb-section" data-testid="recipe-cost-trust-detail">
@@ -618,7 +690,18 @@ export default function RecipeEditorPanel({
                     <p className="inv-ingredients-warning" data-testid="recipe-no-ingredients-warning">
                       No active ingredients yet. Add ingredients in Ingredient Master first.
                     </p>
-                  ) : null}
+                  ) : (
+                    <label className="inv-fb-ingredient-search">
+                      <span>Search ingredients</span>
+                      <input
+                        type="search"
+                        value={ingredientQuery}
+                        onChange={(event) => setIngredientQuery(event.target.value)}
+                        placeholder="Type to find an ingredient"
+                        data-testid="recipe-ingredient-search"
+                      />
+                    </label>
+                  )}
                   <div className="inv-fb-stage-toolbar">
                     <select
                       defaultValue=""
@@ -673,7 +756,7 @@ export default function RecipeEditorPanel({
                           >
                             <option value="">Choose ingredient or component</option>
                             <optgroup label="Ingredients">
-                              {activeIngredients.map((entry) => (
+                              {visibleIngredients.map((entry) => (
                                 <option key={entry.id} value={`ing:${entry.id}`}>
                                   {entry.canonicalName} · base {unitLabel(entry.baseInventoryUnit)}
                                 </option>
@@ -821,14 +904,32 @@ export default function RecipeEditorPanel({
                   disabled={Boolean(busy) || !bundle?.recipe?.id}
                   data-testid="deactivate-recipe-button"
                 >
-                  Deactivate
+                  Archive
                 </button>
               ) : null}
               <div className="inv-ingredients-form-actions-right">
+                <label className="inv-check">
+                  <input
+                    type="checkbox"
+                    checked={applyNow}
+                    onChange={(event) => setApplyNow(event.target.checked)}
+                    data-testid="recipe-apply-now"
+                  />
+                  Save changes — effective now
+                </label>
+                <label>
+                  <span>Effective date</span>
+                  <input
+                    type="date"
+                    value={effectiveDate}
+                    onChange={(event) => setEffectiveDate(event.target.value)}
+                    data-testid="recipe-effective-date"
+                  />
+                </label>
                 <button type="button" className="inv-button inv-button--ghost" onClick={requestClose} disabled={Boolean(busy)}>
                   Cancel
                 </button>
-                {bundle?.version?.status === "draft" ? (
+                {bundle?.version?.status === "draft" && !applyNow ? (
                   <button
                     type="button"
                     className="inv-button inv-button--secondary"
@@ -847,7 +948,7 @@ export default function RecipeEditorPanel({
                   data-testid="save-recipe-button"
                 >
                   {busy === "save" ? <Loader2 size={16} className="inv-spin" /> : null}
-                  Save draft
+                  {applyNow ? "Save — effective now" : "Save draft"}
                 </button>
               </div>
             </div>

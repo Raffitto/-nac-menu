@@ -45,7 +45,11 @@ describe("RecipeEditorPanel", () => {
       lines: [],
       stages: [],
     });
-    saveRecipeDraft.mockResolvedValue({});
+    saveRecipeDraft.mockResolvedValue({
+      recipe: { id: "recipe-new", active: true },
+      version: { id: "version-new", status: "draft" },
+    });
+    activateRecipeVersion.mockResolvedValue({});
     const onSaved = jest.fn();
     render(
       <RecipeEditorPanel
@@ -64,6 +68,10 @@ describe("RecipeEditorPanel", () => {
     await waitFor(() => {
       expect(createRecipe).toHaveBeenCalled();
       expect(saveRecipeDraft).toHaveBeenCalled();
+      expect(activateRecipeVersion).toHaveBeenCalledWith(expect.objectContaining({
+        recipeVersionId: "version-new",
+        reason: "Save changes — effective now",
+      }));
       expect(onSaved).toHaveBeenCalled();
     });
   });
@@ -193,6 +201,37 @@ describe("RecipeEditorPanel", () => {
     expect(await screen.findByTestId("recipe-editor-error")).toHaveTextContent(/circular/i);
   });
 
+  test("quantity edit is saved with the draft payload", async () => {
+    fetchRecipeBundle.mockResolvedValue({
+      recipe: { id: "recipe-1", name: "Big NAC", recipeType: "menu_item", outputQuantity: "1", outputUnit: "each", active: true },
+      version: { id: "version-1", status: "active", documentation: {} },
+      lines: [{ id: "line-1", clientId: "line-1", ingredientId: "ing-1", quantity: "180", unit: "gram" }],
+      stages: [],
+    });
+    saveRecipeDraft.mockResolvedValue({
+      recipe: { id: "recipe-1" },
+      version: { id: "version-2", status: "draft" },
+    });
+    activateRecipeVersion.mockResolvedValue({});
+    render(
+      <RecipeEditorPanel
+        branchId="khobar"
+        target={{ recipeId: "recipe-1", displayName: "Big NAC", menuItemId: "menu-1" }}
+        overview={overview}
+        canEditBranch
+        canEditNetwork={false}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    const qty = await screen.findByDisplayValue("180");
+    fireEvent.change(qty, { target: { value: "170" } });
+    fireEvent.click(screen.getByTestId("save-recipe-button"));
+    await waitFor(() => expect(saveRecipeDraft).toHaveBeenCalled());
+    const payload = saveRecipeDraft.mock.calls[0][1];
+    expect(payload.lines[0].quantity).toBe("170");
+  });
+
   test("activates a saved draft with reason and effective business date", async () => {
     fetchRecipeBundle.mockResolvedValue({
       recipe: {
@@ -229,6 +268,7 @@ describe("RecipeEditorPanel", () => {
         onSaved={onSaved}
       />,
     );
+    fireEvent.click(await screen.findByTestId("recipe-apply-now"));
     fireEvent.click(await screen.findByTestId("activate-recipe-version-button"));
     await waitFor(() => expect(activateRecipeVersion).toHaveBeenCalledWith({
       recipeVersionId: "version-2",

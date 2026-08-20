@@ -1112,6 +1112,12 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
     const category = categoryById[section?.category_id];
     const productCost = productCostByMenuItemId.get(identity.primaryItem.id)
       || (recipe ? productCostByRecipeId.get(recipe.id) : null);
+    const namedLines = lines.map((line) => ({
+      ...line,
+      name: line.subRecipeId
+        ? recipeById.get(line.subRecipeId)?.name
+        : ingredientById.get(line.ingredientId)?.canonicalName,
+    }));
     return {
       kind: "menu_item",
       identityKey: identity.identityKey,
@@ -1126,8 +1132,17 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
       placements: identity.placements,
       categoryName: category?.name_en || "Uncategorised",
       guestStatus: guestMenuStatus(identity.primaryItem),
+      operationallyActive: guestMenuStatus(identity.primaryItem) === "live",
       readiness: readinessResult.readiness,
-      lineCount: lines.length,
+      lineCount: namedLines.length,
+      lines: namedLines,
+      documentation: version?.documentation || {},
+      version,
+      outputQuantity: recipe?.outputQuantity ?? version?.outputQuantity,
+      outputUnit: recipe?.outputUnit || version?.outputUnit,
+      portionCount: recipe?.portionCount ?? version?.portionCount,
+      portionSize: recipe?.portionSize ?? version?.portionSize,
+      portionUnit: recipe?.portionUnit || version?.portionUnit,
       yieldSummary: recipe ? `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}` : "—",
       scope: recipe?.scope || "branch",
       updatedAt: recipe?.updatedAt || null,
@@ -1139,9 +1154,14 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
 
   for (const recipe of recipes) {
     if (menuLinkedRecipeIds.has(recipe.id)) continue;
-    if (recipe.recipeType === "menu_item" || recipe.recipeType === "direct_stock") continue;
     const version = versionByRecipe.get(recipe.id);
     const lines = version ? (linesByVersion.get(version.id) || []) : [];
+    const namedLines = lines.map((line) => ({
+      ...line,
+      name: line.subRecipeId
+        ? recipeById.get(line.subRecipeId)?.name
+        : ingredientById.get(line.ingredientId)?.canonicalName,
+    }));
     const readinessResult = deriveRecipeReadiness({
       recipe,
       version,
@@ -1152,8 +1172,9 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
       cycleDetected: wouldCreateCycle(recipe.id, null, allLinesByRecipeId),
     });
     const productCost = productCostByRecipeId.get(recipe.id) || null;
+    const isSellableType = recipe.recipeType === "menu_item" || recipe.recipeType === "direct_stock";
     rows.push({
-      kind: "component",
+      kind: isSellableType ? "archived" : "component",
       identityKey: recipe.id,
       displayName: recipe.name,
       displayNameAr: recipe.nameAr,
@@ -1164,10 +1185,19 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
       menuItemId: recipe.menuItemId,
       placementGroupId: recipe.placementGroupId,
       placements: [],
-      categoryName: "Kitchen components",
-      guestStatus: null,
+      categoryName: isSellableType ? "Archived recipes" : "Kitchen components",
+      guestStatus: isSellableType ? "archived" : null,
+      operationallyActive: false,
       readiness: readinessResult.readiness,
-      lineCount: lines.length,
+      lineCount: namedLines.length,
+      lines: namedLines,
+      documentation: version?.documentation || {},
+      version,
+      outputQuantity: recipe.outputQuantity,
+      outputUnit: recipe.outputUnit,
+      portionCount: recipe.portionCount,
+      portionSize: recipe.portionSize,
+      portionUnit: recipe.portionUnit,
       yieldSummary: `${recipe.outputQuantity || "—"} ${recipe.outputUnit || ""}`,
       scope: recipe.scope,
       updatedAt: recipe.updatedAt,
@@ -1186,6 +1216,9 @@ export async function fetchFoodBibleOverview({ branchId, asOf = new Date().toISO
     costAsOf: asOf,
     hasActiveIngredients: ingredientRows.some((ingredient) => ingredient.active),
     lineGraph: allLinesByRecipeId,
+    versionsByRecipeId: Object.fromEntries(
+      recipes.map((recipe) => [recipe.id, versions.filter((row) => row.recipe_id === recipe.id).map(mapVersionRow)]),
+    ),
   };
 }
 

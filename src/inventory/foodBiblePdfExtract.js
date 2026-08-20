@@ -84,7 +84,13 @@ function looksLikeTitle(line) {
   const letters = text.replace(/[^A-Za-z]/g, "");
   if (!letters) return false;
   const upper = letters.replace(/[^A-Z]/g, "").length;
-  return upper / letters.length >= 0.55;
+  if (upper / letters.length >= 0.55) return true;
+  const words = text.split(/[\s,/&-]+/).filter((word) => /[A-Za-z]/.test(word));
+  const capped = words.filter((word) => /^[A-Z]/.test(word));
+  return words.length >= 2
+    && words.length <= 16
+    && capped.length >= 2
+    && capped.length / words.length >= 0.45;
 }
 
 function isPrepTitle(title) {
@@ -93,7 +99,9 @@ function isPrepTitle(title) {
   // Prefer prep classification for short component cards / explicit batch labels.
   if (/\bbatch\b/i.test(text)) return true;
   if (/^\s*(vodka\s+)?tomato\s+sauce\s*$/i.test(text)) return true;
+  const tokens = text.split(/[,\s]+/).filter(Boolean);
   if (
+    tokens.length <= 3 &&
     /\b(dressing|marinade|mayonnaise|fillet|patty|dough|meringue|coulis|granola|hummus|tatziki|tzatziki|choux)\b/i.test(
       text
     )
