@@ -3,6 +3,10 @@ import {
   INTELLIGENCE_SECONDARY_TABS,
   INTELLIGENCE_TAB_ALIASES,
   INTELLIGENCE_TABS,
+  NAV_ITEMS,
+  adminViewFromLocation,
+  isScrollableView,
+  navIdFromLegacyView,
   normalizeIntelligenceTabId,
   resolveIntelligenceDestination,
 } from "./navigation";
@@ -108,5 +112,23 @@ describe("intelligence navigation", () => {
     expect(INTELLIGENCE_TAB_ALIASES.executive).toBe("operations");
     expect(INTELLIGENCE_TAB_ALIASES.sales).toBe("commercial");
     expect(INTELLIGENCE_TAB_ALIASES.competitive).toBe("market");
+  });
+});
+
+describe("NAC OS Food Bible navigation", () => {
+  test("exposes Food Bible as a primary nav item", () => {
+    expect(NAV_ITEMS.map((item) => item.id)).toContain("food-bible");
+    expect(NAV_ITEMS.find((item) => item.id === "food-bible").label).toBe("Food Bible");
+    expect(navIdFromLegacyView("recipes")).toBe("food-bible");
+    expect(isScrollableView("food-bible")).toBe(true);
+  });
+
+  test("reads Food Bible from the admin view query", () => {
+    window.history.replaceState({}, "", "/?view=food-bible");
+    expect(adminViewFromLocation()).toBe("food-bible");
+    window.history.replaceState({}, "", "/?view=recipes");
+    expect(adminViewFromLocation()).toBe("food-bible");
+    window.history.replaceState({}, "", "/");
+    expect(adminViewFromLocation()).toBe("overview");
   });
 });

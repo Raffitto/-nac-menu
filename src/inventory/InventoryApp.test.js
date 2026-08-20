@@ -1,7 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InventoryApp from "./InventoryApp";
-import { fetchFoodBibleOverview, fetchInventoryReferenceData, fetchInvoiceHistory, fetchIngredients, fetchInventoryStaffAccess } from "../lib/inventoryApi";
+import { fetchFoodBibleOverview, fetchCanonicalCostContext, fetchInventoryReferenceData, fetchInvoiceHistory, fetchIngredients, fetchInventoryStaffAccess } from "../lib/inventoryApi";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 
 jest.mock("../dashboard/hooks/usePlatformSession", () => ({
@@ -23,6 +23,7 @@ jest.mock("../lib/inventoryApi", () => ({
   createIngredient: jest.fn(),
   createRecipe: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
+  fetchCanonicalCostContext: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
   fetchInventoryReferenceData: jest.fn(),
@@ -64,6 +65,7 @@ describe("InventoryApp", () => {
       ingredients: [],
       hasActiveIngredients: false,
     });
+    fetchCanonicalCostContext.mockResolvedValue({ costByCanonicalId: {} });
     fetchInventoryStaffAccess.mockResolvedValue({
       vaultRole: "branch_manager",
       primaryBranchId: "khobar",

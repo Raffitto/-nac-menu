@@ -1029,3 +1029,7 @@ export async function fetchInventoryStaffAccess() {
 export function invoiceLineFingerprint(lines) {
   return buildInvoiceLineFingerprint(lines);
 }
+
+export async function fetchCanonicalCostContext() {
+  return { costByCanonicalId: {}, reconcile: { newlyMapped: [] }, identities: [] };
+}

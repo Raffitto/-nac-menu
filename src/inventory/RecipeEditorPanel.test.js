@@ -19,6 +19,7 @@ jest.mock("../lib/inventoryApi", () => ({
 const overview = {
   ingredients: [
     { id: "ing-1", canonicalName: "Heavy cream", baseInventoryUnit: "litre", active: true },
+    { id: "ing-2", canonicalName: "Minced Beef", baseInventoryUnit: "gram", active: true },
   ],
   recipes: [
     { id: "cmp-1", name: "Hollandaise", recipeType: "preparation", active: true },
@@ -165,5 +166,42 @@ describe("RecipeEditorPanel", () => {
     const select = screen.getAllByLabelText("Ingredient or component")[0];
     fireEvent.change(select, { target: { value: "cmp:recipe-2" } });
     expect(await screen.findByTestId("recipe-editor-error")).toHaveTextContent(/circular/i);
+  });
+
+  test("adds, changes, removes, and replaces ingredient lines", async () => {
+    fetchRecipeBundle.mockResolvedValue({
+      recipe: { id: "recipe-1", name: "Big NAC", recipeType: "menu_item", outputQuantity: "1", outputUnit: "each", active: true },
+      version: { id: "version-1", documentation: {} },
+      lines: [{ id: "line-1", clientId: "line-1", ingredientId: "ing-1", quantity: "10", unit: "gram" }],
+      stages: [],
+    });
+    saveRecipeDraft.mockResolvedValue({
+      recipe: { id: "recipe-1" },
+      version: { id: "version-2" },
+    });
+    render(
+      <RecipeEditorPanel
+        branchId="khobar"
+        target={{ recipeId: "recipe-1", displayName: "Big NAC", menuItemId: "menu-1" }}
+        overview={overview}
+        canEditBranch
+        canEditNetwork={false}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("recipe-line-0")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("add-recipe-line-button"));
+    expect(screen.getByTestId("recipe-line-1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("recipe-line-quantity-0"), { target: { value: "160" } });
+    fireEvent.change(screen.getAllByLabelText("Ingredient or component")[0], { target: { value: "ing:ing-2" } });
+    fireEvent.click(screen.getByTestId("remove-recipe-line-1"));
+    expect(screen.queryByTestId("recipe-line-1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("save-recipe-button"));
+    await waitFor(() => expect(saveRecipeDraft).toHaveBeenCalled());
+    const payload = saveRecipeDraft.mock.calls[0][1];
+    expect(payload.lines).toHaveLength(1);
+    expect(payload.lines[0].ingredientId).toBe("ing-2");
+    expect(payload.lines[0].quantity).toBe("160");
   });
 });

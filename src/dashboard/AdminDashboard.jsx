@@ -10,6 +10,7 @@ import {
   Brain,
   PanelLeftClose,
   PanelLeftOpen,
+  BookOpen,
 } from "lucide-react";
 import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
 import useKeepAliveNav from "./hooks/useKeepAliveNav";
@@ -24,7 +25,7 @@ import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacConte
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
 import AdminBootShell from "./components/AdminBootShell";
-import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
+import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS, adminViewFromLocation, syncAdminViewLocation } from "./navigation";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
 import HubTabs from "./components/HubTabs";
@@ -55,6 +56,7 @@ const ReviewsHub = lazy(() => import("./views/ReviewsHub"));
 const BranchesView = lazy(() => import("./views/BranchesView"));
 const SettingsView = lazy(() => import("./views/SettingsView"));
 const MenuManager = lazy(() => import("./MenuManager"));
+const FoodBibleOsView = lazy(() => import("./views/FoodBibleOsView"));
 const OperationalDashboard = lazy(() => import("./views/OperationalDashboard"));
 const LegacyOverviewPanel = lazy(() => import("./views/LegacyOverviewPanel"));
 
@@ -62,6 +64,7 @@ const VIEW_PREFETCHERS = {
   intelligence: () => import("./views/IntelligenceHub"),
   reviews: () => import("./views/ReviewsHub"),
   menu: () => import("./MenuManager"),
+  "food-bible": () => import("./views/FoodBibleOsView"),
   branches: () => import("./views/BranchesView"),
   settings: () => import("./views/SettingsView"),
 };
@@ -71,6 +74,7 @@ const NAV_ICONS = {
   intelligence: Brain,
   reviews: Star,
   menu: UtensilsCrossed,
+  "food-bible": BookOpen,
   branches: Store,
   settings: Settings,
 };
@@ -147,7 +151,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
     isMounted,
     schedulePrefetch,
     cancelPrefetch,
-  } = useKeepAliveNav("overview");
+  } = useKeepAliveNav(adminViewFromLocation());
   const {
     collapsed: globalSidebarCollapsed,
     toggle: toggleGlobalSidebar,
@@ -187,6 +191,10 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
       setAdminView(visibleNav[0].id);
     }
   }, [adminView, rbac, visibleNav, setAdminView]);
+
+  useEffect(() => {
+    syncAdminViewLocation(adminView);
+  }, [adminView]);
 
   const configured = isSupabaseConfigured();
 
@@ -423,6 +431,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                   aria-label={item.label}
                   aria-current={isActive ? "page" : undefined}
                   data-nav-id={item.id}
+                  data-testid={`nacos-nav-${item.id}`}
                 >
                   {Icon && <Icon size={18} aria-hidden="true" />}
                   <span>{item.label}</span>
@@ -505,6 +514,22 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 </MenuEditorAuth>
               ) : (
                 <AccessDeniedPanel message="Menu management is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("food-bible") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "food-bible"}
+            data-testid="pane-food-bible"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Food Bible…" />}>
+              {rbac.canAccessNav("food-bible") ? (
+                <FoodBibleOsView />
+              ) : (
+                <AccessDeniedPanel message="Food Bible access is not enabled for your NAC OS role." />
               )}
             </Suspense>
           </div>

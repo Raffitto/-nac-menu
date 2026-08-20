@@ -582,6 +582,7 @@ export default function RecipeEditorPanel({
                             min="0"
                             step="0.01"
                             value={line.quantity}
+                            data-testid={`recipe-line-quantity-${index}`}
                             onChange={(event) => updateLine(lineKey, { quantity: event.target.value })}
                           />
                         </label>
@@ -651,6 +652,7 @@ export default function RecipeEditorPanel({
                           type="button"
                           className="inv-button inv-button--ghost"
                           onClick={() => setLines((prev) => prev.filter((entry) => (entry.clientId || entry.id) !== (line.clientId || line.id)))}
+                          data-testid={`remove-recipe-line-${index}`}
                         >
                           <Trash2 size={14} /> Remove line
                         </button>

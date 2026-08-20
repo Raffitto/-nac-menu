@@ -1,12 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FoodBibleView from "./FoodBibleView";
-import { fetchFoodBibleOverview, fetchInventoryStaffAccess } from "../lib/inventoryApi";
+import { fetchFoodBibleOverview, fetchInventoryStaffAccess, fetchCanonicalCostContext } from "../lib/inventoryApi";
 import { READINESS } from "./foodBible";
 
 jest.mock("../lib/inventoryApi", () => ({
   createRecipe: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
+  fetchCanonicalCostContext: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
@@ -76,6 +77,7 @@ describe("FoodBibleView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fetchFoodBibleOverview.mockResolvedValue(overview);
+    fetchCanonicalCostContext.mockResolvedValue({ costByCanonicalId: {} });
     fetchInventoryStaffAccess.mockResolvedValue(managerAccess);
   });
 
@@ -124,6 +126,31 @@ describe("FoodBibleView", () => {
     render(<FoodBibleView branchId="khobar" onOpenIngredients={onOpenIngredients} />);
     await screen.findByText("Burrata");
     expect(screen.queryByTestId("food-bible-empty-state")).not.toBeInTheDocument();
+  });
+
+  test("shows download actions for recipes", async () => {
+    URL.createObjectURL = jest.fn(() => "blob:recipe");
+    URL.revokeObjectURL = jest.fn();
+    fetchFoodBibleOverview.mockResolvedValue({
+      ...overview,
+      rows: [{
+        ...overview.rows[0],
+        recipeId: "recipe-1",
+        guestStatus: "live",
+        kind: "menu_item",
+        lines: [{ name: "Cream", quantity: 1, unit: "litre", ingredientId: "ing-1" }],
+      }],
+    });
+    render(<FoodBibleView branchId="khobar" />);
+    await screen.findByText("Burrata");
+    expect(screen.getByTestId("download-food-bible-button")).toBeInTheDocument();
+    expect(screen.getByTestId("download-selected-recipes-button")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("download-recipe-menu-1"));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+    URL.createObjectURL.mockClear();
+    fireEvent.click(screen.getByTestId("select-recipe-menu-1"));
+    fireEvent.click(screen.getByTestId("download-selected-recipes-button"));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
   });
 
   test("opens recipe editor from a menu row", async () => {

@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { id: "intelligence", label: "Intelligence", legacyViews: ["ai-insights", "restaurant-intelligence", "sales-intelligence"] },
   { id: "reviews", label: "Reviews", legacyViews: ["reviews"] },
   { id: "menu", label: "Menu", legacyViews: ["menu-manager"] },
+  { id: "food-bible", label: "Food Bible", legacyViews: ["food-bible", "recipes"] },
   { id: "branches", label: "Branches", legacyViews: ["branches"] },
   { id: "settings", label: "Settings", legacyViews: ["settings"] },
 ];
@@ -176,7 +177,25 @@ export function isScrollableView(view) {
     "reviews",
     "menu-manager",
     "menu",
+    "food-bible",
+    "recipes",
     "branches",
     "settings",
   ].includes(view);
+}
+
+export function adminViewFromLocation(fallback = "overview") {
+  if (typeof window === "undefined") return fallback;
+  const view = new URLSearchParams(window.location.search).get("view");
+  if (!view) return fallback;
+  const match = NAV_ITEMS.find((item) => item.id === view || item.legacyViews.includes(view));
+  return match?.id || fallback;
+}
+
+export function syncAdminViewLocation(view) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("view") === view) return;
+  params.set("view", view);
+  window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
 }
