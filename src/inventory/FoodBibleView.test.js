@@ -1,8 +1,8 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FoodBibleView from "./FoodBibleView";
-import { fetchFoodBibleOverview, fetchInventoryStaffAccess, fetchCanonicalCostContext } from "../lib/inventoryApi";
-import { READINESS } from "./foodBible";
+import { fetchFoodBibleOverview, fetchInventoryStaffAccess, fetchCanonicalCostContext, fetchRecipeBundle } from "../lib/inventoryApi";
+import { CATALOGUE_SCOPES, READINESS } from "./foodBible";
 
 jest.mock("../lib/inventoryApi", () => ({
   createRecipe: jest.fn(),
@@ -33,12 +33,19 @@ const managerAccess = {
 
 const overview = {
   summary: {
-    totalMenuItems: 2,
+    totalMenuItems: 1,
+    liveKitchenItems: 1,
     complete: 0,
     inProgress: 0,
-    missing: 2,
+    incomplete: 0,
+    missing: 1,
     needsAttention: 0,
+    mapped: 0,
     coveragePct: 0,
+    fullyCosted: 0,
+    partiallyCosted: 0,
+    uncosted: 1,
+    costCoveragePct: 0,
   },
   rows: [
     {
@@ -49,6 +56,7 @@ const overview = {
       recipeType: "menu_item",
       categoryName: "Mains",
       guestStatus: "live",
+      requiresKitchenRecipe: true,
       readiness: READINESS.MISSING,
       lineCount: 0,
       yieldSummary: "—",
@@ -62,6 +70,7 @@ const overview = {
       recipeType: "menu_item",
       categoryName: "Drinks",
       guestStatus: "sold_out",
+      requiresKitchenRecipe: false,
       readiness: READINESS.MISSING,
       lineCount: 0,
       yieldSummary: "—",
@@ -71,6 +80,7 @@ const overview = {
   recipes: [],
   ingredients: [],
   hasActiveIngredients: false,
+  detailsDeferred: true,
 };
 
 describe("FoodBibleView", () => {
@@ -78,18 +88,28 @@ describe("FoodBibleView", () => {
     jest.clearAllMocks();
     fetchFoodBibleOverview.mockResolvedValue(overview);
     fetchCanonicalCostContext.mockResolvedValue({ costByCanonicalId: {} });
+    fetchRecipeBundle.mockResolvedValue({
+      recipe: { name: "Burrata" },
+      version: { documentation: { preparationMethod: "Plate." } },
+      lines: [{ ingredientId: "ing-1", name: "Cream", quantity: 1, unit: "litre" }],
+      stages: [],
+    });
     fetchInventoryStaffAccess.mockResolvedValue(managerAccess);
   });
 
   test("loads overview metrics and menu rows", async () => {
     render(<FoodBibleView branchId="khobar" />);
     await waitFor(() => {
-      expect(screen.getByTestId("food-bible-metric-total")).toHaveTextContent("2");
-      expect(screen.getByTestId("food-bible-metric-missing")).toHaveTextContent("2");
+      expect(screen.getByTestId("food-bible-metric-total")).toHaveTextContent("1");
+      expect(screen.getByTestId("food-bible-metric-missing")).toHaveTextContent("1");
       expect(screen.getByTestId("food-bible-metric-coverage")).toHaveTextContent("0%");
     });
     expect(screen.getByText("Burrata")).toBeInTheDocument();
+    expect(screen.queryByText("Iced Spanish Latte")).not.toBeInTheDocument();
     expect(screen.getByText(/Appears in 2 menu placements/)).toBeInTheDocument();
+    expect(screen.queryByText(/Unreliable/)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: CATALOGUE_SCOPES.DRINKS } });
+    expect(screen.getByText("Iced Spanish Latte")).toBeInTheDocument();
   });
 
   test("filters by readiness and search", async () => {
@@ -112,11 +132,14 @@ describe("FoodBibleView", () => {
       recipes: [{ id: "recipe-1", recipeType: "preparation", active: true }],
     });
     render(<FoodBibleView branchId="khobar" />);
-    await screen.findByText("Hollandaise");
+    await screen.findByText("Burrata");
+    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: CATALOGUE_SCOPES.COMPONENTS } });
+    expect(await screen.findByText("Hollandaise")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("food-bible-readiness-filter"), { target: { value: READINESS.DRAFT } });
     expect(screen.getByText("Hollandaise")).toBeInTheDocument();
     expect(screen.queryByText("Burrata")).not.toBeInTheDocument();
     fireEvent.change(screen.getByTestId("food-bible-readiness-filter"), { target: { value: "all" } });
+    fireEvent.change(screen.getByTestId("food-bible-menu-filter"), { target: { value: CATALOGUE_SCOPES.KITCHEN } });
     fireEvent.change(screen.getByTestId("food-bible-search-input"), { target: { value: "burrata" } });
     expect(await screen.findByText("Burrata")).toBeInTheDocument();
   });

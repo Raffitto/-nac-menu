@@ -1,3 +1,4 @@
+import { classifyMenuItem } from "../dashboard/config/menuOperationalTaxonomy";
 import { normalizeText } from "./inventoryIntelligence";
 import { areUnitsCompatible, normalizeUnit } from "./inventoryIntelligence";
 import {
@@ -26,6 +27,16 @@ export const READINESS_LABELS = Object.freeze({
   ready: "Complete",
   needs_attention: "Needs attention",
 });
+
+export const CATALOGUE_SCOPES = Object.freeze({
+  KITCHEN: "kitchen",
+  COMPONENTS: "components",
+  DRINKS: "drinks",
+  ARCHIVED: "archived",
+  ALL: "all",
+});
+
+const NON_KITCHEN_CATEGORY = /drink|beverage|coffee|espresso|soft\s*drink|barista|add-?ons?|extras/i;
 
 export const DEFAULT_DOCUMENTATION = Object.freeze({
   preparationMethod: "",
@@ -58,9 +69,24 @@ export function normalizeRecipeType(value) {
   return value;
 }
 
+export function isVerificationFixture(...values) {
+  return values.some((value) => /\[temp verify/i.test(String(value || "")));
+}
+
+export function requiresKitchenRecipe({ name, categoryName } = {}) {
+  if (isVerificationFixture(name, categoryName)) return false;
+  const classified = classifyMenuItem(name, categoryName);
+  if (classified.beverageTier) return false;
+  if (NON_KITCHEN_CATEGORY.test(String(categoryName || ""))) return false;
+  return true;
+}
+
 export function menuIdentityKey(item) {
   if (!item) return null;
-  return item.placement_group_id || item.id;
+  if (item.placement_group_id) return `pg:${item.placement_group_id}`;
+  const name = normalizeText(item.name_en);
+  if (name) return `name:${name}`;
+  return `id:${item.id}`;
 }
 
 export function guestMenuStatus(item) {
@@ -97,19 +123,53 @@ export function dedupeMenuItems(items = []) {
     if ((item.sort_order ?? 0) < (existing.primaryItem.sort_order ?? 0)) {
       existing.primaryItem = item;
     }
+    if (!existing.placementGroupId && item.placement_group_id) {
+      existing.placementGroupId = item.placement_group_id;
+    }
   }
   return [...groups.values()];
 }
 
+export function placementLabels(placements = [], sectionById = {}) {
+  const labels = [];
+  const seen = new Set();
+  for (const item of placements) {
+    const label = sectionById[item.section_id]?.name_en || item.section_name_en;
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    labels.push(label);
+  }
+  return labels;
+}
+
+function recipeNameKeys(recipe) {
+  return [...new Set([
+    recipe.normalizedName,
+    recipe.name,
+    recipe.nameEn,
+  ].map((value) => normalizeText(value)).filter(Boolean))];
+}
+
 export function findRecipeForMenuIdentity(recipes = [], identity) {
   if (!identity) return null;
-  return recipes.find((recipe) => {
-    if (!recipe.active) return false;
+  const usable = recipes.filter((recipe) => (
+    recipe.active
+    && !isVerificationFixture(recipe.name, recipe.internalName, recipe.nameEn)
+  ));
+  const linked = usable.find((recipe) => {
     if (recipe.placementGroupId && identity.placementGroupId) {
       return recipe.placementGroupId === identity.placementGroupId;
     }
     return recipe.menuItemId === identity.primaryItem.id
       || identity.placements.some((item) => item.id === recipe.menuItemId);
+  });
+  if (linked) return linked;
+
+  const identityName = normalizeText(identity.primaryItem?.name_en);
+  if (!identityName) return null;
+  return usable.find((recipe) => {
+    if (recipe.recipeType === "preparation") return false;
+    return recipeNameKeys(recipe).includes(identityName);
   }) || null;
 }
 
@@ -294,6 +354,8 @@ export function deriveRecipeReadiness({
   recipeById = new Map(),
   menuItem = null,
   cycleDetected = false,
+  catalogueMode = false,
+  lineCount = 0,
 }) {
   const checklist = [];
   const issues = [];
@@ -343,7 +405,9 @@ export function deriveRecipeReadiness({
     requiredForReady: true,
   });
 
-  const validLines = lines.filter((line) => line.ingredientId || line.subRecipeId);
+  const validLines = catalogueMode
+    ? (Number(lineCount) > 0 ? [{ ingredientId: "present" }] : [])
+    : lines.filter((line) => line.ingredientId || line.subRecipeId);
   checklist.push({
     id: "lines",
     label: "Ingredients or components added",
@@ -358,11 +422,13 @@ export function deriveRecipeReadiness({
     requiredForReady: true,
   });
 
-  for (const line of validLines) {
-    issues.push(...lineIssues(line, { ingredientById, recipeById, recipeId: recipe.id }));
+  if (!catalogueMode) {
+    for (const line of validLines) {
+      issues.push(...lineIssues(line, { ingredientById, recipeById, recipeId: recipe.id }));
+    }
   }
 
-  if (recipe.recipeType === "direct_stock") {
+  if (!catalogueMode && recipe.recipeType === "direct_stock") {
     const ingredientLines = validLines.filter((line) => line.ingredientId);
     if (ingredientLines.length !== 1) issues.push("direct_stock_line_count");
   }
@@ -399,17 +465,68 @@ export function deriveRecipeReadiness({
   return { readiness: READINESS.MISSING, checklist, issues };
 }
 
+export function isLiveKitchenRow(row) {
+  if (!row || row.kind !== "menu_item") return false;
+  if (row.isVerificationFixture) return false;
+  if (row.requiresKitchenRecipe === false) return false;
+  if (row.guestStatus && row.guestStatus !== "live") return false;
+  return true;
+}
+
 export function buildFoodBibleSummary(rows = []) {
   const menuRows = rows.filter((row) => row.kind === "menu_item");
-  const totalMenuItems = menuRows.length;
-  const complete = menuRows.filter((row) => row.readiness === READINESS.READY).length;
-  const inProgress = menuRows.filter((row) => row.readiness === READINESS.DRAFT).length;
-  const missing = menuRows.filter((row) => row.readiness === READINESS.MISSING).length;
-  const needsAttention = menuRows.filter((row) => row.readiness === READINESS.NEEDS_ATTENTION).length;
-  const coveragePct = totalMenuItems
-    ? Math.round((complete / totalMenuItems) * 100)
-    : 0;
-  return { totalMenuItems, complete, inProgress, missing, needsAttention, coveragePct };
+  const kitchen = rows.filter(isLiveKitchenRow);
+  const complete = kitchen.filter((row) => row.readiness === READINESS.READY).length;
+  const inProgress = kitchen.filter((row) => row.readiness === READINESS.DRAFT).length;
+  const missing = kitchen.filter((row) => row.readiness === READINESS.MISSING).length;
+  const needsAttention = kitchen.filter((row) => row.readiness === READINESS.NEEDS_ATTENTION).length;
+  const mapped = kitchen.filter((row) => Boolean(row.recipeId)).length;
+  const incomplete = inProgress + needsAttention;
+  const coveragePct = kitchen.length ? Math.round((mapped / kitchen.length) * 100) : 0;
+  const fullyCosted = kitchen.filter((row) => row.cost?.profitabilityAvailable && row.costTrustStatus === "TRUSTED").length;
+  const partiallyCosted = kitchen.filter((row) => (
+    row.cost?.profitabilityAvailable
+    && row.costTrustStatus
+    && row.costTrustStatus !== "TRUSTED"
+    && row.costTrustStatus !== "UNRELIABLE"
+  )).length;
+  const uncosted = kitchen.length - fullyCosted - partiallyCosted;
+  const costCoveragePct = kitchen.length ? Math.round((fullyCosted / kitchen.length) * 100) : 0;
+  return {
+    totalMenuItems: kitchen.length,
+    liveKitchenItems: kitchen.length,
+    uniqueLiveKitchenItems: kitchen.length,
+    complete,
+    inProgress,
+    incomplete,
+    missing,
+    needsAttention,
+    mapped,
+    coveragePct,
+    placementCount: menuRows.reduce((sum, row) => sum + (row.placements?.length || 1), 0),
+    uniqueIdentityCount: menuRows.length,
+    preparedComponentCount: rows.filter((row) => row.kind === "component" && !row.isVerificationFixture).length,
+    drinkCount: menuRows.filter((row) => row.requiresKitchenRecipe === false && !row.isVerificationFixture).length,
+    fullyCosted,
+    partiallyCosted,
+    uncosted,
+    costCoveragePct,
+  };
+}
+
+export function foodBibleCostCell(row) {
+  if (row?.cost?.profitabilityAvailable && row.cost.costPerSoldPortion != null) {
+    return {
+      trust: null,
+      portion: row.cost.costPerSoldPortion,
+      label: "Costed",
+    };
+  }
+  return {
+    trust: "Not costed",
+    portion: null,
+    label: "Missing cost",
+  };
 }
 
 export function filterFoodBibleRows(rows, {
@@ -418,15 +535,29 @@ export function filterFoodBibleRows(rows, {
   menuVisibility = "all",
   category = "all",
   recipeType = "all",
+  catalogue = CATALOGUE_SCOPES.KITCHEN,
 }) {
   const query = normalizeText(search);
   return rows.filter((row) => {
+    if (row.isVerificationFixture) return false;
     if (readiness !== "all" && row.readiness !== readiness) return false;
     if (recipeType !== "all" && row.recipeType !== recipeType) return false;
     if (category !== "all" && row.categoryName !== category) return false;
+    if (catalogue === CATALOGUE_SCOPES.KITCHEN && !isLiveKitchenRow(row)) return false;
+    if (catalogue === CATALOGUE_SCOPES.COMPONENTS && row.kind !== "component") return false;
+    if (catalogue === CATALOGUE_SCOPES.DRINKS && (row.kind !== "menu_item" || row.requiresKitchenRecipe !== false || row.guestStatus === "hidden")) return false;
+    if (catalogue === CATALOGUE_SCOPES.ARCHIVED) {
+      const archived = row.kind === "archived" || row.guestStatus === "hidden" || row.operationallyActive === false;
+      if (!archived) return false;
+    }
+    if (catalogue === CATALOGUE_SCOPES.ALL && row.kind === "archived") return false;
     if (menuVisibility === "active" && row.guestStatus !== "live") return false;
     if (menuVisibility === "hidden" && row.guestStatus !== "hidden") return false;
     if (menuVisibility === "sold_out" && row.guestStatus !== "sold_out") return false;
+    if (menuVisibility === "archived") {
+      const archived = row.kind === "archived" || row.guestStatus === "hidden" || row.operationallyActive === false;
+      if (!archived) return false;
+    }
     if (!query) return true;
     const haystack = normalizeText([
       row.displayName,
@@ -434,6 +565,7 @@ export function filterFoodBibleRows(rows, {
       row.recipeName,
       row.internalName,
       row.categoryName,
+      row.placementSummary,
     ].filter(Boolean).join(" "));
     return haystack.includes(query);
   });

@@ -622,9 +622,9 @@ export async function fetchMenuCatalogueForBranch(options = {}) {
     return { data: null, error: new Error("Branch is required for menu catalogue") };
   }
 
-  let catQuery = supabase.from("categories").select("*").order("sort_order");
-  let secQuery = supabase.from("sections").select("*").order("sort_order");
-  let itemQuery = supabase.from("menu_items").select("*").order("sort_order");
+  let catQuery = supabase.from("categories").select(options.categorySelect || "*").order("sort_order");
+  let secQuery = supabase.from("sections").select(options.sectionSelect || "*").order("sort_order");
+  let itemQuery = supabase.from("menu_items").select(options.itemSelect || "*").order("sort_order");
   catQuery = menuBranchQueryFilter(catQuery, branchId);
   secQuery = menuBranchQueryFilter(secQuery, branchId);
   itemQuery = menuBranchQueryFilter(itemQuery, branchId);

@@ -54,6 +54,10 @@
     align-items: stretch;
   }
 
+  .nacos-food-bible .inv-fb-table {
+    min-width: 720px;
+  }
+
   .nacos-food-bible .inv-fb-row-actions,
   .nacos-food-bible .inv-button {
     min-height: 42px;

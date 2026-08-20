@@ -13,7 +13,7 @@ jest.mock("./menuApi", () => ({
 
 import { supabase } from "./supabase";
 import { fetchMenuCatalogueForBranch } from "./menuApi";
-import { fetchFoodBibleOverview } from "./inventoryApi";
+import { fetchFoodBibleOverview, clearFoodBibleCaches } from "./inventoryApi";
 import { READINESS } from "../inventory/foodBible";
 
 const mockFrom = supabase.from;
@@ -35,6 +35,7 @@ function emptyQuery() {
 describe("fetchFoodBibleOverview", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearFoodBibleCaches();
     mockFrom.mockImplementation(() => emptyQuery());
   });
 
@@ -53,12 +54,15 @@ describe("fetchFoodBibleOverview", () => {
 
     const overview = await fetchFoodBibleOverview({ branchId: "khobar" });
 
-    expect(fetchMenuCatalogueForBranch).toHaveBeenCalledWith({ branchId: "khobar" });
-    expect(overview.summary.totalMenuItems).toBe(2);
-    expect(overview.summary.missing).toBe(2);
+    expect(fetchMenuCatalogueForBranch).toHaveBeenCalledWith(expect.objectContaining({ branchId: "khobar" }));
+    expect(overview.summary.totalMenuItems).toBe(1);
+    expect(overview.summary.liveKitchenItems).toBe(1);
+    expect(overview.summary.missing).toBe(1);
     expect(overview.summary.coveragePct).toBe(0);
     expect(overview.rows.filter((row) => row.kind === "menu_item")).toHaveLength(2);
-    expect(overview.rows.every((row) => row.readiness === READINESS.MISSING)).toBe(true);
+    expect(overview.detailsDeferred).toBe(true);
+    expect(overview.meta.requestCount).toBe(6);
+    expect(mockFrom).toHaveBeenCalledTimes(3);
   });
 
   test("deduplicates linked placements and keeps distinct ungrouped items", async () => {
@@ -96,9 +100,10 @@ describe("fetchFoodBibleOverview", () => {
     const overview = await fetchFoodBibleOverview({ branchId: "khobar" });
     const menuRows = overview.rows.filter((row) => row.kind === "menu_item");
 
-    expect(menuRows).toHaveLength(3);
-    expect(menuRows.find((row) => row.identityKey === "group-1")?.placements).toHaveLength(2);
-    expect(menuRows.filter((row) => row.displayName === "Latte")).toHaveLength(2);
+    expect(menuRows).toHaveLength(2);
+    expect(menuRows.find((row) => row.identityKey === "pg:group-1")?.placements).toHaveLength(2);
+    expect(menuRows.filter((row) => row.displayName === "Latte")).toHaveLength(1);
+    expect(menuRows.find((row) => row.displayName === "Latte")?.placements).toHaveLength(2);
   });
 
   test("returns empty menu summary only when catalogue is genuinely empty", async () => {
@@ -135,5 +140,34 @@ describe("fetchFoodBibleOverview", () => {
     expect(statuses.live).toBe("live");
     expect(statuses.hidden).toBe("hidden");
     expect(statuses.sold).toBe("sold_out");
+  });
+
+  test("does not inflate kitchen coverage with duplicate placements or drinks", async () => {
+    fetchMenuCatalogueForBranch.mockResolvedValue({
+      data: {
+        categories: [{ id: "cat-1", name_en: "All day" }],
+        sections: [
+          { id: "brunch", category_id: "cat-1", name_en: "Brunch" },
+          { id: "day", category_id: "cat-1", name_en: "Daytime" },
+          { id: "eve", category_id: "cat-1", name_en: "Evening" },
+        ],
+        items: [
+          { id: "1", section_id: "brunch", name_en: "Big NAC", active: true },
+          { id: "2", section_id: "day", name_en: "Big NAC", active: true },
+          { id: "3", section_id: "eve", name_en: "Big NAC", active: true },
+          { id: "4", section_id: "brunch", name_en: "Coca Cola", active: true },
+          { id: "5", section_id: "brunch", name_en: "[TEMP VERIFY] Recipe", active: true },
+        ],
+      },
+      error: null,
+    });
+
+    const overview = await fetchFoodBibleOverview({ branchId: "khobar" });
+    expect(overview.summary.liveKitchenItems).toBe(1);
+    expect(overview.summary.drinkCount).toBe(1);
+    expect(overview.summary.placementCount).toBe(4);
+    expect(overview.summary.uniqueIdentityCount).toBe(2);
+    expect(overview.rows.some((row) => /TEMP VERIFY/i.test(row.displayName))).toBe(false);
+    expect(overview.rows.find((row) => row.displayName === "Big NAC")?.placementSummary).toMatch(/Brunch/);
   });
 });

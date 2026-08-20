@@ -536,6 +536,10 @@
 .inv-fb-stage-toolbar { margin-bottom: 8px; }
 .inv-fb-unsaved { margin: 0; color: var(--inv-gold); font-size: 12px; }
 .inv-fb-row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.inv-fb-load-more {
+  margin: 12px 0 0;
+  width: 100%;
+}
 .inv-fb-ingredient-search { margin-bottom: 8px; }
 .inv-fb-cost-delta { display: grid; gap: 4px; }
 @media (max-width: 720px) {
