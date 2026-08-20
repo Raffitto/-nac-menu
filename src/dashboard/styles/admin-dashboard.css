@@ -1732,3 +1732,25 @@ body {
   margin: 2px 0 0;
   font-weight: 600;
 }
+
+/* Mobile Menu Edit: one document scroll, edge-to-edge (desktop unchanged). */
+@media (max-width: 900px) {
+  .admin-shell.admin-shell--menu-page {
+    overflow: visible !important;
+    height: auto;
+    max-height: none;
+    min-height: 0 !important;
+  }
+
+  .admin-shell.admin-shell--menu-page .admin-content {
+    padding: 0;
+    overflow: visible !important;
+    min-height: 0 !important;
+    flex: none;
+    align-self: auto;
+  }
+
+  .admin-shell.admin-shell--menu-page .admin-keepalive-pane {
+    min-height: 0;
+  }
+}

@@ -2100,20 +2100,25 @@
 @media (max-width: 900px) {
   .mm {
     flex-direction: column;
-    height: 100dvh;
-    min-height: 100dvh;
-    overflow: hidden;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    overflow: visible;
   }
 
   .mm-body {
     flex-direction: column;
+    flex: none;
+    min-height: 0;
+    overflow: visible;
   }
 
   .mm-sidebar {
     width: 100%;
     min-width: 0;
     flex: 0 0 auto;
-    max-height: min(42vh, 320px);
+    max-height: none;
+    overflow: visible;
     border-right: none;
     border-bottom: 1px solid rgba(255,255,255,0.08);
   }
@@ -2152,12 +2157,10 @@
   .mm-cat-list {
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
     padding: 8px;
     gap: 6px;
-    max-height: min(36vh, 280px);
+    max-height: none;
   }
 
   .mm-cat-item {
@@ -2174,16 +2177,9 @@
   }
 
   .mm-main {
-    flex: 1;
+    flex: none;
     min-height: 0;
-    overflow: hidden;
-  }
-
-  .mm-content {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
 
   .mm-topbar {
@@ -2191,7 +2187,14 @@
   }
 
   .mm-content {
-    padding: 16px 18px 32px;
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+    padding: 16px 14px calc(32px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mm-content.has-command-dock {
+    padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   }
 
   .mm-item-grid {
@@ -2199,7 +2202,8 @@
   }
 
   .mm-editor {
-    width: 100vw;
+    width: 100%;
+    max-width: 100%;
   }
 
   .mm-field-row {
@@ -3440,6 +3444,6 @@
   }
 
   .mm-content.has-command-dock {
-    padding-bottom: 128px;
+    padding-bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   }
 }
