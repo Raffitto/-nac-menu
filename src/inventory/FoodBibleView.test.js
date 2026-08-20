@@ -147,6 +147,10 @@ describe("FoodBibleView", () => {
     expect(screen.getByTestId("download-selected-recipes-button")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("download-recipe-menu-1"));
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
+    URL.createObjectURL.mockClear();
+    fireEvent.click(screen.getByTestId("select-recipe-menu-1"));
+    fireEvent.click(screen.getByTestId("download-selected-recipes-button"));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalled());
   });
 
   test("opens recipe editor from a menu row", async () => {

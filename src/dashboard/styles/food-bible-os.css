@@ -1,0 +1,61 @@
+.nacos-food-bible {
+  padding-bottom: 48px;
+}
+
+.nacos-food-bible-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.nacos-food-bible-header h1 {
+  margin: 4px 0 6px;
+}
+
+.nacos-food-bible-branch {
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  color: rgba(249, 249, 247, 0.7);
+  font-size: 12px;
+}
+
+.nacos-food-bible-branch select {
+  min-height: 42px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #151b1d;
+  color: #f5f2eb;
+  padding: 0 10px;
+}
+
+.nacos-food-bible .inv-food-bible {
+  max-width: none;
+}
+
+.nacos-food-bible .inv-fb-table {
+  min-width: 920px;
+}
+
+@media (max-width: 760px) {
+  .nacos-food-bible-header {
+    align-items: stretch;
+  }
+
+  .nacos-food-bible-branch,
+  .nacos-food-bible-branch select {
+    width: 100%;
+  }
+
+  .nacos-food-bible .inv-ingredients-toolbar {
+    align-items: stretch;
+  }
+
+  .nacos-food-bible .inv-fb-row-actions,
+  .nacos-food-bible .inv-button {
+    min-height: 42px;
+  }
+}

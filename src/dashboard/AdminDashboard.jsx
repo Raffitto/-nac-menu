@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Crown,
   Info,
+  BookOpen,
 } from "lucide-react";
 import {
   BarChart,
@@ -45,7 +46,7 @@ import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformF
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
-import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS } from "./navigation";
+import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS, adminViewFromLocation, syncAdminViewLocation } from "./navigation";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
 import OperationalDashboard from "./views/OperationalDashboard";
@@ -79,12 +80,14 @@ import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
 
 const AnalyticsDashboard = lazy(() => import("./AnalyticsDashboard"));
+const FoodBibleOsView = lazy(() => import("./views/FoodBibleOsView"));
 
 const NAV_ICONS = {
   overview: LayoutDashboard,
   intelligence: Brain,
   reviews: Star,
   menu: UtensilsCrossed,
+  "food-bible": BookOpen,
   branches: Store,
   settings: Settings,
 };
@@ -169,7 +172,7 @@ export default function AdminDashboard(props) {
 }
 
 function AdminDashboardContent({ onBack, session = null, authChecked = true, rbacEnvInvalid = false }) {
-  const [adminView, setAdminView] = useState("overview");
+  const [adminView, setAdminView] = useState(adminViewFromLocation);
   const unifiedOverview = isUnifiedOverviewEnabled();
   const [overviewTab, setOverviewTab] = useState("operations");
   const rbac = useRbac();
@@ -188,6 +191,10 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
       setAdminView(visibleNav[0].id);
     }
   }, [adminView, rbac, visibleNav]);
+
+  useEffect(() => {
+    syncAdminViewLocation(adminView);
+  }, [adminView]);
 
   const configured = isSupabaseConfigured();
 
@@ -344,6 +351,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                   key={item.id}
                   type="button"
                   className={`sidebar-item ${isActive ? "active" : ""}`}
+                  data-testid={`nacos-nav-${item.id}`}
                   whileHover={{ x: 6 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setAdminView(item.id)}
@@ -390,6 +398,14 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             </MenuEditorAuth>
           ) : (
             <AccessDeniedPanel message="Menu management is not enabled for your NAC OS role." />
+          )
+        ) : adminView === "food-bible" ? (
+          rbac.canAccessNav("food-bible") ? (
+            <Suspense fallback={<ViewFallback label="Loading Food Bible…" />}>
+              <FoodBibleOsView />
+            </Suspense>
+          ) : (
+            <AccessDeniedPanel message="Food Bible access is not enabled for your NAC OS role." />
           )
         ) : adminView === "branches" ? (
           rbac.canAccessNav("branches") ? (
