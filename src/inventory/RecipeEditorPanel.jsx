@@ -35,7 +35,7 @@ import {
   yieldSummary,
 } from "./foodBible";
 import { costTrustLabel, formatSar } from "./costTrust";
-import { classifyRecipeCosting, recipeCostDelta, withFoodCostPct } from "./recipeGraph";
+import { classifyRecipeCosting, computeLineCost, recipeCostDelta, withFoodCostPct } from "./recipeGraph";
 
 function emptyLine() {
   return {
@@ -227,21 +227,21 @@ export default function RecipeEditorPanel({
   }), [bundle, form, lines, ingredientById, recipeById, target, allLinesByRecipeId]);
 
   const liveCosting = useMemo(() => {
-    const costByIngredientId = {};
+    const costByIngredientId = { ...(overview?.costByCanonicalId || {}) };
     for (const line of costTrust?.lines || []) {
       const match = activeIngredients.find((ingredient) => ingredient.canonicalName === line.itemName);
       const id = line.ingredientId || match?.id;
       if (!id || line.historicalUnitCost == null || line.historicalUnitCost === "") continue;
       costByIngredientId[id] = {
         amount: line.historicalUnitCost,
-        unit: line.normalizedBaseUnit || "each",
+        unit: line.normalizedBaseUnit || costByIngredientId[id]?.unit || "each",
       };
     }
     const nestedCostByRecipeId = {};
     const costing = classifyRecipeCosting({ lines, costByIngredientId, nestedCostByRecipeId });
     const sellingPrice = target?.placements?.[0]?.price || target?.cost?.sellingPrice;
     return withFoodCostPct(costing, sellingPrice);
-  }, [costTrust, lines, activeIngredients, target]);
+  }, [costTrust, lines, activeIngredients, target, overview?.costByCanonicalId]);
 
   const costDelta = recipeCostDelta(
     costTrust?.costPerPortion ?? costTrust?.outputUnitCost,
@@ -420,31 +420,46 @@ export default function RecipeEditorPanel({
               <div className="inv-fb-section-heading">
                 <div>
                   <h3>Recipe cost</h3>
-                  <p>{liveCosting.state}</p>
+                  <p data-testid="recipe-costing-state">{liveCosting.state}</p>
                 </div>
               </div>
               <div className="inv-fb-summary inv-fb-cost-delta">
                 <article>
-                  <strong>{formatSar(costDelta.previous)}</strong>
-                  <span>Previous recipe cost</span>
+                  <strong>{formatSar(liveCosting.total ?? liveCosting.knownSubtotal)}</strong>
+                  <span>{liveCosting.state === "fully costed" ? "Recipe cost" : "Known subtotal"}</span>
                 </article>
                 <article>
-                  <strong>{formatSar(costDelta.next)}</strong>
-                  <span>New recipe cost</span>
+                  <strong>{liveCosting.foodCostPct == null ? "Unavailable" : `${Number(liveCosting.foodCostPct).toFixed(1)}%`}</strong>
+                  <span>Food cost %</span>
+                </article>
+                <article>
+                  <strong>{liveCosting.missing?.length || 0}</strong>
+                  <span>Missing-cost ingredients</span>
+                </article>
+                <article>
+                  <strong>{liveCosting.coveragePct ?? 0}%</strong>
+                  <span>Ingredient cost coverage</span>
                 </article>
                 <article>
                   <strong>
                     {costDelta.difference == null
                       ? "Unavailable"
-                      : `${costDelta.difference > 0 ? "+" : ""}${Number(costDelta.difference).toFixed(2)} SAR / serving`}
+                      : `${costDelta.difference > 0 ? "+" : ""}${formatSar(costDelta.difference)}`}
                   </strong>
-                  <span>Difference</span>
-                </article>
-                <article>
-                  <strong>{liveCosting.foodCostPct == null ? "Unavailable" : `${Number(liveCosting.foodCostPct).toFixed(1)}%`}</strong>
-                  <span>Theoretical food cost %</span>
+                  <span>Vs last trusted cost</span>
                 </article>
               </div>
+              {liveCosting.state === "partially costed" ? (
+                <div className="inv-banner inv-banner--error" data-testid="recipe-missing-cost-banner">
+                  <AlertTriangle size={16} />
+                  <span>
+                    Missing cost: {(liveCosting.missing || [])
+                      .map((item) => item.name || item.ingredientId || item.code)
+                      .filter(Boolean)
+                      .join(", ") || "one or more ingredients"}
+                  </span>
+                </div>
+              ) : null}
             </section>
 
             {costTrust ? (
@@ -724,6 +739,7 @@ export default function RecipeEditorPanel({
                     const lineKey = line.clientId || line.id || index;
                     const duplicate = duplicateLineWarning(lines.filter((entry) => entry !== line), line);
                     const ingredient = ingredientById.get(line.ingredientId);
+                    const lineCost = computeLineCost(line, overview?.costByCanonicalId || {});
                     return (
                       <div key={lineKey} className="inv-fb-line" data-testid={`recipe-line-${index}`}>
                         <label>
@@ -793,6 +809,11 @@ export default function RecipeEditorPanel({
                         {ingredient ? (
                           <p className="inv-ingredients-help">Inventory base unit: {unitLabel(ingredient.baseInventoryUnit)}</p>
                         ) : null}
+                        <p className="inv-ingredients-help" data-testid={`recipe-line-cost-${index}`}>
+                          {lineCost.status === "COSTED"
+                            ? `Line cost ${formatSar(lineCost.amount)}`
+                            : "Missing cost"}
+                        </p>
                         {stages.length ? (
                           <label>
                             <span>Stage</span>

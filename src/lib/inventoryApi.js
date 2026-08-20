@@ -22,6 +22,11 @@ import {
   summarizeVarianceCommandCenter,
 } from "../inventory/varianceIntelligence";
 import { mergeTheoreticalConsumption } from "../inventory/dataReadiness";
+import {
+  buildCostByCanonicalId,
+  collectProcurementIdentities,
+  reconcileProcurementToCanonical,
+} from "../inventory/foodBibleProcurementCost";
 
 function requireClient() {
   if (!supabase) throw new Error("Supabase is not configured");
@@ -905,6 +910,126 @@ export async function fetchIngredientDependencySummary(ingredientId) {
     receiptCount,
     hasDependencies: movementCount + catalogueCount + receiptCount > 0,
   };
+}
+
+export async function fetchCanonicalCostContext({ branchId, asOf = new Date().toISOString() }) {
+  const client = requireClient();
+  const [ingredients, history, receipts, catalogue, related] = await Promise.all([
+    fetchIngredients({ branchId, includeInactive: true }),
+    unwrap(client.from("inventory_ingredient_cost_history").select("*").eq("branch_id", branchId), "Fetch cost history"),
+    unwrap(client.from("inventory_purchase_receipt_lines").select("ingredient_id,original_description,normalized_description,canonical_unit,unit_cost_canonical,pack_quantity,pack_size,pack_unit,created_at"), "Fetch receipt cost lines"),
+    unwrap(client.from("inventory_supplier_catalogue_items").select("id,ingredient_id,original_product_name,normalized_product_name,purchase_unit,pack_quantity,pack_size,pack_unit,conversion_factor,last_purchase_price,last_purchase_at"), "Fetch supplier catalogue"),
+    unwrap(client.from("inventory_related_items").select("*").eq("branch_id", branchId).eq("active", true), "Fetch related ingredients"),
+  ]);
+  const identities = collectProcurementIdentities({
+    history,
+    receipts,
+    catalogue,
+    ingredients: ingredients.map((item) => ({
+      id: item.id,
+      canonical_name: item.canonicalName,
+      canonicalName: item.canonicalName,
+      base_inventory_unit: item.baseInventoryUnit,
+    })),
+  });
+  const reconcile = reconcileProcurementToCanonical({
+    identities,
+    canonicalIngredients: ingredients,
+    existingRelated: related,
+  });
+  return {
+    costByCanonicalId: buildCostByCanonicalId({
+      canonicalIngredients: ingredients,
+      historyRows: history,
+      related,
+      asOf,
+    }),
+    reconcile,
+    identities,
+  };
+}
+
+export async function fetchIngredientCostTrace({ ingredientId, branchId }) {
+  const client = requireClient();
+  const [history, receipts, catalogue, related] = await Promise.all([
+    unwrap(
+      client.from("inventory_ingredient_cost_history")
+        .select("weighted_average_cost,canonical_unit_cost,canonical_unit,effective_at,purchase_date")
+        .eq("branch_id", branchId)
+        .eq("ingredient_id", ingredientId)
+        .order("effective_at", { ascending: false })
+        .limit(5),
+      "Fetch ingredient cost history",
+    ),
+    unwrap(
+      client.from("inventory_purchase_receipt_lines")
+        .select("original_description,normalized_description,canonical_unit,unit_cost_canonical,pack_quantity,pack_size,pack_unit,created_at")
+        .eq("ingredient_id", ingredientId)
+        .order("created_at", { ascending: false })
+        .limit(5),
+      "Fetch ingredient receipts",
+    ).catch(() => []),
+    unwrap(
+      client.from("inventory_supplier_catalogue_items")
+        .select("original_product_name,purchase_unit,pack_quantity,pack_size,pack_unit,conversion_factor,last_purchase_price,last_purchase_at")
+        .eq("ingredient_id", ingredientId)
+        .limit(5),
+      "Fetch ingredient catalogue",
+    ).catch(() => []),
+    unwrap(
+      client.from("inventory_related_items")
+        .select("ingredient_id,related_ingredient_id")
+        .eq("branch_id", branchId)
+        .eq("active", true)
+        .or(`ingredient_id.eq.${ingredientId},related_ingredient_id.eq.${ingredientId}`),
+      "Fetch ingredient relations",
+    ).catch(() => []),
+  ]);
+  const latestHistory = (history || [])[0] || null;
+  const latestReceipt = (receipts || [])[0] || null;
+  const catalogueRow = (catalogue || [])[0] || null;
+  return {
+    latestUnitCost: latestHistory
+      ? Number(latestHistory.weighted_average_cost || latestHistory.canonical_unit_cost)
+      : (latestReceipt ? Number(latestReceipt.unit_cost_canonical) : null),
+    unit: latestHistory?.canonical_unit || latestReceipt?.canonical_unit || catalogueRow?.purchase_unit || null,
+    lastPurchaseDate: latestHistory?.purchase_date || latestHistory?.effective_at || latestReceipt?.created_at || catalogueRow?.last_purchase_at || null,
+    supplierName: null,
+    sourceReference: latestReceipt?.original_description || catalogueRow?.original_product_name || null,
+    packConversion: catalogueRow?.conversion_factor
+      ? `${catalogueRow.pack_quantity} × ${catalogueRow.pack_size} ${catalogueRow.pack_unit}`
+      : (latestReceipt?.pack_size ? `${latestReceipt.pack_quantity} × ${latestReceipt.pack_size} ${latestReceipt.pack_unit}` : null),
+    relatedCount: (related || []).length,
+  };
+}
+
+export async function persistOperationalIngredientLink({ branchId, canonicalId, procurementId, notes }) {
+  const client = requireClient();
+  const existing = await unwrap(
+    client.from("inventory_related_items")
+      .select("id")
+      .eq("branch_id", branchId)
+      .eq("ingredient_id", canonicalId)
+      .eq("related_ingredient_id", procurementId)
+      .eq("relationship_type", "same_operational_ingredient")
+      .maybeSingle(),
+    "Check existing operational ingredient link",
+  );
+  if (existing?.id) return { id: existing.id, created: false };
+  const userId = await currentUserId();
+  const row = await unwrap(
+    client.from("inventory_related_items").insert({
+      branch_id: branchId,
+      ingredient_id: canonicalId,
+      related_ingredient_id: procurementId,
+      relationship_type: "same_operational_ingredient",
+      notes: notes || "Food Bible procurement identity mapping",
+      created_by: userId,
+      active: true,
+    }).select("id").single(),
+    "Persist operational ingredient link",
+  );
+  return { id: row.id, created: true };
 }
 
 export async function updateIngredient(ingredientId, input) {

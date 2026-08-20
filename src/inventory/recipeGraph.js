@@ -225,7 +225,7 @@ export function resolveCanonicalSaleToRecipe({
   });
 }
 
-function lineCost(line, costByIngredientId = {}) {
+export function computeLineCost(line, costByIngredientId = {}) {
   if (line.subRecipeId || line.sub_recipe_id) {
     return { kind: "sub_recipe", amount: null, status: "nested" };
   }
@@ -257,7 +257,7 @@ export function classifyRecipeCosting({
 } = {}) {
   const usable = lines.filter((line) => line.ingredientId || line.subRecipeId || line.sub_recipe_id);
   if (!usable.length) {
-    return { state: COSTING_STATES.UNCOSTED, total: null, missing: ["NO_LINES"], foodCostPct: null };
+    return { state: COSTING_STATES.UNCOSTED, total: null, knownSubtotal: null, coveragePct: 0, missing: ["NO_LINES"], foodCostPct: null };
   }
   let total = 0;
   let costed = 0;
@@ -275,7 +275,7 @@ export function classifyRecipeCosting({
       costed += 1;
       continue;
     }
-    const priced = lineCost(line, costByIngredientId);
+    const priced = computeLineCost(line, costByIngredientId);
     if (priced.status !== "COSTED") {
       missing.push(priced);
       continue;
@@ -283,13 +283,15 @@ export function classifyRecipeCosting({
     total += priced.amount;
     costed += 1;
   }
+  const coveragePct = Math.round((costed / usable.length) * 100);
+  const knownSubtotal = costed > 0 ? total : null;
   if (costed === 0) {
-    return { state: COSTING_STATES.UNCOSTED, total: null, missing, foodCostPct: null };
+    return { state: COSTING_STATES.UNCOSTED, total: null, knownSubtotal: null, coveragePct, missing, foodCostPct: null };
   }
   if (missing.length) {
-    return { state: COSTING_STATES.PARTIALLY_COSTED, total: null, missing, foodCostPct: null };
+    return { state: COSTING_STATES.PARTIALLY_COSTED, total: null, knownSubtotal, coveragePct, missing, foodCostPct: null };
   }
-  return { state: COSTING_STATES.FULLY_COSTED, total, missing: [], foodCostPct: null };
+  return { state: COSTING_STATES.FULLY_COSTED, total, knownSubtotal: total, coveragePct: 100, missing: [], foodCostPct: null };
 }
 
 export function withFoodCostPct(costing, sellingPrice) {

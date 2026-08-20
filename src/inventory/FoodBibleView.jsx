@@ -12,6 +12,7 @@ import {
 import {
   fetchFoodBibleOverview,
   fetchInventoryStaffAccess,
+  fetchCanonicalCostContext,
 } from "../lib/inventoryApi";
 import {
   currentFoodBibleSnapshots,
@@ -78,11 +79,12 @@ export default function FoodBibleView({
     setLoading(true);
     setError("");
     try {
-      const [data, staffAccess] = await Promise.all([
+      const [data, staffAccess, costContext] = await Promise.all([
         fetchFoodBibleOverview({ branchId, asOf: costAsOf }),
         fetchInventoryStaffAccess(),
+        fetchCanonicalCostContext({ branchId, asOf: `${costAsOf}T23:59:59+03:00` }).catch(() => ({ costByCanonicalId: {} })),
       ]);
-      setOverview(data);
+      setOverview({ ...data, costByCanonicalId: costContext.costByCanonicalId || {} });
       setAccess(staffAccess);
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not load Food Bible."));

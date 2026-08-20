@@ -1,12 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FoodBibleView from "./FoodBibleView";
-import { fetchFoodBibleOverview, fetchInventoryStaffAccess } from "../lib/inventoryApi";
+import { fetchFoodBibleOverview, fetchInventoryStaffAccess, fetchCanonicalCostContext } from "../lib/inventoryApi";
 import { READINESS } from "./foodBible";
 
 jest.mock("../lib/inventoryApi", () => ({
   createRecipe: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
+  fetchCanonicalCostContext: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
@@ -76,6 +77,7 @@ describe("FoodBibleView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     fetchFoodBibleOverview.mockResolvedValue(overview);
+    fetchCanonicalCostContext.mockResolvedValue({ costByCanonicalId: {} });
     fetchInventoryStaffAccess.mockResolvedValue(managerAccess);
   });
 

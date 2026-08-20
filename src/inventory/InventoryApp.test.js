@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InventoryApp from "./InventoryApp";
 import {
   fetchFoodBibleOverview,
+  fetchCanonicalCostContext,
   fetchInventoryExceptions,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
@@ -47,6 +48,7 @@ jest.mock("../lib/inventoryApi", () => ({
   fetchCountSessions: jest.fn(),
   fetchInventoryAuditTrail: jest.fn(),
   fetchFoodBibleOverview: jest.fn(),
+  fetchCanonicalCostContext: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
   fetchInventoryDataReadiness: jest.fn(),
@@ -126,6 +128,7 @@ describe("InventoryApp", () => {
       ingredients: [],
       hasActiveIngredients: false,
     });
+    fetchCanonicalCostContext.mockResolvedValue({ costByCanonicalId: {} });
     fetchInventoryStaffAccess.mockResolvedValue({
       vaultRole: "branch_manager",
       primaryBranchId: "khobar",

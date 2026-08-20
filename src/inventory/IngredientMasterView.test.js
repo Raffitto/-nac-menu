@@ -6,6 +6,7 @@ import {
   fetchIngredientDependencySummary,
   fetchIngredients,
   fetchInventoryStaffAccess,
+  fetchIngredientCostTrace,
   findDuplicateIngredient,
   setIngredientActive,
   updateIngredient,
@@ -15,6 +16,7 @@ jest.mock("../lib/inventoryApi", () => ({
   createIngredient: jest.fn(),
   fetchIngredientDependencySummary: jest.fn(),
   fetchIngredients: jest.fn(),
+  fetchIngredientCostTrace: jest.fn(),
   fetchInventoryStaffAccess: jest.fn(),
   findDuplicateIngredient: jest.fn(),
   setIngredientActive: jest.fn(),
@@ -66,6 +68,7 @@ describe("IngredientMasterView", () => {
     fetchIngredients.mockResolvedValue(sampleIngredients);
     fetchInventoryStaffAccess.mockResolvedValue(managerAccess);
     fetchIngredientDependencySummary.mockResolvedValue({ hasDependencies: false, movementCount: 0, catalogueCount: 0, receiptCount: 0 });
+    fetchIngredientCostTrace.mockResolvedValue({ latestUnitCost: null });
     findDuplicateIngredient.mockResolvedValue(null);
     createIngredient.mockResolvedValue({ id: "ing-new" });
     updateIngredient.mockResolvedValue({ id: "ing-1" });

@@ -167,6 +167,35 @@ describe("RecipeEditorPanel", () => {
     expect(await screen.findByTestId("recipe-cost-trust-detail")).toHaveTextContent("SAR 3.00");
   });
 
+  test("marks missing ingredient cost instead of showing zero", async () => {
+    fetchRecipeBundle.mockResolvedValue({
+      recipe: {
+        id: "recipe-2",
+        name: "Big NAC",
+        recipeType: "menu_item",
+        outputQuantity: "1",
+        outputUnit: "each",
+        active: true,
+      },
+      version: { id: "version-2", documentation: {} },
+      lines: [{ id: "line-2", ingredientId: "ing-1", quantity: "160", unit: "gram" }],
+      stages: [],
+    });
+    render(
+      <RecipeEditorPanel
+        branchId="khobar"
+        target={{ recipeId: "recipe-2", displayName: "Big NAC", placements: [{ price: 48 }] }}
+        overview={overview}
+        canEditBranch
+        canEditNetwork={false}
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("recipe-costing-state")).toHaveTextContent("uncosted");
+    expect(screen.getByTestId("recipe-line-cost-0")).toHaveTextContent("Missing cost");
+  });
+
   test("rejects circular component selection", async () => {
     fetchRecipeBundle.mockResolvedValue({
       recipe: { id: "recipe-1", name: "Sauce", recipeType: "preparation", outputQuantity: "1", outputUnit: "litre", active: true },

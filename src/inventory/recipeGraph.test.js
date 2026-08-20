@@ -3,6 +3,7 @@ import {
   classifyRecipeCosting,
   detectRecipeCycle,
   expandRecipeToIngredients,
+  withFoodCostPct,
   resolveCanonicalSaleToRecipe,
   resolveRecipeVersionForDate,
   theoreticalConsumptionForSale,
@@ -139,6 +140,9 @@ describe("recipeGraph", () => {
     });
     expect(partial.state).toBe(COSTING_STATES.PARTIALLY_COSTED);
     expect(partial.total).toBeNull();
+    expect(partial.knownSubtotal).toBeCloseTo(7.2, 5);
+    expect(withFoodCostPct(full, 46).foodCostPct).toBeCloseTo(20, 5);
+    expect(withFoodCostPct(partial, 46).foodCostPct).toBeNull();
     const none = classifyRecipeCosting({ lines, costByIngredientId: {} });
     expect(none.state).toBe(COSTING_STATES.UNCOSTED);
     expect(none.total).toBeNull();

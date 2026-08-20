@@ -13,6 +13,7 @@ import {
   fetchIngredientDependencySummary,
   fetchIngredients,
   fetchInventoryStaffAccess,
+  fetchIngredientCostTrace,
   findDuplicateIngredient,
   setIngredientActive,
   updateIngredient,
@@ -69,6 +70,7 @@ export default function IngredientMasterView({ branchId }) {
   const [form, setForm] = useState({ ...EMPTY_INGREDIENT_FORM });
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const [unitLocked, setUnitLocked] = useState(false);
+  const [costTrace, setCostTrace] = useState(null);
 
   const canEditBranch = canManageBranchIngredients(access, branchId);
   const canEditNetwork = canManageNetworkIngredients(access);
@@ -127,9 +129,12 @@ export default function IngredientMasterView({ branchId }) {
     setDuplicateWarning("");
     setForm(formFromIngredient(ingredient));
     setUnitLocked(false);
+    setCostTrace(null);
     try {
       const summary = await fetchIngredientDependencySummary(ingredient.id);
       setUnitLocked(summary.hasDependencies);
+      const trace = await fetchIngredientCostTrace({ ingredientId: ingredient.id, branchId });
+      setCostTrace(trace);
     } catch {
       setUnitLocked(true);
     }
@@ -422,6 +427,10 @@ export default function IngredientMasterView({ branchId }) {
             </header>
 
             <form className="inv-ingredients-form" onSubmit={handleSave}>
+              {duplicateWarning ? (
+                <p className="inv-ingredients-warning" data-testid="ingredient-duplicate-warning">{duplicateWarning}</p>
+              ) : null}
+
               <label>
                 <span>Ingredient name</span>
                 <input
@@ -433,8 +442,23 @@ export default function IngredientMasterView({ branchId }) {
                 />
               </label>
 
-              {duplicateWarning ? (
-                <p className="inv-ingredients-warning" data-testid="ingredient-duplicate-warning">{duplicateWarning}</p>
+              {panelMode === "edit" && costTrace ? (
+                <div className="inv-fb-readonly-block" data-testid="ingredient-cost-trace">
+                  <span>Why this ingredient costs what it does</span>
+                  <strong>
+                    {costTrace.latestUnitCost == null
+                      ? "No purchase cost on file"
+                      : `${Number(costTrace.latestUnitCost).toFixed(4)} per ${costTrace.unit || "unit"}`}
+                  </strong>
+                  <p>
+                    {[
+                      costTrace.supplierName ? `Supplier ${costTrace.supplierName}` : null,
+                      costTrace.lastPurchaseDate ? `Last purchase ${String(costTrace.lastPurchaseDate).slice(0, 10)}` : null,
+                      costTrace.sourceReference ? `Source ${costTrace.sourceReference}` : null,
+                      costTrace.packConversion ? `Pack ${costTrace.packConversion}` : null,
+                    ].filter(Boolean).join(" · ") || "No supplier receipt history is linked yet."}
+                  </p>
+                </div>
               ) : null}
 
               <label>
