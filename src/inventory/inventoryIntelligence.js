@@ -12,6 +12,7 @@ const UNIT_ALIASES = Object.freeze({
   grams: "gram",
   g: "gram",
   gm: "gram",
+  gr: "gram",
   kilogram: "kilogram",
   kilograms: "kilogram",
   kg: "kilogram",

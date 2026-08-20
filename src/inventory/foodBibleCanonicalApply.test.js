@@ -1,8 +1,19 @@
-import { buildApplyPlan, matchCanonicalIngredient, recipeImportKey, applyDecision } from "./foodBibleCanonicalApply";
+import { buildApplyPlan, matchCanonicalIngredient, recipeImportKey, applyDecision, inferredBatchOutput } from "./foodBibleCanonicalApply";
 import { RECONCILE_STATES } from "./recipeMenuReconcile";
 import { kitchenRecipeCoverage, requiresKitchenRecipe } from "./foodBibleKitchenCoverage";
+import fs from "fs";
+import path from "path";
 
 describe("foodBibleCanonicalApply", () => {
+  test("delete grant migration is authenticated-only", () => {
+    const sql = fs.readFileSync(
+      path.resolve(__dirname, "../../supabase/migrations/20260820180000_inventory_recipe_line_delete_grant.sql"),
+      "utf8",
+    );
+    expect(sql).toMatch(/grant delete on public\.inventory_recipe_version_lines to authenticated/i);
+    expect(sql).toMatch(/grant delete on public\.inventory_recipe_stages to authenticated/i);
+    expect(sql).not.toMatch(/to anon/i);
+  });
   test("reuses singular/plural ingredient names instead of creating duplicates", () => {
     const match = matchCanonicalIngredient("Tomatoes", [
       { id: "1", canonicalName: "Tomato", normalizedSearchName: "tomato" },
@@ -20,6 +31,14 @@ describe("foodBibleCanonicalApply", () => {
     expect(applyDecision({ fingerprint: "abc" }, "abc", { hasLines: false, plannedLineCount: 4, existingLineCount: 0 })).toBe("new_version");
     expect(applyDecision({ fingerprint: "abc" }, "abc", { hasLines: true, plannedLineCount: 8, existingLineCount: 1 })).toBe("new_version");
     expect(applyDecision({ fingerprint: "abc" }, "abc", { hasLines: true, plannedLineCount: 3, existingLineCount: 3 })).toBe("skip_identical");
+    expect(applyDecision({ fingerprint: "abc" }, "abc", { hasLines: true, plannedLineCount: 3, existingLineCount: 3, outputChanged: true })).toBe("new_version");
+    expect(applyDecision({ fingerprint: "abc" }, "abc", {
+      hasLines: true,
+      plannedLineCount: 4,
+      existingLineCount: 4,
+      plannedSubRecipes: true,
+      existingHasSubRecipe: false,
+    })).toBe("new_version");
   });
 
   test("sub-recipe ingredient names are not created as duplicate ingredients", () => {
@@ -53,7 +72,7 @@ describe("foodBibleCanonicalApply", () => {
     });
     const pasta = plan.persist.find((row) => /rigatoni/i.test(row.name));
     expect(pasta.lines[0].subRecipeName).toMatch(/vodka tomato sauce/i);
-    expect(plan.createIngredientCount).toBe(1);
+    expect(plan.createIngredientCount).toBe(2);
   });
 
   test("missing ingredient cost stays unknown, never zero", () => {
@@ -127,5 +146,78 @@ describe("kitchen recipe coverage", () => {
     expect(coverage.kitchenRequired).toBe(2);
     expect(coverage.kitchenMatched).toBe(1);
     expect(coverage.kitchenPct).toBe(50);
+  });
+});
+
+describe("Sea Bass apply graph", () => {
+  test("finished dish links sauce as a component and does not consume the marinate card", () => {
+    expect(inferredBatchOutput("1 Pax", [
+      { quantity: 30, unit: "gram" },
+      { quantity: 200, unit: "millilitre" },
+    ], { force: true })).toEqual(expect.objectContaining({ outputQuantity: 230, outputUnit: "gram" }));
+
+    const plan = buildApplyPlan({
+      ingredients: [],
+      recipes: [
+        {
+          ksaOperationalTitle: "SEA BASS CREOLE WITH PEPPER CREAM SAUCE",
+          sourceFile: "Sea bass creole.pdf",
+          recipeKind: "finished",
+          yieldRaw: "1 Pax",
+          ksaIngredients: [
+            { ksaOperationalName: "Sea bass fillet", sourceQuantity: 1, sourceUnit: "pcs" },
+            { ksaOperationalName: "Salt", sourceQuantity: 2, sourceUnit: "gr" },
+            { ksaOperationalName: "Creole pepper sauce", sourceQuantity: 70, sourceUnit: "gr" },
+            { ksaOperationalName: "Watercress", sourceQuantity: 10, sourceUnit: "gr" },
+          ],
+        },
+        {
+          ksaOperationalTitle: "SEA BASS MARINATE",
+          sourceFile: "Sea bass creole.pdf",
+          recipeKind: "prep",
+          yieldRaw: "1 Batch",
+          ksaIngredients: [
+            { ksaOperationalName: "Sea bass", sourceQuantity: 1, sourceUnit: "pcs" },
+            { ksaOperationalName: "creole spice", sourceQuantity: 5, sourceUnit: "gr" },
+            { ksaOperationalName: "Salt", sourceQuantity: 3, sourceUnit: "gr" },
+          ],
+        },
+        {
+          ksaOperationalTitle: "CREOLE PEPPER SAUCE",
+          sourceFile: "Sea bass creole.pdf",
+          recipeKind: "prep",
+          yieldRaw: "1 Batch",
+          ksaIngredients: [
+            { ksaOperationalName: "Butter", sourceQuantity: 30, sourceUnit: "g" },
+            { ksaOperationalName: "Creole spice mix", sourceQuantity: 15, sourceUnit: "g" },
+            { ksaOperationalName: "Tomato paste", sourceQuantity: 10, sourceUnit: "g" },
+            { ksaOperationalName: "Double cream", sourceQuantity: 200, sourceUnit: "ml" },
+            { ksaOperationalName: "Red pepper", sourceQuantity: 10, sourceUnit: "g" },
+            { ksaOperationalName: "Yellow pepper", sourceQuantity: 10, sourceUnit: "g" },
+          ],
+        },
+      ],
+      recipeRows: [
+        {
+          recipeTitle: "SEA BASS CREOLE WITH PEPPER CREAM SAUCE",
+          state: RECONCILE_STATES.ACTIVE_MATCHED,
+          sourceFile: "Sea bass creole.pdf",
+          liveItem: { primary: { id: "menu-seabass", placement_group_id: "g1" } },
+        },
+        { recipeTitle: "SEA BASS MARINATE", state: RECONCILE_STATES.SUB_RECIPE_NON_SELLABLE, recipeKind: "prep", sourceFile: "Sea bass creole.pdf" },
+        { recipeTitle: "CREOLE PEPPER SAUCE", state: RECONCILE_STATES.SUB_RECIPE_NON_SELLABLE, recipeKind: "prep", sourceFile: "Sea bass creole.pdf" },
+      ],
+    });
+    const finished = plan.persist.find((row) => /creole with pepper/i.test(row.name));
+    const sauce = plan.persist.find((row) => /^creole pepper sauce$/i.test(row.name));
+    const marinate = plan.persist.find((row) => /marinate/i.test(row.name));
+    expect(finished.lines).toHaveLength(4);
+    expect(finished.lines.some((line) => /marinate/i.test(line.sourceName || ""))).toBe(false);
+    expect(finished.lines.find((line) => /creole pepper sauce/i.test(line.sourceName)).subRecipeName).toMatch(/creole pepper sauce/i);
+    expect(plan.ingredientActions.some((row) => /creole pepper sauce/i.test(row.canonicalName))).toBe(true);
+    expect(sauce.outputUnit).toBe("gram");
+    expect(sauce.outputQuantity).toBe(275);
+    expect(sauce.lines).toHaveLength(6);
+    expect(marinate.lines.some((line) => /sea bass/i.test(line.sourceName))).toBe(true);
   });
 });

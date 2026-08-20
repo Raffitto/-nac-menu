@@ -44,6 +44,7 @@ async function loadModules() {
     pdf: load(path.join(root, "src/inventory/recipePdfExport.js")),
     foodBible: load(path.join(root, "src/inventory/foodBible.js")),
     intel: load(path.join(root, "src/inventory/inventoryIntelligence.js")),
+    cost: load(path.join(root, "src/inventory/foodBibleCostReconcile.js")),
   };
 }
 
@@ -269,18 +270,22 @@ async function main() {
     const { data: already } = await client.from("inventory_recipes").select("*").eq("internal_name", row.importKey).maybeSingle();
     let liveFingerprint = null;
     let lineCount = 0;
+    let existingHasSubRecipe = false;
+    let versionDocs = [];
     if (already?.id) {
-      const { data: versionDocs } = await client.from("inventory_recipe_versions")
-        .select("id,documentation,status,version_number")
+      const fetched = await client.from("inventory_recipe_versions")
+        .select("id,documentation,status,version_number,output_quantity,output_unit")
         .eq("recipe_id", already.id)
         .order("version_number", { ascending: false });
-      liveFingerprint = (versionDocs || []).find((version) => version.documentation?.fingerprint)?.documentation?.fingerprint || null;
-      const versionIds = (versionDocs || []).map((version) => version.id);
+      versionDocs = fetched.data || [];
+      liveFingerprint = versionDocs.find((version) => version.documentation?.fingerprint)?.documentation?.fingerprint || null;
+      const versionIds = versionDocs.map((version) => version.id);
       if (versionIds.length) {
-        const activeIds = (versionDocs || []).filter((version) => version.status === "active" || version.status === "retired").map((version) => version.id);
+        const activeIds = versionDocs.filter((version) => version.status === "active" || version.status === "retired").map((version) => version.id);
         if (activeIds.length) {
-          const { count } = await client.from("inventory_recipe_version_lines").select("id", { count: "exact", head: true }).in("recipe_version_id", activeIds);
-          lineCount = count || 0;
+          const { data: existingLines } = await client.from("inventory_recipe_version_lines").select("id,sub_recipe_id").in("recipe_version_id", activeIds);
+          lineCount = (existingLines || []).length;
+          existingHasSubRecipe = (existingLines || []).some((line) => line.sub_recipe_id);
         }
       }
     }
@@ -291,10 +296,21 @@ async function main() {
         fingerprint: liveFingerprint,
       }
       : existingWithFingerprint.find((recipe) => recipe.internalName === row.importKey);
+    const activeVersion = (versionDocs || []).find((version) => version.status === "active");
     const decision = mods.apply.applyDecision(existing, row.fingerprint, {
       hasLines: Boolean(already) && lineCount > 0,
       plannedLineCount: row.lines.length,
       existingLineCount: lineCount,
+      plannedSubRecipes: row.lines.some((line) => line.subRecipeName),
+      existingHasSubRecipe,
+      outputChanged: Boolean(already) && (
+        String(already.output_unit || "") !== String(row.outputUnit || "")
+        || Number(already.output_quantity) !== Number(row.outputQuantity)
+        || (activeVersion && (
+          String(activeVersion.output_unit || "") !== String(row.outputUnit || "")
+          || Number(activeVersion.output_quantity) !== Number(row.outputQuantity)
+        ))
+      ),
     });
     let recipeId = existing?.id || already?.id || null;
     let versionId = null;
@@ -351,6 +367,11 @@ async function main() {
         active: row.active,
         menu_item_id: row.menuItemId,
         placement_group_id: row.placementGroupId,
+        output_quantity: row.outputQuantity,
+        output_unit: row.outputUnit,
+        portion_count: row.portionCount,
+        portion_size: row.portionSize,
+        portion_unit: row.portionUnit,
         updated_by: userId,
       }).eq("id", recipeId), "Update recipe header");
     } else {
@@ -361,7 +382,7 @@ async function main() {
         updated_by: userId,
       }).eq("id", recipeId), "Refresh recipe flags");
     }
-    pending.push({ ...row, recipeId, decision, versionId });
+    pending.push({ ...row, recipeId, decision, versionId, wasActive: Boolean(already?.active) });
   }
 
   const recipeIdByPrepKey = new Map();
@@ -376,9 +397,17 @@ async function main() {
     ...pending.filter((row) => row.recipeType !== "preparation"),
   ];
   const activatedPrepIds = new Set();
+  let applyClockMs = Date.now();
+  async function nextApplyInstant(recipeId) {
+    const recipeNext = await nextEffectiveFrom(client, recipeId, mods.apply.PACKAGE_EFFECTIVE_FROM);
+    applyClockMs = Math.max(applyClockMs, new Date(recipeNext).getTime()) + 1000;
+    return new Date(applyClockMs).toISOString();
+  }
   for (const row of activateOrder) {
     if (!row.versionId || (row.decision !== "create" && row.decision !== "new_version")) {
-      if (row.recipeType === "preparation" && row.recipeId) activatedPrepIds.add(row.recipeId);
+      if (row.recipeType === "preparation" && row.recipeId && row.wasActive) {
+        activatedPrepIds.add(row.recipeId);
+      }
       continue;
     }
     if (!row.lines.length) {
@@ -405,16 +434,27 @@ async function main() {
     try {
       await unwrap(await client.rpc("inventory_activate_recipe_version", {
         p_recipe_version_id: row.versionId,
-        p_effective_from: row.decision === "create"
-          ? mods.apply.PACKAGE_EFFECTIVE_FROM
-          : await nextEffectiveFrom(client, row.recipeId, mods.apply.PACKAGE_EFFECTIVE_FROM),
+        p_effective_from: await nextApplyInstant(row.recipeId),
         p_reason: row.decision === "create"
           ? "Food Bible 20 Aug 2026 canonical apply"
           : "Food Bible 20 Aug 2026 re-apply (content changed)",
       }), "Activate version");
       if (row.recipeType === "preparation") activatedPrepIds.add(row.recipeId);
     } catch (err) {
+      row.activateError = String(err.message).slice(0, 180);
       if (/INVALID_SUBRECIPE_VERSION_OR_UNIT/.test(err.message)) {
+        try {
+          await unwrap(await client.rpc("inventory_activate_recipe_version", {
+            p_recipe_version_id: row.versionId,
+            p_effective_from: await nextApplyInstant(row.recipeId),
+            p_reason: "Food Bible 20 Aug 2026 canonical apply (retry after nested version clock)",
+          }), "Activate version retry");
+          if (row.recipeType === "preparation") activatedPrepIds.add(row.recipeId);
+          row.activateRetry = true;
+          continue;
+        } catch (retryErr) {
+          row.activateError = String(retryErr.message).slice(0, 180);
+        }
         const { data: badLines } = await client.from("inventory_recipe_version_lines").select("*").eq("recipe_version_id", row.versionId);
         for (const line of badLines || []) {
           if (!line.sub_recipe_id) continue;
@@ -425,13 +465,12 @@ async function main() {
             sub_recipe_id: null,
             ingredient_id: ingredientId,
           }).eq("id", line.id);
+          row.subRecipeFallback = true;
         }
         try {
           await unwrap(await client.rpc("inventory_activate_recipe_version", {
             p_recipe_version_id: row.versionId,
-            p_effective_from: row.decision === "create"
-              ? mods.apply.PACKAGE_EFFECTIVE_FROM
-              : await nextEffectiveFrom(client, row.recipeId, mods.apply.PACKAGE_EFFECTIVE_FROM),
+            p_effective_from: await nextApplyInstant(row.recipeId),
             p_reason: "Food Bible 20 Aug 2026 canonical apply (ingredient fallback for unresolved component)",
           }), "Activate version after sub-recipe fallback");
           if (row.recipeType === "preparation") activatedPrepIds.add(row.recipeId);
@@ -454,15 +493,55 @@ async function main() {
   const linesNow = await fetchAll(client, "inventory_recipe_version_lines", "*");
   const ingredientsNow = await fetchAll(client, "inventory_ingredients", "*");
 
-  const costRows = await fetchAll(client, "inventory_ingredient_cost_history", "ingredient_id,canonical_unit,canonical_unit_cost,effective_at,branch_id");
-  const costByIngredient = new Map();
-  for (const row of costRows.sort((a, b) => String(b.effective_at).localeCompare(String(a.effective_at)))) {
-    if (costByIngredient.has(row.ingredient_id)) continue;
-    if (row.canonical_unit_cost == null || Number(row.canonical_unit_cost) <= 0) continue;
-    costByIngredient.set(row.ingredient_id, { amount: row.canonical_unit_cost, unit: row.canonical_unit });
+  const costHistory = await fetchAll(client, "inventory_ingredient_cost_history", "ingredient_id,canonical_unit,canonical_unit_cost,effective_at,branch_id");
+  let receiptLines = [];
+  let aliases = [];
+  let catalogue = [];
+  try {
+    receiptLines = await fetchAll(client, "inventory_purchase_receipt_lines", "ingredient_id,canonical_unit,unit_cost_canonical,original_description,normalized_description,created_at");
+  } catch {
+    receiptLines = [];
   }
+  try {
+    catalogue = await fetchAll(client, "inventory_supplier_catalogue_items", "id,ingredient_id,original_product_name,normalized_product_name");
+  } catch {
+    catalogue = [];
+  }
+  try {
+    const aliasRows = await fetchAll(client, "inventory_supplier_item_aliases", "catalogue_item_id,original_description,normalized_description");
+    const catalogueById = new Map(catalogue.map((row) => [row.id, row]));
+    aliases = aliasRows.map((row) => {
+      const item = catalogueById.get(row.catalogue_item_id);
+      return {
+        ingredient_id: item?.ingredient_id || null,
+        original_description: row.original_description,
+        normalized_description: row.normalized_description,
+      };
+    });
+  } catch {
+    aliases = [];
+  }
+  const costRows = mods.cost.collectPositiveCostRecords({
+    history: costHistory,
+    receiptLines,
+    invoiceLines: [],
+  });
+  const costMap = mods.cost.matchCostHistoryToCanonical({
+    costRows,
+    ingredients: ingredientsNow.map(mapIngredient),
+    lookupIngredients: ingredientsNow.map(mapIngredient),
+    aliases,
+    catalogue: catalogue.map((row) => ({
+      ingredient_id: row.ingredient_id,
+      item_name: row.original_product_name,
+      normalized_name: row.normalized_product_name,
+    })),
+  });
+  const costByIngredient = new Map(
+    Object.entries(costMap.costByCanonicalId).map(([id, row]) => [id, { amount: row.amount, unit: row.unit }]),
+  );
 
-  const costing = { fully: 0, partial: 0, uncosted: 0, partialMissing: [] };
+  const costing = { fully: 0, partial: 0, uncosted: 0, partialMissing: [], fullyNamed: [], examples: [] };
   const recipeById = Object.fromEntries(recipesNow.map((row) => [row.id, {
     id: row.id,
     outputQuantity: row.output_quantity,
@@ -513,15 +592,17 @@ async function main() {
       recipesById: recipeById,
       versionsByRecipeId,
       linesByRecipeId,
-      businessDate: "2026-08-20",
+      businessDate: null,
       soldQuantity: 1,
     });
     const classified = mods.graph.classifyRecipeCosting({
       lines: expanded.ingredients,
       costByIngredientId: Object.fromEntries(costByIngredient),
     });
-    if (classified.state === "fully costed") costing.fully += 1;
-    else if (classified.state === "partially costed") {
+    if (classified.state === "fully costed") {
+      costing.fully += 1;
+      costing.fullyNamed.push({ name: recipe.name, total: classified.total });
+    } else if (classified.state === "partially costed") {
       costing.partial += 1;
       costing.partialMissing.push({
         name: recipe.name,
@@ -551,16 +632,29 @@ async function main() {
       linesByRecipeId,
       soldQuantity: 1,
     });
+    const currentVersion = currentVersionByRecipe[recipe.id];
+    const direct = (currentVersion ? linesByVersion[currentVersion.id] : []).map((line) => ({
+      ingredientId: line.ingredientId,
+      subRecipeId: line.subRecipeId,
+      name: ingredientsNow.find((ing) => ing.id === line.ingredientId)?.canonical_name
+        || recipesNow.find((entry) => entry.id === line.subRecipeId)?.name
+        || null,
+      quantity: line.quantity,
+      unit: line.unit,
+    }));
     examples.push({
       name,
       ok: consumption.authoritative && consumption.lines.length > 0,
       menuItemId: live?.id || recipe.menu_item_id,
       recipeName: recipe.name,
       recipeId: recipe.id,
-      versionId: consumption.versionId || currentVersionByRecipe[recipe.id]?.id,
+      versionId: consumption.versionId || currentVersion?.id,
       authoritative: consumption.authoritative,
-      lineCount: consumption.lines.length,
-      lines: consumption.lines.slice(0, 12).map((line) => ({
+      blockers: consumption.blockers || [],
+      directLineCount: direct.length,
+      directLines: direct,
+      expandedLineCount: consumption.lines.length,
+      lines: consumption.lines.slice(0, 16).map((line) => ({
         ingredientId: line.ingredientId,
         name: ingredientsNow.find((ing) => ing.id === line.ingredientId)?.canonical_name || null,
         quantity: line.quantity,
@@ -726,6 +820,10 @@ async function main() {
     fs.writeFileSync(path.join(OUT_DIR, "canonical-exports", "selected.pdf"), Buffer.from(mods.pdf.recipesPdfBytes(selected, { title: "Selected recipes" })));
   }
   fs.writeFileSync(path.join(OUT_DIR, "canonical-exports", "food-bible.pdf"), Buffer.from(mods.pdf.recipesPdfBytes(bible, { title: "NAC Food Bible" })));
+  const seaBassSnap = snapshots.find((snap) => /sea bass|seabass/i.test(snap.name));
+  if (seaBassSnap) {
+    fs.writeFileSync(path.join(OUT_DIR, "canonical-exports", "sea-bass.pdf"), Buffer.from(mods.pdf.recipesPdfBytes([seaBassSnap])));
+  }
   const bibleText = bible.map((snap) => snap.name).join(" | ");
 
   const editorCapability = {
@@ -812,6 +910,17 @@ async function main() {
     unresolvedIngredients: plan.unresolvedIngredients.length,
     coverage,
     costing,
+    costReconcile: {
+      costRecords: costRows.length,
+      historyRows: costHistory.length,
+      receiptLineRows: receiptLines.length,
+      invoiceLineRows: 0,
+      matchedCanonical: costMap.matchedCount,
+      unmatchedCostRecords: costMap.unmatchedCostCount,
+      missingCanonical: costMap.missingCostCount,
+      unmatchedSample: costMap.unmatchedCost.slice(0, 12),
+      missingSample: costMap.missing.slice(0, 12).map((item) => item.canonicalName),
+    },
     examples,
     editorProof: {
       recipe: verifyName,
@@ -829,6 +938,9 @@ async function main() {
       foodBibleCount: bible.length,
       bircherInBible: /bircher/i.test(bibleText),
       conchiglieInvented: /conchiglie/i.test(bibleText),
+      seaBassPdf: Boolean(seaBassSnap),
+      seaBassPdfName: seaBassSnap?.name || null,
+      seaBassIngredientCount: (seaBassSnap?.ingredients || []).length,
     },
     idempotency: {
       secondPassSkipOrExisting: secondDecisions.filter((value) => value !== "create").length,
@@ -849,6 +961,22 @@ async function main() {
       acc[row.decision] = (acc[row.decision] || 0) + 1;
       return acc;
     }, {}),
+    firstPassFailures: persisted
+      .filter((row) => row.decision && row.decision !== "skip_identical" && row.decision !== "new_version" && row.decision !== "create")
+      .map((row) => ({ name: row.name, decision: row.decision, planned: row.lines.length, insertSkipped: row.insertSkipped || [] })),
+    seaBassGraph: persisted
+      .filter((row) => /sea bass|creole pepper|shallot reduction/i.test(row.name))
+      .map((row) => ({
+        name: row.name,
+        decision: row.decision,
+        outputQuantity: row.outputQuantity,
+        outputUnit: row.outputUnit,
+        planned: row.lines.length,
+        insertSkipped: row.insertSkipped || [],
+        activateError: row.activateError || null,
+        subRecipeFallback: Boolean(row.subRecipeFallback),
+        activateRetry: Boolean(row.activateRetry),
+      })),
   };
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -873,12 +1001,10 @@ async function nextEffectiveFrom(client, recipeId, packageFrom) {
 
 async function insertLines(client, mods, versionId, row, ingredientIdByKey, recipeIdByPrepKey, ingredientRows, extra = {}) {
   const { pendingById = new Map(), activatedPrepIds = new Set() } = extra;
-  const { count } = await client.from("inventory_recipe_version_lines").select("id", { count: "exact", head: true }).eq("recipe_version_id", versionId);
-  if (count && count >= row.lines.length) return;
-  const startIndex = count || 0;
+  await client.from("inventory_recipe_version_lines").delete().eq("recipe_version_id", versionId);
   const ingredientById = new Map(ingredientRows.map((item) => [item.id, item]));
+  const skipped = [];
   for (const [index, line] of row.lines.entries()) {
-    if (index < startIndex) continue;
     const prepId = recipeIdByPrepKey.get(line.ingredientKey)
       || recipeIdByPrepKey.get(mods.apply.normalizeIngredientKey(line.subRecipeName || ""));
     const prep = prepId ? pendingById.get(prepId) : null;
@@ -903,21 +1029,29 @@ async function insertLines(client, mods, versionId, row, ingredientIdByKey, reci
       }
     }
     if (usedSubRecipe) continue;
-    const ingredientId = ingredientIdByKey.get(line.ingredientKey);
-    if (!ingredientId) continue;
+    const ingredientId = ingredientIdByKey.get(line.ingredientKey)
+      || ingredientIdByKey.get(mods.apply.normalizeIngredientKey(line.subRecipeName || line.sourceName || ""));
+    if (!ingredientId) {
+      skipped.push({ name: line.sourceName || line.ingredientKey, reason: "NO_INGREDIENT_ID" });
+      continue;
+    }
     const ingredient = ingredientById.get(ingredientId);
     let canonicalQuantity = line.quantity;
-    let canonicalUnit = line.unit;
+    let canonicalUnit = mods.apply.mapSourceUnit(line.unit) || line.unit;
     try {
       const canonical = mods.foodBible.computeCanonicalLine({
         ingredientId,
         quantity: line.quantity,
-        unit: line.unit,
+        unit: canonicalUnit,
       }, new Map([[ingredientId, ingredient]]));
       canonicalQuantity = canonical.canonicalQuantity;
       canonicalUnit = canonical.canonicalUnit;
     } catch {
       // keep source units when conversion is not yet defined
+    }
+    if (!["each", "gram", "kilogram", "millilitre", "litre"].includes(canonicalUnit)) {
+      skipped.push({ name: line.sourceName || line.ingredientKey, reason: `ILLEGAL_UNIT:${canonicalUnit}` });
+      continue;
     }
     if (ingredient?.baseInventoryUnit && canonicalUnit !== ingredient.baseInventoryUnit) {
       const converted = mods.graph.convertOrBlock(canonicalQuantity, canonicalUnit, ingredient.baseInventoryUnit);
@@ -925,6 +1059,10 @@ async function insertLines(client, mods, versionId, row, ingredientIdByKey, reci
         canonicalQuantity = converted.quantity;
         canonicalUnit = ingredient.baseInventoryUnit;
       } else {
+        skipped.push({
+          name: line.sourceName || line.ingredientKey,
+          reason: `UNIT_MISMATCH:${canonicalUnit}->${ingredient.baseInventoryUnit}`,
+        });
         continue;
       }
     }
@@ -933,13 +1071,14 @@ async function insertLines(client, mods, versionId, row, ingredientIdByKey, reci
       ingredient_id: ingredientId,
       sub_recipe_id: null,
       quantity: line.quantity,
-      unit: line.unit,
+      unit: mods.apply.mapSourceUnit(line.unit) || line.unit,
       canonical_quantity: canonicalQuantity,
       canonical_unit: canonicalUnit,
       preparation_note: line.note || null,
       sort_order: index,
     }), "Insert ingredient line");
   }
+  row.insertSkipped = skipped;
 }
 
 main().catch((err) => {

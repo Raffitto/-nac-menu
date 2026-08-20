@@ -47,6 +47,33 @@ export function mapSourceUnit(unit) {
   }
 }
 
+export function inferredBatchOutput(yieldRaw, lines = [], extras = {}) {
+  const text = String(yieldRaw || "");
+  if (!extras.force && !/\bbatch\b/i.test(text)) return null;
+  if (!lines.length) return null;
+  let grams = 0;
+  for (const line of lines) {
+    const unit = mapSourceUnit(line.unit);
+    const qty = Number(line.quantity);
+    if (!unit || !Number.isFinite(qty) || qty <= 0) return null;
+    if (unit === "each") return null;
+    if (unit === "gram") grams += qty;
+    else if (unit === "kilogram") grams += qty * 1000;
+    else if (unit === "millilitre") grams += qty;
+    else if (unit === "litre") grams += qty * 1000;
+    else return null;
+  }
+  if (!(grams > 0)) return null;
+  return {
+    outputQuantity: grams,
+    outputUnit: "gram",
+    portionCount: 1,
+    portionSize: grams,
+    portionUnit: "gram",
+    yieldDerivation: "sum_of_source_mass_and_volume_as_grams_for_one_batch",
+  };
+}
+
 export function parseYield(yieldRaw) {
   const text = String(yieldRaw || "").toLowerCase();
   const match = text.match(/([0-9]+(?:[.,][0-9]+)?)\s*(pax|kg|g|l|ml|units?|each)/i);
@@ -164,7 +191,6 @@ export function buildApplyPlan({
       sourceFile: source.sourceFile || row.sourceFile,
       title,
     });
-    const yieldFields = parseYield(source.yieldRaw);
     const isPrep = row.state === RECONCILE_STATES.SUB_RECIPE_NON_SELLABLE || source.recipeKind === "prep";
     const isLegacy = row.state === RECONCILE_STATES.RECIPE_LEGACY_INACTIVE;
     const isAmbiguous = row.state === RECONCILE_STATES.AMBIGUOUS_MATCH;
@@ -193,9 +219,28 @@ export function buildApplyPlan({
         continue;
       }
       if (isSubRecipe) {
+        const match = matchCanonicalIngredient(sourceName, ingredients);
+        if (match.status === "create" && !seenIngredientKeys.has(match.key)) {
+          seenIngredientKeys.add(match.key);
+          ingredientActions.push({
+            action: "create",
+            key: match.key,
+            canonicalName: match.canonicalName,
+            baseInventoryUnit: unit,
+            sourceNames: [sourceName],
+          });
+        } else if (match.status === "reuse") {
+          ingredientActions.push({
+            action: "reuse",
+            key: match.key,
+            ingredientId: match.ingredient.id,
+            canonicalName: match.ingredient.canonicalName,
+            sourceNames: [sourceName],
+          });
+        }
         lines.push({
           sourceName,
-          ingredientKey,
+          ingredientKey: match.status === "reuse" ? match.key : (match.key || ingredientKey),
           subRecipeName: sourceName,
           quantity,
           unit,
@@ -240,6 +285,12 @@ export function buildApplyPlan({
       });
     }
 
+    const parsedYield = parseYield(source.yieldRaw);
+    const batchYield = isPrep && parsedYield.outputUnit === "each"
+      ? inferredBatchOutput(source.yieldRaw, lines, { force: true })
+      : inferredBatchOutput(source.yieldRaw, lines);
+    const yieldFields = batchYield || parsedYield;
+
     persist.push({
       importKey,
       name: title,
@@ -255,6 +306,7 @@ export function buildApplyPlan({
         importKey,
         packageId: PACKAGE_ID,
         reconcileState: row.state,
+        yieldDerivation: yieldFields.yieldDerivation || null,
         provenance: {
           sha256: source.sha256 || null,
           pages: source.pages || [],
@@ -296,8 +348,11 @@ export function buildApplyPlan({
 
 export function applyDecision(existing, nextFingerprint, extras = {}) {
   if (!existing) return "create";
+  if (extras.inactive && extras.plannedLineCount > 0) return "new_version";
+  if (extras.plannedSubRecipes && extras.existingHasSubRecipe === false) return "new_version";
   const existingLineCount = extras.existingLineCount;
   const planned = extras.plannedLineCount || 0;
+  if (extras.outputChanged) return "new_version";
   if (planned > 0 && (existingLineCount === 0 || existingLineCount == null) && extras.hasLines === false) {
     return "new_version";
   }

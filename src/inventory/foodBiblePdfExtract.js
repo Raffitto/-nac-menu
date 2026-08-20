@@ -11,13 +11,13 @@ import {
 const NOISE_LINE_RE =
   /^(utensils used\b.*|allergens?:.*|menu section|prep time|cooking time|yield|ingredients(?:\s+unit.*)?|unit(?:\s+1)?(?:\s+batch)?(?:\s+notes)?|notes|1 batch|method|to serve|critical control|all our products are produced.*|store food at.*|keep raw and.*|when food is prepped.*|frequently wash.*|cook food to.*|always label.*|keep foods covered.*|total|celery mains|alcohol\s*\/.*)$/i;
 
-const UNIT_RE = /^(g|kg|ml|l|litre|liter|pcs|pc|unit|units|pax)$/i;
-const QTY_ONLY_RE = /^(g|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)\b(.*)$/i;
+const UNIT_RE = /^(g|gr|kg|ml|l|litre|liter|pcs|pc|unit|units|pax)$/i;
+const QTY_ONLY_RE = /^(g|gr|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)\b(.*)$/i;
 const INLINE_ING_RE =
-  /^(.+?)\s+(g|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)(?:\s+(.*))?$/i;
+  /^(.+?)\s+(g|gr|kg|ml|l|litre|liter|pcs|pc|unit|units)\s+([0-9]+(?:[.,][0-9]+)?)(?:\s+(.*))?$/i;
 const QTY_NUMBER_RE = /^([0-9]+(?:[.,][0-9]+)?)(?:\s*\/\s*([0-9]+))?$/;
 const INGREDIENT_NOTE_RE =
-  /^(chopped|sliced|diced|grated|finely|roughly|optional|to taste|2 slices|3 slices|2x |3 layers|remove |pre cooked|when reduced)/i;
+  /^(chopped|sliced|diced|grated|finely|roughly|optional|to taste|2 slices|3 slices|2x |3 layers|remove |pre cooked|when reduced|\d+\s*gr\b)/i;
 const ALLERGEN_LINE_RE = /^(dairy|egg|eggs|gluten|celery|sulphite|sulphites|mustard|nuts|sesame|soya|crustaceans|fish|alcohol)(\s*\/\s*(dairy|egg|eggs|gluten|celery|sulphite|sulphites|mustard|nuts|sesame|soya|crustaceans|fish|alcohol))+$/i;
 const METHOD_START_RE = /^\d+\.\s+/;
 const YIELD_RE = /\b((?:\d+(?:[.,]\d+)?)\s*(?:pax|kg|g|l|ml|units?))\b/i;
@@ -72,6 +72,8 @@ function isNoiseLine(line) {
   const text = normalizeFoodBibleText(line);
   if (!text) return true;
   if (NOISE_LINE_RE.test(text)) return true;
+  if (/^(fi|llet|fl)$/i.test(text)) return true;
+  if (/^(celery|dairy|gluten|mustard|fish|sulphite|sulphites|alcohol)\b/i.test(text) && /[/,]/.test(text)) return true;
   if (/^allergens?:/i.test(text)) return true;
   if (ALLERGEN_LINE_RE.test(text)) return true;
   return false;
@@ -115,7 +117,7 @@ function isPrepTitle(title) {
   const tokens = text.split(/[,\s]+/).filter(Boolean);
   if (
     tokens.length <= 3 &&
-    /\b(dressing|marinade|mayonnaise|fillet|patty|dough|meringue|coulis|granola|hummus|tatziki|tzatziki|choux)\b/i.test(
+    /\b(dressing|marinade|marinate|mayonnaise|fillet|patty|dough|meringue|coulis|granola|hummus|tatziki|tzatziki|choux|reduction)\b/i.test(
       text
     )
   ) {
@@ -141,6 +143,15 @@ function isPrepTitle(title) {
  * Deterministic Food Bible recipe-title validation.
  * Rejects layout placeholders/quantities; never discards underlying source text.
  */
+export function repairFoodBiblePdfText(text) {
+  return String(text || "")
+    .replace(/\nfi\s*\n+llet\b/gi, " fillet")
+    .replace(/\bfi\s*\n+\s*llet\b/gi, "fillet")
+    .replace(/([A-Za-z][A-Za-z ]+)\n\s*fillet\b/gi, "$1 fillet")
+    .replace(/\bbrie\s*\n+\s*fl\s*\n+\s*y\b/gi, "briefly")
+    .replace(/\bcling\s*\n+\s*fi\s*\n+\s*lm\b/gi, "cling film");
+}
+
 export function validateFoodBibleRecipeTitle(title, card = {}) {
   const text = normalizeFoodBibleText(title);
   const reasons = [];
@@ -222,6 +233,12 @@ function extractIngredientSectionLines(lines) {
     }
     // These labels are layout noise and may appear before or after Ingredients.
     if (/^(to serve|critical control)\b/i.test(line)) {
+      continue;
+    }
+    if (/^(celery|dairy|gluten|mustard|fish|sulphite|sulphites|alcohol)\b/i.test(line) && /[/,]/.test(line)) {
+      continue;
+    }
+    if (/^(brunoise|julienne|chiffonade|dice[ds]?|minced)$/i.test(line)) {
       continue;
     }
     if (/^method\b/i.test(line)) {
@@ -697,7 +714,7 @@ export function extractFoodBibleRecipesFromPages({
   };
 
   for (const page of pages) {
-    const text = page.text || "";
+    const text = repairFoodBiblePdfText(page.text || "");
     const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const hasIngredientHeader = lines.some((l) => /^ingredients\b/i.test(normalizeFoodBibleText(l)));
     const title = findTitleInPages([text]);

@@ -311,4 +311,124 @@ Method`,
     expect(rejectedTitles).toHaveLength(0);
     expect(recipes.some((recipe) => /prawn rendang/i.test(recipe.sourceTitle))).toBe(true);
   });
+
+  test("parses Sea Bass Creole stacked gr/pcs rows after PDF ligature repair", () => {
+    const { recipes } = extractFoodBibleRecipesFromPages({
+      sourceFile: "Sea bass creole with pepper cream sauce N_A.pdf",
+      pages: [
+    {
+      page: 1,
+      text: `SEA BASS CREOLE WITH PEPPER CREAM SAUCE
+Utensils Used
+Menu Section
+Mains
+Prep Time
+Ingredients
+Unit
+1 Batch
+Notes
+To Serve
+Critical Control
+Celery/ sulphites/
+Dairy/ Gluten/
+Mustard/ Fish
+Sea bass
+fi
+llet
+pcs
+1
+160gr
+Salt
+gr
+2
+Creole pepper sauce
+gr
+70
+Watercress
+gr
+10
+1. Sauce on the bottom of the plate.
+Method`,
+    },
+        {
+          page: 2,
+          text: `SEA BASS MARINATE
+Utensils Used
+Menu Section
+Prep
+Ingredients
+Unit
+Sea bass
+pcs
+1
+creole spice
+gr
+5
+Salt
+gr
+3
+1. Lightly season the seabass.
+Method`,
+        },
+        {
+          page: 3,
+          text: `SHALLOT REDUCTION
+Utensils Used
+Menu Section
+Prep
+Ingredients
+shallots
+pcs
+2
+White wine vinegar
+ml
+70
+1. Combine shallots and vinegar.
+Method`,
+        },
+        {
+          page: 4,
+          text: `CREOLE PEPPER SAUCE
+Utensils Used
+Menu Section
+Prep
+Ingredients
+Butter
+g
+30
+Creole spice mix
+g
+15
+Tomato paste
+g
+10
+Double cream
+ml
+200
+Red pepper
+g
+10
+Yellow pepper
+g
+10
+6. Fold in the shallot reduction.
+Method`,
+        },
+      ],
+    });
+    const finished = recipes.find((recipe) => /sea bass creole/i.test(recipe.sourceTitle));
+    const marinate = recipes.find((recipe) => /marinate/i.test(recipe.sourceTitle));
+    const reduction = recipes.find((recipe) => /shallot reduction/i.test(recipe.sourceTitle));
+    const sauce = recipes.find((recipe) => /^creole pepper sauce$/i.test(recipe.sourceTitle));
+    expect(finished?.recipeKind).toBe("finished");
+    expect(marinate?.recipeKind).toBe("prep");
+    expect(reduction?.recipeKind).toBe("prep");
+    expect(sauce?.recipeKind).toBe("prep");
+    const fillet = finished.ksaIngredients.find((ing) => /sea bass/i.test(ing.ksaOperationalName));
+    expect(fillet?.sourceQuantity).toBe(1);
+    expect(fillet?.sourceUnit).toMatch(/pc/i);
+    expect(finished.ksaIngredients.find((ing) => /creole pepper sauce/i.test(ing.ksaOperationalName))?.sourceQuantity).toBe(70);
+    expect(sauce.ksaIngredients.find((ing) => /double cream/i.test(ing.ksaOperationalName))?.sourceQuantity).toBe(200);
+    expect(sauce.ksaIngredients.find((ing) => /yellow pepper/i.test(ing.ksaOperationalName))?.sourceQuantity).toBe(10);
+  });
 });

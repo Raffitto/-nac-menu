@@ -53,6 +53,35 @@ describe("recipeGraph", () => {
     expect(garlic.quantity).toBeCloseTo(7, 5);
   });
 
+  test("Sea Bass finished expansion uses sauce yield and does not include marinate fish", () => {
+    const result = expandRecipeToIngredients({
+      recipeId: "creole",
+      recipesById: {
+        creole: { id: "creole", outputQuantity: 1, outputUnit: "each" },
+        sauce: { id: "sauce", outputQuantity: 275, outputUnit: "gram" },
+        marinate: { id: "marinate", outputQuantity: 1, outputUnit: "each" },
+      },
+      linesByRecipeId: {
+        creole: [
+          { ingredientId: "fillet", quantity: 1, unit: "each" },
+          { ingredientId: "salt", quantity: 2, unit: "gram" },
+          { subRecipeId: "sauce", quantity: 70, unit: "gram" },
+          { ingredientId: "watercress", quantity: 10, unit: "gram" },
+        ],
+        sauce: [
+          { ingredientId: "butter", quantity: 30, unit: "gram" },
+          { ingredientId: "cream", quantity: 200, unit: "millilitre" },
+        ],
+        marinate: [{ ingredientId: "fillet", quantity: 1, unit: "each" }],
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ingredients.filter((line) => line.ingredientId === "fillet")).toHaveLength(1);
+    expect(result.ingredients.find((line) => line.ingredientId === "fillet").quantity).toBe(1);
+    const butter = result.ingredients.find((line) => line.ingredientId === "butter");
+    expect(butter.quantity).toBeCloseTo(30 * (70 / 275), 5);
+  });
+
   test("circular dependencies fail safely", () => {
     const linesByRecipeId = {
       a: [{ subRecipeId: "b", quantity: 1, unit: "each" }],
