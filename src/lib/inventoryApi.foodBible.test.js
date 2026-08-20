@@ -61,8 +61,8 @@ describe("fetchFoodBibleOverview", () => {
     expect(overview.summary.coveragePct).toBe(0);
     expect(overview.rows.filter((row) => row.kind === "menu_item")).toHaveLength(2);
     expect(overview.detailsDeferred).toBe(true);
-    expect(overview.meta.requestCount).toBe(6);
-    expect(mockFrom).toHaveBeenCalledTimes(3);
+    expect(overview.meta.requestCount).toBe(7);
+    expect(mockFrom).toHaveBeenCalledTimes(4);
   });
 
   test("deduplicates linked placements and keeps distinct ungrouped items", async () => {

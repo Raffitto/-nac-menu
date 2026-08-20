@@ -30,6 +30,7 @@ export function snapshotFromRecipeRecord({
   recipeById = new Map(),
   brand = "NAC",
   generatedAt = new Date().toISOString(),
+  imageDataUrl = null,
 } = {}) {
   const archived = row?.kind === "archived" || row?.guestStatus === "archived" || (row?.operationallyActive === false && row?.kind !== "menu_item");
   const live = row?.guestStatus === "live" && row?.kind === "menu_item";
@@ -60,6 +61,8 @@ export function snapshotFromRecipeRecord({
     plating: documentation?.platingInstructions || "",
     storage: documentation?.storageInstructions || "",
     allergens: documentation?.allergens || documentation?.qualityCheckpoints || "",
+    utensils: documentation?.utensils || documentation?.equipmentNotes || "",
+    imageDataUrl,
     sourceDocument: documentation?.sourceDocument || null,
   };
 }
@@ -94,7 +97,29 @@ export function snapshotFromExtractedRecipe(recipe, extra = {}) {
     storage: "",
     allergens: "",
     sourceDocument: recipe.sourceFile || null,
+    imageDataUrl: extra.imageDataUrl || null,
   };
+}
+
+export function menuImagePublicUrl(path, supabaseUrl = process.env.REACT_APP_SUPABASE_URL) {
+  if (!path) return "";
+  if (/^https?:/i.test(path)) return path;
+  if (!supabaseUrl) return "";
+  return `${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/menu-images/${path}`;
+}
+
+export async function fetchHeroImageDataUrl(path, fetcher = fetch) {
+  const url = menuImagePublicUrl(path);
+  if (!url || typeof fetcher !== "function") return null;
+  const response = await fetcher(url);
+  if (!response?.ok) return null;
+  const buffer = new Uint8Array(await response.arrayBuffer());
+  const binary = Array.from(buffer, (byte) => String.fromCharCode(byte)).join("");
+  const contentType = response.headers?.get?.("content-type") || "image/png";
+  const encoded = typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(buffer).toString("base64");
+  return `data:${contentType};base64,${encoded}`;
 }
 
 export function currentFoodBibleSnapshots(snapshots = []) {
@@ -148,6 +173,17 @@ function drawRecipe(doc, snapshot, startY) {
   ].filter(Boolean);
   doc.text(meta.join("   ·   "), margin, y, { maxWidth: pageW - margin * 2 });
   y += 16;
+  if (snapshot.imageDataUrl) {
+    try {
+      const imgW = 180;
+      const imgH = 120;
+      const format = /image\/png/i.test(snapshot.imageDataUrl) ? "PNG" : "JPEG";
+      doc.addImage(snapshot.imageDataUrl, format, pageW - margin - imgW, startY, imgW, imgH);
+      y = Math.max(y, startY + imgH + 12);
+    } catch {
+      /* skip unreadable images */
+    }
+  }
 
   autoTable(doc, {
     startY: y,

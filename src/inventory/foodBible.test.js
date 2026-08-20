@@ -185,6 +185,23 @@ describe("foodBible helpers", () => {
     });
     expect(ready.readiness).toBe(READINESS.READY);
 
+    const emptyCatalogue = deriveRecipeReadiness({
+      recipe: {
+        id: "r-quinoa",
+        name: "Quinoa",
+        recipeType: "menu_item",
+        menuItemId: "menu-1",
+        outputQuantity: "1",
+        outputUnit: "each",
+      },
+      version: { documentation: { preparationMethod: "Season the quinoa." } },
+      catalogueMode: true,
+      lineCount: 0,
+      menuItem: { id: "menu-1", active: true },
+    });
+    expect(emptyCatalogue.readiness).not.toBe(READINESS.READY);
+    expect(emptyCatalogue.checklist.find((item) => item.id === "lines")?.complete).toBe(false);
+
     const attention = deriveRecipeReadiness({
       recipe: {
         id: "r3",
@@ -267,6 +284,18 @@ describe("foodBible helpers", () => {
     expect(filterFoodBibleRows(rows, { catalogue: CATALOGUE_SCOPES.COMPONENTS }).map((row) => row.displayName)).toEqual(["Hollandaise"]);
     expect(filterFoodBibleRows(rows, { catalogue: CATALOGUE_SCOPES.ARCHIVED }).map((row) => row.displayName)).toEqual(["APPLE BIRCHER MUESLI"]);
     expect(filterFoodBibleRows(rows, { catalogue: CATALOGUE_SCOPES.ALL }).some((row) => /TEMP VERIFY/.test(row.displayName))).toBe(false);
+  });
+
+  test("needs review filter surfaces inferred links and missing kitchen recipes", () => {
+    const rows = [
+      { kind: "menu_item", displayName: "Quinoa", guestStatus: "live", requiresKitchenRecipe: true, recipeId: "r1", linkKind: "menu_item", linkedMenuItemId: "m1", readiness: READINESS.DRAFT },
+      { kind: "menu_item", displayName: "Greek Yogurt", guestStatus: "live", requiresKitchenRecipe: true, recipeId: "r2", linkKind: "inferred", linkedMenuItemId: null, readiness: READINESS.DRAFT },
+      { kind: "menu_item", displayName: "Conchiglie", guestStatus: "live", requiresKitchenRecipe: true, recipeId: null, readiness: READINESS.MISSING },
+    ];
+    expect(filterFoodBibleRows(rows, { catalogue: CATALOGUE_SCOPES.REVIEW }).map((row) => row.displayName)).toEqual([
+      "Greek Yogurt",
+      "Conchiglie",
+    ]);
   });
 
   test("guestMenuStatus reflects live, hidden, and sold out states", () => {

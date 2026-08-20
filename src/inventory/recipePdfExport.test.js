@@ -48,6 +48,12 @@ describe("recipePdfExport", () => {
     expect(recipePdfPlaintext(imported)).toContain("180");
   });
 
+  test("generated PDF includes a source photograph when the canonical snapshot has one", () => {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const withPhoto = { ...bigNac, imageDataUrl: png };
+    expect(new Uint8Array(recipesPdfBytes([withPhoto]))[0]).toBe(0x25);
+  });
+
   test("current Food Bible excludes archived Apple Bircher", () => {
     const bircher = snapshotFromExtractedRecipe({
       ksaOperationalTitle: "Apple Bircher",

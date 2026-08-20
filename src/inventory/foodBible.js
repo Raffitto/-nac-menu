@@ -33,6 +33,7 @@ export const CATALOGUE_SCOPES = Object.freeze({
   COMPONENTS: "components",
   DRINKS: "drinks",
   ARCHIVED: "archived",
+  REVIEW: "needs_review",
   ALL: "all",
 });
 
@@ -48,6 +49,11 @@ export const DEFAULT_DOCUMENTATION = Object.freeze({
   equipmentNotes: "",
   qualityCheckpoints: "",
   internalNotes: "",
+  utensils: "",
+  allergens: "",
+  prepTime: "",
+  cookTime: "",
+  menuSection: "",
 });
 
 export const STAGE_PRESETS = Object.freeze([
@@ -254,6 +260,27 @@ export function findRecipeForMenuIdentity(recipes = [], identity) {
   return uniqueQualifiedRecipeMatch(inactiveCanonical, identityName, recipes);
 }
 
+export function menuRecipeLinkKind(recipe, identity) {
+  if (!recipe || !identity) return null;
+  if (recipe.placementGroupId && identity.placementGroupId && recipe.placementGroupId === identity.placementGroupId) {
+    return "placement_group";
+  }
+  const ids = new Set([
+    identity.primaryItem?.id,
+    ...(identity.placements || []).map((item) => item.id),
+  ].filter(Boolean));
+  if (recipe.menuItemId && ids.has(recipe.menuItemId)) return "menu_item";
+  return "inferred";
+}
+
+export function needsMenuReview(row) {
+  if (!row || row.isVerificationFixture) return false;
+  if (row.kind === "menu_item" && row.requiresKitchenRecipe && row.guestStatus === "live" && !row.recipeId) return true;
+  if (row.kind === "menu_item" && row.recipeId && (row.linkKind === "inferred" || !row.linkedMenuItemId)) return true;
+  if (row.kind === "component" && row.recipeType === "menu_item" && !row.linkedMenuItemId) return true;
+  return false;
+}
+
 export function mapRecipeRow(row) {
   if (!row) return null;
   return {
@@ -273,6 +300,7 @@ export function mapRecipeRow(row) {
     portionCount: row.portion_count,
     portionSize: row.portion_size,
     portionUnit: row.portion_unit,
+    heroImagePath: row.hero_image_path || null,
     active: row.active !== false,
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -483,7 +511,7 @@ export function deriveRecipeReadiness({
       (recipe.portionCount && Number(recipe.portionCount) > 0)
         || (recipe.portionSize && Number(recipe.portionSize) > 0 && recipe.portionUnit),
     ),
-    requiredForReady: true,
+    requiredForReady: false,
   });
 
   const validLines = catalogueMode
@@ -562,6 +590,7 @@ export function buildFoodBibleSummary(rows = []) {
   const missing = kitchen.filter((row) => row.readiness === READINESS.MISSING).length;
   const needsAttention = kitchen.filter((row) => row.readiness === READINESS.NEEDS_ATTENTION).length;
   const mapped = kitchen.filter((row) => Boolean(row.recipeId)).length;
+  const needsReview = rows.filter(needsMenuReview).length;
   const incomplete = inProgress + needsAttention;
   const coveragePct = kitchen.length ? Math.round((mapped / kitchen.length) * 100) : 0;
   const fullyCosted = kitchen.filter((row) => row.cost?.profitabilityAvailable && row.costTrustStatus === "TRUSTED").length;
@@ -583,6 +612,7 @@ export function buildFoodBibleSummary(rows = []) {
     missing,
     needsAttention,
     mapped,
+    needsReview,
     coveragePct,
     placementCount: menuRows.reduce((sum, row) => sum + (row.placements?.length || 1), 0),
     uniqueIdentityCount: menuRows.length,
@@ -631,6 +661,7 @@ export function filterFoodBibleRows(rows, {
       const archived = row.kind === "archived" || row.guestStatus === "hidden" || row.operationallyActive === false;
       if (!archived) return false;
     }
+    if (catalogue === CATALOGUE_SCOPES.REVIEW && !needsMenuReview(row)) return false;
     if (catalogue === CATALOGUE_SCOPES.ALL && row.kind === "archived") return false;
     if (menuVisibility === "active" && row.guestStatus !== "live") return false;
     if (menuVisibility === "hidden" && row.guestStatus !== "hidden") return false;
@@ -644,7 +675,6 @@ export function filterFoodBibleRows(rows, {
       row.displayName,
       row.displayNameAr,
       row.recipeName,
-      row.internalName,
       row.categoryName,
       row.placementSummary,
     ].filter(Boolean).join(" "));
@@ -671,9 +701,6 @@ export function validateRecipeDraft(form, lines = []) {
     return { ok: false, message: "Enter a batch yield greater than zero." };
   }
   if (!form.outputUnit) return { ok: false, message: "Choose a yield unit." };
-  if ((form.recipeType === "menu_item" || form.recipeType === "direct_stock") && !form.menuItemId) {
-    return { ok: false, message: "Link a menu item for this recipe type." };
-  }
   for (const line of lines) {
     if (!line.ingredientId && !line.subRecipeId) continue;
     if (!line.quantity || Number(line.quantity) <= 0) {

@@ -19,6 +19,7 @@ import {
   currentFoodBibleSnapshots,
   recipePdfFilename,
   recipesPdfBytes,
+  fetchHeroImageDataUrl,
   snapshotFromRecipeRecord,
   triggerPdfDownload,
 } from "./recipePdfExport";
@@ -35,7 +36,7 @@ import {
   guestMenuStatusLabel,
   recipeTypeLabel,
 } from "./foodBible";
-import RecipeEditorPanel from "./RecipeEditorPanel";
+import FoodBibleCard from "./FoodBibleCard";
 import { formatSar } from "./costTrust";
 
 const READINESS_FILTERS = [
@@ -51,6 +52,7 @@ const CATALOGUE_FILTERS = [
   { id: CATALOGUE_SCOPES.COMPONENTS, label: "Prepared components" },
   { id: CATALOGUE_SCOPES.DRINKS, label: "Drinks / packaged" },
   { id: CATALOGUE_SCOPES.ARCHIVED, label: "Archived" },
+  { id: CATALOGUE_SCOPES.REVIEW, label: "Needs review / menu link" },
   { id: CATALOGUE_SCOPES.ALL, label: "All identities" },
 ];
 
@@ -210,6 +212,7 @@ export default function FoodBibleView({
       documentation = bundle?.version?.documentation || documentation;
       version = bundle?.version || version;
     }
+    const imageDataUrl = await fetchHeroImageDataUrl(row.heroImagePath || documentation?.sourcePhotograph?.storagePath);
     return snapshotFromRecipeRecord({
       row,
       lines,
@@ -218,6 +221,7 @@ export default function FoodBibleView({
       ingredientById,
       recipeById,
       generatedAt: new Date().toISOString(),
+      imageDataUrl,
     });
   }, [ingredientById, recipeById, overview?.detailsDeferred]);
 
@@ -323,17 +327,25 @@ export default function FoodBibleView({
           <strong>{summary.liveKitchenItems ?? summary.totalMenuItems}</strong>
           <span>Live kitchen items</span>
         </article>
+        <article data-testid="food-bible-metric-mapped">
+          <strong>{summary.mapped}</strong>
+          <span>Mapped</span>
+        </article>
         <article data-testid="food-bible-metric-complete">
           <strong>{summary.complete}</strong>
           <span>Recipe complete</span>
         </article>
         <article data-testid="food-bible-metric-progress">
-          <strong>{summary.incomplete ?? summary.inProgress}</strong>
+          <strong>{summary.needsAttention ?? summary.incomplete ?? summary.inProgress}</strong>
           <span>Needs attention</span>
         </article>
         <article data-testid="food-bible-metric-missing">
           <strong>{summary.missing}</strong>
           <span>Missing recipe</span>
+        </article>
+        <article data-testid="food-bible-metric-review">
+          <strong>{summary.needsReview || 0}</strong>
+          <span>Needs review / link</span>
         </article>
         <article data-testid="food-bible-metric-coverage">
           <strong>{summary.coveragePct}%</strong>
@@ -584,7 +596,16 @@ export default function FoodBibleView({
                           onClick={() => openEditor(row)}
                           data-testid={`open-recipe-editor-${row.identityKey}`}
                         >
-                          {row.recipeId ? "Edit" : "Document"}
+                          {row.recipeId ? "Open card" : "Document"}
+                        </button>
+                      ) : row.recipeId ? (
+                        <button
+                          type="button"
+                          className="inv-button inv-button--ghost inv-ingredients-edit"
+                          onClick={() => openEditor(row)}
+                          data-testid={`open-recipe-editor-${row.identityKey}`}
+                        >
+                          View card
                         </button>
                       ) : null}
                     </div>
@@ -608,14 +629,14 @@ export default function FoodBibleView({
       )}
 
       {editorTarget ? (
-        <RecipeEditorPanel
+        <FoodBibleCard
           branchId={branchId}
           target={editorTarget}
           overview={overview}
-          canEditNetwork={canEditNetwork}
-          canEditBranch={canEditBranch}
+          canEdit={canEdit}
           onClose={closeEditor}
           onSaved={handleSaved}
+          onOpenRecipe={(next) => setEditorTarget(next)}
         />
       ) : null}
     </section>

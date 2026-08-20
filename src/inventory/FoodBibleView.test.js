@@ -15,11 +15,11 @@ jest.mock("../lib/inventoryApi", () => ({
   setRecipeActive: jest.fn(),
 }));
 
-jest.mock("./RecipeEditorPanel", () => ({
+jest.mock("./FoodBibleCard", () => ({
   __esModule: true,
   default: ({ target, onClose }) => (
-    <div data-testid="recipe-editor-panel">
-      Editor for {target.displayName}
+    <div data-testid="food-bible-card">
+      Card for {target.displayName}
       <button type="button" onClick={onClose}>Close editor</button>
     </div>
   ),
@@ -180,7 +180,7 @@ describe("FoodBibleView", () => {
     render(<FoodBibleView branchId="khobar" />);
     await screen.findByText("Burrata");
     fireEvent.click(screen.getByTestId("open-recipe-editor-menu-1"));
-    expect(screen.getByTestId("recipe-editor-panel")).toHaveTextContent("Burrata");
+    expect(screen.getByTestId("food-bible-card")).toHaveTextContent("Burrata");
   });
 
   test("read-only users cannot document recipes", async () => {
