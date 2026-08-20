@@ -127,7 +127,24 @@ export function dedupeMenuItems(items = []) {
       existing.placementGroupId = item.placement_group_id;
     }
   }
-  return [...groups.values()];
+  const byName = new Map();
+  for (const group of groups.values()) {
+    const name = normalizeText(group.primaryItem.name_en);
+    const mergeKey = name || group.identityKey;
+    const existing = byName.get(mergeKey);
+    if (!existing) {
+      byName.set(mergeKey, group);
+      continue;
+    }
+    existing.placements.push(...group.placements);
+    if ((group.primaryItem.sort_order ?? 0) < (existing.primaryItem.sort_order ?? 0)) {
+      existing.primaryItem = group.primaryItem;
+    }
+    if (!existing.placementGroupId && group.placementGroupId) {
+      existing.placementGroupId = group.placementGroupId;
+    }
+  }
+  return [...byName.values()];
 }
 
 export function placementLabels(placements = [], sectionById = {}) {
@@ -142,12 +159,67 @@ export function placementLabels(placements = [], sectionById = {}) {
   return labels;
 }
 
+function foldRecipeName(value) {
+  return normalizeText(value)
+    .replace(/\byoghurt\b/g, "yogurt")
+    .replace(/\btoat\b/g, "toast");
+}
+
 function recipeNameKeys(recipe) {
   return [...new Set([
     recipe.normalizedName,
     recipe.name,
     recipe.nameEn,
-  ].map((value) => normalizeText(value)).filter(Boolean))];
+  ].map((value) => foldRecipeName(value)).filter(Boolean))];
+}
+
+const COOKING_PREFIX = /^(grilled|fried|toasted)\s+/;
+const STYLE_SUFFIX = /^(fried|poached|scrambled)$/;
+
+function displayRecipeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\byoghurt\b/g, "yogurt")
+    .replace(/\btoat\b/g, "toast")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function recipeDisplayKeys(recipe) {
+  return [...new Set([
+    recipe.name,
+    recipe.nameEn,
+    recipe.normalizedName,
+  ].map(displayRecipeName).filter(Boolean))];
+}
+
+function recipeCoversIdentity(recipe, identityDisplay) {
+  return recipeDisplayKeys(recipe).some((key) => {
+    if (key === identityDisplay) return true;
+    if (!key.startsWith(identityDisplay)) return false;
+    const remainder = key.slice(identityDisplay.length).trim().replace(/^[-–—,]\s*/, "");
+    if (!remainder) return true;
+    return !STYLE_SUFFIX.test(remainder);
+  });
+}
+
+function uniqueQualifiedRecipeMatch(recipes, identityName, allRecipes = recipes) {
+  const folded = foldRecipeName(identityName);
+  if (!folded) return null;
+  const exact = recipes.filter((recipe) => recipeNameKeys(recipe).includes(folded));
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+
+  const stripped = folded.replace(COOKING_PREFIX, "");
+  if (stripped && stripped !== folded) {
+    const byCook = recipes.filter((recipe) => recipeNameKeys(recipe).includes(stripped));
+    if (byCook.length === 1) return byCook[0];
+  }
+
+  const identityDisplay = displayRecipeName(identityName);
+  const covering = (allRecipes || recipes).filter((recipe) => recipeCoversIdentity(recipe, identityDisplay));
+  if (covering.length !== 1) return null;
+  return recipes.find((recipe) => recipe.id === covering[0].id) || null;
 }
 
 export function findRecipeForMenuIdentity(recipes = [], identity) {
@@ -165,12 +237,21 @@ export function findRecipeForMenuIdentity(recipes = [], identity) {
   });
   if (linked) return linked;
 
-  const identityName = normalizeText(identity.primaryItem?.name_en);
-  if (!identityName) return null;
-  return usable.find((recipe) => {
-    if (recipe.recipeType === "preparation") return false;
-    return recipeNameKeys(recipe).includes(identityName);
-  }) || null;
+  const identityName = identity.primaryItem?.name_en;
+  const menuItemRecipes = usable.filter((recipe) => recipe.recipeType !== "preparation");
+  const named = uniqueQualifiedRecipeMatch(menuItemRecipes, identityName, recipes);
+  if (named) return named;
+
+  const includingPrep = uniqueQualifiedRecipeMatch(usable, identityName, recipes);
+  if (includingPrep) return includingPrep;
+
+  const inactiveCanonical = recipes.filter((recipe) => (
+    recipe.active === false
+    && !isVerificationFixture(recipe.name, recipe.internalName, recipe.nameEn)
+    && /^fb:/i.test(recipe.internalName || "")
+    && recipe.recipeType !== "preparation"
+  ));
+  return uniqueQualifiedRecipeMatch(inactiveCanonical, identityName, recipes);
 }
 
 export function mapRecipeRow(row) {

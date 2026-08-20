@@ -34,6 +34,7 @@ yarn-error.log*
 # Ask NAC local verification — generated artifacts (keep *.mjs verifier scripts)
 ask-nac-executive-*.pdf
 test.pdf
+tmp/
 tmp-vault-verify/*.bundle.cjs
 tmp-vault-verify/intelligence/
 tmp-vault-verify/dashboard/
