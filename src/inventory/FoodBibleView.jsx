@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -16,7 +16,7 @@ import {
   fetchRecipeBundle,
 } from "../lib/inventoryApi";
 import {
-  currentFoodBibleSnapshots,
+  flattenSelectedRecipeTrees,
   recipePdfFilename,
   recipesPdfBytes,
   fetchHeroImageDataUrl,
@@ -38,6 +38,7 @@ import {
 } from "./foodBible";
 import FoodBibleCard from "./FoodBibleCard";
 import { formatSar } from "./costTrust";
+import { popCardTarget } from "./foodBibleCardNav";
 
 const READINESS_FILTERS = [
   { id: "all", label: "All" },
@@ -71,7 +72,8 @@ export default function FoodBibleView({
   const [readinessFilter, setReadinessFilter] = useState("all");
   const [catalogueFilter, setCatalogueFilter] = useState(CATALOGUE_SCOPES.KITCHEN);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [editorTarget, setEditorTarget] = useState(null);
+  const [editorStack, setEditorStack] = useState([]);
+  const bundleCacheRef = useRef(new Map());
   const [costAsOf, setCostAsOf] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [downloadBusy, setDownloadBusy] = useState("");
@@ -83,7 +85,6 @@ export default function FoodBibleView({
   const canEdit = canEditBranch || canEditNetwork;
 
   const refresh = useCallback(async ({ force = true } = {}) => {
-    setLoading(true);
     setError("");
     try {
       const [data, staffAccess] = await Promise.all([
@@ -130,10 +131,8 @@ export default function FoodBibleView({
       (entry) => entry.menuItemId === initialTarget.menuItemId,
     );
     if (row) {
-      setEditorTarget({
-        ...row,
-        suggestedRecipeType: initialTarget.recipeType || "menu_item",
-      });
+      bundleCacheRef.current = new Map();
+      setEditorStack([row]);
     }
     onInitialTargetHandled?.();
   }, [initialTarget, overview?.rows, onInitialTargetHandled]);
@@ -179,13 +178,36 @@ export default function FoodBibleView({
     costCoveragePct: 0,
   };
 
+  const editorTarget = editorStack[editorStack.length - 1] || null;
+
   const openEditor = (row) => {
-    setEditorTarget(row);
+    bundleCacheRef.current = new Map();
+    setEditorStack([row]);
   };
 
   const closeEditor = () => {
-    setEditorTarget(null);
+    setEditorStack([]);
   };
+
+  const goBack = () => {
+    setEditorStack((stack) => popCardTarget(stack));
+  };
+
+  const openComponent = (next) => {
+    if (typeof window !== "undefined" && window.history?.pushState) {
+      window.history.pushState({ foodBibleCard: true }, "");
+    }
+    setEditorStack((stack) => [...stack, next]);
+  };
+
+  useEffect(() => {
+    if (!editorStack.length) return undefined;
+    const onPop = () => {
+      setEditorStack((stack) => popCardTarget(stack));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [editorStack.length]);
 
   const handleSaved = async () => {
     setNotice("Recipe saved.");
@@ -202,28 +224,53 @@ export default function FoodBibleView({
     [overview?.recipes],
   );
 
-  const snapshotForRow = useCallback(async (row) => {
-    let lines = row.lines || [];
-    let documentation = row.documentation || row.version?.documentation || {};
-    let version = row.version;
-    if (row.recipeId && (!lines.length || overview?.detailsDeferred)) {
-      const bundle = await fetchRecipeBundle(row.recipeId);
-      lines = bundle?.lines || [];
-      documentation = bundle?.version?.documentation || documentation;
-      version = bundle?.version || version;
+  const loadBundle = useCallback(async (recipeId) => {
+    if (!recipeId) return null;
+    if (!bundleCacheRef.current.has(recipeId)) {
+      bundleCacheRef.current.set(recipeId, fetchRecipeBundle(recipeId));
     }
-    const imageDataUrl = await fetchHeroImageDataUrl(row.heroImagePath || documentation?.sourcePhotograph?.storagePath);
+    return bundleCacheRef.current.get(recipeId);
+  }, []);
+
+  const snapshotFromBundle = useCallback(async (rowHint, bundle) => {
+    const recipe = bundle?.recipe;
     return snapshotFromRecipeRecord({
-      row,
-      lines,
-      documentation,
-      version,
+      row: {
+        ...rowHint,
+        displayName: rowHint?.displayName || recipe?.name,
+        recipeType: recipe?.recipeType || rowHint?.recipeType,
+        kind: rowHint?.kind || (recipe?.recipeType === "menu_item" ? "menu_item" : "component"),
+        outputQuantity: recipe?.outputQuantity,
+        outputUnit: recipe?.outputUnit,
+        heroImagePath: recipe?.heroImagePath || null,
+      },
+      lines: bundle?.lines || [],
+      documentation: bundle?.version?.documentation || {},
+      version: bundle?.version,
       ingredientById,
       recipeById,
       generatedAt: new Date().toISOString(),
-      imageDataUrl,
+      imageDataUrl: await fetchHeroImageDataUrl(recipe?.heroImagePath),
     });
-  }, [ingredientById, recipeById, overview?.detailsDeferred]);
+  }, [ingredientById, recipeById]);
+
+  const snapshotTreeForRoots = useCallback(async (rootRows) => {
+    const linesByRecipeId = {};
+    const bundles = {};
+    const load = async (id) => {
+      if (!id || bundles[id]) return;
+      const bundle = await loadBundle(id);
+      bundles[id] = bundle;
+      linesByRecipeId[id] = bundle?.lines || [];
+      for (const line of linesByRecipeId[id]) {
+        if (line.subRecipeId) await load(line.subRecipeId);
+      }
+    };
+    for (const row of rootRows) await load(row.recipeId);
+    const order = flattenSelectedRecipeTrees(rootRows.map((row) => row.recipeId), linesByRecipeId);
+    const rootById = new Map(rootRows.map((row) => [row.recipeId, row]));
+    return Promise.all(order.map((id) => snapshotFromBundle(rootById.get(id) || { recipeId: id, kind: "component" }, bundles[id])));
+  }, [loadBundle, snapshotFromBundle]);
 
   const downloadSnapshots = (snapshots, filename, combined = false) => {
     if (!snapshots.length) {
@@ -244,8 +291,8 @@ export default function FoodBibleView({
     }
     setDownloadBusy(row.identityKey);
     try {
-      const snapshot = await snapshotForRow(row);
-      downloadSnapshots([snapshot], recipePdfFilename(row.displayName));
+      const snapshots = await snapshotTreeForRoots([row]);
+      downloadSnapshots(snapshots, recipePdfFilename(row.displayName));
     } finally {
       setDownloadBusy("");
     }
@@ -254,10 +301,8 @@ export default function FoodBibleView({
   const handleDownloadSelected = async () => {
     setDownloadBusy("selected");
     try {
-      const snapshots = await Promise.all(
-        filtered
-          .filter((row) => selectedKeys.has(row.identityKey) && row.recipeId)
-          .map(snapshotForRow),
+      const snapshots = await snapshotTreeForRoots(
+        filtered.filter((row) => selectedKeys.has(row.identityKey) && row.recipeId),
       );
       downloadSnapshots(snapshots, recipePdfFilename("selected-recipes", { combined: true }), true);
     } finally {
@@ -268,12 +313,8 @@ export default function FoodBibleView({
   const handleDownloadFoodBible = async () => {
     setDownloadBusy("bible");
     try {
-      const snapshots = currentFoodBibleSnapshots(
-        await Promise.all(
-          (overview?.rows || [])
-            .filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId)
-            .map(snapshotForRow),
-        ),
+      const snapshots = await snapshotTreeForRoots(
+        (overview?.rows || []).filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId),
       );
       downloadSnapshots(snapshots, recipePdfFilename("food-bible", { combined: true }), true);
     } finally {
@@ -635,8 +676,11 @@ export default function FoodBibleView({
           overview={overview}
           canEdit={canEdit}
           onClose={closeEditor}
+          onBack={editorStack.length > 1 ? goBack : null}
+          breadcrumb={editorStack.map((entry) => entry.displayName).filter(Boolean)}
+          getBundle={loadBundle}
           onSaved={handleSaved}
-          onOpenRecipe={(next) => setEditorTarget(next)}
+          onOpenRecipe={openComponent}
         />
       ) : null}
     </section>

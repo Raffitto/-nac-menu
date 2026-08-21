@@ -95,35 +95,58 @@ function titleFromPage(text) {
   return lines.find((line) => blocked.has(line.toLowerCase()) || (line.length > 3 && !isSkip(line))) || "";
 }
 
+const TOOL_LINE = /griddle|knife|board|bowl|whisk|spatula|plancha|saucepan|tray|mandoline|mixer|pan\b|container|presser/i;
+const ALLERGEN_LINE = /dairy|gluten|egg|nuts?|sulphit|seafood|sesame|mustard|celery|soya|lupin|mollusc|\bn\/?a\b/i;
+const SECTION_LINE = /^(mains?|salads?|main bases?|bases?|brunch|dessert|breakfast|starters?|sides?)$/i;
+const TIME_LINE = /^(?:(?:\d+\s*(?:to|-)\s*)?\d+\s*(?:min|minutes)|n\/?a)$/i;
+const YIELD_LINE = /^\d+(?:[.,]\d+)?\s*(pax|batch|portions?|g|gr|grams?|kg|ml|l)\b/i;
+
+function parseYieldRaw(raw) {
+  const text = String(raw || "").trim();
+  const match = text.match(/^(\d+(?:[.,]\d+)?)\s*(pax|batch|portions?|g|gr|grams?|kg|ml|l)?/i);
+  if (!match) return { yieldRaw: text, yieldQuantity: null, yieldUnit: "each" };
+  const quantity = Number(String(match[1]).replace(",", "."));
+  const unitKey = String(match[2] || "").toLowerCase();
+  const yieldUnit = !unitKey || /pax|batch|portion/.test(unitKey)
+    ? "each"
+    : canonicalUnit(unitKey) || "each";
+  return { yieldRaw: text, yieldQuantity: Number.isFinite(quantity) ? quantity : null, yieldUnit };
+}
+
 function metaFromCover(text) {
   const lines = linesOf(text);
-  const idx = (label) => lines.findIndex((line) => line.toLowerCase() === label);
-  const after = (label) => {
-    const at = idx(label);
-    if (at < 0) return "";
-    for (let i = at + 1; i < Math.min(lines.length, at + 4); i += 1) {
-      if (!isSkip(lines[i]) && !isNoise(lines[i])) return lines[i];
+  const title = titleFromPage(text);
+  const values = [];
+  for (const line of lines) {
+    if (!line || line === title || isSkip(line) || isNoise(line) || /^ingredients$/i.test(line) || METHOD_START.test(line) || /^\d+\./.test(line)) continue;
+    if (line === line.toUpperCase() && /[A-Z]/.test(line) && line.length > 12) continue;
+    if (values.length && /\/\s*$/.test(values[values.length - 1]) && ALLERGEN_LINE.test(line)) {
+      values[values.length - 1] = `${values[values.length - 1]} ${line}`.replace(/\s+/g, " ");
+      continue;
     }
-    return "";
-  };
-  const allergenIdx = lines.findIndex((line) => /^allergens:?$/i.test(line));
-  let allergens = "";
-  if (allergenIdx >= 0) {
-    const next = lines[allergenIdx + 1] || "";
-    allergens = /^n\/?a$/i.test(next) ? "N/A" : next;
+    values.push(line);
   }
-  const utensilsIdx = lines.findIndex((line) => /^utensils used$/i.test(line));
-  let utensils = "";
-  if (utensilsIdx >= 0) {
-    utensils = lines.slice(utensilsIdx + 1).find((line) => !isSkip(line) && !isNoise(line) && line !== titleFromPage(text)) || "";
+  const utensils = values.find((line) => TOOL_LINE.test(line)) || "";
+  const allergensRaw = values.find((line) => ALLERGEN_LINE.test(line) && !TOOL_LINE.test(line)) || "";
+  const allergens = /^n\/?a$/i.test(allergensRaw) ? "N/A" : allergensRaw;
+  const menuSection = values.find((line) => SECTION_LINE.test(line)) || "";
+  const times = values.filter((line) => TIME_LINE.test(line));
+  const yieldCandidate = values.find((line) => YIELD_LINE.test(line) && !TIME_LINE.test(line) && !/^1\s*batch$/i.test(line)) || "";
+  let prepTime = "";
+  let cookTime = "";
+  if (times.length >= 2) {
+    prepTime = /^n\/?a$/i.test(times[0]) ? "" : times[0];
+    cookTime = /^n\/?a$/i.test(times[1]) ? "" : times[1];
+  } else if (times.length === 1 && !/^n\/?a$/i.test(times[0])) {
+    cookTime = times[0];
   }
   return {
     utensils,
     allergens,
-    menuSection: after("menu section"),
-    prepTime: after("prep time"),
-    cookTime: after("cooking time"),
-    yieldRaw: after("yield") || lines.find((line) => /\d+\s*(pax|batch|portion)/i.test(line)) || "",
+    menuSection,
+    prepTime,
+    cookTime,
+    yieldRaw: yieldCandidate,
   };
 }
 
@@ -137,11 +160,12 @@ function methodFromPages(pages) {
   return steps;
 }
 
-const NAME_SKIP = /^(base|salads|mains|minutes?|rice cooker|sauce pan.*|mixing bowl.*|gastro tray.*|table top.*|plancha.*|\d+\s*minutes?)$/i;
+const NAME_SKIP = /^(base|salads|mains|minutes?|notes?|rice cooker|sauce pan.*|mixing bowl.*|gastro tray.*|table top.*|plancha.*|\d+\s*minutes?)$/i;
 
 function looksLikeIngredientName(line) {
   if (!line || isSkip(line) || isNoise(line) || canonicalUnit(line) || parseQuantity(line) != null) return false;
-  if (METHOD_START.test(line) || NAME_SKIP.test(line)) return false;
+  if (METHOD_START.test(line) || NAME_SKIP.test(line) || /^\d+\./.test(line)) return false;
+  if (/^powder$/i.test(line)) return false;
   if (/^\d+\s*(pax|batch)/i.test(line)) return false;
   return true;
 }
@@ -154,8 +178,12 @@ function extractNames(lines) {
       inList = true;
       continue;
     }
-    if (/^method$/i.test(line) || /^critical control$/i.test(line)) continue;
+    if (/^method$/i.test(line)) {
+      inList = false;
+      continue;
+    }
     if (!inList) continue;
+    if (/^\d+\./.test(line) || METHOD_START.test(line)) continue;
     if (!looksLikeIngredientName(line)) continue;
     if (line === line.toUpperCase() && line.split(" ").length >= 2) continue;
     names.push(line);
@@ -180,7 +208,7 @@ function extractQtyUnits(lines) {
     pendingNote = "";
   };
   for (const line of lines) {
-    if (isNoise(line) || METHOD_START.test(line) || isSkip(line)) {
+    if (isNoise(line) || METHOD_START.test(line) || isSkip(line) || /^\d+\./.test(line) || /^powder$/i.test(line)) {
       flush();
       continue;
     }
@@ -197,6 +225,10 @@ function extractQtyUnits(lines) {
       continue;
     }
     if (pendingQty != null) {
+      if (looksLikeIngredientName(line) && !/^(leaves|whole|sliced.*)$/i.test(line)) {
+        flush();
+        continue;
+      }
       pendingNote = pendingNote ? `${pendingNote}; ${line}` : line;
       flush();
     }
@@ -208,12 +240,15 @@ function extractQtyUnits(lines) {
 function parseInterleaved(lines) {
   const rows = [];
   let i = 0;
-  const start = lines.findIndex((line) => /^ingredients$/i.test(line));
-  i = start >= 0 ? start + 1 : 0;
+  const start = 0;
+  i = start;
   while (i < lines.length) {
     const line = lines[i];
-    if (/^method$/i.test(line) || /^critical control$/i.test(line) || isNoise(line) || METHOD_START.test(line)) break;
-    if (isSkip(line) || NAME_SKIP.test(line) || canonicalUnit(line) || parseQuantity(line) != null) {
+    if (/^method$/i.test(line) || /^critical control$/i.test(line) || isNoise(line) || METHOD_START.test(line) || /^to serve$/i.test(line)) {
+      i += 1;
+      continue;
+    }
+    if (isSkip(line) || NAME_SKIP.test(line) || canonicalUnit(line) || parseQuantity(line) != null || /^ingredients$/i.test(line)) {
       i += 1;
       continue;
     }
@@ -236,7 +271,7 @@ function parseInterleaved(lines) {
       }
       if (quantity != null && !isSkip(next) && !canonicalUnit(next) && parseQuantity(next) == null && !METHOD_START.test(next) && !isNoise(next) && !/^ingredients$/i.test(next)) {
         const looksLikeName = next === next.toUpperCase() && next.length > 8;
-        if (looksLikeName) break;
+        if (looksLikeName || (looksLikeIngredientName(next) && next.split(/\s+/).length >= 2)) break;
         notes = next;
         j += 1;
         break;
@@ -262,16 +297,30 @@ function parseInterleaved(lines) {
 function parseColumnSplit(lines) {
   const names = extractNames(lines);
   const qtys = extractQtyUnits(lines);
-  if (!names.length || !qtys.length) return [];
+  if (!names.length || !qtys.length) return { rows: [], unresolved: [] };
   const count = Math.min(names.length, qtys.length);
-  if (count < 2) return [];
-  return names.slice(0, count).map((name, index) => ({
+  if (count < 2 && names.length < 2) return { rows: [], unresolved: names.map((name) => ({ sourceName: name })) };
+  const rows = names.slice(0, count).map((name, index) => ({
     sourceName: name,
     sourceQuantity: qtys[index].quantity,
     sourceUnit: qtys[index].unit,
     notes: qtys[index].notes || "",
     alignment: "COLUMN_ZIP",
   }));
+  const unresolved = names.slice(count).map((name) => ({ sourceName: name, sourceQuantity: null, sourceUnit: null, alignment: "UNRESOLVED" }));
+  return { rows, unresolved };
+}
+
+function mergeIngredientRows(columnRows, interleavedRows) {
+  const out = [];
+  const seen = new Set();
+  for (const row of [...columnRows, ...interleavedRows]) {
+    const key = sourceIngredientKey(row.sourceName);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
 }
 
 function score(rows) {
@@ -283,11 +332,13 @@ export function parseFoodBibleCard(pages = []) {
   const allLines = pages.flatMap((page) => linesOf(page.text));
   const interleaved = parseInterleaved(allLines);
   const column = parseColumnSplit(allLines);
-  const ingredients = score(column) > score(interleaved) ? column : interleaved;
+  const primary = score(column.rows) >= score(interleaved) ? column.rows : interleaved;
+  const ingredients = mergeIngredientRows(primary, score(column.rows) >= score(interleaved) ? interleaved : column.rows);
+  const unresolvedIngredients = column.unresolved || [];
   const meta = metaFromCover(cover);
   const method = methodFromPages(pages);
   const title = titleFromPage(cover) || titleFromPage(pages.map((page) => page.text).join("\n"));
-  const yieldMatch = String(meta.yieldRaw || "").match(/(\d+(?:\.\d+)?)\s*(pax|batch|portion|portions)?/i);
+  const yieldInfo = parseYieldRaw(meta.yieldRaw);
   return {
     title,
     recipeKind: /base|batch/i.test(meta.menuSection || "") || /cooking|dressing|batch/i.test(title)
@@ -298,10 +349,11 @@ export function parseFoodBibleCard(pages = []) {
     menuSection: meta.menuSection,
     prepTime: meta.prepTime,
     cookTime: meta.cookTime,
-    yieldRaw: meta.yieldRaw,
-    yieldQuantity: yieldMatch ? Number(yieldMatch[1]) : null,
-    yieldUnit: /batch/i.test(meta.yieldRaw || "") ? "each" : "each",
+    yieldRaw: yieldInfo.yieldRaw,
+    yieldQuantity: yieldInfo.yieldQuantity,
+    yieldUnit: yieldInfo.yieldUnit,
     ingredients,
+    unresolvedIngredients,
     method,
     sourceLocator: pages.map((page) => page.page).filter(Boolean),
   };

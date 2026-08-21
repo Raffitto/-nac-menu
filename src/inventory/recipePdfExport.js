@@ -122,6 +122,34 @@ export async function fetchHeroImageDataUrl(path, fetcher = fetch) {
   return `data:${contentType};base64,${encoded}`;
 }
 
+export function flattenRecipeTree(rootId, linesByRecipeId = {}) {
+  const ordered = [];
+  const seen = new Set();
+  const walk = (id) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    ordered.push(id);
+    for (const line of linesByRecipeId[id] || []) {
+      if (line.subRecipeId) walk(line.subRecipeId);
+    }
+  };
+  walk(rootId);
+  return ordered;
+}
+
+export function flattenSelectedRecipeTrees(rootIds = [], linesByRecipeId = {}) {
+  const ordered = [];
+  const seen = new Set();
+  for (const rootId of rootIds) {
+    for (const id of flattenRecipeTree(rootId, linesByRecipeId)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  return ordered;
+}
+
 export function currentFoodBibleSnapshots(snapshots = []) {
   return snapshots.filter((snapshot) => snapshot.operationallyActive && !snapshot.archived);
 }

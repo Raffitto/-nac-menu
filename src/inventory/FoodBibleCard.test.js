@@ -16,6 +16,10 @@ jest.mock("../lib/inventoryApi", () => ({
   saveRecipeDraft: jest.fn(),
 }));
 
+jest.mock("../lib/menuApi", () => ({
+  uploadMenuImage: jest.fn(),
+}));
+
 const overview = {
   ingredients: [
     { id: "ing-1", canonicalName: "Heavy cream", baseInventoryUnit: "litre", active: true },
@@ -80,7 +84,45 @@ describe("FoodBibleCard", () => {
     expect(await screen.findByTestId("food-bible-card")).toBeInTheDocument();
     expect(await screen.findByText(/QUINOA, POMEGRANATE/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("open-component-cmp-1"));
-    expect(onOpenRecipe).toHaveBeenCalledWith(expect.objectContaining({ recipeId: "cmp-1" }));
+    expect(onOpenRecipe).toHaveBeenCalledWith(expect.objectContaining({ recipeId: "cmp-1", kind: "component" }));
+    expect(onOpenRecipe.mock.calls[0][0].heroImagePath).toBeUndefined();
+  });
+
+  test("back returns to the parent card without closing", async () => {
+    const onBack = jest.fn();
+    const onClose = jest.fn();
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-sauce", displayName: "PEPPERCORN SAUCE", kind: "component" }}
+        overview={overview}
+        canEdit
+        breadcrumb={["Black Angus Steak Au Poivre", "PEPPERCORN SAUCE"]}
+        onBack={onBack}
+        onClose={onClose}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("food-bible-card-breadcrumb")).toHaveTextContent("Black Angus Steak Au Poivre > PEPPERCORN SAUCE");
+    fireEvent.click(screen.getByTestId("food-bible-card-back"));
+    expect(onBack).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test("edit mode exposes image upload, crop, hero and remove controls", async () => {
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa", kind: "menu_item" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-card-edit"));
+    expect(screen.getByTestId("food-bible-image-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("food-bible-image-upload")).toBeInTheDocument();
   });
 
   test("edits a line in place, saves, and does not invent a menu mapping", async () => {
