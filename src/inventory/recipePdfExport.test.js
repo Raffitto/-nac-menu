@@ -1,5 +1,6 @@
 import {
   currentFoodBibleSnapshots,
+  flattenSelectedRecipeTrees,
   recipePdfPlaintext,
   recipesPdfBytes,
   snapshotFromExtractedRecipe,
@@ -52,6 +53,16 @@ describe("recipePdfExport", () => {
     const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
     const withPhoto = { ...bigNac, imageDataUrl: png };
     expect(new Uint8Array(recipesPdfBytes([withPhoto]))[0]).toBe(0x25);
+  });
+
+  test("recipe-tree PDF includes each referenced component once after the finished dish", () => {
+    const order = flattenSelectedRecipeTrees(["steak", "quinoa"], {
+      steak: [{ subRecipeId: "sauce" }],
+      sauce: [{ subRecipeId: "demi" }, { subRecipeId: "demi" }],
+      quinoa: [{ subRecipeId: "sauce" }],
+      demi: [],
+    });
+    expect(order).toEqual(["steak", "sauce", "demi", "quinoa"]);
   });
 
   test("current Food Bible excludes archived Apple Bircher", () => {

@@ -73,7 +73,7 @@
 }
 
 .fb-card {
-  width: min(1100px, 100%);
+  width: min(1400px, calc(100vw - 32px));
   margin: 0 auto 48px;
   background: #f4efe6;
   color: #1b1b18;
@@ -205,6 +205,7 @@
   background: none;
   border: none;
   color: #0f3d3c;
+  font-weight: 700;
   text-decoration: underline;
   padding: 0;
   min-height: auto;

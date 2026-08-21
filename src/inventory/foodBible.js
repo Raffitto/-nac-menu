@@ -54,6 +54,11 @@ export const DEFAULT_DOCUMENTATION = Object.freeze({
   prepTime: "",
   cookTime: "",
   menuSection: "",
+  unresolvedSourceLines: [],
+  sourceYieldRaw: "",
+  sourceDataNeedsReview: false,
+  heroCrop: null,
+  gallery: [],
 });
 
 export const STAGE_PRESETS = Object.freeze([
@@ -527,7 +532,9 @@ export function deriveRecipeReadiness({
   checklist.push({
     id: "instructions",
     label: "Instructions added",
-    complete: hasInstructions(version?.documentation),
+    complete: catalogueMode
+      ? (Number(lineCount) > 0 || hasInstructions(version?.documentation))
+      : hasInstructions(version?.documentation),
     requiredForReady: true,
   });
 

@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2, X, ChevronLeft } from "lucide-react";
 import {
   createRecipe,
   fetchRecipeBundle,
   linkRecipeToMenuItem,
   saveRecipeDraft,
 } from "../lib/inventoryApi";
+import { uploadMenuImage } from "../lib/menuApi";
+import { componentOpenTarget } from "./foodBibleCardNav";
 import { CANONICAL_UNITS, unitLabel } from "./ingredientMaster";
 import {
   DEFAULT_DOCUMENTATION,
@@ -49,7 +51,7 @@ function formFromBundle(bundle, target) {
     recipeType: recipe?.recipeType || (target?.kind === "new_component" ? "preparation" : "menu_item"),
     menuItemId: recipe?.menuItemId || target?.linkedMenuItemId || "",
     placementGroupId: recipe?.placementGroupId || target?.placementGroupId || null,
-    heroImagePath: recipe?.heroImagePath || target?.heroImagePath || "",
+    heroImagePath: recipe?.heroImagePath || (target?.kind === "component" ? "" : (target?.heroImagePath || "")),
     scope: recipe?.scope || "branch",
     outputQuantity: recipe?.outputQuantity ?? "1",
     outputUnit: recipe?.outputUnit || "each",
@@ -68,6 +70,9 @@ export default function FoodBibleCard({
   onClose,
   onSaved,
   onOpenRecipe,
+  onBack,
+  breadcrumb = [],
+  getBundle,
 }) {
   const [editing, setEditing] = useState(!target?.recipeId);
   const [bundle, setBundle] = useState(null);
@@ -106,17 +111,18 @@ export default function FoodBibleCard({
     setLoading(true);
     setError("");
     try {
-      const next = await fetchRecipeBundle(target.recipeId);
-      setBundle(next);
-      setForm(formFromBundle(next, target));
-      setLines(next.lines.length ? next.lines : [emptyLine()]);
-      setStages(next.stages || []);
+      const next = await (getBundle || fetchRecipeBundle)(target.recipeId);
+      const resolved = await Promise.resolve(next);
+      setBundle(resolved);
+      setForm(formFromBundle(resolved, target));
+      setLines(resolved.lines.length ? resolved.lines : [emptyLine()]);
+      setStages(resolved.stages || []);
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not load recipe."));
     } finally {
       setLoading(false);
     }
-  }, [target]);
+  }, [target, getBundle]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -226,16 +232,84 @@ export default function FoodBibleCard({
 
   const photo = heroUrl(form.heroImagePath);
   const doc = form.documentation || {};
+  const crop = doc.heroCrop || { x: 50, y: 50, zoom: 1 };
+  const unresolved = doc.unresolvedSourceLines || [];
+  const gallery = doc.gallery || (form.heroImagePath ? [{ path: form.heroImagePath }] : []);
+
+  const updateCrop = (patch) => {
+    setForm((current) => ({
+      ...current,
+      documentation: {
+        ...current.documentation,
+        heroCrop: { ...(current.documentation?.heroCrop || { x: 50, y: 50, zoom: 1 }), ...patch },
+      },
+    }));
+  };
+
+  const handleUploadImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const recipeId = bundle?.recipe?.id || target?.recipeId || "new";
+    const path = `food-bible/recipes/${recipeId}-${Date.now()}.jpg`;
+    setBusy("image");
+    try {
+      const uploaded = await uploadMenuImage(file, path);
+      if (uploaded?.error) throw uploaded.error;
+      const nextPath = uploaded?.data?.path || path;
+      setForm((current) => ({
+        ...current,
+        heroImagePath: nextPath,
+        documentation: {
+          ...current.documentation,
+          gallery: [...(current.documentation?.gallery || []), { path: nextPath }],
+          heroCrop: { x: 50, y: 50, zoom: 1 },
+        },
+      }));
+    } catch (err) {
+      setError(friendlyRecipeError(err, "Could not upload image."));
+    } finally {
+      setBusy("");
+      event.target.value = "";
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setForm((current) => ({
+      ...current,
+      heroImagePath: "",
+      documentation: {
+        ...current.documentation,
+        gallery: (current.documentation?.gallery || []).filter((item) => item.path !== current.heroImagePath),
+        heroCrop: null,
+      },
+    }));
+  };
+
+  const kindLabel = form.recipeType === "preparation" || target?.kind === "component"
+    ? "Prepared component"
+    : target?.kind === "menu_item" || form.menuItemId
+      ? "Linked live menu item"
+      : "Source recipe";
 
   return (
     <div className="fb-card-overlay" data-testid="food-bible-card">
       <article className="fb-card">
         <header className="fb-card__toolbar">
-          <button type="button" onClick={onClose} aria-label="Close recipe" data-testid="food-bible-card-close">
-            <X size={18} />
-          </button>
+          <div className="fb-card__toolbar-left">
+            {onBack ? (
+              <button type="button" onClick={onBack} data-testid="food-bible-card-back">
+                <ChevronLeft size={18} /> Back
+              </button>
+            ) : null}
+            <button type="button" onClick={onClose} aria-label="Close recipe" data-testid="food-bible-card-close">
+              <X size={18} />
+            </button>
+          </div>
           <div>
             <p className="fb-card__kicker">NAC Food Bible</p>
+            {breadcrumb.length > 1 ? (
+              <p className="fb-card__crumb" data-testid="food-bible-card-breadcrumb">{breadcrumb.join(" > ")}</p>
+            ) : null}
             {target?.linkKind === "inferred" ? <p className="fb-card__review">Needs menu confirmation</p> : null}
           </div>
           <div className="fb-card__toolbar-actions">
@@ -253,11 +327,23 @@ export default function FoodBibleCard({
         {error ? <p className="fb-card__error" data-testid="recipe-editor-error">{error}</p> : null}
         {loading ? (
           <div className="fb-card__loading"><Loader2 className="inv-spin" size={22} /> Loading card…</div>
-        ) : (
+        ) : null}
+        {(!loading || bundle || !target?.recipeId) ? (
           <>
             <div className="fb-card__hero">
               {photo ? (
-                <img src={photo} alt="" className="fb-card__photo" data-testid="food-bible-card-photo" />
+                <img
+                  src={photo}
+                  alt=""
+                  className="fb-card__photo"
+                  data-testid="food-bible-card-photo"
+                  loading="lazy"
+                  decoding="async"
+                  style={{
+                    objectPosition: `${crop.x}% ${crop.y}%`,
+                    transform: `scale(${crop.zoom || 1})`,
+                  }}
+                />
               ) : (
                 <div className="fb-card__photo is-empty" data-testid="food-bible-card-photo-empty">No source photograph</div>
               )}
@@ -272,8 +358,10 @@ export default function FoodBibleCard({
                   <h2>{form.name || "Untitled recipe"}</h2>
                 )}
                 {form.nameAr ? <p className="fb-card__ar">{form.nameAr}</p> : null}
+                <p className="fb-card__kind" data-testid="food-bible-card-kind">{kindLabel}</p>
                 <dl>
-                  <div><dt>Section</dt><dd>{doc.menuSection || target?.categoryName || "—"}</dd></div>
+                  <div><dt>Source section</dt><dd>{doc.menuSection || "—"}</dd></div>
+                  <div><dt>Live availability</dt><dd>{target?.placementSummary || "—"}</dd></div>
                   <div><dt>Yield</dt><dd>
                     {editing ? (
                       <span className="fb-card__yield-edit">
@@ -289,6 +377,40 @@ export default function FoodBibleCard({
                   <div><dt>Allergens</dt><dd>{doc.allergens || "—"}</dd></div>
                   <div><dt>Utensils</dt><dd>{doc.utensils || doc.equipmentNotes || "—"}</dd></div>
                 </dl>
+                {doc.sourceDataNeedsReview ? (
+                  <p className="fb-card__review" data-testid="food-bible-source-review">Source data needs review</p>
+                ) : null}
+                {editing ? (
+                  <div className="fb-card__image-edit" data-testid="food-bible-image-editor">
+                    <label className="fb-card__image-upload">
+                      {photo ? "Replace image" : "Upload image"}
+                      <input type="file" accept="image/*" onChange={handleUploadImage} data-testid="food-bible-image-upload" />
+                    </label>
+                    {photo ? (
+                      <>
+                        <button type="button" onClick={handleRemoveImage} data-testid="food-bible-image-remove">Remove image</button>
+                        <label>Position
+                          <input type="range" min="0" max="100" value={crop.x} onChange={(event) => updateCrop({ x: Number(event.target.value) })} data-testid="food-bible-image-x" />
+                          <input type="range" min="0" max="100" value={crop.y} onChange={(event) => updateCrop({ y: Number(event.target.value) })} data-testid="food-bible-image-y" />
+                        </label>
+                        <label>Zoom
+                          <input type="range" min="1" max="3" step="0.1" value={crop.zoom || 1} onChange={(event) => updateCrop({ zoom: Number(event.target.value) })} data-testid="food-bible-image-zoom" />
+                        </label>
+                        <button type="button" onClick={() => updateCrop({ x: 50, y: 50, zoom: 1 })} data-testid="food-bible-image-reset">Reset crop</button>
+                        {gallery.map((item) => (
+                          <button
+                            key={item.path}
+                            type="button"
+                            data-testid="food-bible-image-hero"
+                            onClick={() => setForm((current) => ({ ...current, heroImagePath: item.path }))}
+                          >
+                            Use as hero
+                          </button>
+                        ))}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
                 <p className="fb-card__link">
                   Recipe → {form.menuItemId ? (linkedName || "Linked menu item") : "Not linked"}
                   {canEdit ? (
@@ -352,7 +474,12 @@ export default function FoodBibleCard({
                               ))}
                             </select>
                           ) : component ? (
-                            <button type="button" className="fb-card__component" data-testid={`open-component-${component.id}`} onClick={() => onOpenRecipe?.({ ...target, recipeId: component.id, displayName: component.name, kind: "component" })}>
+                            <button
+                              type="button"
+                              className="fb-card__component"
+                              data-testid={`open-component-${component.id}`}
+                              onClick={() => onOpenRecipe?.(componentOpenTarget(target, component))}
+                            >
                               {label}
                             </button>
                           ) : label}
@@ -404,7 +531,21 @@ export default function FoodBibleCard({
                   <Plus size={14} /> Add row
                 </button>
               ) : null}
-              {!editing && !lines.some((line) => line.ingredientId || line.subRecipeId) ? (
+              {!editing && unresolved.length ? (
+                <table className="fb-card__table">
+                  <tbody>
+                    {unresolved.map((row) => (
+                      <tr key={row.sourceName} data-testid="food-bible-unresolved-line">
+                        <td>{row.sourceName}</td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>Needs review — quantity not captured in source</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+              {!editing && !lines.some((line) => line.ingredientId || line.subRecipeId) && !unresolved.length ? (
                 <p data-testid="food-bible-no-ingredients">No ingredients recorded</p>
               ) : null}
             </section>
@@ -437,7 +578,7 @@ export default function FoodBibleCard({
               ) : null}
             </section>
           </>
-        )}
+        ) : null}
       </article>
       <FoodBibleMenuLink
         open={linkOpen}

@@ -805,7 +805,7 @@
 }
 
 .fb-card {
-  width: min(1100px, 100%);
+  width: min(1400px, calc(100vw - 32px));
   margin: 0 auto 48px;
   background: #f4efe6;
   color: #1b1b18;
@@ -814,6 +814,7 @@
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
 }
 
+.fb-card__toolbar-left,
 .fb-card__toolbar,
 .fb-card__toolbar-actions {
   display: flex;
@@ -936,10 +937,33 @@
 .fb-card__component {
   background: none;
   border: none;
-  color: #0f3d3c;
-  text-decoration: underline;
   padding: 0;
-  min-height: auto;
+  color: #0f3d3c;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.fb-card__crumb,
+.fb-card__kind {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.fb-card__photo {
+  overflow: hidden;
+}
+
+.fb-card__image-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.fb-card__image-upload input {
+  display: block;
+  margin-top: 4px;
 }
 
 .fb-card__method pre {
