@@ -1,6 +1,7 @@
 import {
   currentFoodBibleSnapshots,
   flattenSelectedRecipeTrees,
+  recipePdfFilename,
   recipePdfPlaintext,
   recipesPdfBytes,
   snapshotFromExtractedRecipe,
@@ -10,6 +11,7 @@ import {
 describe("recipePdfExport", () => {
   const bigNac = snapshotFromRecipeRecord({
     row: {
+      recipeId: "big-nac",
       displayName: "Big NAC",
       categoryName: "Burgers",
       guestStatus: "live",
@@ -65,6 +67,57 @@ describe("recipePdfExport", () => {
     expect(order).toEqual(["steak", "sauce", "demi", "quinoa"]);
   });
 
+  test("Beetroot Hummus & Feta preserves the component boundary instead of flattening hummus ingredients", () => {
+    const beetroot = snapshotFromRecipeRecord({
+      row: {
+        recipeId: "beetroot-hummus-feta",
+        displayName: "Beetroot Hummus & Feta",
+        categoryName: "Nibbles",
+        guestStatus: "live",
+        kind: "menu_item",
+        outputQuantity: 1,
+        outputUnit: "each",
+      },
+      lines: [
+        { name: "Beetroot hummus", quantity: 110, unit: "gram", subRecipeId: "hummus-batch" },
+        { name: "Feta", quantity: 12, unit: "gram", ingredientId: "feta", preparationNote: "Crumbled" },
+        { name: "Pumpkin seeds", quantity: 4, unit: "gram", ingredientId: "pumpkin", preparationNote: "Toasted" },
+        { name: "Parsley", quantity: 2, unit: "gram", ingredientId: "parsley", preparationNote: "Thinly chopped" },
+        { name: "Olive oil", quantity: 5, unit: "millilitre", ingredientId: "oil" },
+        { name: "Za'atar powder", quantity: 2, unit: "gram", ingredientId: "zaatar" },
+        { name: "Pita bread", quantity: 2, unit: "each", ingredientId: "pita", preparationNote: "Heated, 120gram" },
+      ],
+      documentation: {
+        preparationMethod: "Using gloves, crumble the feta with the hands.\nToast the pumpkin seeds.\nToast the Pita bread.",
+        platingInstructions: "Spread the beet hummus at the bottom of the serving dish.",
+        allergens: "Gluten / sesame / dairy",
+        utensils: "Plating spoons / tray / gloves",
+        prepTime: "15 minutes",
+        menuSection: "Nibbles",
+      },
+    });
+
+    expect(beetroot.ingredients).toHaveLength(7);
+    expect(beetroot.ingredients[0]).toEqual(expect.objectContaining({
+      name: "Beetroot hummus",
+      quantity: 110,
+      unit: "gram",
+      isComponent: true,
+      subRecipeId: "hummus-batch",
+    }));
+    const text = recipePdfPlaintext(beetroot);
+    expect(text).toContain("Beetroot hummus (component) — 110 gram");
+    expect(text).toContain("Feta — 12 gram");
+    expect(text).not.toContain("Canned chickpeas");
+    expect(text).not.toContain("3304");
+    expect(new Uint8Array(recipesPdfBytes([beetroot], { mode: "recipe_book" }))[0]).toBe(0x25);
+  });
+
+  test("Food Bible and Recipe Book produce distinct combined filenames", () => {
+    expect(recipePdfFilename("all", { combined: true, mode: "food_bible" })).toMatch(/^nac-food-bible-/);
+    expect(recipePdfFilename("all", { combined: true, mode: "recipe_book" })).toMatch(/^nac-recipe-book-/);
+  });
+
   test("current Food Bible excludes archived Apple Bircher", () => {
     const bircher = snapshotFromExtractedRecipe({
       ksaOperationalTitle: "Apple Bircher",
@@ -73,7 +126,7 @@ describe("recipePdfExport", () => {
     const bible = currentFoodBibleSnapshots([bigNac, bircher]);
     expect(bible).toHaveLength(1);
     expect(bible[0].name).toBe("Big NAC");
-    const bytes = recipesPdfBytes(bible, { title: "NAC Food Bible" });
+    const bytes = recipesPdfBytes(bible, { title: "NAC Food Bible", mode: "food_bible" });
     expect(new Uint8Array(bytes)[0]).toBe(0x25);
     expect(recipePdfPlaintext(bircher)).toContain("Apple Bircher");
   });
