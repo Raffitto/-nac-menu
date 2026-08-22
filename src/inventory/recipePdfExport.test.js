@@ -110,7 +110,22 @@ describe("recipePdfExport", () => {
     expect(text).toContain("Feta — 12 gram");
     expect(text).not.toContain("Canned chickpeas");
     expect(text).not.toContain("3304");
-    expect(new Uint8Array(recipesPdfBytes([beetroot], { mode: "recipe_book" }))[0]).toBe(0x25);
+    expect(text).not.toMatch(/^Gluten \/ sesame/m);
+    expect(beetroot.ingredients.some((row) => /gluten|sesame|dairy|nibbles/i.test(row.name))).toBe(false);
+    expect(beetroot.method).not.toContain("Spread the beet hummus");
+    expect(beetroot.plating).toContain("Spread the beet hummus");
+    const hummus = snapshotFromRecipeRecord({
+      row: { recipeId: "hummus-batch", displayName: "Beetroot hummus", recipeType: "preparation", kind: "component" },
+      lines: [
+        { name: "Canned chickpeas", quantity: 800, unit: "gram", ingredientId: "chickpea" },
+        { name: "Cooked beetroot", quantity: 720, unit: "gram", ingredientId: "beet" },
+      ],
+      documentation: { preparationMethod: "Blend chickpeas with beetroot." },
+    });
+    const treeText = [recipePdfPlaintext(beetroot), recipePdfPlaintext(hummus)].join("\n---\n");
+    expect(treeText.split("Blend chickpeas with beetroot.").length - 1).toBe(1);
+    expect(recipePdfPlaintext(beetroot)).not.toContain("Blend chickpeas");
+    expect(new Uint8Array(recipesPdfBytes([beetroot, hummus], { mode: "recipe_book" }))[0]).toBe(0x25);
   });
 
   test("Food Bible and Recipe Book produce distinct combined filenames", () => {

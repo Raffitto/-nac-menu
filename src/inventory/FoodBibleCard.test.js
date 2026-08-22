@@ -144,6 +144,51 @@ describe("FoodBibleCard", () => {
     expect(saveRecipeDraft.mock.calls[0][1].lines[0].quantity).toBe("120");
   });
 
+  test("keeps Save visible and Cancel restores without closing", async () => {
+    const onClose = jest.fn();
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={onClose}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-card-edit"));
+    expect(screen.getByTestId("save-recipe-button")).toBeVisible();
+    fireEvent.change(screen.getByTestId("recipe-line-qty-0"), { target: { value: "999" } });
+    fireEvent.click(screen.getByTestId("food-bible-card-cancel"));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("food-bible-card-edit"));
+    expect(screen.getByTestId("recipe-line-qty-0")).toHaveValue("130");
+    expect(document.body.style.overflow).toBe("hidden");
+  });
+
+  test("segmented workspace only shows the active pane", async () => {
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    await screen.findByTestId("food-bible-workspace-pane");
+    expect(screen.getByTestId("food-bible-workspace-pane")).toHaveAttribute("data-workspace", "ingredients");
+    expect(screen.getByTestId("open-component-cmp-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("recipe-method-input")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("food-bible-workspace-method"));
+    expect(screen.getByTestId("food-bible-workspace-pane")).toHaveAttribute("data-workspace", "method");
+    fireEvent.click(screen.getByTestId("food-bible-card-edit"));
+    expect(screen.getByTestId("recipe-method-input")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("food-bible-workspace-details"));
+    expect(screen.getByTestId("food-bible-details")).toBeInTheDocument();
+  });
+
   test("manual menu link requires confirm", async () => {
     render(
       <FoodBibleCard

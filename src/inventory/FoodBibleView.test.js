@@ -166,6 +166,10 @@ describe("FoodBibleView", () => {
     });
     render(<FoodBibleView branchId="khobar" />);
     await screen.findByText("Burrata");
+    fireEvent.click(screen.getByTestId("food-bible-export-button"));
+    expect(screen.getByTestId("food-bible-export-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("food-bible-export-type-recipe_book")).toBeInTheDocument();
+    expect(screen.getByTestId("food-bible-export-type-food_bible")).toBeInTheDocument();
     expect(screen.getByTestId("download-food-bible-button")).toBeInTheDocument();
     expect(screen.getByTestId("download-selected-recipes-button")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("download-recipe-menu-1"));

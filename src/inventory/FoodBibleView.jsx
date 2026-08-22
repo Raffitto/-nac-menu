@@ -77,8 +77,13 @@ export default function FoodBibleView({
   const [costAsOf, setCostAsOf] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [downloadBusy, setDownloadBusy] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportType, setExportType] = useState("recipe_book");
+  const [exportScope, setExportScope] = useState("selected");
   const [visibleCount, setVisibleCount] = useState(80);
   const [narrow, setNarrow] = useState(false);
+  const listWrapRef = useRef(null);
+  const toastTimer = useRef(null);
 
   const canEditBranch = canManageBranchRecipes(access, branchId);
   const canEditNetwork = canManageNetworkRecipes(access);
@@ -209,10 +214,14 @@ export default function FoodBibleView({
     return () => window.removeEventListener("popstate", onPop);
   }, [editorStack.length]);
 
+  const showToast = (message) => {
+    setNotice(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setNotice(""), 2800);
+  };
+
   const handleSaved = async () => {
-    setNotice("Recipe saved.");
-    closeEditor();
-    await refresh();
+    showToast("Recipe saved.");
   };
 
   const ingredientById = useMemo(
@@ -272,16 +281,52 @@ export default function FoodBibleView({
     return Promise.all(order.map((id) => snapshotFromBundle(rootById.get(id) || { recipeId: id, kind: "component" }, bundles[id])));
   }, [loadBundle, snapshotFromBundle]);
 
-  const downloadSnapshots = (snapshots, filename, combined = false) => {
+  const downloadSnapshots = (snapshots, filename, { combined = false, mode = "recipe_book" } = {}) => {
     if (!snapshots.length) {
       setError("Select at least one recipe with documented ingredients.");
       return;
     }
-    const bytes = recipesPdfBytes(snapshots, {
-      title: combined ? "NAC Food Bible" : snapshots.length > 1 ? "Selected recipes" : snapshots[0].name,
-    });
+    const title = mode === "food_bible"
+      ? "NAC Food Bible"
+      : combined ? "NAC Recipe Book" : snapshots[0].name;
+    const bytes = recipesPdfBytes(snapshots, { title, mode });
     triggerPdfDownload(bytes, filename);
-    setNotice(`Downloaded ${snapshots.length} recipe${snapshots.length === 1 ? "" : "s"}.`);
+    showToast(`Downloaded ${snapshots.length} ${mode === "food_bible" ? "Food Bible" : "Recipe Book"} page${snapshots.length === 1 ? "" : "s"}.`);
+  };
+
+  const rootsForScope = (scope) => {
+    if (scope === "current") {
+      const current = editorStack[0] || filtered.find((row) => selectedKeys.has(row.identityKey) && row.recipeId);
+      return current?.recipeId ? [current] : [];
+    }
+    if (scope === "selected") {
+      return filtered.filter((row) => selectedKeys.has(row.identityKey) && row.recipeId);
+    }
+    return (overview?.rows || []).filter((row) => (
+      (catalogueFilter === CATALOGUE_SCOPES.KITCHEN
+        ? row.kind === "menu_item" && row.guestStatus === "live"
+        : true)
+      && row.recipeId
+    ));
+  };
+
+  const runExport = async ({ mode, scope, busyKey }) => {
+    const roots = rootsForScope(scope);
+    if (!roots.length) {
+      setError(scope === "selected" ? "Select at least one recipe." : "No current recipe to export.");
+      return;
+    }
+    setDownloadBusy(busyKey || scope);
+    try {
+      const snapshots = await snapshotTreeForRoots(roots);
+      downloadSnapshots(snapshots, recipePdfFilename(roots[0].displayName || "recipes", {
+        combined: snapshots.length > 1,
+        mode,
+      }), { combined: snapshots.length > 1, mode });
+      setExportOpen(false);
+    } finally {
+      setDownloadBusy("");
+    }
   };
 
   const handleDownloadRow = async (row) => {
@@ -292,35 +337,14 @@ export default function FoodBibleView({
     setDownloadBusy(row.identityKey);
     try {
       const snapshots = await snapshotTreeForRoots([row]);
-      downloadSnapshots(snapshots, recipePdfFilename(row.displayName));
+      downloadSnapshots(snapshots, recipePdfFilename(row.displayName, { mode: "recipe_book" }), { mode: "recipe_book" });
     } finally {
       setDownloadBusy("");
     }
   };
 
-  const handleDownloadSelected = async () => {
-    setDownloadBusy("selected");
-    try {
-      const snapshots = await snapshotTreeForRoots(
-        filtered.filter((row) => selectedKeys.has(row.identityKey) && row.recipeId),
-      );
-      downloadSnapshots(snapshots, recipePdfFilename("selected-recipes", { combined: true }), true);
-    } finally {
-      setDownloadBusy("");
-    }
-  };
-
-  const handleDownloadFoodBible = async () => {
-    setDownloadBusy("bible");
-    try {
-      const snapshots = await snapshotTreeForRoots(
-        (overview?.rows || []).filter((row) => row.kind === "menu_item" && row.guestStatus === "live" && row.recipeId),
-      );
-      downloadSnapshots(snapshots, recipePdfFilename("food-bible", { combined: true }), true);
-    } finally {
-      setDownloadBusy("");
-    }
-  };
+  const handleDownloadSelected = async () => runExport({ mode: exportType, scope: "selected", busyKey: "selected" });
+  const handleDownloadFoodBible = async () => runExport({ mode: "food_bible", scope: "book", busyKey: "bible" });
 
   const selectable = filtered.filter((row) => row.recipeId);
   const allFilteredSelected = selectable.length > 0 && selectable.every((row) => selectedKeys.has(row.identityKey));
@@ -353,15 +377,21 @@ export default function FoodBibleView({
 
   return (
     <section className="inv-food-bible" data-testid="food-bible-view">
-      {(error || notice) && (
-        <div className={`inv-banner ${error ? "inv-banner--error" : "inv-banner--success"}`}>
-          {error ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
-          <span>{error || notice}</span>
-          <button type="button" aria-label="Dismiss message" onClick={() => { setError(""); setNotice(""); }}>
+      {error ? (
+        <div className="inv-banner inv-banner--error">
+          <AlertTriangle size={18} />
+          <span>{error}</span>
+          <button type="button" aria-label="Dismiss message" onClick={() => setError("")}>
             <X size={16} />
           </button>
         </div>
-      )}
+      ) : null}
+      {notice ? (
+        <div className="fb-toast" data-testid="food-bible-toast" role="status">
+          <CheckCircle2 size={16} />
+          <span>{notice}</span>
+        </div>
+      ) : null}
 
       <div className="inv-fb-summary">
         <article data-testid="food-bible-metric-total">
@@ -471,24 +501,42 @@ export default function FoodBibleView({
             ))}
           </select>
         </label>
-        <button
-          type="button"
-          className="inv-button inv-button--secondary"
-          onClick={handleDownloadSelected}
-          disabled={!selectedKeys.size || Boolean(downloadBusy)}
-          data-testid="download-selected-recipes-button"
-        >
-          <Download size={16} /> Download selected
-        </button>
-        <button
-          type="button"
-          className="inv-button inv-button--secondary"
-          onClick={handleDownloadFoodBible}
-          disabled={Boolean(downloadBusy)}
-          data-testid="download-food-bible-button"
-        >
-          <Download size={16} /> Download Food Bible
-        </button>
+        <div className="fb-export">
+          <button
+            type="button"
+            className="inv-button inv-button--secondary"
+            onClick={() => setExportOpen((open) => !open)}
+            data-testid="food-bible-export-button"
+          >
+            <Download size={16} /> Export
+          </button>
+          {exportOpen ? (
+            <div className="fb-export__sheet" data-testid="food-bible-export-sheet" role="dialog" aria-label="Export recipes">
+              <p>Type</p>
+              <div className="fb-export__choices">
+                <button type="button" className={exportType === "recipe_book" ? "is-active" : ""} data-testid="food-bible-export-type-recipe_book" onClick={() => setExportType("recipe_book")}>Recipe Book</button>
+                <button type="button" className={exportType === "food_bible" ? "is-active" : ""} data-testid="food-bible-export-type-food_bible" onClick={() => setExportType("food_bible")}>Food Bible</button>
+              </div>
+              <p>Scope</p>
+              <div className="fb-export__choices">
+                <button type="button" className={exportScope === "current" ? "is-active" : ""} data-testid="food-bible-export-scope-current" onClick={() => setExportScope("current")}>Current item</button>
+                <button type="button" className={exportScope === "selected" ? "is-active" : ""} data-testid="food-bible-export-scope-selected" onClick={() => setExportScope("selected")}>Selected items</button>
+                <button type="button" className={exportScope === "book" ? "is-active" : ""} data-testid="food-bible-export-scope-book" onClick={() => setExportScope("book")}>Full current book</button>
+              </div>
+              <button
+                type="button"
+                className="inv-button inv-button--primary"
+                data-testid="food-bible-export-confirm"
+                disabled={Boolean(downloadBusy)}
+                onClick={() => runExport({ mode: exportType, scope: exportScope, busyKey: "export" })}
+              >
+                {downloadBusy ? "Preparing…" : "Download"}
+              </button>
+              <button type="button" className="inv-button inv-button--ghost" data-testid="download-selected-recipes-button" onClick={handleDownloadSelected}>Download selected</button>
+              <button type="button" className="inv-button inv-button--ghost" data-testid="download-food-bible-button" onClick={handleDownloadFoodBible}>Download Food Bible</button>
+            </div>
+          ) : null}
+        </div>
         {canEdit ? (
           <button
             type="button"
@@ -541,7 +589,7 @@ export default function FoodBibleView({
           <p>No items match your search or filters.</p>
         </div>
       ) : (
-        <div className="inv-ingredients-table-wrap">
+        <div className="inv-ingredients-table-wrap" ref={listWrapRef}>
           <table className="inv-ingredients-table inv-fb-table">
             <thead>
               <tr>

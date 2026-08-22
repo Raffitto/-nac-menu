@@ -7,6 +7,7 @@ import { normalizeBranchId } from "../utils/branchIdentity";
 import FoodBibleView from "../../inventory/FoodBibleView";
 import "../../inventory/invoice-intake.css";
 import "../styles/food-bible-os.css";
+import "../../inventory/foodBibleEditorUx.css";
 
 function resolveFoodBibleBranch(profile, requested) {
   const allowed = allowedBranchIds(profile);

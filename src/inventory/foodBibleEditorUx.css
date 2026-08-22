@@ -1,10 +1,12 @@
-/* Food Bible editor UX layer: full-screen, stable across laptop sizes, no page-level scroll. */
+/* Food Bible editor UX: viewport shell, segmented workspaces, no page scroll. */
 .fb-card-overlay {
   position: fixed;
   inset: 0;
   z-index: 40;
   padding: 0 !important;
   overflow: hidden !important;
+  width: 100vw;
+  height: 100dvh;
   background: rgba(8, 12, 12, 0.76);
 }
 
@@ -24,10 +26,44 @@
   position: sticky;
   top: 0;
   z-index: 5;
+  display: grid !important;
+  grid-template-columns: minmax(140px, 1fr) minmax(180px, auto) minmax(140px, 1fr);
+  align-items: center;
   min-height: 58px;
-  padding: 10px clamp(14px, 2vw, 28px) !important;
+  padding: 8px clamp(12px, 2vw, 24px) !important;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+
+.fb-card__toolbar-left,
+.fb-card__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fb-card__toolbar-actions {
+  justify-content: flex-end;
+}
+
+.fb-card__toolbar-center {
+  text-align: center;
+}
+
+.fb-card__kicker {
+  letter-spacing: 0.14em;
+}
+
+.fb-card__crumb {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.82;
+}
+
+.fb-card__toolbar button.is-primary {
+  background: #f4efe6;
+  color: #0f3d3c;
+  font-weight: 700;
 }
 
 .fb-card > .fb-card__error,
@@ -41,115 +77,110 @@
   border-radius: 14px;
 }
 
-.fb-card > :not(.fb-card__toolbar):not(.fb-card__error):not(.fb-card__loading) {
+.fb-card__shell {
   min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .fb-card__hero {
-  grid-template-columns: minmax(280px, 38%) minmax(0, 1fr) !important;
-  gap: clamp(16px, 2vw, 30px) !important;
-  padding: clamp(14px, 1.8vw, 24px) clamp(16px, 2vw, 30px) !important;
-  align-items: stretch;
+  grid-template-columns: minmax(240px, 34%) minmax(0, 1fr) !important;
+  gap: clamp(12px, 1.6vw, 24px) !important;
+  padding: clamp(10px, 1.4vw, 18px) clamp(14px, 2vw, 26px) 8px !important;
+  align-items: start;
 }
 
+.fb-photo,
+.fb-photo__frame,
 .fb-card__photo,
 .fb-card__photo.is-empty {
   width: 100%;
-  height: clamp(220px, 38vh, 440px) !important;
+}
+
+.fb-photo__frame,
+.fb-card__photo,
+.fb-card__photo.is-empty {
+  height: clamp(180px, 28vh, 320px) !important;
   min-height: 0 !important;
-  max-height: 44vh;
-  object-fit: cover;
+  max-height: 34vh;
   overflow: hidden;
+  border-radius: 14px;
+}
+
+.fb-photo__frame {
+  background: #d9d0c1;
+  touch-action: none;
+  cursor: grab;
+}
+
+.fb-photo__frame.is-fit { cursor: default; }
+.fb-photo__frame.is-dragging { cursor: grabbing; }
+
+.fb-card__photo {
+  width: 100%;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.fb-photo__empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  border: 2px dashed rgba(15, 61, 60, 0.35);
+  background: #efe8dc;
+  color: #0f3d3c;
+  cursor: pointer;
+}
+
+.fb-photo__file { display: none; }
+
+.fb-photo__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.fb-photo__controls button.is-active {
+  background: #0f3d3c;
+  color: #f4efe6;
+}
+
+.fb-photo__zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .fb-card__identity {
   min-width: 0;
-  align-self: start;
 }
 
 .fb-card__identity h2,
 .fb-card__identity input {
-  font-size: clamp(22px, 2.1vw, 34px) !important;
+  font-size: clamp(20px, 2vw, 30px) !important;
   line-height: 1.08;
 }
 
-.fb-card__identity dl {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 8px 22px !important;
-}
-
-.fb-card__image-edit {
+.fb-card__status-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
-  padding: 10px 0;
+  gap: 8px 14px;
+  margin: 8px 0;
 }
 
-.fb-card__image-edit input[type="range"] {
-  width: min(180px, 28vw);
+.fb-card__status,
+.fb-card__review {
+  margin: 0;
+  font-size: 12px;
 }
 
-.fb-card__table-wrap,
-.fb-card__method {
-  margin: 0 clamp(16px, 2vw, 30px);
-  padding: 0 !important;
-}
-
-.fb-card__table-wrap {
-  max-height: clamp(220px, 34vh, 380px);
-  overflow: auto !important;
-  border: 1px solid rgba(31, 52, 50, 0.12);
-  border-radius: 14px;
-  background: #fffdf8;
-  overscroll-behavior: contain;
-}
-
-.fb-card__table-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #f4efe6;
-  padding: 8px 0;
-}
-
-.fb-card__table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #fffdf8;
-}
-
-.fb-card__table td,
-.fb-card__table th {
-  padding: 7px 10px !important;
-}
-
-.fb-card__method {
-  max-height: clamp(150px, 23vh, 260px);
-  overflow: auto;
-  margin-top: 14px;
-  margin-bottom: 18px;
-  overscroll-behavior: contain;
-}
-
-.fb-card__method textarea {
-  width: 100%;
-  min-height: 150px;
-  resize: vertical;
-  border-radius: 12px;
-  padding: 12px;
-  font: inherit;
-}
-
-.fb-card__toolbar button,
-.fb-card__link button,
-.fb-card__table-wrap button,
-.fb-card__image-edit button,
-.fb-card__image-upload {
-  border-radius: 12px !important;
-  min-height: 38px;
-}
+.fb-card__status.is-quiet { opacity: 0.7; }
 
 .fb-card__review {
   display: inline-flex;
@@ -160,18 +191,191 @@
   background: rgba(232, 194, 122, 0.14);
 }
 
+.fb-card__segments {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 clamp(14px, 2vw, 26px) 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(15, 61, 60, 0.08);
+}
+
+.fb-card__segments button {
+  flex: 1;
+  max-width: 180px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #1b1b18;
+  font-weight: 600;
+}
+
+.fb-card__segments button.is-active {
+  background: #0f3d3c;
+  color: #f4efe6;
+}
+
+.fb-card__workspace {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 clamp(14px, 2vw, 26px) 16px;
+}
+
+.fb-card__table-wrap,
+.fb-card__method,
+.fb-card__details {
+  height: 100%;
+  max-height: none !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.fb-card__table-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f4efe6;
+}
+
+.fb-card__table thead th {
+  position: sticky;
+  top: 0;
+  background: #fffdf8;
+}
+
+.fb-card__table td,
+.fb-card__table th {
+  padding: 7px 10px !important;
+}
+
+.fb-card__table tr.is-component td:first-child {
+  font-weight: 700;
+}
+
+.fb-card__method-editor,
+.fb-card__method textarea {
+  width: 100%;
+  min-height: min(46vh, 420px);
+  resize: none;
+  border-radius: 12px;
+  padding: 14px;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.fb-card__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 18px;
+  align-content: start;
+}
+
+.fb-card__details label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fb-card__details input,
+.fb-card__details select {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid #d7cfc2;
+  padding: 0 10px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.fb-export {
+  position: relative;
+}
+
+.fb-export__sheet {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 12;
+  width: min(320px, 86vw);
+  padding: 14px;
+  border-radius: 16px;
+  background: #fffdf8;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+
+.fb-export__sheet p {
+  margin: 8px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fb-export__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fb-export__choices button {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #d7cfc2;
+  background: #fff;
+}
+
+.fb-export__choices button.is-active {
+  background: #0f3d3c;
+  color: #f4efe6;
+  border-color: #0f3d3c;
+}
+
+.fb-export__sheet .inv-button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.fb-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #0f3d3c;
+  color: #f4efe6;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+
+.inv-food-bible .inv-ingredients-toolbar {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-height: 800px) and (min-width: 761px) {
   .fb-card__toolbar { min-height: 50px; }
-  .fb-card__hero { padding-top: 10px !important; padding-bottom: 10px !important; }
-  .fb-card__photo, .fb-card__photo.is-empty { height: 31vh !important; }
-  .fb-card__identity dl { margin: 7px 0 !important; gap: 4px 16px !important; }
-  .fb-card__table-wrap { max-height: 30vh; }
-  .fb-card__method { max-height: 18vh; }
+  .fb-card__hero { padding-top: 8px !important; padding-bottom: 4px !important; }
+  .fb-photo__frame, .fb-card__photo, .fb-card__photo.is-empty { height: 24vh !important; }
 }
 
 @media (max-width: 760px) {
-  .fb-card { display: block !important; overflow-y: auto !important; }
+  .fb-card__toolbar {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "left actions" "center center";
+  }
+  .fb-card__toolbar-left { grid-area: left; }
+  .fb-card__toolbar-center { grid-area: center; }
+  .fb-card__toolbar-actions { grid-area: actions; }
   .fb-card__hero { grid-template-columns: 1fr !important; }
-  .fb-card__photo, .fb-card__photo.is-empty { height: min(34vh, 300px) !important; }
-  .fb-card__table-wrap, .fb-card__method { max-height: none; }
+  .fb-photo__frame, .fb-card__photo, .fb-card__photo.is-empty { height: min(28vh, 240px) !important; }
 }

@@ -14,6 +14,7 @@ import {
   syncInventoryLocation,
 } from "./inventoryShared";
 import "./invoice-intake.css";
+import "./foodBibleEditorUx.css";
 
 export default function InventoryApp() {
   const { session, checked, issue } = usePlatformSession();
