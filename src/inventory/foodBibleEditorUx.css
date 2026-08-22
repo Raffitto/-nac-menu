@@ -1,0 +1,177 @@
+/* Food Bible editor UX layer: full-screen, stable across laptop sizes, no page-level scroll. */
+.fb-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: rgba(8, 12, 12, 0.76);
+}
+
+.fb-card {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden !important;
+}
+
+.fb-card__toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: 58px;
+  padding: 10px clamp(14px, 2vw, 28px) !important;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.fb-card > .fb-card__error,
+.fb-card > .fb-card__loading {
+  position: absolute;
+  top: 64px;
+  left: 50%;
+  z-index: 8;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  border-radius: 14px;
+}
+
+.fb-card > :not(.fb-card__toolbar):not(.fb-card__error):not(.fb-card__loading) {
+  min-height: 0;
+}
+
+.fb-card__hero {
+  grid-template-columns: minmax(280px, 38%) minmax(0, 1fr) !important;
+  gap: clamp(16px, 2vw, 30px) !important;
+  padding: clamp(14px, 1.8vw, 24px) clamp(16px, 2vw, 30px) !important;
+  align-items: stretch;
+}
+
+.fb-card__photo,
+.fb-card__photo.is-empty {
+  width: 100%;
+  height: clamp(220px, 38vh, 440px) !important;
+  min-height: 0 !important;
+  max-height: 44vh;
+  object-fit: cover;
+  overflow: hidden;
+}
+
+.fb-card__identity {
+  min-width: 0;
+  align-self: start;
+}
+
+.fb-card__identity h2,
+.fb-card__identity input {
+  font-size: clamp(22px, 2.1vw, 34px) !important;
+  line-height: 1.08;
+}
+
+.fb-card__identity dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px 22px !important;
+}
+
+.fb-card__image-edit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+
+.fb-card__image-edit input[type="range"] {
+  width: min(180px, 28vw);
+}
+
+.fb-card__table-wrap,
+.fb-card__method {
+  margin: 0 clamp(16px, 2vw, 30px);
+  padding: 0 !important;
+}
+
+.fb-card__table-wrap {
+  max-height: clamp(220px, 34vh, 380px);
+  overflow: auto !important;
+  border: 1px solid rgba(31, 52, 50, 0.12);
+  border-radius: 14px;
+  background: #fffdf8;
+  overscroll-behavior: contain;
+}
+
+.fb-card__table-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f4efe6;
+  padding: 8px 0;
+}
+
+.fb-card__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fffdf8;
+}
+
+.fb-card__table td,
+.fb-card__table th {
+  padding: 7px 10px !important;
+}
+
+.fb-card__method {
+  max-height: clamp(150px, 23vh, 260px);
+  overflow: auto;
+  margin-top: 14px;
+  margin-bottom: 18px;
+  overscroll-behavior: contain;
+}
+
+.fb-card__method textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  border-radius: 12px;
+  padding: 12px;
+  font: inherit;
+}
+
+.fb-card__toolbar button,
+.fb-card__link button,
+.fb-card__table-wrap button,
+.fb-card__image-edit button,
+.fb-card__image-upload {
+  border-radius: 12px !important;
+  min-height: 38px;
+}
+
+.fb-card__review {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(232, 194, 122, 0.14);
+}
+
+@media (max-height: 800px) and (min-width: 761px) {
+  .fb-card__toolbar { min-height: 50px; }
+  .fb-card__hero { padding-top: 10px !important; padding-bottom: 10px !important; }
+  .fb-card__photo, .fb-card__photo.is-empty { height: 31vh !important; }
+  .fb-card__identity dl { margin: 7px 0 !important; gap: 4px 16px !important; }
+  .fb-card__table-wrap { max-height: 30vh; }
+  .fb-card__method { max-height: 18vh; }
+}
+
+@media (max-width: 760px) {
+  .fb-card { display: block !important; overflow-y: auto !important; }
+  .fb-card__hero { grid-template-columns: 1fr !important; }
+  .fb-card__photo, .fb-card__photo.is-empty { height: min(34vh, 300px) !important; }
+  .fb-card__table-wrap, .fb-card__method { max-height: none; }
+}
