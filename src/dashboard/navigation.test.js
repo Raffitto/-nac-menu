@@ -115,6 +115,15 @@ describe("intelligence navigation", () => {
   });
 });
 
+describe("NAC OS Reports navigation", () => {
+  test("exposes Reports as a primary nav item", () => {
+    expect(NAV_ITEMS.map((item) => item.id)).toContain("reports");
+    expect(NAV_ITEMS.find((item) => item.id === "reports").label).toBe("Reports");
+    expect(navIdFromLegacyView("export-center")).toBe("reports");
+    expect(isScrollableView("reports")).toBe(true);
+  });
+});
+
 describe("NAC OS Food Bible navigation", () => {
   test("exposes Food Bible as a primary nav item", () => {
     expect(NAV_ITEMS.map((item) => item.id)).toContain("food-bible");

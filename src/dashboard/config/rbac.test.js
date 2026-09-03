@@ -118,6 +118,7 @@ describe("NAC OS RBAC", () => {
     test("can access branch operational surfaces", () => {
       expect(canAccessNav(profile, "intelligence")).toBe(true);
       expect(canAccessNav(profile, "reviews")).toBe(true);
+      expect(canAccessNav(profile, "reports")).toBe(true);
       expect(canAccessNav(profile, "food-bible")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "sales")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);

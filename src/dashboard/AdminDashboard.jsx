@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   BookOpen,
+  FileDown,
 } from "lucide-react";
 import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
 import useKeepAliveNav from "./hooks/useKeepAliveNav";
@@ -57,6 +58,7 @@ const BranchesView = lazy(() => import("./views/BranchesView"));
 const SettingsView = lazy(() => import("./views/SettingsView"));
 const MenuManager = lazy(() => import("./MenuManager"));
 const FoodBibleOsView = lazy(() => import("./views/FoodBibleOsView"));
+const ExportCenter = lazy(() => import("./exportCenter/ExportCenter"));
 const OperationalDashboard = lazy(() => import("./views/OperationalDashboard"));
 const LegacyOverviewPanel = lazy(() => import("./views/LegacyOverviewPanel"));
 
@@ -73,6 +75,7 @@ const NAV_ICONS = {
   overview: LayoutDashboard,
   intelligence: Brain,
   reviews: Star,
+  reports: FileDown,
   menu: UtensilsCrossed,
   "food-bible": BookOpen,
   branches: Store,
@@ -496,6 +499,22 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 <ReviewsHub />
               ) : (
                 <AccessDeniedPanel message="Reviews access is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {isMounted("reports") ? (
+          <div
+            className="admin-keepalive-pane"
+            hidden={adminView !== "reports"}
+            data-testid="pane-reports"
+          >
+            <Suspense fallback={<ViewFallback label="Opening Reports…" />}>
+              {rbac.canAccessNav("reports") ? (
+                <ExportCenter />
+              ) : (
+                <AccessDeniedPanel message="Reports access is not enabled for your NAC OS role." />
               )}
             </Suspense>
           </div>

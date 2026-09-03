@@ -4,6 +4,7 @@ import { operationalBrandDisplay, CANONICAL_BRANCH_IDS } from "../utils/branchId
 export const IMPORT_TYPE = {
   PRODUCT_SALES: "product_sales",
   WAITER_PRODUCT_SALES: "waiter_product_sales",
+  SALES_BY_CREATOR: "sales_by_creator",
 };
 
 export const BRANCH_OPTIONS = CANONICAL_BRANCH_IDS.map((id) => ({
@@ -56,6 +57,23 @@ export const IMPORT_LANES = {
       "Waiter leaderboards & upsell %",
       "Modifier / attachment intelligence",
       "Menu visibility correlation",
+    ],
+  },
+  [IMPORT_TYPE.SALES_BY_CREATOR]: {
+    id: IMPORT_TYPE.SALES_BY_CREATOR,
+    title: "Sales by Creator",
+    subtitle: "Staff-level guests, orders, and sales totals",
+    icon: "waiter",
+    foodicsReport: "Sales by Creator Report — not grouped by product",
+    instructions: [
+      "Export from Foodics: Sales by Creator",
+      "Do not group by product",
+      "Columns typically include Creator, Guests, Orders, Net Sales / Gross Sales",
+    ],
+    usedFor: [
+      "Average check",
+      "Staff order and guest counts",
+      "Staff Performance ranking",
     ],
   },
 };
