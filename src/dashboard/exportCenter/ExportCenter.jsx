@@ -11,12 +11,10 @@ import { validateUploadForNeed } from "./detectFoodicsReport";
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
-import { buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
+import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
 import { buildStaffPerformanceReport } from "./staffPerformance";
 import { buildStaffPerformancePdfBytes } from "./staffPerformancePdf";
 import { downloadBlob, zipStoreFiles } from "./zipStore";
-import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
-
 function StatusRow({ item, from, to, onUpload }) {
   const guide = FOODICS_SOURCE_GUIDE[item.id];
   const rangeLabel = formatExportDateRange(from, to);
@@ -62,7 +60,7 @@ export default function ExportCenter() {
   const [error, setError] = useState("");
   const [payload, setPayload] = useState({
     cashFacts: [],
-    reviewEvents: [],
+    reviewEntries: [],
     creatorRows: [],
     productRows: [],
     reviewStats: [],
@@ -95,18 +93,23 @@ export default function ExportCenter() {
           .lte("period_end", to)
           .is("archived_at", null),
         supabase
-          .from("review_events")
-          .select("employee_name,event_type,created_at,branch_id")
+          .from("google_review_tracking_entries")
+          .select("staff_name,source_staff_name,review_date,review_count,source_file_id,source_sheet,source_drive_file_id,ingested_at,branch_id")
           .eq("branch_id", scopedBranch)
-          .gte("created_at", `${from}T00:00:00.000Z`)
-          .lte("created_at", `${to}T23:59:59.999Z`),
+          .gte("review_date", from)
+          .lte("review_date", to),
         getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile),
         getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile),
       ]);
 
       const cashFacts = (cashRes.data || []).filter((r) => r.branch_id === scopedBranch);
       const cashDates = [...new Set(cashFacts.map((f) => String(f.period_end).slice(0, 10)))];
-      const reviewEvents = reviewRes.error ? [] : (reviewRes.data || []);
+      const reviewEntries = reviewRes.error ? [] : (reviewRes.data || []).filter((r) => r.branch_id === scopedBranch);
+      const reviewDates = [...new Set(
+        reviewEntries
+          .filter((r) => Number(r.review_count) > 0)
+          .map((r) => String(r.review_date).slice(0, 10)),
+      )];
       const creatorForBranch = (creatorBatches || []).filter((b) => b.branch_id === scopedBranch);
       const productForBranch = (productBatches || []).filter((b) => b.branch_id === scopedBranch);
 
@@ -114,7 +117,7 @@ export default function ExportCenter() {
         from,
         to,
         cashUpDates: cashDates,
-        reviewAvailable: !reviewRes.error,
+        reviewDates,
         creatorBatches: creatorForBranch,
         productByCreatorBatches: productForBranch,
       });
@@ -127,10 +130,10 @@ export default function ExportCenter() {
 
       setPayload({
         cashFacts,
-        reviewEvents,
+        reviewEntries,
         creatorRows,
         productRows,
-        reviewStats: aggregateStaffReviewStats(reviewEvents),
+        reviewStats: aggregateReviewTrackingStats(reviewEntries, { from, to }),
       });
     } catch (err) {
       setError(err.message || "Could not check report readiness.");
@@ -203,10 +206,10 @@ export default function ExportCenter() {
         data: new Uint8Array(buildCashUpWorkbookBuffer(payload.cashFacts, { from, to, branch: scopedBranch })),
       });
     }
-    if (coverage.reviews.complete) {
+    if (payload.reviewEntries.length) {
       files.push({
         name: `${folder}/NAC_${scopedBranch}_Review_Tracking_${from}_to_${to}.xlsx`,
-        data: new Uint8Array(buildReviewTrackingWorkbookBuffer(payload.reviewEvents, { from, to, branch: scopedBranch })),
+        data: new Uint8Array(buildReviewTrackingWorkbookBuffer(payload.reviewEntries, { from, to, branch: scopedBranch })),
       });
     }
     if (staffPerformanceReady(coverage)) {
@@ -272,7 +275,11 @@ export default function ExportCenter() {
         {coverage ? (
           <>
             <StatusRow item={coverage.cashUp} from={from} to={to} />
-            <StatusRow item={coverage.reviews} from={from} to={to} />
+            <div className="export-center-status" data-testid="export-status-reviews">
+              <p className={`export-center-status-line ${coverage.reviews.complete ? "" : "export-center-review-warning"}`}>
+                {coverage.reviews.message}
+              </p>
+            </div>
             <StatusRow item={coverage.salesByCreator} from={from} to={to} onUpload={handleUpload} />
             <StatusRow item={coverage.salesByProductByCreator} from={from} to={to} onUpload={handleUpload} />
           </>

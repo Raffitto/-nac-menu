@@ -1,5 +1,6 @@
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
-import { assessExportCoverage, staffPerformanceReady } from "./coverage";
+import { assessExportCoverage, assessReviewTrackingCoverage, staffPerformanceReady } from "./coverage";
+import { aggregateReviewTrackingStats, buildReviewTrackingGrid } from "./reviewTrackingWorkbook";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { buildAverageCheckRows, buildReviewRanking, buildUpsellModel } from "./staffPerformance";
@@ -26,7 +27,7 @@ describe("export center coverage", () => {
       from: "2026-09-01",
       to: "2026-09-03",
       cashUpDates: ["2026-09-01", "2026-09-02", "2026-09-03"],
-      reviewAvailable: true,
+      reviewDates: ["2026-09-01", "2026-09-02", "2026-09-03"],
       creatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-03" }],
       productByCreatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-01" }],
     });
@@ -40,7 +41,7 @@ describe("export center coverage", () => {
       from: "2026-08-01",
       to: "2026-08-31",
       cashUpDates: Array.from({ length: 31 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`),
-      reviewAvailable: true,
+      reviewDates: Array.from({ length: 31 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`),
       creatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31" }],
       productByCreatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31" }],
     });
@@ -98,6 +99,55 @@ describe("August staff performance oracle", () => {
     ]);
   });
 
+  test("Drive review tracking sums staff/date cells and maps Kaium to Kayum", () => {
+    const entries = [
+      { staff_name: "Boyboy", review_date: "2026-09-01", review_count: 1 },
+      { staff_name: "Lyn", review_date: "2026-09-01", review_count: 2 },
+      { staff_name: "Ronald", review_date: "2026-09-01", review_count: 2 },
+      { staff_name: "Kaium", review_date: "2026-09-01", review_count: 3 },
+      { staff_name: "Ronald", review_date: "2026-09-02", review_count: 1 },
+      { staff_name: "Saiful", review_date: "2026-09-02", review_count: 1 },
+      { staff_name: "Kaium", review_date: "2026-09-02", review_count: 3 },
+    ];
+    const grid = buildReviewTrackingGrid(entries, { from: "2026-09-01", to: "2026-09-02" });
+    const byName = Object.fromEntries(grid.rows.map((r) => [r.staff, r]));
+    expect(byName.Boyboy["2026-09-01"]).toBe(1);
+    expect(byName.Lyn["2026-09-01"]).toBe(2);
+    expect(byName.Ronald["2026-09-01"]).toBe(2);
+    expect(byName.Kayum["2026-09-01"]).toBe(3);
+    expect(grid.dailyTotals["2026-09-01"]).toBe(8);
+    expect(byName.Ronald["2026-09-02"]).toBe(1);
+    expect(byName.Saiful["2026-09-02"]).toBe(1);
+    expect(byName.Kayum["2026-09-02"]).toBe(3);
+    expect(grid.dailyTotals["2026-09-02"]).toBe(5);
+    const ranks = buildReviewRanking(aggregateReviewTrackingStats(entries, { from: "2026-08-01", to: "2026-08-31" }).map((s) => ({
+      name: s.name,
+      google: s.review_count,
+    })));
+    expect(ranks).toEqual([]);
+    const august = aggregateReviewTrackingStats([
+      { staff_name: "Ronald", review_date: "2026-08-10", review_count: 62 },
+      { staff_name: "Kaium", review_date: "2026-08-10", review_count: 58 },
+      { staff_name: "Boyboy", review_date: "2026-08-10", review_count: 28 },
+    ], { from: "2026-08-01", to: "2026-08-31" });
+    expect(buildReviewRanking(august).map((r) => [r.staff, r.reviews])).toEqual([
+      ["Ronald", 62],
+      ["Kayum", 58],
+      ["Boyboy", 28],
+    ]);
+  });
+
+  test("Google Review Tracking readiness never uses QR availability", () => {
+    expect(assessReviewTrackingCoverage({ from: "2026-09-01", to: "2026-09-03", reviewDates: [] }).message).toMatch(
+      /missing \/ not synced/,
+    );
+    expect(assessReviewTrackingCoverage({
+      from: "2026-09-01",
+      to: "2026-09-02",
+      reviewDates: ["2026-09-01", "2026-09-02"],
+    }).message).toBe("✓ Google Review Tracking — Complete through 02 Sep 2026");
+  });
+
   test("upsell qty, share, and item leaders match supplied August rows", () => {
     const productRows = [
       { waiter_name: "Abu Sofian", raw_item_name: "Water", quantity_sold: 185, gross_sales: 1850 },
@@ -132,6 +182,17 @@ describe("Fady reports RBAC", () => {
     expect(canAccessNav(fady, "reports")).toBe(true);
     expect(allowedBranchIds(fady)).toEqual(["khobar"]);
     expect(resolveEffectiveBranch(fady, "riyadh")).toBe("khobar");
+  });
+});
+
+describe("Reports review source isolation", () => {
+  test("Export Center reads Drive review tracking and never review_events", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "ExportCenter.jsx"), "utf8");
+    expect(src).toMatch(/google_review_tracking_entries/);
+    expect(src).not.toMatch(/review_events/);
+    expect(src).not.toMatch(/aggregateStaffReviewStats/);
   });
 });
 

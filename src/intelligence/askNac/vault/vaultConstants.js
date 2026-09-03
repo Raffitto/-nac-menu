@@ -35,6 +35,7 @@ export const VAULT_REPORT_TYPES = [
   { value: "breakage_report", label: "Breakage Report" },
   { value: "discount_void_comp", label: "Discount / Void / Comp" },
   { value: "guest_feedback", label: "Guest Feedback" },
+  { value: "google_review_tracking", label: "Google Review Tracking" },
   { value: "weekly_sales_overview", label: "Weekly Sales Overview" },
   { value: "weekly_dashboard", label: "Weekly Management Dashboard" },
   { value: "foodics_export", label: "Foodics Export" },

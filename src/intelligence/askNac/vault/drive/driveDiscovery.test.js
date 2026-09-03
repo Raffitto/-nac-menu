@@ -16,6 +16,8 @@ describe("driveDiscoveryClassifier", () => {
     expect(classifyDrivePath("Daily/Daily Napkins Count", "napkins.xlsx").recommendedAction).toBe("ignore");
     expect(classifyDrivePath("Daily/Guest Feedback", "feedback.docx").recommendedAction).toBe("ask");
     expect(classifyDrivePath("Weekly/Executive Reports/Weekly Dashboards", "dash.xlsx").detectedReportType).toBe("weekly_dashboard");
+    expect(classifyDrivePath("Daily", " 2026 review tracking.xlsx").detectedReportType).toBe("google_review_tracking");
+    expect(shouldIngestDiscoveryDecision(classifyDrivePath("Daily", " 2026 review tracking.xlsx"))).toBe(true);
   });
 
   test("unknown folders require approval", () => {

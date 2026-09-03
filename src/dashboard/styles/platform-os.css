@@ -597,6 +597,10 @@
   margin: 0 0 0.35rem;
 }
 
+.export-center-review-warning {
+  color: #e6c27a;
+}
+
 .export-center-missing {
   padding: 0.75rem 0.9rem;
   border-radius: 10px;

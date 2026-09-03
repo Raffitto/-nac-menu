@@ -7,6 +7,10 @@ import {
   type CashUpWorkbookParseResult,
 } from "./vaultCashUpWorkbookParser.ts";
 import {
+  isReviewTrackingWorkbookName,
+  parseReviewTrackingWorkbookFromXlsxBuffer,
+} from "./vaultReviewTrackingWorkbookParser.ts";
+import {
   attachWeeklyDashboardFactContext,
   parseWeeklyDashboardFromText,
   parseWeeklyDashboardFromXlsxBuffer,
@@ -39,6 +43,7 @@ const PARSEABLE_REPORT_TYPES = new Set([
   "ccm_reconciliation",
   "weekly_sales_overview",
   "weekly_dashboard",
+  "google_review_tracking",
   "pnl",
 ]);
 
@@ -142,7 +147,9 @@ function normalizeFolderMetadata(folder: DriveFolder) {
     ? "cash_up"
     : /\bweekly dashboards?\b|\bexecutive reports?\b.*\bweekly\b/i.test(folderLabel)
       ? "weekly_dashboard"
-      : folder.report_type || "other";
+      : /\breview\s+tracking\b/i.test(folderLabel)
+        ? "google_review_tracking"
+        : folder.report_type || "other";
   const sensitivity = folder.sensitivity || "internal";
   return { branchId, department, reportType, sensitivity };
 }
@@ -164,6 +171,7 @@ function resolveDriveFileReportType(
   if (/\bbreakage\b/i.test(text)) return "breakage_report";
   if (/\bdiscount\b|\bcomp\b|\bvoids?\b/i.test(text)) return "discount_void_comp";
   if (/\bguest feedback\b/i.test(text)) return "guest_feedback";
+  if (isReviewTrackingWorkbookName(text)) return "google_review_tracking";
   return fallback || "other";
 }
 
@@ -899,6 +907,46 @@ function isCashUpSpreadsheet(reportType: string, extension: string) {
   return reportType === "cash_up" && (ext === "xlsx" || ext === "xls");
 }
 
+async function persistReviewTrackingEntries(
+  admin: SupabaseLike,
+  {
+    fileRow,
+    driveFileId,
+    entries,
+  }: {
+    fileRow: Record<string, any>;
+    driveFileId?: string | null;
+    entries: Array<{
+      review_date: string;
+      staff_name: string;
+      source_staff_name: string;
+      review_count: number;
+      source_sheet: string;
+    }>;
+  },
+) {
+  const ingestedAt = nowIso();
+  const rows = (entries || []).map((entry) => ({
+    branch_id: fileRow.primary_branch_id || fileRow.branch_id || "khobar",
+    review_date: entry.review_date,
+    staff_name: entry.staff_name,
+    source_staff_name: entry.source_staff_name,
+    review_count: entry.review_count,
+    source_file_id: fileRow.id,
+    source_drive_file_id: driveFileId || fileRow.external_source_id || null,
+    source_sheet: entry.source_sheet,
+    ingested_at: ingestedAt,
+  }));
+  const batchSize = 400;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const { error } = await admin.from("google_review_tracking_entries").upsert(batch, {
+      onConflict: "branch_id,review_date,staff_name",
+    });
+    if (error) throw error;
+  }
+}
+
 async function persistParsedFacts(
   admin: SupabaseLike,
   {
@@ -949,6 +997,35 @@ async function insertStructuredFacts(
     onFactsBatch?: (info: { batchIndex: number; batchCount: number; insertedSoFar: number }) => Promise<void> | void;
   },
 ): Promise<StructuredFactsResult> {
+  const reviewTrackingName = isReviewTrackingWorkbookName(
+    `${fileRow.original_filename || ""} ${fileRow.title || ""} ${download?.filename || ""}`,
+  );
+  if (fileRow.report_type === "google_review_tracking" || reviewTrackingName) {
+    if (!download?.buffer) {
+      throw new Error("Google review tracking workbook parse failed — workbook buffer missing.");
+    }
+    const parsed = await parseReviewTrackingWorkbookFromXlsxBuffer(download.buffer);
+    if (!parsed.ok) {
+      throw new Error(parsed.error || "Google review tracking parse failed — existing entries preserved.");
+    }
+    await persistReviewTrackingEntries(admin, {
+      fileRow,
+      driveFileId: fileRow.external_source_id || null,
+      entries: parsed.entries,
+    });
+    return {
+      factCount: parsed.entries.length,
+      stage: "google_review_tracking_workbook_parsed",
+      confidence: 0.9,
+      confidenceLevel: "high",
+      publish: true,
+      parser: parsed.parser,
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
+      warnings: [],
+    };
+  }
+
   if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) {
     return {
       factCount: 0,

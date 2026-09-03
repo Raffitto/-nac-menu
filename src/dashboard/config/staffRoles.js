@@ -22,6 +22,13 @@ export const WAITER_NAME_ALIASES = {
   azhar: "Azhar",
   saif: "Saiful",
   saiful: "Saiful",
+  kaium: "Kayum",
+  kayum: "Kayum",
+  "boy boy": "Boyboy",
+  boyboy: "Boyboy",
+  lyn: "Lyn",
+  "abu sufiyan": "Abu Sofian",
+  "abu sofian": "Abu Sofian",
 };
 
 /** Core competition waiters — used to ensure export completeness */

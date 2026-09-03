@@ -210,6 +210,12 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(panel).toMatch(/executive reports\?/);
   });
 
+  test("Drive review tracking workbook is parsed into google_review_tracking_entries", () => {
+    expect(driveHelper).toMatch(/vaultReviewTrackingWorkbookParser/);
+    expect(driveHelper).toMatch(/google_review_tracking_entries/);
+    expect(driveHelper).toMatch(/onConflict: "branch_id,review_date,staff_name"/);
+  });
+
   test("smart Drive discovery uses approval rules and discovery roots", () => {
     expect(discoveryMigration).toMatch(/ask_nac_drive_discovery_rules/);
     expect(discoveryMigration).toMatch(/ask_nac_drive_discovery_candidates/);

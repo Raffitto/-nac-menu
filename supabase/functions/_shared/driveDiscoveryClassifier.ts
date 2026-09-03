@@ -11,6 +11,7 @@ export const DISCOVERY_TO_VAULT_REPORT_TYPE: Record<string, string | null> = {
   breakage_report: "breakage_report",
   discount_void_comp: "discount_void_comp",
   guest_feedback: "guest_feedback",
+  google_review_tracking: "google_review_tracking",
   weekly_dashboard: "weekly_dashboard",
   food_safety_haccp: "food_safety_haccp",
   food_safety_temperature: "food_safety_temperature",
@@ -22,6 +23,7 @@ export const DISCOVERY_TO_VAULT_REPORT_TYPE: Record<string, string | null> = {
 };
 
 const CLASSIFIER_PATTERNS: Array<{ pattern: RegExp; type: string; action: string; confidence: number; reason: string }> = [
+  { pattern: /\breview\s+tracking\b/i, type: "google_review_tracking", action: "ingest", confidence: 0.99, reason: "Google Drive 2026 review tracking workbook." },
   { pattern: /\bcash[\s-]?up\b|\bcashup\b/i, type: "cash_up", action: "ingest", confidence: 0.98, reason: "Cash-up folder name match." },
   { pattern: /\blog\s?book\b/i, type: "daily_logbook", action: "ingest", confidence: 0.97, reason: "Daily logbook folder name match." },
   { pattern: /\bdaily reception\b|\breception daily\b/i, type: "daily_reception", action: "ingest", confidence: 0.96, reason: "Daily reception folder name match." },
