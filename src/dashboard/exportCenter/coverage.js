@@ -1,4 +1,5 @@
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
+import { foodicsSourceLabel } from "./foodicsSourceGuide";
 import { missingDates, unionCoverage } from "./dateRange";
 
 export function assessExportCoverage({
@@ -30,13 +31,13 @@ export function assessExportCoverage({
     },
     salesByCreator: {
       id: IMPORT_TYPE.SALES_BY_CREATOR,
-      label: "Sales by Creator",
+      label: foodicsSourceLabel(IMPORT_TYPE.SALES_BY_CREATOR),
       complete: creator.complete,
       missing: creator.missing,
     },
     salesByProductByCreator: {
       id: IMPORT_TYPE.WAITER_PRODUCT_SALES,
-      label: "Sales by Product by Creator",
+      label: foodicsSourceLabel(IMPORT_TYPE.WAITER_PRODUCT_SALES),
       complete: product.complete,
       missing: product.missing,
     },

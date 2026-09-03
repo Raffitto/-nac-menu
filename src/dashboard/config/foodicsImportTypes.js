@@ -34,13 +34,13 @@ export const IMPORT_LANES = {
   },
   [IMPORT_TYPE.WAITER_PRODUCT_SALES]: {
     id: IMPORT_TYPE.WAITER_PRODUCT_SALES,
-    title: "Operational Sales Import",
-    subtitle: "Canonical sales truth — Foodics by creator, grouped by product",
+    title: "Sales by Creator — Grouped by Product",
+    subtitle: "Canonical sales truth — Foodics Sales by Creator, Group By Product",
     icon: "waiter",
-    foodicsReport: "Sales by Creator Report — Group By: product",
+    foodicsReport: "Reports → Sales Reports → Sales by Creator → Group By → Product",
     instructions: [
-      "Export from Foodics: Sales by Creator Report",
-      "Group By: product",
+      "Foodics: Reports → Sales Reports → Sales by Creator → Group By → Product",
+      "Use the exact requested date range",
       "Columns: Creator, Product, Product SKU, Gross Sales, Net Sales, Net Quantity",
       "Creator = waiter/server name · Product = item sold",
     ],
@@ -64,10 +64,10 @@ export const IMPORT_LANES = {
     title: "Sales by Creator",
     subtitle: "Staff-level guests, orders, and sales totals",
     icon: "waiter",
-    foodicsReport: "Sales by Creator Report — not grouped by product",
+    foodicsReport: "Reports → Sales Reports → Sales by Branch → Creator",
     instructions: [
-      "Export from Foodics: Sales by Creator",
-      "Do not group by product",
+      "Foodics: Reports → Sales Reports → Sales by Branch → Creator",
+      "Use the exact requested date range",
       "Columns typically include Creator, Guests, Orders, Net Sales / Gross Sales",
     ],
     usedFor: [

@@ -1,5 +1,6 @@
 import { detectImportTypeFromHeaders, findFoodicsHeaderAndData } from "../utils/foodicsParser";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
+import { foodicsSourceLabel } from "./foodicsSourceGuide";
 
 function norm(h) {
   return String(h || "").toLowerCase().trim();
@@ -15,13 +16,13 @@ export function classifyFoodicsReport(headers = []) {
   if (hasCreator && hasProduct) {
     return {
       detected: IMPORT_TYPE.WAITER_PRODUCT_SALES,
-      label: "Sales by Product by Creator",
+      label: foodicsSourceLabel(IMPORT_TYPE.WAITER_PRODUCT_SALES),
     };
   }
   if (hasCreator && (hasGuests || hasOrders || !hasProduct)) {
     return {
       detected: IMPORT_TYPE.SALES_BY_CREATOR,
-      label: "Sales by Creator",
+      label: foodicsSourceLabel(IMPORT_TYPE.SALES_BY_CREATOR),
     };
   }
   return {
@@ -35,12 +36,7 @@ export function validateUploadForNeed(headers, neededType) {
   if (!neededType || classified.detected === neededType) {
     return { ok: true, ...classified };
   }
-  const neededLabel =
-    neededType === IMPORT_TYPE.SALES_BY_CREATOR
-      ? "Sales by Creator"
-      : neededType === IMPORT_TYPE.WAITER_PRODUCT_SALES
-        ? "Sales by Product by Creator"
-        : neededType;
+  const neededLabel = foodicsSourceLabel(neededType);
   return {
     ok: false,
     ...classified,

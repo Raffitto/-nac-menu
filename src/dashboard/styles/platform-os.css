@@ -545,11 +545,29 @@
   background: rgba(245, 166, 35, 0.08);
 }
 
+.export-center-range-banner {
+  margin: 0 0 1.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(215, 188, 138, 0.45);
+  background: rgba(215, 188, 138, 0.12);
+  color: #f9f9f7;
+  font-size: 1rem;
+}
+
+.export-center-range-banner strong {
+  display: inline-block;
+  margin-left: 0.25rem;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  color: #d7bc8a;
+}
+
 .export-center-form {
   display: flex;
   flex-wrap: wrap;
   gap: 1rem;
-  margin: 0 0 1.5rem;
+  margin: 0 0 1rem;
 }
 
 .export-center-form label {
@@ -571,12 +589,35 @@
 }
 
 .export-center-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0;
-  font-size: 0.9rem;
+  padding: 0.65rem 0;
+  font-size: 0.95rem;
+}
+
+.export-center-status-line {
+  margin: 0 0 0.35rem;
+}
+
+.export-center-missing {
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(245, 166, 35, 0.35);
+  background: rgba(245, 166, 35, 0.08);
+}
+
+.export-center-foodics-path {
+  margin: 0.2rem 0;
+  color: rgba(249, 249, 247, 0.78);
+}
+
+.export-center-use-range {
+  margin: 0.35rem 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #d7bc8a;
+}
+
+.export-center-upload-btn input {
+  display: none;
 }
 
 .export-center-upload-btn,

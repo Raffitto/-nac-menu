@@ -6,8 +6,9 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { parseFoodicsFile, rowsFromMappedData } from "../utils/foodicsParser";
-import { assessExportCoverage, cashUpReady, formatMissingRange, staffPerformanceReady } from "./coverage";
+import { assessExportCoverage, cashUpReady, staffPerformanceReady } from "./coverage";
 import { validateUploadForNeed } from "./detectFoodicsReport";
+import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
@@ -16,16 +17,36 @@ import { buildStaffPerformancePdfBytes } from "./staffPerformancePdf";
 import { downloadBlob, zipStoreFiles } from "./zipStore";
 import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
 
-function StatusRow({ item, onUploadNeed }) {
-  const missing = formatMissingRange(item.missing);
+function StatusRow({ item, from, to, onUpload }) {
+  const guide = FOODICS_SOURCE_GUIDE[item.id];
+  const rangeLabel = formatExportDateRange(from, to);
   return (
     <div className="export-center-status" data-testid={`export-status-${item.id}`}>
-      <span>{item.complete ? "✓" : "⚠"} {item.label}{item.complete ? " — Complete" : missing ? ` — Missing ${missing}` : " — Missing selected period"}</span>
-      {!item.complete && onUploadNeed && (item.id === IMPORT_TYPE.SALES_BY_CREATOR || item.id === IMPORT_TYPE.WAITER_PRODUCT_SALES) ? (
-        <button type="button" className="export-center-upload-btn" onClick={() => onUploadNeed(item.id)}>
-          Upload {item.label}
-        </button>
-      ) : null}
+      {item.complete ? (
+        <p className="export-center-status-line">✓ {item.label} — Complete</p>
+      ) : (
+        <div className="export-center-missing">
+          <p className="export-center-status-line">Missing: {item.label}</p>
+          {guide ? (
+            <>
+              <p className="export-center-foodics-path">Foodics: {guide.foodicsPath}</p>
+              <p className="export-center-use-range">Use: {rangeLabel}</p>
+              <label className="export-center-upload-btn">
+                Upload file
+                <input
+                  type="file"
+                  accept=".csv,.xls,.xlsx"
+                  onChange={(e) => onUpload?.(item.id, e.target.files?.[0])}
+                />
+              </label>
+            </>
+          ) : (
+            <p className="export-center-foodics-path">
+              {item.missing?.length ? `Missing ${item.missing[0]}${item.missing.length > 1 ? ` → ${item.missing[item.missing.length - 1]}` : ""}` : "Missing selected period"}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -39,7 +60,6 @@ export default function ExportCenter() {
   const [coverage, setCoverage] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [needType, setNeedType] = useState(null);
   const [payload, setPayload] = useState({
     cashFacts: [],
     reviewEvents: [],
@@ -123,12 +143,12 @@ export default function ExportCenter() {
     refresh();
   }, [refresh]);
 
-  const handleUpload = async (file) => {
+  const handleUpload = async (neededType, file) => {
     if (!file) return;
     setError("");
     try {
       const parsed = await parseFoodicsFile(file);
-      const check = validateUploadForNeed(parsed.headers, needType);
+      const check = validateUploadForNeed(parsed.headers, neededType);
       if (!check.ok) {
         setError(check.error);
         return;
@@ -166,7 +186,6 @@ export default function ExportCenter() {
         },
         rows,
       );
-      setNeedType(null);
       await refresh();
     } catch (err) {
       setError(err.message || "Upload failed.");
@@ -243,30 +262,22 @@ export default function ExportCenter() {
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </div>
+      <p className="export-center-range-banner" data-testid="export-center-range">
+        Export this exact Foodics date range: <strong>{formatExportDateRange(from, to)}</strong>
+      </p>
 
       <section>
         <h2>Data readiness</h2>
         {busy && !coverage ? <p>Checking sources…</p> : null}
         {coverage ? (
           <>
-            <StatusRow item={coverage.cashUp} />
-            <StatusRow item={coverage.reviews} />
-            <StatusRow item={coverage.salesByCreator} onUploadNeed={setNeedType} />
-            <StatusRow item={coverage.salesByProductByCreator} onUploadNeed={setNeedType} />
+            <StatusRow item={coverage.cashUp} from={from} to={to} />
+            <StatusRow item={coverage.reviews} from={from} to={to} />
+            <StatusRow item={coverage.salesByCreator} from={from} to={to} onUpload={handleUpload} />
+            <StatusRow item={coverage.salesByProductByCreator} from={from} to={to} onUpload={handleUpload} />
           </>
         ) : null}
       </section>
-
-      {needType ? (
-        <div className="export-center-upload">
-          <p>Upload {needType === IMPORT_TYPE.SALES_BY_CREATOR ? "Sales by Creator" : "Sales by Product by Creator"} (CSV / XLS / XLSX)</p>
-          <input
-            type="file"
-            accept=".csv,.xls,.xlsx"
-            onChange={(e) => handleUpload(e.target.files?.[0])}
-          />
-        </div>
-      ) : null}
 
       {error ? <p className="export-center-error" role="alert">{error}</p> : null}
 

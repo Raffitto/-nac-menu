@@ -1,9 +1,24 @@
+import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { assessExportCoverage, staffPerformanceReady } from "./coverage";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { buildAverageCheckRows, buildReviewRanking, buildUpsellModel } from "./staffPerformance";
 import { resolveRbacProfile, canAccessNav, allowedBranchIds, resolveEffectiveBranch } from "../config/rbac";
 import { zipStoreFiles } from "./zipStore";
+
+describe("Foodics source guide", () => {
+  test("uses the real Foodics UI names and paths", () => {
+    expect(FOODICS_SOURCE_GUIDE.sales_by_creator.label).toBe("Sales by Creator");
+    expect(FOODICS_SOURCE_GUIDE.sales_by_creator.foodicsPath).toBe(
+      "Reports → Sales Reports → Sales by Branch → Creator",
+    );
+    expect(FOODICS_SOURCE_GUIDE.waiter_product_sales.label).toBe("Sales by Creator — Grouped by Product");
+    expect(FOODICS_SOURCE_GUIDE.waiter_product_sales.foodicsPath).toBe(
+      "Reports → Sales Reports → Sales by Creator → Group By → Product",
+    );
+    expect(formatExportDateRange("2026-09-01", "2026-09-03")).toBe("01 Sep 2026 → 03 Sep 2026");
+  });
+});
 
 describe("export center coverage", () => {
   test("blocks staff performance when product-by-creator dates are missing", () => {
@@ -39,7 +54,7 @@ describe("export center upload detection", () => {
   test("rejects creator-only file when product-by-creator is required", () => {
     const result = validateUploadForNeed(["Creator", "Guests", "Orders", "Net Sales"], IMPORT_TYPE.WAITER_PRODUCT_SALES);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/Sales by Product by Creator is required/);
+    expect(result.error).toMatch(/Sales by Creator — Grouped by Product is required/);
   });
 
   test("accepts product-by-creator headers", () => {
