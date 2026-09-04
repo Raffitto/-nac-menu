@@ -28,6 +28,10 @@ import {
   runScheduledDriveIngestion,
   validateScheduledIngestSecret,
 } from "../_shared/vaultDriveScheduledIngest.ts";
+import {
+  ingestConnectedReviewTracking,
+  resolveReviewTrackingHits,
+} from "../_shared/vaultReviewTrackingDriveDiscovery.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +52,7 @@ const OPERATIONAL_FOLDER_REPORT_TYPES: Array<[RegExp, string]> = [
   [/\blog ?book\b/i, "daily_logbook"],
   [/\bdaily reception\b/i, "daily_reception"],
   [/\bdaily briefing\b|\bbriefing\b/i, "daily_briefing"],
+  [/\breview\s+tracking\b/i, "google_review_tracking"],
   [/\bguest feedback\b/i, "guest_feedback"],
   [/\bccm|foodics|reconciliation\b/i, "ccm_reconciliation"],
   [/\bdiscount|comp|voids?\b/i, "discount_void_comp"],
@@ -72,6 +77,7 @@ function inferOperationalReportType(name = "", fallback = "other") {
 function resolveRegisteredReportType(folderName = "", requestedReportType = "other") {
   const inferred = inferOperationalReportType(folderName, "other");
   if (inferred === "cash_up") return "cash_up";
+  if (inferred === "google_review_tracking") return "google_review_tracking";
   if (inferred === "weekly_dashboard") return "weekly_dashboard";
   if (inferred === "ignore") return "discovery_root";
   if (/^(daily|weekly)$/i.test(String(folderName || "").trim())) return "discovery_root";
@@ -188,8 +194,36 @@ Deno.serve(async (req) => {
         maxFilesToProcess: body?.maxFilesToProcess,
         budgetMs: body?.budgetMs,
       });
+      const reviewTracking = await ingestConnectedReviewTracking(admin, {
+        refreshAccessToken,
+        triggerType: "scheduled",
+        force: Boolean(body?.force),
+      });
       console.info("[vault-drive-sync] scheduled_ingest complete", summary);
-      return json(200, { ok: true, ...summary });
+      return json(200, { ok: true, ...summary, reviewTracking });
+    }
+
+    if (action === "ingest_review_tracking") {
+      if (req.method !== "POST") return json(405, { error: "Method not allowed" });
+      if (!serviceRoleKey) return json(500, { error: "Service role not configured" });
+      const authHeader = req.headers.get("Authorization") || "";
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      let serviceRoleJwt = false;
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1] || ""));
+        serviceRoleJwt = payload?.role === "service_role";
+      } catch {
+        serviceRoleJwt = false;
+      }
+      const allowed = token === serviceRoleKey || serviceRoleJwt || validateScheduledIngestSecret(req);
+      if (!allowed) return json(401, { error: "Review tracking ingest requires service role or scheduled secret." });
+      const admin = createClient(supabaseUrl, serviceRoleKey);
+      const reviewTracking = await ingestConnectedReviewTracking(admin, {
+        refreshAccessToken,
+        triggerType: "manual",
+        force: Boolean(body?.force),
+      });
+      return json(200, { ok: true, reviewTracking });
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -678,7 +712,7 @@ Deno.serve(async (req) => {
           folder,
           runId,
           email: userEmail,
-          onlyDriveFileId: body?.driveFileId || null,
+          onlyDriveFileId: body?.driveFileId || status.run?.stats?.targetDriveFileId || null,
           force: Boolean(body?.force),
           maxFilesToProcess: Number(body?.maxFilesToProcess || 50),
         });
@@ -732,6 +766,51 @@ Deno.serve(async (req) => {
       }
 
       const runs = [];
+      for (const connection of connections || []) {
+        if (!connection?.refresh_token) continue;
+        try {
+          const tokens = await refreshAccessToken(connection.refresh_token);
+          await admin.from("ask_nac_drive_connections").update({
+            access_token: tokens.access_token,
+            token_expires_at: tokens.expires_in
+              ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+              : connection.token_expires_at,
+            status: "active",
+            last_error: null,
+            updated_at: new Date().toISOString(),
+          }).eq("id", connection.id);
+          const hits = await resolveReviewTrackingHits(admin, {
+            accessToken: tokens.access_token,
+            connectionId: connection.id,
+            branchId: "khobar",
+          });
+          for (const hit of hits) {
+            if (runnableFolders.some((folder) => folder.id === hit.hostFolder.id) && !hit.hostFolder.is_discovery_root) {
+              continue;
+            }
+            try {
+              const runId = await createDriveIngestionRun(admin, {
+                folder: hit.hostFolder,
+                triggerType,
+                initialStats: {
+                  runtimeStage: "queued",
+                  targetDriveFileId: hit.fileId,
+                  targetDriveFileName: hit.fileName,
+                  reviewTrackingDiscovery: true,
+                  parentFolderId: hit.parentId,
+                  parentFolderName: hit.parentName,
+                },
+              });
+              runs.push({ runId, folder: hit.hostFolder });
+            } catch (err) {
+              const message = sanitizeErrorMessage(err) || String((err as Error)?.message || err);
+              if (!/already (running|queued)/i.test(message)) throw err;
+            }
+          }
+        } catch (err) {
+          console.error("[vault-drive-sync] review tracking discovery failed", sanitizeErrorMessage(err));
+        }
+      }
       const selectedFolderDebug = runnableFolders.map((folder) => ({
         folderRowId: folder.id,
         driveFolderId: folder.drive_folder_id,

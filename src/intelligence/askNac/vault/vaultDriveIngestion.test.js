@@ -18,6 +18,10 @@ const driveHelper = fs.readFileSync(
   path.join(root, "supabase/functions/_shared/vaultDriveIngestion.ts"),
   "utf8",
 );
+const reviewTrackingDiscovery = fs.readFileSync(
+  path.join(root, "supabase/functions/_shared/vaultReviewTrackingDriveDiscovery.ts"),
+  "utf8",
+);
 const driveChangeDetection = fs.readFileSync(
   path.join(root, "supabase/functions/_shared/driveFileChangeDetection.ts"),
   "utf8",
@@ -214,6 +218,16 @@ describe("Google Drive Company Knowledge ingestion", () => {
     expect(driveHelper).toMatch(/vaultReviewTrackingWorkbookParser/);
     expect(driveHelper).toMatch(/google_review_tracking_entries/);
     expect(driveHelper).toMatch(/onConflict: "branch_id,review_date,staff_name"/);
+  });
+
+  test("review tracking uses Drive name search instead of walking My Drive", () => {
+    expect(driveHelper).toMatch(/searchDriveFiles/);
+    expect(reviewTrackingDiscovery).toMatch(/name contains 'review tracking'/);
+    expect(reviewTrackingDiscovery).toMatch(/isReviewTrackingWorkbookName/);
+    expect(driveFunction).toMatch(/ingest_review_tracking/);
+    expect(driveFunction).toMatch(/reviewTrackingDiscovery/);
+    expect(driveFunction).toMatch(/targetDriveFileId/);
+    expect(scheduledIngest).toMatch(/google_review_tracking/);
   });
 
   test("smart Drive discovery uses approval rules and discovery roots", () => {

@@ -18,11 +18,12 @@ export const SCHEDULED_MAX_LOOP_ATTEMPTS = 1;
 export const SCHEDULED_MAX_FILES_DEFAULT = 25;
 export const SCHEDULED_STUCK_RUN_MINUTES = 15;
 /** Nightly job only guarantees these registered report types (folder IDs stay authoritative). */
-export const SCHEDULED_PRIORITY_REPORT_TYPES = ["cash_up", "daily_logbook"] as const;
+export const SCHEDULED_PRIORITY_REPORT_TYPES = ["cash_up", "daily_logbook", "google_review_tracking"] as const;
 
 const REPORT_TYPE_PRIORITY: Record<string, number> = {
   cash_up: 0,
   daily_logbook: 1,
+  google_review_tracking: 2,
 };
 
 export type ScheduledIngestFolderResult = {

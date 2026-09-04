@@ -71,7 +71,7 @@ type SupabaseLike = {
   storage: { from: (bucket: string) => any };
 };
 
-type DriveFolder = {
+export type DriveFolder = {
   id: string;
   connection_id: string;
   drive_folder_id: string;
@@ -262,6 +262,14 @@ function resolveDriveExport(file: DriveFile) {
     };
   }
   if (file.mimeType === GOOGLE_SHEET_MIME) {
+    if (isReviewTrackingWorkbookName(file.name)) {
+      return {
+        exportMime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename: file.name.toLowerCase().endsWith(".xlsx") ? file.name : `${file.name}.xlsx`,
+        outputMime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        extension: "xlsx",
+      };
+    }
     return {
       exportMime: "text/csv",
       filename: file.name.toLowerCase().endsWith(".csv") ? file.name : `${file.name}.csv`,
@@ -282,6 +290,22 @@ function resolveDriveExport(file: DriveFile) {
     outputMime: file.mimeType || "application/octet-stream",
     extension,
   };
+}
+
+export async function searchDriveFiles(accessToken: string, query: string, pageToken?: string) {
+  const params = new URLSearchParams({
+    q: query,
+    fields: "nextPageToken,files(id,name,mimeType,modifiedTime,md5Checksum,size,webViewLink,parents,driveId,version)",
+    pageSize: "100",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    corpora: "allDrives",
+  });
+  if (pageToken) params.set("pageToken", pageToken);
+  const res = await driveFetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }, `Drive search ${query}`);
+  return driveJson(res, "Drive search failed");
 }
 
 export async function listDriveFiles(accessToken: string, folderId: string, pageToken?: string) {
@@ -445,9 +469,9 @@ export async function walkDriveFolderTree(
   };
 }
 
-async function getDriveFile(accessToken: string, driveFileId: string) {
+export async function getDriveFile(accessToken: string, driveFileId: string) {
   const params = new URLSearchParams({
-    fields: "id,name,mimeType,modifiedTime,size,md5Checksum,version",
+    fields: "id,name,mimeType,modifiedTime,size,md5Checksum,version,parents,webViewLink",
     supportsAllDrives: "true",
   });
   const res = await driveFetch(`https://www.googleapis.com/drive/v3/files/${driveFileId}?${params}`, {
@@ -926,14 +950,23 @@ async function persistReviewTrackingEntries(
   },
 ) {
   const ingestedAt = nowIso();
+  const branchId = fileRow.primary_branch_id || fileRow.branch_id || "khobar";
+  const resolvedDriveFileId = driveFileId || fileRow.external_source_id || null;
+  if (fileRow.id) {
+    await admin.from("google_review_tracking_entries").delete().eq("source_file_id", fileRow.id);
+  }
+  if (resolvedDriveFileId) {
+    await admin.from("google_review_tracking_entries").delete().eq("source_drive_file_id", resolvedDriveFileId);
+  }
+  await admin.from("google_review_tracking_entries").delete().eq("branch_id", branchId).is("source_drive_file_id", null);
   const rows = (entries || []).map((entry) => ({
-    branch_id: fileRow.primary_branch_id || fileRow.branch_id || "khobar",
+    branch_id: branchId,
     review_date: entry.review_date,
     staff_name: entry.staff_name,
     source_staff_name: entry.source_staff_name,
     review_count: entry.review_count,
     source_file_id: fileRow.id,
-    source_drive_file_id: driveFileId || fileRow.external_source_id || null,
+    source_drive_file_id: resolvedDriveFileId,
     source_sheet: entry.source_sheet,
     ingested_at: ingestedAt,
   }));
@@ -1989,6 +2022,11 @@ export async function processDriveIngestionRun(
         },
       });
       files = traversal.files;
+    }
+
+    if (folder.report_type === "google_review_tracking") {
+      files = files.filter((file) => isReviewTrackingWorkbookName(file.name));
+      runStats.reviewTrackingNameFilter = true;
     }
 
     counters.discovered_count = files.length;
