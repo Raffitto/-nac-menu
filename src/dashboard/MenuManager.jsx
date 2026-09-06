@@ -214,7 +214,6 @@ const MENU_CATALOGUE_SELECT = [
   "vegan",
   "hidden_until",
   "placement_group_id",
-  "sku",
 ].join(",");
 
 const EMPTY_ITEM = {
