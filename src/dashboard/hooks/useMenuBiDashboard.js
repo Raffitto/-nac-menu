@@ -242,6 +242,7 @@ export function useMenuBiDashboard(options = {}) {
           },
           {
             deferClientPatches: true,
+            forceLiveBi: Boolean(force),
             onTier1Partial: (partial) => {
               // Paint KPI cards as soon as session analytics lands; keep refreshing for full BI.
               if (dataRef.current && !dataRef.current._tier1Partial && !force) return;

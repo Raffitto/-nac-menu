@@ -338,9 +338,10 @@ function withSoftFallback(promise, ms, fallback) {
 }
 
 export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, options = {}) {
-  const { onTier1Partial = null, deferClientPatches = true } = options;
+  const { onTier1Partial = null, deferClientPatches = true, forceLiveBi = false } = options;
   const hours = filters.timeRangeHours ?? rangeToHours(filters.selectedRange || "today");
   const branch = filters.branch ?? null;
+  const skipLiveBi = forceLiveBi ? false : options.skipLiveBi !== false && hours <= 24;
   const perf = { started: typeof performance !== "undefined" ? performance.now() : Date.now() };
 
   // Parallelize independent masters — do not wait for session quality scans before BI.
@@ -352,6 +353,8 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, o
     branch,
     hours,
     deferClientPatches,
+    skipLiveBi,
+    forceLiveBi,
   });
 
   // Progressive paint from whichever source arrives first. Session must not hostage BI.

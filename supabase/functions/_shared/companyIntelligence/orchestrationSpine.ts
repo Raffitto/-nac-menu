@@ -48,6 +48,12 @@ import { createModelGateway, loadModelGatewayConfig, type ModelGateway } from ".
 import { verifySynthesizedAnswer } from "./answerVerifier.ts";
 import { estimateOpenAiMiniCostUsd } from "./telemetry.ts";
 import {
+  applyPeriodSafetyNet,
+  coverageContractFromFabric,
+  isSimpleOperationalMetricQuestion,
+  type CoverageContract,
+} from "../askNacCoverageContract.ts";
+import {
   createIntelligenceScope,
   normalizeBranchId,
   type IntelligenceScope,
@@ -83,6 +89,8 @@ export type OrchestrationResult = {
   nextConversation: StructuredConversationState;
   toolsExecuted: string[];
   paidModelCalls: number;
+  coverageContract: CoverageContract | null;
+  correctionNeeded: boolean;
 };
 
 const INTENT_CAPABILITIES: Record<string, CapabilityId[]> = {
@@ -436,6 +444,8 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: 0,
+      coverageContract: null,
+      correctionNeeded: false,
     };
   }
 
@@ -617,6 +627,8 @@ export async function runCompanyIntelligenceOrchestration(
       nextConversation: state.conversation,
       toolsExecuted: [],
       paidModelCalls: state.cost.paidModelCallsPerAnswer,
+      coverageContract: null,
+      correctionNeeded: false,
     };
   }
 
@@ -689,10 +701,18 @@ export async function runCompanyIntelligenceOrchestration(
     }
   }
 
+  const coverageContract = coverageContractFromFabric({
+    period: state.periods.current,
+    coverage: state.coverage,
+    evidence: state.evidence,
+    referenceDate: options.referenceDate,
+  });
+
   // Synthesis — cloud when enabled; unpaid local when cloud off but local synth configured.
   const localUnpaidSynth = gateway.config.synthesizeProvider === "openai_compatible_local"
     && Boolean(gateway.config.localBaseUrl);
   const preferDeterministic = fastPath
+    || isSimpleOperationalMetricQuestion(state.request.originalQuestion || state.request.normalizedQuestion)
     || budget.tier === 0
     || mode === "offline"
     || mode === "heuristic"
@@ -711,6 +731,7 @@ export async function runCompanyIntelligenceOrchestration(
     evidence: state.evidence,
     claims: state.claims,
     coverage: state.coverage,
+    coverageContract,
     comparability: state.comparability,
     offlineAnalysis: !cloudEnabled && !localUnpaidSynth && !fastPath && budget.tier >= 1,
   });
@@ -736,7 +757,9 @@ export async function runCompanyIntelligenceOrchestration(
         periods: state.periods,
         requestedPeriod: state.periods.current,
         availableCoverage: state.coverage,
-        synthesisInstruction: "Never describe unavailable dates as included. Prefer 'through <availableEnd>' / 'so far this period'.",
+        coverageContract,
+        synthesisInstruction: coverageContract.synthesisInstruction
+          || "Never describe unavailable dates as included. Prefer 'through <availableEnd>' / 'so far this period'.",
         comparability: state.comparability,
         claims: state.claims,
         evidence: state.evidence.map((e) => ({
@@ -793,6 +816,7 @@ export async function runCompanyIntelligenceOrchestration(
         evidence: state.evidence,
         claims: state.claims,
         coverage: state.coverage,
+        coverageContract,
         comparability: state.comparability,
         offlineAnalysis: true,
       });
@@ -906,6 +930,12 @@ export async function runCompanyIntelligenceOrchestration(
   });
   state = transition(state, "COMPLETE");
 
+  const safety = applyPeriodSafetyNet(answerText, {
+    coverageContract,
+    keyMetrics: metricKeyMetrics(state),
+  });
+  answerText = safety.text;
+
   return {
     state,
     answerText,
@@ -915,6 +945,8 @@ export async function runCompanyIntelligenceOrchestration(
     nextConversation,
     toolsExecuted,
     paidModelCalls: state.cost.paidModelCallsPerAnswer,
+    coverageContract,
+    correctionNeeded: safety.correctionNeeded,
   };
 }
 

@@ -123,7 +123,9 @@ export default function DataHealthPanel() {
       {integrity ? (
         <div data-testid="settings-integrity-scan">
           <p className="nac-settings-muted">
-            Integrity {integrity.counts.ERROR} errors / {integrity.counts.WARNING} warnings / {integrity.counts.INFO} info
+            Critical {integrity.actionCounts?.CRITICAL ?? integrity.counts.ERROR}
+            {" · "}Needs review {integrity.actionCounts?.NEEDS_REVIEW ?? integrity.counts.WARNING}
+            {" · "}Informational {integrity.actionCounts?.INFORMATIONAL ?? integrity.counts.INFO}
             · last scan {String(integrity.scannedAt || "").slice(11, 19) || "—"}
           </p>
           <dl className="nac-settings-dl">

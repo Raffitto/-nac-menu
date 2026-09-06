@@ -1210,20 +1210,22 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
       vaultCompare.previous.endDate,
       vaultCompare.previous.periodType,
     );
-    const currentResult = await fetchCashUpRangeBundle(supabase, context, {
-      startDate: vaultCompare.current.startDate,
-      endDate: vaultCompare.current.endDate,
-      vaultPeriod: vaultCompare.current,
-      includeDailyBreakdown: currentIncludeDaily,
-      includeCoverage: false,
-    });
-    const previousResult = await fetchCashUpRangeBundle(supabase, context, {
-      startDate: vaultCompare.previous.startDate,
-      endDate: vaultCompare.previous.endDate,
-      vaultPeriod: vaultCompare.previous,
-      includeDailyBreakdown: previousIncludeDaily,
-      includeCoverage: false,
-    });
+    const [currentResult, previousResult] = await Promise.all([
+      fetchCashUpRangeBundle(supabase, context, {
+        startDate: vaultCompare.current.startDate,
+        endDate: vaultCompare.current.endDate,
+        vaultPeriod: vaultCompare.current,
+        includeDailyBreakdown: currentIncludeDaily,
+        includeCoverage: false,
+      }),
+      fetchCashUpRangeBundle(supabase, context, {
+        startDate: vaultCompare.previous.startDate,
+        endDate: vaultCompare.previous.endDate,
+        vaultPeriod: vaultCompare.previous,
+        includeDailyBreakdown: previousIncludeDaily,
+        includeCoverage: false,
+      }),
+    ]);
 
     const warnings = [
       ...((currentResult.warnings as string[]) || []),
@@ -1445,16 +1447,31 @@ async function fetchCashUpRangeBundle(
   let coverage: Record<string, unknown>[] = [];
   let warnings: string[] = [...((factsResult.chunkWarnings as string[]) || [])];
   if (includeCoverage) {
-    const coverageResult = await getVaultCoverage(supabase, {
-      ...context,
-      branch: scopedBranch,
-      startDate: resolvedStart,
-      endDate: resolvedEnd,
-      reportType: "cash_up",
-      slim: true,
-    });
-    coverage = (coverageResult.coverage as Record<string, unknown>[]) || [];
-    warnings = buildVaultWarnings(coverage, (factsResult.facts as Record<string, unknown>[]) || []);
+    const latestFromAgg = String(
+      (aggregation.latestCompletedDate as string)
+      || (aggregation.salesCoverageEnd as string)
+      || "",
+    );
+    if (typeof aggregation.dayCount === "number" && latestFromAgg) {
+      coverage = [{
+        domain: "sales",
+        expectedDays: aggregation.expectedDayCount ?? null,
+        availableDays: aggregation.dayCount,
+        freshness: latestFromAgg,
+        warnings: [],
+      }];
+    } else {
+      const coverageResult = await getVaultCoverage(supabase, {
+        ...context,
+        branch: scopedBranch,
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
+        reportType: "cash_up",
+        slim: true,
+      });
+      coverage = (coverageResult.coverage as Record<string, unknown>[]) || [];
+      warnings = buildVaultWarnings(coverage, (factsResult.facts as Record<string, unknown>[]) || []);
+    }
   }
 
   if (aggregation.dayCount === 0) {

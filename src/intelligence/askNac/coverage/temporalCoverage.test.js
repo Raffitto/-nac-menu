@@ -217,6 +217,21 @@ describe("Ask NAC temporal coverage", () => {
     expect(text).not.toMatch(/September 6, 2026/);
   });
 
+  test("as-of requested date is rewritten from coverageContract as defense in depth", () => {
+    const safety = applyPeriodSafetyNet(
+      "As of September 6, 2026, month-to-date sales are 95450.39 SAR.",
+      {
+        coverageContract: {
+          requestedEnd: "2026-09-06",
+          availableEnd: "2026-09-05",
+        },
+      },
+    );
+    expect(safety.correctionNeeded).toBe(true);
+    expect(safety.text).toMatch(/September 5, 2026/);
+    expect(safety.text).not.toMatch(/September 6, 2026/);
+  });
+
   test("source delayed is not zero", () => {
     const coverage = buildTemporalCoverage({
       requestedStart: "2026-09-01",

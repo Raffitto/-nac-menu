@@ -60,4 +60,38 @@ describe("fetchBiDashboard soft timeout", () => {
     expect(result.partial).toBe(true);
     expect(Number(result.data?.total_sessions || result.data?.funnel?.qr_scans)).toBe(5);
   }, 10000);
+
+  test("skipLiveBi uses rollup only and never calls get_bi_dashboard", async () => {
+    const supabase = {
+      rpc: jest.fn((name) => {
+        if (name === "get_bi_dashboard_from_rollup") {
+          return Promise.resolve({
+            data: {
+              total_events: 9,
+              total_sessions: 3,
+              funnel: { qr_scans: 3 },
+              by_event_type: { qr_session_start: 3 },
+              by_hour: [],
+              top_items: [],
+              top_categories: [],
+            },
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: null });
+      }),
+    };
+
+    const result = await fetchBiDashboard(supabase, {
+      branch: "khobar",
+      hours: 24,
+      skipLiveBi: true,
+      deferClientPatches: true,
+    });
+
+    expect(supabase.rpc).toHaveBeenCalledWith("get_bi_dashboard_from_rollup", expect.any(Object));
+    expect(supabase.rpc).not.toHaveBeenCalledWith("get_bi_dashboard", expect.any(Object));
+    expect(Number(result.data?.total_sessions || result.data?.funnel?.qr_scans)).toBe(3);
+  });
 });
+

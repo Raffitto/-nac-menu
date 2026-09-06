@@ -261,7 +261,30 @@ export function toCoverageContract(coverage, { weekish = false } = {}) {
 }
 
 export function applyPeriodSafetyNet(text, response = {}) {
-  const sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  const contract = response.coverageContract || null;
+  let sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  if (contract?.availableEnd && contract?.requestedEnd && contract.availableEnd < contract.requestedEnd) {
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+    const longDate = (iso) => {
+      const [y, m, d] = String(iso).split("-").map(Number);
+      if (!y || !m || !d) return "";
+      return `${months[m - 1]} ${d}, ${y}`;
+    };
+    const reqLong = longDate(contract.requestedEnd);
+    const availLong = longDate(contract.availableEnd);
+    const reqShort = formatShortSalesDate(contract.requestedEnd);
+    if (reqLong && availLong) {
+      sanitized = sanitized.replace(new RegExp(`\\bAs of\\s+${reqLong}\\b`, "gi"), `As of ${availLong}`);
+      sanitized = sanitized.replace(new RegExp(`\\b${reqLong}\\b`, "g"), availLong);
+    }
+    if (reqShort) {
+      sanitized = sanitized.replace(new RegExp(`\\bAs of\\s+${reqShort}\\b`, "gi"), `as of ${formatShortSalesDate(contract.availableEnd)}`);
+      sanitized = sanitized.replace(new RegExp(`\\bthrough\\s+${reqShort}\\b`, "gi"), `through ${formatShortSalesDate(contract.availableEnd)}`);
+    }
+  }
   return { text: sanitized, correctionNeeded: sanitized !== String(text || "") };
 }
 

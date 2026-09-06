@@ -49,4 +49,37 @@ describe("data integrity scan", () => {
     expect(result.capabilityGaps.some((g) => g.code === "inventory_identity_unmapped")).toBe(true);
     expect(result.groups[0].examples.length).toBeGreaterThan(0);
   });
+
+  test("non-kitchen items without recipes stay informational, kitchen items need review", () => {
+    const result = scanIntegrityBundle({
+      menuItems: [
+        { id: "m1", name_en: "Eggs Florentine", active: true },
+        { id: "m2", name_en: "Pepsi", category_name: "Soft drinks", active: true },
+      ],
+      recipes: [],
+      versions: [],
+      lines: [],
+      ingredients: [],
+    });
+    expect(result.issues.some((i) => i.code === "kitchen_item_no_recipe")).toBe(true);
+    expect(result.issues.some((i) => i.code === "non_kitchen_item_no_recipe")).toBe(true);
+    expect(result.actionCounts.NEEDS_REVIEW).toBeGreaterThan(0);
+    expect(result.actionCounts.INFORMATIONAL).toBeGreaterThan(0);
+  });
+
+  test("OCR and inactive missing costs are not operational warnings", () => {
+    const result = scanIntegrityBundle({
+      menuItems: [],
+      recipes: [],
+      ingredients: [
+        { id: "i1", canonical_name: "INV-OCR tomato [temp verify]", active: true },
+        { id: "i2", canonical_name: "Legacy oil", active: false },
+        { id: "i3", canonical_name: "Fresh basil", active: true },
+      ],
+    });
+    expect(result.issues.some((i) => i.code === "ocr_cost_placeholder")).toBe(true);
+    expect(result.issues.some((i) => i.code === "inactive_ingredient_no_cost")).toBe(true);
+    expect(result.issues.some((i) => i.code === "missing_ingredient_cost" && i.message.includes("Fresh basil"))).toBe(true);
+  });
 });
+

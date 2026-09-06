@@ -8,6 +8,7 @@ import type { CoverageReport } from "./coverageModel.ts";
 import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
 import { buildCoverageAwareSalesLead } from "./coverageWording.ts";
+import type { CoverageContract } from "../askNacCoverageContract.ts";
 
 function branchLabel(branchId: string | null | undefined) {
   if (!branchId) return "the branch";
@@ -36,6 +37,7 @@ export function synthesizeDeterministicAnswer(input: {
   claims: ClaimRecord[];
   coverage: CoverageReport[];
   comparability?: ComparabilityResult | null;
+  coverageContract?: CoverageContract | null;
   offlineAnalysis?: boolean;
   infeasibleText?: string | null;
 }): string {
@@ -67,6 +69,9 @@ export function synthesizeDeterministicAnswer(input: {
     coverage: input.coverage,
     evidence: input.evidence,
   });
+  if (input.coverageContract?.spokenLabel) {
+    coverageLead.windowLabel = input.coverageContract.spokenLabel;
+  }
   const parts: string[] = [];
   parts.push(...coverageLead.preamble);
 

@@ -366,7 +366,9 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
 }
 
 function parseFlexiblePeriodFragment(text = "", referenceDate = new Date()) {
-  return parseExplicitDateRangeFromText(text, referenceDate) || parseHalfMonthPhrase(text, referenceDate);
+  return parseExplicitDateRangeFromText(text, referenceDate)
+    || parseHalfMonthPhrase(text, referenceDate)
+    || parseVaultPeriodFromQuestion(String(text || "").trim(), referenceDate);
 }
 
 function hasRangeConnector(q) {
@@ -384,7 +386,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  if (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to)\b/.test(q)) {
+  if (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to|\bto\b)\b/.test(q)) {
     const compare = parseVaultComparePeriodsFromQuestion(question, referenceDate);
     if (compare?.current) return compare.current;
   }
@@ -570,23 +572,92 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
 /**
  * Current + previous rolling/custom periods for cash-up compare questions.
  */
+function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
+  if (!period?.startDate || !period?.endDate) return period;
+  const ymd = calendarYmdInTz(referenceDate);
+  const today = isoDate(ymd.year, ymd.month, ymd.day);
+  if (period.endDate < today) return period;
+  const yesterday = addCalendarDays(ymd.year, ymd.month, ymd.day, -1);
+  const endDate = isoDate(yesterday.year, yesterday.month, yesterday.day);
+  if (endDate < period.startDate) {
+    return {
+      ...period,
+      endDate: period.startDate,
+      expectedDayCount: 0,
+      noCompletedDays: true,
+      label: `${period.label || "this period"} (no completed days yet)`,
+    };
+  }
+  const dates = listPeriodDates({ startDate: period.startDate, endDate });
+  return {
+    ...period,
+    endDate,
+    expectedDayCount: dates.length,
+    label: period.label
+      ? `${period.label} through ${endDate}`
+      : formatRangeLabel(period.startDate, endDate),
+  };
+}
+
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs|versus|against|with|compared to)\s+(.+)$/);
+  if (/\bthis week\b/.test(q) && /\blast week\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q)) {
+    const currentRequested = parseVaultPeriodFromQuestion("this week", referenceDate);
+    const current = clipPeriodToCompletedDays(currentRequested, referenceDate);
+    const previous = current?.noCompletedDays
+      ? parseVaultPeriodFromQuestion("last week", referenceDate)
+      : buildPreviousEquivalentVaultPeriod(current);
+    if (current && previous) {
+      return { current, previous, isComparison: true, periodType: "week_compare", likeForLike: !current.noCompletedDays };
+    }
+  }
+
+  if (/\b(this month|mtd|month to date|sales this month)\b/.test(q) && /\b(last month|previous month)\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q)) {
+    const current = clipPeriodToCompletedDays(parseVaultPeriodFromQuestion("this month", referenceDate), referenceDate);
+    const previous = buildPreviousEquivalentVaultPeriod(current);
+    if (current && previous) {
+      return { current, previous, isComparison: true, periodType: "mtd_compare", likeForLike: true };
+    }
+  }
+
+  if (/\byesterday\b/.test(q) && /\b(previous day|day before|the day before)\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q)) {
+    const current = parseVaultPeriodFromQuestion("yesterday", referenceDate);
+    const previousEnd = shiftLocalDate(new Date(`${current.startDate}T12:00:00`), -1);
+    const previous = rollingRange(previousEnd, 1, { label: "the previous day", periodType: "previous_day" });
+    return { current, previous, isComparison: true, periodType: "day_compare", likeForLike: true };
+  }
+
+  const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs|versus|against|with|compared to|to)\s+(.+)$/);
   if (customSplit) {
     const previousFragment = String(customSplit[2] || "")
       .replace(/\bfor\s+(nac\s+)?(khobar|riyadh|jeddah|branch|network)\b.*$/i, "")
       .trim();
-    const current = parseFlexiblePeriodFragment(customSplit[1], referenceDate);
-    const previous = parseFlexiblePeriodFragment(previousFragment || customSplit[2], referenceDate);
+    let current = parseFlexiblePeriodFragment(customSplit[1], referenceDate);
+    let previous = parseFlexiblePeriodFragment(previousFragment || customSplit[2], referenceDate);
     if (current && previous) {
+      const clipped = clipPeriodToCompletedDays(current, referenceDate);
+      if (clipped && !clipped.noCompletedDays && clipped.endDate !== current.endDate) {
+        const span = listPeriodDates(clipped).length;
+        const prevDates = listPeriodDates(previous);
+        const prevClipped = prevDates.slice(0, span);
+        current = clipped;
+        if (prevClipped.length) {
+          previous = {
+            ...previous,
+            endDate: prevClipped[prevClipped.length - 1],
+            expectedDayCount: prevClipped.length,
+            label: `${previous.label || formatRangeLabel(previous.startDate, previous.endDate)} (comparable days)`,
+          };
+        }
+      }
       return {
         current: { ...current, label: current.label || formatRangeLabel(current.startDate, current.endDate) },
         previous: { ...previous, label: previous.label || formatRangeLabel(previous.startDate, previous.endDate) },
         periodType: "custom_compare",
         isComparison: true,
+        likeForLike: true,
       };
     }
   }

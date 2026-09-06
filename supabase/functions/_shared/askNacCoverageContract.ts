@@ -207,9 +207,82 @@ export function sanitizeIncompletePeriodAnswer(text: string, response: Record<st
   return next;
 }
 
+function formatLongUsDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split("-").map(Number);
+  if (!y || !m || !d) return String(iso);
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
+function rewriteRequestedEndDates(text: string, contract: CoverageContract | null | undefined): string {
+  if (!contract?.availableEnd || !contract?.requestedEnd || contract.availableEnd >= contract.requestedEnd) {
+    return text;
+  }
+  const through = `through ${formatShortSalesDate(contract.availableEnd)}`;
+  const asOf = `as of ${formatShortSalesDate(contract.availableEnd)}`;
+  const reqShort = formatShortSalesDate(contract.requestedEnd);
+  const reqLong = formatLongUsDate(contract.requestedEnd);
+  const availLong = formatLongUsDate(contract.availableEnd);
+  let next = text;
+  if (reqLong) {
+    next = next.replace(new RegExp(`\\bAs of\\s+${reqLong}\\b`, "gi"), `As of ${availLong}`);
+    next = next.replace(new RegExp(`\\b${reqLong}\\b`, "g"), availLong);
+  }
+  if (reqShort) {
+    next = next.replace(new RegExp(`\\bAs of\\s+${reqShort}\\b`, "gi"), asOf);
+    next = next.replace(new RegExp(`\\bthrough\\s+${reqShort}\\b`, "gi"), through);
+  }
+  return next;
+}
+
 export function applyPeriodSafetyNet(text: string, response: Record<string, unknown> = {}) {
-  const sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  const contract = (response.coverageContract || null) as CoverageContract | null;
+  let sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  sanitized = rewriteRequestedEndDates(sanitized, contract);
   return { text: sanitized, correctionNeeded: sanitized !== String(text || "") };
+}
+
+export function coverageContractFromFabric(input: {
+  period?: { startDate?: string; endDate?: string; label?: string } | null;
+  coverage?: Array<{
+    domain?: string;
+    requestedStart?: string | null;
+    requestedEnd?: string | null;
+    expectedRecords?: number | null;
+    availableRecords?: number | null;
+    freshness?: string | null;
+  }>;
+  evidence?: Array<{ period?: { startDate?: string; endDate?: string } | null }>;
+  referenceDate?: Date;
+}): CoverageContract {
+  const sales = (input.coverage || []).find((c) => c.domain === "sales") || (input.coverage || [])[0] || null;
+  const requestedStart = sales?.requestedStart || input.period?.startDate || null;
+  const requestedEnd = sales?.requestedEnd || input.period?.endDate || null;
+  const latest = sales?.freshness || null;
+  const observed = (input.evidence || [])
+    .map((row) => row.period)
+    .filter((period): period is { startDate: string; endDate: string } => Boolean(
+      period?.startDate && period?.endDate && period.startDate === period.endDate,
+    ))
+    .map((period) => period.startDate);
+  let availableDates = [...new Set(observed)].sort();
+  if (!availableDates.length && latest && requestedStart && latest >= requestedStart) {
+    const clipEnd = requestedEnd && latest > requestedEnd ? requestedEnd : latest;
+    availableDates = listDates(requestedStart, clipEnd);
+  }
+  return buildCashUpCoverageContract({
+    requestedStart,
+    requestedEnd,
+    requestedLabel: input.period?.label || null,
+    availableDates,
+    latestAvailableDate: latest,
+    referenceDate: input.referenceDate,
+    source: "cash_up",
+  });
 }
 
 export function isSimpleOperationalMetricQuestion(question = ""): boolean {

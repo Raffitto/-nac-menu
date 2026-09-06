@@ -2,11 +2,25 @@
  * Diagnostic integrity scan — classify, do not block production data.
  */
 
+import { isVerificationFixture, requiresKitchenRecipe } from "../../inventory/foodBible";
+
 export const INTEGRITY_SEVERITY = Object.freeze({
   ERROR: "ERROR",
   WARNING: "WARNING",
   INFO: "INFO",
 });
+
+export const ACTION_BUCKET = Object.freeze({
+  CRITICAL: "CRITICAL",
+  NEEDS_REVIEW: "NEEDS_REVIEW",
+  INFORMATIONAL: "INFORMATIONAL",
+});
+
+function actionBucketForSeverity(severity) {
+  if (severity === INTEGRITY_SEVERITY.ERROR) return ACTION_BUCKET.CRITICAL;
+  if (severity === INTEGRITY_SEVERITY.WARNING) return ACTION_BUCKET.NEEDS_REVIEW;
+  return ACTION_BUCKET.INFORMATIONAL;
+}
 
 function issue(severity, code, message, extras = {}) {
   return { severity, code, message, ...extras };
@@ -70,10 +84,13 @@ export function scanRecipeMappingIssues(recipes = []) {
 
 export function summarizeIntegrityIssues(issues = []) {
   const counts = { ERROR: 0, WARNING: 0, INFO: 0 };
+  const actionCounts = { CRITICAL: 0, NEEDS_REVIEW: 0, INFORMATIONAL: 0 };
   for (const row of issues) {
     if (counts[row.severity] != null) counts[row.severity] += 1;
+    const bucket = row.actionBucket || actionBucketForSeverity(row.severity);
+    if (actionCounts[bucket] != null) actionCounts[bucket] += 1;
   }
-  return { issues, counts, total: issues.length };
+  return { issues, counts, actionCounts, total: issues.length };
 }
 
 function normalizeName(value) {
@@ -110,11 +127,26 @@ export function scanProductIdentityIssues(items = []) {
       ));
     }
     if (active.length > 1 && skus.length <= 1) {
+      const branches = [...new Set(active.map((r) => r.branch_id || r.branchId).filter(Boolean))];
+      const looksVariant = /small|large|regular|portion|half|double/i.test(name);
+      const kind = branches.length > 1
+        ? "branch_scoped"
+        : looksVariant
+          ? "portion_variant"
+          : "exact_duplicate";
       issues.push(issue(
-        INTEGRITY_SEVERITY.WARNING,
-        "duplicate_active_identity",
-        `Duplicate active product identity “${rows[0].name_en || name}”`,
-        { itemIds: active.map((r) => r.id).slice(0, 6), category: "product" },
+        kind === "exact_duplicate" ? INTEGRITY_SEVERITY.WARNING : INTEGRITY_SEVERITY.INFO,
+        kind === "exact_duplicate" ? "duplicate_active_identity" : `duplicate_identity_${kind}`,
+        kind === "exact_duplicate"
+          ? `Exact duplicate active identity “${rows[0].name_en || name}”`
+          : kind === "branch_scoped"
+            ? `Same name exists on ${branches.length} branches: “${rows[0].name_en || name}”`
+            : `Portion/variant identity “${rows[0].name_en || name}”`,
+        {
+          itemIds: active.map((r) => r.id).slice(0, 6),
+          category: "product",
+          duplicateKind: kind,
+        },
       ));
     }
   }
@@ -228,11 +260,17 @@ export function scanRecipeGraphIssues({
   for (const item of menuItems || []) {
     if (item.active === false) continue;
     if (!linkedMenuIds.has(item.id)) {
+      const kitchenExpected = requiresKitchenRecipe({
+        name: item.name_en || item.name,
+        categoryName: item.category_name || item.category || item.section_name,
+      });
       issues.push(issue(
-        INTEGRITY_SEVERITY.INFO,
-        "active_item_no_recipe",
-        `${item.name_en || item.id} has no linked recipe (may be intentional for beverages)`,
-        { itemId: item.id, category: "recipe" },
+        kitchenExpected ? INTEGRITY_SEVERITY.WARNING : INTEGRITY_SEVERITY.INFO,
+        kitchenExpected ? "kitchen_item_no_recipe" : "non_kitchen_item_no_recipe",
+        kitchenExpected
+          ? `${item.name_en || item.id} is a kitchen item with no linked recipe`
+          : `${item.name_en || item.id} has no recipe (beverage/retail/modifier — not a kitchen gap)`,
+        { itemId: item.id, category: "recipe", kitchenExpected },
       ));
     }
   }
@@ -259,11 +297,19 @@ export function scanCostUomIssues(ingredients = [], { costByIngredientId = {}, c
     const name = ingredient.canonical_name || ingredient.name || ingredient.id;
     const cost = costByIngredientId[ingredient.id];
     if (cost == null && ingredient.unit_cost == null && ingredient.last_cost == null) {
+      const placeholder = isVerificationFixture(name) || /INV-OCR|\[temp verify/i.test(String(name));
+      const inactive = ingredient.active === false;
+      const structural = /sub[-\s]?recipe|derived|structural/i.test(String(name));
+      const actionable = !placeholder && !inactive && !structural;
       issues.push(issue(
-        INTEGRITY_SEVERITY.WARNING,
-        "missing_ingredient_cost",
+        actionable ? INTEGRITY_SEVERITY.WARNING : INTEGRITY_SEVERITY.INFO,
+        actionable ? "missing_ingredient_cost" : placeholder
+          ? "ocr_cost_placeholder"
+          : inactive
+            ? "inactive_ingredient_no_cost"
+            : "structural_ingredient_no_cost",
         `${name} has no recorded cost`,
-        { ingredientId: ingredient.id, category: "cost" },
+        { ingredientId: ingredient.id, category: "cost", actionable },
       ));
     } else if (Number(cost ?? ingredient.unit_cost ?? ingredient.last_cost) === 0) {
       issues.push(issue(
@@ -372,6 +418,7 @@ export function scanIntegrityBundle(input = {}) {
   return {
     ...summary,
     groups: groupIntegrityIssues(issues),
+    actionCounts: summary.actionCounts,
     capabilityGaps: [...extraGaps, ...mapping.capabilityGaps],
     scannedAt: input.scannedAt || new Date().toISOString(),
     sources: ["menu_items", "inventory_recipes", "inventory_ingredients"],

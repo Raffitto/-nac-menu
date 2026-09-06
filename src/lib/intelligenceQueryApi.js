@@ -104,7 +104,7 @@ export const BI_TODAY_SOFT_TIMEOUT_MS = 2200;
  */
 export async function fetchBiDashboard(
   supabase,
-  { branch = null, hours = 24, softTimeoutMs, deferClientPatches = false } = {},
+  { branch = null, hours = 24, softTimeoutMs, deferClientPatches = false, skipLiveBi = false, forceLiveBi = false } = {},
 ) {
   if (!supabase) {
     return {
@@ -120,7 +120,14 @@ export async function fetchBiDashboard(
   const pBranch = normalizeBranchForRpc(branch);
   const params = { p_branch: pBranch, p_hours: pHours };
   const useRollup = biRollupForHours(pHours);
-  const primaryRpc = useRollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
+  const treatAsRollup = !forceLiveBi && (useRollup || skipLiveBi);
+  const primaryRpc = treatAsRollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
+  if (typeof window !== "undefined") {
+    window.__NAC_OVERVIEW_PERF__ = {
+      ...(window.__NAC_OVERVIEW_PERF__ || {}),
+      liveBiCalled: primaryRpc === "get_bi_dashboard",
+    };
+  }
   const resolvedSoftTimeout =
     softTimeoutMs != null
       ? softTimeoutMs
@@ -212,7 +219,7 @@ export async function fetchBiDashboard(
     }
   }
 
-  if (useRollup && (error || primaryRpcEmpty)) {
+  if (treatAsRollup && (error || primaryRpcEmpty) && (!skipLiveBi || forceLiveBi)) {
     devLog("[fetchBiDashboard]", { phase: "rollup_empty_fallback", error: error?.message });
     const direct = await rpcBiDashboard(supabase, "get_bi_dashboard", params);
     if (!direct.error && direct.payload && !isBiTotalsEmpty(direct.payload)) {
@@ -222,6 +229,12 @@ export async function fetchBiDashboard(
       partial = true;
       usedFallback = true;
       dataSource = "rpc";
+      if (typeof window !== "undefined") {
+        window.__NAC_OVERVIEW_PERF__ = {
+          ...(window.__NAC_OVERVIEW_PERF__ || {}),
+          liveBiCalled: true,
+        };
+      }
       note =
         "Loaded from menu_events (rollup empty or stale). Run refresh_menu_events_daily_rollup(45) in Supabase.";
       error = null;

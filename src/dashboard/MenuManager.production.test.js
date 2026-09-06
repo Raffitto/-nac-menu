@@ -31,6 +31,10 @@ describe("MenuManager production layout and loading contract", () => {
     expect(componentSource).toContain("if (itemErr) throw itemErr");
     expect(componentSource).toContain("MENU_CATALOGUE_SELECT");
     expect(componentSource).toMatch(/\.select\(MENU_CATALOGUE_SELECT\)/);
+    const catalogueSelect = componentSource.match(/const MENU_CATALOGUE_SELECT = \[([\s\S]*?)\]\.join/);
+    expect(catalogueSelect).toBeTruthy();
+    expect(catalogueSelect[1]).not.toMatch(/\bsku\b/);
+    expect(catalogueSelect[1]).toMatch(/desc_en|name_en/);
     expect(componentSource).toContain("menuLoadRequestRef");
   });
 
