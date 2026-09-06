@@ -1,12 +1,23 @@
-import { canonicalStaffName, isManagerRole, isWaiterRole } from "../config/staffRoles";
+import { canonicalStaffName } from "../config/staffRoles";
+import { isEligibleStaff, managerExclusionNote, periodExclusionNotes, sortMatrixStaff, STAFF_MATRIX_ORDER } from "./staffEligibility";
+import { matchTrackedUpsell, TRACKED_UPSELL_ITEMS } from "./trackedUpsellCatalog";
+
+/** KSA VAT. Foodics "Net Sales w/ Tax" is inclusive. */
+export const KSA_VAT_RATE = 0.15;
+
+export const AVG_CHECK_FORMULA = {
+  id: "net_sales_ex_vat_per_order",
+  label: "Avg Check = (Net Sales w/ Tax ÷ 1.15) ÷ Orders",
+  why: "Sales by Creator net sales include 15% VAT. Average check is the ex-VAT ticket average. Guests are shown but are not the denominator.",
+};
 
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 }
 
-function itemName(row) {
-  return String(row.matched_menu_item_name || row.raw_item_name || "").trim();
+function sourceProductName(row) {
+  return String(row.raw_item_name || row.matched_menu_item_name || "").trim();
 }
 
 export function parseGuestsFromCreatorRow(row) {
@@ -17,11 +28,18 @@ export function parseGuestsFromCreatorRow(row) {
   return null;
 }
 
-export function buildAverageCheckRows(creatorRows = []) {
+export function averageCheckFromNetSales(netSalesWithTax, orders) {
+  const tickets = num(orders);
+  if (tickets <= 0) return 0;
+  const exVat = num(netSalesWithTax) / (1 + KSA_VAT_RATE);
+  return Math.round((exVat / tickets) * 100) / 100;
+}
+
+export function buildAverageCheckRows(creatorRows = [], { from, to } = {}) {
   const byStaff = {};
   (creatorRows || []).forEach((row) => {
     const name = canonicalStaffName(row.waiter_name || row.raw_item_name);
-    if (!name || isManagerRole(name) || !isWaiterRole(name)) return;
+    if (!isEligibleStaff(name, { from, to, scope: "sales_ranking" })) return;
     if (!byStaff[name]) {
       byStaff[name] = { staff: name, netSales: 0, orders: 0, guests: 0 };
     }
@@ -32,18 +50,18 @@ export function buildAverageCheckRows(creatorRows = []) {
   });
 
   return Object.values(byStaff)
-    .map((row) => {
-      const denom = row.guests > 0 ? row.guests : row.orders;
-      const avgCheck = denom > 0 ? Math.round((row.netSales / denom) * 100) / 100 : 0;
-      return { ...row, avgCheck, netSales: Math.round(row.netSales) };
-    })
+    .map((row) => ({
+      ...row,
+      avgCheck: averageCheckFromNetSales(row.netSales, row.orders),
+      netSales: Math.round(row.netSales),
+    }))
     .sort((a, b) => b.avgCheck - a.avgCheck || b.netSales - a.netSales)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
-export function buildReviewRanking(reviewStats = []) {
+export function buildReviewRanking(reviewStats = [], { from, to } = {}) {
   return (reviewStats || [])
-    .filter((s) => s.name && isWaiterRole(s.name) && !isManagerRole(s.name))
+    .filter((s) => isEligibleStaff(s.name, { from, to, scope: "reviews" }))
     .map((s) => ({
       staff: canonicalStaffName(s.name),
       reviews: num(s.google ?? s.review_count),
@@ -52,25 +70,36 @@ export function buildReviewRanking(reviewStats = []) {
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
-export function buildUpsellModel(productRows = [], { targetItems = null } = {}) {
+export function buildUpsellModel(productRows = [], { from, to, targetItems = null, roster = null } = {}) {
+  void targetItems;
   const byStaff = {};
   const byItem = {};
+  const mappingFailures = [];
+  const allowed = roster ? new Set(roster) : null;
+  TRACKED_UPSELL_ITEMS.forEach((item) => {
+    byItem[item.displayName] = { item: item.displayName, id: item.id, total: 0, byStaff: {}, sales: 0 };
+  });
 
   (productRows || []).forEach((row) => {
     const staff = canonicalStaffName(row.waiter_name);
-    if (!staff || isManagerRole(staff) || !isWaiterRole(staff)) return;
-    const item = itemName(row);
-    if (!item || item === "__creator__") return;
-    if (targetItems && !targetItems.some((t) => item.toLowerCase().includes(String(t).toLowerCase()))) {
+    if (!isEligibleStaff(staff, { from, to, scope: "upsell" })) return;
+    if (allowed && !allowed.has(staff)) return;
+    const sourceName = sourceProductName(row);
+    if (!sourceName || sourceName === "__creator__") return;
+    const matched = matchTrackedUpsell(sourceName);
+    if (matched.status === "ambiguous") {
+      mappingFailures.push(matched);
       return;
     }
+    if (matched.status !== "mapped") return;
+    const item = matched.displayName;
     const qty = num(row.quantity_sold);
     const sales = num(row.gross_sales ?? row.net_sales);
     if (!byStaff[staff]) byStaff[staff] = { staff, qty: 0, sales: 0 };
     byStaff[staff].qty += qty;
     byStaff[staff].sales += sales;
-    if (!byItem[item]) byItem[item] = { item, total: 0, byStaff: {} };
     byItem[item].total += qty;
+    byItem[item].sales += sales;
     byItem[item].byStaff[staff] = (byItem[item].byStaff[staff] || 0) + qty;
   });
 
@@ -84,33 +113,27 @@ export function buildUpsellModel(productRows = [], { targetItems = null } = {}) 
     .sort((a, b) => b.qty - a.qty || b.sales - a.sales)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 
-  const whoSoldWhat = Object.values(byItem)
-    .map((entry) => {
-      const ranked = Object.entries(entry.byStaff)
-        .sort((a, b) => b[1] - a[1])
-        .map(([staff, qty]) => ({ staff, qty }));
-      return {
-        item: entry.item,
-        first: ranked[0] || null,
-        second: ranked[1] || null,
-        third: ranked[2] || null,
-        total: entry.total,
-      };
-    })
-    .sort((a, b) => b.total - a.total);
+  const whoSoldWhat = TRACKED_UPSELL_ITEMS.map((spec) => {
+    const entry = byItem[spec.displayName];
+    const ranked = Object.entries(entry.byStaff)
+      .sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        const ia = STAFF_MATRIX_ORDER.indexOf(a[0]);
+        const ib = STAFF_MATRIX_ORDER.indexOf(b[0]);
+        if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        return a[0].localeCompare(b[0]);
+      })
+      .map(([staff, qty]) => ({ staff, qty }));
+    return {
+      item: spec.displayName,
+      first: ranked[0] || null,
+      second: ranked[1] || null,
+      third: ranked[2] || null,
+      total: entry.total,
+    };
+  });
 
-  const staffNames = [...new Set(topUpsellers.map((s) => s.staff))];
-  const matrix = Object.values(byItem)
-    .sort((a, b) => a.item.localeCompare(b.item))
-    .map((entry) => {
-      const row = { item: entry.item, total: entry.total };
-      staffNames.forEach((name) => {
-        row[name] = entry.byStaff[name] || 0;
-      });
-      return row;
-    });
-
-  return { topUpsellers, whoSoldWhat, matrix, staffNames };
+  return { topUpsellers, whoSoldWhat, byItem, mappingFailures, totalTrackedQty: totalQty };
 }
 
 export function buildStaffPerformanceReport({
@@ -121,15 +144,35 @@ export function buildStaffPerformanceReport({
   from,
   to,
 } = {}) {
-  const averageCheck = buildAverageCheckRows(creatorRows);
-  const reviews = buildReviewRanking(reviewStats);
-  const upsell = buildUpsellModel(productRows);
+  const averageCheck = buildAverageCheckRows(creatorRows, { from, to });
+  const reviews = buildReviewRanking(reviewStats, { from, to });
+  const roster = averageCheck.map((r) => r.staff);
+  const upsell = buildUpsellModel(productRows, { from, to, roster });
+  const staffNames = sortMatrixStaff(averageCheck.map((r) => r.staff));
+  const matrix = TRACKED_UPSELL_ITEMS.map((spec) => {
+    const entry = upsell.byItem[spec.displayName];
+    const row = { item: spec.displayName, total: 0 };
+    staffNames.forEach((name) => {
+      const qty = entry.byStaff[name] || 0;
+      row[name] = qty;
+      row.total += qty;
+    });
+    return row;
+  });
+
   return {
     branch,
     from,
     to,
     averageCheck,
     reviews,
-    ...upsell,
+    reviewTotal: reviews.reduce((s, r) => s + r.reviews, 0),
+    topUpsellers: upsell.topUpsellers.slice(0, 3),
+    whoSoldWhat: upsell.whoSoldWhat,
+    matrix,
+    staffNames,
+    mappingFailures: upsell.mappingFailures,
+    eligibilityNotes: [managerExclusionNote(), ...periodExclusionNotes(from, to, "sales_ranking")],
+    avgCheckFormula: AVG_CHECK_FORMULA,
   };
 }

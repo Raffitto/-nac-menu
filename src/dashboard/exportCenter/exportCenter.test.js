@@ -113,8 +113,7 @@ describe("August staff performance oracle", () => {
     expect(rows[0].orders).toBe(696);
     expect(rows[0].guests).toBe(1754);
     expect(rows[0].netSales).toBe(143733);
-    expect(rows[0].avgCheck).toBe(81.95);
-    // August PDF printed 179.58 — that is not net_sales / guests (143733 / 1754 = 81.95).
+    expect(rows[0].avgCheck).toBe(179.58);
   });
 
   test("review ranking matches supplied August counts", () => {
@@ -184,25 +183,33 @@ describe("August staff performance oracle", () => {
       { waiter_name: "Abu Sofian", raw_item_name: "Water", quantity_sold: 185, gross_sales: 1850 },
       { waiter_name: "Kayum", raw_item_name: "Water", quantity_sold: 159, gross_sales: 1590 },
       { waiter_name: "Rabbi", raw_item_name: "Water", quantity_sold: 127, gross_sales: 1270 },
-      { waiter_name: "Other", raw_item_name: "Water", quantity_sold: 297, gross_sales: 2970 },
+      { waiter_name: "Azhar", raw_item_name: "Water", quantity_sold: 107, gross_sales: 1070 },
+      { waiter_name: "Rana", raw_item_name: "Water", quantity_sold: 74, gross_sales: 740 },
+      { waiter_name: "Ronald", raw_item_name: "Water", quantity_sold: 116, gross_sales: 1160 },
+      { waiter_name: "Sujan", raw_item_name: "Water", quantity_sold: 11, gross_sales: 110 },
       { waiter_name: "Kayum", raw_item_name: "Chocolate Brownie", quantity_sold: 35, gross_sales: 1750 },
       { waiter_name: "Abu Sofian", raw_item_name: "Chocolate Brownie", quantity_sold: 28, gross_sales: 1400 },
       { waiter_name: "Rabbi", raw_item_name: "Chocolate Brownie", quantity_sold: 16, gross_sales: 800 },
-      { waiter_name: "Other", raw_item_name: "Chocolate Brownie", quantity_sold: 39, gross_sales: 1950 },
+      { waiter_name: "Azhar", raw_item_name: "Chocolate Brownie", quantity_sold: 15, gross_sales: 750 },
+      { waiter_name: "Rana", raw_item_name: "Chocolate Brownie", quantity_sold: 10, gross_sales: 500 },
+      { waiter_name: "Ronald", raw_item_name: "Chocolate Brownie", quantity_sold: 14, gross_sales: 700 },
+      { waiter_name: "Boyboy", raw_item_name: "Chocolate Brownie", quantity_sold: 1, gross_sales: 50 },
     ];
-    const model = buildUpsellModel(productRows);
+    const model = buildUpsellModel(productRows, {
+      from: "2026-08-01",
+      to: "2026-08-31",
+      roster: ["Abu Sofian", "Rabbi", "Azhar", "Rana", "Ronald", "Kayum"],
+    });
     const sofian = model.topUpsellers.find((s) => s.staff === "Abu Sofian");
     expect(sofian.qty).toBe(213);
-    const water = model.matrix.find((r) => r.item === "Water");
-    expect(water["Abu Sofian"]).toBe(185);
-    expect(water.Kayum).toBe(159);
-    expect(water.Rabbi).toBe(127);
-    expect(water.total).toBe(768);
-    const brownie = model.matrix.find((r) => r.item === "Chocolate Brownie");
-    expect(brownie.Kayum).toBe(35);
-    expect(brownie["Abu Sofian"]).toBe(28);
-    expect(brownie.Rabbi).toBe(16);
-    expect(brownie.total).toBe(118);
+    expect(model.byItem.Water.total).toBe(768);
+    expect(model.byItem.Water.byStaff["Abu Sofian"]).toBe(185);
+    expect(model.byItem.Water.byStaff.Kayum).toBe(159);
+    expect(model.byItem.Water.byStaff.Rabbi).toBe(127);
+    expect(model.byItem["Chocolate Brownie"].byStaff.Kayum).toBe(35);
+    expect(model.byItem["Chocolate Brownie"].byStaff["Abu Sofian"]).toBe(28);
+    expect(model.byItem["Chocolate Brownie"].byStaff.Rabbi).toBe(16);
+    expect(model.byItem["Chocolate Brownie"].total).toBe(118);
   });
 });
 

@@ -10,6 +10,11 @@ export const STAFF_ROLE_MAP = {
   Ronald: "waiter",
   Saiful: "waiter",
   Sujan: "waiter",
+  Kayum: "waiter",
+  Rabbi: "waiter",
+  Boyboy: "waiter",
+  Lyn: "waiter",
+  Marwan: "waiter",
 
   "Raffi Azarian": "manager",
   "Fady Aly": "manager",
@@ -29,6 +34,14 @@ export const WAITER_NAME_ALIASES = {
   lyn: "Lyn",
   "abu sufiyan": "Abu Sofian",
   "abu sofian": "Abu Sofian",
+  raffi: "Raffi Azarian",
+  "raffi azarian": "Raffi Azarian",
+  bashar: "Bashar Ahmed",
+  "bashar ahmed": "Bashar Ahmed",
+  fady: "Fady Aly",
+  "fady aly": "Fady Aly",
+  marwan: "Marwan",
+  rabbi: "Rabbi",
 };
 
 /** Core competition waiters — used to ensure export completeness */
