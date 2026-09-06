@@ -44,6 +44,10 @@ describe("tracked upsell mapping", () => {
     expect(matchTrackedUpsell("Watermelon & Feta Salad").displayName).toBe("Watermelon & Feta Salad");
     expect(matchTrackedUpsell("Virgin Passion Fruit Mojito").displayName).toBe("Mocktail - Passionfruit Mojito");
     expect(matchTrackedUpsell("Virgin Mojito").displayName).toBe("Mocktail - Classic Mojito");
+    expect(matchTrackedUpsell("Blackberry & Vanilla, Lemon").displayName).toBe("Vanilla Mocktail");
+    expect(matchTrackedUpsell("Sea Bass Creaole").displayName).toBe("Sea Bass Creole");
+    expect(matchTrackedUpsell("Big NAC New").displayName).toBe("Big NAC New");
+    expect(matchTrackedUpsell("Big Nac").status).toBe("unmapped");
   });
 
   test("ambiguous steak-like names fail closed", () => {

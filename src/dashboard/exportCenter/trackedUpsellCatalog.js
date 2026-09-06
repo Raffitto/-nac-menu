@@ -15,7 +15,13 @@ export const TRACKED_UPSELL_ITEMS = [
   { id: "mac_cheese", displayName: "Mac & Cheese", matchKeys: ["mac cheese", "mac & cheese", "truffled mac cheese", "truffled mac & cheese"] },
   { id: "truffle_risotto", displayName: "Truffle Risotto", matchKeys: ["truffle risotto", "corn white truffle risotto", "corn & white truffle risotto"] },
   { id: "steak", displayName: "Steak", matchKeys: ["steak", "black angus steak au poivre"], forbidden: ["sandwich", "tartare"] },
-  { id: "vanilla_mocktail", displayName: "Vanilla Mocktail", matchKeys: ["vanilla mocktail"] },
+  {
+    id: "vanilla_mocktail",
+    displayName: "Vanilla Mocktail",
+    matchKeys: ["vanilla mocktail"],
+    aliases: ["Blackberry & Vanilla, Lemon"],
+    exactOnly: true,
+  },
   { id: "extra_shot", displayName: "Extra Shot", matchKeys: ["extra shot"] },
   { id: "extra_patty", displayName: "Extra Patty", matchKeys: ["extra patty"] },
   {
@@ -84,9 +90,22 @@ export const TRACKED_UPSELL_ITEMS = [
   },
   { id: "morel_pasta", displayName: "Morel Pasta, Parmesan", matchKeys: ["morel pasta parmesan", "morel pasta"], newMenu: true },
   { id: "king_prawn_rendang", displayName: "King Prawn Rendang", matchKeys: ["king prawn rendang", "prawn rendang"], newMenu: true },
-  { id: "big_nac_new", displayName: "Big NAC New", matchKeys: ["big nac new", "big nac"], newMenu: true },
+  {
+    id: "big_nac_new",
+    displayName: "Big NAC New",
+    matchKeys: ["big nac new"],
+    exactOnly: true,
+    newMenu: true,
+  },
   { id: "chocolate_brownie", displayName: "Chocolate Brownie", matchKeys: ["chocolate brownie"], forbidden: ["sauce"], newMenu: true },
-  { id: "sea_bass_creole", displayName: "Sea Bass Creole", matchKeys: ["sea bass creole"], newMenu: true },
+  {
+    id: "sea_bass_creole",
+    displayName: "Sea Bass Creole",
+    matchKeys: ["sea bass creole"],
+    aliases: ["Sea Bass Creaole"],
+    exactOnly: true,
+    newMenu: true,
+  },
   {
     id: "watermelon_feta",
     displayName: "Watermelon & Feta Salad",
@@ -110,8 +129,12 @@ function normKey(name) {
   return normalizeFoodicsName(String(name || "").replace(/,/g, " "));
 }
 
-function itemMatchKeys(item) {
-  return [...new Set([...(item.matchKeys || []), item.displayName].map(normKey).filter(Boolean))];
+function itemExactKeys(item) {
+  return [...new Set([
+    item.displayName,
+    ...(item.matchKeys || []),
+    ...(item.aliases || []),
+  ].map(normKey).filter(Boolean))];
 }
 
 function hasForbidden(key, forbidden = []) {
@@ -130,35 +153,48 @@ function hasRequired(key, required = []) {
   });
 }
 
-function matchesItem(item, key) {
-  const keys = itemMatchKeys(item);
-  if (keys.includes(key)) return !hasForbidden(key, item.forbidden);
-  if (item.required?.length && hasRequired(key, item.required) && !hasForbidden(key, item.forbidden)) {
-    return true;
-  }
-  return false;
+function matchesExact(item, key) {
+  return itemExactKeys(item).includes(key) && !hasForbidden(key, item.forbidden);
+}
+
+function matchesRequiredTokens(item, key) {
+  if (item.exactOnly) return false;
+  if (!item.required?.length) return false;
+  return hasRequired(key, item.required) && !hasForbidden(key, item.forbidden);
+}
+
+function mappedResult(item) {
+  return { status: "mapped", displayName: item.displayName, item };
+}
+
+function ambiguousResult(hits, productName) {
+  return {
+    status: "ambiguous",
+    displayName: null,
+    item: null,
+    candidates: hits.map((h) => h.displayName),
+    sourceName: productName,
+  };
 }
 
 /**
  * Map a Foodics / menu product name onto at most one tracked upsell item.
- * Ambiguous hits are failures — never silently pick a substitute.
+ * Approved aliases and exact keys win. Required-token fallback never
+ * overrides an exact identity and cannot merge a shorter source name
+ * into a longer tracked label (e.g. Big Nac ≠ Big NAC New).
  */
 export function matchTrackedUpsell(productName) {
   const key = normKey(productName);
   if (!key) return { status: "unmapped", displayName: null, item: null };
-  const hits = TRACKED_UPSELL_ITEMS.filter((item) => matchesItem(item, key));
-  if (hits.length === 1) {
-    return { status: "mapped", displayName: hits[0].displayName, item: hits[0] };
-  }
-  if (hits.length > 1) {
-    return {
-      status: "ambiguous",
-      displayName: null,
-      item: null,
-      candidates: hits.map((h) => h.displayName),
-      sourceName: productName,
-    };
-  }
+
+  const exactHits = TRACKED_UPSELL_ITEMS.filter((item) => matchesExact(item, key));
+  if (exactHits.length === 1) return mappedResult(exactHits[0]);
+  if (exactHits.length > 1) return ambiguousResult(exactHits, productName);
+
+  const tokenHits = TRACKED_UPSELL_ITEMS.filter((item) => matchesRequiredTokens(item, key));
+  if (tokenHits.length === 1) return mappedResult(tokenHits[0]);
+  if (tokenHits.length > 1) return ambiguousResult(tokenHits, productName);
+
   return { status: "unmapped", displayName: null, item: null, sourceName: productName };
 }
 
