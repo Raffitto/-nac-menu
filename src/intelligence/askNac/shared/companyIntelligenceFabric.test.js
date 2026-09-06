@@ -539,4 +539,31 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.verified.issues.some((i) => i.code === "incomplete_range_presented_as_complete")).toBe(true);
     expect(out.verified.repairedAnswer).toMatch(/does not have sales data yet/i);
   });
+
+  test("LLM week sentence with US dates is rewritten even if it says partial coverage", () => {
+    const out = run(`
+      const period = {
+        startDate: "2026-08-31",
+        endDate: "2026-09-06",
+        label: "this week",
+      };
+      const coverage = [mod.buildCoverageReport({
+        domain: "sales",
+        range: period,
+        expectedRecords: 7,
+        availableRecords: 6,
+        freshness: "2026-09-05",
+      })];
+      return mod.verifySynthesizedAnswer({
+        answerText: "Sales for this week (August 31, 2026 - September 6, 2026) are as follows: Net sales: 106224.30 SAR. Note that there is partial coverage with 1 missing day.",
+        branchId: "khobar",
+        period,
+        evidence: [],
+        coverage,
+      });
+    `);
+    expect(out.ok).toBe(false);
+    expect(out.repairedAnswer).toMatch(/through 5 Sep 2026/i);
+    expect(out.repairedAnswer).not.toMatch(/September 6, 2026/);
+  });
 });

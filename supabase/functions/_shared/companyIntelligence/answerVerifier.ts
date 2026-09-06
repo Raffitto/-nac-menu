@@ -121,7 +121,7 @@ export function verifySynthesizedAnswer(input: {
       .map((v) => Math.round(v * 100) / 100),
   );
   const evidenceVals = new Set(
-    input.evidence
+    (input.evidence || [])
       .map((e) => (typeof e.value === "number" ? e.value : null))
       .filter((v): v is number => v != null)
       .map((v) => Math.round(v * 100) / 100),
@@ -180,8 +180,7 @@ export function assessIncompleteRangeWording(input: {
   }
 
   const text = String(input.answerText || "");
-  const alreadyHonest = /available through|does not have sales|do not have sales|not yet available|incomplete|missing/i.test(text);
-  if (alreadyHonest) return { ok: true, issues };
+  const alreadyHonest = /available through|does not have sales|do not have sales|not yet available|so far this (week|month|period)/i.test(text);
 
   const requestedEnd = coverage.requestedEnd;
   const endShort = formatShortSalesDate(requestedEnd);
@@ -191,10 +190,17 @@ export function assessIncompleteRangeWording(input: {
     year: "numeric",
     timeZone: "UTC",
   });
+  const [ey, em, ed] = String(requestedEnd).split("-").map(Number);
+  const monthLong = endLong.replace(/^\d+\s+/, "").replace(/\s+20\d{2}$/, "");
+  const usEnd = monthLong && ed ? `${monthLong} ${ed}, ${ey}` : "";
   const mentionsRequestedEnd = text.includes(requestedEnd)
     || (endShort && text.includes(endShort))
-    || (endLong && text.includes(endLong.replace(/ 20\d{2}$/, "")));
+    || (endLong && text.includes(endLong.replace(/ 20\d{2}$/, "")))
+    || (usEnd && text.includes(usEnd));
 
+  if (alreadyHonest && !mentionsRequestedEnd && !(input.period?.label && text.includes(input.period.label))) {
+    return { ok: true, issues };
+  }
   if (!mentionsRequestedEnd && !input.period?.label) return { ok: true, issues };
   if (input.period?.label && text.includes(input.period.label) && !alreadyHonest) {
     issues.push({
@@ -224,6 +230,11 @@ export function assessIncompleteRangeWording(input: {
   if (input.period?.label && rewritten.includes(input.period.label)) {
     rewritten = rewritten.split(input.period.label).join(through);
   }
+  rewritten = rewritten.replace(
+    /\((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)?,?\s*[^)]{0,40}?(?:[-–]|to)\s*[^)]{0,40}?\)/i,
+    `(${through})`,
+  );
+  if (usEnd) rewritten = rewritten.split(usEnd).join(formatShortSalesDate(coverage.coverageEnd));
   return {
     ok: false,
     issues,
