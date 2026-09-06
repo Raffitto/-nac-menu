@@ -237,15 +237,37 @@ export function sanitizeIncompletePeriodAnswer(text, response = {}) {
   if (!incomplete) return raw;
 
   const miss = missing != null ? missing : Math.max(0, expected - dayCount);
-  return raw.replace(
+  const clipEnd = (start, end) => {
+    let latest = end;
+    for (let i = 0; i < miss; i += 1) latest = addIsoDays(latest, -1);
+    if (start && latest < start) latest = start;
+    return `so far this period through ${formatShortSalesDate(latest)}`;
+  };
+  const MONTHS = {
+    january: "01", february: "02", march: "03", april: "04", may: "05", june: "06",
+    july: "07", august: "08", september: "09", october: "10", november: "11", december: "12",
+  };
+  const usToIso = (part) => {
+    const m = String(part).match(/([A-Za-z]+)\s+(\d{1,2}),\s+(20\d{2})/);
+    if (!m) return null;
+    const mm = MONTHS[m[1].toLowerCase()];
+    if (!mm) return null;
+    return `${m[3]}-${mm}-${String(m[2]).padStart(2, "0")}`;
+  };
+  let next = raw.replace(
     /(\d{4}-\d{2}-\d{2})\s*(?:to|until|through|–|-)\s*(\d{4}-\d{2}-\d{2})/gi,
-    (all, start, end) => {
-      let latest = end;
-      for (let i = 0; i < miss; i += 1) latest = addIsoDays(latest, -1);
-      if (latest < start) latest = start;
-      return `so far this period through ${formatShortSalesDate(latest)}`;
+    (_all, start, end) => clipEnd(start, end),
+  );
+  next = next.replace(
+    /([A-Za-z]+\s+\d{1,2},\s+20\d{2})\s*(?:to|until|through|–|-)\s*([A-Za-z]+\s+\d{1,2},\s+20\d{2})/gi,
+    (_all, startUs, endUs) => {
+      const start = usToIso(startUs);
+      const end = usToIso(endUs);
+      if (!start || !end) return _all;
+      return clipEnd(start, end);
     },
   );
+  return next;
 }
 
 export function coverageFromCashUpAggregation(aggregation, requestedPeriod, extras = {}) {

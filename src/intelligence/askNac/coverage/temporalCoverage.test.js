@@ -170,6 +170,21 @@ describe("Ask NAC temporal coverage", () => {
     expect(text).not.toMatch(/2026-09-06/);
   });
 
+  test("sanitize strips US month requested end when missingDayCount is present", () => {
+    const text = sanitizeIncompletePeriodAnswer(
+      "Sales for this week (August 31, 2026 - September 6, 2026) are as follows: Net sales: 106224.30 SAR.",
+      {
+        keyMetrics: [
+          { label: "day_count", value: 6 },
+          { label: "expectedDayCount", value: 7 },
+          { label: "missingDayCount", value: 1 },
+        ],
+      },
+    );
+    expect(text).toMatch(/through 5 Sep 2026/i);
+    expect(text).not.toMatch(/September 6, 2026/);
+  });
+
   test("source delayed is not zero", () => {
     const coverage = buildTemporalCoverage({
       requestedStart: "2026-09-01",
