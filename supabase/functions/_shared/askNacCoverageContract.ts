@@ -259,7 +259,16 @@ export function coverageContractFromFabric(input: {
   evidence?: Array<{ period?: { startDate?: string; endDate?: string } | null }>;
   referenceDate?: Date;
 }): CoverageContract {
-  const sales = (input.coverage || []).find((c) => c.domain === "sales") || (input.coverage || [])[0] || null;
+  const reports = (input.coverage || []).map((c) => ({
+    ...c,
+    availableRecords: c.availableRecords ?? (c as { availableDays?: number }).availableDays ?? null,
+    expectedRecords: c.expectedRecords ?? (c as { expectedDays?: number }).expectedDays ?? null,
+  }));
+  const sales = reports.find((c) => c.domain === "sales" && (c.availableRecords || c.freshness))
+    || reports.find((c) => c.domain === "sales")
+    || reports.find((c) => (c.availableRecords || 0) > 0)
+    || reports[0]
+    || null;
   const requestedStart = sales?.requestedStart || input.period?.startDate || null;
   const requestedEnd = sales?.requestedEnd || input.period?.endDate || null;
   let latest = sales?.freshness || null;
