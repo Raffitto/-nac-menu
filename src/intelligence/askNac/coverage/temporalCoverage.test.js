@@ -232,6 +232,33 @@ describe("Ask NAC temporal coverage", () => {
     expect(safety.text).not.toMatch(/September 6, 2026/);
   });
 
+  test("fabric-style inferred day count still speaks through the last completed date", () => {
+    const requestedStart = "2026-08-31";
+    const requestedEnd = "2026-09-06";
+    const availableRecords = 6;
+    const [y, m, d] = requestedStart.split("-").map(Number);
+    const inferredEnd = new Date(Date.UTC(y, m - 1, d + availableRecords - 1)).toISOString().slice(0, 10);
+    const coverage = buildTemporalCoverage({
+      requestedStart,
+      requestedEnd,
+      requestedLabel: "this week",
+      availableDates: [],
+      latestAvailableDate: inferredEnd,
+      referenceDate: SEP6,
+      source: "cash_up",
+    });
+    const contract = toCoverageContract(coverage, { weekish: true });
+    expect(inferredEnd).toBe("2026-09-05");
+    expect(contract.availableEnd).toBe("2026-09-05");
+    expect(contract.spokenLabel).toMatch(/through 5 Sep 2026/i);
+    expect(contract.spokenLabel).not.toMatch(/6 Sep 2026/);
+    const safety = applyPeriodSafetyNet(
+      `Khobar sales for ${contract.spokenLabel}: 106224.3 SAR.`,
+      { coverageContract: contract },
+    );
+    expect(safety.correctionNeeded).toBe(false);
+  });
+
   test("source delayed is not zero", () => {
     const coverage = buildTemporalCoverage({
       requestedStart: "2026-09-01",

@@ -1,0 +1,23 @@
+---
+description: Default NAC engineering lifecycle for substantial tasks
+alwaysApply: true
+---
+
+# NAC engineering lifecycle
+
+For substantial tasks, follow this order without extra approval gates:
+
+1. UNDERSTAND the request and constraints
+2. INSPECT existing schema, services, and affected files
+3. PLAN the smallest safe change
+4. IMPLEMENT only that change
+5. LOCAL VERIFY with focused tests
+6. REGRESSION on shared modules only if touched
+7. REVIEW for RBAC, truth semantics, and deploy risk
+8. BUILD with `CI=true npm run build` near readiness
+9. BUNDLE into one coherent commit set
+10. DEPLOY ONCE if runtime production change is required
+11. PRODUCTION SMOKE only after that single deploy
+12. HANDOVER
+
+Do not rediscover architecture already documented in `docs/engineering/`. Load specialist skills from `.cursor/skills/` only when relevant. Prefer grep and small reads over rereading giant files.

@@ -5,9 +5,7 @@ alwaysApply: true
 
 # NAC Hospitality OS
 
-You are working on NAC Hospitality OS.
-
-Always follow these rules:
+You are working on NAC Hospitality OS. NAC-specific rules override generic agent frameworks.
 
 1. **Preserve production stability.** Do not redesign dashboards or change unrelated modules unless explicitly requested.
 
@@ -15,33 +13,12 @@ Always follow these rules:
 
 3. **Respect branch isolation.** Khobar, Riyadh, and Jeddah data must remain separated by RLS and `branch_id`.
 
-4. **Company Knowledge rules:**
-   - Uploads must remain working.
-   - Import Folder must remain working.
-   - Google Drive metadata sync must not become content ingestion unless explicitly requested.
-   - No OCR unless explicitly requested.
-   - No embeddings unless explicitly requested.
-   - Keyword search first.
+4. **Company Knowledge:** Uploads and Import Folder must remain working. Drive metadata sync is not content ingestion unless requested. No OCR or embeddings unless requested. Keyword search first.
 
-5. **Ask NAC rules:**
-   - Answers must cite source, branch, period, and freshness when available.
-   - If data is missing, say it is missing.
-   - Do not invent numbers.
+5. **Ask NAC:** Cite source, branch, period, and freshness when available. If data is missing, say it is missing. Do not invent numbers. 0 means verified zero — never coerce null/failed/unavailable into zero.
 
-6. **Before implementation:**
-   - Audit existing schema
-   - Audit existing services
-   - Identify affected files
-   - Make the smallest safe change
+6. **Before implementation:** Audit existing schema and services, identify affected files, make the smallest safe change.
 
-7. **After implementation always run:**
-   - `npm test -- --watchAll=false`
-   - `CI=true npm run build`
-   - `npm run build`
+7. **Verify locally.** During iteration use focused tests. Run `CI=true npm run build` once near release. Do not run the full Jest suite or deploy after every edit. See `nac-deploy-budget` and `docs/engineering/CURSOR_ENGINEERING_SYSTEM.md`.
 
-8. **Output final report with:**
-   - Files changed
-   - Migrations added
-   - Tests run
-   - Risks
-   - Next step
+8. **Handover:** Files changed, migrations added, tests run, risks, next step.

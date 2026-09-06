@@ -34,7 +34,32 @@ describe("MenuManager production layout and loading contract", () => {
     const catalogueSelect = componentSource.match(/const MENU_CATALOGUE_SELECT = \[([\s\S]*?)\]\.join/);
     expect(catalogueSelect).toBeTruthy();
     expect(catalogueSelect[1]).not.toMatch(/\bsku\b/);
-    expect(catalogueSelect[1]).toMatch(/desc_en|name_en/);
+    expect(catalogueSelect[1]).toMatch(/name_en/);
+    const catalogueColumns = catalogueSelect[1]
+      .split(",")
+      .map((part) => part.replace(/["'\s]/g, ""))
+      .filter(Boolean);
+    const allowedCatalogueColumns = [
+      "id",
+      "name_en",
+      "name_ar",
+      "price",
+      "calories",
+      "image",
+      "active",
+      "section_id",
+      "sort_order",
+      "sold_out",
+      "featured",
+      "new_item",
+      "vegetarian",
+      "vegan",
+      "hidden_until",
+      "placement_group_id",
+    ];
+    expect(catalogueColumns).toEqual(allowedCatalogueColumns);
+    expect(catalogueColumns).not.toContain("desc_en");
+    expect(catalogueColumns).not.toContain("desc_ar");
     expect(componentSource).toContain("menuLoadRequestRef");
   });
 

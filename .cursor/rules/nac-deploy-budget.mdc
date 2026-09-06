@@ -1,0 +1,16 @@
+---
+description: Local-first verification and one-deploy production budget
+alwaysApply: true
+---
+
+# NAC deploy budget
+
+Netlify usage is a hard constraint. Do not use production deploys as a test runner.
+
+- Work locally. Test locally. Build locally. Bundle one coherent milestone.
+- **Maximum one production deploy per substantial milestone.** Prefer zero if only `.cursor`, docs, scripts, or tests changed.
+- Do not deploy diagnostics-only, test-only, tiny, or intermediate commits.
+- Do not push to `main` until the milestone is ready. Local commits are fine.
+- A second deploy is allowed only for an actual production-breaking regression.
+- Before a runtime deploy: focused high-risk tests, then `CI=true npm run build`.
+- Emergency exception: production-down or data-loss risk. Still one coherent push, not a drip of fixes.
