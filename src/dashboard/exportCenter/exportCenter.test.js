@@ -29,8 +29,8 @@ describe("export center coverage", () => {
       to: "2026-09-03",
       cashUpDates: ["2026-09-01", "2026-09-02", "2026-09-03"],
       reviewDates: ["2026-09-01", "2026-09-02", "2026-09-03"],
-      creatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-03" }],
-      productByCreatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-01" }],
+      creatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-03", usable_row_count: 3 }],
+      productByCreatorBatches: [{ period_start: "2026-09-01", period_end: "2026-09-01", usable_row_count: 4 }],
     });
     expect(coverage.salesByProductByCreator.complete).toBe(false);
     expect(coverage.salesByProductByCreator.missing).toEqual(["2026-09-02", "2026-09-03"]);
@@ -43,8 +43,8 @@ describe("export center coverage", () => {
       to: "2026-08-31",
       cashUpDates: Array.from({ length: 31 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`),
       reviewDates: Array.from({ length: 31 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`),
-      creatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31" }],
-      productByCreatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31" }],
+      creatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31", usable_row_count: 8 }],
+      productByCreatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31", usable_row_count: 20 }],
     });
     expect(coverage.cashUp.complete).toBe(true);
     expect(coverage.cashUp.status).toBe("ready");

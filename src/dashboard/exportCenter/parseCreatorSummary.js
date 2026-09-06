@@ -47,9 +47,21 @@ export function parseCreatorSummaryRows(matrix) {
     };
   }).filter(Boolean);
 
+  const usable = rows.filter((row) => {
+    const net = Number(row.net_sales);
+    const ordersCount = Number(row.quantity_sold) || 0;
+    return (Number.isFinite(net) && net !== 0) || ordersCount > 0;
+  });
+
   return {
-    rows,
-    error: rows.length ? null : "No Sales by Creator rows found.",
+    rows: usable,
+    error: usable.length
+      ? null
+      : rows.length
+        ? "The file was received but no usable creator rows were stored. Please upload the file again."
+        : "No Sales by Creator rows found.",
     headers,
+    parsedRowCount: rows.length,
+    usableRowCount: usable.length,
   };
 }

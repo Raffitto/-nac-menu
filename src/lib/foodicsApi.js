@@ -10,6 +10,28 @@ export { IMPORT_TYPE };
 
 export const BATCH_COVERAGE_COLUMNS = "id,branch_id,period_start,period_end,import_type,uploaded_at";
 
+export async function getImportBatchItemCounts(batchIds = []) {
+  const unique = [...new Set((batchIds || []).filter(Boolean))];
+  if (!unique.length) return {};
+  const pairs = await Promise.all(
+    unique.map(async (id) => {
+      const { count, error } = await supabase
+        .from("foodics_sales_items")
+        .select("id", { count: "exact", head: true })
+        .eq("batch_id", id);
+      return [id, error ? 0 : Number(count) || 0];
+    }),
+  );
+  return Object.fromEntries(pairs);
+}
+
+export function withUsableRowCounts(batches = [], counts = {}) {
+  return (batches || []).map((batch) => ({
+    ...batch,
+    usable_row_count: Number(counts[batch.id] ?? batch.usable_row_count ?? 0),
+  }));
+}
+
 export async function getImportBatches(limit = 20, importType = null, rbacProfile = null, { columns = "*" } = {}) {
   let query = supabase.from("foodics_import_batches").select(columns);
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
@@ -220,12 +242,47 @@ function toSalesItemPayload(row, batch, meta) {
   };
 }
 
+function isUsablePersistedSalesRow(row, importType) {
+  if (importType === IMPORT_TYPE.SALES_BY_CREATOR) {
+    const name = String(row.waiter_name || "").trim();
+    const net = Number(row.net_sales);
+    const orders = Number(row.quantity_sold) || 0;
+    return Boolean(name) && ((Number.isFinite(net) && net !== 0) || orders > 0);
+  }
+  if (importType === IMPORT_TYPE.WAITER_PRODUCT_SALES) {
+    const name = String(row.raw_item_name || row.matched_menu_item_name || "").trim();
+    const waiter = String(row.waiter_name || "").trim();
+    const qty = Number(row.quantity_sold) || 0;
+    const sales = Number(row.gross_sales) || Number(row.net_sales) || 0;
+    return Boolean(name && name !== "__creator__" && waiter) && (qty > 0 || sales > 0);
+  }
+  return Boolean(row.matched_menu_item_name || row.raw_item_name);
+}
+
 export async function createImportBatch(meta, salesRows) {
+  const importType = meta.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES;
+  const preview = (salesRows || []).filter((row) => isUsablePersistedSalesRow({
+    ...row,
+    raw_item_name: row.raw_item_name,
+    matched_menu_item_name: row.matched_menu_item_name,
+    waiter_name: row.waiter_name,
+    quantity_sold: row.quantity_sold,
+    net_sales: row.net_sales,
+    gross_sales: row.gross_sales,
+  }, importType));
+  if (!preview.length) {
+    throw new Error(
+      importType === IMPORT_TYPE.SALES_BY_CREATOR
+        ? "The file was received but no usable creator rows were stored. Please upload the file again."
+        : "The file was received but no usable product rows were stored. Please upload the file again.",
+    );
+  }
+
   const { data: batch, error: batchErr } = await supabase
     .from("foodics_import_batches")
     .insert({
       branch_id: meta.branch_id || "khobar",
-      import_type: meta.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES,
+      import_type: importType,
       period_type: meta.period_type,
       period_start: meta.period_start,
       period_end: meta.period_end,
@@ -237,29 +294,17 @@ export async function createImportBatch(meta, salesRows) {
     .single();
   if (batchErr) throw batchErr;
 
-  const isWaiterImport = (meta.import_type || IMPORT_TYPE.WAITER_PRODUCT_SALES) !== IMPORT_TYPE.PRODUCT_SALES;
+  const payload = preview.map((row) => toSalesItemPayload(row, batch, meta));
 
-  const payload = salesRows
-    .map((row) => toSalesItemPayload(row, batch, meta))
-    .filter((row) => {
-      if (isWaiterImport) {
-        const hasSales =
-          (Number(row.quantity_sold) || 0) > 0 ||
-          (Number(row.gross_sales) || 0) > 0 ||
-          (Number(row.net_sales) || 0) > 0;
-        return hasSales && (row.waiter_name || row.raw_item_name);
-      }
-      return Boolean(row.matched_menu_item_name);
-    });
-
-  if (payload.length) {
-    const { error: itemsErr } = await supabase.from("foodics_sales_items").insert(payload);
-    if (itemsErr) throw itemsErr;
+  const { error: itemsErr } = await supabase.from("foodics_sales_items").insert(payload);
+  if (itemsErr) {
+    await supabase.from("foodics_import_batches").delete().eq("id", batch.id);
+    throw itemsErr;
   }
 
   await persistImportMappings(salesRows);
 
-  return batch;
+  return { ...batch, usable_row_count: payload.length };
 }
 
 /** Remember matches for future imports — converges toward automatic resolution */

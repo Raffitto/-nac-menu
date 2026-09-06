@@ -39,9 +39,19 @@ function isWaiterSalesHeaderRow(row) {
   return hasCreator && hasProduct && hasGross && hasNet && hasNetQty;
 }
 
+function isCreatorSummaryHeaderRow(row) {
+  const cells = rowToStrings(row).map(normHeader);
+  const hasCreator = cells.some((c) => c === "creator");
+  const hasProduct = cells.some((c) => c === "product" || c === "item" || c === "product name");
+  const hasNet = cells.some((c) => c.includes("net sales"));
+  const hasOrders = cells.some((c) => c.includes("order count") || c === "orders");
+  return hasCreator && !hasProduct && (hasNet || hasOrders);
+}
+
 function isFoodicsHeaderRow(row) {
   const cells = rowToStrings(row).map(normHeader);
   if (isWaiterSalesHeaderRow(row)) return true;
+  if (isCreatorSummaryHeaderRow(row)) return true;
   const hasProduct = cells.some((c) => c === "product");
   const hasNetQty = cells.some((c) => c === "net quantity" || c.includes("net quantity"));
   const hasGrossSales = cells.some((c) => c === "gross sales" || c.startsWith("gross sales"));

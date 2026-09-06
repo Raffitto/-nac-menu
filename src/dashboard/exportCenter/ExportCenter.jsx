@@ -3,7 +3,7 @@ import "../styles/platform-os.css";
 import { useRbac } from "../context/RbacContext";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { BATCH_COVERAGE_COLUMNS, createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
+import { BATCH_COVERAGE_COLUMNS, createImportBatch, getBatchSalesItems, getImportBatchItemCounts, getImportBatches, withUsableRowCounts } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { parseFoodicsFile, rowsFromMappedData } from "../utils/foodicsParser";
 import { assessExportCoverage, cashUpDownloadable, formatMissingDatesList, staffPerformanceReady } from "./coverage";
@@ -12,7 +12,7 @@ import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuid
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
 import { fetchCanonicalCashUpForExport, fetchCashUpCoverage } from "./cashUpSource";
 import { fetchReviewTrackingCoverage } from "./reviewCoverage";
-import { getCachedIntelligence, cacheKey } from "../utils/intelligenceCache";
+import { getCachedIntelligence, cacheKey, invalidateIntelligenceCache } from "../utils/intelligenceCache";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
 import { buildStaffPerformanceReport } from "./staffPerformance";
@@ -47,6 +47,23 @@ function StatusRow({ item, from, to, onUpload }) {
     <div className="export-center-status" data-testid={`export-status-${item.id}`}>
       {item.complete ? (
         <p className="export-center-status-line">✓ {item.label} — Complete</p>
+      ) : item.status === "import_incomplete" ? (
+        <div className="export-center-missing">
+          <p className="export-center-status-line">{item.message}</p>
+          <p className="export-center-foodics-path">
+            {item.detail || "The file was received but no usable rows were stored. Please upload the file again."}
+          </p>
+          {guide ? (
+            <label className="export-center-upload-btn">
+              Upload file
+              <input
+                type="file"
+                accept=".csv,.xls,.xlsx"
+                onChange={(e) => onUpload?.(item.id, e.target.files?.[0])}
+              />
+            </label>
+          ) : null}
+        </div>
       ) : (
         <div className="export-center-missing">
           <p className="export-center-status-line">Missing: {item.label}</p>
@@ -133,7 +150,16 @@ export default function ExportCenter() {
             getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
             getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
           ]);
-          return { cashUp, reviewCoverage, creatorBatches, productBatches };
+          const counts = await getImportBatchItemCounts([
+            ...(creatorBatches || []).map((b) => b.id),
+            ...(productBatches || []).map((b) => b.id),
+          ]);
+          return {
+            cashUp,
+            reviewCoverage,
+            creatorBatches: withUsableRowCounts(creatorBatches, counts),
+            productBatches: withUsableRowCounts(productBatches, counts),
+          };
         },
         persistTtl,
       );
@@ -225,6 +251,12 @@ export default function ExportCenter() {
         },
         rows,
       );
+      invalidateIntelligenceCache(cacheKey(["reports-coverage", scopedBranch, from, to]));
+      try {
+        sessionStorage.removeItem(`nac-reports-coverage:${scopedBranch}:${from}:${to}`);
+      } catch {
+        /* ignore */
+      }
       await refresh();
     } catch (err) {
       setError(err.message || "Upload failed.");

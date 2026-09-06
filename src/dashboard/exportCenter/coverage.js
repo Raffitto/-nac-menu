@@ -22,6 +22,53 @@ export function assessReviewTrackingCoverage({ from, to, reviewDates = [] } = {}
   };
 }
 
+export function batchHasUsableRows(batch) {
+  return Number(batch?.usable_row_count ?? batch?.row_count ?? 0) > 0;
+}
+
+export function assessFoodicsImportCoverage({
+  from,
+  to,
+  batches = [],
+  id,
+  label,
+} = {}) {
+  const covering = (batches || []).filter(
+    (b) => b?.period_start && b?.period_end && b.period_start <= to && b.period_end >= from,
+  );
+  const usable = covering.filter(batchHasUsableRows);
+  const covered = unionCoverage(usable, from, to);
+  if (covered.complete) {
+    return {
+      id,
+      label,
+      complete: true,
+      status: "complete",
+      missing: [],
+      message: `✓ ${label} — Complete`,
+    };
+  }
+  if (covering.length && !usable.length) {
+    return {
+      id,
+      label,
+      complete: false,
+      status: "import_incomplete",
+      missing: covered.missing,
+      message: `⚠ ${label} — Import incomplete`,
+      detail: "The file was received but no usable creator rows were stored.\nPlease upload the file again.",
+    };
+  }
+  return {
+    id,
+    label,
+    complete: false,
+    status: "missing",
+    missing: covered.missing,
+    message: `Missing: ${label}`,
+  };
+}
+
 export function assessExportCoverage({
   from,
   to,
@@ -37,8 +84,23 @@ export function assessExportCoverage({
     : cashPresent.length
       ? "partial"
       : "missing";
-  const creator = unionCoverage(creatorBatches, from, to);
-  const product = unionCoverage(productByCreatorBatches, from, to);
+  const creator = assessFoodicsImportCoverage({
+    from,
+    to,
+    batches: creatorBatches,
+    id: IMPORT_TYPE.SALES_BY_CREATOR,
+    label: foodicsSourceLabel(IMPORT_TYPE.SALES_BY_CREATOR),
+  });
+  const product = assessFoodicsImportCoverage({
+    from,
+    to,
+    batches: productByCreatorBatches,
+    id: IMPORT_TYPE.WAITER_PRODUCT_SALES,
+    label: foodicsSourceLabel(IMPORT_TYPE.WAITER_PRODUCT_SALES),
+  });
+  if (product.status === "import_incomplete") {
+    product.detail = "The file was received but no usable product rows were stored.\nPlease upload the file again.";
+  }
   const reviews = assessReviewTrackingCoverage({ from, to, reviewDates });
 
   return {
@@ -53,23 +115,13 @@ export function assessExportCoverage({
       missing: cashMissing,
     },
     reviews,
-    salesByCreator: {
-      id: IMPORT_TYPE.SALES_BY_CREATOR,
-      label: foodicsSourceLabel(IMPORT_TYPE.SALES_BY_CREATOR),
-      complete: creator.complete,
-      missing: creator.missing,
-    },
-    salesByProductByCreator: {
-      id: IMPORT_TYPE.WAITER_PRODUCT_SALES,
-      label: foodicsSourceLabel(IMPORT_TYPE.WAITER_PRODUCT_SALES),
-      complete: product.complete,
-      missing: product.missing,
-    },
+    salesByCreator: creator,
+    salesByProductByCreator: product,
   };
 }
 
 export function staffPerformanceReady(coverage) {
-  return Boolean(coverage?.salesByProductByCreator?.complete);
+  return Boolean(coverage?.salesByCreator?.complete && coverage?.salesByProductByCreator?.complete);
 }
 
 export function cashUpReady(coverage) {
