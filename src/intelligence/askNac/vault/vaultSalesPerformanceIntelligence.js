@@ -125,6 +125,69 @@ function formatCurrency(value) {
   return formatted != null ? `${formatted} SAR` : null;
 }
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatShortSalesDate(iso) {
+  if (!iso) return "";
+  const [y, m, d] = String(iso).split("-").map(Number);
+  if (!y || !m || !d) return String(iso);
+  return `${d} ${SHORT_MONTHS[m - 1]} ${y}`;
+}
+
+function missingSalesDatesFromAggregation(aggregation) {
+  const start = aggregation?.requestedStartDate;
+  const end = aggregation?.requestedEndDate;
+  if (!start || !end) return [];
+  const have = new Set(
+    (aggregation.dailyBreakdown || [])
+      .filter((row) => row.totalSales != null)
+      .map((row) => row.date),
+  );
+  if (!have.size && aggregation.salesCoverageStart && aggregation.salesCoverageEnd) {
+    let cursor = Date.parse(`${aggregation.salesCoverageStart}T12:00:00Z`);
+    const last = Date.parse(`${aggregation.salesCoverageEnd}T12:00:00Z`);
+    while (Number.isFinite(cursor) && cursor <= last) {
+      have.add(new Date(cursor).toISOString().slice(0, 10));
+      cursor += 86400000;
+    }
+  }
+  const missing = [];
+  let cursor = Date.parse(`${start}T12:00:00Z`);
+  const last = Date.parse(`${end}T12:00:00Z`);
+  while (Number.isFinite(cursor) && cursor <= last) {
+    const iso = new Date(cursor).toISOString().slice(0, 10);
+    if (!have.has(iso)) missing.push(iso);
+    cursor += 86400000;
+  }
+  return missing;
+}
+
+function coverageAwarePeriodLabel(aggregation, periodLabel, isPartial) {
+  if (!isPartial) return periodLabel;
+  const start = aggregation?.salesCoverageStart;
+  const end = aggregation?.salesCoverageEnd;
+  if (start && end) {
+    return start === end
+      ? formatShortSalesDate(start)
+      : `${formatShortSalesDate(start)}–${formatShortSalesDate(end)}`;
+  }
+  return periodLabel;
+}
+
+function namedMissingCoverageLines(aggregation) {
+  const missing = missingSalesDatesFromAggregation(aggregation);
+  const lines = [];
+  if (missing.length === 1) {
+    lines.push(`${formatShortSalesDate(missing[0])} does not have sales data yet.`);
+  } else if (missing.length > 1) {
+    lines.push(`Missing sales dates: ${missing.slice(0, 8).map(formatShortSalesDate).join(", ")}.`);
+  }
+  if (aggregation?.salesCoverageEnd) {
+    lines.push(`Latest available sales date: ${formatShortSalesDate(aggregation.salesCoverageEnd)}.`);
+  }
+  return lines;
+}
+
 export function hasReconciliationData(facts = []) {
   const keys = new Set(RECONCILIATION_METRICS.map(([k]) => k));
   return (facts || []).some((f) => keys.has(f.metricKey || f.metric_key));
@@ -1189,12 +1252,14 @@ export function buildPerformanceOverviewAnswer(question = "", aggregation, {
 
   const expected = resolveExpectedDayCount(aggregation) || expectedDayCount || null;
   const isPartial = expected != null && dayCount > 0 && dayCount < expected;
+  const coveredLabel = coverageAwarePeriodLabel(aggregation, periodLabel, isPartial);
   const lines = [];
 
   if (totalSales != null) {
     if (isPartial) {
       lines.push(
-        `${branchLabel} recorded ${formatCurrency(totalSales)} across ${dayCount} available days of the requested ${expected}-day window.`,
+        `${branchLabel} recorded ${formatCurrency(totalSales)} across ${dayCount} available days of the requested ${expected}-day window`
+          + `${coveredLabel && coveredLabel !== periodLabel ? ` (${coveredLabel})` : ""}.`,
       );
     } else {
       const avgSales = formatAveragePerDay(totalSales, dayCount);
@@ -1294,6 +1359,7 @@ export function buildPerformanceOverviewAnswer(question = "", aggregation, {
   }
 
   if (expected && dayCount < expected) {
+    lines.push(...namedMissingCoverageLines(aggregation));
     if (!previousAggregation) {
       lines.push(
         `Coverage: ${dayCount} of ${expected} requested day(s) have cash-up facts`
@@ -1390,8 +1456,12 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
   }
 
   const avgSales = formatAveragePerDay(totalSales, dayCount);
+  const expected = resolveExpectedDayCount(aggregation);
+  const isPartial = expected != null && dayCount > 0 && dayCount < expected;
+  const coveredLabel = coverageAwarePeriodLabel(aggregation, periodLabel, isPartial);
   if (totalSales != null) {
-    return `${branchLabel} total sales for ${periodLabel}: ${formatCurrency(totalSales)}${avgSales ? ` (${avgSales} avg/day)` : ""} across ${dayCount} cash-up day(s).`;
+    const missingLines = isPartial ? namedMissingCoverageLines(aggregation) : [];
+    return `${branchLabel} total sales for ${coveredLabel}: ${formatCurrency(totalSales)}${avgSales ? ` (${avgSales} avg/day)` : ""} across ${dayCount} cash-up day(s).${missingLines.length ? ` ${missingLines.join(" ")}` : ""}`;
   }
 
   if (totalOrders != null) {

@@ -112,7 +112,7 @@ export const RBAC_USER_DIRECTORY = [
     id: "raffi",
     name: "Raffi",
     role: RBAC_ROLES.DEVELOPER,
-    emails: ["raffi@nac.com", "raffiazarian@gmail.com", "raffi@nac-khobar.com"],
+    emails: ["raffi@nac.com", "raffiazarian@gmail.com", "raffiazarian2@gmail.com", "raffi@nac-khobar.com"],
     branchScope: null,
   },
   {

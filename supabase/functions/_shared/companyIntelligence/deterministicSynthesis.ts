@@ -7,6 +7,7 @@ import type { ComparabilityResult } from "./comparabilityEngine.ts";
 import type { CoverageReport } from "./coverageModel.ts";
 import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
+import { buildCoverageAwareSalesLead } from "./coverageWording.ts";
 
 function branchLabel(branchId: string | null | undefined) {
   if (!branchId) return "the branch";
@@ -44,6 +45,10 @@ export function synthesizeDeterministicAnswer(input: {
     e.metricOrEvent === "net_sales" && typeof e.value === "number" && e.source !== "event_forecast"
   );
   const covers = input.evidence.find((e) => e.metricOrEvent === "covers" && typeof e.value === "number");
+  const avgSpend = input.evidence.find((e) =>
+    (e.metricOrEvent === "avg_spend" || e.metricOrEvent === "average_spend") && typeof e.value === "number"
+  );
+  const orders = input.evidence.find((e) => e.metricOrEvent === "orders" && typeof e.value === "number");
   const delta = input.evidence.find((e) => e.metricOrEvent === "delta_pct" && typeof e.value === "number");
   const forecastSales = input.evidence.find((e) =>
     e.metricOrEvent === "forecast_net_sales" && typeof e.value === "number"
@@ -56,7 +61,14 @@ export function synthesizeDeterministicAnswer(input: {
 
   const branch = branchLabel(input.branchId);
   const period = periodLabel(input.period);
+  const coverageLead = buildCoverageAwareSalesLead({
+    branchLabel: branch,
+    period: input.period,
+    coverage: input.coverage,
+    evidence: input.evidence,
+  });
   const parts: string[] = [];
+  parts.push(...coverageLead.preamble);
 
   if (input.eventWindow?.conventionLabel && input.eventWindow?.anchorDate) {
     parts.push(
@@ -72,11 +84,17 @@ export function synthesizeDeterministicAnswer(input: {
 
   if (sales) {
     parts.push(
-      `For ${branch} in ${period}, observed Cash Up net sales were ${sales.value} SAR.`,
+      `For ${branch} in ${coverageLead.windowLabel}, observed Cash Up net sales were ${sales.value} SAR.`,
     );
   }
   if (covers) {
     parts.push(`Covers were ${covers.value}.`);
+  }
+  if (orders) {
+    parts.push(`Orders were ${orders.value}.`);
+  }
+  if (avgSpend) {
+    parts.push(`Average spend was ${avgSpend.value} SAR.`);
   }
 
   if (delta && input.comparability?.status !== "not_comparable") {
@@ -145,7 +163,7 @@ export function synthesizeDeterministicAnswer(input: {
           msg += ` The latest completed Cash Up I have is ${latest}.`;
         }
         parts.push(msg);
-      } else {
+      } else if (!coverageLead.preamble.length) {
         parts.push(
           `I can use ${cov.domain} evidence for ${cov.availableRecords} of the requested ${cov.expectedRecords} records; coverage is incomplete.`,
         );

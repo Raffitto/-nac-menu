@@ -655,13 +655,29 @@ async function fetchCashUpRangeBundle(
   { startDate, endDate, vaultPeriod, includeDailyBreakdown = true, includeCoverage = true },
 ) {
   const scopedBranch = resolveBranch(context);
+  let resolvedStart = startDate;
+  let resolvedEnd = endDate;
+  let resolvedPeriod = vaultPeriod;
+  if (vaultPeriod?.periodType === "latest_available_sale") {
+    const latest = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
+    if (latest) {
+      resolvedStart = latest;
+      resolvedEnd = latest;
+      resolvedPeriod = {
+        ...vaultPeriod,
+        startDate: latest,
+        endDate: latest,
+        label: latest,
+      };
+    }
+  }
   const resolvedDailyBreakdown = includeDailyBreakdown
-    ?? !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType);
+    ?? !shouldSkipDailyBreakdownForRange(resolvedStart, resolvedEnd, resolvedPeriod?.periodType);
 
   const useRpc = shouldUseCashUpRangeRpc({
-    startDate,
-    endDate,
-    periodType: vaultPeriod?.periodType,
+    startDate: resolvedStart,
+    endDate: resolvedEnd,
+    periodType: resolvedPeriod?.periodType,
     includeDailyBreakdown: resolvedDailyBreakdown,
   });
 
@@ -673,15 +689,15 @@ async function fetchCashUpRangeBundle(
     try {
       aggregation = await fetchCashUpRangeAggregationViaRpc(supabase, {
         branch: scopedBranch,
-        startDate,
-        endDate,
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
         includeDailyBreakdown: Boolean(resolvedDailyBreakdown),
       });
       factsResult = {
         branch: scopedBranch,
         branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
-        startDate,
-        endDate,
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
         facts: [],
         chunkWarnings: [],
         sources: [{ name: "get_vault_cash_up_range_aggregate", detail: "server-side cash-up range aggregation" }],
@@ -690,14 +706,14 @@ async function fetchCashUpRangeBundle(
       factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
         ...context,
         branch: scopedBranch,
-        startDate,
-        endDate,
-        limit: buildCashUpRangeQueryLimit(startDate, endDate),
-      }, vaultPeriod);
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
+        limit: buildCashUpRangeQueryLimit(resolvedStart, resolvedEnd),
+      }, resolvedPeriod);
       factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
       aggregation = aggregateCashUpFactsOverRange({
-        startDate,
-        endDate,
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
         branchId: scopedBranch,
         factsByDate,
         includeDailyBreakdown: resolvedDailyBreakdown,
@@ -707,14 +723,14 @@ async function fetchCashUpRangeBundle(
     factsResult = await fetchCashUpAggregationFactsResilient(supabase, {
       ...context,
       branch: scopedBranch,
-      startDate,
-      endDate,
-      limit: buildCashUpRangeQueryLimit(startDate, endDate),
-    }, vaultPeriod);
+      startDate: resolvedStart,
+      endDate: resolvedEnd,
+      limit: buildCashUpRangeQueryLimit(resolvedStart, resolvedEnd),
+    }, resolvedPeriod);
     factsByDate = groupCashUpFactsByBusinessDate(factsResult.facts || []);
     aggregation = aggregateCashUpFactsOverRange({
-      startDate,
-      endDate,
+      startDate: resolvedStart,
+      endDate: resolvedEnd,
       branchId: scopedBranch,
       factsByDate,
       includeDailyBreakdown: resolvedDailyBreakdown,
@@ -722,7 +738,7 @@ async function fetchCashUpRangeBundle(
   }
 
   // Always attach requested-window coverage meta so matched comparisons can activate on Edge/client.
-  aggregation = enrichCashUpAggregationCoverageMeta(aggregation, startDate, endDate);
+  aggregation = enrichCashUpAggregationCoverageMeta(aggregation, resolvedStart, resolvedEnd);
 
   const resolvedFactsByDate = factsByDate
     ?? (resolvedDailyBreakdown
@@ -735,8 +751,8 @@ async function fetchCashUpRangeBundle(
     const coverageResult = await getVaultCoverage(supabase, {
       ...context,
       branch: scopedBranch,
-      startDate,
-      endDate,
+      startDate: resolvedStart,
+      endDate: resolvedEnd,
       reportType: "cash_up",
       slim: true,
     });
@@ -747,16 +763,16 @@ async function fetchCashUpRangeBundle(
   if (aggregation.dayCount === 0) {
     warnings.push("No structured cash-up facts matched this date range under your access scope.");
     const latestCompletedDate = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
-    if (latestCompletedDate && latestCompletedDate !== startDate && latestCompletedDate !== endDate) {
+    if (latestCompletedDate && latestCompletedDate !== resolvedStart && latestCompletedDate !== resolvedEnd) {
       aggregation = { ...aggregation, latestCompletedDate };
     }
-  } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(vaultPeriod)) {
+  } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(resolvedPeriod)) {
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
 
   return {
     ...factsResult,
-    periodLabel: vaultPeriod?.label || `${startDate} – ${endDate}`,
+    periodLabel: resolvedPeriod?.label || `${resolvedStart} – ${resolvedEnd}`,
     coverage,
     vaultSources: collectVaultSources(factsResult.facts, coverage),
     factsByDate: resolvedDailyBreakdown ? resolvedFactsByDate : undefined,

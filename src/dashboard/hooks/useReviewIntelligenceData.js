@@ -71,6 +71,14 @@ export function useReviewIntelligenceData(options = {}) {
 
     const hours = rangeToHours(selectedRange);
     const platformFilters = options.platformFilters ?? platform;
+    let settled = false;
+    const settleTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      setPartial(true);
+      setError((prev) => prev || "Review metrics timed out. Showing whatever loaded.");
+      setLoading(false);
+    }, 12000);
 
     try {
       const truth = await fetchUnifiedReviewTruth(supabase, {
@@ -159,6 +167,8 @@ export function useReviewIntelligenceData(options = {}) {
       setBranchComparison([]);
       setIntegrity(null);
     } finally {
+      clearTimeout(settleTimer);
+      settled = true;
       setLoading(false);
     }
   }, [rawBranch, reviewScope, selectedRange, platform, options.platformFilters, rbacProfile]);

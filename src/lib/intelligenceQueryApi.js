@@ -467,15 +467,34 @@ export async function fetchBranchComparisonSafe(supabase, hours = 24) {
 /**
  * Server-side review_events aggregates — avoids 5k row client scans.
  */
+async function withSoftTimeout(promise, ms, fallback) {
+  if (!(Number(ms) > 0)) return promise;
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function fetchReviewEventsSummary(supabase, { branch = null, hours = 24 } = {}) {
   if (!supabase) return null;
 
   const pBranch = normalizeBranchForRpc(branch);
 
-  const { data, error } = await supabase.rpc("get_review_events_summary", {
-    p_branch: pBranch,
-    p_hours: Number(hours) || 24,
-  });
+  const { data, error } = await withSoftTimeout(
+    supabase.rpc("get_review_events_summary", {
+      p_branch: pBranch,
+      p_hours: Number(hours) || 24,
+    }),
+    10000,
+    { data: null, error: { message: "statement timeout", code: "57014", softTimeout: true } },
+  );
 
   if (error && isTimeoutError(error) && Number(hours) > 24) {
     const fallback = await supabase.rpc("get_review_events_summary", {

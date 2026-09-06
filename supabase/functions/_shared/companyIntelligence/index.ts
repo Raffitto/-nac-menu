@@ -17,6 +17,7 @@ export * from "./modelGateway.ts";
 export * from "./researchBudget.ts";
 export * from "./sourceAuthority.ts";
 export * from "./coverageModel.ts";
+export * from "./coverageWording.ts";
 export * from "./evidenceLedger.ts";
 export * from "./externalResearchBroker.ts";
 export * from "./causalPolicy.ts";

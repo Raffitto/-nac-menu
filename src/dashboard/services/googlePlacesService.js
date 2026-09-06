@@ -11,6 +11,7 @@ import {
 const PLACES_BASE = "https://places.googleapis.com/v1/places";
 const FIELD_MASK = "displayName,rating,userRatingCount";
 const CACHE_MS = 15 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 8000;
 
 /** @type {Map<string, { at: number, data: object }>} */
 const cache = new Map();
@@ -46,13 +47,21 @@ export async function getGooglePlaceMetrics(placeId) {
   }
 
   try {
-    const res = await fetch(`${PLACES_BASE}/${encodeURIComponent(id)}`, {
-      method: "GET",
-      headers: {
-        "X-Goog-Api-Key": key,
-        "X-Goog-FieldMask": FIELD_MASK,
-      },
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(`${PLACES_BASE}/${encodeURIComponent(id)}`, {
+        method: "GET",
+        headers: {
+          "X-Goog-Api-Key": key,
+          "X-Goog-FieldMask": FIELD_MASK,
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => "");

@@ -5,6 +5,8 @@
 import { assessCausalLanguage } from "./causalPolicy.ts";
 import type { ClaimRecord, EvidenceRecord } from "./evidenceLedger.ts";
 import { canSourceOverride } from "./sourceAuthority.ts";
+import type { CoverageReport } from "./coverageModel.ts";
+import { deriveRangeCoverage, formatMissingDatesProse, formatShortSalesDate } from "./coverageWording.ts";
 import type { BranchId, DateRange } from "./types.ts";
 
 export type VerifierIssue = {
@@ -26,6 +28,7 @@ export function verifySynthesizedAnswer(input: {
   period?: DateRange | null;
   evidence: EvidenceRecord[];
   claims?: ClaimRecord[];
+  coverage?: CoverageReport[];
   presentedSources?: string[];
 }): VerifierResult {
   const issues: VerifierIssue[] = [];
@@ -144,10 +147,80 @@ export function verifySynthesizedAnswer(input: {
     issues.push(...granularity.issues);
   }
 
+  const rangeWording = assessIncompleteRangeWording(input);
+  if (!rangeWording.ok) {
+    issues.push(...rangeWording.issues);
+    if (rangeWording.repairedAnswer) repaired = rangeWording.repairedAnswer;
+  }
+
   return {
     ok: issues.length === 0,
     issues,
     repairedAnswer: issues.length ? repaired : null,
+  };
+}
+
+/**
+ * Partial coverage must not be described as a complete requested window.
+ */
+export function assessIncompleteRangeWording(input: {
+  answerText?: string;
+  period?: DateRange | null;
+  evidence?: EvidenceRecord[];
+  coverage?: CoverageReport[];
+}): { ok: boolean; issues: VerifierIssue[]; repairedAnswer?: string } {
+  const issues: VerifierIssue[] = [];
+  const coverage = deriveRangeCoverage({
+    period: input.period,
+    coverage: input.coverage,
+    evidence: input.evidence,
+  });
+  if (!coverage.isPartial || !coverage.requestedEnd) {
+    return { ok: true, issues };
+  }
+
+  const text = String(input.answerText || "");
+  const alreadyHonest = /available through|does not have sales|do not have sales|not yet available|incomplete|missing/i.test(text);
+  if (alreadyHonest) return { ok: true, issues };
+
+  const requestedEnd = coverage.requestedEnd;
+  const endShort = formatShortSalesDate(requestedEnd);
+  const endLong = new Date(`${requestedEnd}T12:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const mentionsRequestedEnd = text.includes(requestedEnd)
+    || (endShort && text.includes(endShort))
+    || (endLong && text.includes(endLong.replace(/ 20\d{2}$/, "")));
+
+  if (!mentionsRequestedEnd && !input.period?.label) return { ok: true, issues };
+  if (input.period?.label && text.includes(input.period.label) && !alreadyHonest) {
+    issues.push({
+      code: "incomplete_range_presented_as_complete",
+      detail: `Answer uses requested period ${input.period.label} while coverage is partial`,
+    });
+  } else if (mentionsRequestedEnd) {
+    issues.push({
+      code: "incomplete_range_presented_as_complete",
+      detail: `Answer includes requested end ${requestedEnd} without stating missing coverage`,
+    });
+  }
+
+  if (!issues.length) return { ok: true, issues };
+
+  const suffix = [
+    coverage.coverageEnd
+      ? `Sales are currently available through ${formatShortSalesDate(coverage.coverageEnd)}.`
+      : "",
+    formatMissingDatesProse(coverage.missingDates),
+  ].filter(Boolean).join(" ");
+
+  return {
+    ok: false,
+    issues,
+    repairedAnswer: suffix ? `${text.trim()} ${suffix}` : text,
   };
 }
 

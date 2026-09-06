@@ -205,6 +205,38 @@ describe("vaultSalesPerformanceIntelligence", () => {
     expect(partial).not.toMatch(/Need a clearer metric question/i);
   });
 
+  test("this-week overview names the missing day instead of treating the requested Sunday as covered", () => {
+    const answer = buildPerformanceOverviewAnswer(
+      "What are sales this week?",
+      {
+        totalSales: 106224.3,
+        totalGuests: 1191,
+        totalOrders: 625,
+        averageSpend: 89.19,
+        dayCount: 6,
+        expectedDayCount: 7,
+        missingDayCount: 1,
+        requestedStartDate: "2026-08-31",
+        requestedEndDate: "2026-09-06",
+        salesCoverageStart: "2026-08-31",
+        salesCoverageEnd: "2026-09-05",
+        dailyBreakdown: [
+          { date: "2026-08-31", totalSales: 1 },
+          { date: "2026-09-01", totalSales: 1 },
+          { date: "2026-09-02", totalSales: 1 },
+          { date: "2026-09-03", totalSales: 1 },
+          { date: "2026-09-04", totalSales: 1 },
+          { date: "2026-09-05", totalSales: 1 },
+        ],
+      },
+      { branchLabel: "Khobar", periodLabel: "this week" },
+    );
+    expect(answer).toMatch(/6 available days of the requested 7-day window/i);
+    expect(answer).toMatch(/6 Sep 2026 does not have sales data yet/i);
+    expect(answer).toMatch(/Latest available sales date: 5 Sep 2026/i);
+    expect(answer).not.toMatch(/generated .* in sales over this week/i);
+  });
+
   test("partial-period comparisons stay like-for-like and never invent zeros", () => {
     const makeDay = (date, sales, guests, orders) => ({
       date,

@@ -32,9 +32,16 @@ describe("NAC OS RBAC", () => {
       expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
     });
 
+    test("maps Drive login email to developer Reports access", () => {
+      const drive = resolveRbacProfile(mockSession("raffiazarian2@gmail.com"));
+      expect(drive.role).toBe(RBAC_ROLES.DEVELOPER);
+      expect(canAccessNav(drive, "reports")).toBe(true);
+    });
+
     test("can access all nav and intelligence surfaces", () => {
       expect(canAccessNav(profile, "branches")).toBe(true);
       expect(canAccessNav(profile, "intelligence")).toBe(true);
+      expect(canAccessNav(profile, "reports")).toBe(true);
       expect(canAccessNav(profile, "food-bible")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "competitive")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);

@@ -473,4 +473,70 @@ describe("Company Intelligence Fabric foundation", () => {
     expect(out.exact).toMatch(/18100/);
     expect(out.exact).not.toMatch(/not yet available/);
   });
+
+  test("incomplete week wording uses coverage dates and names the missing day", () => {
+    const out = run(`
+      const period = {
+        startDate: "2026-08-31",
+        endDate: "2026-09-06",
+        label: "Monday, 31 August – Sunday, 6 September",
+      };
+      const coverage = [mod.buildCoverageReport({
+        domain: "sales",
+        range: period,
+        expectedRecords: 7,
+        availableRecords: 6,
+        freshness: "2026-09-05",
+      })];
+      const evidence = [
+        mod.createEvidence({
+          source: "cash_up",
+          domain: "INTERNAL_STRUCTURED",
+          branchId: "khobar",
+          metricOrEvent: "net_sales",
+          value: 106224.3,
+          textSummary: "Net sales 106224.3",
+          period: { startDate: "2026-08-31", endDate: "2026-09-05" },
+        }),
+        mod.createEvidence({
+          source: "cash_up",
+          domain: "INTERNAL_STRUCTURED",
+          branchId: "khobar",
+          metricOrEvent: "covers",
+          value: 1191,
+          period: { startDate: "2026-08-31", endDate: "2026-09-05" },
+        }),
+        mod.createEvidence({
+          source: "cash_up",
+          domain: "INTERNAL_STRUCTURED",
+          branchId: "khobar",
+          metricOrEvent: "day_count",
+          value: 6,
+        }),
+      ];
+      const answer = mod.synthesizeDeterministicAnswer({
+        question: "what are sales this week",
+        branchId: "khobar",
+        period,
+        evidence,
+        claims: [],
+        coverage,
+      });
+      const verified = mod.verifySynthesizedAnswer({
+        answerText: "For Khobar in Monday, 31 August – Sunday, 6 September, net sales were SAR 106224.3.",
+        branchId: "khobar",
+        period,
+        evidence,
+        coverage,
+      });
+      return { answer, verified };
+    `);
+    expect(out.answer).toMatch(/available through 5 Sep 2026/i);
+    expect(out.answer).toMatch(/6 Sep 2026 does not have sales data yet/i);
+    expect(out.answer).toMatch(/106224/);
+    expect(out.answer).not.toMatch(/For Khobar in Monday, 31 August – Sunday, 6 September/);
+    expect(out.verified.ok).toBe(false);
+    expect(out.verified.issues.some((i) => i.code === "incomplete_range_presented_as_complete")).toBe(true);
+    expect(out.verified.repairedAnswer).toMatch(/does not have sales data yet/i);
+  });
 });

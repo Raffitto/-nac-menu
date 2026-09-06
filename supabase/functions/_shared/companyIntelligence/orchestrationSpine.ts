@@ -725,6 +725,9 @@ export async function runCompanyIntelligenceOrchestration(
         "Do not use causal verbs unless claim type is VERIFIED_FACT with strong evidence.",
         "Do not mention tools, SQL, or internal labels.",
         "Respect comparability method and coverage warnings.",
+        "If coverage is incomplete, describe only the dates that actually have sales.",
+        "Never say sales were X for a requested end date that has no canonical sales yet.",
+        "Name missing dates. Mention latest available sales date when the request extends past coverage.",
       ].join(" "),
       user: JSON.stringify({
         question: state.request.originalQuestion,
@@ -742,6 +745,8 @@ export async function runCompanyIntelligenceOrchestration(
           period: e.period,
         })),
         warnings: state.warnings,
+        requestedPeriod: state.periods.current,
+        coverage: state.coverage,
       }),
       json: true,
       maxTokens: Number(
@@ -803,6 +808,7 @@ export async function runCompanyIntelligenceOrchestration(
     evidence: state.evidence,
     claims: state.claims,
     presentedSources: state.evidence.map((e) => e.source),
+    coverage: state.coverage,
   });
 
   if (!verified.ok && verified.repairedAnswer) {
@@ -814,6 +820,7 @@ export async function runCompanyIntelligenceOrchestration(
       evidence: state.evidence,
       claims: state.claims,
       presentedSources: state.evidence.map((e) => e.source),
+      coverage: state.coverage,
     });
   }
 
@@ -848,6 +855,7 @@ export async function runCompanyIntelligenceOrchestration(
           period: state.periods.current,
           evidence: state.evidence,
           claims: state.claims,
+          coverage: state.coverage,
         });
         if (!verified.ok && verified.repairedAnswer) answerText = verified.repairedAnswer;
       } catch {
