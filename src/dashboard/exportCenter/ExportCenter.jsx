@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "../styles/platform-os.css";
 import { useRbac } from "../context/RbacContext";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
@@ -100,6 +100,7 @@ export default function ExportCenter() {
   const [coverage, setCoverage] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const readinessGen = useRef(0);
   const [payload, setPayload] = useState({
     cashFacts: [],
     reviewEntries: [],
@@ -123,6 +124,7 @@ export default function ExportCenter() {
       return;
     }
     setError("");
+    const gen = ++readinessGen.current;
     const persistKey = `nac-reports-coverage:${scopedBranch}:${from}:${to}`;
     const historical = to && to < new Date().toISOString().slice(0, 10);
     const persistTtl = historical ? 10 * 60 * 1000 : 45 * 1000;
@@ -149,7 +151,8 @@ export default function ExportCenter() {
           branch: scopedBranch,
           rbacProfile: rbac.profile,
           onPartial: (partial) => {
-            if (partial?.from === from && partial?.to === to) setCoverage(partial);
+            if (readinessGen.current !== gen) return;
+            setCoverage(partial);
           },
         }),
         persistTtl,
@@ -163,6 +166,7 @@ export default function ExportCenter() {
       if (reviewCoverage?.error && !(reviewCoverage.reviewDates || []).length) {
         setError((prev) => prev || `Review coverage query failed: ${reviewCoverage.error}`);
       }
+      if (readinessGen.current !== gen) return;
       setCoverage(next);
       try {
         sessionStorage.setItem(persistKey, JSON.stringify({ coverage: next, at: Date.now() }));
@@ -178,10 +182,11 @@ export default function ExportCenter() {
         };
       }
     } catch (err) {
+      if (readinessGen.current !== gen) return;
       setError(err.message || "Could not check report readiness.");
       setCoverage((prev) => prev || assessExportCoverage({ from, to }));
     } finally {
-      setBusy(false);
+      if (readinessGen.current === gen) setBusy(false);
     }
     // Profile object identity can change every render; key fields are enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
