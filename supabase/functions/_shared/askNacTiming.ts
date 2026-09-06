@@ -37,12 +37,16 @@ export function attachResponseMeta(
   payload: Record<string, unknown>,
   timingMs: AskNacTimingMs,
   narrationSkipped: boolean,
+  extras: { correctionNeeded?: boolean; verificationMs?: number } = {},
 ): Record<string, unknown> {
   return {
     ...payload,
     responseMeta: {
-      timingMs,
+      timingMs: extras.verificationMs != null
+        ? { ...timingMs, verification: extras.verificationMs }
+        : timingMs,
       narrationSkipped,
+      correctionNeeded: Boolean(extras.correctionNeeded),
     },
   };
 }

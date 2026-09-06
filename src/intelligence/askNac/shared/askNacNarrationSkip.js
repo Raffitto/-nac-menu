@@ -3,6 +3,7 @@
  */
 
 import { ASK_NAC_INTENTS } from "../intentRouter";
+import { isSimpleOperationalMetricQuestion } from "../coverage/temporalCoverage";
 
 const VAULT_INTENTS = {
   CASH_UP: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
@@ -62,7 +63,15 @@ export function shouldSkipAiNarration(
   tool,
   vaultPeriod,
   deterministic,
+  question,
 ) {
+  if (
+    isSimpleOperationalMetricQuestion(question)
+    && typeof deterministic?.directAnswer === "string"
+    && deterministic.directAnswer.trim()
+  ) {
+    return true;
+  }
   if (intent === VAULT_INTENTS.BUSINESS_REASONING) return true;
   if (
     intent === VAULT_INTENTS.TEACH_OPERATOR
@@ -78,6 +87,12 @@ export function shouldSkipAiNarration(
   if (deterministic?.conversationDataset) return true;
 
   if (tool?.monthlyLogbookSummary || tool?.structuredLogbookReview) return true;
+
+  if (
+    /\b(why|compare|versus|\bvs\b|forecast|expect|should we|what caused|difference)\b/i.test(String(question || ""))
+  ) {
+    return false;
+  }
 
   if (intent === VAULT_INTENTS.CASH_UP) {
     if (vaultPeriod?.periodType === "year_to_date") return true;

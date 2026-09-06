@@ -39,6 +39,10 @@ import {
   appendCoverageToAggregateAnswer,
 } from "./vaultSalesPerformanceIntelligence";
 import { assessPeriodCoverage, buildCoverageAnswerLines } from "../coverage/coverageAwareness";
+import {
+  coverageFromCashUpAggregation,
+  toCoverageContract,
+} from "../coverage/temporalCoverage";
 import { resolveAnalyticalConfidence } from "../confidence/analyticalConfidence";
 import { buildDocumentSummaryAnswerContent } from "./vaultDocumentSummary";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief";
@@ -290,14 +294,21 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     const confidenceResult = resolveAnalyticalConfidence({ route, tool, coverageAssessment });
 
     const weekish = /this week|current week/i.test(String(question || currentPeriodLabel || ""));
-    const spokenPeriod = coverageAssessment.availablePeriodLabel && (
-      coverageAssessment.completeness === "partial"
-      || coverageAssessment.completeness === "current_day_not_complete"
-    )
-      ? (weekish && coverageAssessment.dataConfidence?.salesCoverageEnd
-        ? `so far this week through ${coverageAssessment.dataConfidence.salesCoverageEnd}`
-        : coverageAssessment.availablePeriodLabel)
-      : currentPeriodLabel;
+    const temporalCoverage = coverageFromCashUpAggregation(aggregation, {
+      startDate: route?.vaultPeriod?.startDate || tool?.startDate,
+      endDate: route?.vaultPeriod?.endDate || tool?.endDate,
+      label: currentPeriodLabel,
+    });
+    const coverageContract = toCoverageContract(temporalCoverage, { weekish });
+    const spokenPeriod = coverageContract.spokenLabel
+      || (coverageAssessment.availablePeriodLabel && (
+        coverageAssessment.completeness === "partial"
+        || coverageAssessment.completeness === "current_day_not_complete"
+      )
+        ? (weekish && coverageAssessment.dataConfidence?.salesCoverageEnd
+          ? `so far this week through ${coverageAssessment.dataConfidence.salesCoverageEnd}`
+          : coverageAssessment.availablePeriodLabel)
+        : currentPeriodLabel);
 
     let resolvedAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
@@ -403,6 +414,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
       warnings: coverageWarnings,
       confidence: confidenceResult.level,
       dataConfidence: confidenceResult.dataConfidence,
+      coverageContract,
     }), tool, route);
   }
 

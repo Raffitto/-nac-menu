@@ -2,7 +2,7 @@
  * Ensure Ask NAC directAnswer is always renderable plain text.
  */
 
-import { sanitizeIncompletePeriodAnswer } from "../coverage/temporalCoverage";
+import { applyPeriodSafetyNet, sanitizeIncompletePeriodAnswer } from "../coverage/temporalCoverage";
 
 export function coercePlainTextDirectAnswer(directAnswer, response = {}) {
   if (typeof directAnswer === "string") {
@@ -36,4 +36,10 @@ export function resolveAskNacDirectAnswer(response = {}) {
   const coerced = coercePlainTextDirectAnswer(response.directAnswer, response);
   if (coerced) return sanitizeIncompletePeriodAnswer(coerced, response);
   return "No summary available.";
+}
+
+export function resolveAskNacDirectAnswerWithMeta(response = {}) {
+  const coerced = coercePlainTextDirectAnswer(response.directAnswer, response);
+  if (!coerced) return { text: "No summary available.", correctionNeeded: false };
+  return applyPeriodSafetyNet(coerced, response);
 }

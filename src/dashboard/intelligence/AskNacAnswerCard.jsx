@@ -12,7 +12,10 @@ import {
   applyExecutiveMetricDisplayLabels,
   extractExecutiveKpiMetrics,
 } from "../../intelligence/askNac/export/executiveBriefExport";
-import { resolveAskNacDirectAnswer } from "../../intelligence/askNac/conversation/coercePlainTextDirectAnswer";
+import {
+  resolveAskNacDirectAnswer,
+  resolveAskNacDirectAnswerWithMeta,
+} from "../../intelligence/askNac/conversation/coercePlainTextDirectAnswer";
 import {
   buildConversationChartPayload,
   resolveVisualizationPresentation,
@@ -85,7 +88,20 @@ function ConversationVisualizationSection({ response }) {
   return null;
 }
 
+function stampCoverageMeta(response) {
+  if (typeof window === "undefined") return;
+  const meta = resolveAskNacDirectAnswerWithMeta(response);
+  window.__NAC_ASKNAC_COVERAGE__ = {
+    correctionNeeded: Boolean(meta.correctionNeeded || response?.responseMeta?.correctionNeeded),
+    narrationSkipped: Boolean(response?.responseMeta?.narrationSkipped),
+    coverageStatus: response?.coverageContract?.coverageStatus || null,
+    spokenLabel: response?.coverageContract?.spokenLabel || null,
+    timingMs: response?.responseMeta?.timingMs || null,
+  };
+}
+
 function PrimaryAnswerContent({ response }) {
+  stampCoverageMeta(response);
   if (shouldRenderCashUpExecutiveBrief(response)) {
     return (
       <CashUpExecutiveBriefView

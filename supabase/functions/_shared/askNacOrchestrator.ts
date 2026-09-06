@@ -84,6 +84,7 @@ import { applyExecutiveIntelligenceV2 } from "./askNacExecutiveEvidenceV2.ts";
 import { scoreDriveDiscoveryIntent } from "./askNacDriveDiscovery.ts";
 import { shouldSkipAiNarration } from "./askNacNarrationSkip.ts";
 import { attachResponseMeta, buildAskNacTimingMs } from "./askNacTiming.ts";
+import { applyPeriodSafetyNet } from "./askNacCoverageContract.ts";
 
 export const ASK_NAC_INTENTS = {
   MENU_QR_SCANS: "menu_qr_scans",
@@ -1494,6 +1495,7 @@ export async function processAskNacOnEdge(
     tool,
     route.vaultPeriod as { periodType?: string } | undefined,
     deterministic,
+    effectiveQuestion,
   );
   let openAiNarrationMs = 0;
   const { answer, aiConnected } = skipAiNarration
@@ -1509,6 +1511,13 @@ export async function processAskNacOnEdge(
       openAiNarrationMs = Math.round(performance.now() - openAiStartedAt);
       return narrated;
     })();
+
+  const verifyStartedAt = performance.now();
+  const safety = applyPeriodSafetyNet(String(answer?.directAnswer || ""), answer as Record<string, unknown>);
+  if (safety.correctionNeeded) {
+    (answer as Record<string, unknown>).directAnswer = safety.text;
+  }
+  const verificationMs = Math.round(performance.now() - verifyStartedAt);
 
   return attachResponseMeta({
     ...answer,
@@ -1560,5 +1569,8 @@ export async function processAskNacOnEdge(
     openAiNarration: openAiNarrationMs,
     datasetReuse: 0,
     knowledgeHealth: knowledgeHealthMs,
-  }), skipAiNarration);
+  }), skipAiNarration, {
+    correctionNeeded: safety.correctionNeeded,
+    verificationMs,
+  });
 }

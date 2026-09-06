@@ -197,6 +197,26 @@ function resolveVisibilityPatch(form) {
   return patch;
 }
 
+const MENU_CATALOGUE_SELECT = [
+  "id",
+  "name_en",
+  "name_ar",
+  "price",
+  "calories",
+  "image",
+  "active",
+  "section_id",
+  "sort_order",
+  "sold_out",
+  "featured",
+  "new_item",
+  "vegetarian",
+  "vegan",
+  "hidden_until",
+  "placement_group_id",
+  "sku",
+].join(",");
+
 const EMPTY_ITEM = {
   name_en: "",
   name_ar: "",
@@ -780,7 +800,7 @@ export default function MenuManager() {
       if (secIds.length > 0) {
         const { data: itemData, error: itemErr } = await supabase
           .from("menu_items")
-          .select("*")
+          .select(MENU_CATALOGUE_SELECT)
           .in("section_id", secIds)
           .eq("branch_id", menuBranch)
           .order("sort_order");
@@ -1316,47 +1336,61 @@ export default function MenuManager() {
     showToast,  noteDraftChanged]);
 
   const openEditItem = useCallback(async (item) => {
-    const secRow = sectionsCatalog.find((s) => s.id === item.section_id);
-    const categoryId = secRow?.category_id || item.category_id || selectedCatId || "";
+    let record = item;
+    if (item?.id && supabase && (item.desc_en === undefined || item.desc_ar === undefined)) {
+      try {
+        const { data: full } = await supabase
+          .from("menu_items")
+          .select("*")
+          .eq("id", item.id)
+          .eq("branch_id", menuBranch)
+          .maybeSingle();
+        if (full) record = { ...item, ...full };
+      } catch {
+        record = item;
+      }
+    }
+    const secRow = sectionsCatalog.find((s) => s.id === record.section_id);
+    const categoryId = secRow?.category_id || record.category_id || selectedCatId || "";
 
     setEditorMode("edit");
     setEditingItem({
-      name_en: item.name_en || "",
-      name_ar: item.name_ar || "",
-      desc_en: item.desc_en || "",
-      desc_ar: item.desc_ar || "",
-      price: item.price ?? "",
-      calories: item.calories ?? "",
-      image: item.image || "",
+      name_en: record.name_en || "",
+      name_ar: record.name_ar || "",
+      desc_en: record.desc_en || "",
+      desc_ar: record.desc_ar || "",
+      price: record.price ?? "",
+      calories: record.calories ?? "",
+      image: record.image || "",
       category_id: categoryId,
-      section_id: item.section_id || "",
-      sold_out: item.sold_out || false,
-      featured: item.featured || false,
-      new_item: item.new_item || false,
-      vegetarian: item.vegetarian || false,
-      vegan: item.vegan || false,
-      active: item.active !== false,
-      hidden_until: item.hidden_until || null,
+      section_id: record.section_id || "",
+      sold_out: record.sold_out || false,
+      featured: record.featured || false,
+      new_item: record.new_item || false,
+      vegetarian: record.vegetarian || false,
+      vegan: record.vegan || false,
+      active: record.active !== false,
+      hidden_until: record.hidden_until || null,
     });
-    setEditingItemId(item.id);
+    setEditingItemId(record.id);
 
     let linkedAddonIds = [];
     let linkedAllergenIds = [];
     try {
       [linkedAddonIds, linkedAllergenIds] = await Promise.all([
-        fetchItemAddonIds(item.id),
-        fetchItemAllergenIds(item.id)]);
+        fetchItemAddonIds(record.id),
+        fetchItemAllergenIds(record.id)]);
     } catch {
-      linkedAddonIds = (item.add_ons || []).map((a) => a.id || a);
-      linkedAllergenIds = (item.allergens || []).map((a) => a.id || a);
+      linkedAddonIds = (record.add_ons || []).map((a) => a.id || a);
+      linkedAllergenIds = (record.allergens || []).map((a) => a.id || a);
     }
     setItemAllergenIds(linkedAllergenIds);
     setItemAddOnIds(linkedAddonIds);
     setImageFile(null);
-    setImagePreview(item.image || "");
+    setImagePreview(record.image || "");
     setRemovedPlacementIds([]);
 
-    const groupId = item.placement_group_id || null;
+    const groupId = record.placement_group_id || null;
     setPlacementGroupId(groupId);
 
     if (groupId) {
@@ -1364,7 +1398,7 @@ export default function MenuManager() {
       const extras = hydratePlacementCategoryIds(
         buildExtraPlacementsFromMembers(
           members,
-          item.id,
+          record.id,
           sectionsCatalog,
           newPlacementRowKey,
         ),
@@ -1376,7 +1410,7 @@ export default function MenuManager() {
     }
 
     setEditorOpen(true);
-  }, [selectedCatId, sectionsCatalog]);
+  }, [selectedCatId, sectionsCatalog, menuBranch]);
 
   const handleSaveItem = useCallback(async () => {
     if (readOnlyMenu) {

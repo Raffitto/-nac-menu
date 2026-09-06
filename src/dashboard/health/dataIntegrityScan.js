@@ -75,3 +75,297 @@ export function summarizeIntegrityIssues(issues = []) {
   }
   return { issues, counts, total: issues.length };
 }
+
+function normalizeName(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+export function scanProductIdentityIssues(items = []) {
+  const issues = [...scanMenuIdentityIssues(items)];
+  const byName = new Map();
+  for (const item of items || []) {
+    const name = normalizeName(item.name_en || item.name);
+    if (!name) continue;
+    if (!byName.has(name)) byName.set(name, []);
+    byName.get(name).push(item);
+  }
+  for (const [name, rows] of byName.entries()) {
+    const active = rows.filter((r) => r.active !== false);
+    const skus = [...new Set(active.map((r) => String(r.sku || "").trim()).filter(Boolean))];
+    if (active.length > 1 && skus.length > 1) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "one_identity_many_skus",
+        `“${rows[0].name_en || name}” has ${skus.length} active SKUs`,
+        { examples: skus.slice(0, 4), count: active.length, category: "product" },
+      ));
+    }
+    const inactive = rows.filter((r) => r.active === false);
+    if (active.length && inactive.length) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "inactive_active_collision",
+        `“${rows[0].name_en || name}” has both active and inactive/legacy rows`,
+        { itemIds: rows.map((r) => r.id).slice(0, 6), category: "product" },
+      ));
+    }
+    if (active.length > 1 && skus.length <= 1) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "duplicate_active_identity",
+        `Duplicate active product identity “${rows[0].name_en || name}”`,
+        { itemIds: active.map((r) => r.id).slice(0, 6), category: "product" },
+      ));
+    }
+  }
+  return issues.map((row) => ({ category: row.category || "product", source: "menu_items", ...row }));
+}
+
+export function scanRecipeGraphIssues({
+  recipes = [],
+  versions = [],
+  lines = [],
+  ingredients = [],
+  menuItems = [],
+} = {}) {
+  const issues = [...scanRecipeMappingIssues(recipes)];
+  const recipeById = new Map((recipes || []).map((r) => [r.id, r]));
+  const ingredientById = new Map((ingredients || []).map((i) => [i.id, i]));
+  const versionsByRecipe = new Map();
+  for (const version of versions || []) {
+    if (!versionsByRecipe.has(version.recipe_id)) versionsByRecipe.set(version.recipe_id, []);
+    versionsByRecipe.get(version.recipe_id).push(version);
+  }
+
+  const subEdges = [];
+  for (const line of lines || []) {
+    if (line.ingredient_id && !ingredientById.has(line.ingredient_id)) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "missing_ingredient",
+        `Recipe line references missing ingredient ${line.ingredient_id}`,
+        { evidence: [line.id || line.recipe_version_id], category: "recipe" },
+      ));
+    }
+    if (line.sub_recipe_id && !recipeById.has(line.sub_recipe_id)) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "missing_sub_recipe",
+        `Recipe line references missing sub-recipe ${line.sub_recipe_id}`,
+        { evidence: [line.id || line.recipe_version_id], category: "recipe" },
+      ));
+    }
+    if (line.sub_recipe_id) {
+      const parentVersion = (versions || []).find((v) => v.id === line.recipe_version_id);
+      if (parentVersion?.recipe_id) subEdges.push([parentVersion.recipe_id, line.sub_recipe_id]);
+    }
+    const qty = Number(line.quantity ?? line.qty);
+    if (Number.isFinite(qty) && qty <= 0) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "invalid_quantity",
+        `Recipe line quantity is ${qty}`,
+        { evidence: [line.id || line.recipe_version_id], category: "cost" },
+      ));
+    }
+  }
+
+  const visited = new Set();
+  const graph = new Map();
+  for (const [from, to] of subEdges) {
+    if (!graph.has(from)) graph.set(from, []);
+    graph.get(from).push(to);
+  }
+  const walk = (node, stack) => {
+    if (stack.has(node)) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "circular_sub_recipe",
+        `Circular sub-recipe dependency at ${recipeById.get(node)?.name || node}`,
+        { evidence: [...stack, node], category: "recipe" },
+      ));
+      return;
+    }
+    if (visited.has(node)) return;
+    const next = new Set(stack);
+    next.add(node);
+    for (const child of graph.get(node) || []) walk(child, next);
+    visited.add(node);
+  };
+  for (const id of graph.keys()) walk(id, new Set());
+
+  for (const [recipeId, recipeVersions] of versionsByRecipe.entries()) {
+    const active = recipeVersions.filter((v) => String(v.status || "").toLowerCase() === "active");
+    if (active.length > 1) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "multiple_active_versions",
+        `${recipeById.get(recipeId)?.name || recipeId} has ${active.length} active versions`,
+        { evidence: active.map((v) => v.id), category: "recipe" },
+      ));
+    }
+  }
+
+  const names = new Map();
+  for (const recipe of recipes || []) {
+    const key = normalizeName(recipe.normalized_name || recipe.name);
+    if (!key) continue;
+    if (!names.has(key)) names.set(key, []);
+    names.get(key).push(recipe);
+  }
+  for (const [, rows] of names.entries()) {
+    if (rows.length > 1) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "duplicate_sub_recipe_identity",
+        `Duplicate recipe identity “${rows[0].name}”`,
+        { evidence: rows.map((r) => r.id), category: "recipe" },
+      ));
+    }
+  }
+
+  const linkedMenuIds = new Set((recipes || []).map((r) => r.menu_item_id).filter(Boolean));
+  for (const item of menuItems || []) {
+    if (item.active === false) continue;
+    if (!linkedMenuIds.has(item.id)) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.INFO,
+        "active_item_no_recipe",
+        `${item.name_en || item.id} has no linked recipe (may be intentional for beverages)`,
+        { itemId: item.id, category: "recipe" },
+      ));
+    }
+  }
+
+  for (const recipe of recipes || []) {
+    if (recipe.active !== false) continue;
+    const used = (lines || []).some((line) => line.sub_recipe_id === recipe.id);
+    if (used) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "inactive_recipe_in_use",
+        `Inactive recipe ${recipe.name || recipe.id} is still referenced`,
+        { recipeId: recipe.id, category: "recipe" },
+      ));
+    }
+  }
+
+  return issues.map((row) => ({ source: "inventory_recipes", category: row.category || "recipe", ...row }));
+}
+
+export function scanCostUomIssues(ingredients = [], { costByIngredientId = {}, conversions = [] } = {}) {
+  const issues = [];
+  for (const ingredient of ingredients || []) {
+    const name = ingredient.canonical_name || ingredient.name || ingredient.id;
+    const cost = costByIngredientId[ingredient.id];
+    if (cost == null && ingredient.unit_cost == null && ingredient.last_cost == null) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "missing_ingredient_cost",
+        `${name} has no recorded cost`,
+        { ingredientId: ingredient.id, category: "cost" },
+      ));
+    } else if (Number(cost ?? ingredient.unit_cost ?? ingredient.last_cost) === 0) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "zero_cost_suspicious",
+        `${name} has zero cost`,
+        { ingredientId: ingredient.id, category: "cost" },
+      ));
+    }
+    if (!ingredient.base_inventory_unit && !ingredient.baseInventoryUnit) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "missing_uom",
+        `${name} has no base inventory unit`,
+        { ingredientId: ingredient.id, category: "cost" },
+      ));
+    }
+  }
+  for (const conversion of conversions || []) {
+    const factor = Number(conversion.factor || conversion.multiplier);
+    if (Number.isFinite(factor) && factor <= 0) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.ERROR,
+        "impossible_conversion",
+        `Impossible UOM conversion ${conversion.from_unit || conversion.from} → ${conversion.to_unit || conversion.to}`,
+        { evidence: [conversion.id], category: "cost" },
+      ));
+    }
+  }
+  return issues.map((row) => ({ source: "inventory_ingredients", ...row }));
+}
+
+export function scanInventorySalesMapping({
+  salesProducts = [],
+  menuItems = [],
+  recipes = [],
+  inventoryItems = null,
+} = {}) {
+  const issues = [];
+  const capabilityGaps = [];
+  const menuNames = new Set((menuItems || []).map((i) => normalizeName(i.name_en || i.name)).filter(Boolean));
+  const recipeMenuIds = new Set((recipes || []).map((r) => r.menu_item_id).filter(Boolean));
+  for (const product of salesProducts || []) {
+    const name = normalizeName(product.name || product.product_name || product.name_en);
+    if (name && !menuNames.has(name) && !recipeMenuIds.has(product.menu_item_id)) {
+      issues.push(issue(
+        INTEGRITY_SEVERITY.WARNING,
+        "sales_without_menu_identity",
+        `${product.name || product.product_name || product.id} sold without a canonical menu identity`,
+        { evidence: [product.id], category: "mapping" },
+      ));
+    }
+  }
+  if (!Array.isArray(inventoryItems)) {
+    capabilityGaps.push({
+      category: "mapping",
+      code: "inventory_identity_unmapped",
+      message: "Inventory deduction identities are not queryable in this scan yet — no automatic mapping table is loaded.",
+    });
+  }
+  return {
+    issues: issues.map((row) => ({ source: "sales_mapping", ...row })),
+    capabilityGaps,
+  };
+}
+
+export function groupIntegrityIssues(issues = []) {
+  const groups = new Map();
+  for (const row of issues || []) {
+    const key = `${row.category || "other"}:${row.severity}:${row.code}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        category: row.category || "other",
+        severity: row.severity,
+        code: row.code,
+        count: 0,
+        source: row.source || "",
+        examples: [],
+      });
+    }
+    const group = groups.get(key);
+    group.count += 1;
+    if (group.examples.length < 3) group.examples.push(row.message);
+  }
+  return [...groups.values()].sort((a, b) => {
+    const rank = { ERROR: 0, WARNING: 1, INFO: 2 };
+    return (rank[a.severity] - rank[b.severity]) || b.count - a.count;
+  });
+}
+
+export function scanIntegrityBundle(input = {}) {
+  const product = scanProductIdentityIssues(input.menuItems || []);
+  const recipe = scanRecipeGraphIssues(input);
+  const cost = scanCostUomIssues(input.ingredients || [], input);
+  const mapping = scanInventorySalesMapping(input);
+  const issues = [...product, ...recipe, ...cost, ...mapping.issues];
+  const summary = summarizeIntegrityIssues(issues);
+  return {
+    ...summary,
+    groups: groupIntegrityIssues(issues),
+    capabilityGaps: mapping.capabilityGaps,
+    scannedAt: input.scannedAt || new Date().toISOString(),
+    sources: ["menu_items", "inventory_recipes", "inventory_ingredients"],
+  };
+}

@@ -65,6 +65,8 @@ export function createAskNacResponse(fields = {}) {
     pendingSessionId: fields.pendingSessionId ?? null,
     pendingSession: fields.pendingSession ?? null,
     executiveEvidence: fields.executiveEvidence || null,
+    coverageContract: fields.coverageContract || null,
+    responseMeta: fields.responseMeta || null,
   };
 }
 

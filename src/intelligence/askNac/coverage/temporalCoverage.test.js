@@ -4,6 +4,8 @@ import {
   applySpokenPeriodToAnswer,
   coverageFromCashUpAggregation,
   sanitizeIncompletePeriodAnswer,
+  applyPeriodSafetyNet,
+  toCoverageContract,
   COVERAGE_STATUS,
   riyadhYmd,
   latestCompletedBusinessDate,
@@ -153,6 +155,36 @@ describe("Ask NAC temporal coverage", () => {
     });
     const text = applySpokenPeriodToAnswer("No cash-up report matched 6 September 2026.", coverage);
     expect(text).toMatch(/does not have sales data yet|available through 5 Sep/i);
+  });
+
+  test("deterministic spoken week answer does not need UI rewrite", () => {
+    const coverage = coverageFromCashUpAggregation({
+      requestedStartDate: "2026-08-31",
+      requestedEndDate: "2026-09-06",
+      salesCoverageEnd: "2026-09-05",
+      dailyBreakdown: [
+        { date: "2026-08-31", totalSales: 10000 },
+        { date: "2026-09-01", totalSales: 11000 },
+        { date: "2026-09-02", totalSales: 12000 },
+        { date: "2026-09-03", totalSales: 13000 },
+        { date: "2026-09-04", totalSales: 14000 },
+        { date: "2026-09-05", totalSales: 46224.3 },
+      ],
+    }, { startDate: "2026-08-31", endDate: "2026-09-06", label: "this week" }, { referenceDate: SEP6 });
+    const contract = toCoverageContract(coverage, { weekish: true });
+    expect(contract.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
+    expect(contract.requestedEnd).toBe("2026-09-06");
+    expect(contract.availableEnd).toBe("2026-09-05");
+    expect(contract.spokenLabel).toMatch(/through 5 Sep 2026/i);
+    const answer = `Khobar total sales for ${contract.spokenLabel}: 106,224.3 SAR.`;
+    const safety = applyPeriodSafetyNet(answer, {
+      keyMetrics: [
+        { label: "Days included", value: 6 },
+        { label: "expectedDayCount", value: 7 },
+      ],
+    });
+    expect(safety.correctionNeeded).toBe(false);
+    expect(safety.text).not.toMatch(/6 Sep 2026/);
   });
 
   test("sanitize strips ISO requested end when missingDayCount is present", () => {

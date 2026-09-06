@@ -42,6 +42,26 @@ describe("shouldSkipAiNarration", () => {
     )).toBe(true);
   });
 
+  test("skips simple this-week sales regardless of intent", () => {
+    expect(shouldSkipAiNarration(
+      ASK_NAC_INTENTS.SALES_TOTAL,
+      { aggregation: { dayCount: 6 } },
+      { periodType: "this_week" },
+      { directAnswer: "Khobar total sales for so far this period through 5 Sep 2026: 106,224.3 SAR." },
+      "what are sales this week",
+    )).toBe(true);
+  });
+
+  test("does not skip compare questions", () => {
+    expect(shouldSkipAiNarration(
+      ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
+      {},
+      { periodType: "this_week" },
+      { directAnswer: "Sales were up." },
+      "compare this week to last week",
+    )).toBe(false);
+  });
+
   test("does not skip unknown foodics intents", () => {
     expect(shouldSkipAiNarration(
       ASK_NAC_INTENTS.SALES_TOTAL,

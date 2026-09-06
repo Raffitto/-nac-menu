@@ -728,11 +728,15 @@ export async function runCompanyIntelligenceOrchestration(
         "If coverage is incomplete, describe only the dates that actually have sales.",
         "Never say sales were X for a requested end date that has no canonical sales yet.",
         "Name missing dates. Mention latest available sales date when the request extends past coverage.",
+        "Use requested vs available ranges from the coverage contract. Never treat requestedEnd as included when it is missing.",
       ].join(" "),
       user: JSON.stringify({
         question: state.request.originalQuestion,
         scope: state.scope,
         periods: state.periods,
+        requestedPeriod: state.periods.current,
+        availableCoverage: state.coverage,
+        synthesisInstruction: "Never describe unavailable dates as included. Prefer 'through <availableEnd>' / 'so far this period'.",
         comparability: state.comparability,
         claims: state.claims,
         evidence: state.evidence.map((e) => ({
@@ -745,7 +749,6 @@ export async function runCompanyIntelligenceOrchestration(
           period: e.period,
         })),
         warnings: state.warnings,
-        requestedPeriod: state.periods.current,
         coverage: state.coverage,
       }),
       json: true,

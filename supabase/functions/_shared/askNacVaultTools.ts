@@ -38,6 +38,7 @@ import {
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
 import { assessPeriodCoverage, buildCoverageAnswerLines } from "./coverageAwareness.ts";
+import { coverageFromCashUpAggregation } from "./askNacCoverageContract.ts";
 import { resolveAnalyticalConfidence } from "./analyticalConfidence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
 import { buildVaultBusinessReasoningAnswer } from "./vaultBusinessReasoningAnswer.ts";
@@ -2308,20 +2309,25 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       || "the period",
     );
 
+    const requestedPeriod = (route?.vaultPeriod as { startDate?: string; endDate?: string; label?: string; periodType?: string }) || {
+      startDate: tool?.startDate as string | undefined,
+      endDate: tool?.endDate as string | undefined,
+      label: currentPeriodLabel,
+      periodType: (route?.vaultPeriod as { periodType?: string })?.periodType,
+    };
     const coverageAssessment = assessPeriodCoverage({
-      requestedPeriod: (route?.vaultPeriod as { startDate?: string; endDate?: string; label?: string; periodType?: string }) || {
-        startDate: tool?.startDate as string | undefined,
-        endDate: tool?.endDate as string | undefined,
-        label: currentPeriodLabel,
-        periodType: (route?.vaultPeriod as { periodType?: string })?.periodType,
-      },
+      requestedPeriod,
       aggregation: aggregation as never,
     });
+    const coverageContract = coverageFromCashUpAggregation(aggregation, requestedPeriod, {
+      source: "cash_up",
+    });
+    const spokenPeriod = coverageContract.spokenLabel || currentPeriodLabel;
     const confidenceResult = resolveAnalyticalConfidence({ route, tool, coverageAssessment });
 
     let directAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation as never, {
       branchLabel: String(tool.branchLabel || "Network"),
-      periodLabel: currentPeriodLabel,
+      periodLabel: spokenPeriod,
       previousAggregation: (previousAggregation as never) || null,
       previousPeriodLabel,
     });
@@ -2405,13 +2411,14 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       ...baseVaultFields(route, tool, readiness),
       answerType: metrics.length ? "metric" : "executive",
       title: isPlatformQuery
-        ? `Delivery platform breakdown · ${currentPeriodLabel}`
+        ? `Delivery platform breakdown · ${spokenPeriod}`
         : (route.performanceOverview || scoreSalesPerformanceQueryFocus(question) === "performance_overview")
-          ? `Performance overview · ${currentPeriodLabel}`
+          ? `Performance overview · ${spokenPeriod}`
           : previousAggregation
-            ? `Period comparison · ${currentPeriodLabel}`
-            : `Sales performance · ${currentPeriodLabel}`,
-      directAnswer: directAnswer || `Cash-up aggregation for ${currentPeriodLabel}.`,
+            ? `Period comparison · ${spokenPeriod}`
+            : `Sales performance · ${spokenPeriod}`,
+      directAnswer: directAnswer || `Cash-up aggregation for ${spokenPeriod}.`,
+      coverageContract,
       keyMetrics: metrics,
       insights: [
         ...(isPlatformQuery

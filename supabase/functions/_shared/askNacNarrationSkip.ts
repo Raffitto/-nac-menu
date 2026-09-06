@@ -2,6 +2,7 @@
  * When deterministic vault answers are complete, skip OpenAI narration.
  */
 
+import { isSimpleOperationalMetricQuestion } from "./askNacCoverageContract.ts";
 import { VAULT_INTENTS } from "./askNacVaultTools.ts";
 import {
   DOCUMENT_SEARCH_MESSAGES,
@@ -46,7 +47,11 @@ export function shouldSkipAiNarration(
   tool: Record<string, unknown> | null,
   vaultPeriod?: { periodType?: string },
   deterministic?: Record<string, unknown> | null,
+  question?: string,
 ): boolean {
+  if (isSimpleOperationalMetricQuestion(question) && isPlainTextDirectAnswer(deterministic?.directAnswer)) {
+    return true;
+  }
   if (intent === VAULT_INTENTS.BUSINESS_REASONING) return true;
   if (
     intent === VAULT_INTENTS.TEACH_OPERATOR
@@ -62,6 +67,10 @@ export function shouldSkipAiNarration(
   if (deterministic?.conversationDataset) return true;
 
   if (tool?.monthlyLogbookSummary || tool?.structuredLogbookReview) return true;
+
+  if (/\b(why|compare|versus|\bvs\b|forecast|expect|should we|what caused|difference)\b/i.test(String(question || ""))) {
+    return false;
+  }
 
   if (intent === VAULT_INTENTS.CASH_UP) {
     if (vaultPeriod?.periodType === "year_to_date") return true;

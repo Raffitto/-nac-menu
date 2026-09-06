@@ -226,6 +226,45 @@ function metricNumber(metrics, pattern) {
  * Last-line defense for answers that still name a requested end date
  * while keyMetrics show missing days.
  */
+export function toCoverageContract(coverage, { weekish = false } = {}) {
+  const requestedStart = coverage?.requestedPeriod?.startDate || null;
+  const requestedEnd = coverage?.requestedPeriod?.endDate || null;
+  const availableStart = coverage?.availablePeriod?.startDate || null;
+  const availableEnd = coverage?.availablePeriod?.endDate || coverage?.latestAvailableDate || null;
+  const spokenLabel = spokenPeriodLabel(coverage, { weekish });
+  const missing = coverage?.missingDates || [];
+  const synthesisInstruction = coverage?.coverageStatus === COVERAGE_STATUS.COMPLETE
+    ? "The requested period is complete. You may name the requested dates."
+    : [
+      "Never describe unavailable dates as included.",
+      availableEnd ? `Describe the result as through ${formatShortSalesDate(availableEnd)} / so far this period.` : "",
+      requestedEnd && availableEnd && requestedEnd !== availableEnd
+        ? `Do not say sales were for ${requestedEnd} or include ${requestedEnd} in the period window.`
+        : "",
+      formatMissingDatesProse(missing),
+    ].filter(Boolean).join(" ");
+  return {
+    source: coverage?.source || "cash_up",
+    requestedStart,
+    requestedEnd,
+    availableStart,
+    availableEnd,
+    latestAvailableDate: coverage?.latestAvailableDate || availableEnd,
+    expectedDayCount: coverage?.expectedDates?.length || null,
+    availableDayCount: coverage?.availableDates?.length || null,
+    missingDates: missing,
+    coverageStatus: coverage?.coverageStatus || COVERAGE_STATUS.NO_DATA,
+    isCurrentPeriod: Boolean(requestedEnd && coverage?.today && requestedEnd >= coverage.today),
+    spokenLabel,
+    synthesisInstruction,
+  };
+}
+
+export function applyPeriodSafetyNet(text, response = {}) {
+  const sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  return { text: sanitized, correctionNeeded: sanitized !== String(text || "") };
+}
+
 export function sanitizeIncompletePeriodAnswer(text, response = {}) {
   const raw = String(text || "");
   const metrics = response.keyMetrics || [];
@@ -268,6 +307,16 @@ export function sanitizeIncompletePeriodAnswer(text, response = {}) {
     },
   );
   return next;
+}
+
+export function isSimpleOperationalMetricQuestion(question = "") {
+  const q = String(question || "").toLowerCase();
+  if (/\b(why|compare|versus|\bvs\b|forecast|expect|should we|what caused|difference)\b/.test(q)) {
+    return false;
+  }
+  const metric = /\b(sales|covers|average spend|avg spend|cash[\s-]?up|latest sale|net sales)\b/.test(q);
+  const when = /\b(today|yesterday|this week|current week|this month|mtd|month to date|latest|last sale|current sales)\b/.test(q);
+  return metric && when;
 }
 
 export function coverageFromCashUpAggregation(aggregation, requestedPeriod, extras = {}) {

@@ -52,12 +52,19 @@ export function buildNarrationPayload(
     },
     toolFacts: trimToolFacts(tool),
     diagnostics: diagnostics || deterministic.diagnostics || null,
+    coverage: deterministic.coverageContract || null,
     rules: [
       "Rewrite directAnswer, optional executiveSummary, insights, and recommendations for clarity.",
       "Never invent or change numeric metric values.",
       "Do not remove or alter sources, warnings, missingData, or vaultSources.",
       "Keep answers grounded in verified facts only.",
-    ],
+      "Use coverage.spokenLabel as the only period window you may name.",
+      "Never include coverage.requestedEnd if it is listed in coverage.missingDates.",
+      "If coverage.coverageStatus is PARTIAL or CURRENT_DAY_NOT_COMPLETE, say so far this period through coverage.availableEnd.",
+      deterministic.coverageContract
+        ? `Coverage instruction: ${String((deterministic.coverageContract as { synthesisInstruction?: string }).synthesisInstruction || "")}`
+        : "",
+    ].filter(Boolean),
   };
 }
 
@@ -101,7 +108,7 @@ export async function narrateWithOpenAi(
 
   const payload = buildNarrationPayload(deterministic, context);
   const systemPrompt =
-    "You are Ask NAC, a restaurant operations analyst. Improve clarity of verified facts. Return JSON only with keys: directAnswer, executiveSummary (optional), insights, recommendations. Do not include keyMetrics, sources, warnings, missingData, or vaultSources.";
+    "You are Ask NAC, a restaurant operations analyst. Improve clarity of verified facts. Return JSON only with keys: directAnswer, executiveSummary (optional), insights, recommendations. Do not include keyMetrics, sources, warnings, missingData, or vaultSources. Never describe a requested end date as included when coverage says it is missing. Prefer 'through {availableEnd}' wording.";
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {

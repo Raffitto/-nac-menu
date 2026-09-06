@@ -232,10 +232,15 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   useEffect(() => {
     const started = typeof performance !== "undefined" ? performance.now() : Date.now();
     const raf = requestAnimationFrame(() => {
+      const overview = typeof window !== "undefined" ? window.__NAC_OVERVIEW_PERF__ : null;
       recordViewPerf({
         view: adminView,
         branch: filters?.branch || null,
         firstUsefulMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started),
+        coreSettleMs: overview?.unifiedMs || null,
+        slowestRequestName: overview?.biMs >= (overview?.unifiedMs || 0) ? "get_bi_dashboard" : "unified_overview",
+        slowestRequestMs: overview?.biMs || overview?.unifiedMs || null,
+        timeoutCount: overview?.sessionTimedOut ? 1 : 0,
         failed: Boolean(error),
       });
     });
