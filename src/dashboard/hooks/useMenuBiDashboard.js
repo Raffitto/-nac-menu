@@ -88,11 +88,33 @@ export function useMenuBiDashboard(options = {}) {
   const dataRef = useRef(null);
   dataRef.current = data;
 
-  const rangeContract = useMemo(
-    () => rangeContractFromFilters(filters || {}),
-    [filters],
-  );
   const hours = hoursFromPlatformFilters(filters || {});
+  const filterSnapshot = useMemo(
+    () => ({
+      branch: filters?.branch || null,
+      selectedRange: filters?.selectedRange || "today",
+      timeRangeHours: hours,
+      language: filters?.language,
+      shift: filters?.shift,
+      eventType: filters?.eventType,
+      dayType: filters?.dayType,
+      role: filters?.role,
+    }),
+    [
+      filters?.branch,
+      filters?.selectedRange,
+      hours,
+      filters?.language,
+      filters?.shift,
+      filters?.eventType,
+      filters?.dayType,
+      filters?.role,
+    ],
+  );
+  const rangeContract = useMemo(
+    () => rangeContractFromFilters(filterSnapshot),
+    [filterSnapshot],
+  );
   const setters = useMemo(
     () => ({
       setData,
@@ -155,23 +177,14 @@ export function useMenuBiDashboard(options = {}) {
       }
 
       setError("");
-      let settled = false;
-      const settleTimer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        setLoading(false);
-        setRefreshing(false);
-        if (!dataRef.current) {
-          setError((prev) => prev || "Overview timed out. Operational metrics did not finish loading.");
-        }
-      }, 12000);
       try {
         const sessionOk = Boolean(rbac?.session);
         if (!sessionOk) {
           markBoot("tier1_get_session_start");
-          const { data: sessionData } = await supabase.auth.getSession();
-          markBoot("tier1_get_session_done");
-          if (!sessionData?.session) {
+          const persisted = typeof window !== "undefined"
+            ? window.localStorage?.getItem("nac-menu-supabase-auth")
+            : null;
+          if (!persisted) {
             setNeedsAuth(true);
             setData(null);
             setLiveFallback(false);
@@ -181,12 +194,13 @@ export function useMenuBiDashboard(options = {}) {
             setPartial(false);
             return;
           }
+          markBoot("tier1_get_session_done");
         }
 
         setNeedsAuth(false);
         if (force) invalidateIntelligenceCache(biCacheKey);
 
-        const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filters?.branch || null);
+        const effectiveBranch = resolveRbacQueryBranch(rbac?.profile, filterSnapshot.branch || null);
         markBoot("tier1_fetch_start");
 
         const buildPkg = (result, { tier1Partial = false } = {}) => {
@@ -222,7 +236,7 @@ export function useMenuBiDashboard(options = {}) {
         const result = await fetchUnifiedOperationalTruth(
           supabase,
           {
-            ...(filters || {}),
+            ...filterSnapshot,
             branch: effectiveBranch,
             timeRangeHours: hours,
           },
@@ -253,7 +267,7 @@ export function useMenuBiDashboard(options = {}) {
           source,
           biData: pkg.normalized,
           hours,
-          selectedRange: filters?.selectedRange || "today",
+          selectedRange: filterSnapshot.selectedRange,
           liveFallback: result?.liveFallback,
           partial: result?.partial,
           dataSource: result?.dataSource,
@@ -272,15 +286,13 @@ export function useMenuBiDashboard(options = {}) {
         }
         setError(e?.message || "Failed to load menu intelligence");
       } finally {
-        clearTimeout(settleTimer);
-        settled = true;
         setLoading(false);
         setRefreshing(false);
       }
     },
     [
       enabled,
-      filters,
+      filterSnapshot,
       hours,
       source,
       rangeContract,

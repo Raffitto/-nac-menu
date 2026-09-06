@@ -3,14 +3,15 @@ import "../styles/platform-os.css";
 import { useRbac } from "../context/RbacContext";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
+import { BATCH_COVERAGE_COLUMNS, createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { parseFoodicsFile, rowsFromMappedData } from "../utils/foodicsParser";
 import { assessExportCoverage, cashUpDownloadable, formatMissingDatesList, staffPerformanceReady } from "./coverage";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
-import { fetchCanonicalCashUpForExport } from "./cashUpSource";
+import { fetchCanonicalCashUpForExport, fetchCashUpCoverage } from "./cashUpSource";
+import { getCachedIntelligence, cacheKey } from "../utils/intelligenceCache";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
 import { buildStaffPerformanceReport } from "./staffPerformance";
@@ -103,22 +104,45 @@ export default function ExportCenter() {
       setError("NAC data connection is not available.");
       return;
     }
-    setBusy(true);
     setError("");
+    const persistKey = `nac-reports-coverage:${scopedBranch}:${from}:${to}`;
+    const historical = to && to < new Date().toISOString().slice(0, 10);
+    const persistTtl = historical ? 10 * 60 * 1000 : 45 * 1000;
     try {
-      const [cashUp, reviewRes, creatorBatches, productBatches] = await Promise.all([
-        fetchCanonicalCashUpForExport(supabase, { branch: scopedBranch, from, to }),
-        supabase
-          .from("google_review_tracking_entries")
-          .select("staff_name,source_staff_name,review_date,review_count,source_file_id,source_sheet,source_drive_file_id,ingested_at,branch_id")
-          .eq("branch_id", scopedBranch)
-          .gte("review_date", from)
-          .lte("review_date", to),
-        getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile),
-        getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile),
-      ]);
+      const raw = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(persistKey) : null;
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (stored?.coverage && Date.now() - Number(stored.at || 0) < persistTtl) {
+          setCoverage(stored.coverage);
+        }
+      }
+    } catch {
+      /* ignore stale persist */
+    }
+    setBusy(true);
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    try {
+      const cacheId = cacheKey(["reports-coverage", scopedBranch, from, to]);
+      const packed = await getCachedIntelligence(
+        cacheId,
+        async () => {
+          const [cashUp, reviewRes, creatorBatches, productBatches] = await Promise.all([
+            fetchCashUpCoverage(supabase, { branch: scopedBranch, from, to }),
+            supabase
+              .from("google_review_tracking_entries")
+              .select("review_date,review_count,branch_id")
+              .eq("branch_id", scopedBranch)
+              .gte("review_date", from)
+              .lte("review_date", to),
+            getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
+            getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
+          ]);
+          return { cashUp, reviewRes, creatorBatches, productBatches };
+        },
+        persistTtl,
+      );
 
-      const cashFacts = cashUp.facts || [];
+      const { cashUp, reviewRes, creatorBatches, productBatches } = packed;
       const cashDates = cashUp.cashUpDates || [];
       if (cashUp.error && !cashDates.length) {
         setError(`Cash Up coverage query failed: ${cashUp.error}`);
@@ -141,19 +165,18 @@ export default function ExportCenter() {
         productByCreatorBatches: productForBranch,
       });
       setCoverage(next);
-
-      const coveringProduct = productForBranch.filter((b) => b.period_start <= to && b.period_end >= from);
-      const coveringCreator = creatorForBranch.filter((b) => b.period_start <= to && b.period_end >= from);
-      const productRows = (await Promise.all(coveringProduct.map((b) => getBatchSalesItems(b.id)))).flat();
-      const creatorRows = (await Promise.all(coveringCreator.map((b) => getBatchSalesItems(b.id)))).flat();
-
-      setPayload({
-        cashFacts,
-        reviewEntries,
-        creatorRows,
-        productRows,
-        reviewStats: aggregateReviewTrackingStats(reviewEntries, { from, to }),
-      });
+      try {
+        sessionStorage.setItem(persistKey, JSON.stringify({ coverage: next, at: Date.now() }));
+      } catch {
+        /* ignore quota */
+      }
+      if (typeof window !== "undefined") {
+        window.__NAC_REPORTS_PERF__ = {
+          coverageMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started),
+          cashDates: cashDates.length,
+          reviewDates: reviewDates.length,
+        };
+      }
     } catch (err) {
       setError(err.message || "Could not check report readiness.");
     } finally {
@@ -214,28 +237,76 @@ export default function ExportCenter() {
     }
   };
 
+  const loadExportPayload = async () => {
+    const [cashUp, reviewRes, creatorBatches, productBatches] = await Promise.all([
+      fetchCanonicalCashUpForExport(supabase, { branch: scopedBranch, from, to }),
+      supabase
+        .from("google_review_tracking_entries")
+        .select("staff_name,source_staff_name,review_date,review_count,source_file_id,source_sheet,source_drive_file_id,ingested_at,branch_id")
+        .eq("branch_id", scopedBranch)
+        .gte("review_date", from)
+        .lte("review_date", to),
+      getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile),
+      getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile),
+    ]);
+    const reviewEntries = reviewRes.error ? [] : (reviewRes.data || []).filter((r) => r.branch_id === scopedBranch);
+    const creatorForBranch = (creatorBatches || []).filter((b) => b.branch_id === scopedBranch);
+    const productForBranch = (productBatches || []).filter((b) => b.branch_id === scopedBranch);
+    const coveringProduct = productForBranch.filter((b) => b.period_start <= to && b.period_end >= from);
+    const coveringCreator = creatorForBranch.filter((b) => b.period_start <= to && b.period_end >= from);
+    const [productRows, creatorRows] = await Promise.all([
+      Promise.all(coveringProduct.map((b) => getBatchSalesItems(b.id))).then((rows) => rows.flat()),
+      Promise.all(coveringCreator.map((b) => getBatchSalesItems(b.id))).then((rows) => rows.flat()),
+    ]);
+    const nextPayload = {
+      cashFacts: cashUp.facts || [],
+      reviewEntries,
+      creatorRows,
+      productRows,
+      reviewStats: aggregateReviewTrackingStats(reviewEntries, { from, to }),
+    };
+    setPayload(nextPayload);
+    return nextPayload;
+  };
+
   const downloadAll = async () => {
     setError("");
     if (!coverage) return;
+    let pack = payload;
+    const needsRows =
+      (staffPerformanceReady(coverage) && (!pack.creatorRows.length || !pack.productRows.length))
+      || (cashUpDownloadable(coverage) && !pack.cashFacts.length)
+      || !pack.reviewEntries.length;
+    if (needsRows) {
+      setBusy(true);
+      try {
+        pack = await loadExportPayload();
+      } catch (err) {
+        setError(err.message || "Could not load report files.");
+        setBusy(false);
+        return;
+      }
+      setBusy(false);
+    }
     const folder = `NAC_${scopedBranch}_${from}_to_${to}`;
     const files = [];
-    if (cashUpDownloadable(coverage) && payload.cashFacts.length) {
+    if (cashUpDownloadable(coverage) && pack.cashFacts.length) {
       files.push({
         name: `${folder}/NAC_${scopedBranch}_Cash_Up_${from}_to_${to}.xlsx`,
-        data: new Uint8Array(buildCashUpWorkbookBuffer(payload.cashFacts, { from, to, branch: scopedBranch })),
+        data: new Uint8Array(buildCashUpWorkbookBuffer(pack.cashFacts, { from, to, branch: scopedBranch })),
       });
     }
-    if (payload.reviewEntries.length) {
+    if (pack.reviewEntries.length) {
       files.push({
         name: `${folder}/NAC_${scopedBranch}_Review_Tracking_${from}_to_${to}.xlsx`,
-        data: new Uint8Array(buildReviewTrackingWorkbookBuffer(payload.reviewEntries, { from, to, branch: scopedBranch })),
+        data: new Uint8Array(buildReviewTrackingWorkbookBuffer(pack.reviewEntries, { from, to, branch: scopedBranch })),
       });
     }
     if (staffPerformanceReady(coverage)) {
       const report = buildStaffPerformanceReport({
-        creatorRows: payload.creatorRows,
-        productRows: payload.productRows,
-        reviewStats: payload.reviewStats,
+        creatorRows: pack.creatorRows,
+        productRows: pack.productRows,
+        reviewStats: pack.reviewStats,
         branch: scopedBranch,
         from,
         to,

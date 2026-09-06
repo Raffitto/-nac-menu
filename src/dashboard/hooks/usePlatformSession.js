@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
-import { subscribePlatformSession } from "../../lib/platformAuth";
+import { readPersistedAuthSession, subscribePlatformSession } from "../../lib/platformAuth";
 
 /**
  * Shared Supabase session bootstrap for NAC OS surfaces.
  */
 export function usePlatformSession() {
-  const [session, setSession] = useState(null);
-  const [checked, setChecked] = useState(false);
+  const persisted = readPersistedAuthSession();
+  const [session, setSession] = useState(persisted);
+  const [checked, setChecked] = useState(Boolean(persisted));
   const [issue, setIssue] = useState(null);
 
   useEffect(() => {

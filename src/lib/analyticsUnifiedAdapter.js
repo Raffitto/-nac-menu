@@ -325,10 +325,23 @@ function buildTier1PartialFromSession(aggregates, hours) {
  * @param {(partial: object) => void} [options.onTier1Partial] Progressive KPI paint (session-first).
  * @param {boolean} [options.deferClientPatches=true] Skip blocking 12k menu_events scans on critical path.
  */
+const SESSION_ANALYTICS_SOFT_MS = 1800;
+
+function withSoftFallback(promise, ms, fallback) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, options = {}) {
   const { onTier1Partial = null, deferClientPatches = true } = options;
   const hours = filters.timeRangeHours ?? rangeToHours(filters.selectedRange || "today");
   const branch = filters.branch ?? null;
+  const perf = { started: typeof performance !== "undefined" ? performance.now() : Date.now() };
 
   // Parallelize independent masters — do not wait for session quality scans before BI.
   const sessionPromise = fetchSessionAnalytics(supabase, filters, {
@@ -341,7 +354,7 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, o
     deferClientPatches,
   });
 
-  // Progressive Tier-1: paint executive KPIs as soon as session analytics resolves (~300–500ms).
+  // Progressive paint from whichever source arrives first. Session must not hostage BI.
   if (typeof onTier1Partial === "function") {
     sessionPromise
       .then((sessionResult) => {
@@ -349,9 +362,54 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, o
         if (partial) onTier1Partial(partial);
       })
       .catch(() => {});
+    biPromise
+      .then((biResult) => {
+        if (biResult?.data && !isBiTotalsEmpty(biResult.data)) {
+          onTier1Partial({
+            data: biResult.data,
+            partial: true,
+            note: biResult.note || null,
+            opsNotes: biResult.opsNotes || [],
+            liveFallback: Boolean(biResult.liveFallback),
+            menuDataEmpty: Boolean(biResult.menuDataEmpty),
+            dataSource: biResult.dataSource || "bi_tier1",
+            operationalTrust: resolveOperationalTrust({
+              sessionPartial: false,
+              biPartial: true,
+              liveFallback: Boolean(biResult.liveFallback),
+              dataSource: biResult.dataSource || "bi_tier1",
+              sessionEvents: 0,
+              biEvents: Number(biResult.data?.total_events) || 0,
+            }),
+          });
+        }
+      })
+      .catch(() => {});
   }
 
-  const [sessionSettled, biSettled] = await Promise.allSettled([sessionPromise, biPromise]);
+  const sessionWait = withSoftFallback(sessionPromise, SESSION_ANALYTICS_SOFT_MS, {
+    aggregates: null,
+    partial: true,
+    note: "Session analytics delayed",
+    timedOut: true,
+  });
+  const timedBi = biPromise.then((value) => {
+    if (typeof window !== "undefined") {
+      window.__NAC_OVERVIEW_PERF__ = {
+        ...(window.__NAC_OVERVIEW_PERF__ || {}),
+        biMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - perf.started),
+      };
+    }
+    return value;
+  });
+  const [sessionSettled, biSettled] = await Promise.allSettled([sessionWait, timedBi]);
+  if (typeof window !== "undefined") {
+    window.__NAC_OVERVIEW_PERF__ = {
+      ...(window.__NAC_OVERVIEW_PERF__ || {}),
+      unifiedMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - perf.started),
+      sessionTimedOut: Boolean(sessionSettled.status === "fulfilled" && sessionSettled.value?.timedOut),
+    };
+  }
 
   let sessionResult = null;
   let sessionError = null;

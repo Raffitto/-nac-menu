@@ -6,6 +6,7 @@
 import { supabase } from "./supabase";
 
 const DEFAULT_SESSION_TIMEOUT_MS = 12_000;
+export const AUTH_STORAGE_KEY = "nac-menu-supabase-auth";
 
 export function isBrowserOffline() {
   return typeof navigator !== "undefined" && navigator.onLine === false;
@@ -53,6 +54,32 @@ export function mapAuthError(raw) {
   return msg;
 }
 
+/**
+ * Read the locally persisted Supabase session without a network round-trip.
+ * A timeout on getSession is not proof this session is invalid.
+ */
+export function readPersistedAuthSession(storageKey = AUTH_STORAGE_KEY) {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const session = parsed?.currentSession && parsed.currentSession.access_token
+      ? parsed.currentSession
+      : parsed;
+    if (!session?.access_token || !session?.user) return null;
+    const expMs = Number(session.expires_at) > 1e12
+      ? Number(session.expires_at)
+      : Number(session.expires_at) * 1000;
+    if (Number.isFinite(expMs) && expMs < Date.now() - 24 * 60 * 60 * 1000 && !session.refresh_token) {
+      return null;
+    }
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 export function withTimeout(promise, ms = DEFAULT_SESSION_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("timeout")), ms);
@@ -93,41 +120,83 @@ export function subscribePlatformSession(onChange) {
   }
 
   let cancelled = false;
+  const persisted = readPersistedAuthSession();
+  const bootAt = typeof performance !== "undefined" ? performance.now() : 0;
 
   const emit = (session, extra = {}) => {
     if (cancelled) return;
     onChange({ session, checked: true, issue: null, ...extra });
   };
 
+  if (persisted) {
+    emit(persisted, { source: "persisted" });
+  }
+
   (async () => {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       const { data, error } = await withTimeout(supabase.auth.getSession());
+      const ms = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started);
+      if (typeof window !== "undefined") {
+        window.__NAC_AUTH_BOOT__ = {
+          persisted: Boolean(persisted),
+          getSessionMs: ms,
+          issue: error?.message || null,
+          fromBootMs: Math.round((typeof performance !== "undefined" ? performance.now() : 0) - bootAt),
+        };
+      }
       if (cancelled) return;
       if (error) {
+        if (persisted) {
+          emit(persisted, { issue: "verification_degraded", source: "persisted" });
+          return;
+        }
         emit(null, { issue: mapAuthError(error.message) });
         return;
       }
-      emit(data?.session ?? null);
+      emit(data?.session ?? persisted ?? null, { source: "getSession" });
     } catch (e) {
       if (cancelled) return;
-      const issue = e?.message === "timeout" ? "session_timeout" : "session_failed";
-      emit(null, { issue });
+      const timedOut = e?.message === "timeout";
+      if (persisted) {
+        emit(persisted, {
+          issue: timedOut ? "verification_degraded" : "verification_degraded",
+          source: "persisted",
+        });
+        if (typeof window !== "undefined") {
+          window.__NAC_AUTH_BOOT__ = {
+            ...(window.__NAC_AUTH_BOOT__ || {}),
+            persisted: true,
+            getSessionMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started),
+            issue: timedOut ? "verification_degraded" : "session_failed",
+          };
+        }
+        return;
+      }
+      emit(null, { issue: timedOut ? "session_timeout" : "session_failed" });
     }
   })();
 
-  const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+  const authSub = supabase.auth.onAuthStateChange((event, nextSession) => {
     if (event === "SIGNED_OUT") {
       emit(null);
       return;
     }
     if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-      emit(session);
+      if (nextSession) {
+        emit(nextSession, { source: event });
+        return;
+      }
+      const keep = readPersistedAuthSession();
+      if (keep) {
+        emit(keep, { issue: "verification_degraded", source: "persisted" });
+      }
     }
   });
 
   return () => {
     cancelled = true;
-    sub.subscription.unsubscribe();
+    authSub?.data?.subscription?.unsubscribe?.();
   };
 }
 

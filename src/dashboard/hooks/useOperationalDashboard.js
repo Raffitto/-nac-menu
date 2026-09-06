@@ -76,9 +76,8 @@ export function useOperationalDashboard(options = {}) {
   }, [enabled, menuBi.needsAuth, filters?.branch, hours]);
 
   useEffect(() => {
-    if (!menuBi.loading && menuBi.data) {
-      loadEnrichment();
-    }
+    if (menuBi.loading || !menuBi.data || menuBi.data._tier1Partial) return;
+    loadEnrichment();
   }, [menuBi.loading, menuBi.data, loadEnrichment]);
 
   useEffect(() => {

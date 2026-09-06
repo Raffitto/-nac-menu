@@ -1,9 +1,24 @@
+jest.mock("./supabase", () => ({
+  supabase: {
+    auth: {
+      getSession: jest.fn(() => Promise.resolve({ data: { session: null }, error: null })),
+      onAuthStateChange: jest.fn(() => ({
+        data: { subscription: { unsubscribe: jest.fn() } },
+      })),
+    },
+  },
+}));
+
 import {
   mapAuthError,
   formatSupabaseSetupMessage,
   validateRbacUsersEnv,
   isBrowserOffline,
+  readPersistedAuthSession,
+  subscribePlatformSession,
+  AUTH_STORAGE_KEY,
 } from "./platformAuth";
+import { supabase } from "./supabase";
 
 describe("platformAuth", () => {
   test("mapAuthError handles invalid credentials", () => {
@@ -38,5 +53,41 @@ describe("platformAuth", () => {
 
   test("isBrowserOffline reflects navigator", () => {
     expect(typeof isBrowserOffline()).toBe("boolean");
+  });
+
+  test("readPersistedAuthSession returns a stored JWT session", () => {
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({
+        access_token: "tok",
+        refresh_token: "ref",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "u1", email: "raffi@nac.com" },
+      }),
+    );
+    expect(readPersistedAuthSession(AUTH_STORAGE_KEY)?.user?.email).toBe("raffi@nac.com");
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  });
+
+  test("subscribePlatformSession keeps a persisted session when getSession times out", async () => {
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({
+        access_token: "tok",
+        refresh_token: "ref",
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: { id: "u1", email: "raffi@nac.com" },
+      }),
+    );
+    supabase.auth.getSession.mockImplementation(() => new Promise(() => {}));
+    const seen = [];
+    const unsub = subscribePlatformSession((state) => seen.push(state));
+    expect(seen[0]?.session?.user?.email).toBe("raffi@nac.com");
+    expect(seen[0]?.checked).toBe(true);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(seen.every((s) => s.session?.user?.email === "raffi@nac.com")).toBe(true);
+    expect(seen.some((s) => s.session == null)).toBe(false);
+    unsub();
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
   });
 });

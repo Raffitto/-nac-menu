@@ -8,8 +8,10 @@ import { IMPORT_TYPE } from "../dashboard/config/foodicsImportTypes";
 
 export { IMPORT_TYPE };
 
-export async function getImportBatches(limit = 20, importType = null, rbacProfile = null) {
-  let query = supabase.from("foodics_import_batches").select("*");
+export const BATCH_COVERAGE_COLUMNS = "id,branch_id,period_start,period_end,import_type,uploaded_at";
+
+export async function getImportBatches(limit = 20, importType = null, rbacProfile = null, { columns = "*" } = {}) {
+  let query = supabase.from("foodics_import_batches").select(columns);
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
     query = query.or("import_type.eq.product_sales,import_type.is.null");
   } else if (importType) {

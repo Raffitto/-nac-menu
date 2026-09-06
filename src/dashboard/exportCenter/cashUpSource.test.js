@@ -1,4 +1,4 @@
-import { cashUpBusinessDate, fetchCanonicalCashUpForExport } from "./cashUpSource";
+import { cashUpBusinessDate, fetchCanonicalCashUpForExport, fetchCashUpCoverage } from "./cashUpSource";
 
 describe("canonical Cash Up source", () => {
   test("resolves business date from period_end or period_start", () => {
@@ -8,7 +8,6 @@ describe("canonical Cash Up source", () => {
 
   test("uses Ask NAC Vault RPC daily breakdown for coverage dates", async () => {
     const supabase = {
-      auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) },
       rpc: async () => ({
         data: {
           dayCount: 2,
@@ -40,5 +39,22 @@ describe("canonical Cash Up source", () => {
     expect(result.cashUpDates).toEqual(["2026-08-01", "2026-08-02"]);
     expect(result.facts.some((f) => f.metric_key === "total_sales" && f.period_end === "2026-08-01")).toBe(true);
     expect(result.error).toBeNull();
+  });
+
+  test("coverage path uses Vault RPC dates without requiring getSession", async () => {
+    const supabase = {
+      rpc: async () => ({
+        data: {
+          dailyBreakdown: [{ date: "2026-08-01", totalSales: 10 }],
+        },
+        error: null,
+      }),
+    };
+    const coverage = await fetchCashUpCoverage(supabase, {
+      branch: "khobar",
+      from: "2026-08-01",
+      to: "2026-08-01",
+    });
+    expect(coverage.cashUpDates).toEqual(["2026-08-01"]);
   });
 });

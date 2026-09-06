@@ -56,20 +56,37 @@ async function fetchCashUpFactsPaged(supabase, { branch, from, to }) {
   return rows.filter((r) => r.branch_id === branch);
 }
 
+export function cashUpDatesFromRpc(rpcAgg) {
+  return (rpcAgg?.dailyBreakdown || [])
+    .map((row) => ({
+      ...row,
+      date: typeof row?.date === "string" ? row.date.slice(0, 10) : String(row?.date || "").slice(0, 10),
+    }))
+    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && (row.totalSales != null || row.totalGuests != null))
+    .map((row) => row.date);
+}
+
+/** Lightweight coverage only — no fact-table scan. */
+export async function fetchCashUpCoverage(supabase, { branch, from, to }) {
+  try {
+    const rpcAgg = await fetchCashUpRangeAggregationViaRpc(supabase, {
+      branch,
+      startDate: from,
+      endDate: to,
+      includeDailyBreakdown: true,
+    });
+    const cashUpDates = [...new Set(cashUpDatesFromRpc(rpcAgg))].sort();
+    return { cashUpDates, rpcAgg, error: null };
+  } catch (err) {
+    return { cashUpDates: [], rpcAgg: null, error: err?.message || String(err) };
+  }
+}
+
 /**
  * Load Cash Up coverage + workbook facts from Vault (RPC + structured facts).
+ * Coverage callers should use fetchCashUpCoverage. This path is for XLSX download.
  */
 export async function fetchCanonicalCashUpForExport(supabase, { branch, from, to }) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (!sessionData?.session) {
-    return {
-      facts: [],
-      cashUpDates: [],
-      rpcAgg: null,
-      error: "Sign in required to read Cash Up coverage.",
-    };
-  }
-
   let rpcAgg = null;
   let rpcError = null;
   try {
@@ -91,13 +108,7 @@ export async function fetchCanonicalCashUpForExport(supabase, { branch, from, to
     factsError = err?.message || String(err);
   }
 
-  const rpcDates = (rpcAgg?.dailyBreakdown || [])
-    .map((row) => ({
-      ...row,
-      date: typeof row?.date === "string" ? row.date.slice(0, 10) : String(row?.date || "").slice(0, 10),
-    }))
-    .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && (row.totalSales != null || row.totalGuests != null))
-    .map((row) => row.date);
+  const rpcDates = cashUpDatesFromRpc(rpcAgg);
   const factDates = facts.map(cashUpBusinessDate).filter(Boolean);
   const cashUpDates = [...new Set([...rpcDates, ...factDates])].sort();
 
