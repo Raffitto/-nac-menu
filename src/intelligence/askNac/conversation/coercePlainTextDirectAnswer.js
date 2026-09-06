@@ -2,6 +2,8 @@
  * Ensure Ask NAC directAnswer is always renderable plain text.
  */
 
+import { sanitizeIncompletePeriodAnswer } from "../coverage/temporalCoverage";
+
 export function coercePlainTextDirectAnswer(directAnswer, response = {}) {
   if (typeof directAnswer === "string") {
     const trimmed = directAnswer.trim();
@@ -32,6 +34,6 @@ export function coercePlainTextDirectAnswer(directAnswer, response = {}) {
 
 export function resolveAskNacDirectAnswer(response = {}) {
   const coerced = coercePlainTextDirectAnswer(response.directAnswer, response);
-  if (coerced) return coerced;
+  if (coerced) return sanitizeIncompletePeriodAnswer(coerced, response);
   return "No summary available.";
 }

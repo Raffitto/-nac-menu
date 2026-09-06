@@ -3,6 +3,7 @@ import {
   spokenPeriodLabel,
   applySpokenPeriodToAnswer,
   coverageFromCashUpAggregation,
+  sanitizeIncompletePeriodAnswer,
   COVERAGE_STATUS,
   riyadhYmd,
   latestCompletedBusinessDate,
@@ -152,6 +153,21 @@ describe("Ask NAC temporal coverage", () => {
     });
     const text = applySpokenPeriodToAnswer("No cash-up report matched 6 September 2026.", coverage);
     expect(text).toMatch(/does not have sales data yet|available through 5 Sep/i);
+  });
+
+  test("sanitize strips ISO requested end when missingDayCount is present", () => {
+    const text = sanitizeIncompletePeriodAnswer(
+      "Sales for this week (2026-08-31 to 2026-09-06) are as follows: Net sales: 106224.30 SAR.",
+      {
+        keyMetrics: [
+          { label: "day_count", value: 6 },
+          { label: "expectedDayCount", value: 7 },
+          { label: "missingDayCount", value: 1 },
+        ],
+      },
+    );
+    expect(text).toMatch(/through 5 Sep 2026/i);
+    expect(text).not.toMatch(/2026-09-06/);
   });
 
   test("source delayed is not zero", () => {

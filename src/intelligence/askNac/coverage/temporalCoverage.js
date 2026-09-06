@@ -216,6 +216,38 @@ export function applySpokenPeriodToAnswer(answer, coverage, { weekish = false } 
   return text;
 }
 
+function metricNumber(metrics, pattern) {
+  const row = (metrics || []).find((m) => pattern.test(String(m.label || m.key || "")));
+  const n = Number(row?.value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Last-line defense for answers that still name a requested end date
+ * while keyMetrics show missing days.
+ */
+export function sanitizeIncompletePeriodAnswer(text, response = {}) {
+  const raw = String(text || "");
+  const metrics = response.keyMetrics || [];
+  const dayCount = metricNumber(metrics, /day[_ ]?count|days included/i);
+  const expected = metricNumber(metrics, /expectedDayCount|expected day/i);
+  const missing = metricNumber(metrics, /missingDayCount|missing day/i);
+  const incomplete = (missing != null && missing > 0)
+    || (expected != null && dayCount != null && dayCount > 0 && dayCount < expected);
+  if (!incomplete) return raw;
+
+  const miss = missing != null ? missing : Math.max(0, expected - dayCount);
+  return raw.replace(
+    /(\d{4}-\d{2}-\d{2})\s*(?:to|until|through|–|-)\s*(\d{4}-\d{2}-\d{2})/gi,
+    (all, start, end) => {
+      let latest = end;
+      for (let i = 0; i < miss; i += 1) latest = addIsoDays(latest, -1);
+      if (latest < start) latest = start;
+      return `so far this period through ${formatShortSalesDate(latest)}`;
+    },
+  );
+}
+
 export function coverageFromCashUpAggregation(aggregation, requestedPeriod, extras = {}) {
   const breakdown = Array.isArray(aggregation?.dailyBreakdown) ? aggregation.dailyBreakdown : [];
   const availableDates = breakdown.filter((row) => row.totalSales != null).map((row) => row.date);
