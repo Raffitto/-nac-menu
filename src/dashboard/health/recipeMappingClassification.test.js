@@ -26,4 +26,21 @@ describe("kitchen recipe mapping classification", () => {
     expect(result.repaired).toBe(0);
     expect(result.deterministicRepairable).toBe(1);
   });
+
+  test("duplicate menu rows with one unique recipe are a safe cluster, not fake ambiguity", () => {
+    const result = classifyKitchenRecipeGaps({
+      menuItems: [
+        { id: "m2", name_en: "King Prawn Rendang", active: true, branch_id: "khobar" },
+        { id: "m3", name_en: "King Prawn Rendang", active: true, branch_id: "khobar" },
+      ],
+      recipes: [
+        { id: "r1", name: "King Prawn Rendang", active: true },
+      ],
+    });
+    expect(result.counts[RECIPE_GAP_CLASS.AMBIGUOUS]).toBe(0);
+    expect(result.counts[RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING]).toBe(2);
+    expect(result.clusterCounts[RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING]).toBe(1);
+    expect(result.deterministicRepairable).toBe(1);
+    expect(result.repaired).toBe(0);
+  });
 });

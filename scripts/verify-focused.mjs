@@ -14,7 +14,10 @@ const defaults = [
   "src/dashboard/health/dataIntegrityScan.test.js",
   "src/dashboard/health/recipeMappingClassification.test.js",
   "src/intelligence/askNac/shared/nacBusinessWeek.test.js",
+  "src/intelligence/askNac/coverage/comparisonContract.test.js",
+  "src/dashboard/health/identityClusters.test.js",
   "src/dashboard/exportCenter/reportsReadiness.test.js",
+  "src/platform/productionContracts.test.js",
 ];
 const files = extra.length ? extra : defaults;
 const result = spawnSync(

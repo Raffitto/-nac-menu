@@ -107,9 +107,15 @@ export function assessComparability(input: {
     comparisonSignature: comparisonComp.signature,
     match: weekdayMatch,
   };
-  if (!weekdayMatch) {
+  const dateOfMonthMirror = current.startDate.slice(8) === comparison.startDate.slice(8)
+    && current.endDate.slice(8) === comparison.endDate.slice(8)
+    && current.startDate.slice(5, 7) !== comparison.startDate.slice(5, 7)
+    && currentDays === comparisonDays;
+  if (!weekdayMatch && !dateOfMonthMirror) {
     structuralDifferences.push("weekday_composition_mismatch");
     reasons.push("weekday_composition_differs");
+  } else if (!weekdayMatch && dateOfMonthMirror) {
+    reasons.push("weekday_mix_differs_date_of_month_compare");
   }
 
   const curRatio = input.currentCoverage?.coverageRatio;

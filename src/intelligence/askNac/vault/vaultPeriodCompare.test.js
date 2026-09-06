@@ -1,5 +1,6 @@
 import {
   parseVaultComparePeriodsFromQuestion,
+  parseVaultPeriodFromQuestion,
 } from "./vaultPeriodParser";
 
 const SEP6 = new Date("2026-09-06T12:00:00+03:00");
@@ -64,11 +65,48 @@ describe("Ask NAC comparison period resolution", () => {
     expect(compare?.previous?.endDate).toBe(compare?.previous?.startDate);
   });
 
+  test("Unicode dashes parse the same as ASCII day ranges", () => {
+    const hyphen = parseVaultComparePeriodsFromQuestion("compare Sep 1-5 to Aug 1-5", SEP6);
+    const en = parseVaultComparePeriodsFromQuestion("compare Sep 1–5 to Aug 1–5", SEP6);
+    const em = parseVaultComparePeriodsFromQuestion("compare Sep 1 — 5 to Aug 1 — 5", SEP6);
+    const dmy = parseVaultComparePeriodsFromQuestion("compare 1–5 Sep to 1–5 Aug", SEP6);
+    expect(en?.current?.startDate).toBe("2026-09-01");
+    expect(en?.current?.endDate).toBe("2026-09-05");
+    expect(en?.previous?.startDate).toBe("2026-08-01");
+    expect(en?.previous?.endDate).toBe("2026-08-05");
+    expect(em?.current?.endDate).toBe(hyphen?.current?.endDate);
+    expect(dmy?.current?.endDate).toBe("2026-09-05");
+  });
+
   test("compare Sep 1-5 to Aug 1-5", () => {
     const compare = parseVaultComparePeriodsFromQuestion("compare Sep 1-5 to Aug 1-5", SEP6);
     expect(compare?.current?.startDate).toBe("2026-09-01");
     expect(compare?.current?.endDate).toBe("2026-09-05");
     expect(compare?.previous?.startDate).toBe("2026-08-01");
     expect(compare?.previous?.endDate).toBe("2026-08-05");
+  });
+
+  test("range typography variants resolve the same day span", () => {
+    const cases = [
+      "Sep 1-5",
+      "Sep 1–5",
+      "Sep 1 — 5",
+      "September 1–5",
+      "Sep 1 – Sep 5",
+      "1–5 Sep",
+      "1 — 5 September",
+      "Sep 1–5 2026",
+    ];
+    for (const phrase of cases) {
+      const period = parseVaultPeriodFromQuestion(`sales ${phrase}`, SEP6);
+      expect(period?.startDate).toBe("2026-09-01");
+      expect(period?.endDate).toBe("2026-09-05");
+    }
+  });
+
+  test("cross-month Unicode range stays intact", () => {
+    const period = parseVaultPeriodFromQuestion("sales Aug 30–Sep 5", SEP6);
+    expect(period?.startDate).toBe("2026-08-30");
+    expect(period?.endDate).toBe("2026-09-05");
   });
 });

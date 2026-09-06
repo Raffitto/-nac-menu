@@ -117,6 +117,13 @@ function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: stri
   if (comparison && typeof comparison.delta_pct === "number") {
     pushMetric(metrics, "delta_pct", comparison.delta_pct, "%");
   }
+
+  const previousAgg = (tool.previousAggregation || (tool.conversationDataset as Record<string, unknown> | undefined)?.previousAggregation) as Record<string, unknown> | undefined;
+  if (previousAgg) {
+    pushMetric(metrics, "comparison_net_sales", previousAgg.totalSales ?? previousAgg.net_sales ?? previousAgg.total_sales, "SAR");
+    pushMetric(metrics, "comparison_covers", previousAgg.totalGuests ?? previousAgg.covers);
+    pushMetric(metrics, "comparison_day_count", previousAgg.dayCount ?? previousAgg.day_count);
+  }
   return metrics;
 }
 
@@ -128,12 +135,28 @@ function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityEx
   const availableFromAgg = typeof aggregation?.dayCount === "number" ? aggregation.dayCount : null;
   const latestCompleted = typeof aggregation?.latestCompletedDate === "string"
     ? aggregation.latestCompletedDate
-    : null;
+    : typeof aggregation?.salesCoverageEnd === "string"
+      ? aggregation.salesCoverageEnd
+      : null;
+  const valueStart = typeof aggregation?.salesCoverageStart === "string"
+    ? aggregation.salesCoverageStart
+    : latestCompleted;
+  const valueEnd = typeof aggregation?.salesCoverageEnd === "string"
+    ? aggregation.salesCoverageEnd
+    : latestCompleted;
+  const valueRange = valueStart && valueEnd
+    ? {
+      startDate: valueStart,
+      endDate: valueEnd,
+      label: req.currentPeriod?.label || `${valueStart}–${valueEnd}`,
+      semantic: req.currentPeriod?.semantic || null,
+    }
+    : req.currentPeriod;
   const freshness = cov?.freshness ? String(cov.freshness) : latestCompleted;
   if (!cov) {
     return buildCoverageReport({
       domain: req.capability.startsWith("operations") ? "logbook" : "sales",
-      range: req.currentPeriod,
+      range: valueRange,
       expectedRecords: expectedFromAgg,
       availableRecords: availableFromAgg,
       freshness,
@@ -141,7 +164,7 @@ function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityEx
   }
   return buildCoverageReport({
     domain: String(cov.domain || "sales"),
-    range: req.currentPeriod,
+    range: valueRange,
     expectedRecords: typeof cov.expectedDays === "number" ? cov.expectedDays
       : typeof cov.expectedRecords === "number" ? cov.expectedRecords
       : expectedFromAgg,

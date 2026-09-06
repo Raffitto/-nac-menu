@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { exportViewPerfJson, recentViewPerf } from "../../lib/viewPerf";
 import { scanIntegrityBundle } from "./dataIntegrityScan";
 import { RECIPE_GAP_CLASS } from "./recipeMappingClassification";
+import { CLUSTER_KIND } from "./identityClusters";
 
 function freshnessLabel(iso) {
   if (!iso) return "Unknown";
@@ -29,8 +30,8 @@ function yesterdayRiyadh() {
 
 async function loadIntegrityPayload() {
   const settled = await Promise.allSettled([
-    supabase.from("menu_items").select("id,name_en,name_ar,active").limit(800),
-    supabase.from("inventory_recipes").select("id,name,normalized_name,menu_item_id,active").limit(800),
+    supabase.from("menu_items").select("id,name_en,name_ar,active,price,section_id,branch_id,placement_group_id").limit(2000),
+    supabase.from("inventory_recipes").select("id,name,normalized_name,menu_item_id,active").limit(2000),
     supabase.from("inventory_recipe_versions").select("id,recipe_id,version_number,status").limit(1200),
     supabase.from("inventory_recipe_version_lines").select("id,recipe_version_id,ingredient_id,sub_recipe_id,quantity").limit(4000),
     supabase.from("inventory_ingredients").select("id,canonical_name,active,base_inventory_unit").limit(800),
@@ -54,6 +55,7 @@ export default function DataHealthPanel() {
   const [error, setError] = useState("");
   const [scanning, setScanning] = useState(false);
   const [mappingFilter, setMappingFilter] = useState("all");
+  const [clusterFilter, setClusterFilter] = useState("all");
 
   const runScan = useCallback(async () => {
     if (!isSupabaseConfigured() || !supabase || typeof supabase.from !== "function") {
@@ -91,6 +93,60 @@ export default function DataHealthPanel() {
   useEffect(() => {
     runScan();
   }, [runScan]);
+
+  const downloadManifest = () => {
+    if (!integrity) return;
+    const payload = {
+      scannedAt: integrity.scannedAt,
+      identity: integrity.identityClusters,
+      recipeMapping: {
+        counts: integrity.recipeMapping?.counts,
+        clusterCounts: integrity.recipeMapping?.clusterCounts,
+        repairPlan: integrity.recipeMapping?.repairPlan || [],
+        repaired: integrity.recipeMapping?.repaired || 0,
+      },
+      costClasses: integrity.costClasses,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "nac-identity-repair-manifest.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadCsv = () => {
+    if (!integrity) return;
+    const clusters = integrity.identityClusters?.duplicateClusters || [];
+    const header = [
+      "normalized_identity",
+      "kind",
+      "duplicate_count",
+      "branch_ids",
+      "menu_item_ids",
+      "prices",
+    ];
+    const lines = [header.join(",")];
+    for (const row of clusters) {
+      const cells = [
+        row.normalizedName,
+        row.kind,
+        row.activeCount,
+        (row.branchIds || []).join("|"),
+        (row.activeItemIds || []).join("|"),
+        (row.prices || []).join("|"),
+      ].map((cell) => `"${String(cell ?? "").replace(/"/g, "\"\"")}"`);
+      lines.push(cells.join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "nac-identity-repair-manifest.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const downloadPerf = () => {
     const blob = new Blob([exportViewPerfJson()], { type: "application/json" });
@@ -141,16 +197,64 @@ export default function DataHealthPanel() {
           {(integrity.capabilityGaps || []).map((gap) => (
             <p key={gap.code} className="nac-settings-muted">{gap.message}</p>
           ))}
+          {integrity.identityClusters ? (
+            <div data-testid="settings-identity-clusters">
+              <p className="nac-settings-muted">
+                Duplicate identity clusters: {integrity.identityClusters.duplicateClusterCount}
+                {" · "}rows {integrity.identityClusters.rowsInsideDuplicateClusters}
+                {" · "}branch copies {integrity.identityClusters.branchCopyCount}
+                {" · "}exact defects {integrity.identityClusters.exactDefectCount}
+                {" · "}same live item {integrity.identityClusters.sameLiveItemCount}
+                {" · "}legacy mix {integrity.identityClusters.legacyContaminationCount}
+              </p>
+              <label className="nac-settings-muted" htmlFor="identity-cluster-filter">Identity filter</label>
+              <select
+                id="identity-cluster-filter"
+                value={clusterFilter}
+                onChange={(event) => setClusterFilter(event.target.value)}
+              >
+                <option value="all">All duplicate clusters</option>
+                <option value={CLUSTER_KIND.EXACT_DUPLICATE_DEFECT}>Exact duplicate defect</option>
+                <option value={CLUSTER_KIND.BRANCH_COPY}>Branch copies</option>
+                <option value={CLUSTER_KIND.SAME_LIVE_ITEM}>Same live item</option>
+                <option value={CLUSTER_KIND.VARIANT}>Variants</option>
+                <option value={CLUSTER_KIND.LEGACY_CONTAMINATION}>Legacy + active</option>
+                <option value={CLUSTER_KIND.AMBIGUOUS}>Ambiguous identity</option>
+              </select>
+              <dl className="nac-settings-dl">
+                {(integrity.identityClusters.duplicateClusters || [])
+                  .filter((row) => clusterFilter === "all" || row.kind === clusterFilter)
+                  .slice(0, 40)
+                  .map((row) => (
+                    <div key={row.normalizedName}>
+                      <dt>{row.kind} · {row.displayName} ({row.activeCount})</dt>
+                      <dd>
+                        {(row.branchIds || []).join(", ") || "no branch"}
+                        {" · "}{row.activeItemIds.slice(0, 4).join(", ")}
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          ) : null}
+          {integrity.costClasses ? (
+            <p className="nac-settings-muted" data-testid="settings-cost-classes">
+              Missing costs: operational {integrity.costClasses.ACTIVE_OPERATIONAL}
+              {" · "}legacy {integrity.costClasses.LEGACY_INACTIVE}
+              {" · "}OCR {integrity.costClasses.OCR_PLACEHOLDER}
+              {" · "}derived {integrity.costClasses.DERIVED_SUB_RECIPE}
+              {" · "}unknown {integrity.costClasses.UNKNOWN}
+            </p>
+          ) : null}
           {integrity.recipeMapping ? (
             <div data-testid="settings-recipe-mapping">
               <p className="nac-settings-muted">
-                Kitchen recipe gaps: {integrity.recipeMapping.originalKitchenNoRecipe}
-                {" · "}Exact {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING] || 0}
-                {" · "}Likely {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED] || 0}
-                {" · "}Ambiguous {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.AMBIGUOUS] || 0}
-                {" · "}Legacy {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.LEGACY_ONLY] || 0}
-                {" · "}True missing {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.TRUE_MISSING] || 0}
-                {" · "}Not recipe-required {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.FALSE_POSITIVE] || 0}
+                Kitchen recipe gap rows: {integrity.recipeMapping.originalKitchenNoRecipe}
+                {" · "}clusters exact {integrity.recipeMapping.clusterCounts?.[RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING] || 0}
+                {" · "}clusters ambiguous {integrity.recipeMapping.clusterCounts?.[RECIPE_GAP_CLASS.AMBIGUOUS] || 0}
+                {" · "}clusters true missing {integrity.recipeMapping.clusterCounts?.[RECIPE_GAP_CLASS.TRUE_MISSING] || 0}
+                {" · "}safe repair plans {integrity.recipeMapping.deterministicRepairable || 0}
+                {" · "}written {integrity.recipeMapping.repaired || 0}
               </p>
               <label className="nac-settings-muted" htmlFor="recipe-mapping-filter">Mapping filter</label>
               <select
@@ -163,12 +267,23 @@ export default function DataHealthPanel() {
                 <option value={RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED}>Likely mapping</option>
                 <option value={RECIPE_GAP_CLASS.AMBIGUOUS}>Ambiguous</option>
                 <option value={RECIPE_GAP_CLASS.LEGACY_ONLY}>Legacy only</option>
+                <option value={RECIPE_GAP_CLASS.SOURCE_CARD_UNLINKED}>Source card only</option>
                 <option value={RECIPE_GAP_CLASS.TRUE_MISSING}>No recipe found</option>
                 <option value={RECIPE_GAP_CLASS.FALSE_POSITIVE}>Not recipe-required</option>
+                <option value="SAFE_UNIQUE">Safe unique recipe</option>
+                <option value="DUPLICATE_IDENTITY">Duplicate identity</option>
               </select>
               <dl className="nac-settings-dl">
                 {(integrity.recipeMapping.rows || [])
-                  .filter((row) => mappingFilter === "all" || row.class === mappingFilter)
+                  .filter((row) => {
+                    if (mappingFilter === "all") return true;
+                    if (mappingFilter === "SAFE_UNIQUE") {
+                      return row.class === RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING
+                        || row.class === RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED;
+                    }
+                    if (mappingFilter === "DUPLICATE_IDENTITY") return (row.clusterActiveCount || 1) > 1;
+                    return row.class === mappingFilter;
+                  })
                   .slice(0, 40)
                   .map((row) => (
                     <div key={row.itemId}>
@@ -188,6 +303,12 @@ export default function DataHealthPanel() {
       <div className="nac-settings-actions">
         <button type="button" className="nac-filter-action" onClick={runScan} disabled={scanning}>
           {scanning ? "Scanning…" : "Rescan"}
+        </button>
+        <button type="button" className="nac-filter-action" onClick={downloadManifest}>
+          Export identity manifest
+        </button>
+        <button type="button" className="nac-filter-action" onClick={downloadCsv}>
+          Export identity CSV
         </button>
         <button type="button" className="nac-filter-action" onClick={downloadPerf}>
           Export view timings

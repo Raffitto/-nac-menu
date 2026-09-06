@@ -1215,9 +1215,7 @@ export async function processAskNacOnEdge(
         filters: { ...mergedFilters, branch: request.branchId || mergedFilters.branch },
         profile: profileHint,
         vaultPeriod,
-        vaultCompare: queryFocus === "period_compare" || request.capability === "commercial.compare"
-          ? vaultCompare
-          : null,
+        vaultCompare: vaultCompare,
         queryFocus,
         performanceOverview: queryFocus === "performance_overview",
         userEmail: effectiveUserEmail,

@@ -81,6 +81,9 @@ describe("data integrity scan", () => {
     expect(result.issues.some((i) => i.code === "ocr_cost_placeholder")).toBe(true);
     expect(result.issues.some((i) => i.code === "inactive_ingredient_no_cost")).toBe(true);
     expect(result.issues.some((i) => i.code === "missing_ingredient_cost" && i.message.includes("Fresh basil"))).toBe(true);
+    expect(result.costClasses.OCR_PLACEHOLDER).toBe(1);
+    expect(result.costClasses.LEGACY_INACTIVE).toBe(1);
+    expect(result.costClasses.ACTIVE_OPERATIONAL).toBe(1);
   });
 });
 

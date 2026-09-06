@@ -4,6 +4,9 @@
  */
 
 import { requiresKitchenRecipe } from "../../inventory/foodBible";
+import { buildIdentityClusters, normalizeIdentityName } from "./identityClusters";
+
+export { normalizeIdentityName };
 
 export const RECIPE_GAP_CLASS = Object.freeze({
   EXACT_MAPPING_MISSING: "EXACT_MAPPING_MISSING",
@@ -14,15 +17,6 @@ export const RECIPE_GAP_CLASS = Object.freeze({
   TRUE_MISSING: "TRUE_MISSING",
   FALSE_POSITIVE: "FALSE_POSITIVE",
 });
-
-export function normalizeIdentityName(value) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function recipeNames(recipe) {
   return [recipe.name, recipe.normalized_name, recipe.name_en, recipe.internal_name]
@@ -53,15 +47,11 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
     }
   }
 
-  const menuNameCounts = new Map();
-  for (const item of menuItems || []) {
-    if (item.active === false) continue;
-    const key = normalizeIdentityName(item.name_en || item.name);
-    if (!key) continue;
-    menuNameCounts.set(key, (menuNameCounts.get(key) || 0) + 1);
-  }
+  const identity = buildIdentityClusters(menuItems);
+  const clusterByName = new Map(identity.clusters.map((c) => [c.normalizedName, c]));
 
   const rows = [];
+  const repairPlan = [];
   for (const item of menuItems || []) {
     if (item.active === false) continue;
     if (linkedMenuIds.has(item.id)) continue;
@@ -71,10 +61,16 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
     });
     const itemName = item.name_en || item.name || item.id;
     const key = normalizeIdentityName(itemName);
+    const cluster = clusterByName.get(key);
     const candidates = key ? [...new Set(byName.get(key) || [])] : [];
     const active = candidates.filter((r) => r.active !== false);
     const inactive = candidates.filter((r) => r.active === false);
-    const menuCollisions = menuNameCounts.get(key) || 0;
+    const uniqueActiveRecipes = [...new Map(active.map((r) => [r.id, r])).values()];
+    const extras = {
+      clusterKind: cluster?.kind || null,
+      clusterActiveCount: cluster?.activeCount || 1,
+      itemIds: cluster?.activeItemIds || [item.id],
+    };
 
     if (!kitchenExpected) {
       rows.push({
@@ -84,42 +80,65 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
         confidence: 1,
         reason: "Item is beverage/retail/modifier — not recipe-required",
         candidates: [],
+        ...extras,
       });
       continue;
     }
 
-    if (menuCollisions > 1 || active.length > 1) {
+    if (uniqueActiveRecipes.length > 1) {
       rows.push({
         class: RECIPE_GAP_CLASS.AMBIGUOUS,
         itemId: item.id,
         itemName,
         confidence: 0.4,
-        reason: menuCollisions > 1
-          ? `${menuCollisions} active menu identities share this name`
-          : `${active.length} active recipes share this name`,
-        candidates: (active.length ? active : candidates).slice(0, 5).map((r) => ({
+        reason: `${uniqueActiveRecipes.length} active recipes share this identity cluster`,
+        candidates: uniqueActiveRecipes.slice(0, 5).map((r) => ({
           id: r.id,
           name: r.name,
           active: r.active !== false,
         })),
+        ...extras,
       });
       continue;
     }
 
-    if (active.length === 1) {
-      const recipe = active[0];
+    if (uniqueActiveRecipes.length === 1) {
+      const recipe = uniqueActiveRecipes[0];
       const exact = normalizeIdentityName(recipe.name) === key
         || normalizeIdentityName(recipe.normalized_name) === key;
+      const siblingLinked = (cluster?.activeItemIds || []).some((id) => linkedMenuIds.has(id));
       rows.push({
         class: exact ? RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING : RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED,
         itemId: item.id,
         itemName,
         confidence: exact ? 0.99 : 0.85,
-        reason: exact
-          ? "Unique active recipe name matches; menu_item_id is missing"
-          : "Unique normalized name match; mapping is reviewable, not auto-applied",
+        reason: siblingLinked
+          ? "Unique cluster recipe already linked to a sibling menu row — Food Bible treats the identity as mapped"
+          : exact
+            ? "Unique active recipe for this identity cluster; menu_item_id is missing"
+            : "Unique normalized cluster match; mapping is reviewable, not auto-applied",
         candidates: [{ id: recipe.id, name: recipe.name, active: true }],
+        ...extras,
       });
+      if (
+        exact
+        && !recipe.menu_item_id
+        && uniqueActiveRecipes.length === 1
+        && cluster
+        && cluster.kind !== "AMBIGUOUS"
+      ) {
+        repairPlan.push({
+          cluster: cluster.normalizedName,
+          duplicateItemIds: cluster.activeItemIds,
+          canonicalRecipeId: recipe.id,
+          canonicalRecipeName: recipe.name,
+          recommendedAction: "link_recipe_menu_item_id_to_primary_only",
+          primaryMenuItemId: cluster.activeItemIds[0],
+          whyDeterministic: "One unique active recipe for one identity cluster",
+          reversible: true,
+          applied: false,
+        });
+      }
       continue;
     }
 
@@ -131,6 +150,7 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
         confidence: 0.6,
         reason: "Only an inactive/legacy recipe matches this name",
         candidates: inactive.slice(0, 3).map((r) => ({ id: r.id, name: r.name, active: false })),
+        ...extras,
       });
       continue;
     }
@@ -146,6 +166,7 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
         confidence: 0.7,
         reason: "Source card / Food Bible identity exists but canonical menu link is missing",
         candidates: unlinkedSource.slice(0, 3).map((r) => ({ id: r.id, name: r.name, active: r.active !== false })),
+        ...extras,
       });
       continue;
     }
@@ -157,20 +178,37 @@ export function classifyKitchenRecipeGaps({ menuItems = [], recipes = [] } = {})
       confidence: 0.2,
       reason: "No recipe identity found",
       candidates: [],
+      ...extras,
     });
+  }
+
+  const uniqueRepair = [];
+  const seenRepair = new Set();
+  for (const plan of repairPlan) {
+    if (seenRepair.has(plan.cluster)) continue;
+    seenRepair.add(plan.cluster);
+    uniqueRepair.push(plan);
   }
 
   const counts = Object.fromEntries(Object.values(RECIPE_GAP_CLASS).map((k) => [k, 0]));
   for (const row of rows) counts[row.class] += 1;
+  const clusterClasses = new Map();
+  for (const row of rows) {
+    if (row.class === RECIPE_GAP_CLASS.FALSE_POSITIVE) continue;
+    const key = normalizeIdentityName(row.itemName);
+    if (!clusterClasses.has(key)) clusterClasses.set(key, row.class);
+  }
+  const clusterCounts = Object.fromEntries(Object.values(RECIPE_GAP_CLASS).map((k) => [k, 0]));
+  for (const cls of clusterClasses.values()) clusterCounts[cls] += 1;
+
   return {
     rows,
     counts,
+    clusterCounts,
+    identity,
+    repairPlan: uniqueRepair,
     originalKitchenNoRecipe: rows.filter((r) => r.class !== RECIPE_GAP_CLASS.FALSE_POSITIVE).length,
-    deterministicRepairable: rows.filter((r) => (
-      r.class === RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING
-      && r.candidates.length === 1
-      && (menuNameCounts.get(normalizeIdentityName(r.itemName)) || 0) === 1
-    )).length,
+    deterministicRepairable: uniqueRepair.length,
     repaired: 0,
   };
 }

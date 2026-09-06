@@ -65,6 +65,13 @@ function isoDate(y, m, d) {
 
 const PERIOD_TZ = "Asia/Riyadh";
 
+export function normalizeRangePunctuation(text = "") {
+  return String(text || "")
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    .replace(/(\d)\s*-\s*(?=\d|[a-z])/gi, "$1-")
+    .replace(/([a-z])\s*-\s*(?=\d)/gi, "$1-");
+}
+
 function calendarYmdInTz(referenceDate, timeZone = PERIOD_TZ) {
   const d = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -269,7 +276,7 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
  * Parse explicit calendar ranges from a text fragment.
  */
 export function parseExplicitDateRangeFromText(text = "", referenceDate = new Date()) {
-  const q = String(text || "").toLowerCase().trim();
+  const q = normalizeRangePunctuation(String(text || "").toLowerCase().trim());
   if (!q) return null;
 
   const half = parseHalfMonthPhrase(q, referenceDate);
@@ -297,7 +304,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  m = q.match(new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:to|until|through|-)\\s*${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const startMonth = MONTH_MAP[m[1]];
     const endMonth = MONTH_MAP[m[3]];
@@ -307,7 +314,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  m = q.match(new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:to|until|through|-)\\s*(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const monthIndex = MONTH_MAP[m[1]];
     const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
@@ -354,7 +361,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  m = q.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\s+(?:to|until|through|-)\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\s*(?:to|until|through|-)\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const startMonth = MONTH_MAP[m[2]];
     const endMonth = MONTH_MAP[m[4]];
@@ -364,8 +371,8 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  // "from 9 to 13 aug" / "9 to 13 August" — month only on the end day.
-  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
+  // "1-5 Sep" / "from 9 to 13 aug"
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?(?:\\s+(?:to|until|through|-)\\s*|-)(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const monthIndex = MONTH_MAP[m[3]];
     const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
@@ -375,7 +382,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
   }
 
   // "from 9 to August 13"
-  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:to|until|through|-)\\s+${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\b(?:from\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:to|until|through|-)\\s*${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`));
   if (m) {
     const monthIndex = MONTH_MAP[m[2]];
     const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
@@ -394,18 +401,22 @@ function parseFlexiblePeriodFragment(text = "", referenceDate = new Date()) {
 }
 
 function hasRangeConnector(q) {
-  return /\b(to|until|through|between|from)\b/.test(q)
-    || new RegExp(`\\b${MONTH_PATTERN}\\s+\\d{1,2}\\s*-\\s*\\d{1,2}\\b`).test(q)
-    || /\b(20\d{2}-\d{2}-\d{2})\s*(?:to|until|-)\s*(20\d{2}-\d{2}-\d{2})\b/.test(q)
-    || /\b\d{1,2}[/.-]\d{1,2}\s*(?:to|until|-)\s*\d{1,2}[/.-]\d{1,2}\b/.test(q)
-    || /\b(first|second)\s+half\b/.test(q);
+  const n = normalizeRangePunctuation(q);
+  return /\b(to|until|through|between|from)\b/.test(n)
+    || new RegExp(`\\b${MONTH_PATTERN}\\s+\\d{1,2}\\s*-\\s*\\d{1,2}\\b`).test(n)
+    || new RegExp(`\\b${MONTH_PATTERN}\\s+\\d{1,2}\\s*-\\s*${MONTH_PATTERN}\\s+\\d{1,2}\\b`).test(n)
+    || new RegExp(`\\b\\d{1,2}\\s*-\\s*\\d{1,2}\\s+${MONTH_PATTERN}\\b`).test(n)
+    || new RegExp(`\\b\\d{1,2}\\s+${MONTH_PATTERN}\\s*-\\s*\\d{1,2}\\s+${MONTH_PATTERN}\\b`).test(n)
+    || /\b(20\d{2}-\d{2}-\d{2})\s*(?:to|until|-)\s*(20\d{2}-\d{2}-\d{2})\b/.test(n)
+    || /\b\d{1,2}[/.-]\d{1,2}\s*(?:to|until|-)\s*\d{1,2}[/.-]\d{1,2}\b/.test(n)
+    || /\b(first|second)\s+half\b/.test(n);
 }
 
 /**
  * @returns {{ periodType: string, startDate: string, endDate: string, label: string, isSingleDay: boolean, isMonth?: boolean, isWeek?: boolean, isRange?: boolean }|null}
  */
 export function parseVaultPeriodFromQuestion(question = "", referenceDate = new Date()) {
-  const q = String(question || "").toLowerCase().trim();
+  const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
 
   if (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to|\bto\b)\b/.test(q)) {
@@ -436,14 +447,17 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (
-    /\b(the\s+)?(last|latest|most recent)\s+sales?\b/.test(q)
-    || (/\b(current|latest)\s+sales\b/.test(q) && !/\b(week|month|mtd|year|7 days)\b/.test(q))
+    (
+      /\b(the\s+)?(last|latest|most recent)\s+(sales?|cash[\s-]?up)\b/.test(q)
+      || (/\b(current|latest)\s+sales\b/.test(q) && !/\b(week|month|mtd|year|7 days)\b/.test(q))
+    ) && !/\b(20\d{2}|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|on\s+\d)/.test(q)
   ) {
-    const ymd = calendarYmdInTz(referenceDate);
-    const iso = isoDate(ymd.year, ymd.month, ymd.day);
+    const latest = latestCompletedBusinessDate(referenceDate);
     return {
-      startDate: iso,
-      endDate: iso,
+      startDate: latest,
+      endDate: latest,
+      requestedStartDate: latest,
+      requestedEndDate: latest,
       label: "the latest available sales date",
       periodType: "latest_available_sale",
       isSingleDay: true,
@@ -629,7 +643,7 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
 }
 
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
-  const q = String(question || "").toLowerCase().trim();
+  const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
 
   if (

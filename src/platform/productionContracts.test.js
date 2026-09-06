@@ -50,5 +50,8 @@ describe("production reliability contracts", () => {
       new Date("2026-09-06T19:00:00+03:00"),
     );
     expect(period.periodType).toBe("latest_available_sale");
+    expect(period.startDate).toBe("2026-09-05");
+    expect(period.endDate).toBe("2026-09-05");
+    expect(period.startDate).not.toBe("2026-09-06");
   });
 });

@@ -8,6 +8,7 @@ import type { CoverageReport } from "./coverageModel.ts";
 import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
 import { buildCoverageAwareSalesLead, formatShortSalesDate } from "./coverageWording.ts";
+import { buildComparisonStatement, isDateOfMonthMirror } from "./comparisonContract.ts";
 import type { CoverageContract } from "../askNacCoverageContract.ts";
 
 function branchLabel(branchId: string | null | undefined) {
@@ -87,7 +88,21 @@ export function synthesizeDeterministicAnswer(input: {
     );
   }
 
-  if (sales) {
+  const previousSales = input.evidence.find((e) =>
+    e.metricOrEvent === "comparison_net_sales" && typeof e.value === "number"
+  );
+  if (sales && (previousSales || input.comparisonPeriod)) {
+    const statement = buildComparisonStatement({
+      currentLabel: coverageLead.windowLabel || period,
+      currentValue: sales.value,
+      previousLabel: periodLabel(input.comparisonPeriod),
+      previousValue: previousSales?.value,
+      currentCoverageStatus: input.coverageContract?.coverageStatus || null,
+      weekdayMismatch: input.comparability?.weekdayComposition?.match === false,
+      dateOfMonthCompare: isDateOfMonthMirror(input.period, input.comparisonPeriod),
+    });
+    parts.push(`For ${branch}. ${statement.text}`);
+  } else if (sales) {
     parts.push(
       `For ${branch} in ${coverageLead.windowLabel}, observed Cash Up net sales were ${sales.value} SAR.`,
     );
@@ -116,9 +131,13 @@ export function synthesizeDeterministicAnswer(input: {
     parts.push("A percentage comparison is not valid for these periods.");
   }
 
-  if (input.comparability?.weekdayComposition?.match === false) {
+  if (
+    input.comparability?.weekdayComposition?.match === false
+    && !isDateOfMonthMirror(input.period, input.comparisonPeriod)
+    && !previousSales
+  ) {
     parts.push(
-      "Weekday composition differs between the compared windows, so they are not treated as like-for-like.",
+      "Weekday composition differs between the compared windows; treat that as context, not a failed compare.",
     );
   }
 

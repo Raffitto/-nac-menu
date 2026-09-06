@@ -421,12 +421,22 @@ export function scanIntegrityBundle(input = {}) {
     menuItems,
     recipes: input.recipes || [],
   });
+  const costClasses = { ACTIVE_OPERATIONAL: 0, LEGACY_INACTIVE: 0, OCR_PLACEHOLDER: 0, DERIVED_SUB_RECIPE: 0, UNKNOWN: 0 };
+  for (const row of cost) {
+    if (row.code === "ocr_cost_placeholder") costClasses.OCR_PLACEHOLDER += 1;
+    else if (row.code === "inactive_ingredient_no_cost") costClasses.LEGACY_INACTIVE += 1;
+    else if (row.code === "structural_ingredient_no_cost") costClasses.DERIVED_SUB_RECIPE += 1;
+    else if (row.code === "missing_ingredient_cost") costClasses.ACTIVE_OPERATIONAL += 1;
+    else if (row.code === "zero_cost_suspicious" || row.code === "missing_uom") costClasses.UNKNOWN += 1;
+  }
   return {
     ...summary,
     groups: groupIntegrityIssues(issues),
     actionCounts: summary.actionCounts,
     capabilityGaps: [...extraGaps, ...mapping.capabilityGaps],
     recipeMapping,
+    identityClusters: recipeMapping.identity || null,
+    costClasses,
     scannedAt: input.scannedAt || new Date().toISOString(),
     sources: ["menu_items", "inventory_recipes", "inventory_ingredients"],
   };
