@@ -188,6 +188,10 @@ export default function ExportCenter() {
   }, [from, to, scopedBranch, rbac.profile?.email, rbac.profile?.authenticated, rbac.profile?.branchScope, rbac.profile?.allBranches]);
 
   useEffect(() => {
+    setCoverage(null);
+  }, [from, to, scopedBranch]);
+
+  useEffect(() => {
     refresh();
   }, [refresh]);
 
