@@ -69,10 +69,18 @@ export function buildIdentityClusters(menuItems = []) {
       kind = CLUSTER_KIND.AMBIGUOUS;
     }
 
+    const byBranch = {};
+    for (const row of active) {
+      const branch = row.branch_id || row.branchId || "none";
+      byBranch[branch] = (byBranch[branch] || 0) + 1;
+    }
+    const hasSameBranchPlacements = Object.values(byBranch).some((n) => n > 1);
+
     clusters.push({
       normalizedName,
       displayName,
       kind,
+      hasSameBranchPlacements,
       itemIds: rows.map((r) => r.id),
       activeItemIds: active.map((r) => r.id),
       branchIds: branches,
@@ -101,6 +109,7 @@ export function buildIdentityClusters(menuItems = []) {
     rowsInsideDuplicateClusters: duplicateClusters.reduce((n, c) => n + c.activeCount, 0),
     branchCopyCount: clusters.filter((c) => c.kind === CLUSTER_KIND.BRANCH_COPY).length,
     exactDefectCount: clusters.filter((c) => c.kind === CLUSTER_KIND.EXACT_DUPLICATE_DEFECT).length,
+    sameBranchPlacementCount: clusters.filter((c) => c.hasSameBranchPlacements).length,
     variantCount: clusters.filter((c) => c.kind === CLUSTER_KIND.VARIANT).length,
     legacyContaminationCount: clusters.filter((c) => c.kind === CLUSTER_KIND.LEGACY_CONTAMINATION).length,
     sameLiveItemCount: clusters.filter((c) => c.kind === CLUSTER_KIND.SAME_LIVE_ITEM).length,

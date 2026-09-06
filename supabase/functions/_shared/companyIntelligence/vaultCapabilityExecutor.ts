@@ -9,7 +9,8 @@ import {
   type CapabilityExecutionResult,
   type CapabilityExecutor,
 } from "./capabilityResolver.ts";
-import { buildCoverageReport } from "./coverageModel.ts";
+import { latestCompletedBusinessDate } from "../nacBusinessWeek.ts";
+import { buildCoverageReport, inclusiveDayCount } from "./coverageModel.ts";
 import { normalizeCapabilityResult } from "./normalizedCapabilityResult.ts";
 
 type LegacyToolRunner = (input: {
@@ -131,7 +132,18 @@ function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityEx
   const covRaw = (tool?.coverage || tool?.matchedCoverage || null) as Record<string, unknown> | Record<string, unknown>[] | null;
   const cov = covRaw && !Array.isArray(covRaw) ? covRaw : null;
   const aggregation = resolveToolAggregation(tool);
-  const expectedFromAgg = typeof aggregation?.expectedDayCount === "number" ? aggregation.expectedDayCount : null;
+  const periodStart = req.currentPeriod?.startDate || (typeof aggregation?.salesCoverageStart === "string" ? aggregation.salesCoverageStart : null);
+  const periodEnd = req.currentPeriod?.endDate || (typeof aggregation?.salesCoverageEnd === "string" ? aggregation.salesCoverageEnd : null);
+  const completedEnd = latestCompletedBusinessDate();
+  const analyticsEnd = periodEnd && periodEnd > completedEnd ? completedEnd : periodEnd;
+  const completedExpected = periodStart && analyticsEnd && periodStart <= analyticsEnd
+    ? inclusiveDayCount({ startDate: periodStart, endDate: analyticsEnd, label: "" })
+    : periodStart && periodEnd && periodEnd > completedEnd
+      ? 0
+      : null;
+  const expectedFromAgg = completedExpected != null
+    ? completedExpected
+    : typeof aggregation?.expectedDayCount === "number" ? aggregation.expectedDayCount : null;
   const availableFromAgg = typeof aggregation?.dayCount === "number" ? aggregation.dayCount : null;
   const latestCompleted = typeof aggregation?.latestCompletedDate === "string"
     ? aggregation.latestCompletedDate
@@ -165,9 +177,10 @@ function extractCoverage(tool: Record<string, unknown> | null, req: CapabilityEx
   return buildCoverageReport({
     domain: String(cov.domain || "sales"),
     range: valueRange,
-    expectedRecords: typeof cov.expectedDays === "number" ? cov.expectedDays
+    expectedRecords: expectedFromAgg != null ? expectedFromAgg
+      : typeof cov.expectedDays === "number" ? cov.expectedDays
       : typeof cov.expectedRecords === "number" ? cov.expectedRecords
-      : expectedFromAgg,
+      : null,
     availableRecords: typeof cov.availableDays === "number" ? cov.availableDays
       : typeof cov.availableRecords === "number" ? cov.availableRecords
       : availableFromAgg,

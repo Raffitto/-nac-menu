@@ -531,13 +531,13 @@ describe("Company Intelligence Fabric foundation", () => {
       });
       return { answer, verified };
     `);
-    expect(out.answer).toMatch(/available through 5 Sep 2026/i);
-    expect(out.answer).toMatch(/6 Sep 2026 does not have sales data yet/i);
+    expect(out.answer).toMatch(/5 Sep 2026/);
     expect(out.answer).toMatch(/106224/);
-    expect(out.answer).not.toMatch(/For Khobar in Monday, 31 August – Sunday, 6 September/);
+    expect(out.answer).not.toMatch(/6 of the requested 7/);
+    expect(out.answer).not.toMatch(/6 Sep 2026 does not have sales data yet/i);
     expect(out.verified.ok).toBe(false);
     expect(out.verified.issues.some((i) => i.code === "incomplete_range_presented_as_complete")).toBe(true);
-    expect(out.verified.repairedAnswer).toMatch(/does not have sales data yet/i);
+    expect(out.verified.repairedAnswer).toMatch(/through 5 Sep 2026/i);
   });
 
   test("LLM week sentence with US dates is rewritten even if it says partial coverage", () => {

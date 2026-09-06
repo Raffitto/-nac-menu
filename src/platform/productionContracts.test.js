@@ -34,7 +34,7 @@ describe("production reliability contracts", () => {
       availableDates: ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"],
       referenceDate: new Date("2026-09-06T19:00:00+03:00"),
     });
-    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
+    expect(coverage.missingDates).not.toContain("2026-09-06");
     const answer = applySpokenPeriodToAnswer(
       "For Khobar in Monday, 31 August – Sunday, 6 September, net sales were SAR 106224.3.",
       coverage,
@@ -53,5 +53,6 @@ describe("production reliability contracts", () => {
     expect(period.startDate).toBe("2026-09-05");
     expect(period.endDate).toBe("2026-09-05");
     expect(period.startDate).not.toBe("2026-09-06");
+    expect(period.label).toMatch(/5 September 2026/);
   });
 });

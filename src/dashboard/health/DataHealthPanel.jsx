@@ -200,12 +200,18 @@ export default function DataHealthPanel() {
           {integrity.identityClusters ? (
             <div data-testid="settings-identity-clusters">
               <p className="nac-settings-muted">
-                Duplicate identity clusters: {integrity.identityClusters.duplicateClusterCount}
+                Repeated identities: {integrity.identityClusters.duplicateClusterCount}
                 {" · "}rows {integrity.identityClusters.rowsInsideDuplicateClusters}
-                {" · "}branch copies {integrity.identityClusters.branchCopyCount}
-                {" · "}exact defects {integrity.identityClusters.exactDefectCount}
+                {" · "}cross-branch copies {integrity.identityClusters.branchCopyCount}
                 {" · "}same live item {integrity.identityClusters.sameLiveItemCount}
-                {" · "}legacy mix {integrity.identityClusters.legacyContaminationCount}
+                {" · "}same-branch placements {integrity.identityClusters.sameBranchPlacementCount || 0}
+                {" · "}confirmed defects {integrity.identityClusters.exactDefectCount}
+              </p>
+              <p className="nac-settings-muted">
+                Row level: active kitchen menu rows without a direct recipe FK.
+                Identity level: Food Bible unique live kitchen identities after placement/name dedupe.
+                Do not treat row-level gaps as recipes to create. Management view is unique live kitchen
+                identities (last measured 53 kitchen / 43 mapped / 10 missing), not the unlinked-row count.
               </p>
               <label className="nac-settings-muted" htmlFor="identity-cluster-filter">Identity filter</label>
               <select
@@ -213,17 +219,22 @@ export default function DataHealthPanel() {
                 value={clusterFilter}
                 onChange={(event) => setClusterFilter(event.target.value)}
               >
-                <option value="all">All duplicate clusters</option>
-                <option value={CLUSTER_KIND.EXACT_DUPLICATE_DEFECT}>Exact duplicate defect</option>
-                <option value={CLUSTER_KIND.BRANCH_COPY}>Branch copies</option>
+                <option value="all">All repeated identities</option>
+                <option value={CLUSTER_KIND.BRANCH_COPY}>Cross-branch copies</option>
                 <option value={CLUSTER_KIND.SAME_LIVE_ITEM}>Same live item</option>
+                <option value="SAME_BRANCH">Same-branch placements</option>
+                <option value={CLUSTER_KIND.AMBIGUOUS}>Potential identity conflict</option>
+                <option value={CLUSTER_KIND.EXACT_DUPLICATE_DEFECT}>Confirmed defect</option>
                 <option value={CLUSTER_KIND.VARIANT}>Variants</option>
                 <option value={CLUSTER_KIND.LEGACY_CONTAMINATION}>Legacy + active</option>
-                <option value={CLUSTER_KIND.AMBIGUOUS}>Ambiguous identity</option>
               </select>
               <dl className="nac-settings-dl">
                 {(integrity.identityClusters.duplicateClusters || [])
-                  .filter((row) => clusterFilter === "all" || row.kind === clusterFilter)
+                  .filter((row) => {
+                    if (clusterFilter === "all") return true;
+                    if (clusterFilter === "SAME_BRANCH") return row.hasSameBranchPlacements;
+                    return row.kind === clusterFilter;
+                  })
                   .slice(0, 40)
                   .map((row) => (
                     <div key={row.normalizedName}>

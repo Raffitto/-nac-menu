@@ -29,14 +29,15 @@ describe("Ask NAC temporal coverage", () => {
       referenceDate: SEP6,
       source: "cash_up",
     });
-    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
-    expect(coverage.missingDates).toEqual(["2026-09-06"]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.COMPLETE);
+    expect(coverage.missingDates).toEqual([]);
+    expect(coverage.expectedDates).not.toContain("2026-09-06");
     expect(spokenPeriodLabel(coverage, { weekish: true })).toMatch(/so far this week through 5 Sep 2026/i);
 
     const bad = "For Khobar in Monday, 31 August – Sunday, 6 September, net sales were SAR 106224.3.";
     const fixed = applySpokenPeriodToAnswer(bad, coverage, { weekish: true });
     expect(fixed).toMatch(/so far this week through 5 Sep 2026/i);
-    expect(fixed).toMatch(/6 Sep 2026 does not have sales data yet/i);
+    expect(fixed).not.toMatch(/6 Sep 2026 does not have sales data yet/i);
     expect(fixed).not.toMatch(/For Khobar in Monday, 31 August – Sunday, 6 September/);
     expect(fixed).toMatch(/106224/);
   });
@@ -50,8 +51,8 @@ describe("Ask NAC temporal coverage", () => {
       latestAvailableDate: "2026-09-06",
       referenceDate: SEP6,
     });
-    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
-    expect(coverage.missingDates).toEqual(["2026-09-06"]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.NO_DATA);
+    expect(coverage.missingDates).toEqual([]);
   });
 
   test("prior-week freshness is not spoken as this week", () => {
@@ -102,8 +103,10 @@ describe("Ask NAC temporal coverage", () => {
       availableDates: ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"],
       referenceDate: SEP6,
     });
-    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
-    expect(spokenPeriodLabel(coverage)).toMatch(/1 Sep 2026–5 Sep 2026/);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.COMPLETE);
+    expect(coverage.expectedDates).toHaveLength(5);
+    expect(coverage.missingDates).toEqual([]);
+    expect(spokenPeriodLabel(coverage)).toMatch(/so far this month through 5 Sep 2026/i);
   });
 
   test("last 7 days partial", () => {
@@ -114,8 +117,8 @@ describe("Ask NAC temporal coverage", () => {
       availableDates: ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"],
       referenceDate: SEP6,
     });
-    expect(coverage.missingDates).toContain("2026-09-06");
-    expect(coverage.coverageStatus).not.toBe(COVERAGE_STATUS.COMPLETE);
+    expect(coverage.missingDates).not.toContain("2026-09-06");
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.COMPLETE);
   });
 
   test("explicit incomplete range stays useful and disclosed", () => {
@@ -190,9 +193,10 @@ describe("Ask NAC temporal coverage", () => {
       ],
     }, { startDate: "2026-08-31", endDate: "2026-09-06", label: "this week" }, { referenceDate: SEP6 });
     const contract = toCoverageContract(coverage, { weekish: true });
-    expect(contract.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
+    expect(contract.coverageStatus).toBe(COVERAGE_STATUS.COMPLETE);
     expect(contract.requestedEnd).toBe("2026-09-06");
     expect(contract.availableEnd).toBe("2026-09-05");
+    expect(contract.expectedDayCount).toBe(6);
     expect(contract.spokenLabel).toMatch(/through 5 Sep 2026/i);
     const answer = `Khobar total sales for ${contract.spokenLabel}: 106,224.3 SAR.`;
     const safety = applyPeriodSafetyNet(answer, {
@@ -290,6 +294,82 @@ describe("Ask NAC temporal coverage", () => {
     expect(contract.requestedStart).toBe("2026-09-06");
     expect(contract.requestedEnd).toBe("2026-09-12");
     expect(spokenPeriodLabel(coverage, { weekish: true })).toMatch(/current NAC week started today, 6 Sep 2026/i);
+  });
+
+  test("MTD at Riyadh midnight does not expect incomplete calendar days", () => {
+    const midnight = new Date("2026-09-07T00:36:00+03:00");
+    const dates = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"];
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-01",
+      requestedEnd: "2026-09-07",
+      requestedLabel: "September 2026 (to date)",
+      availableDates: dates,
+      referenceDate: midnight,
+    });
+    expect(latestCompletedBusinessDate(midnight)).toBe("2026-09-05");
+    expect(coverage.expectedDates).toEqual(dates);
+    expect(coverage.missingDates).toEqual([]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.COMPLETE);
+    expect(toCoverageContract(coverage).expectedDayCount).toBe(5);
+    expect(toCoverageContract(coverage).availableDayCount).toBe(5);
+  });
+
+  test("MTD in Riyadh daytime expects the previous completed day", () => {
+    const afternoon = new Date("2026-09-07T12:00:00+03:00");
+    const dates = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05"];
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-01",
+      requestedEnd: "2026-09-07",
+      requestedLabel: "September 2026 (to date)",
+      availableDates: dates,
+      referenceDate: afternoon,
+    });
+    expect(latestCompletedBusinessDate(afternoon)).toBe("2026-09-06");
+    expect(coverage.expectedDates).toContain("2026-09-06");
+    expect(coverage.missingDates).toEqual(["2026-09-06"]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.PARTIAL);
+  });
+
+  test("first day of month has no completed analytics days yet", () => {
+    const first = new Date("2026-10-01T12:00:00+03:00");
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-10-01",
+      requestedEnd: "2026-10-01",
+      requestedLabel: "October 2026 (to date)",
+      availableDates: [],
+      latestAvailableDate: "2026-09-30",
+      referenceDate: first,
+    });
+    expect(coverage.expectedDates).toEqual([]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.NO_DATA);
+    expect(coverage.priorLatestAvailableDate).toBe("2026-09-30");
+  });
+
+  test("month boundary does not treat last month as this month", () => {
+    const first = new Date("2026-09-01T12:00:00+03:00");
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-01",
+      requestedEnd: "2026-09-01",
+      requestedLabel: "September 2026 (to date)",
+      availableDates: ["2026-08-31"],
+      latestAvailableDate: "2026-08-31",
+      referenceDate: first,
+    });
+    expect(coverage.availablePeriod).toBe(null);
+    expect(coverage.priorLatestAvailableDate).toBe("2026-08-31");
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.NO_DATA);
+  });
+
+  test("a genuinely missing completed Cash Up date stays partial", () => {
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-01",
+      requestedEnd: "2026-09-05",
+      requestedLabel: "1–5 Sep 2026",
+      availableDates: ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-05"],
+      referenceDate: SEP6,
+    });
+    expect(coverage.missingDates).toEqual(["2026-09-04"]);
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.PARTIAL);
   });
 
   test("source delayed is not zero", () => {

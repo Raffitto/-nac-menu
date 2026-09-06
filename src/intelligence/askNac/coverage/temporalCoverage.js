@@ -86,33 +86,40 @@ export function buildTemporalCoverage({
   todayIsComplete = false,
   sourceFailed = false,
 } = {}) {
-  const expectedDates = listInclusiveIsoDates(requestedStart, requestedEnd);
+  const today = riyadhYmd(referenceDate);
+  const latestCompleted = latestCompletedBusinessDate(referenceDate, { todayIsComplete });
+  const calendarStart = requestedStart;
+  const calendarEnd = requestedEnd;
+  const analyticsEnd = requestedEnd && requestedEnd > latestCompleted ? latestCompleted : requestedEnd;
+  const analyticsValid = Boolean(requestedStart && analyticsEnd && requestedStart <= analyticsEnd);
+  const expectedDates = analyticsValid ? listInclusiveIsoDates(requestedStart, analyticsEnd) : [];
   const rawAvailable = [...new Set((availableDates || []).filter(Boolean))].sort();
   const available = requestedStart && requestedEnd
     ? rawAvailable.filter((d) => d >= requestedStart && d <= requestedEnd)
     : rawAvailable;
-  const latestCompleted = latestCompletedBusinessDate(referenceDate, { todayIsComplete });
   const latestInWindow = latestAvailableDate
     && requestedStart
     && latestAvailableDate >= requestedStart
-    && (!requestedEnd || latestAvailableDate <= requestedEnd)
+    && analyticsValid
+    && latestAvailableDate <= analyticsEnd
     ? latestAvailableDate
     : null;
-  const latestAvailable = latestInWindow || available[available.length - 1] || null;
+  const latestAvailable = latestInWindow
+    || available.filter((d) => !analyticsEnd || d <= analyticsEnd).slice(-1)[0]
+    || null;
   const priorLatestAvailableDate = latestAvailableDate
     && requestedStart
     && latestAvailableDate < requestedStart
     ? latestAvailableDate
     : null;
-  const today = riyadhYmd(referenceDate);
 
-  let missingDates = expectedDates.filter((d) => !available.includes(d));
-  if (!available.length && latestAvailable && requestedEnd && requestedEnd > latestAvailable) {
-    missingDates = listInclusiveIsoDates(addIsoDays(latestAvailable, 1), requestedEnd);
-  }
+  const missingDates = expectedDates.filter((d) => !available.includes(d));
 
-  const coverageStart = available[0] || null;
-  const coverageEnd = available[available.length - 1] || latestAvailable || null;
+  const analyticsAvailable = analyticsEnd
+    ? available.filter((d) => d <= analyticsEnd)
+    : available;
+  const coverageStart = analyticsAvailable[0] || null;
+  const coverageEnd = analyticsAvailable[analyticsAvailable.length - 1] || latestAvailable || null;
 
   let status = COVERAGE_STATUS.NO_DATA;
   if (sourceFailed) {
@@ -124,6 +131,7 @@ export function buildTemporalCoverage({
   } else if (
     requestedEnd === today
     && !todayIsComplete
+    && missingDates.length === 0
     && !available.includes(today)
     && (available.length > 0 || latestAvailable)
   ) {
@@ -134,6 +142,14 @@ export function buildTemporalCoverage({
 
   return {
     source,
+    calendarPeriod: {
+      startDate: calendarStart,
+      endDate: calendarEnd,
+      label: requestedLabel || formatCoverageRangeLabel(calendarStart, calendarEnd),
+    },
+    analyticsPeriod: analyticsValid
+      ? { startDate: requestedStart, endDate: analyticsEnd, label: formatCoverageRangeLabel(requestedStart, analyticsEnd) }
+      : null,
     requestedPeriod: {
       startDate: requestedStart,
       endDate: requestedEnd,
@@ -146,7 +162,7 @@ export function buildTemporalCoverage({
     latestAvailableDate: latestAvailable,
     priorLatestAvailableDate,
     expectedDates,
-    availableDates: available,
+    availableDates: analyticsAvailable,
     missingDates,
     coverageStatus: status,
     today,
@@ -166,12 +182,18 @@ export function formatMissingDatesProse(missingDates = []) {
  */
 function isMonthishCoverage(coverage) {
   const label = String(coverage?.requestedPeriod?.label || "");
-  return /month|mtd/i.test(label);
+  if (/month|mtd|to date/i.test(label)) return true;
+  const start = coverage?.requestedPeriod?.startDate || "";
+  return String(start).slice(8) === "01";
 }
 
 export function spokenPeriodLabel(coverage, { weekish = false } = {}) {
   if (!coverage) return "the requested period";
-  const through = coverage.availablePeriod?.endDate || coverage.latestAvailableDate;
+  const through = coverage.availablePeriod?.endDate || coverage.latestAvailableDate || coverage.priorLatestAvailableDate;
+  const latestLabel = String(coverage?.requestedPeriod?.label || "");
+  if (/latest available sales date|latest completed|latest cash up/i.test(latestLabel) && through) {
+    return formatShortSalesDate(through);
+  }
   if (coverage.coverageStatus === COVERAGE_STATUS.NO_DATA && weekish) {
     const start = coverage.requestedPeriod?.startDate;
     const todayPhrase = start && start === coverage.today
@@ -190,6 +212,13 @@ export function spokenPeriodLabel(coverage, { weekish = false } = {}) {
     if (through) return formatCoverageRangeLabel(coverage.availablePeriod?.startDate, through);
   }
   if (coverage.coverageStatus === COVERAGE_STATUS.COMPLETE) {
+    const calendarOpen = coverage.calendarPeriod?.endDate
+      && coverage.analyticsPeriod?.endDate
+      && coverage.calendarPeriod.endDate > coverage.analyticsPeriod.endDate;
+    if (calendarOpen && through) {
+      if (weekish) return `so far this week through ${formatShortSalesDate(through)}`;
+      if (isMonthishCoverage(coverage)) return `so far this month through ${formatShortSalesDate(through)}`;
+    }
     return coverage.requestedPeriod?.label || coverage.availablePeriod?.label || "the requested period";
   }
   if (coverage.coverageStatus === COVERAGE_STATUS.NO_DATA) {
@@ -231,7 +260,6 @@ export function applySpokenPeriodToAnswer(answer, coverage, { weekish = false } 
     requested
     && requested !== spoken
     && text.includes(requested)
-    && coverage.coverageStatus !== COVERAGE_STATUS.COMPLETE
   ) {
     text = text.split(requested).join(spoken);
   }
@@ -280,16 +308,22 @@ export function toCoverageContract(coverage, { weekish = false } = {}) {
         : "",
       formatMissingDatesProse(missing),
     ].filter(Boolean).join(" ");
+  const analyticsDates = coverage?.expectedDates || [];
+  const availableInAnalytics = (coverage?.availableDates || []).filter((d) => analyticsDates.includes(d));
   return {
     source: coverage?.source || "cash_up",
+    calendarStart: coverage?.calendarPeriod?.startDate || requestedStart,
+    calendarEnd: coverage?.calendarPeriod?.endDate || requestedEnd,
+    analyticsStart: coverage?.analyticsPeriod?.startDate || requestedStart,
+    analyticsEnd: coverage?.analyticsPeriod?.endDate || availableEnd,
     requestedStart,
     requestedEnd,
     availableStart,
     availableEnd,
     latestAvailableDate: coverage?.latestAvailableDate || availableEnd,
     priorLatestAvailableDate: coverage?.priorLatestAvailableDate || null,
-    expectedDayCount: coverage?.expectedDates?.length || null,
-    availableDayCount: coverage?.availableDates?.length || null,
+    expectedDayCount: analyticsDates.length || null,
+    availableDayCount: availableInAnalytics.length || coverage?.availableDates?.length || null,
     availableDates: coverage?.availableDates || [],
     missingDates: missing,
     coverageStatus: coverage?.coverageStatus || COVERAGE_STATUS.NO_DATA,

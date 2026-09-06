@@ -44,8 +44,18 @@ export function buildComparisonStatement(input: {
   }
 
   const lines: string[] = [];
-  if (input.currentLabel) lines.push(`${input.currentLabel}: ${current == null ? "unavailable" : `${current} SAR`}`);
-  if (input.previousLabel) lines.push(`${input.previousLabel}: ${previous == null ? "unavailable" : `${previous} SAR`}`);
+  if (current == null && input.currentCoverageStatus === "NO_DATA" && input.currentLabel) {
+    lines.push(`${input.currentLabel} has no completed Cash Up day yet.`);
+  } else if (input.currentLabel) {
+    lines.push(`${input.currentLabel}: ${current == null ? "unavailable" : `${current} SAR`}`);
+  }
+  if (previous == null && input.previousCoverageStatus === "NO_DATA" && input.previousLabel) {
+    lines.push(`${input.previousLabel} has no completed Cash Up day yet.`);
+  } else if (input.previousLabel && current == null && previous != null) {
+    lines.push(`${input.previousLabel} closed at ${previous} SAR.`);
+  } else if (input.previousLabel) {
+    lines.push(`${input.previousLabel}: ${previous == null ? "unavailable" : `${previous} SAR`}`);
+  }
   if (abs != null) {
     const signed = abs > 0 ? `+${abs}` : String(abs);
     const pctText = pct.value == null

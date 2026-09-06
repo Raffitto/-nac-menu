@@ -3,6 +3,8 @@
  * Source-specific: this module describes Cash Up / sales-day coverage only.
  */
 
+import { latestCompletedBusinessDate } from "./nacBusinessWeek.ts";
+
 export const COVERAGE_STATUS = {
   COMPLETE: "COMPLETE",
   PARTIAL: "PARTIAL",
@@ -82,16 +84,21 @@ export function buildCashUpCoverageContract(input: {
 }): CoverageContract {
   const requestedStart = input.requestedStart || null;
   const requestedEnd = input.requestedEnd || null;
-  const expected = listDates(requestedStart, requestedEnd);
+  const today = riyadhYmd(input.referenceDate || new Date());
+  const completedEnd = latestCompletedBusinessDate(input.referenceDate || new Date());
+  const analyticsEnd = requestedEnd && requestedEnd > completedEnd ? completedEnd : requestedEnd;
+  const expected = requestedStart && analyticsEnd && requestedStart <= analyticsEnd
+    ? listDates(requestedStart, analyticsEnd)
+    : [];
   const rawAvailable = [...new Set((input.availableDates || []).filter(Boolean))].sort();
   const available = requestedStart && requestedEnd
-    ? rawAvailable.filter((d) => d >= requestedStart && d <= requestedEnd)
+    ? rawAvailable.filter((d) => d >= requestedStart && d <= (analyticsEnd || requestedEnd))
     : rawAvailable;
-  const today = riyadhYmd(input.referenceDate || new Date());
   const latestInWindow = input.latestAvailableDate
     && requestedStart
     && input.latestAvailableDate >= requestedStart
-    && (!requestedEnd || input.latestAvailableDate <= requestedEnd)
+    && analyticsEnd
+    && input.latestAvailableDate <= analyticsEnd
     ? input.latestAvailableDate
     : null;
   const latestAvailable = latestInWindow || available[available.length - 1] || null;
@@ -122,7 +129,13 @@ export function buildCashUpCoverageContract(input: {
   if (coverageStatus === COVERAGE_STATUS.NO_DATA && weekish && requestedStart === today) {
     spokenLabel = `The current NAC week started today, ${formatShortSalesDate(requestedStart)}, and no completed sales day is available yet`;
   } else if (coverageStatus === COVERAGE_STATUS.COMPLETE) {
-    spokenLabel = input.requestedLabel || `${formatShortSalesDate(requestedStart)}–${formatShortSalesDate(requestedEnd)}`;
+    if (availableEnd && requestedEnd && requestedEnd > availableEnd && weekish) {
+      spokenLabel = `so far this week through ${formatShortSalesDate(availableEnd)}`;
+    } else if (availableEnd && requestedEnd && requestedEnd > availableEnd && monthish) {
+      spokenLabel = `so far this month through ${formatShortSalesDate(availableEnd)}`;
+    } else {
+      spokenLabel = input.requestedLabel || `${formatShortSalesDate(requestedStart)}–${formatShortSalesDate(requestedEnd)}`;
+    }
   } else if (availableEnd && weekish) {
     spokenLabel = `so far this week through ${formatShortSalesDate(availableEnd)}`;
   } else if (availableEnd && monthish && isCurrentPeriod) {

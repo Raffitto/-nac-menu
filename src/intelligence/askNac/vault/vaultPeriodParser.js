@@ -152,17 +152,21 @@ function monthToDateBounds(referenceDate) {
     year: "numeric",
     timeZone: "UTC",
   });
-  return {
-    startDate: isoDate(y, m, 1),
-    endDate: isoDate(y, m, day),
-    requestedStartDate: isoDate(y, m, 1),
-    requestedEndDate: isoDate(y, m, day),
+  const calendarStart = isoDate(y, m, 1);
+  const calendarEnd = isoDate(y, m, day);
+  return clipPeriodToCompletedDays({
+    startDate: calendarStart,
+    endDate: calendarEnd,
+    requestedStartDate: calendarStart,
+    requestedEndDate: calendarEnd,
+    calendarStartDate: calendarStart,
+    calendarEndDate: calendarEnd,
     label: `${label} (to date)`,
     periodType: "this_month",
     isSingleDay: false,
     isMonth: true,
     isRange: true,
-  };
+  }, referenceDate);
 }
 
 function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }) {
@@ -434,12 +438,16 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     ) && !/\b(20\d{2}|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|on\s+\d)/.test(q)
   ) {
     const latest = latestCompletedBusinessDate(referenceDate);
+    const [y, m, d] = latest.split("-").map(Number);
+    const cashUp = /\bcash[\s-]?up\b/.test(q);
     return {
       startDate: latest,
       endDate: latest,
       requestedStartDate: latest,
       requestedEndDate: latest,
-      label: "the latest available sales date",
+      label: cashUp
+        ? `Latest Cash Up is for ${formatDayMonthLabel(y, m - 1, d)}`
+        : `Latest completed sales are for ${formatDayMonthLabel(y, m - 1, d)}`,
       periodType: "latest_available_sale",
       isSingleDay: true,
       expectedDayCount: 1,

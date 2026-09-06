@@ -47,8 +47,18 @@ export function buildComparisonStatement({
   }
 
   const lines = [];
-  if (currentLabel) lines.push(`${currentLabel}: ${current == null ? "unavailable" : `${current} SAR`}`);
-  if (previousLabel) lines.push(`${previousLabel}: ${previous == null ? "unavailable" : `${previous} SAR`}`);
+  if (current == null && currentCoverageStatus === "NO_DATA" && currentLabel) {
+    lines.push(`${currentLabel} has no completed Cash Up day yet.`);
+  } else if (currentLabel) {
+    lines.push(`${currentLabel}: ${current == null ? "unavailable" : `${current} SAR`}`);
+  }
+  if (previous == null && previousCoverageStatus === "NO_DATA" && previousLabel) {
+    lines.push(`${previousLabel} has no completed Cash Up day yet.`);
+  } else if (previousLabel && current == null && previous != null) {
+    lines.push(`${previousLabel} closed at ${previous} SAR.`);
+  } else if (previousLabel) {
+    lines.push(`${previousLabel}: ${previous == null ? "unavailable" : `${previous} SAR`}`);
+  }
   if (abs != null) {
     const signed = abs > 0 ? `+${abs}` : String(abs);
     const pctText = pct.value == null

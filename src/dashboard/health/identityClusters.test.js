@@ -18,6 +18,7 @@ describe("menu identity clusters", () => {
     ]);
     expect(result.clusters[0].kind).toBe(CLUSTER_KIND.BRANCH_COPY);
     expect(result.exactDefectCount).toBe(0);
+    expect(result.sameBranchPlacementCount).toBe(0);
   });
 
   test("shared placement group is the same live item, not a merge candidate", () => {

@@ -175,7 +175,12 @@ export function assessIncompleteRangeWording(input: {
     coverage: input.coverage,
     evidence: input.evidence,
   });
-  if (!coverage.isPartial || !coverage.requestedEnd) {
+  const calendarOpen = Boolean(
+    coverage.requestedEnd
+    && coverage.coverageEnd
+    && coverage.requestedEnd > coverage.coverageEnd,
+  );
+  if ((!coverage.isPartial && !calendarOpen) || !coverage.requestedEnd) {
     return { ok: true, issues };
   }
 

@@ -91,17 +91,37 @@ export function synthesizeDeterministicAnswer(input: {
   const previousSales = input.evidence.find((e) =>
     e.metricOrEvent === "comparison_net_sales" && typeof e.value === "number"
   );
-  if (sales && (previousSales || input.comparisonPeriod)) {
+  const valueDate = input.coverageContract?.availableEnd
+    || input.coverageContract?.latestAvailableDate
+    || (sales?.period?.endDate)
+    || null;
+  const latestLead = (() => {
+    if (!sales || !valueDate) return null;
+    const q = String(input.question || "");
+    if (/\bcommerce\b/i.test(q)) {
+      return `Latest commerce sales are for ${formatShortSalesDate(valueDate)}: ${sales.value} SAR.`;
+    }
+    if (/\bcash[\s-]?up\b/i.test(q)) {
+      return `Latest Cash Up is for ${formatShortSalesDate(valueDate)}: ${sales.value} SAR.`;
+    }
+    if (/\b(latest|last|most recent)\s+sales\b/i.test(q) || input.period?.semantic === "latest_available_sale") {
+      return `Latest completed sales are for ${formatShortSalesDate(valueDate)}: ${sales.value} SAR.`;
+    }
+    return null;
+  })();
+  if (previousSales || input.comparisonPeriod) {
     const statement = buildComparisonStatement({
       currentLabel: coverageLead.windowLabel || period,
-      currentValue: sales.value,
+      currentValue: sales?.value,
       previousLabel: periodLabel(input.comparisonPeriod),
       previousValue: previousSales?.value,
-      currentCoverageStatus: input.coverageContract?.coverageStatus || null,
+      currentCoverageStatus: input.coverageContract?.coverageStatus || (sales ? null : "NO_DATA"),
       weekdayMismatch: input.comparability?.weekdayComposition?.match === false,
       dateOfMonthCompare: isDateOfMonthMirror(input.period, input.comparisonPeriod),
     });
     parts.push(`For ${branch}. ${statement.text}`);
+  } else if (latestLead) {
+    parts.push(latestLead);
   } else if (sales) {
     parts.push(
       `For ${branch} in ${coverageLead.windowLabel}, observed Cash Up net sales were ${sales.value} SAR.`,
@@ -170,9 +190,13 @@ export function synthesizeDeterministicAnswer(input: {
     parts.push(`The next Saudi Founding Day is ${input.nextHolidayDate}.`);
   }
 
+  const contractComplete = input.coverageContract?.coverageStatus === "COMPLETE";
+  const compareAlreadySpoken = Boolean(previousSales || input.comparisonPeriod);
   for (const cov of input.coverage) {
+    if (contractComplete) continue;
     if (cov.coverageRatio != null && cov.coverageRatio < 1 && cov.expectedRecords != null && cov.availableRecords != null) {
       if (cov.availableRecords === 0) {
+        if (compareAlreadySpoken) continue;
         const requested = input.period?.label
           || (input.period?.startDate && input.period?.endDate && input.period.startDate === input.period.endDate
             ? input.period.startDate
@@ -188,6 +212,9 @@ export function synthesizeDeterministicAnswer(input: {
         }
         parts.push(msg);
       } else if (!coverageLead.preamble.length) {
+        const analyticsComplete = coverageLead.coverage?.expectedDayCount
+          && coverageLead.coverage.expectedDayCount === coverageLead.coverage.coveredDayCount;
+        if (analyticsComplete) continue;
         parts.push(
           `I can use ${cov.domain} evidence for ${cov.availableRecords} of the requested ${cov.expectedRecords} records; coverage is incomplete.`,
         );

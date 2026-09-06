@@ -97,7 +97,7 @@ describe("vaultPeriodParser rolling periods", () => {
   test("last sale is a latest-available marker, not calendar today", () => {
     const period = parseVaultPeriodFromQuestion("What is the last sale?", REF);
     expect(period?.periodType).toBe("latest_available_sale");
-    expect(period?.label).toMatch(/latest available/i);
+    expect(period?.label).toMatch(/Latest completed sales are for/i);
   });
 
   test("yesterday on 14 Aug 2026 Asia/Riyadh resolves to 13 Aug", () => {
@@ -214,7 +214,8 @@ describe("vaultPeriodParser rolling periods", () => {
     const period = parseVaultPeriodFromQuestion("guests this month", REF);
     expect(period?.periodType).toBe("this_month");
     expect(period?.startDate).toBe("2026-06-01");
-    expect(period?.endDate).toBe("2026-06-20");
+    expect(period?.endDate).toBe("2026-06-19");
+    expect(period?.requestedEndDate).toBe("2026-06-20");
   });
 
   test("parses last month as previous calendar month", () => {

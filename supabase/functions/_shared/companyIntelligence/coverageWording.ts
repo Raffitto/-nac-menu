@@ -3,6 +3,7 @@
  * Does not change sales arithmetic — only how requested vs observed ranges are described.
  */
 
+import { latestCompletedBusinessDate } from "../nacBusinessWeek.ts";
 import type { CoverageReport } from "./coverageModel.ts";
 import type { EvidenceRecord } from "./evidenceLedger.ts";
 import type { DateRange, IsoDate } from "./types.ts";
@@ -68,8 +69,12 @@ export function deriveRangeCoverage(input: {
   const salesCov = (input.coverage || []).find((c) => c.domain === "sales") || (input.coverage || [])[0] || null;
   const requestedStart = (salesCov?.requestedStart || period?.startDate || null) as IsoDate | null;
   const requestedEnd = (salesCov?.requestedEnd || period?.endDate || null) as IsoDate | null;
-  const expected = salesCov?.expectedRecords
-    ?? (requestedStart && requestedEnd ? listInclusiveIsoDates(requestedStart, requestedEnd).length : null);
+  const completedEnd = latestCompletedBusinessDate();
+  const analyticsEnd = requestedEnd && requestedEnd > completedEnd ? completedEnd : requestedEnd;
+  const analyticsDates = requestedStart && analyticsEnd && requestedStart <= analyticsEnd
+    ? listInclusiveIsoDates(requestedStart, analyticsEnd)
+    : [];
+  const expected = analyticsDates.length || null;
   const covered = salesCov?.availableRecords ?? null;
   const latestAvailable = (salesCov?.freshness || null) as IsoDate | null;
   const observedDates = observedDatesFromEvidence(input.evidence || []);
@@ -81,18 +86,17 @@ export function deriveRangeCoverage(input: {
   }
 
   let missingDates: IsoDate[] = [];
-  if (requestedStart && requestedEnd) {
-    const requested = listInclusiveIsoDates(requestedStart, requestedEnd);
+  if (analyticsDates.length) {
     if (observedDates.length) {
       const have = new Set(observedDates);
-      missingDates = requested.filter((d) => !have.has(d));
-    } else if (latestAvailable && requestedEnd > latestAvailable) {
+      missingDates = analyticsDates.filter((d) => !have.has(d));
+    } else if (latestAvailable && analyticsEnd && analyticsEnd > latestAvailable) {
       missingDates = listInclusiveIsoDates(
         new Date(Date.parse(`${latestAvailable}T12:00:00Z`) + 86400000).toISOString().slice(0, 10),
-        requestedEnd,
+        analyticsEnd,
       );
-    } else if (expected != null && covered != null && covered < expected && requested.length) {
-      missingDates = requested.slice(covered);
+    } else if (expected != null && covered != null && covered < expected) {
+      missingDates = analyticsDates.slice(covered);
     }
   }
 
@@ -146,6 +150,15 @@ export function buildCoverageAwareSalesLead(input: {
     if (coverage.missingDates.length) {
       preamble.push(formatMissingDatesProse(coverage.missingDates));
     }
+    return { windowLabel: coveredLabel, preamble, coverage };
+  }
+
+  const calendarOpen = Boolean(
+    coverage.requestedEnd
+    && coverage.coverageEnd
+    && coverage.requestedEnd > coverage.coverageEnd,
+  );
+  if (calendarOpen) {
     return { windowLabel: coveredLabel, preamble, coverage };
   }
 
