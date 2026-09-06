@@ -23,13 +23,19 @@ export default function ReviewsHub() {
     () => REVIEWS_TABS.filter((t) => rbac.canAccessReviewsTab(t.id)),
     [rbac],
   );
+  const profileEmail = rbac.profile?.email;
+  const profileScope = rbac.profile?.branchScope;
+  const profileAllBranches = rbac.profile?.allBranches;
   const reviewBranchIds = useMemo(
     () => reviewAllowedBranchIds(rbac.profile),
-    [rbac.profile],
+    // Identity fields only — a new profile object must not refetch Google Places.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [profileEmail, profileScope, profileAllBranches],
   );
   const reviewBranchOptions = useMemo(
     () => buildReviewBranchFilterOptions(rbac.profile),
-    [rbac.profile],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [profileEmail, profileScope, profileAllBranches],
   );
 
   useEffect(() => {

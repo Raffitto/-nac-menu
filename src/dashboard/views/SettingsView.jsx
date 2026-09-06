@@ -22,6 +22,7 @@ import { RBAC_ROLES } from "../config/rbac";
 import { branchExportName } from "../config/branchDisplayConfig";
 import { useRbacOptional } from "../context/RbacContext";
 import AuthForgotPassword from "../components/AuthForgotPassword";
+import DataHealthPanel from "../health/DataHealthPanel";
 import "../styles/platform-os.css";
 import "../styles/settings-view.css";
 
@@ -276,6 +277,8 @@ export default function SettingsView({ session: sessionProp = undefined }) {
           </section>
 
           {(profile?.role === RBAC_ROLES.DEVELOPER || profile?.devOverride) && (
+            <>
+            <DataHealthPanel />
             <section className="nac-settings-card" data-testid="settings-system">
               <h3>
                 <Shield size={18} />
@@ -295,6 +298,7 @@ export default function SettingsView({ session: sessionProp = undefined }) {
                 </div>
               </dl>
             </section>
+            </>
           )}
 
           <section className="nac-settings-card" data-testid="settings-security">

@@ -411,7 +411,10 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     return rollingRange(referenceDate, 7, { endOffset: -1, label: "last week", periodType: "last_week" });
   }
 
-  if (/\b(the\s+)?(last|latest|most recent)\s+sale\b/.test(q)) {
+  if (
+    /\b(the\s+)?(last|latest|most recent)\s+sales?\b/.test(q)
+    || (/\b(current|latest)\s+sales\b/.test(q) && !/\b(week|month|mtd|year|7 days)\b/.test(q))
+  ) {
     const ymd = calendarYmdInTz(referenceDate);
     const iso = isoDate(ymd.year, ymd.month, ymd.day);
     return {

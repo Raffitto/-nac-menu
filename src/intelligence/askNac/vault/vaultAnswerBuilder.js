@@ -289,9 +289,19 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
     });
     const confidenceResult = resolveAnalyticalConfidence({ route, tool, coverageAssessment });
 
+    const weekish = /this week|current week/i.test(String(question || currentPeriodLabel || ""));
+    const spokenPeriod = coverageAssessment.availablePeriodLabel && (
+      coverageAssessment.completeness === "partial"
+      || coverageAssessment.completeness === "current_day_not_complete"
+    )
+      ? (weekish && coverageAssessment.dataConfidence?.salesCoverageEnd
+        ? `so far this week through ${coverageAssessment.dataConfidence.salesCoverageEnd}`
+        : coverageAssessment.availablePeriodLabel)
+      : currentPeriodLabel;
+
     let resolvedAnswer = buildCashUpPeriodAggregateAnswer(question, aggregation, {
       branchLabel: tool.branchLabel,
-      periodLabel: currentPeriodLabel,
+      periodLabel: spokenPeriod,
       previousAggregation,
       previousPeriodLabel,
     });

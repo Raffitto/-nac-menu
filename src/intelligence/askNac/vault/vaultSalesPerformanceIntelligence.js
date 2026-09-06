@@ -4,6 +4,11 @@ import {
   buildCoverageAnswerLines,
 } from "../coverage/coverageAwareness";
 import {
+  applySpokenPeriodToAnswer,
+  coverageFromCashUpAggregation,
+  spokenPeriodLabel,
+} from "../coverage/temporalCoverage";
+import {
   deriveTrafficSpendInterpretation,
   deriveRecommendedAction,
 } from "../interpretation/operationalInterpretation";
@@ -953,7 +958,11 @@ export function appendCoverageToAggregateAnswer(baseAnswer, question, aggregatio
   if (forbiddenSilentJune && requestedPeriod?.periodType === "year_to_date" && aggregation.dayCount > 0) {
     return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
   }
-  if (coverage.completeness === "partial" || coverage.completeness === "unavailable") {
+  if (
+    coverage.completeness === "partial"
+    || coverage.completeness === "unavailable"
+    || coverage.completeness === "current_day_not_complete"
+  ) {
     return `${baseAnswer}\n\n${coverageLines.join("\n")}`;
   }
   if (coverage.confidenceExplanation) {
@@ -1458,10 +1467,18 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
   const avgSales = formatAveragePerDay(totalSales, dayCount);
   const expected = resolveExpectedDayCount(aggregation);
   const isPartial = expected != null && dayCount > 0 && dayCount < expected;
-  const coveredLabel = coverageAwarePeriodLabel(aggregation, periodLabel, isPartial);
+  const temporal = coverageFromCashUpAggregation(aggregation, {
+    startDate: aggregation?.requestedStartDate,
+    endDate: aggregation?.requestedEndDate,
+    label: periodLabel,
+  });
+  const weekish = /this week|current week/i.test(String(periodLabel || ""));
+  const coveredLabel = spokenPeriodLabel(temporal, { weekish })
+    || coverageAwarePeriodLabel(aggregation, periodLabel, isPartial);
   if (totalSales != null) {
     const missingLines = isPartial ? namedMissingCoverageLines(aggregation) : [];
-    return `${branchLabel} total sales for ${coveredLabel}: ${formatCurrency(totalSales)}${avgSales ? ` (${avgSales} avg/day)` : ""} across ${dayCount} cash-up day(s).${missingLines.length ? ` ${missingLines.join(" ")}` : ""}`;
+    const sentence = `${branchLabel} total sales for ${coveredLabel}: ${formatCurrency(totalSales)}${avgSales ? ` (${avgSales} avg/day)` : ""} across ${dayCount} cash-up day(s).${missingLines.length ? ` ${missingLines.join(" ")}` : ""}`;
+    return applySpokenPeriodToAnswer(sentence, temporal, { weekish });
   }
 
   if (totalOrders != null) {

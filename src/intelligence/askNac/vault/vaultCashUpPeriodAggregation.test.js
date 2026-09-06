@@ -591,3 +591,38 @@ describe("runVaultQueryTool range path", () => {
     expect(result.previousAggregation.dayCount).toBe(previousDates.length);
   });
 });
+
+describe("Sep 6 2026 current-week wording", () => {
+  const SEP6 = new Date("2026-09-06T19:00:00+03:00");
+
+  test("latest sales is a latest-available marker", () => {
+    const period = parseVaultPeriodFromQuestion("what are the latest sales", SEP6);
+    expect(period?.periodType).toBe("latest_available_sale");
+  });
+
+  test("this week answer does not treat 6 Sep as included", () => {
+    const factsByDate = {
+      "2026-08-31": [dayFact("2026-08-31", "total_sales", 10000)],
+      "2026-09-01": [dayFact("2026-09-01", "total_sales", 11000)],
+      "2026-09-02": [dayFact("2026-09-02", "total_sales", 12000)],
+      "2026-09-03": [dayFact("2026-09-03", "total_sales", 13000)],
+      "2026-09-04": [dayFact("2026-09-04", "total_sales", 14000)],
+      "2026-09-05": [dayFact("2026-09-05", "total_sales", 46224.3)],
+    };
+    const period = parseVaultPeriodFromQuestion("what are sales this week", SEP6);
+    const agg = aggregateCashUpFactsOverRange({
+      startDate: period.startDate,
+      endDate: period.endDate,
+      factsByDate,
+    });
+    const answer = buildCashUpPeriodAggregateAnswer("what are sales this week", agg, {
+      branchLabel: "Khobar",
+      periodLabel: "Monday, 31 August – Sunday, 6 September",
+    });
+    expect(agg.dayCount).toBe(6);
+    expect(agg.expectedDayCount).toBe(7);
+    expect(answer).toMatch(/through 5 Sep 2026|31 Aug 2026–5 Sep 2026/i);
+    expect(answer).not.toMatch(/Sunday, 6 September/);
+    expect(answer).toMatch(/106,224/);
+  });
+});

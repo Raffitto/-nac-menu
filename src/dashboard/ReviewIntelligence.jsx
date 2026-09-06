@@ -387,7 +387,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         </motion.div>
       )}
 
-      {embedded && (
+      {embedded && !reviewScope.networkWide && (
         <div className="rev-google-rep-row" style={{ marginBottom: "0.75rem" }}>
           <GoogleReputationWithMovement
             metrics={googleMetrics}
@@ -397,6 +397,11 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
           />
         </div>
       )}
+      {embedded && reviewScope.networkWide && (
+        <p className="rev-intel-muted" style={{ margin: "0 0 0.75rem" }}>
+          Google ratings are per branch — see the comparison table. A network-wide Google rating is not a single Place.
+        </p>
+      )}
 
       {loading ? (
         <p className="rev-intel-muted">Loading…</p>
@@ -405,29 +410,29 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
           <motion.div className="rev-kpi-grid" layout>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.cardTaps}</span>
-              <strong>{kpis?.qr_scans ?? 0}</strong>
+              <strong>{kpis ? kpis.qr_scans : "—"}</strong>
               <small className="rev-kpi-insight">QR/NFC · {rangeLabel}</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.reviewInteractions}</span>
-              <strong>{kpis?.reviews_generated ?? 0}</strong>
+              <strong>{kpis ? kpis.reviews_generated : "—"}</strong>
               <small className="rev-kpi-insight">Generated pages, not Google posts</small>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.googleRedirects}</span>
-              <strong>{kpis?.google_redirects ?? 0}</strong>
+              <strong>{kpis ? kpis.google_redirects : "—"}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.tapToGooglePct}</span>
-              <strong>{kpis?.conversion_pct ?? 0}%</strong>
+              <strong>{kpis ? `${kpis.conversion_pct}%` : "—"}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review page opens</span>
-              <strong>{kpis?.review_page_opens ?? 0}</strong>
+              <strong>{kpis ? kpis.review_page_opens : "—"}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Unique visitors</span>
-              <strong>{kpis?.unique_review_visitors ?? 0}</strong>
+              <strong>{kpis ? kpis.unique_review_visitors : "—"}</strong>
             </motion.div>
             {topStaff && (
               <motion.div className="rev-kpi-card rev-kpi-card--highlight" whileHover={{ y: -2 }}>

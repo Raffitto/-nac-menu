@@ -33,7 +33,7 @@ function formatMonthLabel(iso) {
  * @returns {{
  *   requestedPeriodLabel: string,
  *   availablePeriodLabel: string|null,
- *   completeness: 'complete'|'partial'|'unavailable',
+ *   completeness: 'complete'|'partial'|'unavailable'|'current_day_not_complete',
  *   coverageNotes: string[],
  *   confidence: string,
  *   confidenceExplanation: string,
@@ -75,11 +75,16 @@ export function assessPeriodCoverage({ requestedPeriod = null, aggregation = nul
       confidence = CONFIDENCE_LEVELS.HIGH;
       confidenceExplanation = `Sales coverage is complete for ${requestedLabel} (${dayCount} cash-up day(s)).`;
     } else if (expectedDays > 0 && dayCount < expectedDays) {
-      completeness = "partial";
+      const todayIso = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Riyadh" });
+      const missingToday = requestedPeriod?.endDate === todayIso && dayCount === expectedDays - 1;
+      completeness = missingToday ? "current_day_not_complete" : "partial";
       confidence = CONFIDENCE_LEVELS.MEDIUM;
       coverageNotes.push(
         `Requested period: ${requestedLabel}. Available sales coverage: ${availableLabel} (${dayCount} of ${expectedDays} calendar day(s); ${missingDays} missing).`,
       );
+      if (missingToday && salesEnd) {
+        coverageNotes.push(`So far this period through ${salesEnd} — today is not a completed Cash Up date yet.`);
+      }
       if (dayCount === 1 && expectedDays >= 2) {
         coverageNotes.push(
           `Only 1 of ${expectedDays} requested days has structured data — do not treat this single-day result as the full ${requestedLabel} total.`,

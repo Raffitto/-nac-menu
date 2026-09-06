@@ -769,7 +769,7 @@ export default function MenuManager() {
     try {
       const { data: sections, error: secErr } = await supabase
         .from("sections")
-        .select("*")
+        .select("id, name_en, name_ar, category_id, sort_order, branch_id")
         .eq("category_id", catId)
         .eq("branch_id", menuBranch)
         .order("sort_order");

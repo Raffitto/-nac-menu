@@ -12,11 +12,13 @@ const TYPE_WEIGHT = { direct: 1.35, reputation: 1.15, traffic: 0.95 };
  */
 export function scoreCompetitiveThreat(nac, competitor) {
   const nacRating = nac?.rating ?? null;
-  const nacReviews = nac?.totalReviews ?? 0;
+  const nacReviews = nac?.totalReviews != null ? Number(nac.totalReviews) : null;
   const compRating = competitor?.metrics?.rating ?? null;
-  const compReviews = competitor?.metrics?.totalReviews ?? 0;
+  const compReviews = competitor?.metrics?.totalReviews != null
+    ? Number(competitor.metrics.totalReviews)
+    : null;
 
-  if (compRating == null && compReviews === 0) {
+  if (compRating == null && (compReviews == null || compReviews === 0)) {
     return {
       level: "watch",
       label: THREAT_LEVELS.watch.label,
@@ -36,9 +38,11 @@ export function scoreCompetitiveThreat(nac, competitor) {
     };
   }
 
-  const ratingGap = (compRating ?? 0) - nacRating;
+  const ratingGap = (compRating ?? nacRating) - nacRating;
   const reviewRatio =
-    nacReviews > 0 ? compReviews / nacReviews : compReviews > 200 ? 2 : 0;
+    nacReviews > 0 && compReviews != null
+      ? compReviews / nacReviews
+      : (compReviews != null && compReviews > 200 ? 2 : 0);
 
   let psych = TYPE_WEIGHT[competitor.type] || 1;
   if (competitor.premiumPositioning) psych += 0.22;
@@ -97,7 +101,7 @@ export function scoreCompetitiveThreat(nac, competitor) {
     score,
     factors: factors.slice(0, 3),
     ratingGap: Math.round(ratingGap * 10) / 10,
-    reviewGap: compReviews - nacReviews,
+    reviewGap: compReviews != null && nacReviews != null ? compReviews - nacReviews : null,
     momentum: null,
     trendArrow: null,
   };

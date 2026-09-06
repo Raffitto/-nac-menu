@@ -47,6 +47,7 @@ import { filterCustomerFacingCategories } from "../lib/customerFacingAnalytics";
 import { filterDisplayInsights } from "../lib/operationalMetricsIntegrity";
 import { generateOperationalDashboardInsights } from "./utils/operationalInsightsIntegrity";
 import { markBoot } from "../lib/bootTelemetry";
+import { recordViewPerf } from "../lib/viewPerf";
 import "./styles/admin-dashboard.css";
 import "./styles/platform-os.css";
 import "./styles/settings-view.css";
@@ -183,17 +184,18 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const overviewActive = adminView === "overview";
   const overviewMounted = isMounted("overview");
 
+  const canAccessNav = rbac.canAccessNav;
   const visibleNav = useMemo(
-    () => NAV_ITEMS.filter((item) => rbac.canAccessNav(item.id)),
-    [rbac],
+    () => NAV_ITEMS.filter((item) => canAccessNav(item.id)),
+    [canAccessNav],
   );
 
   useEffect(() => {
     if (!visibleNav.length) return;
-    if (!rbac.canAccessNav(adminView)) {
+    if (!canAccessNav(adminView)) {
       setAdminView(visibleNav[0].id);
     }
-  }, [adminView, rbac, visibleNav, setAdminView]);
+  }, [adminView, canAccessNav, visibleNav, setAdminView]);
 
   useEffect(() => {
     syncAdminViewLocation(adminView);
@@ -226,6 +228,19 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   useEffect(() => {
     if (data) markBoot("overview_tier1_ready");
   }, [data]);
+
+  useEffect(() => {
+    const started = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const raf = requestAnimationFrame(() => {
+      recordViewPerf({
+        view: adminView,
+        branch: filters?.branch || null,
+        firstUsefulMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started),
+        failed: Boolean(error),
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [adminView, filters?.branch, error]);
 
   // Prefetch AFTER Overview Tier-1 — never compete with cold-boot RPCs / parse.
   // Heavy hubs (Menu / Intelligence) are last; Settings/Reviews are cheaper.

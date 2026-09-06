@@ -606,7 +606,7 @@ export async function getCategories(options = {}) {
   const branchId = normalizeBranchId(options.branchId);
   let query = supabase
     .from("categories")
-    .select("*")
+    .select("id, name_en, name_ar, slug, sort_order, branch_id, active")
     .eq("active", true)
     .order("sort_order", { ascending: true });
   if (branchId) query = menuBranchQueryFilter(query, branchId);

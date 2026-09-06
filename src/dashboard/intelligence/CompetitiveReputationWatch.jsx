@@ -79,8 +79,8 @@ function CompetitorCard({ nac, competitor }) {
 
       <div className="cr-comp-metrics">
         <div className="cr-comp-line">
-          <span className="cr-comp-rating">{rating ? `★ ${rating}` : "—"}</span>
-          <span className="cr-comp-reviews">{reviews}</span>
+          <span className="cr-comp-rating">{rating ? `★ ${rating}` : "Unavailable"}</span>
+          <span className="cr-comp-reviews">{reviews === "—" ? "Unavailable" : reviews}</span>
         </div>
         <p className="cr-comp-gap">
           vs NAC {nacRating ? `★ ${nacRating}` : "—"} · gap {gap}
@@ -112,7 +112,12 @@ function CompetitorCard({ nac, competitor }) {
       )}
 
       {competitor.metrics?.error === "missing_place_id" && (
-        <p className="cr-comp-pending">Add Google Place ID in competitors.js to activate live tracking.</p>
+        <p className="cr-comp-pending">Not tracked — no Google Place ID. This is not a zero rating.</p>
+      )}
+      {competitor.metrics?.error && competitor.metrics.error !== "missing_place_id" && competitor.metrics.rating == null && (
+        <p className="cr-comp-pending">
+          {competitor.metrics.error === "no_snapshot" ? "No recent snapshot." : "Source delayed — not a verified zero."}
+        </p>
       )}
 
       <p className="cr-momentum">

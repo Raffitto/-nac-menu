@@ -217,10 +217,17 @@ export function assessIncompleteRangeWording(input: {
     formatMissingDatesProse(coverage.missingDates),
   ].filter(Boolean).join(" ");
 
+  const through = coverage.coverageEnd
+    ? `so far this week through ${formatShortSalesDate(coverage.coverageEnd)}`
+    : "the available dates";
+  let rewritten = text;
+  if (input.period?.label && rewritten.includes(input.period.label)) {
+    rewritten = rewritten.split(input.period.label).join(through);
+  }
   return {
     ok: false,
     issues,
-    repairedAnswer: suffix ? `${text.trim()} ${suffix}` : text,
+    repairedAnswer: suffix ? `${rewritten.trim()} ${suffix}` : rewritten,
   };
 }
 

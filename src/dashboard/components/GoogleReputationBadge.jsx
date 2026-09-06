@@ -39,9 +39,17 @@ export default function GoogleReputationBadge({
   const reviews = formatGoogleReviewCount(metrics?.totalReviews);
 
   if (!rating) {
+    const reason = metrics?.error;
+    const label = reason === "missing_place_id"
+      ? "Not tracked"
+      : reason === "no_snapshot"
+        ? "No recent snapshot"
+        : reason === "timed_out" || reason === "network" || reason === "fetch_failed"
+          ? "Source delayed"
+          : "Unavailable";
     return (
-      <div className={`nac-google-rep nac-google-rep--muted ${className}`} title="Google Places data unavailable">
-        <span>Google rating unavailable</span>
+      <div className={`nac-google-rep nac-google-rep--muted ${className}`} title={label}>
+        <span>{label}</span>
       </div>
     );
   }
