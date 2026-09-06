@@ -37,6 +37,16 @@ describe("Ask NAC comparison period resolution", () => {
     expect(compare?.likeForLike).toBe(true);
   });
 
+  test("MTD compare after Riyadh midnight still uses 1–5 Sep vs 1–5 Aug", () => {
+    const mondayEarly = new Date("2026-09-07T00:36:00+03:00");
+    const compare = parseVaultComparePeriodsFromQuestion("compare MTD to last month", mondayEarly);
+    expect(compare?.current?.startDate).toBe("2026-09-01");
+    expect(compare?.current?.endDate).toBe("2026-09-05");
+    expect(compare?.previous?.startDate).toBe("2026-08-01");
+    expect(compare?.previous?.endDate).toBe("2026-08-05");
+    expect(compare?.likeForLike).toBe(true);
+  });
+
   test("compare MTD to last month mirrors completed September days onto August", () => {
     const compare = parseVaultComparePeriodsFromQuestion("compare MTD to last month", SEP6);
     expect(compare?.current?.startDate).toBe("2026-09-01");

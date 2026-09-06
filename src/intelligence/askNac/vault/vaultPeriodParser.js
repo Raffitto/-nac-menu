@@ -139,16 +139,17 @@ export function monthBoundsFromToken(monthToken, explicitYear, referenceDate = n
 }
 
 function monthToDateBounds(referenceDate) {
-  const y = referenceDate.getFullYear();
-  const m = referenceDate.getMonth();
-  const label = new Date(Date.UTC(y, m, 1, 12)).toLocaleDateString("en-GB", {
+  const { year: y, month: m, day } = calendarYmdInTz(referenceDate);
+  const label = new Date(Date.UTC(y, m - 1, 1, 12)).toLocaleDateString("en-GB", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
   return {
-    startDate: isoDate(y, m + 1, 1),
-    endDate: isoDate(y, m + 1, referenceDate.getDate()),
+    startDate: isoDate(y, m, 1),
+    endDate: isoDate(y, m, day),
+    requestedStartDate: isoDate(y, m, 1),
+    requestedEndDate: isoDate(y, m, day),
     label: `${label} (to date)`,
     periodType: "this_month",
     isSingleDay: false,
