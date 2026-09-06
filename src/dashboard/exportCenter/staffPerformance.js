@@ -1,5 +1,5 @@
 import { canonicalStaffName } from "../config/staffRoles";
-import { isEligibleStaff, managerExclusionNote, periodExclusionNotes, sortMatrixStaff, STAFF_MATRIX_ORDER } from "./staffEligibility";
+import { isEligibleStaff, isRankedUpsellStaff, managerExclusionNote, periodExclusionNotes, sortMatrixStaff, STAFF_MATRIX_ORDER } from "./staffEligibility";
 import { matchTrackedUpsell, TRACKED_UPSELL_ITEMS } from "./trackedUpsellCatalog";
 
 /** KSA VAT. Foodics "Net Sales w/ Tax" is inclusive. */
@@ -104,11 +104,14 @@ export function buildUpsellModel(productRows = [], { from, to, targetItems = nul
   });
 
   const totalQty = Object.values(byStaff).reduce((s, r) => s + r.qty, 0);
+  const rankedShareQty = Object.values(byStaff)
+    .filter((r) => isRankedUpsellStaff(r.staff, { from, to }))
+    .reduce((s, r) => s + r.qty, 0);
   const topUpsellers = Object.values(byStaff)
     .map((r) => ({
       ...r,
       sales: Math.round(r.sales),
-      share: totalQty > 0 ? Math.round((r.qty / totalQty) * 1000) / 10 : 0,
+      share: rankedShareQty > 0 ? Math.round((r.qty / rankedShareQty) * 1000) / 10 : 0,
     }))
     .sort((a, b) => b.qty - a.qty || b.sales - a.sales)
     .map((row, i) => ({ ...row, rank: i + 1 }));

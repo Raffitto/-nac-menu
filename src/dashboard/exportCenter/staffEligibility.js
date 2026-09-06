@@ -13,7 +13,14 @@ export const PERIOD_SALES_EXCLUSIONS = [
     from: "2026-08-01",
     to: "2026-08-31",
     reason: "vacation / partial month",
-    scopes: ["sales_ranking", "upsell", "matrix"],
+    scopes: ["sales_ranking", "upsell", "matrix", "upsell_ranking"],
+  },
+  {
+    staff: ["Saiful"],
+    from: "2026-08-01",
+    to: "2026-08-31",
+    reason: "outside the period ranked upsell population",
+    scopes: ["upsell_ranking"],
   },
 ];
 
@@ -49,6 +56,10 @@ export function isPeriodExcluded(staff, { from, to, scope } = {}) {
       rule.scopes.includes(scope) &&
       rangeOverlaps(from, to, rule.from, rule.to),
   );
+}
+
+export function isRankedUpsellStaff(staff, { from, to } = {}) {
+  return isEligibleStaff(staff, { from, to, scope: "upsell_ranking" });
 }
 
 export function isEligibleStaff(staff, { from, to, scope = "sales_ranking" } = {}) {
