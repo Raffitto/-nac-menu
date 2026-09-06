@@ -7,7 +7,7 @@ import type { ComparabilityResult } from "./comparabilityEngine.ts";
 import type { CoverageReport } from "./coverageModel.ts";
 import type { DateRange } from "./types.ts";
 import { allowedInferenceWording } from "./causalPolicy.ts";
-import { buildCoverageAwareSalesLead } from "./coverageWording.ts";
+import { buildCoverageAwareSalesLead, formatShortSalesDate } from "./coverageWording.ts";
 import type { CoverageContract } from "../askNacCoverageContract.ts";
 
 function branchLabel(branchId: string | null | undefined) {
@@ -165,7 +165,7 @@ export function synthesizeDeterministicAnswer(input: {
           && latest !== input.period?.startDate
           && latest !== input.period?.endDate
         ) {
-          msg += ` The latest completed Cash Up I have is ${latest}.`;
+          msg += ` The latest completed Cash Up I have is ${formatShortSalesDate(latest)}.`;
         }
         parts.push(msg);
       } else if (!coverageLead.preamble.length) {

@@ -465,7 +465,7 @@ describe("Company Intelligence Fabric foundation", () => {
     `);
     expect(out.missing).toMatch(/13 August 2026/);
     expect(out.missing).toMatch(/not yet available in the canonical data/i);
-    expect(out.missing).toMatch(/latest completed Cash Up I have is 2026-08-08/);
+    expect(out.missing).toMatch(/latest completed Cash Up I have is (2026-08-08|8 Aug 2026)/);
     expect(out.missing).not.toMatch(/0 of the requested 1/);
     expect(out.missing).not.toMatch(/18100/);
     expect(out.missingNoLatest).toMatch(/not yet available in the canonical data/i);

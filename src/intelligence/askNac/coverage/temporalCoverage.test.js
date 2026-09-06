@@ -47,11 +47,27 @@ describe("Ask NAC temporal coverage", () => {
       requestedEnd: "2026-09-06",
       requestedLabel: "6 September 2026",
       availableDates: [],
-      latestAvailableDate: "2026-09-05",
+      latestAvailableDate: "2026-09-06",
       referenceDate: SEP6,
     });
     expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE);
     expect(coverage.missingDates).toEqual(["2026-09-06"]);
+  });
+
+  test("prior-week freshness is not spoken as this week", () => {
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-06",
+      requestedEnd: "2026-09-12",
+      requestedLabel: "this week",
+      availableDates: [],
+      latestAvailableDate: "2026-09-05",
+      referenceDate: SEP6,
+    });
+    expect(coverage.coverageStatus).toBe(COVERAGE_STATUS.NO_DATA);
+    expect(coverage.availablePeriod).toBe(null);
+    expect(coverage.priorLatestAvailableDate).toBe("2026-09-05");
+    expect(spokenPeriodLabel(coverage, { weekish: true })).toMatch(/no completed sales day is available yet/i);
+    expect(spokenPeriodLabel(coverage, { weekish: true })).not.toMatch(/through 5 Sep 2026/i);
   });
 
   test("yesterday complete", () => {
@@ -74,7 +90,8 @@ describe("Ask NAC temporal coverage", () => {
       latestAvailableDate: "2026-09-05",
       referenceDate: SEP6,
     });
-    expect(coverage.latestAvailableDate).toBe("2026-09-05");
+    expect(coverage.priorLatestAvailableDate).toBe("2026-09-05");
+    expect(coverage.latestAvailableDate).toBe(null);
   });
 
   test("MTD partial through latest available", () => {
@@ -154,7 +171,8 @@ describe("Ask NAC temporal coverage", () => {
       referenceDate: SEP6,
     });
     const text = applySpokenPeriodToAnswer("No cash-up report matched 6 September 2026.", coverage);
-    expect(text).toMatch(/does not have sales data yet|available through 5 Sep/i);
+    expect(text).toMatch(/latest completed business day/i);
+    expect(text).toMatch(/5 Sep 2026/);
   });
 
   test("deterministic spoken week answer does not need UI rewrite", () => {

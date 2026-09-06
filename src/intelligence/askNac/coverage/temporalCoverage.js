@@ -81,9 +81,23 @@ export function buildTemporalCoverage({
   sourceFailed = false,
 } = {}) {
   const expectedDates = listInclusiveIsoDates(requestedStart, requestedEnd);
-  const available = [...new Set((availableDates || []).filter(Boolean))].sort();
+  const rawAvailable = [...new Set((availableDates || []).filter(Boolean))].sort();
+  const available = requestedStart && requestedEnd
+    ? rawAvailable.filter((d) => d >= requestedStart && d <= requestedEnd)
+    : rawAvailable;
   const latestCompleted = latestCompletedBusinessDate(referenceDate, { todayIsComplete });
-  const latestAvailable = latestAvailableDate || available[available.length - 1] || null;
+  const latestInWindow = latestAvailableDate
+    && requestedStart
+    && latestAvailableDate >= requestedStart
+    && (!requestedEnd || latestAvailableDate <= requestedEnd)
+    ? latestAvailableDate
+    : null;
+  const latestAvailable = latestInWindow || available[available.length - 1] || null;
+  const priorLatestAvailableDate = latestAvailableDate
+    && requestedStart
+    && latestAvailableDate < requestedStart
+    ? latestAvailableDate
+    : null;
   const today = riyadhYmd(referenceDate);
 
   let missingDates = expectedDates.filter((d) => !available.includes(d));
@@ -124,6 +138,7 @@ export function buildTemporalCoverage({
       : null,
     latestCompletedDate: latestCompleted,
     latestAvailableDate: latestAvailable,
+    priorLatestAvailableDate,
     expectedDates,
     availableDates: available,
     missingDates,
@@ -153,9 +168,10 @@ export function spokenPeriodLabel(coverage, { weekish = false } = {}) {
   const through = coverage.availablePeriod?.endDate || coverage.latestAvailableDate;
   if (coverage.coverageStatus === COVERAGE_STATUS.NO_DATA && weekish) {
     const start = coverage.requestedPeriod?.startDate;
-    if (start && start === coverage.today) {
-      return `The current NAC week started today, ${formatShortSalesDate(start)}, and no completed sales day is available yet`;
-    }
+    const todayPhrase = start && start === coverage.today
+      ? `started today, ${formatShortSalesDate(start)}`
+      : `is ${formatCoverageRangeLabel(start, coverage.requestedPeriod?.endDate)}`;
+    return `The current NAC week ${todayPhrase}, and no completed sales day is available yet`;
   }
   if (
     coverage.coverageStatus === COVERAGE_STATUS.PARTIAL
@@ -189,8 +205,9 @@ export function temporalDisclosureLines(coverage) {
   }
   if (coverage.coverageStatus === COVERAGE_STATUS.NO_DATA) {
     lines.push(`No ${coverage.source === "cash_up" ? "Cash Up" : coverage.source} data is available for ${coverage.requestedPeriod?.label || "the requested period"}.`);
-    if (coverage.latestAvailableDate) {
-      lines.push(`Latest available date: ${formatShortSalesDate(coverage.latestAvailableDate)}.`);
+    const prior = coverage.priorLatestAvailableDate || coverage.latestAvailableDate;
+    if (prior) {
+      lines.push(`The latest completed business day is ${formatShortSalesDate(prior)}.`);
     }
   }
   if (coverage.coverageStatus === COVERAGE_STATUS.SOURCE_DELAYED) {
@@ -264,6 +281,7 @@ export function toCoverageContract(coverage, { weekish = false } = {}) {
     availableStart,
     availableEnd,
     latestAvailableDate: coverage?.latestAvailableDate || availableEnd,
+    priorLatestAvailableDate: coverage?.priorLatestAvailableDate || null,
     expectedDayCount: coverage?.expectedDates?.length || null,
     availableDayCount: coverage?.availableDates?.length || null,
     availableDates: coverage?.availableDates || [],

@@ -20,6 +20,7 @@ export type CoverageContract = {
   availableStart: string | null;
   availableEnd: string | null;
   latestAvailableDate: string | null;
+  priorLatestAvailableDate?: string | null;
   expectedDayCount: number | null;
   availableDayCount: number | null;
   availableDates: string[];
@@ -82,9 +83,23 @@ export function buildCashUpCoverageContract(input: {
   const requestedStart = input.requestedStart || null;
   const requestedEnd = input.requestedEnd || null;
   const expected = listDates(requestedStart, requestedEnd);
-  const available = [...new Set((input.availableDates || []).filter(Boolean))].sort();
+  const rawAvailable = [...new Set((input.availableDates || []).filter(Boolean))].sort();
+  const available = requestedStart && requestedEnd
+    ? rawAvailable.filter((d) => d >= requestedStart && d <= requestedEnd)
+    : rawAvailable;
   const today = riyadhYmd(input.referenceDate || new Date());
-  const latestAvailable = input.latestAvailableDate || available[available.length - 1] || null;
+  const latestInWindow = input.latestAvailableDate
+    && requestedStart
+    && input.latestAvailableDate >= requestedStart
+    && (!requestedEnd || input.latestAvailableDate <= requestedEnd)
+    ? input.latestAvailableDate
+    : null;
+  const latestAvailable = latestInWindow || available[available.length - 1] || null;
+  const priorLatestAvailableDate = input.latestAvailableDate
+    && requestedStart
+    && input.latestAvailableDate < requestedStart
+    ? input.latestAvailableDate
+    : null;
   const missing = expected.filter((d) => !available.includes(d));
   const availableStart = available[0] || null;
   const availableEnd = available[available.length - 1] || latestAvailable || null;
@@ -142,6 +157,7 @@ export function buildCashUpCoverageContract(input: {
     availableStart,
     availableEnd,
     latestAvailableDate: latestAvailable,
+    priorLatestAvailableDate,
     expectedDayCount: expected.length || null,
     availableDayCount: available.length || null,
     availableDates: available,
