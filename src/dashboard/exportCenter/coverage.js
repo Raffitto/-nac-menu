@@ -31,6 +31,12 @@ export function assessExportCoverage({
   productByCreatorBatches = [],
 } = {}) {
   const cashMissing = missingDates(new Set(cashUpDates), from, to);
+  const cashPresent = (cashUpDates || []).filter((d) => d >= from && d <= to);
+  const cashStatus = cashMissing.length === 0
+    ? "ready"
+    : cashPresent.length
+      ? "partial"
+      : "missing";
   const creator = unionCoverage(creatorBatches, from, to);
   const product = unionCoverage(productByCreatorBatches, from, to);
   const reviews = assessReviewTrackingCoverage({ from, to, reviewDates });
@@ -41,7 +47,9 @@ export function assessExportCoverage({
     cashUp: {
       id: "cash_up",
       label: "Cash Up",
-      complete: cashMissing.length === 0,
+      complete: cashStatus === "ready",
+      status: cashStatus,
+      present: cashPresent,
       missing: cashMissing,
     },
     reviews,
@@ -66,6 +74,14 @@ export function staffPerformanceReady(coverage) {
 
 export function cashUpReady(coverage) {
   return Boolean(coverage?.cashUp?.complete);
+}
+
+export function cashUpDownloadable(coverage) {
+  return Boolean(coverage?.cashUp?.present?.length || coverage?.cashUp?.complete);
+}
+
+export function formatMissingDatesList(dates = []) {
+  return (dates || []).join(", ");
 }
 
 export function formatMissingRange(dates = []) {

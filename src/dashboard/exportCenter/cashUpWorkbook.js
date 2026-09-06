@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { eachIsoDateInclusive } from "./dateRange";
+import { cashUpBusinessDate } from "./cashUpSource";
 
 const COLUMNS = [
   { key: "date", label: "Date" },
@@ -31,7 +32,7 @@ const COLUMNS = [
 
 function factValue(facts, date, key) {
   const row = (facts || []).find((f) => {
-    if (String(f.period_end).slice(0, 10) !== date) return false;
+    if (cashUpBusinessDate(f) !== date) return false;
     if (f.metric_key === key) return true;
     if (f.metric_key === "payment_method" && (f.dimensions?.method || f.dimensions?.payment_method) === key) {
       return true;

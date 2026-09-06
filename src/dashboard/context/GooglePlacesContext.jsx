@@ -20,6 +20,11 @@ export function GooglePlacesProvider({ children, enabled = true, branchIds = nul
     }
 
     let cancelled = false;
+    const settleTimer = setTimeout(() => {
+      if (cancelled) return;
+      setError((prev) => prev || "timed_out");
+      setLoading(false);
+    }, 8000);
 
     (async () => {
       setLoading(true);
@@ -34,7 +39,7 @@ export function GooglePlacesProvider({ children, enabled = true, branchIds = nul
           : await fetchBranchGooglePlaceMetrics(null);
         if (cancelled) return;
         setByBranch(data);
-        await upsertTodayGoogleReviewSnapshots(data).catch(() => {});
+        upsertTodayGoogleReviewSnapshots(data).catch(() => {});
         const failed = Object.values(data).every((m) => m?.rating == null);
         if (failed && !apiKeyPresent()) {
           setError("missing_api_key");
@@ -47,12 +52,14 @@ export function GooglePlacesProvider({ children, enabled = true, branchIds = nul
           setError("fetch_error");
         }
       } finally {
+        clearTimeout(settleTimer);
         if (!cancelled) setLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(settleTimer);
     };
   }, [enabled, branchIds]);
 

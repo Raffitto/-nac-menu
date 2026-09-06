@@ -6,10 +6,11 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { parseFoodicsFile, rowsFromMappedData } from "../utils/foodicsParser";
-import { assessExportCoverage, cashUpReady, staffPerformanceReady } from "./coverage";
+import { assessExportCoverage, cashUpDownloadable, formatMissingDatesList, staffPerformanceReady } from "./coverage";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
+import { fetchCanonicalCashUpForExport } from "./cashUpSource";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
 import { buildStaffPerformanceReport } from "./staffPerformance";
@@ -18,6 +19,28 @@ import { downloadBlob, zipStoreFiles } from "./zipStore";
 function StatusRow({ item, from, to, onUpload }) {
   const guide = FOODICS_SOURCE_GUIDE[item.id];
   const rangeLabel = formatExportDateRange(from, to);
+  if (item.id === "cash_up") {
+    const missingList = formatMissingDatesList(item.missing);
+    return (
+      <div className="export-center-status" data-testid={`export-status-${item.id}`}>
+        {item.status === "ready" ? (
+          <p className="export-center-status-line">✓ Cash Up — Ready</p>
+        ) : item.status === "partial" ? (
+          <div>
+            <p className="export-center-status-line">⚠ Cash Up — Partial</p>
+            <p className="export-center-foodics-path">Missing Cash Up: {missingList}</p>
+          </div>
+        ) : (
+          <div className="export-center-missing">
+            <p className="export-center-status-line">Missing: Cash Up</p>
+            <p className="export-center-foodics-path">
+              {missingList ? `Missing Cash Up: ${missingList}` : "Missing selected period"}
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="export-center-status" data-testid={`export-status-${item.id}`}>
       {item.complete ? (
@@ -83,15 +106,8 @@ export default function ExportCenter() {
     setBusy(true);
     setError("");
     try {
-      const [cashRes, reviewRes, creatorBatches, productBatches] = await Promise.all([
-        supabase
-          .from("ask_nac_structured_facts")
-          .select("metric_key,metric_value,period_end,dimensions,branch_id,report_type")
-          .eq("report_type", "cash_up")
-          .eq("branch_id", scopedBranch)
-          .gte("period_end", from)
-          .lte("period_end", to)
-          .is("archived_at", null),
+      const [cashUp, reviewRes, creatorBatches, productBatches] = await Promise.all([
+        fetchCanonicalCashUpForExport(supabase, { branch: scopedBranch, from, to }),
         supabase
           .from("google_review_tracking_entries")
           .select("staff_name,source_staff_name,review_date,review_count,source_file_id,source_sheet,source_drive_file_id,ingested_at,branch_id")
@@ -102,8 +118,11 @@ export default function ExportCenter() {
         getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile),
       ]);
 
-      const cashFacts = (cashRes.data || []).filter((r) => r.branch_id === scopedBranch);
-      const cashDates = [...new Set(cashFacts.map((f) => String(f.period_end).slice(0, 10)))];
+      const cashFacts = cashUp.facts || [];
+      const cashDates = cashUp.cashUpDates || [];
+      if (cashUp.error && !cashDates.length) {
+        setError(`Cash Up coverage query failed: ${cashUp.error}`);
+      }
       const reviewEntries = reviewRes.error ? [] : (reviewRes.data || []).filter((r) => r.branch_id === scopedBranch);
       const reviewDates = [...new Set(
         reviewEntries
@@ -200,7 +219,7 @@ export default function ExportCenter() {
     if (!coverage) return;
     const folder = `NAC_${scopedBranch}_${from}_to_${to}`;
     const files = [];
-    if (cashUpReady(coverage)) {
+    if (cashUpDownloadable(coverage) && payload.cashFacts.length) {
       files.push({
         name: `${folder}/NAC_${scopedBranch}_Cash_Up_${from}_to_${to}.xlsx`,
         data: new Uint8Array(buildCashUpWorkbookBuffer(payload.cashFacts, { from, to, branch: scopedBranch })),

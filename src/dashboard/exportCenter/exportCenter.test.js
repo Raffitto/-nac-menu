@@ -1,5 +1,6 @@
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
-import { assessExportCoverage, assessReviewTrackingCoverage, staffPerformanceReady } from "./coverage";
+import { assessExportCoverage, assessReviewTrackingCoverage, cashUpDownloadable, staffPerformanceReady } from "./coverage";
+import { buildCashUpRows } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingGrid } from "./reviewTrackingWorkbook";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
@@ -46,8 +47,38 @@ describe("export center coverage", () => {
       productByCreatorBatches: [{ period_start: "2026-08-01", period_end: "2026-08-31" }],
     });
     expect(coverage.cashUp.complete).toBe(true);
+    expect(coverage.cashUp.status).toBe("ready");
     expect(coverage.salesByCreator.complete).toBe(true);
     expect(staffPerformanceReady(coverage)).toBe(true);
+  });
+
+  test("Cash Up is PARTIAL with exact missing dates, never a collapsed full-month range", () => {
+    const coverage = assessExportCoverage({
+      from: "2026-08-01",
+      to: "2026-08-31",
+      cashUpDates: ["2026-08-02", "2026-08-15", "2026-08-30"],
+    });
+    expect(coverage.cashUp.status).toBe("partial");
+    expect(coverage.cashUp.complete).toBe(false);
+    expect(coverage.cashUp.present).toEqual(["2026-08-02", "2026-08-15", "2026-08-30"]);
+    expect(coverage.cashUp.missing[0]).toBe("2026-08-01");
+    expect(coverage.cashUp.missing).toContain("2026-08-31");
+    expect(coverage.cashUp.missing).not.toContain("2026-08-15");
+    expect(cashUpDownloadable(coverage)).toBe(true);
+  });
+
+  test("Cash Up XLSX rows come from canonical facts, not commerce", () => {
+    const rows = buildCashUpRows(
+      [
+        { period_start: "2026-08-05", period_end: "2026-08-05", metric_key: "total_sales", metric_value: 1234 },
+        { period_start: "2026-08-05", period_end: "2026-08-05", metric_key: "net_sales", metric_value: 1200 },
+      ],
+      "2026-08-05",
+      "2026-08-05",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].total_sales).toBe(1234);
+    expect(rows[0].net_sales).toBe(1200);
   });
 });
 
@@ -191,8 +222,19 @@ describe("Reports review source isolation", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "ExportCenter.jsx"), "utf8");
     expect(src).toMatch(/google_review_tracking_entries/);
+    expect(src).toMatch(/fetchCanonicalCashUpForExport/);
     expect(src).not.toMatch(/review_events/);
     expect(src).not.toMatch(/aggregateStaffReviewStats/);
+  });
+
+  test("Cash Up source uses Vault RPC, not commerce orders", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const src = fs.readFileSync(path.join(__dirname, "cashUpSource.js"), "utf8");
+    expect(src).toMatch(/get_vault_cash_up_range_aggregate|fetchCashUpRangeAggregationViaRpc/);
+    expect(src).toMatch(/ask_nac_structured_facts/);
+    expect(src).toMatch(/report_type.*cash_up|eq\("report_type", "cash_up"\)/);
+    expect(src).not.toMatch(/from\("orders"\)|from\("menu_events"\)/);
   });
 });
 

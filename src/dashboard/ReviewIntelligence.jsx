@@ -102,6 +102,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
   const rangeLabel = rangeExportLabel(selectedRange);
   const { loading: googleLoading, forBranch: googleMetrics, byBranch: googleByBranch } =
     useGooglePlaceMetrics(branch);
+  const googleBadgeLoading = googleLoading && !(prefetched && prefetched.loading === false);
   const { movementByBranch } = useGoogleReviewMovement({
     byBranch: googleByBranch,
     enabled: configured,
@@ -330,7 +331,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             <GoogleReputationWithMovement
               metrics={googleMetrics}
               movement={branchGoogleMovement}
-              loading={googleLoading}
+              loading={googleBadgeLoading}
               showName
             />
           </div>
@@ -391,7 +392,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
           <GoogleReputationWithMovement
             metrics={googleMetrics}
             movement={branchGoogleMovement}
-            loading={googleLoading}
+            loading={googleBadgeLoading}
             compact
           />
         </div>
@@ -629,7 +630,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                     <GoogleReputationWithMovement
                       metrics={googleByBranch[row.branch_id]}
                       movement={movementByBranch[row.branch_id]}
-                      loading={googleLoading}
+                      loading={googleBadgeLoading}
                       compact
                     />
                   </span>

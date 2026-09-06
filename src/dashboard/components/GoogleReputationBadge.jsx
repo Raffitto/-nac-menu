@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Star, Loader2 } from "lucide-react";
 import {
   formatGoogleRating,
@@ -16,7 +16,17 @@ export default function GoogleReputationBadge({
   showName = false,
   className = "",
 }) {
-  if (loading) {
+  const [loadingExpired, setLoadingExpired] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setLoadingExpired(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setLoadingExpired(true), 8000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
+  if (loading && !loadingExpired) {
     return (
       <div className={`nac-google-rep nac-google-rep--loading ${className}`} aria-busy="true">
         <Loader2 size={compact ? 12 : 14} className="nac-bi-spin" />

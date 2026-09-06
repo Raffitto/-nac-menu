@@ -155,6 +155,16 @@ export function useMenuBiDashboard(options = {}) {
       }
 
       setError("");
+      let settled = false;
+      const settleTimer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        setLoading(false);
+        setRefreshing(false);
+        if (!dataRef.current) {
+          setError((prev) => prev || "Overview timed out. Operational metrics did not finish loading.");
+        }
+      }, 12000);
       try {
         const sessionOk = Boolean(rbac?.session);
         if (!sessionOk) {
@@ -236,6 +246,7 @@ export function useMenuBiDashboard(options = {}) {
 
         setCachedIntelligence(biCacheKey, pkg, BI_TTL_MS);
         applyPackage(pkg, setters);
+        setError("");
         probeLatestEventTimestamps(supabase).catch(() => {});
 
         logBiIntelligenceDiagnostics({
@@ -261,6 +272,8 @@ export function useMenuBiDashboard(options = {}) {
         }
         setError(e?.message || "Failed to load menu intelligence");
       } finally {
+        clearTimeout(settleTimer);
+        settled = true;
         setLoading(false);
         setRefreshing(false);
       }
