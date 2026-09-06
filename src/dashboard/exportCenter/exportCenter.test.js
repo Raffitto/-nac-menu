@@ -229,6 +229,7 @@ describe("Reports review source isolation", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "ExportCenter.jsx"), "utf8");
     expect(src).toMatch(/google_review_tracking_entries/);
+    expect(src).toMatch(/fetchReviewTrackingCoverage/);
     expect(src).toMatch(/fetchCashUpCoverage/);
     expect(src).toMatch(/fetchCanonicalCashUpForExport/);
     expect(src).toMatch(/BATCH_COVERAGE_COLUMNS/);

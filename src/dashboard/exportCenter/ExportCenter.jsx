@@ -11,6 +11,7 @@ import { validateUploadForNeed } from "./detectFoodicsReport";
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
 import { fetchCanonicalCashUpForExport, fetchCashUpCoverage } from "./cashUpSource";
+import { fetchReviewTrackingCoverage } from "./reviewCoverage";
 import { getCachedIntelligence, cacheKey } from "../utils/intelligenceCache";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
@@ -126,33 +127,26 @@ export default function ExportCenter() {
       const packed = await getCachedIntelligence(
         cacheId,
         async () => {
-          const [cashUp, reviewRes, creatorBatches, productBatches] = await Promise.all([
+          const [cashUp, reviewCoverage, creatorBatches, productBatches] = await Promise.all([
             fetchCashUpCoverage(supabase, { branch: scopedBranch, from, to }),
-            supabase
-              .from("google_review_tracking_entries")
-              .select("review_date,review_count,branch_id")
-              .eq("branch_id", scopedBranch)
-              .gte("review_date", from)
-              .lte("review_date", to),
+            fetchReviewTrackingCoverage(supabase, { branch: scopedBranch, from, to }),
             getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
             getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
           ]);
-          return { cashUp, reviewRes, creatorBatches, productBatches };
+          return { cashUp, reviewCoverage, creatorBatches, productBatches };
         },
         persistTtl,
       );
 
-      const { cashUp, reviewRes, creatorBatches, productBatches } = packed;
+      const { cashUp, reviewCoverage, creatorBatches, productBatches } = packed;
       const cashDates = cashUp.cashUpDates || [];
       if (cashUp.error && !cashDates.length) {
         setError(`Cash Up coverage query failed: ${cashUp.error}`);
       }
-      const reviewEntries = reviewRes.error ? [] : (reviewRes.data || []).filter((r) => r.branch_id === scopedBranch);
-      const reviewDates = [...new Set(
-        reviewEntries
-          .filter((r) => Number(r.review_count) > 0)
-          .map((r) => String(r.review_date).slice(0, 10)),
-      )];
+      if (reviewCoverage.error && !(reviewCoverage.reviewDates || []).length) {
+        setError((prev) => prev || `Review coverage query failed: ${reviewCoverage.error}`);
+      }
+      const reviewDates = reviewCoverage.reviewDates || [];
       const creatorForBranch = (creatorBatches || []).filter((b) => b.branch_id === scopedBranch);
       const productForBranch = (productBatches || []).filter((b) => b.branch_id === scopedBranch);
 
