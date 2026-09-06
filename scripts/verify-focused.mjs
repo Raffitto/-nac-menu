@@ -12,6 +12,8 @@ const defaults = [
   "src/intelligence/askNac/vault/vaultPeriodCompare.test.js",
   "src/dashboard/MenuManager.production.test.js",
   "src/dashboard/health/dataIntegrityScan.test.js",
+  "src/dashboard/health/recipeMappingClassification.test.js",
+  "src/intelligence/askNac/shared/nacBusinessWeek.test.js",
   "src/dashboard/exportCenter/reportsReadiness.test.js",
 ];
 const files = extra.length ? extra : defaults;

@@ -259,6 +259,21 @@ describe("Ask NAC temporal coverage", () => {
     expect(safety.correctionNeeded).toBe(false);
   });
 
+  test("coverage contract persists availableDates", () => {
+    const coverage = buildTemporalCoverage({
+      requestedStart: "2026-09-06",
+      requestedEnd: "2026-09-12",
+      requestedLabel: "this week",
+      availableDates: [],
+      referenceDate: SEP6,
+    });
+    const contract = toCoverageContract(coverage, { weekish: true });
+    expect(contract.availableDates).toEqual([]);
+    expect(contract.requestedStart).toBe("2026-09-06");
+    expect(contract.requestedEnd).toBe("2026-09-12");
+    expect(spokenPeriodLabel(coverage, { weekish: true })).toMatch(/current NAC week started today, 6 Sep 2026/i);
+  });
+
   test("source delayed is not zero", () => {
     const coverage = buildTemporalCoverage({
       requestedStart: "2026-09-01",

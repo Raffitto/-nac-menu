@@ -221,6 +221,40 @@ export function shouldSkipDailyBreakdownForRange(
   return countCalendarDaysInRange(startDate, endDate) > 31;
 }
 
+export function shouldSkipDailyBreakdownForSimpleMetric(
+  question?: string | null,
+  periodType?: string | null,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
+  if (shouldSkipDailyBreakdownForRange(startDate, endDate, periodType)) return true;
+  const q = String(question || "").toLowerCase();
+  if (/\b(compare|versus|\bvs\b|week over week|wow|rank|best|worst|which day)\b/.test(q)) return false;
+  return ["this_week", "this_month", "last_week", "named_month", "previous_week"].includes(String(periodType || ""));
+}
+
+export function coverageRowsFromCashUpAggregation(
+  aggregation: Record<string, unknown> | null | undefined,
+  { startDate, endDate, branchId = null }: { startDate?: string | null; endDate?: string | null; branchId?: string | null } = {},
+) {
+  const available = Array.isArray(aggregation?.availableDates) ? aggregation.availableDates : [];
+  return [{
+    id: "rpc-cash-up-range",
+    branchId,
+    department: "finance",
+    reportType: "cash_up",
+    periodStart: startDate || aggregation?.requestedStartDate || null,
+    periodEnd: endDate || aggregation?.requestedEndDate || null,
+    factCount: Number(aggregation?.dayCount) || 0,
+    readinessStatus: (Number(aggregation?.dayCount) || 0) > 0 ? "ready" : "missing",
+    lastIngestedAt: aggregation?.salesCoverageEnd || null,
+    sourceFileId: null,
+    fileTitle: null,
+    availableDates: available,
+    freshness: aggregation?.salesCoverageEnd || null,
+  }];
+}
+
 export function aggregateCashUpFactsOverRange({
   startDate,
   endDate,

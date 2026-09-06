@@ -13,6 +13,7 @@ import {
   shouldUseChunkedCashUpFetch,
   shouldSkipDailyBreakdownForRange,
   countCalendarDaysInRange,
+  enrichCashUpAggregationCoverageMeta,
 } from "./vaultCashUpAggregation";
 import { CASH_UP_PERIOD_AGGREGATION_METRIC_KEYS } from "./vaultSalesPerformanceIntelligence";
 import { buildCashUpPeriodAggregateAnswer } from "./vaultSalesPerformanceIntelligence";
@@ -600,7 +601,7 @@ describe("Sep 6 2026 current-week wording", () => {
     expect(period?.periodType).toBe("latest_available_sale");
   });
 
-  test("this week answer does not treat 6 Sep as included", () => {
+  test("this week on Sunday is the empty current NAC week, not last week", () => {
     const factsByDate = {
       "2026-08-31": [dayFact("2026-08-31", "total_sales", 10000)],
       "2026-09-01": [dayFact("2026-09-01", "total_sales", 11000)],
@@ -610,19 +611,27 @@ describe("Sep 6 2026 current-week wording", () => {
       "2026-09-05": [dayFact("2026-09-05", "total_sales", 46224.3)],
     };
     const period = parseVaultPeriodFromQuestion("what are sales this week", SEP6);
-    const agg = aggregateCashUpFactsOverRange({
+    expect(period.startDate).toBe("2026-09-06");
+    expect(period.endDate).toBe("2026-09-12");
+    const agg = enrichCashUpAggregationCoverageMeta(aggregateCashUpFactsOverRange({
       startDate: period.startDate,
       endDate: period.endDate,
       factsByDate,
-    });
+    }), period.startDate, period.endDate);
     const answer = buildCashUpPeriodAggregateAnswer("what are sales this week", agg, {
       branchLabel: "Khobar",
-      periodLabel: "Monday, 31 August – Sunday, 6 September",
+      periodLabel: "this week",
+      referenceDate: SEP6,
     });
-    expect(agg.dayCount).toBe(6);
-    expect(agg.expectedDayCount).toBe(7);
-    expect(answer).toMatch(/through 5 Sep 2026|31 Aug 2026–5 Sep 2026/i);
+    expect(agg.dayCount).toBe(0);
+    expect(answer).toMatch(/current NAC week started today, 6 Sep 2026/i);
+    expect(answer).not.toMatch(/106,224/);
     expect(answer).not.toMatch(/Sunday, 6 September/);
-    expect(answer).toMatch(/106,224/);
+  });
+
+  test("last week on Sunday 6 Sep is the completed 30 Aug–5 Sep week", () => {
+    const period = parseVaultPeriodFromQuestion("what were sales last week", SEP6);
+    expect(period.startDate).toBe("2026-08-30");
+    expect(period.endDate).toBe("2026-09-05");
   });
 });

@@ -22,6 +22,7 @@ export type CoverageContract = {
   latestAvailableDate: string | null;
   expectedDayCount: number | null;
   availableDayCount: number | null;
+  availableDates: string[];
   missingDates: string[];
   coverageStatus: CoverageStatus;
   isCurrentPeriod: boolean;
@@ -100,11 +101,22 @@ export function buildCashUpCoverageContract(input: {
   }
 
   const isCurrentPeriod = Boolean(requestedEnd && requestedEnd >= today);
-  const spokenLabel = coverageStatus === COVERAGE_STATUS.COMPLETE
-    ? (input.requestedLabel || `${formatShortSalesDate(requestedStart)}–${formatShortSalesDate(requestedEnd)}`)
-    : availableEnd
-      ? (isCurrentPeriod ? `so far this period through ${formatShortSalesDate(availableEnd)}` : `${formatShortSalesDate(availableStart)}–${formatShortSalesDate(availableEnd)}`)
-      : (input.requestedLabel || "the requested period");
+  const weekish = /this week|current week/i.test(String(input.requestedLabel || ""));
+  const monthish = /month|mtd/i.test(String(input.requestedLabel || ""));
+  let spokenLabel = input.requestedLabel || "the requested period";
+  if (coverageStatus === COVERAGE_STATUS.NO_DATA && weekish && requestedStart === today) {
+    spokenLabel = `The current NAC week started today, ${formatShortSalesDate(requestedStart)}, and no completed sales day is available yet`;
+  } else if (coverageStatus === COVERAGE_STATUS.COMPLETE) {
+    spokenLabel = input.requestedLabel || `${formatShortSalesDate(requestedStart)}–${formatShortSalesDate(requestedEnd)}`;
+  } else if (availableEnd && weekish) {
+    spokenLabel = `so far this week through ${formatShortSalesDate(availableEnd)}`;
+  } else if (availableEnd && monthish && isCurrentPeriod) {
+    spokenLabel = `so far this month through ${formatShortSalesDate(availableEnd)}`;
+  } else if (availableEnd && isCurrentPeriod) {
+    spokenLabel = `so far this period through ${formatShortSalesDate(availableEnd)}`;
+  } else if (availableStart && availableEnd) {
+    spokenLabel = `${formatShortSalesDate(availableStart)}–${formatShortSalesDate(availableEnd)}`;
+  }
 
   const missingProse = missing.length === 1
     ? `${formatShortSalesDate(missing[0])} does not have sales data yet.`
@@ -132,6 +144,7 @@ export function buildCashUpCoverageContract(input: {
     latestAvailableDate: latestAvailable,
     expectedDayCount: expected.length || null,
     availableDayCount: available.length || null,
+    availableDates: available,
     missingDates: missing,
     coverageStatus,
     isCurrentPeriod,
@@ -146,7 +159,12 @@ export function coverageFromCashUpAggregation(
   extras: { sourceFailed?: boolean; source?: string; referenceDate?: Date } = {},
 ): CoverageContract {
   const breakdown = Array.isArray(aggregation?.dailyBreakdown) ? aggregation.dailyBreakdown as { date?: string; totalSales?: number | null }[] : [];
-  const availableDates = breakdown.filter((row) => row.totalSales != null).map((row) => String(row.date));
+  let availableDates = Array.isArray(aggregation?.availableDates) && (aggregation.availableDates as string[]).length
+    ? (aggregation.availableDates as string[]).map(String)
+    : breakdown.filter((row) => row.totalSales != null).map((row) => String(row.date));
+  if (!availableDates.length && aggregation?.salesCoverageStart && aggregation?.salesCoverageEnd) {
+    availableDates = listDates(String(aggregation.salesCoverageStart), String(aggregation.salesCoverageEnd));
+  }
   return buildCashUpCoverageContract({
     requestedStart: requested?.startDate || (aggregation?.requestedStartDate as string) || null,
     requestedEnd: requested?.endDate || (aggregation?.requestedEndDate as string) || null,
@@ -243,6 +261,12 @@ export function applyPeriodSafetyNet(text: string, response: Record<string, unkn
   const contract = (response.coverageContract || null) as CoverageContract | null;
   let sanitized = sanitizeIncompletePeriodAnswer(text, response);
   sanitized = rewriteRequestedEndDates(sanitized, contract);
+  if (contract?.availableEnd && contract?.requestedEnd && contract.availableEnd < contract.requestedEnd) {
+    sanitized = sanitized.replace(
+      new RegExp(`\\b${contract.requestedEnd}\\b`, "g"),
+      formatShortSalesDate(contract.availableEnd),
+    );
+  }
   return { text: sanitized, correctionNeeded: sanitized !== String(text || "") };
 }
 
@@ -255,6 +279,7 @@ export function coverageContractFromFabric(input: {
     expectedRecords?: number | null;
     availableRecords?: number | null;
     freshness?: string | null;
+    availableDates?: string[];
   }>;
   evidence?: Array<{ period?: { startDate?: string; endDate?: string } | null }>;
   referenceDate?: Date;
@@ -278,7 +303,12 @@ export function coverageContractFromFabric(input: {
       period?.startDate && period?.endDate && period.startDate === period.endDate,
     ))
     .map((period) => period.startDate);
-  let availableDates = [...new Set(observed)].sort();
+  let availableDates = [
+    ...new Set([
+      ...observed,
+      ...((sales as { availableDates?: string[] } | null)?.availableDates || []),
+    ]),
+  ].sort();
   if (!latest && requestedStart && sales?.availableRecords && sales.availableRecords > 0) {
     latest = addIsoDays(requestedStart, Number(sales.availableRecords) - 1);
     if (requestedEnd && latest > requestedEnd) latest = requestedEnd;

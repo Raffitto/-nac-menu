@@ -19,6 +19,9 @@ export function mapRpcAggregationRow(row = {}) {
     dailyBreakdown: dailyBreakdown || [],
     salesCoverageStart: row.salesCoverageStart || null,
     salesCoverageEnd: row.salesCoverageEnd || null,
+    availableDates: Array.isArray(row.availableDates)
+      ? row.availableDates.map(String)
+      : [],
     deliveryOrderCoverageStart: row.deliveryOrderCoverageStart || null,
     deliveryPlatformBreakdown: row.deliveryPlatformBreakdown || {},
     topPlatformBySales: row.topPlatformBySales || null,

@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { exportViewPerfJson, recentViewPerf } from "../../lib/viewPerf";
 import { scanIntegrityBundle } from "./dataIntegrityScan";
+import { RECIPE_GAP_CLASS } from "./recipeMappingClassification";
 
 function freshnessLabel(iso) {
   if (!iso) return "Unknown";
@@ -52,6 +53,7 @@ export default function DataHealthPanel() {
   const [perf, setPerf] = useState(null);
   const [error, setError] = useState("");
   const [scanning, setScanning] = useState(false);
+  const [mappingFilter, setMappingFilter] = useState("all");
 
   const runScan = useCallback(async () => {
     if (!isSupabaseConfigured() || !supabase || typeof supabase.from !== "function") {
@@ -139,6 +141,48 @@ export default function DataHealthPanel() {
           {(integrity.capabilityGaps || []).map((gap) => (
             <p key={gap.code} className="nac-settings-muted">{gap.message}</p>
           ))}
+          {integrity.recipeMapping ? (
+            <div data-testid="settings-recipe-mapping">
+              <p className="nac-settings-muted">
+                Kitchen recipe gaps: {integrity.recipeMapping.originalKitchenNoRecipe}
+                {" · "}Exact {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING] || 0}
+                {" · "}Likely {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED] || 0}
+                {" · "}Ambiguous {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.AMBIGUOUS] || 0}
+                {" · "}Legacy {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.LEGACY_ONLY] || 0}
+                {" · "}True missing {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.TRUE_MISSING] || 0}
+                {" · "}Not recipe-required {integrity.recipeMapping.counts[RECIPE_GAP_CLASS.FALSE_POSITIVE] || 0}
+              </p>
+              <label className="nac-settings-muted" htmlFor="recipe-mapping-filter">Mapping filter</label>
+              <select
+                id="recipe-mapping-filter"
+                value={mappingFilter}
+                onChange={(event) => setMappingFilter(event.target.value)}
+              >
+                <option value="all">All gaps</option>
+                <option value={RECIPE_GAP_CLASS.EXACT_MAPPING_MISSING}>Exact mapping available</option>
+                <option value={RECIPE_GAP_CLASS.HIGH_CONFIDENCE_NORMALIZED}>Likely mapping</option>
+                <option value={RECIPE_GAP_CLASS.AMBIGUOUS}>Ambiguous</option>
+                <option value={RECIPE_GAP_CLASS.LEGACY_ONLY}>Legacy only</option>
+                <option value={RECIPE_GAP_CLASS.TRUE_MISSING}>No recipe found</option>
+                <option value={RECIPE_GAP_CLASS.FALSE_POSITIVE}>Not recipe-required</option>
+              </select>
+              <dl className="nac-settings-dl">
+                {(integrity.recipeMapping.rows || [])
+                  .filter((row) => mappingFilter === "all" || row.class === mappingFilter)
+                  .slice(0, 40)
+                  .map((row) => (
+                    <div key={row.itemId}>
+                      <dt>{row.class} · {row.itemName}</dt>
+                      <dd>
+                        {row.candidates[0]?.name || "no candidate"}
+                        {" · "}{Math.round((row.confidence || 0) * 100)}%
+                        {" · "}{row.reason}
+                      </dd>
+                    </div>
+                  ))}
+              </dl>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="nac-settings-actions">

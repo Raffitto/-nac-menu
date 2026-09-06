@@ -143,14 +143,28 @@ export function formatMissingDatesProse(missingDates = []) {
 /**
  * Spoken window for answers. Never names unavailable dates as included.
  */
+function isMonthishCoverage(coverage) {
+  const label = String(coverage?.requestedPeriod?.label || "");
+  return /month|mtd/i.test(label);
+}
+
 export function spokenPeriodLabel(coverage, { weekish = false } = {}) {
   if (!coverage) return "the requested period";
   const through = coverage.availablePeriod?.endDate || coverage.latestAvailableDate;
+  if (coverage.coverageStatus === COVERAGE_STATUS.NO_DATA && weekish) {
+    const start = coverage.requestedPeriod?.startDate;
+    if (start && start === coverage.today) {
+      return `The current NAC week started today, ${formatShortSalesDate(start)}, and no completed sales day is available yet`;
+    }
+  }
   if (
     coverage.coverageStatus === COVERAGE_STATUS.PARTIAL
     || coverage.coverageStatus === COVERAGE_STATUS.CURRENT_DAY_NOT_COMPLETE
   ) {
     if (weekish && through) return `so far this week through ${formatShortSalesDate(through)}`;
+    if (isMonthishCoverage(coverage) && through) {
+      return `so far this month through ${formatShortSalesDate(through)}`;
+    }
     if (through) return formatCoverageRangeLabel(coverage.availablePeriod?.startDate, through);
   }
   if (coverage.coverageStatus === COVERAGE_STATUS.COMPLETE) {
@@ -252,6 +266,7 @@ export function toCoverageContract(coverage, { weekish = false } = {}) {
     latestAvailableDate: coverage?.latestAvailableDate || availableEnd,
     expectedDayCount: coverage?.expectedDates?.length || null,
     availableDayCount: coverage?.availableDates?.length || null,
+    availableDates: coverage?.availableDates || [],
     missingDates: missing,
     coverageStatus: coverage?.coverageStatus || COVERAGE_STATUS.NO_DATA,
     isCurrentPeriod: Boolean(requestedEnd && coverage?.today && requestedEnd >= coverage.today),
@@ -260,9 +275,17 @@ export function toCoverageContract(coverage, { weekish = false } = {}) {
   };
 }
 
+function stripIsoLeaks(text, contract) {
+  if (!contract?.availableEnd || !contract?.requestedEnd || !text) return text;
+  if (contract.availableEnd >= contract.requestedEnd) return text;
+  const requested = contract.requestedEnd;
+  return String(text).replace(new RegExp(`\\b${requested}\\b`, "g"), formatShortSalesDate(contract.availableEnd));
+}
+
 export function applyPeriodSafetyNet(text, response = {}) {
   const contract = response.coverageContract || null;
   let sanitized = sanitizeIncompletePeriodAnswer(text, response);
+  sanitized = stripIsoLeaks(sanitized, contract);
   if (contract?.availableEnd && contract?.requestedEnd && contract.availableEnd < contract.requestedEnd) {
     const months = [
       "January", "February", "March", "April", "May", "June",
@@ -344,7 +367,12 @@ export function isSimpleOperationalMetricQuestion(question = "") {
 
 export function coverageFromCashUpAggregation(aggregation, requestedPeriod, extras = {}) {
   const breakdown = Array.isArray(aggregation?.dailyBreakdown) ? aggregation.dailyBreakdown : [];
-  const availableDates = breakdown.filter((row) => row.totalSales != null).map((row) => row.date);
+  let availableDates = Array.isArray(aggregation?.availableDates) && aggregation.availableDates.length
+    ? aggregation.availableDates.map(String)
+    : breakdown.filter((row) => row.totalSales != null).map((row) => row.date);
+  if (!availableDates.length && aggregation?.salesCoverageStart && aggregation?.salesCoverageEnd) {
+    availableDates = listInclusiveIsoDates(aggregation.salesCoverageStart, aggregation.salesCoverageEnd);
+  }
   return buildTemporalCoverage({
     requestedStart: requestedPeriod?.startDate || aggregation?.requestedStartDate || null,
     requestedEnd: requestedPeriod?.endDate || aggregation?.requestedEndDate || null,

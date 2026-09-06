@@ -139,6 +139,13 @@ function formatShortSalesDate(iso) {
   return `${d} ${SHORT_MONTHS[m - 1]} ${y}`;
 }
 
+function formatCoverageRangeLabel(start, end) {
+  if (!start && !end) return "unavailable";
+  if (start && end && start === end) return formatShortSalesDate(start);
+  if (start && end) return `${formatShortSalesDate(start)}–${formatShortSalesDate(end)}`;
+  return formatShortSalesDate(start || end);
+}
+
 function missingSalesDatesFromAggregation(aggregation) {
   const start = aggregation?.requestedStartDate;
   const end = aggregation?.requestedEndDate;
@@ -877,6 +884,16 @@ export function buildCashUpPeriodCompareAnswer(aggregation, previousAggregation,
 } = {}) {
   if (!aggregation || !previousAggregation) return null;
 
+  if (aggregation.dayCount === 0 && /this week|no completed/i.test(String(periodLabel || ""))) {
+    const latest = previousAggregation.salesCoverageEnd || previousAggregation.requestedEndDate;
+    return [
+      `The current NAC week has no completed sales day yet, so it is not compared as “this week.”`,
+      latest
+        ? `The latest completed business week available is ${previousPeriodLabel}${previousAggregation.totalSales != null ? ` (${formatCurrency(previousAggregation.totalSales)})` : ""}.`
+        : "The latest completed business week is not available in Cash Up yet.",
+    ].join(" ");
+  }
+
   const comparison = buildMatchedCoverageComparison(aggregation, previousAggregation);
   if (comparison.mode === "unavailable") {
     const lines = [
@@ -907,9 +924,11 @@ export function buildCashUpPeriodCompareAnswer(aggregation, previousAggregation,
     comparison.mode === "matched"
       ? `${branchLabel} like-for-like ${comparison.matchedDayCount}-day sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`
       : `${branchLabel} sales comparison — ${periodLabel} vs ${previousPeriodLabel}:`,
+    `Current requested ${formatCoverageRangeLabel(aggregation.requestedStartDate, aggregation.requestedEndDate)}; available ${formatCoverageRangeLabel(aggregation.salesCoverageStart, aggregation.salesCoverageEnd)}.`,
+    `Comparison requested ${formatCoverageRangeLabel(previousAggregation.requestedStartDate, previousAggregation.requestedEndDate)}; available ${formatCoverageRangeLabel(previousAggregation.salesCoverageStart, previousAggregation.salesCoverageEnd)}.`,
     `Current: ${formatCurrency(currentSales)} (${current.dayCount} cash-up day(s)).`,
     `Previous: ${formatCurrency(previousSales)} (${previous.dayCount} cash-up day(s)).`,
-    `Sales delta: ${formatSignedDelta(salesDelta)}${salesPct != null ? ` (${formatSignedPct(salesPct)})` : ""}.`,
+    `Sales delta: ${formatSignedDelta(salesDelta)}${salesPct != null ? ` (${formatSignedPct(salesPct)})` : previousSales === 0 ? " (percentage omitted — previous period is zero)." : ""}.`,
   ];
 
   if (current.totalGuests != null && previous.totalGuests != null) {
@@ -1395,6 +1414,7 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
   periodLabel = "the period",
   previousAggregation = null,
   previousPeriodLabel = null,
+  referenceDate = null,
 } = {}) {
   if (!aggregation) return null;
 
@@ -1471,8 +1491,15 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
     startDate: aggregation?.requestedStartDate,
     endDate: aggregation?.requestedEndDate,
     label: periodLabel,
-  });
-  const weekish = /this week|current week/i.test(String(periodLabel || ""));
+  }, { referenceDate: referenceDate || undefined });
+  const weekish = /this week|current week/i.test(String(periodLabel || question || ""));
+  if ((dayCount === 0 || totalSales == null) && weekish && temporal.coverageStatus === "NO_DATA") {
+    const latest = aggregation?.latestCompletedDate || temporal.latestAvailableDate;
+    const latestLine = latest
+      ? ` The latest completed business day is ${formatShortSalesDate(latest)}.`
+      : "";
+    return `${spokenPeriodLabel(temporal, { weekish })}.${latestLine}`;
+  }
   const coveredLabel = spokenPeriodLabel(temporal, { weekish })
     || coverageAwarePeriodLabel(aggregation, periodLabel, isPartial);
   if (totalSales != null) {

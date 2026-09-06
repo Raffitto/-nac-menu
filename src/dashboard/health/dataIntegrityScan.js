@@ -2,7 +2,8 @@
  * Diagnostic integrity scan — classify, do not block production data.
  */
 
-import { isVerificationFixture, requiresKitchenRecipe } from "../../inventory/foodBible";
+import { isVerificationFixture } from "../../inventory/foodBible";
+import { classifyKitchenRecipeGaps, RECIPE_GAP_CLASS, recipeGapIssueCode } from "./recipeMappingClassification";
 
 export const INTEGRITY_SEVERITY = Object.freeze({
   ERROR: "ERROR",
@@ -256,23 +257,24 @@ export function scanRecipeGraphIssues({
     }
   }
 
-  const linkedMenuIds = new Set((recipes || []).map((r) => r.menu_item_id).filter(Boolean));
-  for (const item of menuItems || []) {
-    if (item.active === false) continue;
-    if (!linkedMenuIds.has(item.id)) {
-      const kitchenExpected = requiresKitchenRecipe({
-        name: item.name_en || item.name,
-        categoryName: item.category_name || item.category || item.section_name,
-      });
-      issues.push(issue(
-        kitchenExpected ? INTEGRITY_SEVERITY.WARNING : INTEGRITY_SEVERITY.INFO,
-        kitchenExpected ? "kitchen_item_no_recipe" : "non_kitchen_item_no_recipe",
-        kitchenExpected
-          ? `${item.name_en || item.id} is a kitchen item with no linked recipe`
-          : `${item.name_en || item.id} has no recipe (beverage/retail/modifier — not a kitchen gap)`,
-        { itemId: item.id, category: "recipe", kitchenExpected },
-      ));
-    }
+  const mapping = classifyKitchenRecipeGaps({ menuItems, recipes });
+  for (const row of mapping.rows) {
+    const warning = row.class !== RECIPE_GAP_CLASS.FALSE_POSITIVE;
+    issues.push(issue(
+      warning ? INTEGRITY_SEVERITY.WARNING : INTEGRITY_SEVERITY.INFO,
+      row.class === RECIPE_GAP_CLASS.FALSE_POSITIVE
+        ? "non_kitchen_item_no_recipe"
+        : recipeGapIssueCode(row.class),
+      `${row.itemName}: ${row.reason}`,
+      {
+        itemId: row.itemId,
+        category: "recipe",
+        kitchenExpected: warning,
+        mappingClass: row.class,
+        confidence: row.confidence,
+        candidates: row.candidates,
+      },
+    ));
   }
 
   for (const recipe of recipes || []) {
@@ -415,11 +417,16 @@ export function scanIntegrityBundle(input = {}) {
     code: "sku_column_unavailable",
     message: "menu_items has no SKU column in this environment — SKU reuse checks are a capability gap.",
   }];
+  const recipeMapping = classifyKitchenRecipeGaps({
+    menuItems,
+    recipes: input.recipes || [],
+  });
   return {
     ...summary,
     groups: groupIntegrityIssues(issues),
     actionCounts: summary.actionCounts,
     capabilityGaps: [...extraGaps, ...mapping.capabilityGaps],
+    recipeMapping,
     scannedAt: input.scannedAt || new Date().toISOString(),
     sources: ["menu_items", "inventory_recipes", "inventory_ingredients"],
   };

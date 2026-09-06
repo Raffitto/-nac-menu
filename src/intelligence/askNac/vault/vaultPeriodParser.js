@@ -2,6 +2,12 @@
  * Parse calendar day / month ranges for Data Vault queries (uploaded facts).
  */
 
+import {
+  nacLastWeekPeriod,
+  nacLikeForLikePriorWeek,
+  nacThisWeekPeriod,
+} from "../shared/nacBusinessWeek";
+
 const MONTH_MAP = Object.freeze({
   january: 0,
   jan: 0,
@@ -180,16 +186,10 @@ export function listPeriodDates(period) {
 }
 
 function previousCalendarWeekBounds(referenceDate) {
-  const end = shiftLocalDate(referenceDate, -referenceDate.getDay());
-  const start = shiftLocalDate(end, -6);
   return {
-    startDate: isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate()),
-    endDate: isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate()),
+    ...nacLastWeekPeriod(referenceDate),
     label: "previous week",
     periodType: "previous_week",
-    isSingleDay: false,
-    isWeek: true,
-    isRange: true,
   };
 }
 
@@ -410,7 +410,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (/\blast\s+week\b/.test(q)) {
-    return rollingRange(referenceDate, 7, { endOffset: -1, label: "last week", periodType: "last_week" });
+    return nacLastWeekPeriod(referenceDate);
   }
 
   if (
@@ -517,11 +517,12 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     };
   }
 
-  if (/\b(this week|current week|past week)\b/.test(q)) {
-    return {
-      ...rollingRange(referenceDate, 7, { label: "this week", periodType: "this_week" }),
-      isWeek: true,
-    };
+  if (/\b(this week|current week)\b/.test(q)) {
+    return nacThisWeekPeriod(referenceDate);
+  }
+
+  if (/\bpast week\b/.test(q)) {
+    return nacLastWeekPeriod(referenceDate);
   }
 
   const monthOnly = q.match(
@@ -574,28 +575,36 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
  */
 function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
   if (!period?.startDate || !period?.endDate) return period;
+  const requestedStartDate = period.requestedStartDate || period.startDate;
+  const requestedEndDate = period.requestedEndDate || period.endDate;
   const ymd = calendarYmdInTz(referenceDate);
   const today = isoDate(ymd.year, ymd.month, ymd.day);
-  if (period.endDate < today) return period;
+  if (period.endDate < today) {
+    return { ...period, requestedStartDate, requestedEndDate, noCompletedDays: false };
+  }
   const yesterday = addCalendarDays(ymd.year, ymd.month, ymd.day, -1);
-  const endDate = isoDate(yesterday.year, yesterday.month, yesterday.day);
-  if (endDate < period.startDate) {
+  const completedEnd = isoDate(yesterday.year, yesterday.month, yesterday.day);
+  if (completedEnd < period.startDate) {
     return {
       ...period,
-      endDate: period.startDate,
+      requestedStartDate,
+      requestedEndDate,
       expectedDayCount: 0,
       noCompletedDays: true,
       label: `${period.label || "this period"} (no completed days yet)`,
     };
   }
-  const dates = listPeriodDates({ startDate: period.startDate, endDate });
+  const dates = listPeriodDates({ startDate: period.startDate, endDate: completedEnd });
   return {
     ...period,
-    endDate,
+    requestedStartDate,
+    requestedEndDate,
+    endDate: completedEnd,
     expectedDayCount: dates.length,
+    noCompletedDays: false,
     label: period.label
-      ? `${period.label} through ${endDate}`
-      : formatRangeLabel(period.startDate, endDate),
+      ? `${period.label} through ${formatRangeLabel(period.startDate, completedEnd)}`
+      : formatRangeLabel(period.startDate, completedEnd),
   };
 }
 
@@ -603,7 +612,10 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   const q = String(question || "").toLowerCase().trim();
   if (!q) return null;
 
-  if (/\bthis week\b/.test(q) && /\blast week\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q)) {
+  if (
+    /\b(week over week|wow|w\/w)\b/.test(q)
+    || (/\bthis week\b/.test(q) && /\blast week\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q))
+  ) {
     const currentRequested = parseVaultPeriodFromQuestion("this week", referenceDate);
     const current = clipPeriodToCompletedDays(currentRequested, referenceDate);
     const previous = current?.noCompletedDays
@@ -706,6 +718,22 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
  */
 export function buildPreviousEquivalentVaultPeriod(current) {
   if (!current?.startDate || !current?.endDate) return null;
+
+  if (current.isWeek || current.periodType === "this_week" || current.periodType === "last_week") {
+    const prior = nacLikeForLikePriorWeek(current.startDate, current.endDate);
+    if (!prior) return null;
+    return {
+      ...prior,
+      requestedStartDate: prior.startDate,
+      requestedEndDate: prior.endDate,
+      label: formatRangeLabel(prior.startDate, prior.endDate),
+      periodType: "previous_week_like_for_like",
+      isSingleDay: prior.startDate === prior.endDate,
+      isWeek: true,
+      isRange: prior.startDate !== prior.endDate,
+      expectedDayCount: listPeriodDates(prior).length,
+    };
+  }
 
   if (current.periodType === "this_month" || current.periodType === "named_month") {
     const [y, m] = current.startDate.split("-").map(Number);

@@ -61,8 +61,9 @@ describe("data integrity scan", () => {
       lines: [],
       ingredients: [],
     });
-    expect(result.issues.some((i) => i.code === "kitchen_item_no_recipe")).toBe(true);
+    expect(result.issues.some((i) => i.code === "kitchen_recipe_true_missing")).toBe(true);
     expect(result.issues.some((i) => i.code === "non_kitchen_item_no_recipe")).toBe(true);
+    expect(result.recipeMapping.counts.TRUE_MISSING).toBe(1);
     expect(result.actionCounts.NEEDS_REVIEW).toBeGreaterThan(0);
     expect(result.actionCounts.INFORMATIONAL).toBeGreaterThan(0);
   });

@@ -1,8 +1,15 @@
-# Next NAC runtime work (not this harness milestone)
+# Next NAC runtime work
 
-1. Persistent daily available dates on Fabric evidence (spoken `through 5 Sep 2026`, not ISO/`this week`)
+Completed in the Sunday-week / coverage / mapping milestone:
+
+1. Persistent available dates on Fabric coverage contracts
 2. Sunday-start comparable-week semantics
-3. 381 kitchen/no-recipe mapping pass (do not auto-merge)
-4. Cold week/MTD Cash Up RPC still >2s
-5. Explicit Refresh `get_bi_dashboard` still ~8s
-6. Inventory/sales mapping capability gap
+3. Kitchen/no-recipe classification (no auto-merge)
+4. Cash Up range RPC returns `availableDates` and skips a second coverage fetch on the simple path
+
+Still open:
+
+1. Explicit Refresh `get_bi_dashboard` still ~8s
+2. Inventory/sales mapping capability gap
+3. Wire Netlify ignore for non-runtime paths after a dedicated review
+4. Apply remaining recipe exact-mapping repairs only with a reversible admin action

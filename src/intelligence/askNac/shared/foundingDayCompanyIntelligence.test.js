@@ -346,7 +346,7 @@ describe("Founding Day company intelligence", () => {
     ]));
     expect(planner.next).toBe("2027-02-22");
     expect(planner.window?.convention).toBe("day_before_anchor_day_after");
-    expect(planner.answer).toMatch(/2027-02-22/);
+    expect(planner.answer).toMatch(/2027-02-22|22 Feb 2027/);
   });
 
   test("13. cloud-off / deterministic path degrades safely if model unavailable", () => {
@@ -384,7 +384,7 @@ describe("Founding Day company intelligence", () => {
     });
     expect(out.paid).toBe(0);
     expect(out.next).toBe("2027-02-22");
-    expect(out.answer).toMatch(/2027-02-22/);
+    expect(out.answer).toMatch(/2027-02-22|22 Feb 2027/);
     expect(out.answer).toMatch(/FORECAST|estimate|expectation/i);
   });
 

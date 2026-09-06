@@ -16,6 +16,7 @@ import {
   resolveAskNacDirectAnswer,
   resolveAskNacDirectAnswerWithMeta,
 } from "../../intelligence/askNac/conversation/coercePlainTextDirectAnswer";
+import { recordAskNacDiag } from "../../lib/askNacDiag";
 import {
   buildConversationChartPayload,
   resolveVisualizationPresentation,
@@ -91,13 +92,22 @@ function ConversationVisualizationSection({ response }) {
 function stampCoverageMeta(response) {
   if (typeof window === "undefined") return;
   const meta = resolveAskNacDirectAnswerWithMeta(response);
-  window.__NAC_ASKNAC_COVERAGE__ = {
+  const coverage = {
     correctionNeeded: Boolean(meta.correctionNeeded || response?.responseMeta?.correctionNeeded),
     narrationSkipped: Boolean(response?.responseMeta?.narrationSkipped),
     coverageStatus: response?.coverageContract?.coverageStatus || null,
     spokenLabel: response?.coverageContract?.spokenLabel || null,
     timingMs: response?.responseMeta?.timingMs || null,
   };
+  window.__NAC_ASKNAC_COVERAGE__ = coverage;
+  recordAskNacDiag({
+    intent: response?.intent,
+    coverageContract: response?.coverageContract,
+    comparisonPeriod: response?.companyIntelligence?.comparability || response?.vaultCompare || null,
+    correctionNeeded: coverage.correctionNeeded,
+    timingMs: coverage.timingMs,
+    coverageStatus: coverage.coverageStatus,
+  });
 }
 
 function PrimaryAnswerContent({ response }) {

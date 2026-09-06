@@ -78,9 +78,11 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
   shouldSkipDailyBreakdownForRange,
+  shouldSkipDailyBreakdownForSimpleMetric,
   shouldUseChunkedCashUpFetch,
   splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation.ts";
@@ -1259,7 +1261,12 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
     startDate,
     endDate,
     vaultPeriod,
-    includeDailyBreakdown: !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType),
+    includeDailyBreakdown: !shouldSkipDailyBreakdownForSimpleMetric(
+      String(context.question || ""),
+      vaultPeriod?.periodType,
+      startDate,
+      endDate,
+    ),
     includeCoverage: true,
   });
 }
@@ -1452,12 +1459,22 @@ async function fetchCashUpRangeBundle(
       || (aggregation.salesCoverageEnd as string)
       || "",
     );
-    if (typeof aggregation.dayCount === "number" && latestFromAgg) {
+    if (typeof aggregation.dayCount === "number" && (latestFromAgg || aggregation.dayCount === 0)) {
+      const fromRpc = coverageRowsFromCashUpAggregation(aggregation, {
+        startDate: resolvedStart,
+        endDate: resolvedEnd,
+        branchId: scopedBranch,
+      })[0];
       coverage = [{
+        ...fromRpc,
         domain: "sales",
+        requestedStart: resolvedStart,
+        requestedEnd: resolvedEnd,
         expectedDays: aggregation.expectedDayCount ?? null,
         availableDays: aggregation.dayCount,
-        freshness: latestFromAgg,
+        expectedRecords: aggregation.expectedDayCount ?? null,
+        availableRecords: aggregation.dayCount,
+        freshness: latestFromAgg || fromRpc.freshness,
         warnings: [],
       }];
     } else {

@@ -21,9 +21,11 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
   shouldSkipDailyBreakdownForRange,
+  shouldSkipDailyBreakdownForSimpleMetric,
   shouldUseChunkedCashUpFetch,
   splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation";
@@ -573,7 +575,12 @@ export async function getVaultCashUpFactsOverRange(supabase, context = {}) {
     startDate,
     endDate,
     vaultPeriod,
-    includeDailyBreakdown: !shouldSkipDailyBreakdownForRange(startDate, endDate, vaultPeriod?.periodType),
+    includeDailyBreakdown: !shouldSkipDailyBreakdownForSimpleMetric(
+      context.question,
+      vaultPeriod?.periodType,
+      startDate,
+      endDate,
+    ),
     includeCoverage: true,
   });
 }
@@ -747,7 +754,13 @@ async function fetchCashUpRangeBundle(
 
   let coverage = [];
   let warnings = [...(factsResult.chunkWarnings || [])];
-  if (includeCoverage) {
+  if (includeCoverage && useRpc && (aggregation?.salesCoverageEnd || aggregation?.dayCount >= 0)) {
+    coverage = coverageRowsFromCashUpAggregation(aggregation, {
+      startDate: resolvedStart,
+      endDate: resolvedEnd,
+      branchId: scopedBranch,
+    });
+  } else if (includeCoverage) {
     const coverageResult = await getVaultCoverage(supabase, {
       ...context,
       branch: scopedBranch,
