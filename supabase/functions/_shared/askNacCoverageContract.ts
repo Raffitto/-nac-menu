@@ -262,7 +262,7 @@ export function coverageContractFromFabric(input: {
   const sales = (input.coverage || []).find((c) => c.domain === "sales") || (input.coverage || [])[0] || null;
   const requestedStart = sales?.requestedStart || input.period?.startDate || null;
   const requestedEnd = sales?.requestedEnd || input.period?.endDate || null;
-  const latest = sales?.freshness || null;
+  let latest = sales?.freshness || null;
   const observed = (input.evidence || [])
     .map((row) => row.period)
     .filter((period): period is { startDate: string; endDate: string } => Boolean(
@@ -270,6 +270,10 @@ export function coverageContractFromFabric(input: {
     ))
     .map((period) => period.startDate);
   let availableDates = [...new Set(observed)].sort();
+  if (!latest && requestedStart && sales?.availableRecords && sales.availableRecords > 0) {
+    latest = addIsoDays(requestedStart, Number(sales.availableRecords) - 1);
+    if (requestedEnd && latest > requestedEnd) latest = requestedEnd;
+  }
   if (!availableDates.length && latest && requestedStart && latest >= requestedStart) {
     const clipEnd = requestedEnd && latest > requestedEnd ? requestedEnd : latest;
     availableDates = listDates(requestedStart, clipEnd);
