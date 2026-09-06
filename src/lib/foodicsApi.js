@@ -10,10 +10,16 @@ export { IMPORT_TYPE };
 
 export const BATCH_COVERAGE_COLUMNS = "id,branch_id,period_start,period_end,import_type,uploaded_at";
 
+export function coveringBatchIds(batches = [], from, to) {
+  return (batches || [])
+    .filter((b) => b?.id && b.period_start && b.period_end && b.period_start <= to && b.period_end >= from)
+    .map((b) => b.id);
+}
+
 export async function getImportBatchItemCounts(batchIds = []) {
   const unique = [...new Set((batchIds || []).filter(Boolean))];
   if (!unique.length) return {};
-  const pairs = await Promise.all(
+  const pairs = await Promise.allSettled(
     unique.map(async (id) => {
       const { count, error } = await supabase
         .from("foodics_sales_items")
@@ -22,7 +28,11 @@ export async function getImportBatchItemCounts(batchIds = []) {
       return [id, error ? 0 : Number(count) || 0];
     }),
   );
-  return Object.fromEntries(pairs);
+  return Object.fromEntries(
+    pairs.map((result, i) => (
+      result.status === "fulfilled" ? result.value : [unique[i], 0]
+    )),
+  );
 }
 
 export function withUsableRowCounts(batches = [], counts = {}) {
@@ -32,14 +42,23 @@ export function withUsableRowCounts(batches = [], counts = {}) {
   }));
 }
 
-export async function getImportBatches(limit = 20, importType = null, rbacProfile = null, { columns = "*" } = {}) {
+export async function getImportBatches(limit = 20, importType = null, rbacProfile = null, {
+  columns = "*",
+  periodFrom = null,
+  periodTo = null,
+  branchId = null,
+} = {}) {
   let query = supabase.from("foodics_import_batches").select(columns);
   if (importType === IMPORT_TYPE.PRODUCT_SALES) {
     query = query.or("import_type.eq.product_sales,import_type.is.null");
   } else if (importType) {
     query = query.eq("import_type", importType);
   }
-  query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
+  if (periodFrom && periodTo) {
+    query = query.lte("period_start", periodTo).gte("period_end", periodFrom);
+  }
+  if (branchId) query = query.eq("branch_id", String(branchId).toLowerCase());
+  else query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
   const { data, error } = await query.order("uploaded_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return filterRowsByRbacProfile(rbacProfile, data || []);

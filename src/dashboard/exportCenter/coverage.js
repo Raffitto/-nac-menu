@@ -6,19 +6,41 @@ export function assessReviewTrackingCoverage({ from, to, reviewDates = [] } = {}
   const dates = [...new Set((reviewDates || []).map((d) => String(d).slice(0, 10)))]
     .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
     .sort();
-  const latest = dates.filter((d) => !to || d <= to).pop() || null;
-  const overlaps = dates.some((d) => d >= from && d <= to);
-  const complete = Boolean(latest && overlaps && latest >= to);
+  const inRange = dates.filter((d) => (!from || d >= from) && (!to || d <= to));
+  const missing = missingDates(new Set(inRange), from, to);
+  const latest = inRange[inRange.length - 1] || dates.filter((d) => !to || d <= to).pop() || null;
   const throughLabel = latest ? formatExportDate(latest) : "";
+  if (inRange.length && missing.length === 0) {
+    return {
+      id: "reviews",
+      label: "Google Review Tracking",
+      complete: true,
+      status: "complete",
+      throughDate: latest,
+      missing: [],
+      message: `✓ Google Review Tracking — Complete through ${throughLabel}`,
+    };
+  }
+  if (inRange.length) {
+    return {
+      id: "reviews",
+      label: "Google Review Tracking",
+      complete: false,
+      status: "partial",
+      throughDate: latest,
+      missing,
+      message: `⚠ Google Review Tracking — Partial`,
+      detail: `Complete through ${throughLabel}\nMissing ${missing.length === 1 ? formatExportDate(missing[0]) : `${formatExportDate(missing[0])} → ${formatExportDate(missing[missing.length - 1])}`}`,
+    };
+  }
   return {
     id: "reviews",
     label: "Google Review Tracking",
-    complete,
+    complete: false,
+    status: "missing",
     throughDate: latest,
-    missing: complete ? [] : [from, to].filter(Boolean),
-    message: complete
-      ? `✓ Google Review Tracking — Complete through ${throughLabel}`
-      : "⚠ Google Review Tracking missing / not synced for selected range",
+    missing: [from, to].filter(Boolean),
+    message: "⚠ Google Review Tracking missing / not synced for selected range",
   };
 }
 

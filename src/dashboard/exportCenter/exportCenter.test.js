@@ -176,6 +176,16 @@ describe("August staff performance oracle", () => {
       to: "2026-09-02",
       reviewDates: ["2026-09-01", "2026-09-02"],
     }).message).toBe("✓ Google Review Tracking — Complete through 02 Sep 2026");
+    const partial = assessReviewTrackingCoverage({
+      from: "2026-09-01",
+      to: "2026-09-05",
+      reviewDates: ["2026-09-01", "2026-09-02", "2026-09-03"],
+    });
+    expect(partial.status).toBe("partial");
+    expect(partial.complete).toBe(false);
+    expect(partial.message).toMatch(/Partial/);
+    expect(partial.detail).toMatch(/Complete through 03 Sep 2026/);
+    expect(partial.detail).toMatch(/04 Sep 2026 → 05 Sep 2026/);
   });
 
   test("upsell qty, share, and item leaders match supplied August rows", () => {
@@ -229,10 +239,12 @@ describe("Reports review source isolation", () => {
     const path = require("path");
     const src = fs.readFileSync(path.join(__dirname, "ExportCenter.jsx"), "utf8");
     expect(src).toMatch(/google_review_tracking_entries/);
-    expect(src).toMatch(/fetchReviewTrackingCoverage/);
-    expect(src).toMatch(/fetchCashUpCoverage/);
+    expect(src).toMatch(/fetchReportsReadiness/);
     expect(src).toMatch(/fetchCanonicalCashUpForExport/);
-    expect(src).toMatch(/BATCH_COVERAGE_COLUMNS/);
+    const readiness = fs.readFileSync(path.join(__dirname, "reportsReadiness.js"), "utf8");
+    expect(readiness).toMatch(/coveringBatchIds/);
+    expect(readiness).toMatch(/Promise\.allSettled/);
+    expect(readiness).not.toMatch(/review_events/);
     expect(src).not.toMatch(/review_events/);
     expect(src).not.toMatch(/aggregateStaffReviewStats/);
   });

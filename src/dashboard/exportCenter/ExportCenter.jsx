@@ -3,16 +3,16 @@ import "../styles/platform-os.css";
 import { useRbac } from "../context/RbacContext";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { BATCH_COVERAGE_COLUMNS, createImportBatch, getBatchSalesItems, getImportBatchItemCounts, getImportBatches, withUsableRowCounts } from "../../lib/foodicsApi";
+import { createImportBatch, getBatchSalesItems, getImportBatches } from "../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../config/foodicsImportTypes";
 import { parseFoodicsFile, rowsFromMappedData } from "../utils/foodicsParser";
 import { assessExportCoverage, cashUpDownloadable, formatMissingDatesList, staffPerformanceReady } from "./coverage";
 import { validateUploadForNeed } from "./detectFoodicsReport";
 import { FOODICS_SOURCE_GUIDE, formatExportDateRange } from "./foodicsSourceGuide";
 import { parseCreatorSummaryFromParsed } from "./parseCreatorSummary";
-import { fetchCanonicalCashUpForExport, fetchCashUpCoverage } from "./cashUpSource";
-import { fetchReviewTrackingCoverage } from "./reviewCoverage";
+import { fetchCanonicalCashUpForExport } from "./cashUpSource";
 import { getCachedIntelligence, cacheKey, invalidateIntelligenceCache } from "../utils/intelligenceCache";
+import { fetchReportsReadiness } from "./reportsReadiness";
 import { buildCashUpWorkbookBuffer } from "./cashUpWorkbook";
 import { aggregateReviewTrackingStats, buildReviewTrackingWorkbookBuffer } from "./reviewTrackingWorkbook";
 import { buildStaffPerformanceReport } from "./staffPerformance";
@@ -143,47 +143,26 @@ export default function ExportCenter() {
       const cacheId = cacheKey(["reports-coverage", scopedBranch, from, to]);
       const packed = await getCachedIntelligence(
         cacheId,
-        async () => {
-          const [cashUp, reviewCoverage, creatorBatches, productBatches] = await Promise.all([
-            fetchCashUpCoverage(supabase, { branch: scopedBranch, from, to }),
-            fetchReviewTrackingCoverage(supabase, { branch: scopedBranch, from, to }),
-            getImportBatches(40, IMPORT_TYPE.SALES_BY_CREATOR, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
-            getImportBatches(40, IMPORT_TYPE.WAITER_PRODUCT_SALES, rbac.profile, { columns: BATCH_COVERAGE_COLUMNS }),
-          ]);
-          const counts = await getImportBatchItemCounts([
-            ...(creatorBatches || []).map((b) => b.id),
-            ...(productBatches || []).map((b) => b.id),
-          ]);
-          return {
-            cashUp,
-            reviewCoverage,
-            creatorBatches: withUsableRowCounts(creatorBatches, counts),
-            productBatches: withUsableRowCounts(productBatches, counts),
-          };
-        },
+        () => fetchReportsReadiness(supabase, {
+          from,
+          to,
+          branch: scopedBranch,
+          rbacProfile: rbac.profile,
+          onPartial: (partial) => {
+            if (partial?.from === from && partial?.to === to) setCoverage(partial);
+          },
+        }),
         persistTtl,
       );
 
-      const { cashUp, reviewCoverage, creatorBatches, productBatches } = packed;
-      const cashDates = cashUp.cashUpDates || [];
-      if (cashUp.error && !cashDates.length) {
+      const { coverage: next, cashUp, reviewCoverage, timings } = packed;
+      const cashDates = cashUp?.cashUpDates || next?.cashUp?.present || [];
+      if (cashUp?.error && !cashDates.length) {
         setError(`Cash Up coverage query failed: ${cashUp.error}`);
       }
-      if (reviewCoverage.error && !(reviewCoverage.reviewDates || []).length) {
+      if (reviewCoverage?.error && !(reviewCoverage.reviewDates || []).length) {
         setError((prev) => prev || `Review coverage query failed: ${reviewCoverage.error}`);
       }
-      const reviewDates = reviewCoverage.reviewDates || [];
-      const creatorForBranch = (creatorBatches || []).filter((b) => b.branch_id === scopedBranch);
-      const productForBranch = (productBatches || []).filter((b) => b.branch_id === scopedBranch);
-
-      const next = assessExportCoverage({
-        from,
-        to,
-        cashUpDates: cashDates,
-        reviewDates,
-        creatorBatches: creatorForBranch,
-        productByCreatorBatches: productForBranch,
-      });
       setCoverage(next);
       try {
         sessionStorage.setItem(persistKey, JSON.stringify({ coverage: next, at: Date.now() }));
@@ -193,16 +172,20 @@ export default function ExportCenter() {
       if (typeof window !== "undefined") {
         window.__NAC_REPORTS_PERF__ = {
           coverageMs: Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - started),
+          timings: timings || null,
           cashDates: cashDates.length,
-          reviewDates: reviewDates.length,
+          reviewDates: (reviewCoverage?.reviewDates || []).length,
         };
       }
     } catch (err) {
       setError(err.message || "Could not check report readiness.");
+      setCoverage((prev) => prev || assessExportCoverage({ from, to }));
     } finally {
       setBusy(false);
     }
-  }, [from, to, scopedBranch, rbac.profile]);
+    // Profile object identity can change every render; key fields are enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, scopedBranch, rbac.profile?.email, rbac.profile?.authenticated, rbac.profile?.branchScope, rbac.profile?.allBranches]);
 
   useEffect(() => {
     refresh();
@@ -395,6 +378,9 @@ export default function ExportCenter() {
               <p className={`export-center-status-line ${coverage.reviews.complete ? "" : "export-center-review-warning"}`}>
                 {coverage.reviews.message}
               </p>
+              {coverage.reviews.detail ? (
+                <p className="export-center-foodics-path">{coverage.reviews.detail}</p>
+              ) : null}
             </div>
             <StatusRow item={coverage.salesByCreator} from={from} to={to} onUpload={handleUpload} />
             <StatusRow item={coverage.salesByProductByCreator} from={from} to={to} onUpload={handleUpload} />
