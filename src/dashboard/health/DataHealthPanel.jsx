@@ -28,7 +28,7 @@ function yesterdayRiyadh() {
 
 async function loadIntegrityPayload() {
   const settled = await Promise.allSettled([
-    supabase.from("menu_items").select("id,sku,name_en,active").limit(800),
+    supabase.from("menu_items").select("id,name_en,name_ar,active").limit(800),
     supabase.from("inventory_recipes").select("id,name,normalized_name,menu_item_id,active").limit(800),
     supabase.from("inventory_recipe_versions").select("id,recipe_id,version_number,status").limit(1200),
     supabase.from("inventory_recipe_version_lines").select("id,recipe_version_id,ingredient_id,sub_recipe_id,quantity").limit(4000),

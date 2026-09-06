@@ -355,16 +355,24 @@ export function groupIntegrityIssues(issues = []) {
 }
 
 export function scanIntegrityBundle(input = {}) {
-  const product = scanProductIdentityIssues(input.menuItems || []);
+  const menuItems = input.menuItems || [];
+  const skuPresent = menuItems.some((item) => item.sku != null || item.item_sku != null);
+  const product = scanProductIdentityIssues(menuItems);
   const recipe = scanRecipeGraphIssues(input);
   const cost = scanCostUomIssues(input.ingredients || [], input);
   const mapping = scanInventorySalesMapping(input);
-  const issues = [...product, ...recipe, ...cost, ...mapping.issues];
+  const skuIssues = skuPresent ? product : product.filter((row) => !["missing_sku", "reused_sku", "duplicate_sku", "one_identity_many_skus"].includes(row.code));
+  const issues = [...skuIssues, ...recipe, ...cost, ...mapping.issues];
   const summary = summarizeIntegrityIssues(issues);
+  const extraGaps = skuPresent ? [] : [{
+    category: "product",
+    code: "sku_column_unavailable",
+    message: "menu_items has no SKU column in this environment — SKU reuse checks are a capability gap.",
+  }];
   return {
     ...summary,
     groups: groupIntegrityIssues(issues),
-    capabilityGaps: mapping.capabilityGaps,
+    capabilityGaps: [...extraGaps, ...mapping.capabilityGaps],
     scannedAt: input.scannedAt || new Date().toISOString(),
     sources: ["menu_items", "inventory_recipes", "inventory_ingredients"],
   };
