@@ -66,7 +66,13 @@ export function formatCoverageRangeLabel(start, end) {
  */
 export function latestCompletedBusinessDate(referenceDate = new Date(), { todayIsComplete = false } = {}) {
   const today = riyadhYmd(referenceDate);
-  return todayIsComplete ? today : addIsoDays(today, -1);
+  if (todayIsComplete) return today;
+  const hour = Number(new Intl.DateTimeFormat("en-GB", {
+    timeZone: NAC_OPERATING_TZ,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(referenceDate instanceof Date ? referenceDate : new Date(referenceDate)).replace(/[^\d]/g, "").slice(0, 2)) || 0;
+  return addIsoDays(today, hour < 8 ? -2 : -1);
 }
 
 export function buildTemporalCoverage({

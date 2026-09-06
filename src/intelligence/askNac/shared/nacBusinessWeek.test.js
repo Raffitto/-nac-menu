@@ -1,4 +1,5 @@
 import {
+  latestCompletedBusinessDate,
   nacBusinessWeekRange,
   nacLastWeekPeriod,
   nacLikeForLikePriorWeek,
@@ -37,5 +38,11 @@ describe("NAC Sunday-start business week", () => {
       startDate: "2026-08-30",
       endDate: "2026-09-01",
     });
+  });
+
+  test("Cash Up completed-day lag does not flip at midnight", () => {
+    expect(latestCompletedBusinessDate(new Date("2026-09-06T12:00:00+03:00"))).toBe("2026-09-05");
+    expect(latestCompletedBusinessDate(new Date("2026-09-07T00:36:00+03:00"))).toBe("2026-09-05");
+    expect(latestCompletedBusinessDate(new Date("2026-09-07T08:00:00+03:00"))).toBe("2026-09-06");
   });
 });

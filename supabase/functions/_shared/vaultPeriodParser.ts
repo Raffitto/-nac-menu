@@ -2,7 +2,13 @@
  * Parse calendar day / month ranges for Data Vault queries (uploaded facts).
  */
 
-import { nacLastWeekPeriod, nacLikeForLikePriorWeek, nacThisWeekPeriod } from "./nacBusinessWeek.ts";
+import {
+  latestCompletedBusinessDate,
+  nacLastWeekPeriod,
+  nacLikeForLikePriorWeek,
+  nacThisWeekPeriod,
+  riyadhIsoDate,
+} from "./nacBusinessWeek.ts";
 
 export type VaultPeriod = {
   startDate: string;
@@ -592,13 +598,11 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
   if (!period?.startDate || !period?.endDate) return period;
   const requestedStartDate = period.requestedStartDate || period.startDate;
   const requestedEndDate = period.requestedEndDate || period.endDate;
-  const ymd = calendarYmdInTz(referenceDate);
-  const today = isoDate(ymd.year, ymd.month, ymd.day);
+  const today = riyadhIsoDate(referenceDate);
   if (period.endDate < today) {
     return { ...period, requestedStartDate, requestedEndDate, noCompletedDays: false };
   }
-  const yesterday = addCalendarDays(ymd.year, ymd.month, ymd.day, -1);
-  const completedEnd = isoDate(yesterday.year, yesterday.month, yesterday.day);
+  const completedEnd = latestCompletedBusinessDate(referenceDate);
   if (completedEnd < period.startDate) {
     return {
       ...period,

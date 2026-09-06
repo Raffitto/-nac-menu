@@ -15,6 +15,18 @@ describe("Ask NAC comparison period resolution", () => {
     expect(compare?.likeForLike).toBe(false);
   });
 
+  test("compare this week to last week before 08:00 Monday does not treat Sunday as complete", () => {
+    const mondayEarly = new Date("2026-09-07T00:36:00+03:00");
+    const compare = parseVaultComparePeriodsFromQuestion("compare this week to last week", mondayEarly);
+    expect(compare?.current?.requestedStartDate).toBe("2026-09-06");
+    expect(compare?.current?.requestedEndDate).toBe("2026-09-12");
+    expect(compare?.current?.noCompletedDays).toBe(true);
+    expect(compare?.current?.endDate).not.toBe("2026-09-06");
+    expect(compare?.previous?.startDate).toBe("2026-08-30");
+    expect(compare?.previous?.endDate).toBe("2026-09-05");
+    expect(compare?.likeForLike).toBe(false);
+  });
+
   test("week over week on Wednesday is like-for-like weekday positions", () => {
     const wed = new Date("2026-09-09T12:00:00+03:00");
     const compare = parseVaultComparePeriodsFromQuestion("week over week", wed);

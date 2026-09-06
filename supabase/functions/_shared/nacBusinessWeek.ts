@@ -57,6 +57,23 @@ export function nacLikeForLikePriorWeek(availableStart: string, availableEnd: st
   };
 }
 
+export function riyadhHour(referenceDate: Date = new Date()): number {
+  const raw = new Intl.DateTimeFormat("en-GB", {
+    timeZone: NAC_WEEK_TZ,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(referenceDate);
+  return Number(String(raw).replace(/[^\d]/g, "").slice(0, 2)) || 0;
+}
+
+export const CASH_UP_COMPLETED_DAY_HOUR = 8;
+
+export function latestCompletedBusinessDate(referenceDate: Date = new Date()): string {
+  const today = riyadhIsoDate(referenceDate);
+  const lag = riyadhHour(referenceDate) < CASH_UP_COMPLETED_DAY_HOUR ? 2 : 1;
+  return addIsoDays(today, -lag);
+}
+
 export function nacThisWeekPeriod(referenceDate: Date = new Date()) {
   const today = riyadhIsoDate(referenceDate);
   const { startDate, endDate } = nacBusinessWeekRange(today);

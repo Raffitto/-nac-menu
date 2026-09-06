@@ -63,8 +63,25 @@ export function nacLikeForLikePriorWeek(availableStart, availableEnd) {
   };
 }
 
+export function riyadhHour(referenceDate = new Date()) {
+  const raw = new Intl.DateTimeFormat("en-GB", {
+    timeZone: NAC_WEEK_TZ,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(referenceDate instanceof Date ? referenceDate : new Date(referenceDate));
+  return Number(String(raw).replace(/[^\d]/g, "").slice(0, 2)) || 0;
+}
+
+/**
+ * Latest date that completed-day Cash Up may be treated as present.
+ * Yesterday is not complete at midnight — before 08:00 Asia/Riyadh we lag two days.
+ */
+export const CASH_UP_COMPLETED_DAY_HOUR = 8;
+
 export function latestCompletedBusinessDate(referenceDate = new Date()) {
-  return addIsoDays(riyadhIsoDate(referenceDate), -1);
+  const today = riyadhIsoDate(referenceDate);
+  const lag = riyadhHour(referenceDate) < CASH_UP_COMPLETED_DAY_HOUR ? 2 : 1;
+  return addIsoDays(today, -lag);
 }
 
 export function nacThisWeekPeriod(referenceDate = new Date()) {
