@@ -5,6 +5,7 @@ import { exportViewPerfJson, recentViewPerf } from "../../lib/viewPerf";
 import { scanIntegrityBundle } from "./dataIntegrityScan";
 import { RECIPE_GAP_CLASS } from "./recipeMappingClassification";
 import { CLUSTER_KIND } from "./identityClusters";
+import { buildInventoryTruthResult } from "../../lib/inventoryTruthApi";
 
 function freshnessLabel(iso) {
   if (!iso) return "Unknown";
@@ -35,17 +36,42 @@ async function loadIntegrityPayload() {
     supabase.from("inventory_recipe_versions").select("id,recipe_id,version_number,status").limit(1200),
     supabase.from("inventory_recipe_version_lines").select("id,recipe_version_id,ingredient_id,sub_recipe_id,quantity").limit(4000),
     supabase.from("inventory_ingredients").select("id,canonical_name,active,base_inventory_unit").limit(800),
+    supabase.from("inventory_ingredient_cost_state").select("ingredient_id,branch_id,weighted_average_cost,last_purchase_price,last_purchase_at").limit(2000),
+    supabase.from("inventory_movements").select("id", { count: "exact", head: true }).limit(1),
+    supabase.from("inventory_stock_counts").select("id", { count: "exact", head: true }).eq("status", "posted").limit(1),
   ]);
   const pick = (i) => (settled[i].status === "fulfilled" ? settled[i].value.data || [] : []);
-  return scanIntegrityBundle({
+  const costRows = pick(5);
+  const costByIngredientId = {};
+  for (const row of costRows) {
+    if (row.last_purchase_at || row.last_purchase_price != null) {
+      costByIngredientId[row.ingredient_id] = row;
+    }
+  }
+  const movementCount = settled[6].status === "fulfilled" ? Number(settled[6].value.count || 0) : 0;
+  const postedCounts = settled[7].status === "fulfilled" ? Number(settled[7].value.count || 0) : 0;
+  const ingredients = pick(4);
+  const scan = scanIntegrityBundle({
     menuItems: pick(0),
     recipes: pick(1),
     versions: pick(2),
     lines: pick(3),
-    ingredients: pick(4),
+    ingredients,
+    costByIngredientId,
     inventoryItems: null,
     scannedAt: new Date().toISOString(),
   });
+  const truth = buildInventoryTruthResult({
+    ingredients,
+    recipes: pick(1),
+    versions: pick(2),
+    lines: pick(3),
+    catalogueItems: [],
+    costStateByIngredientId: costByIngredientId,
+    movements: movementCount ? [{ movement_type: "unknown_present" }] : [],
+    stockCounts: postedCounts ? [{ status: "posted" }] : [],
+  });
+  return { ...scan, inventoryTruth: truth };
 }
 
 export default function DataHealthPanel() {
@@ -256,6 +282,34 @@ export default function DataHealthPanel() {
               {" · "}derived {integrity.costClasses.DERIVED_SUB_RECIPE}
               {" · "}unknown {integrity.costClasses.UNKNOWN}
             </p>
+          ) : null}
+          {integrity.inventoryTruth ? (
+            <div data-testid="settings-inventory-truth">
+              <p className="nac-settings-muted">
+                Inventory Truth readiness:
+                recipe {integrity.inventoryTruth.readiness.recipeCoverage}
+                {" · "}identity {integrity.inventoryTruth.readiness.ingredientIdentityHealth}
+                {" · "}UOM {integrity.inventoryTruth.readiness.uomHealth}
+                {" · "}cost {integrity.inventoryTruth.readiness.costCoverage}
+                {" · "}theoretical {integrity.inventoryTruth.readiness.theoreticalConsumptionReadiness}
+                {" · "}actual {integrity.inventoryTruth.readiness.actualConsumptionReadiness}
+                {" · "}variance {integrity.inventoryTruth.readiness.varianceReadiness}
+              </p>
+              <p className="nac-settings-muted">
+                Actual {integrity.inventoryTruth.actual.actualCoverageStatus}
+                {" · "}
+                variance {integrity.inventoryTruth.variance.status}
+                {" · "}
+                costed {integrity.inventoryTruth.costSummary.valid}
+                {" · "}
+                actionable missing {integrity.inventoryTruth.costSummary.actionableMissing}
+                {" · "}
+                UOM blocked {integrity.inventoryTruth.uom.blocked}
+              </p>
+              <p className="nac-settings-muted">
+                Open Inventory → Truth to explore an ingredient and calculate theoretical consumption for a sales period.
+              </p>
+            </div>
           ) : null}
           {integrity.recipeMapping ? (
             <div data-testid="settings-recipe-mapping">

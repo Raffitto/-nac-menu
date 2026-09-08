@@ -8,6 +8,7 @@ export const INVENTORY_TABS = Object.freeze([
   { id: "invoices", label: "Invoice Review" },
   { id: "ingredients", label: "Ingredients" },
   { id: "food-bible", label: "Food Bible" },
+  { id: "truth", label: "Truth" },
 ]);
 
 export function inventoryBranchFromLocation(defaultBranch = "khobar") {

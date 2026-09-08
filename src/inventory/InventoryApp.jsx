@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import InvoiceIntakeView from "./InvoiceIntakeView";
 import IngredientMasterView from "./IngredientMasterView";
 import FoodBibleView from "./FoodBibleView";
+import InventoryTruthView from "./InventoryTruthView";
 import {
   INVENTORY_BRANCHES,
   INVENTORY_TABS,
@@ -35,7 +36,9 @@ export default function InventoryApp() {
             ? "Ingredient master"
             : activeTab === "food-bible"
               ? "Food Bible"
-              : "Invoice intake"
+              : activeTab === "truth"
+                ? "Inventory Truth"
+                : "Invoice intake"
         }
         subtitle="Authorized purchasing, inventory, and operations team members"
         sessionIssue={issue}
@@ -49,7 +52,7 @@ export default function InventoryApp() {
         <div>
           <p className="inv-kicker">NAC Hospitality OS</p>
           <h1>Inventory</h1>
-          <p>Review supplier invoices, manage ingredients, and document the Food Bible for this branch.</p>
+          <p>Review supplier invoices, manage ingredients, document the Food Bible, and inspect inventory truth for this branch.</p>
           <nav className="inv-tabs" aria-label="Inventory sections">
             {INVENTORY_TABS.map((tab) => (
               <button
@@ -88,6 +91,8 @@ export default function InventoryApp() {
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
       ) : activeTab === "ingredients" ? (
         <IngredientMasterView branchId={branchId} />
+      ) : activeTab === "truth" ? (
+        <InventoryTruthView branchId={branchId} />
       ) : (
         <FoodBibleView
           branchId={branchId}

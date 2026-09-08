@@ -18,6 +18,12 @@ const defaults = [
   "src/dashboard/health/identityClusters.test.js",
   "src/dashboard/exportCenter/reportsReadiness.test.js",
   "src/platform/productionContracts.test.js",
+  "src/inventory/truth/inventoryTruth.test.js",
+  "src/inventory/truth/knownCases.test.js",
+  "src/inventory/truth/salesSource.test.js",
+  "src/lib/inventoryTruthApi.test.js",
+  "src/lib/inventoryTruthApi.sales.test.js",
+  "src/inventory/InventoryTruthView.test.js",
 ];
 const files = extra.length ? extra : defaults;
 const result = spawnSync(

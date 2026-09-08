@@ -84,6 +84,7 @@ describe("InventoryApp", () => {
     expect(await screen.findByTestId("inventory-tab-invoices")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-ingredients")).toBeInTheDocument();
     expect(screen.getByTestId("inventory-tab-food-bible")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-tab-truth")).toBeInTheDocument();
     expect(screen.getByText("Upload supplier invoice")).toBeInTheDocument();
   });
 

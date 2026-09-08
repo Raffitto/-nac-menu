@@ -293,12 +293,24 @@ export function scanRecipeGraphIssues({
   return issues.map((row) => ({ source: "inventory_recipes", category: row.category || "recipe", ...row }));
 }
 
+function recordedCost(ingredient, costByIngredientId = {}) {
+  const evidence = costByIngredientId[ingredient.id];
+  if (evidence && typeof evidence === "object") {
+    if (evidence.last_purchase_at || evidence.lastPurchaseAt || evidence.last_purchase_price != null || evidence.lastPurchasePrice != null) {
+      return evidence.weighted_average_cost ?? evidence.weightedAverageCost ?? evidence.last_purchase_price ?? evidence.lastPurchasePrice;
+    }
+    return null;
+  }
+  if (evidence != null) return evidence;
+  return ingredient.unit_cost ?? ingredient.last_cost ?? null;
+}
+
 export function scanCostUomIssues(ingredients = [], { costByIngredientId = {}, conversions = [] } = {}) {
   const issues = [];
   for (const ingredient of ingredients || []) {
     const name = ingredient.canonical_name || ingredient.name || ingredient.id;
-    const cost = costByIngredientId[ingredient.id];
-    if (cost == null && ingredient.unit_cost == null && ingredient.last_cost == null) {
+    const cost = recordedCost(ingredient, costByIngredientId);
+    if (cost == null) {
       const placeholder = isVerificationFixture(name) || /INV-OCR|\[temp verify/i.test(String(name));
       const inactive = ingredient.active === false;
       const structural = /sub[-\s]?recipe|derived|structural/i.test(String(name));

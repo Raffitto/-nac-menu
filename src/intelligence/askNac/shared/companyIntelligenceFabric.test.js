@@ -476,6 +476,19 @@ describe("Company Intelligence Fabric foundation", () => {
 
   test("incomplete week wording uses coverage dates and names the missing day", () => {
     const out = run(`
+      const frozenMs = Date.parse("2026-09-06T12:00:00+03:00");
+      const RealDate = Date;
+      function FakeDate(...args) {
+        if (new.target) {
+          return args.length ? new RealDate(...args) : new RealDate(frozenMs);
+        }
+        return args.length ? RealDate(...args) : RealDate(frozenMs);
+      }
+      FakeDate.now = () => frozenMs;
+      FakeDate.parse = RealDate.parse;
+      FakeDate.UTC = RealDate.UTC;
+      Object.setPrototypeOf(FakeDate, RealDate);
+      global.Date = FakeDate;
       const period = {
         startDate: "2026-08-31",
         endDate: "2026-09-06",

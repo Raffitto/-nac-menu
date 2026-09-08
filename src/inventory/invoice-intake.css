@@ -1033,3 +1033,46 @@
   .fb-card__photo { min-height: 180px; }
   .fb-card__table-wrap { overflow-x: auto; }
 }
+
+.inv-truth {
+  max-width: 1540px;
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+.inv-truth--embedded { max-width: none; }
+.inv-muted { margin: 0; color: var(--inv-muted); line-height: 1.5; }
+.inv-error { margin: 0; color: var(--inv-red); }
+.inv-truth-readiness,
+.inv-truth-dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.inv-truth-readiness dt,
+.inv-truth-dl dt {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--inv-muted);
+}
+.inv-truth-readiness dd,
+.inv-truth-dl dd { margin: 4px 0 0; }
+.inv-truth-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.inv-truth-period label { display: grid; gap: 6px; color: var(--inv-muted); font-size: 12px; }
+.inv-truth-explorer { display: grid; gap: 12px; }
+.inv-truth-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+.inv-truth-explorer ol { margin: 0; padding-left: 1.2rem; color: #f5f2eb; }

@@ -85,5 +85,14 @@ describe("data integrity scan", () => {
     expect(result.costClasses.LEGACY_INACTIVE).toBe(1);
     expect(result.costClasses.ACTIVE_OPERATIONAL).toBe(1);
   });
+
+  test("cost_state default zero without purchase evidence stays missing, not zero", () => {
+    const result = scanIntegrityBundle({
+      ingredients: [{ id: "i3", canonical_name: "Fresh basil", active: true }],
+      costByIngredientId: { i3: { weighted_average_cost: 0 } },
+    });
+    expect(result.issues.some((i) => i.code === "missing_ingredient_cost")).toBe(true);
+    expect(result.costClasses.ACTIVE_OPERATIONAL).toBe(1);
+  });
 });
 

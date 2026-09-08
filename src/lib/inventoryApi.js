@@ -1180,6 +1180,7 @@ export function invoiceLineFingerprint(lines) {
   return buildInvoiceLineFingerprint(lines);
 }
 
+/** Food Bible stub. Do not invent a second cost policy; Truth reads cost_state directly. */
 export async function fetchCanonicalCostContext() {
   return { costByCanonicalId: {}, reconcile: { newlyMapped: [] }, identities: [] };
 }
