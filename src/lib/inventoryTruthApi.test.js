@@ -36,6 +36,8 @@ describe("inventory truth access and query contracts", () => {
     expect(INVENTORY_TRUTH_SELECTS.COMMERCE_ITEM_SELECT).toContain("canonical_menu_item_id");
     expect(INVENTORY_TRUTH_SELECTS.COMMERCE_ITEM_SELECT).toContain("quantity");
     expect(INVENTORY_TRUTH_SELECTS.LINE_SELECT).toContain("sub_recipe_id");
+    expect(INVENTORY_TRUTH_SELECTS.VERSION_SELECT).toContain("effective_from");
+    expect(INVENTORY_TRUTH_SELECTS.VERSION_SELECT).toContain("effective_to");
     expect(INVENTORY_TRUTH_SELECTS.COST_STATE_SELECT).toContain("last_purchase_at");
     expect(Object.values(INVENTORY_TRUTH_SELECTS).every((value) => !value.includes("*"))).toBe(true);
   });

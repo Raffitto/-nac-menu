@@ -327,6 +327,7 @@ export function mapVersionRow(row) {
     outputUnit: row.output_unit,
     effectiveFrom: row.effective_from,
     effectiveTo: row.effective_to,
+    approvedBy: row.approved_by,
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

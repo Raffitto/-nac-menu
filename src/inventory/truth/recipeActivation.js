@@ -147,6 +147,7 @@ export function validateRecipeVersionForActivation({
     evidence,
     supersededDrafts: resolved.superseded,
     blockers: ok ? [] : uniqueBlockers,
+    conversionNotes: canonical.conversionNotes || [],
     plan: planActivateRecipeVersion({
       recipeId: recipe.id,
       activateVersionId: candidateId,

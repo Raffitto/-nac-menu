@@ -13,7 +13,7 @@ import {
 
 const INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
 const RECIPE_SELECT = "id,name,normalized_name,name_en,recipe_type,menu_item_id,branch_id,output_quantity,output_unit,active";
-const VERSION_SELECT = "id,recipe_id,version_number,status,yield_percentage";
+const VERSION_SELECT = "id,recipe_id,version_number,status,yield_percentage,effective_from,effective_to";
 const LINE_SELECT = "id,recipe_version_id,ingredient_id,sub_recipe_id,quantity,unit,canonical_quantity,canonical_unit";
 const COST_STATE_SELECT = "branch_id,ingredient_id,weighted_average_cost,last_purchase_price,last_purchase_at,current_quantity";
 const CATALOGUE_SELECT = "id,ingredient_id,supplier_sku,original_product_name,verification_state";

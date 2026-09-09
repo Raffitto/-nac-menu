@@ -26,7 +26,7 @@ const FOOD_BIBLE_CATEGORY_SELECT = "id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_SECTION_SELECT = "id,category_id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_ITEM_SELECT = "id,section_id,name_en,name_ar,sort_order,active,sold_out,hidden_until,placement_group_id,branch_id";
 const FOOD_BIBLE_RECIPE_SELECT = "id,name,normalized_name,name_en,name_ar,internal_name,recipe_type,menu_item_id,placement_group_id,branch_id,output_quantity,output_unit,portion_count,portion_size,portion_unit,hero_image_path,active,updated_at,updated_by,created_at";
-const FOOD_BIBLE_VERSION_SELECT = "id,recipe_id,version_number,status,updated_at";
+const FOOD_BIBLE_VERSION_SELECT = "id,recipe_id,version_number,status,updated_at,effective_from,effective_to,approved_by";
 const FOOD_BIBLE_INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
 
 const foodBibleOverviewCache = new Map();
@@ -682,17 +682,21 @@ export async function fetchRecipeBundle(recipeId) {
   ]);
   if (!row) return null;
   const recipe = mapRecipeRow(row);
+  const mappedVersions = (versions || []).map(mapVersionRow);
   const versionRow = pickWorkingVersion(versions, recipeId);
   const version = mapVersionRow(versionRow);
-  const versionId = version?.id;
-  const [lineRows, stageRows] = versionId
-    ? await Promise.all([fetchRecipeLines([versionId]), fetchRecipeStages([versionId])])
+  const versionIds = (versions || []).map((row) => row.id).filter(Boolean);
+  const [lineRows, stageRows] = versionIds.length
+    ? await Promise.all([fetchRecipeLines(versionIds), fetchRecipeStages(versionIds)])
     : [[], []];
+  const allLines = lineRows.map(mapLineRow);
   return {
     recipe,
     version,
-    lines: lineRows.map(mapLineRow),
-    stages: stageRows.map(mapStageRow),
+    versions: mappedVersions,
+    lines: allLines.filter((line) => line.recipeVersionId === version?.id),
+    allLines,
+    stages: stageRows.map(mapStageRow).filter((stage) => stage.recipeVersionId === version?.id),
   };
 }
 

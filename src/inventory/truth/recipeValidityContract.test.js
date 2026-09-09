@@ -15,6 +15,7 @@ import {
   evaluateCanonicalRecipeValidity,
   evaluateProductionSqlLine,
   formatSourceDiff,
+  formatStaffValidationMessage,
   hasOperationalAcknowledgement,
   versionCoversTimestamp,
 } from "./recipeValidityContract";
@@ -32,9 +33,10 @@ const gram = (id, name, extra = {}) => ({
 });
 
 describe("SQL/JS production gate snapshot", () => {
-  test("live production SQL blocks on recipe_cost_eligible, not classification", () => {
+  test("canonical live SQL does not gate on cost eligibility or exact sub-recipe units", () => {
     expect(PRODUCTION_SQL_GATES.usesInventoryClassification).toBe(false);
-    expect(PRODUCTION_SQL_GATES.requiresRecipeCostEligible).toBe(true);
+    expect(PRODUCTION_SQL_GATES.requiresRecipeCostEligible).toBe(false);
+    expect(PRODUCTION_SQL_GATES.requiresExactSubrecipeOutputUnit).toBe(false);
     expect(evaluateProductionSqlLine(
       { ingredient_id: "salt", canonical_quantity: 3, canonical_unit: "gram" },
       gram("salt", "table salt"),
@@ -116,6 +118,7 @@ describe("documentation and UOM contract", () => {
       allRecipes: [{ id: "r", output_quantity: "1", output_unit: "each" }],
     });
     expect(mass.valid).toBe(true);
+    expect(mass.conversionNotes.some((note) => /converted automatically/i.test(note))).toBe(true);
     const volume = evaluateCanonicalRecipeValidity({
       recipe: { id: "r", output_quantity: "1", output_unit: "each" },
       version: { id: "v", recipe_id: "r", status: "draft", output_quantity: "1", output_unit: "each" },
@@ -138,6 +141,7 @@ describe("documentation and UOM contract", () => {
     });
     expect(massVolume.valid).toBe(false);
     expect(massVolume.status).toBe(RECIPE_VALIDITY.BLOCKED_UOM);
+    expect(formatStaffValidationMessage(massVolume.errors[0])).toMatch(/Greek yoghurt is stored in millilitre but this recipe uses gram/i);
     const eachMass = evaluateCanonicalRecipeValidity({
       recipe: { id: "r", output_quantity: "1", output_unit: "each" },
       version: { id: "v", recipe_id: "r", status: "draft", output_quantity: "1", output_unit: "each" },
@@ -174,7 +178,8 @@ describe("documentation and UOM contract", () => {
       null,
     );
     expect(productionExact).toBe(null);
-    expect(PRODUCTION_SQL_GATES.requiresExactSubrecipeOutputUnit).toBe(true);
+    expect(PRODUCTION_SQL_GATES.requiresExactSubrecipeOutputUnit).toBe(false);
+    expect(result.conversionNotes.some((note) => /Truffle Mayonnaise/i.test(note) && /converted automatically/i.test(note))).toBe(true);
   });
 });
 
@@ -220,6 +225,10 @@ describe("lifecycle and source policy", () => {
       operationalChange: { acknowledged: true, reason: "chef_operational_update" },
     }, { sourceClass: SOURCE_EVIDENCE_CLASS.SOURCE_CONFIRMED_WITH_DIFFERENCES })).toBe(true);
     expect(OPERATIONAL_CHANGE_REASONS.map((item) => item.value)).toContain("chef_operational_update");
+    expect(OPERATIONAL_CHANGE_REASONS.map((item) => item.label)).toEqual(expect.arrayContaining([
+      "Ingredient change",
+      "Seasonal change",
+    ]));
     const policy = evaluateCanonicalRecipeValidity({
       recipe: { id: "r", output_quantity: "1", output_unit: "each" },
       version: { id: "v", recipe_id: "r", status: "draft", output_quantity: "1", output_unit: "each" },
@@ -291,6 +300,8 @@ describe("authored SQL matches canonical contract", () => {
     expect(sql).toMatch(/inventory_recipe_units_compatible/);
     expect(sql).toMatch(/UNRESOLVED_RECIPE_LINE/);
     expect(sql).toMatch(/INVALID_SUBRECIPE_VERSION_OR_UNIT/);
+    expect(sql).toMatch(/\(ocr\|temp verify\)/);
+    expect(sql).not.toMatch(/\\\[temp verify/);
     expect(sql).not.toMatch(/update public\.inventory_ingredients set inventory_classification/);
   });
 });

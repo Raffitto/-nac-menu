@@ -11,7 +11,7 @@ import {
 } from "../lib/inventoryApi";
 import { uploadMenuImage } from "../lib/menuApi";
 import { componentOpenTarget } from "./foodBibleCardNav";
-import { CANONICAL_UNITS, unitLabel } from "./ingredientMaster";
+import { CANONICAL_UNITS, recipeUnitShort, unitLabel } from "./ingredientMaster";
 import {
   DEFAULT_DOCUMENTATION,
   deriveRecipeReadiness,
@@ -30,6 +30,7 @@ import { mustForkNewDraft } from "./truth/recipeActivation";
 import {
   OPERATIONAL_CHANGE_REASONS,
   formatSourceDiff,
+  formatStaffValidationMessage,
   sourceDiffRequiresAcknowledgement,
 } from "./truth/recipeValidityContract";
 
@@ -39,7 +40,7 @@ const WORKSPACES = [
   { id: "details", label: "Details" },
 ];
 
-function emptyLine() {
+function emptyLine(kind = "ingredient") {
   return {
     clientId: `line-${Math.random().toString(36).slice(2, 9)}`,
     ingredientId: "",
@@ -50,7 +51,29 @@ function emptyLine() {
     isOptional: false,
     wastePercentage: "0",
     stageId: "",
+    lineKind: kind,
   };
+}
+
+function formatVersionWhen(value) {
+  if (!value) return "—";
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return "—";
+  return new Date(time).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function versionReasonLabel(version) {
+  const reason = version?.documentation?.operationalChange?.reason
+    || version?.documentation?.operational_change?.reason
+    || "";
+  const match = OPERATIONAL_CHANGE_REASONS.find((item) => item.value === reason);
+  return match?.label || (reason ? String(reason) : "—");
 }
 
 function heroUrl(path) {
@@ -126,6 +149,11 @@ export default function FoodBibleCard({
   const [activationNote, setActivationNote] = useState("");
   const [activationReason, setActivationReason] = useState("");
   const [sourceAcknowledged, setSourceAcknowledged] = useState(false);
+  const [sourceDiffOpen, setSourceDiffOpen] = useState(false);
+  const [versionPane, setVersionPane] = useState("current");
+  const [viewedVersionId, setViewedVersionId] = useState(null);
+  const [conversionNotes, setConversionNotes] = useState([]);
+  const [validationDetailsOpen, setValidationDetailsOpen] = useState(false);
 
   const ingredients = useMemo(() => {
     const seen = new Set();
@@ -158,6 +186,11 @@ export default function FoodBibleCard({
       setLines(nextLines);
       setSavedLines(nextLines);
       setStages(next?.stages || []);
+      setViewedVersionId(next?.version?.id || null);
+      setVersionPane("current");
+      setSourceDiffOpen(false);
+      setConversionNotes([]);
+      setValidationDetailsOpen(false);
     };
     if (!target?.recipeId) {
       applyBundle(null);
@@ -209,6 +242,14 @@ export default function FoodBibleCard({
   const sourceDiff = useMemo(() => formatSourceDiff(sourceEvidence.differences || []), [sourceEvidence.differences]);
   const needsSourceAck = sourceDiffRequiresAcknowledgement(sourceEvidence.class);
   const canActivate = Boolean(activationReason) && (!needsSourceAck || sourceAcknowledged);
+  const allVersions = bundle?.versions || (bundle?.version ? [bundle.version] : []);
+  const viewingHistorical = Boolean(viewedVersionId && bundle?.version?.id && viewedVersionId !== bundle.version.id);
+  const draftVersions = allVersions.filter((version) => String(version.status || "").toLowerCase() === "draft");
+  const historyVersions = allVersions.filter((version) => {
+    const status = String(version.status || "").toLowerCase();
+    return status === "retired" || (status === "active" && version.id !== bundle?.version?.id);
+  });
+  const sourcePdf = sourceEvidence.sourceDish?.pdf || "NAC Food Bible · Aug 2026";
 
   const linkedName = (overview?.rows || []).find((row) => row.menuItemId === form.menuItemId)?.displayName
     || (overview?.rows || []).find((row) => row.identityKey === target?.identityKey)?.displayName
@@ -375,9 +416,11 @@ export default function FoodBibleCard({
         },
       });
       setActivationBlockers(evaluation.blockers || []);
+      setConversionNotes(evaluation.conversionNotes || []);
+      setValidationDetailsOpen(false);
       if (evaluation.alreadyActive) setActivationNote("This version is already ACTIVE.");
       else if (evaluation.ok) setActivationNote("Validation passed. Safe to activate.");
-      else setActivationNote("Activation blocked.");
+      else setActivationNote("This recipe cannot be activated yet.");
     } catch (err) {
       setError(friendlyRecipeError(err, "Could not validate recipe."));
     } finally {
@@ -496,14 +539,14 @@ export default function FoodBibleCard({
             ) : null}
           </div>
           <div className="fb-card__toolbar-actions">
-            {canEdit && !editing ? (
+            {canEdit && !editing && !viewingHistorical ? (
               <button
                 type="button"
                 data-testid="food-bible-card-edit"
                 onClick={() => {
                   setEditing(true);
                   if (mustForkNewDraft(bundle?.version?.status)) {
-                    setActivationNote("Editing ACTIVE creates a new DRAFT on save. The live recipe stays unchanged.");
+                    setActivationNote("Editing creates a new draft. Current active recipe stays live until you activate the new version.");
                   }
                 }}
               >
@@ -560,20 +603,17 @@ export default function FoodBibleCard({
                     className={`inv-status-pill inv-status-pill--${String(bundle?.version?.status || "draft").toLowerCase()}`}
                     data-testid="food-bible-version-status"
                   >
-                    {versionStatus}
+                    Operational Recipe {versionStatus}
                   </p>
                   <p className="fb-card__status" data-testid="food-bible-recipe-completeness">
                     Recipe completeness: {completenessLabel(readiness.readiness)}
                   </p>
-                  <p className="fb-card__status" data-testid="food-bible-source-evidence">
-                    Source: {sourceEvidence.class}
-                    {sourceEvidence.sourceDish?.pdf ? ` · ${sourceEvidence.sourceDish.pdf}` : ""}
+                  <p className="fb-card__status is-quiet" data-testid="food-bible-source-evidence">
+                    Source reference: {sourcePdf}
                   </p>
                   {doc.sourceDataNeedsReview ? (
                     <p className="fb-card__review" data-testid="food-bible-source-review">Source review: needs review</p>
-                  ) : (
-                    <p className="fb-card__status is-quiet">Source review: clear</p>
-                  )}
+                  ) : null}
                   {needsSourceAck ? (
                     <p className="fb-card__review" data-testid="food-bible-source-modified">
                       Operationally modified from source
@@ -581,16 +621,83 @@ export default function FoodBibleCard({
                   ) : null}
                 </div>
                 {sourceDiff.length ? (
-                  <ul className="fb-card__source-diff" data-testid="food-bible-source-diff">
-                    {sourceDiff.map((row) => (
-                      <li key={row.label}>{row.label}</li>
-                    ))}
+                  <div className="fb-card__source-panel">
+                    <button
+                      type="button"
+                      className="fb-card__source-toggle"
+                      data-testid="food-bible-source-diff-toggle"
+                      onClick={() => setSourceDiffOpen((open) => !open)}
+                    >
+                      {sourceDiffOpen ? "Hide changes" : "Tap to view changes"}
+                    </button>
+                    {sourceDiffOpen ? (
+                      <ul className="fb-card__source-diff" data-testid="food-bible-source-diff">
+                        {sourceDiff.map((row) => (
+                          <li key={row.label}>{row.label}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div className="fb-card__version-panes" data-testid="food-bible-version-panes">
+                  {[
+                    { id: "current", label: "Current" },
+                    { id: "drafts", label: "Drafts" },
+                    { id: "history", label: "History" },
+                  ].map((pane) => (
+                    <button
+                      key={pane.id}
+                      type="button"
+                      className={versionPane === pane.id ? "is-active" : ""}
+                      data-testid={`food-bible-version-pane-${pane.id}`}
+                      onClick={() => {
+                        setVersionPane(pane.id);
+                        if (pane.id === "current" && bundle?.version?.id) {
+                          setViewedVersionId(bundle.version.id);
+                          setLines(savedLines.length ? savedLines : lines);
+                        }
+                      }}
+                    >
+                      {pane.label}
+                    </button>
+                  ))}
+                </div>
+                {versionPane === "drafts" ? (
+                  <ul className="fb-card__version-list" data-testid="food-bible-drafts-list">
+                    {draftVersions.length ? draftVersions.map((version) => (
+                      <li key={version.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editing) return;
+                            setViewedVersionId(version.id);
+                            const histLines = (bundle?.allLines || []).filter((line) => line.recipeVersionId === version.id);
+                            setLines(histLines.length ? histLines : [emptyLine()]);
+                          }}
+                        >
+                          Draft v{version.versionNumber || "—"}
+                        </button>
+                      </li>
+                    )) : <li>No drafts</li>}
                   </ul>
                 ) : null}
-                {canEdit && bundle?.recipe?.id ? (
-                  <div className="fb-card__activation-actions">
+                {versionPane === "history" ? (
+                  <ul className="fb-card__version-list" data-testid="food-bible-history-list">
+                    {historyVersions.length ? historyVersions.map((version) => (
+                      <li key={version.id}>
+                        <p>Active from {formatVersionWhen(version.effectiveFrom)}</p>
+                        <p>Active until {formatVersionWhen(version.effectiveTo)}</p>
+                        <p>Change reason {versionReasonLabel(version)}</p>
+                        <p>Who activated it {version.approvedBy ? "Recorded" : "—"}</p>
+                      </li>
+                    )) : <li>No previous versions</li>}
+                  </ul>
+                ) : null}
+                {canEdit && bundle?.recipe?.id && !viewingHistorical ? (
+                  <div className="fb-card__activation-actions" data-testid="food-bible-activate-panel">
+                    <p className="fb-card__activate-title">Activate Recipe</p>
                     <label className="fb-card__reason">
-                      <span>Change reason</span>
+                      <span>Reason</span>
                       <select
                         data-testid="food-bible-activation-reason"
                         value={activationReason}
@@ -612,7 +719,7 @@ export default function FoodBibleCard({
                           onChange={(event) => setSourceAcknowledged(event.target.checked)}
                           disabled={Boolean(busy) || editing}
                         />
-                        Acknowledge operational difference from source
+                        I confirm this is the recipe currently used in the kitchen
                       </label>
                     ) : null}
                     <button
@@ -637,12 +744,37 @@ export default function FoodBibleCard({
                   </div>
                 ) : null}
                 {activationNote ? <p className="fb-card__status" data-testid="food-bible-activation-note">{activationNote}</p> : null}
-                {activationBlockers.length ? (
-                  <ul className="fb-card__activation-blockers" data-testid="food-bible-activation-blockers">
-                    {activationBlockers.map((item, index) => (
-                      <li key={`${item.code || "block"}-${index}`}>{item.reason || item.code}</li>
-                    ))}
+                {conversionNotes.length ? (
+                  <ul className="fb-card__conversion-notes" data-testid="food-bible-conversion-notes">
+                    {conversionNotes.map((note) => <li key={note}>{note}</li>)}
                   </ul>
+                ) : null}
+                {activationBlockers.length ? (
+                  <div className="fb-card__validation">
+                    <ul className="fb-card__activation-blockers" data-testid="food-bible-activation-blockers">
+                      {activationBlockers
+                        .map((item, index) => ({ item, index, message: formatStaffValidationMessage(item) }))
+                        .filter(({ item, message }) => message && message !== item.code)
+                        .map(({ item, index, message }) => (
+                          <li key={`${item.code || "block"}-${index}`}>{message}</li>
+                        ))}
+                    </ul>
+                    <button
+                      type="button"
+                      className="fb-card__details-toggle"
+                      data-testid="food-bible-validation-details"
+                      onClick={() => setValidationDetailsOpen((open) => !open)}
+                    >
+                      {validationDetailsOpen ? "Hide details" : "Details"}
+                    </button>
+                    {validationDetailsOpen ? (
+                      <ul className="fb-card__validation-codes" data-testid="food-bible-validation-codes">
+                        {activationBlockers.map((item, index) => (
+                          <li key={`${item.code || "code"}-${index}`}>{item.code}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                 ) : null}
                 {target?.linkKind === "inferred" ? <p className="fb-card__review">Needs menu confirmation</p> : null}
                 <p className="fb-card__link">
@@ -681,23 +813,31 @@ export default function FoodBibleCard({
                       <input
                         value={lineSearch}
                         onChange={(event) => setLineSearch(event.target.value)}
-                        placeholder="Search ingredients"
+                        placeholder="Search to add"
                         data-testid="recipe-ingredient-search"
                       />
                     ) : null}
                   </div>
                   {editing && searchMiss ? (
                     <div className="fb-card__new-ingredient" data-testid="food-bible-new-ingredient">
-                      <p>No match for “{lineSearch.trim()}”. Add it without leaving this recipe.</p>
+                      <p>No match for “{lineSearch.trim()}”. Create it here — supplier and cost can wait.</p>
                       <label>
-                        <span>Base unit</span>
+                        <span>Name</span>
+                        <input
+                          data-testid="food-bible-new-ingredient-name"
+                          value={lineSearch}
+                          onChange={(event) => setLineSearch(event.target.value)}
+                        />
+                      </label>
+                      <label>
+                        <span>Base UOM</span>
                         <select
                           data-testid="food-bible-new-ingredient-unit"
                           value={newIngredientUnit}
                           onChange={(event) => setNewIngredientUnit(event.target.value)}
                         >
                           {CANONICAL_UNITS.map((unit) => (
-                            <option key={unit.value} value={unit.value}>{unitLabel(unit.value)}</option>
+                            <option key={unit.value} value={unit.value}>{recipeUnitShort(unit.value)} · {unitLabel(unit.value)}</option>
                           ))}
                         </select>
                       </label>
@@ -707,7 +847,7 @@ export default function FoodBibleCard({
                         onClick={handleCreateIngredient}
                         disabled={Boolean(busy)}
                       >
-                        {busy === "ingredient" ? "Creating…" : `Add “${lineSearch.trim()}”`}
+                        {busy === "ingredient" ? "Creating…" : "Create + Add"}
                       </button>
                     </div>
                   ) : null}
@@ -715,9 +855,8 @@ export default function FoodBibleCard({
                     <thead>
                       <tr>
                         <th>Ingredient</th>
-                        <th>Quantity</th>
-                        <th>Unit</th>
-                        <th>Note</th>
+                        <th>Qty</th>
+                        <th>UOM</th>
                         {editing ? <th /> : null}
                       </tr>
                     </thead>
@@ -730,11 +869,13 @@ export default function FoodBibleCard({
                         const warning = duplicateLineWarning(lines, line);
                         const lineKind = classifyRecipeLineKind(line, { ingredientName: label });
                         const documentation = lineKind === RECIPE_LINE_KIND.DOCUMENTATION_LINE;
+                        const subrecipeLine = Boolean(line.subRecipeId || line.lineKind === "subrecipe");
+                        const filterChoices = !(line.ingredientId || line.subRecipeId);
                         return (
                           <tr
                             key={key}
                             data-testid={`recipe-line-${index}`}
-                            className={[component ? "is-component" : "", documentation ? "is-documentation" : ""].filter(Boolean).join(" ")}
+                            className={[component || subrecipeLine ? "is-component" : "", documentation ? "is-documentation" : ""].filter(Boolean).join(" ")}
                           >
                             <td>
                               {editing ? (
@@ -743,17 +884,22 @@ export default function FoodBibleCard({
                                   value={line.subRecipeId ? `cmp:${line.subRecipeId}` : line.ingredientId ? `ing:${line.ingredientId}` : ""}
                                   onChange={(event) => {
                                     const value = event.target.value;
-                                    if (value.startsWith("cmp:")) updateLine(key, { subRecipeId: value.slice(4), ingredientId: "" });
-                                    else updateLine(key, { ingredientId: value.replace(/^ing:/, ""), subRecipeId: "" });
+                                    if (value.startsWith("cmp:")) updateLine(key, { subRecipeId: value.slice(4), ingredientId: "", lineKind: "subrecipe" });
+                                    else updateLine(key, { ingredientId: value.replace(/^ing:/, ""), subRecipeId: "", lineKind: "ingredient" });
                                   }}
                                 >
-                                  <option value="">Select ingredient or component</option>
-                                  {ingredients.filter((item) => item.active && (!lineSearch || item.canonicalName.toLowerCase().includes(lineSearch.toLowerCase()))).map((item) => (
-                                    <option key={item.id} value={`ing:${item.id}`}>{item.canonicalName}</option>
-                                  ))}
-                                  {components.filter((item) => !lineSearch || item.name.toLowerCase().includes(lineSearch.toLowerCase())).map((item) => (
-                                    <option key={item.id} value={`cmp:${item.id}`}>{item.name} (component)</option>
-                                  ))}
+                                  <option value="">{subrecipeLine ? "Select sub-recipe" : "Select ingredient"}</option>
+                                  {subrecipeLine
+                                    ? components
+                                      .filter((item) => !filterChoices || !lineSearch || item.name.toLowerCase().includes(lineSearch.toLowerCase()))
+                                      .map((item) => (
+                                        <option key={item.id} value={`cmp:${item.id}`}>{item.name}</option>
+                                      ))
+                                    : ingredients
+                                      .filter((item) => item.active && (!filterChoices || !lineSearch || item.canonicalName.toLowerCase().includes(lineSearch.toLowerCase())))
+                                      .map((item) => (
+                                        <option key={item.id} value={`ing:${item.id}`}>{item.canonicalName}</option>
+                                      ))}
                                 </select>
                               ) : component ? (
                                 <button
@@ -764,25 +910,20 @@ export default function FoodBibleCard({
                                 >
                                   {label}
                                 </button>
-                              ) : <>{label}{documentation ? <small> Documentation</small> : null}</>}
+                              ) : <>{label}{documentation ? <small> Note</small> : null}</>}
                               {warning ? <small>Duplicate line — add a distinguishing note</small> : null}
                             </td>
                             <td>
                               {editing ? (
-                                <input data-testid={`recipe-line-qty-${index}`} value={line.quantity} onChange={(event) => updateLine(key, { quantity: event.target.value })} />
+                                <input inputMode="decimal" data-testid={`recipe-line-qty-${index}`} value={line.quantity} onChange={(event) => updateLine(key, { quantity: event.target.value })} />
                               ) : line.quantity}
                             </td>
                             <td>
                               {editing ? (
                                 <select data-testid={`recipe-line-unit-${index}`} value={line.unit} onChange={(event) => updateLine(key, { unit: event.target.value })}>
-                                  {CANONICAL_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unitLabel(unit.value)}</option>)}
+                                  {CANONICAL_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{recipeUnitShort(unit.value)}</option>)}
                                 </select>
-                              ) : line.unit}
-                            </td>
-                            <td>
-                              {editing ? (
-                                <input data-testid={`recipe-line-note-${index}`} value={line.preparationNote || ""} onChange={(event) => updateLine(key, { preparationNote: event.target.value })} />
-                              ) : line.preparationNote || ""}
+                              ) : recipeUnitShort(line.unit)}
                             </td>
                             {editing ? (
                               <td className="fb-card__line-actions">
@@ -803,9 +944,14 @@ export default function FoodBibleCard({
                     </tbody>
                   </table>
                   {editing ? (
-                    <button type="button" data-testid="add-recipe-line-button" onClick={() => setLines((current) => [...current, emptyLine()])}>
-                      <Plus size={14} /> Add ingredient
-                    </button>
+                    <div className="fb-card__add-actions">
+                      <button type="button" data-testid="add-recipe-line-button" onClick={() => { setLines((current) => [...current, emptyLine("ingredient")]); setLineSearch(""); }}>
+                        <Plus size={14} /> Add ingredient
+                      </button>
+                      <button type="button" data-testid="add-subrecipe-line-button" onClick={() => { setLines((current) => [...current, emptyLine("subrecipe")]); setLineSearch(""); }}>
+                        <Plus size={14} /> Add sub-recipe
+                      </button>
+                    </div>
                   ) : null}
                   {!editing && unresolved.length ? (
                     <table className="fb-card__table">

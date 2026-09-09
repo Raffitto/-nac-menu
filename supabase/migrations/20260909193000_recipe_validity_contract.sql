@@ -1,13 +1,7 @@
--- Canonical recipe-validity contract (local authoring only — do not apply in this milestone).
--- Replaces the production validator's cost-eligible / exact-unit gates with operational
--- identity + UOM + yield rules. Does not reclassify ingredients or write costs.
---
--- Production snapshot (do not weaken silently):
---   UNRESOLVED_RECIPE_LINE currently fires when recipe_cost_eligible is not true
---   or base_inventory_unit <> line.canonical_unit.
---   INVALID_SUBRECIPE_VERSION_OR_UNIT currently requires exact output_unit match.
--- Those gates are incorrect for kitchen operations: classification default is 'other'
--- and recipe_cost_eligible default is false; mass g↔kg and volume ml↔L must convert.
+-- Canonical recipe-validity contract.
+-- Replaces cost-eligible / exact-unit gates with operational identity + UOM + yield rules.
+-- Preserves live overlapping-date, portion-count, and direct-stock guards.
+-- Does not reclassify ingredients, write costs, or mutate recipe lines.
 
 create or replace function public.inventory_recipe_units_compatible(p_left text, p_right text)
 returns boolean
@@ -71,9 +65,22 @@ begin
   end if;
   if p_effective_from is null then
     v_errors := v_errors || jsonb_build_array('INVALID_EFFECTIVE_DATE');
+  elsif exists (
+    select 1
+    from public.inventory_recipe_versions existing
+    where existing.recipe_id = v_recipe.id
+      and existing.id <> v_version.id
+      and existing.status in ('active', 'retired')
+      and existing.effective_from < 'infinity'::timestamptz
+      and coalesce(existing.effective_to, 'infinity'::timestamptz) > p_effective_from
+  ) then
+    v_errors := v_errors || jsonb_build_array('OVERLAPPING_EFFECTIVE_DATE');
   end if;
   if v_version.yield_percentage is null or v_version.yield_percentage <= 0 then
     v_errors := v_errors || jsonb_build_array('INVALID_YIELD');
+  end if;
+  if v_version.portion_count is not null and v_version.portion_count <= 0 then
+    v_errors := v_errors || jsonb_build_array('INVALID_PORTION_COUNT');
   end if;
 
   if not exists (
@@ -101,7 +108,7 @@ begin
           and (
             i.id is null
             or not i.active
-            or i.canonical_name ~* '(ocr|\\[temp verify)'
+            or i.canonical_name ~* '(ocr|temp verify)'
             or i.base_inventory_unit is null
             or not public.inventory_recipe_units_compatible(i.base_inventory_unit, l.canonical_unit)
           )
@@ -109,6 +116,21 @@ begin
       )
   ) then
     v_errors := v_errors || jsonb_build_array('UNRESOLVED_RECIPE_LINE');
+  end if;
+
+  if v_recipe.recipe_type = 'direct_stock' and (
+    select count(*) from public.inventory_recipe_version_lines l
+    where l.recipe_version_id = p_recipe_version_id
+      and l.ingredient_id is not null
+      and l.sub_recipe_id is null
+  ) <> 1 then
+    v_errors := v_errors || jsonb_build_array('DIRECT_STOCK_REQUIRES_ONE_ITEM');
+  end if;
+  if v_recipe.recipe_type = 'direct_stock' and (
+    select count(*) from public.inventory_recipe_version_lines l
+    where l.recipe_version_id = p_recipe_version_id
+  ) <> 1 then
+    v_errors := v_errors || jsonb_build_array('DIRECT_STOCK_REQUIRES_ONE_ITEM');
   end if;
 
   with recursive dependency_tree as (
@@ -172,3 +194,6 @@ $$;
 
 comment on function public.inventory_validate_recipe_version_activation(uuid, timestamptz) is
   'Canonical recipe activation validator: identity, UOM compatibility, documentation exclusion, effective-dated sub-recipes. Cost eligibility is not a structural gate.';
+
+comment on function public.inventory_recipe_units_compatible(text, text) is
+  'Same-dimension recipe UOM compatibility: g↔kg and ml↔L. Mass↔volume and each↔mass/volume stay incompatible.';

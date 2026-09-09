@@ -37,18 +37,19 @@ export const RECIPE_VALIDITY_CODE = Object.freeze({
 
 export const OPERATIONAL_CHANGE_REASONS = Object.freeze([
   { value: "chef_operational_update", label: "Chef operational update" },
-  { value: "seasonal_adjustment", label: "Seasonal adjustment" },
-  { value: "supplier_substitution", label: "Supplier substitution" },
   { value: "portion_adjustment", label: "Portion adjustment" },
+  { value: "ingredient_change", label: "Ingredient change" },
+  { value: "supplier_substitution", label: "Supplier substitution" },
+  { value: "seasonal_adjustment", label: "Seasonal change" },
   { value: "correction", label: "Correction" },
   { value: "other", label: "Other" },
 ]);
 
 export const PRODUCTION_SQL_GATES = Object.freeze({
   usesInventoryClassification: false,
-  requiresRecipeCostEligible: true,
-  requiresExactSubrecipeOutputUnit: true,
-  treatsDocumentationAsUnresolvedLine: true,
+  requiresRecipeCostEligible: false,
+  requiresExactSubrecipeOutputUnit: false,
+  treatsDocumentationAsUnresolvedLine: false,
   costEligibleDefault: false,
   classificationDefault: "other",
 });
@@ -185,6 +186,31 @@ export function hasOperationalAcknowledgement(documentation = {}, { sourceClass 
   return Boolean(change.acknowledged) && allowed;
 }
 
+export function formatStaffValidationMessage(error = {}) {
+  const code = error.code;
+  const reason = String(error.reason || "").trim();
+  if (code === RECIPE_VALIDITY_CODE.INCOMPATIBLE_UOM || code === CONVERSION_STATUS.INCOMPATIBLE || code === CONVERSION_STATUS.MISSING_CONVERSION) {
+    return reason || "This ingredient is stored in a different unit. Add a conversion before activating.";
+  }
+  if (code === RECIPE_VALIDITY_CODE.INVALID_SUBRECIPE_VERSION_OR_UNIT) {
+    if (/no active version/i.test(reason)) {
+      const name = reason.replace(/\s+has no active version\.?$/i, "");
+      return `${name} is used here, but it does not have an active recipe yet. Activate that component first.`;
+    }
+    return reason || "A nested recipe is missing or not ready to use.";
+  }
+  if (code === RECIPE_VALIDITY_CODE.UNRESOLVED_RECIPE_LINE) {
+    return reason || "This line is not a usable ingredient or sub-recipe yet.";
+  }
+  if (code === RECIPE_VALIDITY_CODE.SOURCE_ACKNOWLEDGEMENT_REQUIRED) {
+    return "This recipe is different from the Food Bible PDF. Confirm it is what the kitchen uses now.";
+  }
+  if (code === RECIPE_VALIDITY_CODE.ACTIVATION_REASON_REQUIRED) {
+    return "Choose why you are activating this recipe.";
+  }
+  return reason || code || "This recipe cannot be activated yet.";
+}
+
 export function formatSourceDiff(differences = []) {
   return (differences || []).map((row) => {
     if (row.draftName && !row.sourceName) return { kind: "added", label: `+ ${row.draftName}` };
@@ -218,6 +244,7 @@ export function evaluateCanonicalRecipeValidity({
   requireActivationPolicy = false,
 } = {}) {
   const errors = [];
+  const conversionNotes = [];
   const ingredientById = new Map((ingredients || []).map((row) => [row.id, row]));
   const recipeById = new Map((allRecipes || []).map((row) => [row.id, row]));
   const yieldInfo = recipeYield(recipe, version);
@@ -282,12 +309,15 @@ export function evaluateCanonicalRecipeValidity({
           unit: line.unit || line.canonical_unit || line.canonicalUnit,
           baseUom: nestedYield.unit,
         });
+        if (converted.conversionStatus === CONVERSION_STATUS.CONVERTED) {
+          conversionNotes.push(`${nestedRecipe.name || "Sub-recipe"} is measured in ${nestedYield.unit}, but this recipe uses ${line.unit}. This is allowed and will be converted automatically.`);
+        }
         if (converted.conversionStatus !== CONVERSION_STATUS.EXACT && converted.conversionStatus !== CONVERSION_STATUS.CONVERTED) {
           errors.push({
             code: RECIPE_VALIDITY_CODE.INCOMPATIBLE_UOM,
             bucket: RECIPE_VALIDITY.BLOCKED_UOM,
             lineId: lineId(line),
-            reason: `${nestedRecipe.name || "Sub-recipe"} yield ${nestedYield.unit} is incompatible with line unit ${line.unit}`,
+            reason: `${nestedRecipe.name || "Sub-recipe"} is stored in ${nestedYield.unit} but this recipe uses ${line.unit}. Add a conversion before activating.`,
           });
           continue;
         }
@@ -325,6 +355,11 @@ export function evaluateCanonicalRecipeValidity({
         baseUom: ingredient?.base_inventory_unit || ingredient?.baseInventoryUnit,
         verifiedConversionFactor: line.verified_conversion_factor || line.verifiedConversionFactor || null,
       });
+      const ingredientName = ingredient?.canonical_name || ingredient?.canonicalName || "ingredient";
+      const baseUnit = ingredient?.base_inventory_unit || ingredient?.baseInventoryUnit;
+      if (converted.conversionStatus === CONVERSION_STATUS.CONVERTED) {
+        conversionNotes.push(`${ingredientName} is stored in ${baseUnit}, but this recipe uses ${line.unit}. This is allowed and will be converted automatically.`);
+      }
       if (converted.conversionStatus !== CONVERSION_STATUS.EXACT && converted.conversionStatus !== CONVERSION_STATUS.CONVERTED) {
         errors.push({
           code: converted.conversionStatus === CONVERSION_STATUS.INCOMPATIBLE
@@ -332,7 +367,7 @@ export function evaluateCanonicalRecipeValidity({
             : converted.conversionStatus,
           bucket: RECIPE_VALIDITY.BLOCKED_UOM,
           lineId: lineId(line),
-          reason: `${ingredient?.canonical_name || ingredient?.canonicalName || "ingredient"} ${line.unit} cannot convert to ${ingredient?.base_inventory_unit || ingredient?.baseInventoryUnit}`,
+          reason: `${ingredientName} is stored in ${baseUnit} but this recipe uses ${line.unit}. Add a conversion before activating.`,
         });
       }
     }
@@ -367,6 +402,7 @@ export function evaluateCanonicalRecipeValidity({
     valid: unique.length === 0,
     status: unique.length ? status : RECIPE_VALIDITY.VALID,
     errors: unique,
+    conversionNotes,
     productionWouldUseCostEligibleGate: PRODUCTION_SQL_GATES.requiresRecipeCostEligible,
   };
 }

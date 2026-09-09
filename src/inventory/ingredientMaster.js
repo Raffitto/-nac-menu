@@ -37,6 +37,18 @@ export const INVENTORY_NETWORK_INGREDIENT_ROLES = new Set([
 const DUPLICATE_NAME_MESSAGE =
   "An ingredient with this name already exists. Use a different name or reactivate the existing one.";
 
+export const RECIPE_UNIT_SHORT = Object.freeze({
+  each: "ea",
+  gram: "g",
+  kilogram: "kg",
+  millilitre: "ml",
+  litre: "L",
+});
+
+export function recipeUnitShort(value) {
+  return RECIPE_UNIT_SHORT[value] || unitLabel(value) || value || "";
+}
+
 export function unitLabel(value) {
   return CANONICAL_UNITS.find((unit) => unit.value === value)?.label || value || "—";
 }

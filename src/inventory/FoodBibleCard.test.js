@@ -229,9 +229,12 @@ describe("FoodBibleCard", () => {
     );
     expect(await screen.findByTestId("food-bible-version-status")).toHaveTextContent("DRAFT");
     expect(screen.getByTestId("food-bible-recipe-completeness")).toHaveTextContent(/Recipe completeness:/);
-    expect(screen.getByTestId("food-bible-source-evidence")).toHaveTextContent(/Source:/);
+    expect(screen.getByTestId("food-bible-source-evidence")).toHaveTextContent(/Source reference:/);
     expect(screen.getByTestId("food-bible-source-modified")).toHaveTextContent("Operationally modified from source");
+    fireEvent.click(screen.getByTestId("food-bible-source-diff-toggle"));
     expect(screen.getByTestId("food-bible-source-diff")).toHaveTextContent(/Minced Beef|Quinoa|Lemon/);
+    expect(screen.getByTestId("food-bible-source-ack")).toBeInTheDocument();
+    expect(screen.getByTestId("food-bible-activate-panel")).toHaveTextContent("Activate Recipe");
     fireEvent.click(screen.getByTestId("food-bible-validate-button"));
     await waitFor(() => expect(evaluateRecipeActivation).toHaveBeenCalledWith("r-q", expect.any(Object)));
     await screen.findByText("Validation passed. Safe to activate.");
@@ -288,5 +291,103 @@ describe("FoodBibleCard", () => {
       baseInventoryUnit: "gram",
       branchId: "khobar",
     })));
+  });
+
+  test("mobile editor can add a sub-recipe line and shows history panes", async () => {
+    fetchRecipeBundle.mockResolvedValueOnce({
+      recipe: { id: "r-q", name: "QUINOA", recipeType: "menu_item", menuItemId: "menu-q", outputQuantity: "1", outputUnit: "each" },
+      version: { id: "v1", status: "draft", versionNumber: 2, documentation: {} },
+      versions: [
+        { id: "v0", status: "retired", versionNumber: 1, effectiveFrom: "2026-08-01T00:00:00.000Z", effectiveTo: "2026-09-09T00:00:00.000Z", approvedBy: "user-1" },
+        { id: "v1", status: "draft", versionNumber: 2 },
+      ],
+      lines: [{ id: "l1", ingredientId: "ing-2", quantity: "130", unit: "gram" }],
+      allLines: [{ id: "l1", ingredientId: "ing-2", quantity: "130", unit: "gram", recipeVersionId: "v1" }],
+      stages: [],
+    });
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-card-edit"));
+    fireEvent.click(screen.getByTestId("add-subrecipe-line-button"));
+    expect(screen.getByTestId("recipe-line-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("food-bible-card-cancel"));
+    fireEvent.click(screen.getByTestId("food-bible-version-pane-history"));
+    expect(screen.getByTestId("food-bible-history-list")).toHaveTextContent(/Active from/);
+    expect(screen.getByTestId("food-bible-history-list")).toHaveTextContent(/Change reason/);
+  });
+
+  test("editing an ACTIVE recipe explains the draft fork and does not write on cancel", async () => {
+    fetchRecipeBundle.mockResolvedValueOnce({
+      recipe: { id: "r-steak", name: "BLACK ANGUS, BLACK PEPPERCORN", recipeType: "menu_item", outputQuantity: "1", outputUnit: "each" },
+      version: { id: "v-live", status: "active", documentation: {} },
+      versions: [{ id: "v-live", status: "active", versionNumber: 1, effectiveFrom: "2026-08-19T00:00:00.000Z" }],
+      lines: [
+        { id: "pepper", ingredientId: "ing-pepper", quantity: "10", unit: "gram" },
+      ],
+      stages: [],
+    });
+    const steakOverview = {
+      ...overview,
+      ingredients: [
+        ...overview.ingredients,
+        { id: "ing-pepper", canonicalName: "Black Pepper", baseInventoryUnit: "gram", active: true },
+        { id: "ing-maldon", canonicalName: "Maldon Salt", baseInventoryUnit: "gram", active: true },
+      ],
+    };
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-steak", displayName: "Steak" }}
+        overview={steakOverview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-card-edit"));
+    expect(screen.getByTestId("food-bible-activation-note")).toHaveTextContent(
+      "Editing creates a new draft. Current active recipe stays live until you activate the new version.",
+    );
+    fireEvent.change(screen.getByTestId("recipe-line-qty-0"), { target: { value: "12" } });
+    fireEvent.change(screen.getByTestId("recipe-ingredient-search"), { target: { value: "Rosemary" } });
+    expect(screen.getByTestId("food-bible-new-ingredient")).toHaveTextContent("Rosemary");
+    fireEvent.change(screen.getByTestId("recipe-ingredient-search"), { target: { value: "Maldon Salt" } });
+    expect(screen.queryByTestId("food-bible-new-ingredient")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("add-recipe-line-button"));
+    fireEvent.click(screen.getByTestId("food-bible-card-cancel"));
+    expect(saveRecipeDraft).not.toHaveBeenCalled();
+    expect(activateRecipeVersion).not.toHaveBeenCalled();
+  });
+
+  test("shows kitchen-friendly validation and keeps codes behind Details", async () => {
+    evaluateRecipeActivation.mockResolvedValueOnce({
+      ok: false,
+      blockers: [{ code: "INVALID_SUBRECIPE_VERSION_OR_UNIT", reason: "SPECULOS has no active version" }],
+    });
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-validate-button"));
+    expect(await screen.findByTestId("food-bible-activation-blockers")).toHaveTextContent(
+      "SPECULOS is used here, but it does not have an active recipe yet",
+    );
+    fireEvent.click(screen.getByTestId("food-bible-validation-details"));
+    expect(screen.getByTestId("food-bible-validation-codes")).toHaveTextContent("INVALID_SUBRECIPE_VERSION_OR_UNIT");
+    expect(activateRecipeVersion).not.toHaveBeenCalled();
   });
 });
