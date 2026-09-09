@@ -24,6 +24,8 @@ const defaults = [
   "src/lib/inventoryTruthApi.test.js",
   "src/lib/inventoryTruthApi.sales.test.js",
   "src/inventory/InventoryTruthView.test.js",
+  "src/inventory/truth/readinessAudit.test.js",
+  "src/lib/inventoryReadinessApi.test.js",
 ];
 const files = extra.length ? extra : defaults;
 const result = spawnSync(

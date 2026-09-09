@@ -6,6 +6,7 @@ import {
   fetchInventoryTruthFoundation,
   fetchInventoryTruthSales,
 } from "../lib/inventoryTruthApi";
+import InventoryReadinessPanel from "./InventoryReadinessPanel";
 import { exploreIngredient, traceIngredientQuantity } from "./truth";
 
 function pct(value) {
@@ -256,6 +257,14 @@ export default function InventoryTruthView({
               )}
             </div>
           ) : null}
+
+          <InventoryReadinessPanel
+            branchId={branchId}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
+            access={access}
+            rbacProfile={rbacProfile}
+          />
         </>
       ) : null}
     </section>

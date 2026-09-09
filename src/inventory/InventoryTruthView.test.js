@@ -47,8 +47,13 @@ describe("InventoryTruthView", () => {
   });
 
   test("shows readiness and does not render actual or variance as zero", async () => {
-    render(<InventoryTruthView branchId="khobar" />);
+    render(<InventoryTruthView
+      branchId="khobar"
+      access={{ vaultRole: "super_admin", branchIds: ["khobar"], primaryBranchId: "khobar" }}
+    />);
     expect(await screen.findByTestId("inventory-truth-readiness")).toBeInTheDocument();
+    expect(screen.getByTestId("inventory-readiness-panel")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Scan inventory readiness" })).toBeInTheDocument();
     expect(screen.getByTestId("inventory-truth-actual").textContent).toMatch(/UNAVAILABLE/i);
     expect(screen.getByTestId("inventory-truth-actual").textContent).not.toMatch(/Actual consumption: 0/);
     expect(screen.getByTestId("inventory-truth-cost").textContent).toMatch(/Costed ingredients: 4/);

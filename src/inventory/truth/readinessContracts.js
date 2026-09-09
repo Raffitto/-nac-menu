@@ -1,0 +1,50 @@
+/**
+ * Inventory readiness audit contracts.
+ * Classification only — never activate recipes or invent cost.
+ */
+
+export const RECIPE_VERSION_CLASS = Object.freeze({
+  UNIQUE_CURRENT_DRAFT: "UNIQUE_CURRENT_DRAFT",
+  MULTIPLE_DRAFT_CANDIDATES: "MULTIPLE_DRAFT_CANDIDATES",
+  LEGACY_STALE_ONLY: "LEGACY_STALE_ONLY",
+  BROKEN_RECIPE: "BROKEN_RECIPE",
+  MENU_MAPPING_MISSING: "MENU_MAPPING_MISSING",
+  TRUE_RECIPE_MISSING: "TRUE_RECIPE_MISSING",
+  NON_KITCHEN_FALSE_POSITIVE: "NON_KITCHEN_FALSE_POSITIVE",
+  ANALYTICAL_OK: "ANALYTICAL_OK",
+});
+
+export const ACTIVATION_DECISION = Object.freeze({
+  SAFE_TO_ACTIVATE: "SAFE_TO_ACTIVATE",
+  REVIEW_REQUIRED: "REVIEW_REQUIRED",
+  DO_NOT_ACTIVATE: "DO_NOT_ACTIVATE",
+});
+
+export const COMMERCE_IDENTITY_CLASS = Object.freeze({
+  EXACT_EXISTING_PRODUCT_ID_MATCH: "EXACT_EXISTING_PRODUCT_ID_MATCH",
+  EXACT_MENU_NAME_UNIQUE_BRANCH_MATCH: "EXACT_MENU_NAME_UNIQUE_BRANCH_MATCH",
+  PLACEMENT_COPY_CLUSTER_MATCH: "PLACEMENT_COPY_CLUSTER_MATCH",
+  AMBIGUOUS: "AMBIGUOUS",
+  NO_MENU_MATCH: "NO_MENU_MATCH",
+  ALREADY_MAPPED: "ALREADY_MAPPED",
+});
+
+export const PURCHASE_EVIDENCE_CLASS = Object.freeze({
+  PURCHASE_EVIDENCE_COMPLETE: "PURCHASE_EVIDENCE_COMPLETE",
+  PURCHASE_EVIDENCE_UNMAPPED: "PURCHASE_EVIDENCE_UNMAPPED",
+  SUPPLIER_ITEM_UNLINKED: "SUPPLIER_ITEM_UNLINKED",
+  PRICE_WITHOUT_UOM: "PRICE_WITHOUT_UOM",
+  UOM_CONVERSION_BLOCKED: "UOM_CONVERSION_BLOCKED",
+  PRICE_WITHOUT_USABLE_UNIT: "PRICE_WITHOUT_USABLE_UNIT",
+  NO_PURCHASE_SOURCE: "NO_PURCHASE_SOURCE",
+  OCR_ONLY: "OCR_ONLY",
+  LEGACY_ONLY: "LEGACY_ONLY",
+  OCR_PLACEHOLDER: "OCR_PLACEHOLDER",
+});
+
+export const RECIPE_VERSION_LIFECYCLE = Object.freeze({
+  states: Object.freeze(["draft", "active", "retired"]),
+  currentWritePath: "createRecipe / saveRecipeDraft always persist status=draft and never promote",
+  intendedTransition: "edit → structural validate → review → activate (retire previous active) → next edit opens a new draft",
+  gap: "No activate RPC, no Food Bible publish control, and Food Bible 'Complete' does not flip version status",
+});

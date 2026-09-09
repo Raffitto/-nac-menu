@@ -1076,3 +1076,13 @@
   margin: 0;
 }
 .inv-truth-explorer ol { margin: 0; padding-left: 1.2rem; color: #f5f2eb; }
+.inv-readiness { margin-top: 28px; display: grid; gap: 10px; }
+.inv-readiness-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  color: #f5f2eb;
+  font-size: 13px;
+}

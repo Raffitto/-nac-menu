@@ -6,6 +6,8 @@ import { scanIntegrityBundle } from "./dataIntegrityScan";
 import { RECIPE_GAP_CLASS } from "./recipeMappingClassification";
 import { CLUSTER_KIND } from "./identityClusters";
 import { buildInventoryTruthResult } from "../../lib/inventoryTruthApi";
+import InventoryReadinessPanel from "../../inventory/InventoryReadinessPanel";
+import { nacPreviousBusinessWeekRange, riyadhIsoDate } from "../../intelligence/askNac/shared/nacBusinessWeek";
 
 function freshnessLabel(iso) {
   if (!iso) return "Unknown";
@@ -309,6 +311,12 @@ export default function DataHealthPanel() {
               <p className="nac-settings-muted">
                 Open Inventory → Truth to explore an ingredient and calculate theoretical consumption for a sales period.
               </p>
+              <InventoryReadinessPanel
+                branchId="khobar"
+                periodStart={nacPreviousBusinessWeekRange(riyadhIsoDate()).startDate}
+                periodEnd={nacPreviousBusinessWeekRange(riyadhIsoDate()).endDate}
+                rbacProfile={{ role: "developer", allBranches: true }}
+              />
             </div>
           ) : null}
           {integrity.recipeMapping ? (
