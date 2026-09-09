@@ -79,12 +79,23 @@ export function computeTheoreticalLedger({
     const resolved = driver.menuItemId
       ? resolveMenuItemRecipe(graph, driver.menuItemId)
       : { recipe: null, status: GRAPH_STATUS.MISSING_RECIPE, candidates: [] };
-    if (!resolved.recipe) {
-      uncovered.push({ ...driver, reason: resolved.status });
+    const node = resolved.recipe && graph?.recipeIndex?.get(resolved.recipe.id);
+    const usable = Boolean(resolved.recipe && node && node.versionStatus === GRAPH_STATUS.OK);
+    if (!usable) {
+      const reason = !resolved.recipe
+        ? resolved.status
+        : (node?.versionStatus || GRAPH_STATUS.MISSING_RECIPE);
+      uncovered.push({ ...driver, reason });
       uncoveredRows += driver.soldRows;
       uncoveredQty = addDecimal(uncoveredQty, driver.soldQuantity);
       uncoveredRevenue = addRevenue(uncoveredRevenue, driver.mappedRevenue);
-      recipeIssues.push({ code: resolved.status, menuItemId: driver.menuItemId, displayName: driver.displayName });
+      recipeIssues.push({
+        code: reason,
+        menuItemId: driver.menuItemId,
+        displayName: driver.displayName,
+        recipeId: resolved.recipe?.id,
+        recipeName: resolved.recipe?.name,
+      });
       continue;
     }
 
@@ -200,7 +211,28 @@ export function resolveActualConsumption({
   const trusted = trustworthyMovements(movements);
   const types = movementTypesPresent(trusted);
   const emptyLedger = !trusted.length && !postedCounts.length;
-  if (emptyLedger || (movementPresence === "empty" && postedCountPresence === "empty")) {
+  const presencePresent = movementPresence === "present" || postedCountPresence === "present";
+  const presenceEmpty = movementPresence === "empty" && postedCountPresence === "empty";
+  if (emptyLedger && presencePresent) {
+    return {
+      actualConsumption: null,
+      actualUom: null,
+      actualSource: null,
+      actualStart: periodStart,
+      actualEnd: periodEnd,
+      actualCoverageStatus: ACTUAL_COVERAGE.UNAVAILABLE,
+      missingMovementTypes: [
+        "opening_balance",
+        "purchase_receipt",
+        "transfer_in",
+        "transfer_out",
+        "wastage",
+        "physical_count_adjustment",
+      ],
+      note: "Posted counts or movements exist in the ledger, but no period-scoped actual consumption equation is loaded. Actual consumption is unavailable.",
+    };
+  }
+  if (emptyLedger || presenceEmpty) {
     return {
       actualConsumption: null,
       actualUom: null,

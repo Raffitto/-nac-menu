@@ -219,6 +219,30 @@ describe("theoretical consumption and coverage", () => {
     expect(theoretical.coverage.mappedRevenue).toBe("1120");
   });
 
+  test("sales linked to a recipe without an active version stay uncovered", () => {
+    const graph = buildRecipeGraph({
+      ingredients,
+      recipes: [{ id: "toast", name: "French Toast", menu_item_id: "menu-toast", output_quantity: "1", active: true }],
+      versions: [{ id: "v-toast", recipe_id: "toast", status: "draft" }],
+      lines: [{ id: "l1", recipe_version_id: "v-toast", ingredient_id: "honey", quantity: "15", unit: "g" }],
+    });
+    const theoretical = computeTheoreticalLedger({
+      graph,
+      salesRows: [{
+        matched_menu_item_id: "menu-toast",
+        matched_menu_item_name: "French Toast",
+        quantity_sold: 4,
+        net_sales: 220,
+      }],
+    });
+    expect(theoretical.rows).toHaveLength(0);
+    expect(theoretical.coverage.recipeCoveredSoldRows).toBe(0);
+    expect(theoretical.coverage.recipeUncoveredSoldRows).toBe(1);
+    expect(theoretical.uncoveredSales[0].reason).toBe(GRAPH_STATUS.INACTIVE_VERSION);
+    expect(theoretical.uncoveredSales[0].soldQuantity).toBe("4");
+    expect(theoretical.coverage.unmappedRevenue).toBe("220");
+  });
+
   test("never hides unmapped sales or treats them as zero consumption", () => {
     const graph = platedGraph();
     const theoretical = computeTheoreticalLedger({
@@ -309,6 +333,8 @@ describe("actual consumption and variance", () => {
     });
     expect(presentProbe.actualConsumption).toBe(null);
     expect(presentProbe.actualCoverageStatus).toBe(ACTUAL_COVERAGE.UNAVAILABLE);
+    expect(presentProbe.note).toMatch(/exist in the ledger/i);
+    expect(presentProbe.note).not.toMatch(/do not exist/i);
   });
 
   test("sale_consumption alone is not independent actual", () => {
