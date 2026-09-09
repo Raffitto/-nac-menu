@@ -366,6 +366,7 @@ describe("readiness audit orchestration", () => {
       costHistory: [],
       invoiceLines: [],
       receiptLines: [],
+      sourceCatalog: null,
     });
     expect(result.recipes.blocked).toBeGreaterThanOrEqual(1);
     expect(result.recipes.safeToActivate).toBe(1);

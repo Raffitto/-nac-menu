@@ -10,6 +10,12 @@ import {
   PURCHASE_EVIDENCE_CLASS,
   RECIPE_VERSION_CLASS,
 } from "./readinessContracts";
+import {
+  applySourceEvidenceToRecipeRow,
+  classifyFoodicsProductIdentity,
+  compareDraftToSource,
+} from "./sourceEvidence";
+import defaultSourceCatalog from "./sourceEvidence.catalog.json";
 
 export {
   ACTIVATION_DECISION,
@@ -301,7 +307,25 @@ export function classifyBlockedRecipe({
   };
 }
 
-export function classifyCommerceIdentity({ driver, salesRows = [], menuItems = [], branchId = null } = {}) {
+function attachFoodicsIdentity(row, foodicsProducts) {
+  const foodics = classifyFoodicsProductIdentity(row.displayName, foodicsProducts);
+  if (!foodics) return row;
+  if (row.class === COMMERCE_IDENTITY_CLASS.NO_MENU_MATCH) {
+    return {
+      ...row,
+      class: foodics.class === "FOODICS_PRODUCT_NAME_AMBIGUOUS"
+        ? COMMERCE_IDENTITY_CLASS.FOODICS_PRODUCT_NAME_AMBIGUOUS
+        : COMMERCE_IDENTITY_CLASS.EXACT_FOODICS_PRODUCT_NAME_MATCH,
+      foodicsSku: foodics.sku || null,
+      foodicsSkus: foodics.skus || null,
+      proposedMenuItemId: null,
+      reason: `${row.reason}. ${foodics.reason}`,
+    };
+  }
+  return { ...row, foodicsSku: foodics.sku || null, foodicsEvidence: foodics.class };
+}
+
+export function classifyCommerceIdentity({ driver, salesRows = [], menuItems = [], branchId = null, foodicsProducts = [] } = {}) {
   if (driver.menuItemId) {
     return {
       class: COMMERCE_IDENTITY_CLASS.ALREADY_MAPPED,
@@ -390,7 +414,7 @@ export function classifyCommerceIdentity({ driver, salesRows = [], menuItems = [
       reason: "Multiple live menu rows share this name on the branch",
     };
   }
-  return {
+  return attachFoodicsIdentity({
     class: COMMERCE_IDENTITY_CLASS.NO_MENU_MATCH,
     displayName: driver.displayName,
     productId,
@@ -398,7 +422,7 @@ export function classifyCommerceIdentity({ driver, salesRows = [], menuItems = [
     proposedMenuItemId: null,
     candidateMenuItemIds: [],
     reason: "No exact menu name or product-id match",
-  };
+  }, foodicsProducts);
 }
 
 function latestReceipt(receiptLines = []) {
@@ -568,6 +592,7 @@ export function runInventoryReadinessAudit({
   invoiceLines = [],
   receiptLines = [],
   branchId = null,
+  sourceCatalog = defaultSourceCatalog,
 } = {}) {
   const graph = buildRecipeGraph({ recipes, versions, lines, ingredients });
   const versionsByRecipe = new Map();
@@ -577,16 +602,36 @@ export function runInventoryReadinessAudit({
   }
 
   const blockedRecipes = (recipes || [])
-    .map((recipe) => classifyBlockedRecipe({
-      recipe,
-      versions: versionsByRecipe.get(recipe.id) || [],
-      allRecipes: recipes,
-      allVersions: versions,
-      lines,
-      ingredients,
-      menuItems,
-      salesRows,
-    }))
+    .map((recipe) => {
+      const row = classifyBlockedRecipe({
+        recipe,
+        versions: versionsByRecipe.get(recipe.id) || [],
+        allRecipes: recipes,
+        allVersions: versions,
+        lines,
+        ingredients,
+        menuItems,
+        salesRows,
+      });
+      if (row.class === RECIPE_VERSION_CLASS.ANALYTICAL_OK) return row;
+      const ingredientById = new Map((ingredients || []).map((item) => [item.id, item]));
+      const recipeById = new Map((recipes || []).map((item) => [item.id, item]));
+      const draftLines = linesForVersion(lines, row.candidate?.versionId).map((line) => ({
+        name: ingredientById.get(line.ingredient_id || line.ingredientId)?.canonical_name
+          || ingredientById.get(line.ingredient_id || line.ingredientId)?.canonicalName
+          || recipeById.get(line.sub_recipe_id || line.subRecipeId)?.name
+          || null,
+        qty: line.quantity,
+        unit: line.unit,
+      }));
+      return applySourceEvidenceToRecipeRow(row, compareDraftToSource({
+        recipeName: row.recipeName,
+        soldDisplayName: row.soldDisplayName,
+        draftLines,
+        catalog: sourceCatalog,
+        draftUpdatedAt: row.candidate?.updatedAt,
+      }));
+    })
     .filter((row) => row.class !== RECIPE_VERSION_CLASS.ANALYTICAL_OK);
 
   const recipeClassCounts = countBy(blockedRecipes, "class");
@@ -613,6 +658,7 @@ export function runInventoryReadinessAudit({
       salesRows,
       menuItems,
       branchId,
+      foodicsProducts: sourceCatalog?.foodicsProducts || [],
     });
   });
 
@@ -697,6 +743,7 @@ export function runInventoryReadinessAudit({
       legacy: recipeClassCounts[RECIPE_VERSION_CLASS.LEGACY_STALE_ONLY] || 0,
       nonKitchen: recipeClassCounts[RECIPE_VERSION_CLASS.NON_KITCHEN_FALSE_POSITIVE] || 0,
       classCounts: recipeClassCounts,
+      sourceClassCounts: countBy(blockedRecipes, "sourceClass"),
       rows: blockedRecipes,
       topSafe,
     },

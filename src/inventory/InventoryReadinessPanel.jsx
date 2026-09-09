@@ -87,6 +87,9 @@ export default function InventoryReadinessPanel({
             {" · "}Broken {audit.recipes.broken}
             {" · "}Mapping missing {audit.recipes.mappingMissing}
             {" · "}True missing {audit.recipes.trueMissing}
+            {" · "}Source confirmed {audit.recipes.sourceClassCounts?.SOURCE_CONFIRMED_CURRENT || 0}
+            {" · "}Source diffs {audit.recipes.sourceClassCounts?.SOURCE_CONFIRMED_WITH_DIFFERENCES || 0}
+            {" · "}No source {audit.recipes.sourceClassCounts?.NO_SOURCE_EVIDENCE || 0}
           </p>
           <p className="inv-muted" data-testid="inventory-readiness-sales-counts">
             Covered now {audit.sales.coveredToday}
@@ -126,6 +129,7 @@ export default function InventoryReadinessPanel({
                 {" · "}{row.recipeName}
                 {" · "}{row.candidate ? `v${row.candidate.versionNumber} ${row.candidate.status}` : "no version"}
                 {" · "}{row.decision}
+                {row.sourceClass ? ` · ${row.sourceClass}` : ""}
                 {" · "}{row.reason}
               </li>
             ))}

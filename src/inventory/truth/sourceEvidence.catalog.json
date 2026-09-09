@@ -1,0 +1,4615 @@
+{
+  "meta": {
+    "generatedAt": "2026-09-09T15:31:41.968Z",
+    "hierarchy": [
+      "Aug 20 2026 company recipe PDFs (Nac menu updated 20 aug 2026); Steak PDF file mtime Aug 29",
+      "Brand Food Bible column in NAC_FULL_Food_Bible_vs_Foodics_vs_Actual_NORMALIZED.xlsx (traced to those PDFs, Aug 26)",
+      "NAC_Recipe_Comparison_Brand_Foodics_Actual.xlsx for Brand vs Foodics vs Actual reconciliation only",
+      "Existing NAC database recipe/version drafts",
+      "NAC_Foodics_Products_Ingredients_Organized.xlsx for identity / Foodics recipe config — not purchase cost"
+    ],
+    "notAuthority": {
+      "Food bible 3 in 1.xlsx": "Newest file mtime 2026-09-01 but only a small multi-source compare (Rigatoni-first). Created 2026-08-26. Not a newer operational bible."
+    },
+    "files": {
+      "brandWorkbook": "NAC_FULL_Food_Bible_vs_Foodics_vs_Actual_NORMALIZED.xlsx",
+      "brandWorkbookMtime": "2026-08-26T19:03:05.224Z",
+      "recipeComparison": "NAC_Recipe_Comparison_Brand_Foodics_Actual.xlsx",
+      "recipeComparisonMtime": "2026-08-26T18:50:25.306Z",
+      "foodicsWorkbook": "NAC_Foodics_Products_Ingredients_Organized.xlsx",
+      "foodicsWorkbookMtime": "2026-08-26T17:56:15.728Z",
+      "threeInOne": "Food bible 3 in 1.xlsx",
+      "threeInOneMtime": "2026-09-01T20:55:02.295Z",
+      "threeInOneCreated": "2026-08-26T18:12:30.000Z",
+      "sourcePdfDir": "Nac menu updated 20 aug 2026",
+      "sourcePdfZipMtime": "2026-08-20T17:02:56.908Z"
+    }
+  },
+  "dishes": [
+    {
+      "dish": "2 EGGS ANY STYLE - FRIED",
+      "pdf": "2 eggs any style - fried.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Butter",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Aleppo chili flakes",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon sea salt",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Zaatar",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Sourdough",
+          "qty": "70",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "POACHED EGGS ON TOAST",
+      "pdf": "2 eggs any style - poached.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Alepo pepper",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Spring onion",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon sea salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "10",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Sourdough bread",
+          "qty": "60",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SCRAMBLED EGGS ON TOAST",
+      "pdf": "2 eggs any style - scrambled.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Egg",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "Butter",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Alepo chili flakes",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Clotted cream",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon sea salt",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Sourdough",
+          "qty": "60",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "AFFOGATO",
+      "pdf": "Affogato.pdf",
+      "foodicsName": "Affogato",
+      "actualName": null,
+      "brandLineCount": 2,
+      "lines": [
+        {
+          "name": "Cookie",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Soft serve",
+          "qty": "150",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "APPLE BIRCHER MUESLI",
+      "pdf": "Apple Bircher muesli.pdf",
+      "foodicsName": "Apple Bircher",
+      "actualName": null,
+      "brandLineCount": 9,
+      "lines": [
+        {
+          "name": "coconut yoghurt",
+          "qty": "100",
+          "unit": "gram"
+        },
+        {
+          "name": "fresh coconut",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "poached pear",
+          "qty": "35",
+          "unit": "gram"
+        },
+        {
+          "name": "blueberries",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "almond",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "pecan nuts",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "apple",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "syrup",
+          "qty": "25",
+          "unit": "gram"
+        },
+        {
+          "name": "musli",
+          "qty": "250",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "ASPARAGUS, TOASTED HAZELNUTS",
+      "pdf": "Asparagus, toasted hazelnuts.pdf",
+      "foodicsName": "Asparagus",
+      "actualName": "Asparagus",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Asparagus",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "5",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Maldon salt",
+          "qty": "2.5",
+          "unit": "gram"
+        },
+        {
+          "name": "Black pepper",
+          "qty": "1.25",
+          "unit": "gram"
+        },
+        {
+          "name": "Hazelnut",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Spinach",
+          "qty": "10",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "AVOCADO TOAST, FETA",
+      "pdf": "Avocado toast, feta, chili flakes.pdf",
+      "foodicsName": "Avocado Toast",
+      "actualName": "Avocado Toast",
+      "brandLineCount": 10,
+      "lines": [
+        {
+          "name": "Sourdough",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Avocado",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Feta",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Alepo pepper",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander baby",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Mandon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Lemon juice",
+          "qty": "5",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Chili flakes",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "8",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "AVOCADO WITH SMOKED SEA SALT",
+      "pdf": "Avocado with smoked sea salt.pdf",
+      "foodicsName": "Avocado",
+      "actualName": null,
+      "brandLineCount": 4,
+      "lines": [
+        {
+          "name": "Avocado 1/2",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "Mandon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "BEETROOT HUMMUS & FETA",
+      "pdf": "Beetroot hummus _ feta.pdf",
+      "foodicsName": "Beetroot Hummus",
+      "actualName": "Beet Hummos",
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Beetroot hummus",
+          "qty": "110",
+          "unit": "gram"
+        },
+        {
+          "name": "Feta",
+          "qty": "12",
+          "unit": "gram"
+        },
+        {
+          "name": "Pumpkin seeds",
+          "qty": "4",
+          "unit": "gram"
+        },
+        {
+          "name": "Parsley",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "5",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Za'atar powder",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Pita bread",
+          "qty": "2",
+          "unit": "each"
+        }
+      ]
+    },
+    {
+      "dish": "BIG NAC",
+      "pdf": "Big NAC V2.pdf",
+      "foodicsName": "Big Nac",
+      "actualName": "BIG NAC",
+      "brandLineCount": 8,
+      "lines": [
+        {
+          "name": "Minced beef",
+          "qty": "160",
+          "unit": "gram"
+        },
+        {
+          "name": "Burger bun (sesame)",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Butter unsalted",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "sea salt",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "iceberg",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Gherkins",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "American cheese",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "big nac sauce",
+          "qty": "70",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "BLACK ANGUS, BLACK PEPPERCORN",
+      "pdf": "Black Angus, black peppercorn.pdf",
+      "foodicsName": "Black Angus Steak au Poivre",
+      "actualName": "BLACK ANGUS STEAK AU POIVRE",
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Peppercorn sauce",
+          "qty": "75",
+          "unit": "gram"
+        },
+        {
+          "name": "Black Angus steak",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Oil cooking",
+          "qty": "10",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Table salt",
+          "qty": "3",
+          "unit": "gram"
+        },
+        {
+          "name": "Black pepper",
+          "qty": "10",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "BREAD SALAD",
+      "pdf": "Bread salad.pdf",
+      "foodicsName": "Bread Salad",
+      "actualName": null,
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Heritage tomatoes",
+          "qty": "250",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "10",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Yoghurt",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Brioche bread",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt",
+          "qty": "3",
+          "unit": "gram"
+        },
+        {
+          "name": "Black pepper",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CHICKEN SLIDERS",
+      "pdf": "Chicken sliders.pdf",
+      "foodicsName": "Chicken Sliders",
+      "actualName": "CHIKEN SLIDERS",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Spicy mayo",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Burger bun, unseeded (23g)",
+          "qty": "3",
+          "unit": "each"
+        },
+        {
+          "name": "Chicken patty",
+          "qty": "3",
+          "unit": "each"
+        },
+        {
+          "name": "Coriander",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Pickled onions",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Butter",
+          "qty": "5",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CHOCOLATE BROWNIE WITH COOKIE CHUNK & CARAMEL",
+      "pdf": "Chocolate brownie with Cookie chunk & caramel .pdf",
+      "foodicsName": "Chocolate Brownie",
+      "actualName": null,
+      "brandLineCount": 3,
+      "lines": [
+        {
+          "name": "Caramel sauce (callebaut)",
+          "qty": "15",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Cookie chunck raw",
+          "qty": "60",
+          "unit": "gram"
+        },
+        {
+          "name": "Brownie (batch)",
+          "qty": "170",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CHURROS, BURNT MILK",
+      "pdf": "Churros, burnt milk.pdf",
+      "foodicsName": "Churros",
+      "actualName": null,
+      "brandLineCount": 3,
+      "lines": [
+        {
+          "name": "Churros",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Dulce de leche",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Caster sugar",
+          "qty": "10",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CORN & TRUFFLE RISOTTO",
+      "pdf": "Corn & truffle risotto.pdf",
+      "foodicsName": "Corn & White Truffle Risotto",
+      "actualName": "Risotto",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Corn risotto",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "sweet corn",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmesan chips",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Extra virgin olive oil",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "black summer truffle",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "black peppercorn",
+          "qty": "5",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CRUSHED BURRATA, CHERRY TOMATOES, SMOKED SALT",
+      "pdf": "Crushed burrata, cherry tomatoes, smoked salt.pdf",
+      "foodicsName": "Burrata",
+      "actualName": "Burrata",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Burrata",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Cherry tomatoes",
+          "qty": "65",
+          "unit": "gram"
+        },
+        {
+          "name": "Basil",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "2",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Black peppercorn",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "CRUSHED MILK CHOCOLATE COOKIES, FROSTIES SOFT SERVE",
+      "pdf": "Crushed milk chocolate cookies, Frosties soft serve.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 3,
+      "lines": [
+        {
+          "name": "Cookie (3 units)",
+          "qty": "200",
+          "unit": "gram"
+        },
+        {
+          "name": "Horlick ice cream",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Frosties",
+          "qty": "6",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "FLAMED AUBERGINE, MISO, CRISPY RICE, GREEK YOGURT",
+      "pdf": "Flamed aubergine, miso, crispy rice, greek yogurt.pdf",
+      "foodicsName": "Aubergine",
+      "actualName": "Aubergine",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Miso aubergine",
+          "qty": "200",
+          "unit": "gram"
+        },
+        {
+          "name": "Spring onion",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Greek yoghurt",
+          "qty": "40",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Miso marinade",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Crispy rice",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "10",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "FREE RANGE GRILLED CAJUN CHICKEN, CORN, TOMATOES",
+      "pdf": "Free range grilled cajun chicken, corn, tomatoes.pdf",
+      "foodicsName": "Cajun Chicken",
+      "actualName": "Cajun Chicken",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Cajun chicken fillet (cooked)",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Cajun chicken sauce",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Sweet corn",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Tomatoes",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Cooking oil",
+          "qty": "10",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "FRITES",
+      "pdf": "Frites.pdf",
+      "foodicsName": "Fries",
+      "actualName": null,
+      "brandLineCount": 2,
+      "lines": [
+        {
+          "name": "Fries",
+          "qty": "200",
+          "unit": "gram"
+        },
+        {
+          "name": "Table salt",
+          "qty": "3",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "GREEK YOGHURT, HOUSE GRANOLA, RASPBERRY, CARAMEL TOAST",
+      "pdf": "Greek yoghurt, house granola, raspberry, caramel toast.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Greek yoghurt",
+          "qty": "180",
+          "unit": "gram"
+        },
+        {
+          "name": "Granola",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Raspberries jam",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Raspberries",
+          "qty": "30",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "HALLOUMI FRIES, HONEY SRIRACHA",
+      "pdf": "Halloumi fries.pdf",
+      "foodicsName": "Halloumi fries",
+      "actualName": "Halloumi Fries",
+      "brandLineCount": 3,
+      "lines": [
+        {
+          "name": "Halloumi",
+          "qty": "160",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey sriracha",
+          "qty": "32",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar",
+          "qty": "1",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "HALLOUMI",
+      "pdf": "Halloumi.pdf",
+      "foodicsName": "Halloumi Grilled",
+      "actualName": null,
+      "brandLineCount": 3,
+      "lines": [
+        {
+          "name": "Halloumi",
+          "qty": "95",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "15",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "HONEY SWEET POTATO, BLACK PEPPER YOGURT, ZHOUGH",
+      "pdf": "Honey sweet potato, black pepper yogurt, zhoug.pdf",
+      "foodicsName": "Sweet Potato",
+      "actualName": "Sweet Pot",
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Sweet potatoes",
+          "qty": "170",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Greek yoghurt",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Zhoug",
+          "qty": "6",
+          "unit": "gram"
+        },
+        {
+          "name": "Smoked maldon salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Black pepper",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "HOUSE SALAD WITH HAZELNUT SALT",
+      "pdf": "House salad with hazelnut salt (batches).pdf",
+      "foodicsName": "House Salad",
+      "actualName": "House Salade",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Baby gem lettuce",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "House salad dressing",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Hazelnut",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Red radish",
+          "qty": "25",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "KALE & CABBAGE, PARMIGIANO, PINE NUTS, GOLDEN RAISINS, HONEY",
+      "pdf": "Kale & cabbage, parmigiano, pine nuts, golden raisins, honey za’atar dressing.pdf",
+      "foodicsName": "Kale S.",
+      "actualName": "Kale",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Marinated kale & cabbage",
+          "qty": "125",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey & za'atar dressing",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Pine nuts",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Golden raisins",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmesan",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar powder",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Marinated kale & cabbage",
+          "qty": "210",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey & za'atar dressing",
+          "qty": "16",
+          "unit": "gram"
+        },
+        {
+          "name": "Pine nuts",
+          "qty": "8",
+          "unit": "gram"
+        },
+        {
+          "name": "Golden raisins",
+          "qty": "34",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmesan",
+          "qty": "20",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "KALE & CABBAGE, PARMIGIANO, PINE NUTS, GOLDEN RAISINS, HONEY",
+      "pdf": "Lunch kale & cabbage, parmigiano, pine nuts, golden raisins, honey za’atar dressing_daytime.pdf",
+      "foodicsName": "Kale B.",
+      "actualName": "Kale",
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Marinated kale & cabbage",
+          "qty": "125",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey & za'atar dressing",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Pine nuts",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Golden raisins",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmesan",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar powder",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Marinated kale & cabbage",
+          "qty": "210",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey & za'atar dressing",
+          "qty": "16",
+          "unit": "gram"
+        },
+        {
+          "name": "Pine nuts",
+          "qty": "8",
+          "unit": "gram"
+        },
+        {
+          "name": "Golden raisins",
+          "qty": "34",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmesan",
+          "qty": "20",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "QUINOA, POMEGRANATE, BABY TOMATO, LEMON CONFIT DRESSING (LUNCH)",
+      "pdf": "Lunch- quinoa, pomegranate, baby tomato, lemon confit dressing_daytime.pdf",
+      "foodicsName": "Quinoa B.",
+      "actualName": "Quinoa",
+      "brandLineCount": 8,
+      "lines": [
+        {
+          "name": "Quinoa",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Lemon confit dressing",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Confit baby tomatoes",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Radish",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Parsley",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Pomegranate seeds",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "MEDITERRANEAN PLATE",
+      "pdf": "Mediterranean plate.pdf",
+      "foodicsName": "Mediterranean Breakfast",
+      "actualName": "Mediterranean",
+      "brandLineCount": 10,
+      "lines": [
+        {
+          "name": "Fried egg",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "Halloumi",
+          "qty": "90",
+          "unit": "gram"
+        },
+        {
+          "name": "Avocado",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Tatziki",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Salad",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Pita bread",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "Sumac powder",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Sea salt",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Chili flakes",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "MOREL PASTA, PARMESAN",
+      "pdf": "Morel pasta, parmesan.pdf",
+      "foodicsName": "Morel Pasta,Parmesan",
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Fusilli pasta (De Cecco)",
+          "qty": "100",
+          "unit": "gram"
+        },
+        {
+          "name": "Morels sauce",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmigianno",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Table salt",
+          "qty": "3",
+          "unit": "gram"
+        },
+        {
+          "name": "Black peppercorn",
+          "qty": "1",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "MUSHROOM TOAT, HAZELNUT SALT",
+      "pdf": "Mushroom toast, hazelnut salt.pdf",
+      "foodicsName": "Mushroom Toast",
+      "actualName": null,
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "Sourdough",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "shimeji mushroom",
+          "qty": "0.02",
+          "unit": "kilogram"
+        },
+        {
+          "name": "hazelnut",
+          "qty": "0.005",
+          "unit": "kilogram"
+        },
+        {
+          "name": "Virgin olive oil",
+          "qty": "0.005",
+          "unit": "litre"
+        },
+        {
+          "name": "Salt",
+          "qty": "0.002",
+          "unit": "kilogram"
+        },
+        {
+          "name": "Black pepper corn",
+          "qty": "0.002",
+          "unit": "kilogram"
+        }
+      ]
+    },
+    {
+      "dish": "OLIVES",
+      "pdf": "Olives.pdf",
+      "foodicsName": "Olives",
+      "actualName": null,
+      "brandLineCount": 1,
+      "lines": [
+        {
+          "name": "Olives",
+          "qty": "80",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "PAVLOVA",
+      "pdf": "Pavlova strawberry.pdf",
+      "foodicsName": "Pavlova Pistachio & Raspberry",
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Pavlova meringue",
+          "qty": "56",
+          "unit": "gram"
+        },
+        {
+          "name": "Pistachio cream",
+          "qty": "62",
+          "unit": "gram"
+        },
+        {
+          "name": "Strawberry coulis",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Fresh strawberry",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Pistachio",
+          "qty": "30",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "POACHED EGGS & AVOCADO TOAST, FETA, CORIANDER PESTO",
+      "pdf": "Poached eggs & avocado toast, feta.pdf",
+      "foodicsName": "Poached Eggs Avocado toast",
+      "actualName": "Poached Avocado",
+      "brandLineCount": 10,
+      "lines": [
+        {
+          "name": "Sourdough",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Avocado",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Feta",
+          "qty": "16",
+          "unit": "gram"
+        },
+        {
+          "name": "Alepo pepper",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander baby",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Chilli flakes",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "8",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Lemon juice",
+          "qty": "8",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "POPCORN CHICKEN, SPICY MAYO",
+      "pdf": "Popcorn chicken, spicy mayo (batches).pdf",
+      "foodicsName": "Popcorn Chicken",
+      "actualName": "Popcorn Chicken",
+      "brandLineCount": 4,
+      "lines": [
+        {
+          "name": "Cornflaked chicken",
+          "qty": "140",
+          "unit": "gram"
+        },
+        {
+          "name": "Spicy mayo",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt",
+          "qty": "0.5",
+          "unit": "gram"
+        },
+        {
+          "name": "Cooking oil",
+          "qty": "250",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "Prawn Rendang, grilled lemon",
+      "pdf": "Prawn Rendang, grilled lemon .pdf",
+      "foodicsName": "King Prawn rendang",
+      "actualName": null,
+      "brandLineCount": 11,
+      "lines": [
+        {
+          "name": "Ginger root",
+          "qty": "26",
+          "unit": "gram"
+        },
+        {
+          "name": "Lemongrass",
+          "qty": "24",
+          "unit": "gram"
+        },
+        {
+          "name": "Rendang paste",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander",
+          "qty": "28",
+          "unit": "gram"
+        },
+        {
+          "name": "Coconut milk",
+          "qty": "400",
+          "unit": "gram"
+        },
+        {
+          "name": "Tamarind paste",
+          "qty": "4",
+          "unit": "gram"
+        },
+        {
+          "name": "Soy sauce Dark",
+          "qty": "4",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Light soft brown sugar",
+          "qty": "8",
+          "unit": "gram"
+        },
+        {
+          "name": "Maggi coconut powder",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Prawns Tiger 16/29",
+          "qty": "6",
+          "unit": "each"
+        },
+        {
+          "name": "Grilled Lemon",
+          "qty": "1",
+          "unit": "each"
+        }
+      ]
+    },
+    {
+      "dish": "QUINOA, POMEGRANATE, BABY TOMATO, LEMON CONFIT DRESSING",
+      "pdf": "Quinoa, pomegranate, baby tomato, lemon confit dressing_daytime.pdf",
+      "foodicsName": "Quinoa S.",
+      "actualName": "Quinoa",
+      "brandLineCount": 8,
+      "lines": [
+        {
+          "name": "Quinoa",
+          "qty": "130",
+          "unit": "gram"
+        },
+        {
+          "name": "Lemon confit dressing",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Confit baby tomatoes",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Radish",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Parsley",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Pomegranate seeds",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "RICOTTA PANCAKES, DULCE DE LECHE, BANANA",
+      "pdf": "Ricotta pancakes, dulce de leche, banana.pdf",
+      "foodicsName": null,
+      "actualName": null,
+      "brandLineCount": 4,
+      "lines": [
+        {
+          "name": "Pancakes",
+          "qty": "4",
+          "unit": "each"
+        },
+        {
+          "name": "Dulce de leche",
+          "qty": "120",
+          "unit": "gram"
+        },
+        {
+          "name": "Fresh banana",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Icing sugar",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "RIGATONI, PINK SAUCE, BASIL, CHILI, PARMIGIANO",
+      "pdf": "Rigatoni, pink sauce, basil, chili, parmigiano.pdf",
+      "foodicsName": "Rigatoni",
+      "actualName": "Rigatoni pink",
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Rigatonni pasta (De Ceddo)",
+          "qty": "200",
+          "unit": "gram"
+        },
+        {
+          "name": "Vodka tomato sauce",
+          "qty": "400",
+          "unit": "gram"
+        },
+        {
+          "name": "Basil leaves",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Extra virgin olive oil",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Chilli flakes",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Parmigianno",
+          "qty": "22",
+          "unit": "gram"
+        },
+        {
+          "name": "Table salt",
+          "qty": "2",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SCRAMBLED EGGS, MONTERREY JACK, JALAPEÑO MAYO, BRIOCHE BUN",
+      "pdf": "Scrambled eggs, Monterrey Jack, jalapeño mayo, brioche bun.pdf",
+      "foodicsName": "Egg Bun",
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Monterrey Jack",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Jalapenos mayo (b)",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Butter",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Sea salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Brioche bun",
+          "qty": "1",
+          "unit": "each"
+        }
+      ]
+    },
+    {
+      "dish": "SEA BASS CREOLE WITH PEPPER CREAM SAUCE",
+      "pdf": "Sea bass creole with pepper cream sauce N_A.pdf",
+      "foodicsName": "Sea Bass Creaole",
+      "actualName": null,
+      "brandLineCount": 4,
+      "lines": [
+        {
+          "name": "Sea bass fillet",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Creole pepper sauce",
+          "qty": "70",
+          "unit": "gram"
+        },
+        {
+          "name": "Watercress",
+          "qty": "10",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SEA BASS IN PAPILLOTE, ZUCCHINI, LEMON",
+      "pdf": "Sea bass in baking sheet.pdf",
+      "foodicsName": "Seabass in Papillote",
+      "actualName": null,
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Sea bass filet after wastage",
+          "qty": "140",
+          "unit": "gram"
+        },
+        {
+          "name": "Courgette/Zucchini after wastage",
+          "qty": "100",
+          "unit": "gram"
+        },
+        {
+          "name": "Extra virgin olive oil",
+          "qty": "15",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Sea salt maldon",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Lemon half",
+          "qty": "70",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SHAKSHUKA POACHED EGGS, FETA, ZA'ATAR, PITA",
+      "pdf": "Shakshuka, poached eggs, feta, za_atar, pita.pdf",
+      "foodicsName": "Shakshuka",
+      "actualName": "shaksuka",
+      "brandLineCount": 8,
+      "lines": [
+        {
+          "name": "shakshuka (b)",
+          "qty": "130",
+          "unit": "gram"
+        },
+        {
+          "name": "egg",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "feta",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "parsley",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "alepo pepper",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "chili flakes",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "za'atar powder",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "pita",
+          "qty": "2",
+          "unit": "each"
+        }
+      ]
+    },
+    {
+      "dish": "SMOKED PAPRIKA PRAWN",
+      "pdf": "Smoked paprika prawn.pdf",
+      "foodicsName": "Paprika Prawn",
+      "actualName": "Shrimps Add on",
+      "brandLineCount": 7,
+      "lines": [
+        {
+          "name": "Shrimps",
+          "qty": "72",
+          "unit": "gram"
+        },
+        {
+          "name": "Extra virgin olive oil",
+          "qty": "3",
+          "unit": "millilitre"
+        },
+        {
+          "name": "Maldon salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Coriander leaves",
+          "qty": "3",
+          "unit": "gram"
+        },
+        {
+          "name": "Lime (to serve only)",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Paprika - Hot smoked",
+          "qty": "1.5",
+          "unit": "gram"
+        },
+        {
+          "name": "Spring onion",
+          "qty": "1",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SPECULOOS FRENCH TOAST, RASPBERRIES, CLOTTED CREAM",
+      "pdf": "Speculoos french toast, raspberries, clotted cream.pdf",
+      "foodicsName": "French Toast",
+      "actualName": null,
+      "brandLineCount": 6,
+      "lines": [
+        {
+          "name": "French toast batter bun",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Clotted cream",
+          "qty": "50",
+          "unit": "gram"
+        },
+        {
+          "name": "Raspberries",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Speculos",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Honey",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Butter",
+          "qty": "20",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "SPICY FRIED EGG",
+      "pdf": "Spicy fried egg.pdf",
+      "foodicsName": "Fried Egg",
+      "actualName": "Fried Egg",
+      "brandLineCount": 4,
+      "lines": [
+        {
+          "name": "Egg",
+          "qty": "1",
+          "unit": "each"
+        },
+        {
+          "name": "Cajun meat seasoning",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt (smoked)",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Cooking oil",
+          "qty": "2.5",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "SUMAC CHICKEN",
+      "pdf": "Sumac chicken.pdf",
+      "foodicsName": "Sumac chicken",
+      "actualName": "Sumac Chicken",
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Chicken fillet",
+          "qty": "110",
+          "unit": "gram"
+        },
+        {
+          "name": "Shawarma paste",
+          "qty": "6",
+          "unit": "gram"
+        },
+        {
+          "name": "Za'atar",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Table salt",
+          "qty": "1",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "TRUFFLE BURGER, MONTERREY JACK, TRUFFLE MAYO",
+      "pdf": "Truffle burger, Monterrey Jack, truffle mayo.pdf",
+      "foodicsName": "Truffle Burger",
+      "actualName": "Truffle Burger",
+      "brandLineCount": 8,
+      "lines": [
+        {
+          "name": "Truffle mayonnaise",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Plantbased burger bun",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Butter (unsalted)",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Sliced cheese (Monterey Jack)",
+          "qty": "40",
+          "unit": "gram"
+        },
+        {
+          "name": "Minced beef",
+          "qty": "150",
+          "unit": "gram"
+        },
+        {
+          "name": "Sea salt",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Truffle salad dressing",
+          "qty": "10",
+          "unit": "gram"
+        },
+        {
+          "name": "Little gem lettuce",
+          "qty": "50",
+          "unit": "gram"
+        }
+      ]
+    },
+    {
+      "dish": "TRUFFLED MAC & CHEESE",
+      "pdf": "Truffled mac & cheese.pdf",
+      "foodicsName": "Mac & Cheese",
+      "actualName": "Mac N Cheese",
+      "brandLineCount": 5,
+      "lines": [
+        {
+          "name": "Cooked pasta (De Cecco)",
+          "qty": "136",
+          "unit": "gram"
+        },
+        {
+          "name": "Mascarpone mix",
+          "qty": "200",
+          "unit": "gram"
+        },
+        {
+          "name": "Monterey jack cheese slice",
+          "qty": "20",
+          "unit": "gram"
+        },
+        {
+          "name": "Black peppercorn",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Truffle oil",
+          "qty": "2",
+          "unit": "millilitre"
+        }
+      ]
+    },
+    {
+      "dish": "TURKISH EGGS, CAJUN BUTTER, PITA",
+      "pdf": "Turkish eggs, cajun butter, pita.pdf",
+      "foodicsName": "Turkish Eggs",
+      "actualName": "Turkish Eggs",
+      "brandLineCount": 9,
+      "lines": [
+        {
+          "name": "Greek yogurt",
+          "qty": "80",
+          "unit": "gram"
+        },
+        {
+          "name": "Poached egg",
+          "qty": "2",
+          "unit": "each"
+        },
+        {
+          "name": "Spicy harissa meze",
+          "qty": "6",
+          "unit": "gram"
+        },
+        {
+          "name": "Chives",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Aleppo chili flakes",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Spring onion",
+          "qty": "12",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon sea salt",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Cajun brown butter",
+          "qty": "8",
+          "unit": "gram"
+        },
+        {
+          "name": "Pita",
+          "qty": "2",
+          "unit": "each"
+        }
+      ]
+    },
+    {
+      "dish": "WATERMELON & CUCUMBER, FETA, PINE NUTS, BALSAMIC DRESSING",
+      "pdf": "watermelon & cucumber, feta, pine nuts, balsamic dressing.xlsx.pdf",
+      "foodicsName": "Watermelon & Feta Salad",
+      "actualName": null,
+      "brandLineCount": 10,
+      "lines": [
+        {
+          "name": "Watermelon",
+          "qty": "175",
+          "unit": "gram"
+        },
+        {
+          "name": "Organic feta",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Baby cucumber",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Pine nuts",
+          "qty": "15",
+          "unit": "gram"
+        },
+        {
+          "name": "Parsley",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Mint",
+          "qty": "2",
+          "unit": "gram"
+        },
+        {
+          "name": "Basil",
+          "qty": "1",
+          "unit": "gram"
+        },
+        {
+          "name": "Olive oil",
+          "qty": "5",
+          "unit": "gram"
+        },
+        {
+          "name": "Balsamic dressing",
+          "qty": "30",
+          "unit": "gram"
+        },
+        {
+          "name": "Maldon salt",
+          "qty": "1",
+          "unit": "gram"
+        }
+      ]
+    }
+  ],
+  "foodicsProducts": [
+    {
+      "sku": "sk-1184",
+      "name": "7up",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1452",
+      "name": "7up Diet",
+      "localizedName": "سفن اب دايت"
+    },
+    {
+      "sku": "sk-1903",
+      "name": "Acai Bowl",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1656",
+      "name": "Add Eggs",
+      "localizedName": "أضافة البيض"
+    },
+    {
+      "sku": "sk-1175",
+      "name": "Affogato",
+      "localizedName": "افوقاتو"
+    },
+    {
+      "sku": "sk-1764",
+      "name": "Almond, Raspberry & Rose Parfait",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0657",
+      "name": "Americano",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1476",
+      "name": "Americano",
+      "localizedName": "امريكانو"
+    },
+    {
+      "sku": "sk-2315",
+      "name": "Americano",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1190",
+      "name": "Apple",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1943",
+      "name": "Apple & Cucumber, Lemon",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0669",
+      "name": "Apple & Lemon, Lime, Mint",
+      "localizedName": "تفاح مع الليمون والنعناع"
+    },
+    {
+      "sku": "sk-1902",
+      "name": "Apple Bircher",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2076",
+      "name": "Apple Cobbler",
+      "localizedName": "فطيرة التفاح"
+    },
+    {
+      "sku": "sk-1181",
+      "name": "Apple, Cucumber, Spinach",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2440",
+      "name": "Arabic Bread Pudding",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1781",
+      "name": "Arabic Coffee",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0687",
+      "name": "Asparagus",
+      "localizedName": "الهليون"
+    },
+    {
+      "sku": "sk-0598",
+      "name": "Aubergine",
+      "localizedName": "باذنجان ، ميسو ، أرز مقرمش ، زبادي يوناني"
+    },
+    {
+      "sku": "sk-0638",
+      "name": "Avocado",
+      "localizedName": "أفوكادو"
+    },
+    {
+      "sku": "sk-0615",
+      "name": "Avocado toast",
+      "localizedName": "توست الأفوكادو"
+    },
+    {
+      "sku": "sk-2051",
+      "name": "Avocado Toast",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2208",
+      "name": "Baba Ganoush on Campaillou Bread",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2367",
+      "name": "Baked Cheese Potato",
+      "localizedName": "بطاطس مشوية"
+    },
+    {
+      "sku": "sk-2368",
+      "name": "Baked Cheese Potato - Spicy",
+      "localizedName": "بطاطس مشوية حراق"
+    },
+    {
+      "sku": "sk-2182",
+      "name": "Baked Fig Sandwich",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2441",
+      "name": "Baklava",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1259",
+      "name": "Balsamic Vinegar",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1904",
+      "name": "Beef Bacon",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1299",
+      "name": "Beef Burger",
+      "localizedName": "برقر لحم كلاسيك"
+    },
+    {
+      "sku": "sk-2392",
+      "name": "Beef Burger",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2393",
+      "name": "Beef Burger (Ali)",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2209",
+      "name": "Beef Lasagna",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2210",
+      "name": "Beef Slider",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2377",
+      "name": "Beef Striploin",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2378",
+      "name": "Beef Striploin - Spicy",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2281",
+      "name": "Beef Taco",
+      "localizedName": "تاكو لحم"
+    },
+    {
+      "sku": "sk-2338",
+      "name": "Beef Taco",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1695",
+      "name": "Beef Tenderloin",
+      "localizedName": "تندرلوين لحم بقري"
+    },
+    {
+      "sku": "sk-1292",
+      "name": "Beetroot Hummus",
+      "localizedName": "حمّص بالشمندر"
+    },
+    {
+      "sku": "sk-1294",
+      "name": "Beetroot Salad",
+      "localizedName": "سلطة الشمندر"
+    },
+    {
+      "sku": "sk-2211",
+      "name": "Beetroot Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1180",
+      "name": "Beetroot, apple, celery",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2052",
+      "name": "Benedict with Bacon",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1462",
+      "name": "Berries Cake",
+      "localizedName": "كيكة التوت"
+    },
+    {
+      "sku": "sk-2165",
+      "name": "BF Combo 1 - French Toast",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2172",
+      "name": "BF Combo 2 - Pancake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2173",
+      "name": "BF Combo 3 - Avocado Toast",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2174",
+      "name": "BF Combo 4 - Watermelon & Grilled Halloumi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2175",
+      "name": "BF Combo 5 - Egg Bun",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1955",
+      "name": "Big Nac",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2457",
+      "name": "Big NAC New",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1318",
+      "name": "Black Angus Steak au Poivre",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2212",
+      "name": "Black Forest Cake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0670",
+      "name": "Blackberry & Vanilla, Lemon",
+      "localizedName": "توت الاسود والفانيلا مع ليمون"
+    },
+    {
+      "sku": "sk-2332",
+      "name": "Blondie Pistachio",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1923",
+      "name": "Bloody Lemonade",
+      "localizedName": "عصير الليمون  الوردي"
+    },
+    {
+      "sku": "sk-2245",
+      "name": "Blue Lagoon Mocktail",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2257",
+      "name": "Bottled Water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2237",
+      "name": "Bread Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1197",
+      "name": "Breakfast tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2454",
+      "name": "Brioche,Asparagus,Beurre Blanc",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2330",
+      "name": "Brownie Tiramisu",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2463",
+      "name": "Buffalo Chicken Wings",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2100",
+      "name": "Burger-Double Patty",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0618",
+      "name": "Burrata",
+      "localizedName": "بوراتا مهروسة ، طماطم كرزية ، ملح مدخن"
+    },
+    {
+      "sku": "sk-2276",
+      "name": "Burrata Fusion",
+      "localizedName": "سلطة بوراتا"
+    },
+    {
+      "sku": "sk-1915",
+      "name": "Burrata Pizza",
+      "localizedName": "بيتزا بوراتا"
+    },
+    {
+      "sku": "sk-1293",
+      "name": "Burrata Salad",
+      "localizedName": "سلطة البوراتا"
+    },
+    {
+      "sku": "sk-1653",
+      "name": "Butter",
+      "localizedName": "زبدة"
+    },
+    {
+      "sku": "sk-1763",
+      "name": "Butternut & Chestnut Veloute",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2213",
+      "name": "Caesar Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0631",
+      "name": "Cajun Chicken",
+      "localizedName": "دجاج كاجون المشوي"
+    },
+    {
+      "sku": "sk-2280",
+      "name": "Cajun Corn",
+      "localizedName": "ذرة"
+    },
+    {
+      "sku": "sk-0660",
+      "name": "Cappuccino",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1469",
+      "name": "Cappuccino",
+      "localizedName": "كابتشينو"
+    },
+    {
+      "sku": "sk-2306",
+      "name": "Cappuccino",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1457",
+      "name": "Caramel Cake",
+      "localizedName": "كيك الكراميل"
+    },
+    {
+      "sku": "sk-1474",
+      "name": "Caramel Latte",
+      "localizedName": "كراميل لاتيه"
+    },
+    {
+      "sku": "sk-2314",
+      "name": "Caramel Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2414",
+      "name": "Caramel Sundae",
+      "localizedName": "صنداي كراميل"
+    },
+    {
+      "sku": "sk-1691",
+      "name": "Caramel Syrup Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2055",
+      "name": "Caramelized Banana Crepe",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1179",
+      "name": "Carrot, apple, ginger",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0616",
+      "name": "Cauliflower",
+      "localizedName": "القرنبيط"
+    },
+    {
+      "sku": "sk-1467",
+      "name": "Chamomile",
+      "localizedName": "شاموميل"
+    },
+    {
+      "sku": "sk-1199",
+      "name": "Chamomile Tea",
+      "localizedName": "شاي البابونج"
+    },
+    {
+      "sku": "sk-2319",
+      "name": "Chamomile Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2243",
+      "name": "Cheddar Sauce",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1458",
+      "name": "Cheese Cake",
+      "localizedName": "تشيز كيك"
+    },
+    {
+      "sku": "sk-2397",
+      "name": "Cheese Sauce",
+      "localizedName": "صوص جبن"
+    },
+    {
+      "sku": "sk-2215",
+      "name": "Cheese Spring Roll & Avocado Salsa",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2265",
+      "name": "Cheesecake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2214",
+      "name": "Cheesecake Raspberry",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1645",
+      "name": "Cherry Tomato",
+      "localizedName": "طماطم شيري"
+    },
+    {
+      "sku": "sk-2188",
+      "name": "Chia Seed Mango Coconut",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2359",
+      "name": "Chicken",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2290",
+      "name": "Chicken Avo Flatbread",
+      "localizedName": "تشيكن أفوكادو"
+    },
+    {
+      "sku": "sk-1642",
+      "name": "Chicken Breast",
+      "localizedName": "صدر دجاج"
+    },
+    {
+      "sku": "sk-1921",
+      "name": "Chicken Burger",
+      "localizedName": "برغر دجاج"
+    },
+    {
+      "sku": "sk-1295",
+      "name": "Chicken Caesar Salad",
+      "localizedName": "سلطة السيزر بالدجاج"
+    },
+    {
+      "sku": "sk-2436",
+      "name": "Chicken Ouzi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1300",
+      "name": "Chicken Sandwich",
+      "localizedName": "سندويتش الدجاج"
+    },
+    {
+      "sku": "sk-2443",
+      "name": "Chicken Shish Tawook",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2216",
+      "name": "Chicken Slider",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1927",
+      "name": "Chicken Sliders",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2465",
+      "name": "Chicken Sllider",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2381",
+      "name": "Chicken Strip for Kids",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1290",
+      "name": "Chicken Strips",
+      "localizedName": "أصابع الدجاج"
+    },
+    {
+      "sku": "sk-2217",
+      "name": "Chicken Tzatziki Roll",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1263",
+      "name": "Chilli Flakes",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2458",
+      "name": "Chocolate Brownie",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2192",
+      "name": "Chocolate Ice Cream Scoop",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2398",
+      "name": "Chocolate Sundae",
+      "localizedName": "صنداي شوكولاتة"
+    },
+    {
+      "sku": "sk-0650",
+      "name": "Choux",
+      "localizedName": "تشوالا كريم"
+    },
+    {
+      "sku": "sk-0649",
+      "name": "Churros",
+      "localizedName": "شوروز"
+    },
+    {
+      "sku": "sk-2247",
+      "name": "Churros",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2264",
+      "name": "Churros",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2329",
+      "name": "Cinnamon Spiral",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2394",
+      "name": "Classic Cheeseburger",
+      "localizedName": "كلاسيك تشيز برجر"
+    },
+    {
+      "sku": "sk-2428",
+      "name": "Classic Combo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2218",
+      "name": "Classic Hummus & Flavored Lamb Minced",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2467",
+      "name": "Classic Lettuce Wrap",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0680",
+      "name": "Classic Mojito",
+      "localizedName": "موهيتو عادي"
+    },
+    {
+      "sku": "sk-1429",
+      "name": "Classic Mojito",
+      "localizedName": "موهيتو كلاسيك"
+    },
+    {
+      "sku": "sk-2300",
+      "name": "Classic Mojito",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1182",
+      "name": "Coca cola",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1183",
+      "name": "Coca cola light",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0665",
+      "name": "Coconut Iced Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2455",
+      "name": "Coconut Shrimp",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2078",
+      "name": "Coffee Mocha",
+      "localizedName": "كافيه موكا"
+    },
+    {
+      "sku": "sk-1450",
+      "name": "Coke Diet",
+      "localizedName": "كولا لايت"
+    },
+    {
+      "sku": "sk-2337",
+      "name": "Coke Diet",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1449",
+      "name": "Coke Regular",
+      "localizedName": "كوكا كولا"
+    },
+    {
+      "sku": "sk-2336",
+      "name": "Coke Regular",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2410",
+      "name": "Coke Regular",
+      "localizedName": "كوكاكولا"
+    },
+    {
+      "sku": "sk-2412",
+      "name": "Coke zero",
+      "localizedName": "كوكاكولا زيرو"
+    },
+    {
+      "sku": "sk-2471",
+      "name": "Cold Coffee Day",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2101",
+      "name": "Combo Starter",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2331",
+      "name": "Cookie Crumble",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0646",
+      "name": "Cookies",
+      "localizedName": "بسكويت شوكولاتة الحليب المجروش ، فروستيز سوفت"
+    },
+    {
+      "sku": "sk-1929",
+      "name": "Corn & White Truffle Risotto",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1193",
+      "name": "cortado",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1243",
+      "name": "Cortado",
+      "localizedName": "كورتادو"
+    },
+    {
+      "sku": "sk-1480",
+      "name": "Cortado",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2308",
+      "name": "Cortado",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1189",
+      "name": "Cranberry",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2287",
+      "name": "Creamy Burrata",
+      "localizedName": "بيتزا بوراتا"
+    },
+    {
+      "sku": "sk-1699",
+      "name": "Creamy Chicken Soup",
+      "localizedName": "شوربة كريمة الدجاج"
+    },
+    {
+      "sku": "sk-1459",
+      "name": "Creme Brulé",
+      "localizedName": "كريم بروليه"
+    },
+    {
+      "sku": "sk-2057",
+      "name": "Crepe with Banana & Nutella",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2059",
+      "name": "Crepe with Mixed Berry Jam",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2274",
+      "name": "Crispy Kale",
+      "localizedName": "سلطة الكايل"
+    },
+    {
+      "sku": "sk-2186",
+      "name": "Croque Monsier",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2278",
+      "name": "Crunchy Slider",
+      "localizedName": "سلايدر برغر دجاج"
+    },
+    {
+      "sku": "sk-2189",
+      "name": "Crème Brulé",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1460",
+      "name": "Date Pudding",
+      "localizedName": "كيكة التمر"
+    },
+    {
+      "sku": "sk-2219",
+      "name": "Deep Fried Mozzarella w/ Sriracha Mayo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0654",
+      "name": "Double Espresso",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2305",
+      "name": "Double Espresso",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0656",
+      "name": "Double Macchiato",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2353",
+      "name": "Drink Set 1",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2328",
+      "name": "Dulce Cheesecake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1264",
+      "name": "Dulce de Leche",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1464",
+      "name": "Earl Grey Tea",
+      "localizedName": "شاي ايرل قراي"
+    },
+    {
+      "sku": "sk-1321",
+      "name": "Egg Bun",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2054",
+      "name": "Egg Omelet",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2220",
+      "name": "Eggplant Parmessan",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1323",
+      "name": "Eggs Florentine",
+      "localizedName": "بيض فلورنتين،"
+    },
+    {
+      "sku": "sk-1910",
+      "name": "Eid Welcome Drink",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1659",
+      "name": "Emmental Cheese",
+      "localizedName": "جبنة إيمنتال"
+    },
+    {
+      "sku": "sk-1688",
+      "name": "Eng. Bfast Tea Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2318",
+      "name": "English B-fast Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2258",
+      "name": "English Bfast Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1434",
+      "name": "English Breakfast Tea",
+      "localizedName": "شاي الفطور الانجليزي"
+    },
+    {
+      "sku": "sk-0653",
+      "name": "Espresso",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1477",
+      "name": "Espresso",
+      "localizedName": "اسبريسو"
+    },
+    {
+      "sku": "sk-2304",
+      "name": "Espresso",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1478",
+      "name": "Espresso Double",
+      "localizedName": "دبل اسبريسو"
+    },
+    {
+      "sku": "sk-2299",
+      "name": "Espresso Martini",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1684",
+      "name": "Extra Patty",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2250",
+      "name": "Extra Shot",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1677",
+      "name": "Extra Shot Espresso",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1704",
+      "name": "Falafel",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0651",
+      "name": "Farro S.",
+      "localizedName": "فارو مع الفطر و صوص العسل والخردل"
+    },
+    {
+      "sku": "sk-2102",
+      "name": "Fattoush Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2221",
+      "name": "Fettuccini Chicken",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0659",
+      "name": "Flat White",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1481",
+      "name": "Flat White",
+      "localizedName": "فلات وايت"
+    },
+    {
+      "sku": "sk-2307",
+      "name": "Flat White",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1685",
+      "name": "Foundation Day Cocktail",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1311",
+      "name": "French Fries",
+      "localizedName": "بطاطس مقليّة"
+    },
+    {
+      "sku": "sk-1539",
+      "name": "French Fries",
+      "localizedName": "بطاطا مقلية |"
+    },
+    {
+      "sku": "sk-0647",
+      "name": "French Toast",
+      "localizedName": "توست فرنسي سبيكولوس ، توت ، كريمة متخثرة"
+    },
+    {
+      "sku": "sk-1461",
+      "name": "French Toast",
+      "localizedName": "فرنش توست"
+    },
+    {
+      "sku": "sk-1201",
+      "name": "Fresh mint tea",
+      "localizedName": "شاي النعناع الطازج"
+    },
+    {
+      "sku": "sk-0624",
+      "name": "Fried Egg",
+      "localizedName": "البيض المقلي الحار"
+    },
+    {
+      "sku": "sk-0635",
+      "name": "Fries",
+      "localizedName": "بطاطس مقلية"
+    },
+    {
+      "sku": "sk-2396",
+      "name": "Fries",
+      "localizedName": "بطاطس مقلية"
+    },
+    {
+      "sku": "sk-1187",
+      "name": "Ginger Ale",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2077",
+      "name": "Ginger Cake Pudding",
+      "localizedName": "كعكة التمر بالزنجبيل"
+    },
+    {
+      "sku": "sk-2074",
+      "name": "Ginger Tea",
+      "localizedName": "شاي بالزنجبيل"
+    },
+    {
+      "sku": "sk-1319",
+      "name": "Granola Yoghurt",
+      "localizedName": "بادي، قرانولا"
+    },
+    {
+      "sku": "sk-2222",
+      "name": "Greek Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2383",
+      "name": "Green Apple Mocktail",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2339",
+      "name": "Green Sencha Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1200",
+      "name": "Green Tea",
+      "localizedName": "شاي أخضر"
+    },
+    {
+      "sku": "sk-1468",
+      "name": "Green Tea",
+      "localizedName": "شاي اخضر"
+    },
+    {
+      "sku": "sk-2390",
+      "name": "Green Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1687",
+      "name": "Grilled Chicken Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2125",
+      "name": "Grilled Halloumi Cheese",
+      "localizedName": "جبنة حلوم مشوي"
+    },
+    {
+      "sku": "sk-1298",
+      "name": "Grilled Halloumi Sandwich",
+      "localizedName": "سندويتش حلومي"
+    },
+    {
+      "sku": "sk-2442",
+      "name": "Halawet el Jibn",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2409",
+      "name": "Half & Half",
+      "localizedName": "هاف & هاف"
+    },
+    {
+      "sku": "sk-1658",
+      "name": "Halloumi Cheese",
+      "localizedName": "جبنة حلومي"
+    },
+    {
+      "sku": "sk-0613",
+      "name": "Halloumi fries",
+      "localizedName": "حلوم مقلي ، عسل سريراتشا"
+    },
+    {
+      "sku": "sk-0628",
+      "name": "Halloumi Grilled",
+      "localizedName": "جبنة حلومي"
+    },
+    {
+      "sku": "sk-2283",
+      "name": "Halloumi Toasted Pesto",
+      "localizedName": "حلومي ساندويش"
+    },
+    {
+      "sku": "sk-2183",
+      "name": "Hamour w/ Citrus sauce & Pomme Paile",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1473",
+      "name": "Hazelnut Latte",
+      "localizedName": "لاتيه بالبندق"
+    },
+    {
+      "sku": "sk-2313",
+      "name": "Hazelnut Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1690",
+      "name": "Hazelnut Syrup Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1711",
+      "name": "Hibiscus",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1428",
+      "name": "Hibiscus Iced Tea",
+      "localizedName": "شاي مثلّج بالكركديه"
+    },
+    {
+      "sku": "sk-2163",
+      "name": "Homemade Basil Lemonade",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1206",
+      "name": "Honey",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1652",
+      "name": "Honey",
+      "localizedName": "عسل"
+    },
+    {
+      "sku": "sk-0662",
+      "name": "Hot Chocolate",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2073",
+      "name": "Hot Chocolate",
+      "localizedName": "شوكلاتة ساخنة"
+    },
+    {
+      "sku": "sk-2316",
+      "name": "Hot Chocolate",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2343",
+      "name": "Hot Chocolate",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2470",
+      "name": "Hot Coffee Day",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2395",
+      "name": "House Cheeseburger",
+      "localizedName": "هاوس تشيز برجر"
+    },
+    {
+      "sku": "sk-2429",
+      "name": "House Combo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2469",
+      "name": "House Lettuce Wrap",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0639",
+      "name": "House Salad",
+      "localizedName": "سلطة المنزل"
+    },
+    {
+      "sku": "sk-2415",
+      "name": "House Sauce",
+      "localizedName": "صوص هاوس"
+    },
+    {
+      "sku": "sk-0087",
+      "name": "Hummus",
+      "localizedName": "حمص شمندر وجبنة فيتا"
+    },
+    {
+      "sku": "sk-2282",
+      "name": "Hummus Trio",
+      "localizedName": "حمص"
+    },
+    {
+      "sku": "sk-2206",
+      "name": "Ice Cream Cone - Chocolate",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2238",
+      "name": "Ice Cream Cone - Mix",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2205",
+      "name": "Ice Cream Cone - Vanilla",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1236",
+      "name": "Iced Americano",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1488",
+      "name": "Iced Americano",
+      "localizedName": "امريكانو مثلج"
+    },
+    {
+      "sku": "sk-2327",
+      "name": "Iced Americano",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1486",
+      "name": "Iced Caramel Latte",
+      "localizedName": "كراميل لاتيه مثلج"
+    },
+    {
+      "sku": "sk-2326",
+      "name": "Iced Caramel Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1485",
+      "name": "Iced Hazelnut Latte",
+      "localizedName": "لاتيه بالبندق مثلج"
+    },
+    {
+      "sku": "sk-2325",
+      "name": "Iced Hazelnut Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0666",
+      "name": "Iced Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1482",
+      "name": "Iced Latte",
+      "localizedName": "لاتيه مثلج"
+    },
+    {
+      "sku": "sk-2322",
+      "name": "Iced Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2323",
+      "name": "Iced Malfa Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0667",
+      "name": "Iced Matcha Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2321",
+      "name": "Iced Matcha Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1196",
+      "name": "Iced Mocha",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1487",
+      "name": "Iced Mocha Latte",
+      "localizedName": "موكا لاتيه مثلج"
+    },
+    {
+      "sku": "sk-1483",
+      "name": "Iced Spanish Latte",
+      "localizedName": "سبانش لاتيه مثلج"
+    },
+    {
+      "sku": "sk-2386",
+      "name": "Iced Spanish Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2402",
+      "name": "Iced Tea",
+      "localizedName": "شاي مثلج"
+    },
+    {
+      "sku": "sk-1484",
+      "name": "Iced Vanilla Latte",
+      "localizedName": "فانيلا لاتيه مثلج"
+    },
+    {
+      "sku": "sk-2324",
+      "name": "Iced Vanilla Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1564",
+      "name": "Jack Cheese",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0676",
+      "name": "Jasmine Iced Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1254",
+      "name": "Jasmine Tea",
+      "localizedName": "شاي بالياسمين"
+    },
+    {
+      "sku": "sk-1465",
+      "name": "Jasmine Tea",
+      "localizedName": "شاي بالياسمين"
+    },
+    {
+      "sku": "sk-2273",
+      "name": "Jules' Caesar",
+      "localizedName": "سلطة القيصر"
+    },
+    {
+      "sku": "sk-0622",
+      "name": "Kale B.",
+      "localizedName": "كرنب ملفوف ، بارميجيانو ، صنوبر ، زبيب ذهبي ، صلصة زعتر بالعسل"
+    },
+    {
+      "sku": "sk-0620",
+      "name": "Kale S.",
+      "localizedName": "كيل وملفوف‚ بارميزان‚ صنوبر‚ زبيب‚ مزين بالزعتر والعسل"
+    },
+    {
+      "sku": "sk-1297",
+      "name": "Kale Salad",
+      "localizedName": "سلطة الكيل"
+    },
+    {
+      "sku": "sk-1514",
+      "name": "Karak Tea",
+      "localizedName": "شاي كرك"
+    },
+    {
+      "sku": "sk-1782",
+      "name": "Karak Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2256",
+      "name": "Karak Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2320",
+      "name": "Karak Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1702",
+      "name": "Kibbeh Beef",
+      "localizedName": "كبّة لحم مقليّة"
+    },
+    {
+      "sku": "sk-1703",
+      "name": "Kibbeh Mutton",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2379",
+      "name": "Kids Pasta",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2380",
+      "name": "Kids Pizza",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2459",
+      "name": "King Prawn rendang",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2164",
+      "name": "Kumquat, Rosemary & Lemon",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2127",
+      "name": "Kunafa Cheese",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2371",
+      "name": "Kunafah Brulee",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1705",
+      "name": "Kunafah Cheese",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2176",
+      "name": "L. Combo 1 - Rigatoni & Sumac Chicken",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2177",
+      "name": "L. Combo 2 - House Salad & Cajun Chicken",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2178",
+      "name": "L. Combo 3 - Big NAC & Fries",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2179",
+      "name": "L. Combo 4 - Truffle Burger & Fries",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2180",
+      "name": "L. Combo 5 - Slider & Fried Halloumi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2181",
+      "name": "L. Combo 6 - Risotto & Prawn",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2435",
+      "name": "Lamb Ouzi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2437",
+      "name": "Lamb Shank",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2103",
+      "name": "Lamb Tazine",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2279",
+      "name": "Lasagna Crostini",
+      "localizedName": "لازانيا بايتس"
+    },
+    {
+      "sku": "sk-0658",
+      "name": "Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1470",
+      "name": "Latte",
+      "localizedName": "لاتيه"
+    },
+    {
+      "sku": "sk-2310",
+      "name": "Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1425",
+      "name": "lemon Iced Tea",
+      "localizedName": "شاي مثلّج بالليمون"
+    },
+    {
+      "sku": "sk-1207",
+      "name": "Lemon Slice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1432",
+      "name": "Lemonade",
+      "localizedName": "ليموناضة"
+    },
+    {
+      "sku": "sk-2408",
+      "name": "Lemonade",
+      "localizedName": "ليموناضة"
+    },
+    {
+      "sku": "sk-1698",
+      "name": "Lentil Soup",
+      "localizedName": "شوربة العدس"
+    },
+    {
+      "sku": "sk-2370",
+      "name": "Lentil Soup",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2297",
+      "name": "Lilikoi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1255",
+      "name": "Lime",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1944",
+      "name": "Lychee & Raspberry, Rose water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0636",
+      "name": "Mac & Cheese",
+      "localizedName": "ترفل ماك اند تشيز"
+    },
+    {
+      "sku": "sk-0655",
+      "name": "Macchiato",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1479",
+      "name": "Macchiato",
+      "localizedName": "ماكياتو"
+    },
+    {
+      "sku": "sk-2439",
+      "name": "Malabia",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2311",
+      "name": "Malfa Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2333",
+      "name": "Malfa's Date Cake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2298",
+      "name": "Malfa's Garden",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1945",
+      "name": "Mango & Cardamon, Basil",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2248",
+      "name": "Maple Syrup",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0663",
+      "name": "Matcha Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2309",
+      "name": "Matcha Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1643",
+      "name": "Mayonnaise",
+      "localizedName": "مايونيز"
+    },
+    {
+      "sku": "sk-2434",
+      "name": "Meat Hummus",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1906",
+      "name": "Mediterranean Breakfast",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1426",
+      "name": "Miami Vice",
+      "localizedName": "ديكري فراوله"
+    },
+    {
+      "sku": "sk-1689",
+      "name": "Milk Full Fat Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2246",
+      "name": "Mini Pancakes",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1433",
+      "name": "Minted Lemonade",
+      "localizedName": "عصير ليمون نعناع"
+    },
+    {
+      "sku": "sk-0626",
+      "name": "Miso Salmon",
+      "localizedName": "ميزو السلمون على اللهب"
+    },
+    {
+      "sku": "sk-1430",
+      "name": "Mix Berry Mojito",
+      "localizedName": "موهيتو بالتوت المشكل"
+    },
+    {
+      "sku": "sk-1694",
+      "name": "Mixberry Puree Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2303",
+      "name": "Mixed Berry Mojito",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0661",
+      "name": "Mocha",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1475",
+      "name": "Mocha Latte",
+      "localizedName": "موكا لاتيه"
+    },
+    {
+      "sku": "sk-2453",
+      "name": "Morel Pasta,Parmesan",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1657",
+      "name": "Mozzarella Cheese",
+      "localizedName": "جبنة موزاريلا"
+    },
+    {
+      "sku": "sk-2223",
+      "name": "Muhamarra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1644",
+      "name": "Mushroom Mix",
+      "localizedName": "خليط الفطر"
+    },
+    {
+      "sku": "sk-1928",
+      "name": "Mushroom Toast",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1905",
+      "name": "Mushrooms",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1262",
+      "name": "Mustard",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1651",
+      "name": "Mustard",
+      "localizedName": "صلصة الخردل"
+    },
+    {
+      "sku": "sk-1925",
+      "name": "Nactella",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1261",
+      "name": "Olive Oil",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1649",
+      "name": "Olive Oil",
+      "localizedName": "زيت زيتون"
+    },
+    {
+      "sku": "sk-0086",
+      "name": "Olives",
+      "localizedName": "زيتون"
+    },
+    {
+      "sku": "sk-2224",
+      "name": "Opera Cake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0673",
+      "name": "Orange & Lychee, Orgeat",
+      "localizedName": "برتقال وليتشي مع الاورقيت"
+    },
+    {
+      "sku": "sk-2234",
+      "name": "Orange & Pineapple, Almond",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1178",
+      "name": "Orange Juice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1489",
+      "name": "Orange Juice",
+      "localizedName": "عصير برتقال"
+    },
+    {
+      "sku": "sk-2260",
+      "name": "Orange Juice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2162",
+      "name": "Orange, Cranberry & Coconut",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2200",
+      "name": "Pancake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0648",
+      "name": "Pancakes",
+      "localizedName": "فطائر ريكوتا ، دولسي دي ليتشي ، موز"
+    },
+    {
+      "sku": "sk-1908",
+      "name": "Panier de Viennoiserie",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0627",
+      "name": "Paprika Prawn",
+      "localizedName": "بابريكا مدخنة"
+    },
+    {
+      "sku": "sk-1244",
+      "name": "Parmesan",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1647",
+      "name": "Parmesan Cheese",
+      "localizedName": "جبنة بارميزان"
+    },
+    {
+      "sku": "sk-2360",
+      "name": "Parmesan Cheese",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0672",
+      "name": "PassionFruit Lemonade",
+      "localizedName": "ليموناضة باشن فروت"
+    },
+    {
+      "sku": "sk-0681",
+      "name": "Passionfruit Mojito",
+      "localizedName": "موهيتو باشن فروت"
+    },
+    {
+      "sku": "sk-1431",
+      "name": "Passionfruit Mojito",
+      "localizedName": "موهيتو باشن فروت"
+    },
+    {
+      "sku": "sk-2301",
+      "name": "Passionfruit Mojito",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1693",
+      "name": "Passionfruit Puree Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2185",
+      "name": "Pavlova Pistachio & Raspberry",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0675",
+      "name": "Peach & Ginger iced Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1427",
+      "name": "Peach Iced Tea",
+      "localizedName": "شاي مثلّج بالخوخ"
+    },
+    {
+      "sku": "sk-2302",
+      "name": "Peach Iced Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1305",
+      "name": "Penne Arabiata",
+      "localizedName": "بينيه أرابياتا"
+    },
+    {
+      "sku": "sk-2225",
+      "name": "Penne Arabiata",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1198",
+      "name": "Peppermint Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1466",
+      "name": "Peppermint Tea",
+      "localizedName": "شاي نعناع"
+    },
+    {
+      "sku": "sk-1530",
+      "name": "Pepperoni Sizzle",
+      "localizedName": "بيتزا بيبروني"
+    },
+    {
+      "sku": "sk-2293",
+      "name": "Pesto Gnocchi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1424",
+      "name": "Pina Colada",
+      "localizedName": "بينا كولادا"
+    },
+    {
+      "sku": "sk-1191",
+      "name": "Pineapple",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0671",
+      "name": "Pineapple & Rosemary, Mint",
+      "localizedName": "الاناناس واكليل الجبل مع النعناع"
+    },
+    {
+      "sku": "sk-1707",
+      "name": "Pistachio Cake",
+      "localizedName": "كيكة البيستاشيو"
+    },
+    {
+      "sku": "sk-1686",
+      "name": "Pistachio Choux ala Crème & White Chocolate Sauce",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2194",
+      "name": "Pistachio Ice Cream Scoop",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1784",
+      "name": "Pistachio Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1245",
+      "name": "Pita Bread",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2099",
+      "name": "Pita Bread",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2361",
+      "name": "Pita Bread",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1302",
+      "name": "Pizza Margherita",
+      "localizedName": "بيتزا مارغريتا"
+    },
+    {
+      "sku": "sk-1324",
+      "name": "Poached Eggs Avocado toast",
+      "localizedName": "بيض مسلوق مع توست الافوكادو"
+    },
+    {
+      "sku": "sk-1924",
+      "name": "Pomegranate Mojito",
+      "localizedName": "موهيتوا رمان"
+    },
+    {
+      "sku": "sk-2416",
+      "name": "Pomme Frites Sauce",
+      "localizedName": "صوص بوم فرايت"
+    },
+    {
+      "sku": "sk-0614",
+      "name": "Popcorn Chicken",
+      "localizedName": "بوب كورن الدجاج"
+    },
+    {
+      "sku": "sk-2126",
+      "name": "Pulled Lamb",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1709",
+      "name": "Qamar Al Dine",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2226",
+      "name": "Quinoa & Kale Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0621",
+      "name": "Quinoa B.",
+      "localizedName": "كينوا , رمان , طامطم كرزية و صوص ليمون كونفيت"
+    },
+    {
+      "sku": "sk-2275",
+      "name": "Quinoa Garden Bowl",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0599",
+      "name": "Quinoa S.",
+      "localizedName": "كينوا ، رمان ، طماطم صغيرة ، صلصة ليمون كونفيت"
+    },
+    {
+      "sku": "sk-2235",
+      "name": "Radicchio Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0685",
+      "name": "Raspberry & Cranberry Lemonade",
+      "localizedName": "ليموناضة توت والتوت البري"
+    },
+    {
+      "sku": "sk-0682",
+      "name": "Raspberry Mojito",
+      "localizedName": "موهيتو توت"
+    },
+    {
+      "sku": "sk-1256",
+      "name": "Regular Ketchup",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1257",
+      "name": "Regular Mayo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1174",
+      "name": "Rigatoni",
+      "localizedName": "ريجاتوني"
+    },
+    {
+      "sku": "sk-0632",
+      "name": "Risotto",
+      "localizedName": "ريزوتو مع مقرمشات البرميزان 672 س.ح"
+    },
+    {
+      "sku": "sk-1918",
+      "name": "Risotto Mushroom",
+      "localizedName": "مشروم ريزوتوا"
+    },
+    {
+      "sku": "sk-2104",
+      "name": "Roasted Chicken with Rice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2227",
+      "name": "Roasted Eggplant & Burrata on Tomato Sauce",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1313",
+      "name": "Roasted Honey Sweet Potato",
+      "localizedName": "بطاطس حلوة محمّرة مع العسل"
+    },
+    {
+      "sku": "sk-2233",
+      "name": "Roasted Lamb Leg",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2292",
+      "name": "Rosatella Penne",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2128",
+      "name": "Rose Laban",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1527",
+      "name": "Rustic Margarita",
+      "localizedName": "بيتزا مارجريتا"
+    },
+    {
+      "sku": "sk-2067",
+      "name": "Sahlab",
+      "localizedName": "سحلب"
+    },
+    {
+      "sku": "sk-1930",
+      "name": "Salad Nicoise",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1317",
+      "name": "Salmon Paillard",
+      "localizedName": "سلمون بيلارد"
+    },
+    {
+      "sku": "sk-2242",
+      "name": "Salsa Fresca",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1708",
+      "name": "Samosa Chicken",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1700",
+      "name": "Samosa Veg",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1712",
+      "name": "Saudi Coffee",
+      "localizedName": "قهوة سعودية"
+    },
+    {
+      "sku": "sk-2255",
+      "name": "Saudi Coffee",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2317",
+      "name": "Saudi Coffee",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1314",
+      "name": "Sautee Broccoli",
+      "localizedName": "بروكلي مقلي"
+    },
+    {
+      "sku": "sk-2053",
+      "name": "Scrambled Egg",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2456",
+      "name": "Sea Bass Creaole",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2236",
+      "name": "Seabass in Papillote",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1907",
+      "name": "Shakshuka",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2438",
+      "name": "Short Ribs",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1185",
+      "name": "Soda",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2184",
+      "name": "Spaghetti Carbonara",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1471",
+      "name": "Spanish Latte",
+      "localizedName": "سبانش لاتيه"
+    },
+    {
+      "sku": "sk-2387",
+      "name": "Spanish Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0678",
+      "name": "Sparkling Homemade Lemonade",
+      "localizedName": "ليموناضه مصنوعه بالماء الغازي"
+    },
+    {
+      "sku": "sk-1177",
+      "name": "Sparkling Water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2342",
+      "name": "Sparkling Water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1455",
+      "name": "Sparkling Water Small",
+      "localizedName": "مياه غازية صغيره"
+    },
+    {
+      "sku": "sk-2385",
+      "name": "Sparkling Water-SM",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1696",
+      "name": "Spiced Grilled Chicken Thigh",
+      "localizedName": "دجاج مشوي بالتوابل"
+    },
+    {
+      "sku": "sk-2466",
+      "name": "Spicy green sauce",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1205",
+      "name": "Spicy Ketchup",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1250",
+      "name": "Spicy Mayo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2050",
+      "name": "Spicy Shakshuka",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2285",
+      "name": "Spicy Tuna",
+      "localizedName": "تونا ساندويش"
+    },
+    {
+      "sku": "sk-2340",
+      "name": "Sprite",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2413",
+      "name": "Sprite",
+      "localizedName": "سبرايت"
+    },
+    {
+      "sku": "sk-1451",
+      "name": "Sprite Regular",
+      "localizedName": "سبرايت"
+    },
+    {
+      "sku": "sk-1260",
+      "name": "Sriracha Sauce",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1654",
+      "name": "Sriracha Sauce",
+      "localizedName": "صلصة سيراتشا"
+    },
+    {
+      "sku": "sk-2284",
+      "name": "Steak Melt",
+      "localizedName": "ستيك ساندويش"
+    },
+    {
+      "sku": "sk-2426",
+      "name": "Steak Sandwich",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0677",
+      "name": "Still Homemade Lemonade",
+      "localizedName": "ليموناضه مصنوعه بالماء المعدني"
+    },
+    {
+      "sku": "sk-1176",
+      "name": "Still Water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2341",
+      "name": "Still Water",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1453",
+      "name": "Still Water Small",
+      "localizedName": "مياه معدنية صغيره"
+    },
+    {
+      "sku": "sk-0679",
+      "name": "Strawberry Mojito",
+      "localizedName": "موهيتو فراولة"
+    },
+    {
+      "sku": "sk-2382",
+      "name": "Sum+Champagne",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0625",
+      "name": "Sumac chicken",
+      "localizedName": "دجاج السماق"
+    },
+    {
+      "sku": "sk-1917",
+      "name": "Summer Quinoa Salad",
+      "localizedName": "سلطة الكينوا الصيفية"
+    },
+    {
+      "sku": "sk-2228",
+      "name": "Summer Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1922",
+      "name": "Sumplus Mocktail",
+      "localizedName": "صم بلس ثينغ موكتيل"
+    },
+    {
+      "sku": "sk-2464",
+      "name": "Supreme Nachos",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0619",
+      "name": "Sweet Potato",
+      "localizedName": "بطاطا حلوه"
+    },
+    {
+      "sku": "sk-1258",
+      "name": "Tabasco",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2433",
+      "name": "Tabouleh Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1940",
+      "name": "Tagliatelle Pasta with Chicken",
+      "localizedName": "باستا تالياتيلي بالدجاج"
+    },
+    {
+      "sku": "sk-1646",
+      "name": "Tartar Sauce",
+      "localizedName": "صلصة التارتار"
+    },
+    {
+      "sku": "sk-2268",
+      "name": "Tea",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2294",
+      "name": "Tenderloin Steak",
+      "localizedName": "لحم بقري تندرلوين"
+    },
+    {
+      "sku": "sk-1463",
+      "name": "Tiramisu",
+      "localizedName": "تيراميسو"
+    },
+    {
+      "sku": "sk-2266",
+      "name": "Tiramisu",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1194",
+      "name": "Toasted Banana iced latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1650",
+      "name": "Tomato Ketchup",
+      "localizedName": "كاتشاب"
+    },
+    {
+      "sku": "sk-2140",
+      "name": "Tomato Soup",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1920",
+      "name": "Trio Ice Cream",
+      "localizedName": "تريو ايس كريم"
+    },
+    {
+      "sku": "sk-1919",
+      "name": "Triple Chocolate Cake",
+      "localizedName": "كيكة الشوكلاتة"
+    },
+    {
+      "sku": "sk-2267",
+      "name": "Triple Chocolate Cake",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0629",
+      "name": "Truffle Burger",
+      "localizedName": "برجر الكمأه"
+    },
+    {
+      "sku": "sk-2296",
+      "name": "Truffle French Fries",
+      "localizedName": "ترافيل بطاطس"
+    },
+    {
+      "sku": "sk-1213",
+      "name": "Truffle Mayo",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2362",
+      "name": "Truffle Mayonnaise",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1648",
+      "name": "Truffle Oil",
+      "localizedName": "زيت الكمأة"
+    },
+    {
+      "sku": "sk-1303",
+      "name": "Truffle Pizza",
+      "localizedName": "بيتزا الكمأة"
+    },
+    {
+      "sku": "sk-1307",
+      "name": "Truffle Rigatoni",
+      "localizedName": "ريجاتوني بالكمأة"
+    },
+    {
+      "sku": "sk-2291",
+      "name": "Truffle Rigatoni",
+      "localizedName": "معكرونة الريجاتوني بالكمأ"
+    },
+    {
+      "sku": "sk-1655",
+      "name": "Truffle Slice",
+      "localizedName": "شريحة الكمأة"
+    },
+    {
+      "sku": "sk-2277",
+      "name": "Truffle Sliders",
+      "localizedName": "سلايدر برغر لحم"
+    },
+    {
+      "sku": "sk-1289",
+      "name": "Truffle Tart",
+      "localizedName": "ترافل تارت"
+    },
+    {
+      "sku": "sk-1322",
+      "name": "Turkish Eggs",
+      "localizedName": "بيض تركي"
+    },
+    {
+      "sku": "sk-1706",
+      "name": "Um Ali",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1490",
+      "name": "Vanilla Ice Cream",
+      "localizedName": "ايس كريم فانيلا"
+    },
+    {
+      "sku": "sk-2193",
+      "name": "Vanilla Ice Cream Scoop",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1472",
+      "name": "Vanilla Latte",
+      "localizedName": "فانيلا لاتيه"
+    },
+    {
+      "sku": "sk-2312",
+      "name": "Vanilla Latte",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1692",
+      "name": "Vanilla Syrup Extra",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0634",
+      "name": "Veal",
+      "localizedName": "لحم العجل شنيتزل ، قشرة جريسيني"
+    },
+    {
+      "sku": "sk-2187",
+      "name": "Veal Carpaccio Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2229",
+      "name": "Veg. Spring Roll & Avocado Salsa",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1710",
+      "name": "Vimto Juice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1786",
+      "name": "Vimto Juice",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-0683",
+      "name": "Virgin Pina Colada",
+      "localizedName": "بينا كولادا"
+    },
+    {
+      "sku": "sk-2060",
+      "name": "Waffle with Hazelnut Chocolate & Berries",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2056",
+      "name": "Waffle with Nutella & Mix Berries",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2058",
+      "name": "Waffle with Pistachio,Condensed Milk & Mix Berries",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2075",
+      "name": "Warm Chocolate Mousse",
+      "localizedName": "الشوكولاتة الدافئة"
+    },
+    {
+      "sku": "sk-2411",
+      "name": "Water",
+      "localizedName": "مياه"
+    },
+    {
+      "sku": "sk-1916",
+      "name": "Watermelon & Feta Salad",
+      "localizedName": "سلطة بطيخ مع الجبنة"
+    },
+    {
+      "sku": "sk-1926",
+      "name": "Watermelon & Feta Salad",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-2376",
+      "name": "Watermelon & Halloumi",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1941",
+      "name": "Watermelon & Mint, Lemon",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1529",
+      "name": "White Truffle",
+      "localizedName": "بيتزا الكمأ |"
+    },
+    {
+      "sku": "sk-1942",
+      "name": "Yuzu & Saffron, Apple",
+      "localizedName": null
+    },
+    {
+      "sku": "sk-1172",
+      "name": "Za'atar Salmon",
+      "localizedName": "سمك السلمون بالزعتر ، صلصة الكزبرة"
+    }
+  ]
+}
