@@ -1,8 +1,9 @@
-import { ACTIVATION_DECISION, SOURCE_EVIDENCE_CLASS } from "./readinessContracts";
+import { ACTIVATION_DECISION } from "./readinessContracts";
 import { classifyBlockedRecipe } from "./readinessAudit";
 import { applySourceEvidenceToRecipeRow, compareDraftToSource } from "./sourceEvidence";
 import { resolveSupersededDrafts } from "./draftCandidates";
 import defaultSourceCatalog from "./sourceEvidence.catalog.json";
+import { evaluateCanonicalRecipeValidity } from "./recipeValidityContract";
 
 function statusOf(version) {
   return String(version?.status || "").toLowerCase();
@@ -79,6 +80,9 @@ export function validateRecipeVersionForActivation({
   menuItems = [],
   salesRows = [],
   sourceCatalog = defaultSourceCatalog,
+  activationReason = "",
+  requireActivationPolicy = false,
+  documentation = {},
 } = {}) {
   const resolved = resolveSupersededDrafts({ recipeId: recipe.id, versions, lines, ingredients });
   const classified = classifyBlockedRecipe({
@@ -110,13 +114,23 @@ export function validateRecipeVersionForActivation({
     catalog: sourceCatalog,
   });
   const row = applySourceEvidenceToRecipeRow(classified, evidence);
+  const candidateVersion = (versions || []).find((version) => version.id === candidateId)
+    || (candidateId ? { id: candidateId, documentation } : null);
+  const canonical = evaluateCanonicalRecipeValidity({
+    recipe,
+    version: candidateVersion,
+    versions,
+    lines,
+    ingredients,
+    allRecipes: allRecipes.length ? allRecipes : [recipe],
+    sourceClass: evidence.class,
+    documentation: candidateVersion?.documentation || documentation,
+    activationReason,
+    requireActivationPolicy,
+  });
   const blockers = [
     ...(row.structuralIssues || []),
-    ...(row.sourceClass && row.sourceClass !== SOURCE_EVIDENCE_CLASS.SOURCE_CONFIRMED_CURRENT
-      && row.sourceClass !== SOURCE_EVIDENCE_CLASS.NO_SOURCE_EVIDENCE
-      && row.sourceClass !== SOURCE_EVIDENCE_CLASS.SOURCE_CATALOG_UNAVAILABLE
-      ? [{ code: row.sourceClass, reason: row.sourceReason || row.reason }]
-      : []),
+    ...canonical.errors,
   ];
   if (row.decision !== ACTIVATION_DECISION.SAFE_TO_ACTIVATE) {
     blockers.push({ code: row.class, reason: row.reason });
@@ -125,18 +139,19 @@ export function validateRecipeVersionForActivation({
     blockers.findIndex((other) => other.code === item.code && other.reason === item.reason) === index
   ));
   const alreadyActive = classified.class === "ANALYTICAL_OK";
+  const ok = !alreadyActive && canonical.valid && row.decision === ACTIVATION_DECISION.SAFE_TO_ACTIVATE;
   return {
-    ok: !alreadyActive && row.decision === ACTIVATION_DECISION.SAFE_TO_ACTIVATE,
+    ok,
     alreadyActive,
-    row,
+    row: { ...row, validityStatus: canonical.status },
     evidence,
     supersededDrafts: resolved.superseded,
-    blockers: row.decision === ACTIVATION_DECISION.SAFE_TO_ACTIVATE ? [] : uniqueBlockers,
+    blockers: ok ? [] : uniqueBlockers,
     plan: planActivateRecipeVersion({
       recipeId: recipe.id,
       activateVersionId: candidateId,
       versions,
-      validation: { decision: row.decision, sourceClass: row.sourceClass },
+      validation: { decision: row.decision, sourceClass: row.sourceClass, validityStatus: canonical.status },
     }),
   };
 }

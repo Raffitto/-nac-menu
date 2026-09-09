@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
   activateRecipeVersion,
+  createIngredient,
   createRecipe,
   evaluateRecipeActivation,
   fetchRecipeBundle,
@@ -25,6 +26,12 @@ import FoodBiblePhotoEditor, { normalizeHeroCrop } from "./FoodBiblePhotoEditor"
 import { compareDraftToSource } from "./truth/sourceEvidence";
 import sourceCatalog from "./truth/sourceEvidence.catalog.json";
 import { classifyRecipeLineKind, RECIPE_LINE_KIND } from "./truth/recipeLineKind";
+import { mustForkNewDraft } from "./truth/recipeActivation";
+import {
+  OPERATIONAL_CHANGE_REASONS,
+  formatSourceDiff,
+  sourceDiffRequiresAcknowledgement,
+} from "./truth/recipeValidityContract";
 
 const WORKSPACES = [
   { id: "ingredients", label: "Ingredients" },
@@ -113,10 +120,21 @@ export default function FoodBibleCard({
   const [error, setError] = useState("");
   const [linkOpen, setLinkOpen] = useState(false);
   const [lineSearch, setLineSearch] = useState("");
+  const [newIngredientUnit, setNewIngredientUnit] = useState("gram");
+  const [createdIngredients, setCreatedIngredients] = useState([]);
   const [activationBlockers, setActivationBlockers] = useState([]);
   const [activationNote, setActivationNote] = useState("");
+  const [activationReason, setActivationReason] = useState("");
+  const [sourceAcknowledged, setSourceAcknowledged] = useState(false);
 
-  const ingredients = useMemo(() => overview?.ingredients || [], [overview?.ingredients]);
+  const ingredients = useMemo(() => {
+    const seen = new Set();
+    return [...(overview?.ingredients || []), ...createdIngredients].filter((ingredient) => {
+      if (!ingredient?.id || seen.has(ingredient.id)) return false;
+      seen.add(ingredient.id);
+      return true;
+    });
+  }, [overview?.ingredients, createdIngredients]);
   const components = useMemo(
     () => (overview?.recipes || []).filter((recipe) => recipe.recipeType === "preparation" && recipe.active),
     [overview?.recipes],
@@ -188,6 +206,9 @@ export default function FoodBibleCard({
     })),
     catalog: sourceCatalog,
   }), [form.name, lines, recipeById, ingredientById]);
+  const sourceDiff = useMemo(() => formatSourceDiff(sourceEvidence.differences || []), [sourceEvidence.differences]);
+  const needsSourceAck = sourceDiffRequiresAcknowledgement(sourceEvidence.class);
+  const canActivate = Boolean(activationReason) && (!needsSourceAck || sourceAcknowledged);
 
   const linkedName = (overview?.rows || []).find((row) => row.menuItemId === form.menuItemId)?.displayName
     || (overview?.rows || []).find((row) => row.identityKey === target?.identityKey)?.displayName
@@ -219,6 +240,17 @@ export default function FoodBibleCard({
     }));
   };
 
+  const moveLine = (index, delta) => {
+    setLines((current) => {
+      const targetIndex = index + delta;
+      if (targetIndex < 0 || targetIndex >= current.length) return current;
+      const next = [...current];
+      const [row] = next.splice(index, 1);
+      next.splice(targetIndex, 0, row);
+      return next;
+    });
+  };
+
   const handleCancel = () => {
     setForm(savedForm);
     setLines(savedLines);
@@ -241,6 +273,7 @@ export default function FoodBibleCard({
     }
     setBusy("save");
     setError("");
+    const forkedFromLive = mustForkNewDraft(bundle?.version?.status);
     try {
       let recipeId = bundle?.recipe?.id || target?.recipeId;
       if (!recipeId) {
@@ -258,10 +291,14 @@ export default function FoodBibleCard({
         version: bundle?.version,
         lines: lines.filter((line) => line.ingredientId || line.subRecipeId),
         stages,
+        ingredients,
       });
       setSavedForm(form);
       setSavedLines(lines);
       setEditing(false);
+      setActivationNote(forkedFromLive
+        ? "Saved a new DRAFT. The ACTIVE version was not changed."
+        : "Draft saved.");
       onSaved?.({ stayOpen: true, recipeId });
       await load();
     } catch (err) {
@@ -327,7 +364,16 @@ export default function FoodBibleCard({
     setError("");
     setActivationNote("");
     try {
-      const evaluation = await evaluateRecipeActivation(recipeId);
+      const evaluation = await evaluateRecipeActivation(recipeId, {
+        reason: activationReason,
+        documentation: {
+          ...form.documentation,
+          operationalChange: {
+            acknowledged: sourceAcknowledged,
+            reason: activationReason,
+          },
+        },
+      });
       setActivationBlockers(evaluation.blockers || []);
       if (evaluation.alreadyActive) setActivationNote("This version is already ACTIVE.");
       else if (evaluation.ok) setActivationNote("Validation passed. Safe to activate.");
@@ -345,10 +391,26 @@ export default function FoodBibleCard({
       setActivationNote("Save the recipe before activating.");
       return;
     }
+    if (!canActivate) {
+      setActivationNote(needsSourceAck
+        ? "Choose a change reason and acknowledge the source difference before activating."
+        : "Choose an operational change reason before activating.");
+      return;
+    }
     setBusy("activate");
     setError("");
     try {
-      await activateRecipeVersion(recipeId, { reason: "food_bible_reviewed_activation", source: "food_bible" });
+      await activateRecipeVersion(recipeId, {
+        reason: activationReason,
+        source: "food_bible",
+        documentation: {
+          ...form.documentation,
+          operationalChange: {
+            acknowledged: needsSourceAck ? sourceAcknowledged : true,
+            reason: activationReason,
+          },
+        },
+      });
       setActivationBlockers([]);
       setActivationNote("Activated. Previous active version was retired if one existed.");
       onSaved?.({ stayOpen: true, recipeId });
@@ -356,6 +418,35 @@ export default function FoodBibleCard({
     } catch (err) {
       setActivationBlockers(err.blockers || []);
       setError(friendlyRecipeError(err, "Activation blocked."));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleCreateIngredient = async () => {
+    const name = lineSearch.trim();
+    if (!name) return;
+    setBusy("ingredient");
+    setError("");
+    try {
+      const created = await createIngredient({
+        canonicalName: name,
+        baseInventoryUnit: newIngredientUnit,
+        branchId,
+      });
+      setCreatedIngredients((current) => [...current, created]);
+      setLines((current) => {
+        const blankIndex = current.findIndex((line) => !line.ingredientId && !line.subRecipeId);
+        const nextLine = { ...emptyLine(), ingredientId: created.id, unit: newIngredientUnit };
+        if (blankIndex >= 0) {
+          return current.map((line, index) => (index === blankIndex ? { ...line, ingredientId: created.id, unit: newIngredientUnit } : line));
+        }
+        return [...current, nextLine];
+      });
+      setLineSearch("");
+      onSaved?.({ stayOpen: true });
+    } catch (err) {
+      setError(friendlyRecipeError(err, "Could not create ingredient."));
     } finally {
       setBusy("");
     }
@@ -374,6 +465,10 @@ export default function FoodBibleCard({
   const photo = heroUrl(form.heroImagePath);
   const doc = form.documentation || {};
   const unresolved = doc.unresolvedSourceLines || [];
+  const searchNeedle = lineSearch.trim().toLowerCase();
+  const searchMiss = Boolean(searchNeedle)
+    && !ingredients.some((item) => item.active && String(item.canonicalName || "").toLowerCase().includes(searchNeedle))
+    && !components.some((item) => String(item.name || "").toLowerCase().includes(searchNeedle));
   const kindLabel = form.recipeType === "preparation" || target?.kind === "component"
     ? "Prepared component"
     : target?.kind === "menu_item" || form.menuItemId
@@ -402,13 +497,24 @@ export default function FoodBibleCard({
           </div>
           <div className="fb-card__toolbar-actions">
             {canEdit && !editing ? (
-              <button type="button" data-testid="food-bible-card-edit" onClick={() => setEditing(true)}>Edit</button>
+              <button
+                type="button"
+                data-testid="food-bible-card-edit"
+                onClick={() => {
+                  setEditing(true);
+                  if (mustForkNewDraft(bundle?.version?.status)) {
+                    setActivationNote("Editing ACTIVE creates a new DRAFT on save. The live recipe stays unchanged.");
+                  }
+                }}
+              >
+                Edit
+              </button>
             ) : null}
             {canEdit && editing ? (
               <>
                 <button type="button" data-testid="food-bible-card-cancel" onClick={handleCancel}>Cancel</button>
                 <button type="button" className="is-primary" data-testid="save-recipe-button" onClick={handleSave} disabled={Boolean(busy)}>
-                  {busy === "save" ? "Saving…" : "Save"}
+                  {busy === "save" ? "Saving…" : "Save Draft"}
                 </button>
               </>
             ) : null}
@@ -468,9 +574,47 @@ export default function FoodBibleCard({
                   ) : (
                     <p className="fb-card__status is-quiet">Source review: clear</p>
                   )}
+                  {needsSourceAck ? (
+                    <p className="fb-card__review" data-testid="food-bible-source-modified">
+                      Operationally modified from source
+                    </p>
+                  ) : null}
                 </div>
+                {sourceDiff.length ? (
+                  <ul className="fb-card__source-diff" data-testid="food-bible-source-diff">
+                    {sourceDiff.map((row) => (
+                      <li key={row.label}>{row.label}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {canEdit && bundle?.recipe?.id ? (
                   <div className="fb-card__activation-actions">
+                    <label className="fb-card__reason">
+                      <span>Change reason</span>
+                      <select
+                        data-testid="food-bible-activation-reason"
+                        value={activationReason}
+                        onChange={(event) => setActivationReason(event.target.value)}
+                        disabled={Boolean(busy) || editing}
+                      >
+                        <option value="">Select reason</option>
+                        {OPERATIONAL_CHANGE_REASONS.map((item) => (
+                          <option key={item.value} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {needsSourceAck ? (
+                      <label className="fb-card__ack">
+                        <input
+                          type="checkbox"
+                          data-testid="food-bible-source-ack"
+                          checked={sourceAcknowledged}
+                          onChange={(event) => setSourceAcknowledged(event.target.checked)}
+                          disabled={Boolean(busy) || editing}
+                        />
+                        Acknowledge operational difference from source
+                      </label>
+                    ) : null}
                     <button
                       type="button"
                       data-testid="food-bible-validate-button"
@@ -485,7 +629,7 @@ export default function FoodBibleCard({
                         className="is-primary"
                         data-testid="food-bible-activate-button"
                         onClick={handleActivate}
-                        disabled={Boolean(busy) || editing}
+                        disabled={Boolean(busy) || editing || !canActivate}
                       >
                         {busy === "activate" ? "Activating…" : "Activate"}
                       </button>
@@ -542,6 +686,31 @@ export default function FoodBibleCard({
                       />
                     ) : null}
                   </div>
+                  {editing && searchMiss ? (
+                    <div className="fb-card__new-ingredient" data-testid="food-bible-new-ingredient">
+                      <p>No match for “{lineSearch.trim()}”. Add it without leaving this recipe.</p>
+                      <label>
+                        <span>Base unit</span>
+                        <select
+                          data-testid="food-bible-new-ingredient-unit"
+                          value={newIngredientUnit}
+                          onChange={(event) => setNewIngredientUnit(event.target.value)}
+                        >
+                          {CANONICAL_UNITS.map((unit) => (
+                            <option key={unit.value} value={unit.value}>{unitLabel(unit.value)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        data-testid="food-bible-create-ingredient-button"
+                        onClick={handleCreateIngredient}
+                        disabled={Boolean(busy)}
+                      >
+                        {busy === "ingredient" ? "Creating…" : `Add “${lineSearch.trim()}”`}
+                      </button>
+                    </div>
+                  ) : null}
                   <table className="fb-card__table">
                     <thead>
                       <tr>
@@ -616,7 +785,13 @@ export default function FoodBibleCard({
                               ) : line.preparationNote || ""}
                             </td>
                             {editing ? (
-                              <td>
+                              <td className="fb-card__line-actions">
+                                <button type="button" aria-label="Move line up" data-testid={`move-recipe-line-up-${index}`} onClick={() => moveLine(index, -1)} disabled={index === 0}>
+                                  <ChevronUp size={14} />
+                                </button>
+                                <button type="button" aria-label="Move line down" data-testid={`move-recipe-line-down-${index}`} onClick={() => moveLine(index, 1)} disabled={index === lines.length - 1}>
+                                  <ChevronDown size={14} />
+                                </button>
                                 <button type="button" aria-label="Remove line" data-testid={`remove-recipe-line-${index}`} onClick={() => setLines((current) => current.filter((entry) => (entry.clientId || entry.id) !== key))}>
                                   <Trash2 size={14} />
                                 </button>

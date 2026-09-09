@@ -23,7 +23,8 @@ export function aggregateSalesDrivers(salesRows = []) {
   for (const row of salesRows || []) {
     const menuItemId = row.matched_menu_item_id || row.matchedMenuItemId || row.menu_item_id || null;
     const name = row.matched_menu_item_name || row.raw_item_name || row.normalized_item_name || row.name || "";
-    const key = menuItemId || `name:${String(name).toLowerCase()}`;
+    const saleAt = row.business_date || row.sold_on || row.order_date || row.sold_at || row.period_start || null;
+    const key = `${menuItemId || `name:${String(name).toLowerCase()}`}|${saleAt || ""}`;
     const qty = row.quantity_sold ?? row.quantitySold ?? row.quantity ?? 0;
     const revenue = row.net_sales ?? row.netSales ?? row.gross_sales ?? null;
     const current = byKey.get(key) || {
@@ -35,6 +36,7 @@ export function aggregateSalesDrivers(salesRows = []) {
       branchId: row.branch_id || row.branchId || null,
       periodStart: row.period_start || row.periodStart || null,
       periodEnd: row.period_end || row.periodEnd || null,
+      saleAt,
     };
     current.soldQuantity = addDecimal(current.soldQuantity, String(qty || 0));
     current.soldRows += 1;
@@ -51,6 +53,7 @@ export function aggregateSalesDrivers(salesRows = []) {
 export function computeTheoreticalLedger({
   salesRows = [],
   graph,
+  graphAt = null,
   identities = [],
   costByIngredientId = {},
   periodStart = null,
@@ -76,10 +79,13 @@ export function computeTheoreticalLedger({
   };
 
   for (const driver of drivers) {
+    const activeGraph = typeof graphAt === "function" && driver.saleAt
+      ? graphAt(driver.saleAt)
+      : graph;
     const resolved = driver.menuItemId
-      ? resolveMenuItemRecipe(graph, driver.menuItemId)
+      ? resolveMenuItemRecipe(activeGraph, driver.menuItemId)
       : { recipe: null, status: GRAPH_STATUS.MISSING_RECIPE, candidates: [] };
-    const node = resolved.recipe && graph?.recipeIndex?.get(resolved.recipe.id);
+    const node = resolved.recipe && activeGraph?.recipeIndex?.get(resolved.recipe.id);
     const usable = Boolean(resolved.recipe && node && node.versionStatus === GRAPH_STATUS.OK);
     if (!usable) {
       const reason = !resolved.recipe
@@ -102,7 +108,7 @@ export function computeTheoreticalLedger({
     const expansion = expandRecipeToIngredients({
       recipeId: resolved.recipe.id,
       outputNeeded: driver.soldQuantity,
-      graph,
+      graph: activeGraph,
     });
     recipeIssues.push(...expansion.issues);
     coveredRows += driver.soldRows;
@@ -112,7 +118,7 @@ export function computeTheoreticalLedger({
     for (const entry of expansion.ingredients.values()) {
       uomLines.push({ conversionStatus: entry.conversionStatus });
       const identity = identityById.get(entry.ingredientId) || resolveCanonicalIngredient(
-        graph.ingredientById.get(entry.ingredientId) || { id: entry.ingredientId },
+        activeGraph.ingredientById.get(entry.ingredientId) || { id: entry.ingredientId },
       );
       const current = ledger.get(entry.ingredientId) || {
         ...identity,

@@ -182,6 +182,7 @@ describe("Steak draft resolution", () => {
         menu_item_id: "menu-steak",
         active: true,
         output_quantity: "1",
+        output_unit: "each",
       },
       versions: [
         { id: "steak-v1", recipe_id: "steak", status: "draft", version_number: 1 },
@@ -189,8 +190,8 @@ describe("Steak draft resolution", () => {
         { id: "sauce-v", recipe_id: "sauce", status: "active", version_number: 1 },
       ],
       allRecipes: [
-        { id: "steak", name: "BLACK ANGUS, BLACK PEPPERCORN", recipe_type: "menu_item", menu_item_id: "menu-steak", active: true, output_quantity: "1" },
-        { id: "sauce", name: "PEPPERCORN SAUCE", recipe_type: "preparation", active: true, output_quantity: "4000", output_unit: "millilitre" },
+        { id: "steak", name: "BLACK ANGUS, BLACK PEPPERCORN", recipe_type: "menu_item", menu_item_id: "menu-steak", active: true, output_quantity: "1", output_unit: "each" },
+        { id: "sauce", name: "PEPPERCORN SAUCE", recipe_type: "preparation", active: true, output_quantity: "4000", output_unit: "gram" },
       ],
       lines: [
         { id: "v1a", recipe_version_id: "steak-v1", sub_recipe_id: "sauce", quantity: "75", unit: "gram" },

@@ -968,6 +968,8 @@ export async function createRecipe(input) {
       effective_from: new Date().toISOString(),
       status: "draft",
       documentation: input.documentation || {},
+      output_quantity: input.outputQuantity,
+      output_unit: input.outputUnit,
       created_by: userId,
       updated_by: userId,
     }).select().single(),
@@ -1035,6 +1037,11 @@ export async function saveRecipeDraft(recipeId, payload) {
           effective_from: new Date().toISOString(),
           status: "draft",
           documentation: payload.documentation || {},
+          output_quantity: payload.outputQuantity,
+          output_unit: payload.outputUnit,
+          portion_count: payload.portionCount || null,
+          portion_size: payload.portionSize || null,
+          portion_unit: payload.portionUnit || null,
           created_by: userId,
           updated_by: userId,
         }).select().single(),
@@ -1045,6 +1052,11 @@ export async function saveRecipeDraft(recipeId, payload) {
       const versionRow = await unwrap(
         client.from("inventory_recipe_versions").update({
           documentation: payload.documentation || {},
+          output_quantity: payload.outputQuantity,
+          output_unit: payload.outputUnit,
+          portion_count: payload.portionCount || null,
+          portion_size: payload.portionSize || null,
+          portion_unit: payload.portionUnit || null,
           updated_at: new Date().toISOString(),
           updated_by: userId,
         }).eq("id", version.id).select().single(),
@@ -1060,6 +1072,8 @@ export async function saveRecipeDraft(recipeId, payload) {
         effective_from: new Date().toISOString(),
         status: "draft",
         documentation: payload.documentation || {},
+        output_quantity: payload.outputQuantity,
+        output_unit: payload.outputUnit,
         created_by: userId,
         updated_by: userId,
       }).select().single(),
@@ -1164,15 +1178,24 @@ export async function fetchRecipeActivationContext(recipeId) {
   };
 }
 
-export async function evaluateRecipeActivation(recipeId) {
+export async function evaluateRecipeActivation(recipeId, options = {}) {
   const context = await fetchRecipeActivationContext(recipeId);
   if (!context.recipe) throw new Error("Recipe not found");
-  return validateRecipeVersionForActivation(context);
+  return validateRecipeVersionForActivation({
+    ...context,
+    activationReason: options.reason || "",
+    requireActivationPolicy: Boolean(options.requireActivationPolicy),
+    documentation: options.documentation || {},
+  });
 }
 
-export async function activateRecipeVersion(recipeId, { reason, source } = {}) {
+export async function activateRecipeVersion(recipeId, { reason, source, documentation } = {}) {
   clearFoodBibleCaches();
-  const evaluation = await evaluateRecipeActivation(recipeId);
+  const evaluation = await evaluateRecipeActivation(recipeId, {
+    reason,
+    requireActivationPolicy: true,
+    documentation,
+  });
   if (!evaluation.ok) {
     const error = new Error(
       evaluation.blockers.map((item) => item.reason || item.code).filter(Boolean).join("; ")
@@ -1182,9 +1205,24 @@ export async function activateRecipeVersion(recipeId, { reason, source } = {}) {
     error.evaluation = evaluation;
     throw error;
   }
+  const versionId = evaluation.plan.activateVersionId;
+  if (documentation && versionId) {
+    const client = requireClient();
+    const live = await unwrap(
+      client.from("inventory_recipe_versions").select("documentation").eq("id", versionId).single(),
+      "Fetch draft documentation before activation",
+    );
+    await unwrap(
+      client.from("inventory_recipe_versions").update({
+        documentation: { ...(live?.documentation || {}), ...documentation },
+        updated_at: new Date().toISOString(),
+      }).eq("id", versionId),
+      "Store operational change acknowledgement",
+    );
+  }
   const result = await unwrap(
     requireClient().rpc("inventory_activate_recipe_version", {
-      p_recipe_version_id: evaluation.plan.activateVersionId,
+      p_recipe_version_id: versionId,
       p_effective_from: new Date().toISOString(),
       p_reason: reason || source || evaluation.plan.reason,
     }),

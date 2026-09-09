@@ -209,7 +209,7 @@ describe("recipe version candidate classification", () => {
 });
 
 describe("safe activation criteria", () => {
-  test("unresolved ingredient classification blocks SAFE activation", () => {
+  test("legacy other classification does not by itself block SAFE activation", () => {
     const fixture = draftSteakFixture();
     fixture.ingredients = fixture.ingredients.map((ingredient) => (
       ingredient.id === "steak-cut"
@@ -226,8 +226,8 @@ describe("safe activation criteria", () => {
       menuItems: fixture.menuItems,
       salesRows: fixture.salesRows,
     });
-    expect(row.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
-    expect(row.structuralIssues.some((issue) => issue.code === "UNRESOLVED_RECIPE_LINE")).toBe(true);
+    expect(row.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
+    expect(row.structuralIssues.some((issue) => issue.code === "UNRESOLVED_RECIPE_LINE")).toBe(false);
   });
 
   test("inactive sub-recipe blocks SAFE even when the plate draft is unique", () => {

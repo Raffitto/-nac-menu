@@ -29,6 +29,7 @@ const defaults = [
   "src/lib/inventoryReadinessApi.test.js",
   "src/inventory/truth/recipeLineKind.test.js",
   "src/inventory/truth/recipeActivation.test.js",
+  "src/inventory/truth/recipeValidityContract.test.js",
   "src/inventory/recipeActivation.contract.test.js",
   "src/inventory/FoodBibleCard.test.js",
 ];

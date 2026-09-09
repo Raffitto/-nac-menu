@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FoodBibleCard from "./FoodBibleCard";
 import {
   activateRecipeVersion,
+  createIngredient,
   createRecipe,
   evaluateRecipeActivation,
   fetchRecipeBundle,
@@ -12,6 +13,7 @@ import {
 
 jest.mock("../lib/inventoryApi", () => ({
   activateRecipeVersion: jest.fn(),
+  createIngredient: jest.fn(),
   createRecipe: jest.fn(),
   evaluateRecipeActivation: jest.fn(),
   fetchRecipeBundle: jest.fn(),
@@ -72,6 +74,7 @@ describe("FoodBibleCard", () => {
     linkRecipeToMenuItem.mockResolvedValue({});
     evaluateRecipeActivation.mockResolvedValue({ ok: true, blockers: [], alreadyActive: false });
     activateRecipeVersion.mockResolvedValue({ newActiveVersionId: "v1" });
+    createIngredient.mockResolvedValue({ id: "ing-rosemary", canonicalName: "Rosemary", baseInventoryUnit: "gram", active: true });
   });
 
   test("shows culinary card fields and opens a prepared component", async () => {
@@ -227,11 +230,23 @@ describe("FoodBibleCard", () => {
     expect(await screen.findByTestId("food-bible-version-status")).toHaveTextContent("DRAFT");
     expect(screen.getByTestId("food-bible-recipe-completeness")).toHaveTextContent(/Recipe completeness:/);
     expect(screen.getByTestId("food-bible-source-evidence")).toHaveTextContent(/Source:/);
+    expect(screen.getByTestId("food-bible-source-modified")).toHaveTextContent("Operationally modified from source");
+    expect(screen.getByTestId("food-bible-source-diff")).toHaveTextContent(/Minced Beef|Quinoa|Lemon/);
     fireEvent.click(screen.getByTestId("food-bible-validate-button"));
-    await waitFor(() => expect(evaluateRecipeActivation).toHaveBeenCalledWith("r-q"));
+    await waitFor(() => expect(evaluateRecipeActivation).toHaveBeenCalledWith("r-q", expect.any(Object)));
     await screen.findByText("Validation passed. Safe to activate.");
+    fireEvent.change(screen.getByTestId("food-bible-activation-reason"), { target: { value: "chef_operational_update" } });
+    fireEvent.click(screen.getByTestId("food-bible-source-ack"));
     fireEvent.click(screen.getByTestId("food-bible-activate-button"));
-    await waitFor(() => expect(activateRecipeVersion).toHaveBeenCalledWith("r-q", expect.any(Object)));
+    await waitFor(() => expect(activateRecipeVersion).toHaveBeenCalledWith("r-q", expect.objectContaining({
+      reason: "chef_operational_update",
+      documentation: expect.objectContaining({
+        operationalChange: expect.objectContaining({
+          acknowledged: true,
+          reason: "chef_operational_update",
+        }),
+      }),
+    })));
   });
 
   test("shows exact activation blockers when validation fails", async () => {
@@ -252,5 +267,26 @@ describe("FoodBibleCard", () => {
     fireEvent.click(await screen.findByTestId("food-bible-validate-button"));
     expect(await screen.findByTestId("food-bible-activation-blockers")).toHaveTextContent("Zhoug gram cannot convert to millilitre");
     expect(activateRecipeVersion).not.toHaveBeenCalled();
+  });
+
+  test("creates a missing ingredient from search without leaving the recipe", async () => {
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-card-edit"));
+    fireEvent.change(screen.getByTestId("recipe-ingredient-search"), { target: { value: "Rosemary" } });
+    fireEvent.click(await screen.findByTestId("food-bible-create-ingredient-button"));
+    await waitFor(() => expect(createIngredient).toHaveBeenCalledWith(expect.objectContaining({
+      canonicalName: "Rosemary",
+      baseInventoryUnit: "gram",
+      branchId: "khobar",
+    })));
   });
 });

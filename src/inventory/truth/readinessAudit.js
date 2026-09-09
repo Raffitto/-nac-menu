@@ -18,6 +18,7 @@ import {
 import defaultSourceCatalog from "./sourceEvidence.catalog.json";
 import { resolveSupersededDrafts } from "./draftCandidates";
 import { analyticalRecipeLines, isDocumentationLineName } from "./recipeLineKind";
+import { classifyIngredientReadiness } from "./recipeValidityContract";
 
 export {
   ACTIVATION_DECISION,
@@ -238,12 +239,12 @@ export function classifyBlockedRecipe({
       uomIssues.push({ code: resolved.conversionStatus, lineId: line.id, unit: line.unit });
     }
     if (!line.unit) uomIssues.push({ code: GRAPH_STATUS.MISSING_QUANTITY, lineId: line.id, reason: "missing_uom" });
-    const classification = ingredient?.inventory_classification || ingredient?.inventoryClassification || null;
-    if (classification && classification !== "food_ingredient") {
+    const readiness = classifyIngredientReadiness(ingredient, line);
+    if (!readiness.ok && !readiness.documentation) {
       uomIssues.push({
-        code: "UNRESOLVED_RECIPE_LINE",
+        code: readiness.code,
         lineId: line.id,
-        reason: `${ingredient.canonical_name || ingredient.canonicalName || "ingredient"} is classified ${classification}, not a resolved food ingredient`,
+        reason: readiness.reason,
       });
     }
   }

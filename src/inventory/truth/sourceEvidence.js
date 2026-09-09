@@ -234,14 +234,11 @@ export function applySourceEvidenceToRecipeRow(row, evidence) {
     sourceDifferences: evidence.differences || [],
   };
   if (evidence.class === SOURCE_EVIDENCE_CLASS.SOURCE_CATALOG_UNAVAILABLE) return next;
-  if (evidence.class === SOURCE_EVIDENCE_CLASS.SOURCE_CONFIRMED_CURRENT) return next;
   if (evidence.class === SOURCE_EVIDENCE_CLASS.NO_SOURCE_EVIDENCE && row.recipeType === "preparation") return next;
-  if (row.decision !== "SAFE_TO_ACTIVATE") return next;
-  return {
-    ...next,
-    decision: "REVIEW_REQUIRED",
-    reason: evidence.reason,
-  };
+  if (evidence.class === SOURCE_EVIDENCE_CLASS.IDENTITY_MAPPING_PROBLEM && row.decision === "SAFE_TO_ACTIVATE") {
+    return { ...next, decision: "REVIEW_REQUIRED", reason: evidence.reason };
+  }
+  return next;
 }
 
 export function classifyFoodicsProductIdentity(displayName, foodicsProducts = []) {

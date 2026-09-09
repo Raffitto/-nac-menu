@@ -32,6 +32,7 @@ import {
   wouldCreateCycle,
   yieldSummary,
 } from "./foodBible";
+import { mustForkNewDraft } from "./truth/recipeActivation";
 
 function emptyLine() {
   return {
@@ -325,6 +326,12 @@ export default function RecipeEditorPanel({
                 <AlertTriangle size={16} />
                 <span>{error}</span>
               </div>
+            ) : null}
+
+            {mustForkNewDraft(bundle?.version?.status) ? (
+              <p className="inv-fb-unsaved" data-testid="recipe-fork-notice">
+                Saving creates a new DRAFT. The ACTIVE version stays unchanged.
+              </p>
             ) : null}
 
             {isDirty() ? (

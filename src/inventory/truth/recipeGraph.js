@@ -7,6 +7,7 @@ import {
 import { CONVERSION_STATUS, GRAPH_STATUS, YIELD_STATUS } from "./contracts";
 import { resolveRecipeLineUom } from "./uom";
 import { analyticalRecipeLines } from "./recipeLineKind";
+import { recipeYield, versionCoversTimestamp } from "./recipeValidityContract";
 
 function recipeName(recipe) {
   return recipe?.name || recipe?.nameEn || recipe?.name_en || recipe?.id || null;
@@ -36,7 +37,17 @@ function addIngredientEntry(target, entry) {
   }
 }
 
-export function selectAnalyticalVersion(versions = []) {
+export function selectAnalyticalVersion(versions = [], { asOf = null } = {}) {
+  const dated = (versions || []).filter((version) => versionCoversTimestamp(version, asOf));
+  if (asOf) {
+    if (dated.length > 1) {
+      return { version: null, status: GRAPH_STATUS.MULTIPLE_ACTIVE_VERSIONS, candidates: dated };
+    }
+    if (dated.length === 1) {
+      return { version: dated[0], status: GRAPH_STATUS.OK, candidates: dated };
+    }
+    return { version: null, status: GRAPH_STATUS.INACTIVE_VERSION, candidates: versions };
+  }
   const active = (versions || []).filter((version) => String(version.status || "").toLowerCase() === "active");
   const drafts = (versions || []).filter((version) => String(version.status || "").toLowerCase() === "draft");
   const retired = (versions || []).filter((version) => String(version.status || "").toLowerCase() === "retired");
@@ -55,7 +66,7 @@ export function selectAnalyticalVersion(versions = []) {
   return { version: null, status: GRAPH_STATUS.MISSING_RECIPE, candidates: [] };
 }
 
-export function buildRecipeGraph({ recipes = [], versions = [], lines = [], ingredients = [] } = {}) {
+export function buildRecipeGraph({ recipes = [], versions = [], lines = [], ingredients = [], asOf = null } = {}) {
   const recipeById = new Map((recipes || []).map((recipe) => [recipe.id, recipe]));
   const ingredientById = new Map((ingredients || []).map((ingredient) => [ingredient.id, ingredient]));
   const versionsByRecipe = new Map();
@@ -74,7 +85,7 @@ export function buildRecipeGraph({ recipes = [], versions = [], lines = [], ingr
   const recipeIndex = new Map();
   const issues = [];
   for (const recipe of recipes || []) {
-    const selected = selectAnalyticalVersion(versionsByRecipe.get(recipe.id) || []);
+    const selected = selectAnalyticalVersion(versionsByRecipe.get(recipe.id) || [], { asOf });
     if (selected.status !== GRAPH_STATUS.OK) {
       issues.push({
         code: selected.status,
@@ -194,9 +205,31 @@ export function expandRecipeToIngredients({
     };
 
     if (subRecipeId) {
+      const nestedNode = graph.recipeIndex.get(subRecipeId);
+      const nestedYield = recipeYield(nestedNode?.recipe, nestedNode?.version);
+      let nestedNeeded = required;
+      if (nestedYield.unit) {
+        const converted = resolveRecipeLineUom({
+          quantity: required,
+          unit: line.unit,
+          baseUom: nestedYield.unit,
+          verifiedConversionFactor: line.verified_conversion_factor || line.verifiedConversionFactor || null,
+        });
+        if (converted.conversionStatus !== CONVERSION_STATUS.EXACT && converted.conversionStatus !== CONVERSION_STATUS.CONVERTED) {
+          issues.push({
+            code: GRAPH_STATUS.INVALID_SUBRECIPE_VERSION_OR_UNIT,
+            recipeId,
+            lineId: line.id,
+            unit: line.unit,
+            reason: "sub_recipe_yield_uom",
+          });
+          continue;
+        }
+        nestedNeeded = converted.quantityBase;
+      }
       const nested = expandRecipeToIngredients({
         recipeId: subRecipeId,
-        outputNeeded: required,
+        outputNeeded: nestedNeeded,
         graph,
         visiting: nextVisit,
         path: [...path, recipeId],

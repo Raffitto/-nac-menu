@@ -166,6 +166,7 @@ export function runInventoryTruthEngine({
   const theoretical = computeTheoreticalLedger({
     salesRows,
     graph,
+    graphAt: (asOf) => buildRecipeGraph({ recipes, versions, lines, ingredients, asOf }),
     identities: identity.identities,
     costByIngredientId,
     periodStart,

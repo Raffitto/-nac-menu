@@ -120,7 +120,7 @@ describe("source evidence classification", () => {
     expect(row.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
   });
 
-  test("qty mismatch is SOURCE_CONFIRMED_WITH_DIFFERENCES and cannot stay SAFE", () => {
+  test("qty mismatch is SOURCE_CONFIRMED_WITH_DIFFERENCES and stays structurally SAFE", () => {
     const evidence = compareDraftToSource({
       recipeName: "HONEY SWEET POTATO, BLACK PEPPER YOGURT, ZHOUGH",
       draftLines: [
@@ -135,7 +135,8 @@ describe("source evidence classification", () => {
       decision: ACTIVATION_DECISION.SAFE_TO_ACTIVATE,
       reason: "structurally valid",
     }, evidence);
-    expect(row.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
+    expect(row.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
+    expect(row.sourceClass).toBe(SOURCE_EVIDENCE_CLASS.SOURCE_CONFIRMED_WITH_DIFFERENCES);
   });
 
   test("French Toast strongest source includes Honey 20 g and ignores Total artifacts", () => {
@@ -216,7 +217,8 @@ describe("source evidence classification", () => {
       recipeType: "menu_item",
       reason: "structurally valid",
     }, evidence);
-    expect(plate.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
+    expect(plate.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
+    expect(plate.sourceClass).toBe(SOURCE_EVIDENCE_CLASS.NO_SOURCE_EVIDENCE);
   });
 
   test("Foodics exact name is identity evidence, not a menu write", () => {

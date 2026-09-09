@@ -215,6 +215,38 @@
   color: #8a2f2a;
 }
 
+.fb-card__source-diff {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.fb-card__reason,
+.fb-card__ack,
+.fb-card__new-ingredient {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.fb-card__reason select,
+.fb-card__new-ingredient select,
+.fb-card__new-ingredient button {
+  min-height: 40px;
+}
+
+.fb-card__line-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.fb-card__line-actions button {
+  min-width: 36px;
+  min-height: 36px;
+}
+
 .fb-card__table tr.is-documentation td {
   opacity: 0.7;
   font-style: italic;
@@ -288,6 +320,7 @@
 .fb-card__table td,
 .fb-card__table th {
   padding: 7px 10px !important;
+  min-height: 44px;
 }
 
 .fb-card__table tr.is-component td:first-child {

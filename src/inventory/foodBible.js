@@ -323,6 +323,8 @@ export function mapVersionRow(row) {
     status: row.status,
     yieldPercentage: row.yield_percentage,
     documentation: { ...DEFAULT_DOCUMENTATION, ...(row.documentation || {}) },
+    outputQuantity: row.output_quantity,
+    outputUnit: row.output_unit,
     effectiveFrom: row.effective_from,
     effectiveTo: row.effective_to,
     createdBy: row.created_by,
