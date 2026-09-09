@@ -205,6 +205,18 @@ describe("source evidence classification", () => {
       catalog,
     });
     expect(evidence.class).toBe(SOURCE_EVIDENCE_CLASS.NO_SOURCE_EVIDENCE);
+    const prep = applySourceEvidenceToRecipeRow({
+      decision: ACTIVATION_DECISION.SAFE_TO_ACTIVATE,
+      recipeType: "preparation",
+      reason: "structurally valid",
+    }, evidence);
+    expect(prep.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
+    const plate = applySourceEvidenceToRecipeRow({
+      decision: ACTIVATION_DECISION.SAFE_TO_ACTIVATE,
+      recipeType: "menu_item",
+      reason: "structurally valid",
+    }, evidence);
+    expect(plate.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
   });
 
   test("Foodics exact name is identity evidence, not a menu write", () => {

@@ -1,7 +1,6 @@
 import { normalizeIdentityName } from "../../dashboard/health/identityClusters";
 import { SOURCE_EVIDENCE_CLASS } from "./readinessContracts";
-
-const DOCUMENTATION_LINE = /^(total|portions?|finished weight|fin?ished weight|bases|except the olive oil,?|notes|timing.*)$/i;
+import { isDocumentationLineName } from "./recipeLineKind";
 
 const NAME_ALIASES = Object.freeze({
   "table salt": "table salt",
@@ -31,7 +30,7 @@ export function normalizeSourceName(value) {
 }
 
 export function isDocumentationSourceLine(name) {
-  return DOCUMENTATION_LINE.test(String(name || "").trim());
+  return isDocumentationLineName(name);
 }
 
 export function quantityMatches(left, right) {
@@ -235,8 +234,9 @@ export function applySourceEvidenceToRecipeRow(row, evidence) {
     sourceDifferences: evidence.differences || [],
   };
   if (evidence.class === SOURCE_EVIDENCE_CLASS.SOURCE_CATALOG_UNAVAILABLE) return next;
-  if (row.decision !== "SAFE_TO_ACTIVATE") return next;
   if (evidence.class === SOURCE_EVIDENCE_CLASS.SOURCE_CONFIRMED_CURRENT) return next;
+  if (evidence.class === SOURCE_EVIDENCE_CLASS.NO_SOURCE_EVIDENCE && row.recipeType === "preparation") return next;
+  if (row.decision !== "SAFE_TO_ACTIVATE") return next;
   return {
     ...next,
     decision: "REVIEW_REQUIRED",

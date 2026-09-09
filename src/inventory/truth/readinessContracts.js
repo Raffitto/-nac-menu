@@ -58,7 +58,7 @@ export const PURCHASE_EVIDENCE_CLASS = Object.freeze({
 
 export const RECIPE_VERSION_LIFECYCLE = Object.freeze({
   states: Object.freeze(["draft", "active", "retired"]),
-  currentWritePath: "createRecipe / saveRecipeDraft always persist status=draft and never promote",
+  currentWritePath: "draft → validate → inventory_activate_recipe_version; saveRecipeDraft forks a new draft from active",
   intendedTransition: "edit → structural validate → review → activate (retire previous active) → next edit opens a new draft",
-  gap: "No activate RPC, no Food Bible publish control, and Food Bible 'Complete' does not flip version status",
+  gap: "Food Bible Complete remains card completeness and does not mean Active",
 });

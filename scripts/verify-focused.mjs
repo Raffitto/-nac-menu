@@ -27,6 +27,10 @@ const defaults = [
   "src/inventory/truth/readinessAudit.test.js",
   "src/inventory/truth/sourceEvidence.test.js",
   "src/lib/inventoryReadinessApi.test.js",
+  "src/inventory/truth/recipeLineKind.test.js",
+  "src/inventory/truth/recipeActivation.test.js",
+  "src/inventory/recipeActivation.contract.test.js",
+  "src/inventory/FoodBibleCard.test.js",
 ];
 const files = extra.length ? extra : defaults;
 const result = spawnSync(

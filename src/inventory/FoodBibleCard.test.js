@@ -2,14 +2,18 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FoodBibleCard from "./FoodBibleCard";
 import {
+  activateRecipeVersion,
   createRecipe,
+  evaluateRecipeActivation,
   fetchRecipeBundle,
   linkRecipeToMenuItem,
   saveRecipeDraft,
 } from "../lib/inventoryApi";
 
 jest.mock("../lib/inventoryApi", () => ({
+  activateRecipeVersion: jest.fn(),
   createRecipe: jest.fn(),
+  evaluateRecipeActivation: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
   linkRecipeToMenuItem: jest.fn(),
@@ -56,7 +60,7 @@ describe("FoodBibleCard", () => {
         outputQuantity: "1",
         outputUnit: "each",
       },
-      version: { id: "v1", documentation: { preparationMethod: "Season the quinoa." } },
+      version: { id: "v1", status: "draft", documentation: { preparationMethod: "Season the quinoa." } },
       lines: [
         { id: "l1", ingredientId: "ing-2", quantity: "130", unit: "gram", preparationNote: "", subRecipeId: "" },
         { id: "l2", subRecipeId: "cmp-1", quantity: "10", unit: "gram", preparationNote: "", ingredientId: "" },
@@ -66,6 +70,8 @@ describe("FoodBibleCard", () => {
     saveRecipeDraft.mockResolvedValue({});
     createRecipe.mockResolvedValue({ recipe: { id: "r-new" }, version: { id: "v-new" }, lines: [], stages: [] });
     linkRecipeToMenuItem.mockResolvedValue({});
+    evaluateRecipeActivation.mockResolvedValue({ ok: true, blockers: [], alreadyActive: false });
+    activateRecipeVersion.mockResolvedValue({ newActiveVersionId: "v1" });
   });
 
   test("shows culinary card fields and opens a prepared component", async () => {
@@ -205,5 +211,46 @@ describe("FoodBibleCard", () => {
     fireEvent.click(screen.getByTestId("food-bible-menu-link-option-menu-q"));
     fireEvent.click(screen.getByTestId("food-bible-menu-link-confirm"));
     await waitFor(() => expect(linkRecipeToMenuItem).toHaveBeenCalledWith("r-q", expect.objectContaining({ menuItemId: "menu-q" })));
+  });
+
+  test("shows DRAFT separately from completeness and can validate then activate", async () => {
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa", kind: "menu_item" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("food-bible-version-status")).toHaveTextContent("DRAFT");
+    expect(screen.getByTestId("food-bible-recipe-completeness")).toHaveTextContent(/Recipe completeness:/);
+    expect(screen.getByTestId("food-bible-source-evidence")).toHaveTextContent(/Source:/);
+    fireEvent.click(screen.getByTestId("food-bible-validate-button"));
+    await waitFor(() => expect(evaluateRecipeActivation).toHaveBeenCalledWith("r-q"));
+    await screen.findByText("Validation passed. Safe to activate.");
+    fireEvent.click(screen.getByTestId("food-bible-activate-button"));
+    await waitFor(() => expect(activateRecipeVersion).toHaveBeenCalledWith("r-q", expect.any(Object)));
+  });
+
+  test("shows exact activation blockers when validation fails", async () => {
+    evaluateRecipeActivation.mockResolvedValueOnce({
+      ok: false,
+      blockers: [{ code: "INCOMPATIBLE", reason: "Zhoug gram cannot convert to millilitre" }],
+    });
+    render(
+      <FoodBibleCard
+        branchId="khobar"
+        target={{ recipeId: "r-q", displayName: "Quinoa" }}
+        overview={overview}
+        canEdit
+        onClose={jest.fn()}
+        onSaved={jest.fn()}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId("food-bible-validate-button"));
+    expect(await screen.findByTestId("food-bible-activation-blockers")).toHaveTextContent("Zhoug gram cannot convert to millilitre");
+    expect(activateRecipeVersion).not.toHaveBeenCalled();
   });
 });

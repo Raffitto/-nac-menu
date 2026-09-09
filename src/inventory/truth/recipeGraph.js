@@ -6,6 +6,7 @@ import {
 } from "../inventoryIntelligence";
 import { CONVERSION_STATUS, GRAPH_STATUS, YIELD_STATUS } from "./contracts";
 import { resolveRecipeLineUom } from "./uom";
+import { analyticalRecipeLines } from "./recipeLineKind";
 
 function recipeName(recipe) {
   return recipe?.name || recipe?.nameEn || recipe?.name_en || recipe?.id || null;
@@ -86,7 +87,9 @@ export function buildRecipeGraph({ recipes = [], versions = [], lines = [], ingr
       recipe,
       version: selected.version,
       versionStatus: selected.status,
-      lines: selected.version ? (linesByVersion.get(selected.version.id) || []) : [],
+      lines: selected.version
+        ? analyticalRecipeLines(linesByVersion.get(selected.version.id) || [], ingredientById)
+        : [],
     });
   }
 
@@ -166,7 +169,7 @@ export function expandRecipeToIngredients({
   const issues = [];
   const traces = [];
 
-  for (const line of node.lines || []) {
+  for (const line of analyticalRecipeLines(node.lines || [], graph.ingredientById) ) {
     const qty = lineQuantity(line);
     if (qty == null) {
       issues.push({ code: GRAPH_STATUS.MISSING_QUANTITY, recipeId, lineId: line.id });

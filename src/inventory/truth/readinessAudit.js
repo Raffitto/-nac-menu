@@ -16,6 +16,8 @@ import {
   compareDraftToSource,
 } from "./sourceEvidence";
 import defaultSourceCatalog from "./sourceEvidence.catalog.json";
+import { resolveSupersededDrafts } from "./draftCandidates";
+import { analyticalRecipeLines, isDocumentationLineName } from "./recipeLineKind";
 
 export {
   ACTIVATION_DECISION,
@@ -25,7 +27,6 @@ export {
   RECIPE_VERSION_LIFECYCLE,
 } from "./readinessContracts";
 
-const DOCUMENTATION_LINE = /^(total|portions?|finished weight|fin?ished weight|bases|except the olive oil,?)$/i;
 const PACK_UNIT = /^(case|box|bag|bottle|btl|pack|carton|tin|can)$/i;
 
 function statusOf(version) {
@@ -41,7 +42,7 @@ function linesForVersion(lines, versionId) {
 }
 
 function isDocumentationArtifact(ingredientName) {
-  return DOCUMENTATION_LINE.test(String(ingredientName || "").trim());
+  return isDocumentationLineName(ingredientName);
 }
 
 function graphWithForcedVersion(graph, recipeId, version, lines) {
@@ -120,12 +121,14 @@ export function classifyBlockedRecipe({
   menuItems = [],
   salesRows = [],
 } = {}) {
+  const recipeVersions = (versions || []).filter((version) => version.recipe_id === recipe.id);
   const sales = soldForRecipe({ recipe, menuItems, salesRows });
-  const selected = selectAnalyticalVersion(versions);
+  const selected = selectAnalyticalVersion(recipeVersions);
   const ingredientById = new Map((ingredients || []).map((row) => [row.id, row]));
-  const drafts = versions.filter((version) => statusOf(version) === "draft");
-  const draftsWithLines = drafts.filter((version) => linesForVersion(lines, version.id).length);
-  const retired = versions.filter((version) => statusOf(version) === "retired");
+  const drafts = recipeVersions.filter((version) => statusOf(version) === "draft");
+  const resolvedDrafts = resolveSupersededDrafts({ recipeId: recipe.id, versions: recipeVersions, lines, ingredients });
+  const draftsWithLines = resolvedDrafts.competing;
+  const retired = recipeVersions.filter((version) => statusOf(version) === "retired");
   const kitchen = requiresKitchenRecipe({ name: recipeName(recipe) });
   const base = {
     recipeId: recipe.id,
@@ -182,7 +185,7 @@ export function classifyBlockedRecipe({
     };
   }
 
-  const candidate = draftsWithLines[0] || drafts[0] || null;
+  const candidate = resolvedDrafts.current || draftsWithLines[0] || drafts[0] || null;
   if (!candidate) {
     return { ...base, class: RECIPE_VERSION_CLASS.TRUE_RECIPE_MISSING, reason: "No draft or active version to evaluate" };
   }
@@ -190,10 +193,11 @@ export function classifyBlockedRecipe({
   const candidateLines = linesForVersion(lines, candidate.id);
   const artifactLines = candidateLines.filter((line) => {
     const ingredient = ingredientById.get(line.ingredient_id || line.ingredientId);
-    return isDocumentationArtifact(ingredient?.canonical_name || ingredient?.canonicalName);
+    const subName = (allRecipes || []).find((item) => item.id === (line.sub_recipe_id || line.subRecipeId))?.name;
+    return isDocumentationArtifact(ingredient?.canonical_name || ingredient?.canonicalName || subName || line.name);
   });
-  const realLines = candidateLines.filter((line) => !artifactLines.includes(line));
-  if (!realLines.length || artifactLines.length > realLines.length) {
+  const realLines = analyticalRecipeLines(candidateLines, ingredientById);
+  if (!realLines.length) {
     return {
       ...base,
       class: RECIPE_VERSION_CLASS.BROKEN_RECIPE,
@@ -219,7 +223,7 @@ export function classifyBlockedRecipe({
     lines,
     ingredients,
   });
-  const forced = graphWithForcedVersion(graph, recipe.id, candidate, candidateLines);
+  const forced = graphWithForcedVersion(graph, recipe.id, candidate, realLines);
   const expansion = expandRecipeToIngredients({ recipeId: recipe.id, outputNeeded: "1", graph: forced });
   const uomIssues = [];
   for (const line of realLines) {
@@ -234,15 +238,18 @@ export function classifyBlockedRecipe({
       uomIssues.push({ code: resolved.conversionStatus, lineId: line.id, unit: line.unit });
     }
     if (!line.unit) uomIssues.push({ code: GRAPH_STATUS.MISSING_QUANTITY, lineId: line.id, reason: "missing_uom" });
+    const classification = ingredient?.inventory_classification || ingredient?.inventoryClassification || null;
+    if (classification && classification !== "food_ingredient") {
+      uomIssues.push({
+        code: "UNRESOLVED_RECIPE_LINE",
+        lineId: line.id,
+        reason: `${ingredient.canonical_name || ingredient.canonicalName || "ingredient"} is classified ${classification}, not a resolved food ingredient`,
+      });
+    }
   }
   const structuralIssues = [
     ...(expansion.issues || []).filter(blockingIssue),
     ...uomIssues,
-    ...artifactLines.map((line) => ({
-      code: GRAPH_STATUS.INVALID_QUANTITY,
-      lineId: line.id,
-      reason: "documentation_artifact",
-    })),
   ];
 
   const candidateMeta = {
@@ -269,7 +276,7 @@ export function classifyBlockedRecipe({
     };
   }
 
-  if (structuralIssues.length || artifactLines.length) {
+  if (structuralIssues.length) {
     const brokenCodes = new Set([
       GRAPH_STATUS.CIRCULAR,
       GRAPH_STATUS.MISSING_SUB_RECIPE,
@@ -773,9 +780,9 @@ export function runInventoryReadinessAudit({
     proposedIdentityRepairs,
     proposedCostWrites,
     lifecycle: {
-      currentWritePath: "createRecipe / saveRecipeDraft always persist status=draft and never promote",
+      currentWritePath: "draft → validate → inventory_activate_recipe_version; saveRecipeDraft forks a new draft from active",
       intendedTransition: "edit → structural validate → review → activate (retire previous active) → next edit opens a new draft",
-      gap: "No activate RPC or Food Bible publish control. Completing a card does not flip version status.",
+      gap: "Food Bible Complete remains card completeness and does not mean Active.",
     },
   };
 }

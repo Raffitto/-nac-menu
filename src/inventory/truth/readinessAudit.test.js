@@ -89,16 +89,17 @@ describe("recipe version candidate classification", () => {
     expect(row.soldQuantity).toBe("52");
   });
 
-  test("multiple draft candidates stay REVIEW_REQUIRED", () => {
+  test("multiple competing drafts stay REVIEW_REQUIRED", () => {
     const fixture = draftSteakFixture();
     fixture.versions.push({ id: "steak-draft-old", recipe_id: "steak", version_number: 1, status: "draft" });
     fixture.lines.push({
       id: "old",
       recipe_version_id: "steak-draft-old",
-      ingredient_id: "steak-cut",
-      quantity: "140",
-      unit: "gram",
+      ingredient_id: "wine",
+      quantity: "20",
+      unit: "millilitre",
     });
+    fixture.ingredients.push({ id: "wine", canonical_name: "White wine", active: true, base_inventory_unit: "millilitre" });
     const row = classifyBlockedRecipe({
       recipe: fixture.recipes[0],
       versions: fixture.versions.filter((v) => v.recipe_id === "steak"),
@@ -111,6 +112,28 @@ describe("recipe version candidate classification", () => {
     });
     expect(row.class).toBe(RECIPE_VERSION_CLASS.MULTIPLE_DRAFT_CANDIDATES);
     expect(row.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
+  });
+
+  test("older incomplete subset draft is superseded so v2 stays unique", () => {
+    const fixture = draftSteakFixture();
+    fixture.versions.push({ id: "steak-v1", recipe_id: "steak", version_number: 1, status: "draft" });
+    fixture.lines.push(
+      { id: "v1a", recipe_version_id: "steak-v1", sub_recipe_id: "sauce", quantity: "75", unit: "millilitre" },
+      { id: "v1b", recipe_version_id: "steak-v1", ingredient_id: "steak-cut", quantity: "150", unit: "gram" },
+    );
+    const row = classifyBlockedRecipe({
+      recipe: fixture.recipes[0],
+      versions: fixture.versions.filter((v) => v.recipe_id === "steak"),
+      allRecipes: fixture.recipes,
+      allVersions: fixture.versions,
+      lines: fixture.lines,
+      ingredients: fixture.ingredients,
+      menuItems: fixture.menuItems,
+      salesRows: fixture.salesRows,
+    });
+    expect(row.class).toBe(RECIPE_VERSION_CLASS.UNIQUE_CURRENT_DRAFT);
+    expect(row.decision).toBe(ACTIVATION_DECISION.SAFE_TO_ACTIVATE);
+    expect(row.candidate.versionId).toBe("steak-draft");
   });
 
   test("retired-only recipes are LEGACY and DO_NOT_ACTIVATE", () => {
@@ -186,6 +209,27 @@ describe("recipe version candidate classification", () => {
 });
 
 describe("safe activation criteria", () => {
+  test("unresolved ingredient classification blocks SAFE activation", () => {
+    const fixture = draftSteakFixture();
+    fixture.ingredients = fixture.ingredients.map((ingredient) => (
+      ingredient.id === "steak-cut"
+        ? { ...ingredient, inventory_classification: "other" }
+        : ingredient
+    ));
+    const row = classifyBlockedRecipe({
+      recipe: fixture.recipes[0],
+      versions: fixture.versions.filter((v) => v.recipe_id === "steak"),
+      allRecipes: fixture.recipes,
+      allVersions: fixture.versions,
+      lines: fixture.lines,
+      ingredients: fixture.ingredients,
+      menuItems: fixture.menuItems,
+      salesRows: fixture.salesRows,
+    });
+    expect(row.decision).toBe(ACTIVATION_DECISION.REVIEW_REQUIRED);
+    expect(row.structuralIssues.some((issue) => issue.code === "UNRESOLVED_RECIPE_LINE")).toBe(true);
+  });
+
   test("inactive sub-recipe blocks SAFE even when the plate draft is unique", () => {
     const fixture = draftSteakFixture();
     fixture.versions = fixture.versions.map((v) => (

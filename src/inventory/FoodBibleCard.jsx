@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Loader2, Plus, Trash2, X } from "lucide-react";
 import {
+  activateRecipeVersion,
   createRecipe,
+  evaluateRecipeActivation,
   fetchRecipeBundle,
   linkRecipeToMenuItem,
   saveRecipeDraft,
@@ -20,6 +22,9 @@ import {
 } from "./foodBible";
 import FoodBibleMenuLink from "./FoodBibleMenuLink";
 import FoodBiblePhotoEditor, { normalizeHeroCrop } from "./FoodBiblePhotoEditor";
+import { compareDraftToSource } from "./truth/sourceEvidence";
+import sourceCatalog from "./truth/sourceEvidence.catalog.json";
+import { classifyRecipeLineKind, RECIPE_LINE_KIND } from "./truth/recipeLineKind";
 
 const WORKSPACES = [
   { id: "ingredients", label: "Ingredients" },
@@ -76,6 +81,13 @@ function completenessLabel(readiness) {
   return "In progress";
 }
 
+function versionLifecycleLabel(status) {
+  const value = String(status || "draft").toLowerCase();
+  if (value === "active") return "ACTIVE";
+  if (value === "retired") return "RETIRED";
+  return "DRAFT";
+}
+
 export default function FoodBibleCard({
   branchId,
   target,
@@ -101,6 +113,8 @@ export default function FoodBibleCard({
   const [error, setError] = useState("");
   const [linkOpen, setLinkOpen] = useState(false);
   const [lineSearch, setLineSearch] = useState("");
+  const [activationBlockers, setActivationBlockers] = useState([]);
+  const [activationNote, setActivationNote] = useState("");
 
   const ingredients = useMemo(() => overview?.ingredients || [], [overview?.ingredients]);
   const components = useMemo(
@@ -164,6 +178,16 @@ export default function FoodBibleCard({
     recipeById,
     menuItem: form.menuItemId ? { id: form.menuItemId, active: true } : null,
   });
+  const versionStatus = versionLifecycleLabel(bundle?.version?.status);
+  const sourceEvidence = useMemo(() => compareDraftToSource({
+    recipeName: form.name,
+    draftLines: lines.map((line) => ({
+      name: recipeById.get(line.subRecipeId)?.name || ingredientById.get(line.ingredientId)?.canonicalName || line.name,
+      qty: line.quantity,
+      unit: line.unit,
+    })),
+    catalog: sourceCatalog,
+  }), [form.name, lines, recipeById, ingredientById]);
 
   const linkedName = (overview?.rows || []).find((row) => row.menuItemId === form.menuItemId)?.displayName
     || (overview?.rows || []).find((row) => row.identityKey === target?.identityKey)?.displayName
@@ -293,6 +317,50 @@ export default function FoodBibleCard({
     }
   };
 
+  const handleValidateActivation = async () => {
+    const recipeId = bundle?.recipe?.id || target?.recipeId;
+    if (!recipeId) {
+      setActivationNote("Save the recipe before validating activation.");
+      return;
+    }
+    setBusy("validate");
+    setError("");
+    setActivationNote("");
+    try {
+      const evaluation = await evaluateRecipeActivation(recipeId);
+      setActivationBlockers(evaluation.blockers || []);
+      if (evaluation.alreadyActive) setActivationNote("This version is already ACTIVE.");
+      else if (evaluation.ok) setActivationNote("Validation passed. Safe to activate.");
+      else setActivationNote("Activation blocked.");
+    } catch (err) {
+      setError(friendlyRecipeError(err, "Could not validate recipe."));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleActivate = async () => {
+    const recipeId = bundle?.recipe?.id || target?.recipeId;
+    if (!recipeId) {
+      setActivationNote("Save the recipe before activating.");
+      return;
+    }
+    setBusy("activate");
+    setError("");
+    try {
+      await activateRecipeVersion(recipeId, { reason: "food_bible_reviewed_activation", source: "food_bible" });
+      setActivationBlockers([]);
+      setActivationNote("Activated. Previous active version was retired if one existed.");
+      onSaved?.({ stayOpen: true, recipeId });
+      await load();
+    } catch (err) {
+      setActivationBlockers(err.blockers || []);
+      setError(friendlyRecipeError(err, "Activation blocked."));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const updateCrop = (patch) => {
     setForm((current) => ({
       ...current,
@@ -382,8 +450,18 @@ export default function FoodBibleCard({
                 {form.nameAr ? <p className="fb-card__ar">{form.nameAr}</p> : null}
                 <p className="fb-card__kind" data-testid="food-bible-card-kind">{kindLabel}</p>
                 <div className="fb-card__status-row">
+                  <p
+                    className={`inv-status-pill inv-status-pill--${String(bundle?.version?.status || "draft").toLowerCase()}`}
+                    data-testid="food-bible-version-status"
+                  >
+                    {versionStatus}
+                  </p>
                   <p className="fb-card__status" data-testid="food-bible-recipe-completeness">
                     Recipe completeness: {completenessLabel(readiness.readiness)}
+                  </p>
+                  <p className="fb-card__status" data-testid="food-bible-source-evidence">
+                    Source: {sourceEvidence.class}
+                    {sourceEvidence.sourceDish?.pdf ? ` · ${sourceEvidence.sourceDish.pdf}` : ""}
                   </p>
                   {doc.sourceDataNeedsReview ? (
                     <p className="fb-card__review" data-testid="food-bible-source-review">Source review: needs review</p>
@@ -391,6 +469,37 @@ export default function FoodBibleCard({
                     <p className="fb-card__status is-quiet">Source review: clear</p>
                   )}
                 </div>
+                {canEdit && bundle?.recipe?.id ? (
+                  <div className="fb-card__activation-actions">
+                    <button
+                      type="button"
+                      data-testid="food-bible-validate-button"
+                      onClick={handleValidateActivation}
+                      disabled={Boolean(busy) || editing}
+                    >
+                      {busy === "validate" ? "Validating…" : "Validate"}
+                    </button>
+                    {versionStatus === "DRAFT" ? (
+                      <button
+                        type="button"
+                        className="is-primary"
+                        data-testid="food-bible-activate-button"
+                        onClick={handleActivate}
+                        disabled={Boolean(busy) || editing}
+                      >
+                        {busy === "activate" ? "Activating…" : "Activate"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {activationNote ? <p className="fb-card__status" data-testid="food-bible-activation-note">{activationNote}</p> : null}
+                {activationBlockers.length ? (
+                  <ul className="fb-card__activation-blockers" data-testid="food-bible-activation-blockers">
+                    {activationBlockers.map((item, index) => (
+                      <li key={`${item.code || "block"}-${index}`}>{item.reason || item.code}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 {target?.linkKind === "inferred" ? <p className="fb-card__review">Needs menu confirmation</p> : null}
                 <p className="fb-card__link">
                   {form.menuItemId ? `Linked live menu item: ${linkedName || "Linked"}` : "Not linked to a live menu item"}
@@ -450,8 +559,14 @@ export default function FoodBibleCard({
                         const ingredient = line.ingredientId ? ingredientById.get(line.ingredientId) : null;
                         const label = component?.name || ingredient?.canonicalName || "Select…";
                         const warning = duplicateLineWarning(lines, line);
+                        const lineKind = classifyRecipeLineKind(line, { ingredientName: label });
+                        const documentation = lineKind === RECIPE_LINE_KIND.DOCUMENTATION_LINE;
                         return (
-                          <tr key={key} data-testid={`recipe-line-${index}`} className={component ? "is-component" : ""}>
+                          <tr
+                            key={key}
+                            data-testid={`recipe-line-${index}`}
+                            className={[component ? "is-component" : "", documentation ? "is-documentation" : ""].filter(Boolean).join(" ")}
+                          >
                             <td>
                               {editing ? (
                                 <select
@@ -480,7 +595,7 @@ export default function FoodBibleCard({
                                 >
                                   {label}
                                 </button>
-                              ) : label}
+                              ) : <>{label}{documentation ? <small> Documentation</small> : null}</>}
                               {warning ? <small>Duplicate line — add a distinguishing note</small> : null}
                             </td>
                             <td>

@@ -31,6 +31,8 @@ jest.mock("../lib/inventoryApi", () => ({
   fetchInvoiceHistory: jest.fn(),
   fetchRecipeBundle: jest.fn(),
   fetchRecipeUsageCounts: jest.fn(),
+  evaluateRecipeActivation: jest.fn(),
+  activateRecipeVersion: jest.fn(),
   findDuplicateIngredient: jest.fn(),
   generateMatchCandidates: jest.fn(),
   getInvoiceSourceUrl: jest.fn(),

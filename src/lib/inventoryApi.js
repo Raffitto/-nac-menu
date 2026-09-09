@@ -20,6 +20,7 @@ import {
   computeCanonicalLine,
 } from "../inventory/foodBible";
 import { fetchMenuCatalogueForBranch } from "./menuApi";
+import { mustForkNewDraft, validateRecipeVersionForActivation } from "../inventory/truth/recipeActivation";
 
 const FOOD_BIBLE_CATEGORY_SELECT = "id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_SECTION_SELECT = "id,category_id,name_en,name_ar,sort_order,branch_id";
@@ -663,9 +664,10 @@ async function fetchRecipeStages(versionIds) {
   );
 }
 
-function pickWorkingVersion(versions, recipeId) {
-  const recipeVersions = versions.filter((version) => version.recipe_id === recipeId);
+export function pickWorkingVersion(versions, recipeId) {
+  const recipeVersions = (versions || []).filter((version) => version.recipe_id === recipeId);
   return recipeVersions.find((version) => version.status === "draft")
+    || recipeVersions.find((version) => version.status === "active")
     || recipeVersions[0]
     || null;
 }
@@ -1012,7 +1014,45 @@ export async function saveRecipeDraft(recipeId, payload) {
   );
 
   let version = payload.version;
-  if (!version?.id) {
+  if (version?.id) {
+    const liveVersion = await unwrap(
+      client.from("inventory_recipe_versions").select("id,status,version_number,recipe_id").eq("id", version.id).single(),
+      "Fetch recipe version",
+    );
+    if (mustForkNewDraft(liveVersion.status)) {
+      const latest = await unwrap(
+        client.from("inventory_recipe_versions")
+          .select("version_number")
+          .eq("recipe_id", recipeId)
+          .order("version_number", { ascending: false })
+          .limit(1),
+        "Fetch latest recipe version number",
+      );
+      const versionRow = await unwrap(
+        client.from("inventory_recipe_versions").insert({
+          recipe_id: recipeId,
+          version_number: Number(latest?.[0]?.version_number || liveVersion.version_number || 0) + 1,
+          effective_from: new Date().toISOString(),
+          status: "draft",
+          documentation: payload.documentation || {},
+          created_by: userId,
+          updated_by: userId,
+        }).select().single(),
+        "Create forked recipe draft",
+      );
+      version = mapVersionRow(versionRow);
+    } else {
+      const versionRow = await unwrap(
+        client.from("inventory_recipe_versions").update({
+          documentation: payload.documentation || {},
+          updated_at: new Date().toISOString(),
+          updated_by: userId,
+        }).eq("id", version.id).select().single(),
+        "Update recipe version",
+      );
+      version = mapVersionRow(versionRow);
+    }
+  } else {
     const versionRow = await unwrap(
       client.from("inventory_recipe_versions").insert({
         recipe_id: recipeId,
@@ -1024,16 +1064,6 @@ export async function saveRecipeDraft(recipeId, payload) {
         updated_by: userId,
       }).select().single(),
       "Create recipe version",
-    );
-    version = mapVersionRow(versionRow);
-  } else {
-    const versionRow = await unwrap(
-      client.from("inventory_recipe_versions").update({
-        documentation: payload.documentation || {},
-        updated_at: new Date().toISOString(),
-        updated_by: userId,
-      }).eq("id", version.id).select().single(),
-      "Update recipe version",
     );
     version = mapVersionRow(versionRow);
   }
@@ -1091,6 +1121,76 @@ export async function saveRecipeDraft(recipeId, payload) {
   }
 
   return fetchRecipeBundle(recipeId);
+}
+
+export async function fetchRecipeActivationContext(recipeId) {
+  const client = requireClient();
+  const pending = [recipeId];
+  const seen = new Set();
+  const recipes = [];
+  const versions = [];
+  const lines = [];
+  while (pending.length) {
+    const id = pending.shift();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const recipe = await unwrap(
+      client.from("inventory_recipes").select("*").eq("id", id).maybeSingle(),
+      "Fetch activation recipe",
+    );
+    if (!recipe) continue;
+    recipes.push(recipe);
+    const recipeVersions = await fetchRecipeVersions([id]);
+    versions.push(...recipeVersions);
+    const recipeLines = await fetchRecipeLines(recipeVersions.map((version) => version.id));
+    lines.push(...recipeLines);
+    for (const line of recipeLines) {
+      if (line.sub_recipe_id) pending.push(line.sub_recipe_id);
+    }
+  }
+  const ingredientIds = [...new Set(lines.map((line) => line.ingredient_id).filter(Boolean))];
+  const ingredients = ingredientIds.length
+    ? await unwrap(
+      client.from("inventory_ingredients").select("*").in("id", ingredientIds),
+      "Fetch activation ingredients",
+    )
+    : [];
+  return {
+    recipe: recipes.find((row) => row.id === recipeId) || null,
+    versions,
+    lines,
+    ingredients,
+    allRecipes: recipes,
+  };
+}
+
+export async function evaluateRecipeActivation(recipeId) {
+  const context = await fetchRecipeActivationContext(recipeId);
+  if (!context.recipe) throw new Error("Recipe not found");
+  return validateRecipeVersionForActivation(context);
+}
+
+export async function activateRecipeVersion(recipeId, { reason, source } = {}) {
+  clearFoodBibleCaches();
+  const evaluation = await evaluateRecipeActivation(recipeId);
+  if (!evaluation.ok) {
+    const error = new Error(
+      evaluation.blockers.map((item) => item.reason || item.code).filter(Boolean).join("; ")
+      || "Activation blocked",
+    );
+    error.blockers = evaluation.blockers;
+    error.evaluation = evaluation;
+    throw error;
+  }
+  const result = await unwrap(
+    requireClient().rpc("inventory_activate_recipe_version", {
+      p_recipe_version_id: evaluation.plan.activateVersionId,
+      p_effective_from: new Date().toISOString(),
+      p_reason: reason || source || evaluation.plan.reason,
+    }),
+    "Activate recipe version",
+  );
+  return { ...result, evaluation };
 }
 
 export async function linkRecipeToMenuItem(recipeId, { menuItemId, placementGroupId = null } = {}) {

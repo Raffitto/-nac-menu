@@ -228,7 +228,10 @@ describe("OCR provider and workflow contract", () => {
       "fetchCostHistory",
       "fetchRecipeCost",
       "fetchMenuItemMargin",
+      "activateRecipeVersion",
+      "evaluateRecipeActivation",
     ].forEach((name) => expect(api).toContain(`function ${name}`));
+    expect(api).toContain("inventory_activate_recipe_version");
   });
 
   test("Food Bible overview loads editable branch menu catalogue", () => {

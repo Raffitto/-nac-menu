@@ -492,6 +492,7 @@
 .inv-fb-summary span { color: var(--inv-muted); font-size: 12px; }
 .inv-status-pill--missing { background: rgba(144, 160, 161, .16); color: #b8c3c3; }
 .inv-status-pill--draft { background: rgba(224, 173, 98, .2); color: #efc987; }
+.inv-status-pill--retired { background: rgba(144, 160, 161, .16); color: #b8c3c3; }
 .inv-status-pill--ready { background: rgba(75, 143, 110, .22); color: #9bd4b7; }
 .inv-status-pill--needs_attention { background: rgba(223, 130, 120, .2); color: #f0a299; }
 .inv-fb-table td { vertical-align: middle; }
