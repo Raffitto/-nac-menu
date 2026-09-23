@@ -36,9 +36,13 @@ describe("AdminDashboard cold-boot contracts", () => {
     expect(opsSrc).toContain("tier2Ready");
   });
 
-  test("keep-alive navigation helpers remain", () => {
+  test("active-only shell mounts — inactive views do not stay mounted", () => {
     expect(adminSrc).toContain("useKeepAliveNav");
-    expect(adminSrc).toContain("admin-keepalive-pane");
+    expect(adminSrc).toContain("ActiveViewProvider");
+    expect(adminSrc).toContain("admin-active-pane");
+    expect(adminSrc).toContain('adminView === "intelligence"');
+    expect(adminSrc).not.toContain("admin-keepalive-pane");
+    expect(adminSrc).not.toMatch(/isMounted\("intelligence"\)/);
   });
 
   test("marks the Menu Edit page so mobile CSS can use document scroll", () => {

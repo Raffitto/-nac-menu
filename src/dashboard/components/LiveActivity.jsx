@@ -8,24 +8,34 @@ export default function LiveActivity({
   session,
   CATEGORY_NAMES,
   activeSessions: activeSessionsProp,
+  enabled = true,
+  status: statusProp = null,
 }) {
   const [data, setData] = useState(null);
+  const [pollStatus, setPollStatus] = useState("loading");
   const mountedRef = useRef(true);
   const categoryMap = CATEGORY_NAMES || {};
 
   const fetchLive = useCallback(async () => {
-    if (!supabase || !session) return;
+    if (!enabled || !supabase || !session) return;
     try {
-      const { data: result } = await supabase.rpc("get_live_activity");
-      if (mountedRef.current && result) {
-        setData(result);
+      const { data: result, error } = await supabase.rpc("get_live_activity");
+      if (!mountedRef.current) return;
+      if (error || result == null) {
+        setPollStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
+        return;
       }
+      setData(result);
+      setPollStatus("success");
     } catch (_) {
-      // silently ignore polling failures
+      if (mountedRef.current) {
+        setPollStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
+      }
     }
-  }, [supabase, session]);
+  }, [supabase, session, enabled]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     mountedRef.current = true;
     fetchLive();
     const id = setInterval(fetchLive, POLL_INTERVAL);
@@ -33,18 +43,20 @@ export default function LiveActivity({
       mountedRef.current = false;
       clearInterval(id);
     };
-  }, [fetchLive]);
+  }, [fetchLive, enabled]);
 
   if (!supabase || !session) return null;
 
-  const polledActive = data?.active_sessions ?? 0;
+  const status = statusProp || pollStatus;
+  const polledActive = data?.active_sessions;
   const activeSessions =
     activeSessionsProp != null && activeSessionsProp !== undefined
-      ? Number(activeSessionsProp) || 0
+      ? activeSessionsProp
       : polledActive;
   const languages = data?.languages || {};
   const hotCategory = data?.hot_category ?? null;
   const recentItems = (data?.recent_items || []).slice(0, 8);
+  const unavailable = status === "unavailable" || activeSessions == null;
 
   const hotCategoryName = hotCategory
     ? categoryMap[hotCategory] || hotCategory
@@ -62,7 +74,14 @@ export default function LiveActivity({
         <span>Guests Active Now</span>
       </div>
 
-      <div className="nac-bi-live-count">{activeSessions}</div>
+      <div className="nac-bi-live-count">
+        {unavailable ? "—" : Number(activeSessions) || 0}
+      </div>
+      {unavailable ? (
+        <p className="nac-bi-live-sub" style={{ opacity: 0.7, fontSize: 12 }}>
+          Live guests unavailable — not a verified zero
+        </p>
+      ) : null}
 
       <div className="nac-bi-live-pills">
         {Object.entries(languages).map(([lang, count]) => (

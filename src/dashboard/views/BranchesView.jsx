@@ -22,16 +22,22 @@ export default function BranchesView() {
   const [rows, setRows] = useState([]);
   const [menuByBranch, setMenuByBranch] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadStatus, setLoadStatus] = useState("loading");
+  const [loadError, setLoadError] = useState(null);
   const { loading: googleLoading, byBranch: googleByBranch } = useGooglePlaceMetrics(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !supabase) {
       setLoading(false);
+      setLoadStatus("unavailable");
+      setLoadError("Supabase not configured");
       return;
     }
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadError(null);
+      setLoadStatus("loading");
       try {
         const hours = rangeToHours(filters?.selectedRange || "today");
         const branchFilter = resolveRbacQueryBranch(rbac.profile, null);
@@ -63,11 +69,18 @@ export default function BranchesView() {
               return acc;
             }, {}),
           );
+          if (branchCmp.partial) {
+            setLoadStatus("stale");
+            setLoadError(branchCmp.note || "Branch comparison returned partial data.");
+          } else {
+            setLoadStatus("success");
+          }
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setRows([]);
-          setMenuByBranch({});
+          // Failure ≠ empty network — keep prior paint if any; mark unavailable.
+          setLoadStatus("unavailable");
+          setLoadError(err?.message || "Branch comparison failed — not a verified zero.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -92,12 +105,22 @@ export default function BranchesView() {
         <p className="nac-platform-sub">Khobar · Riyadh · Jeddah performance snapshot</p>
       </header>
 
+      {loadError ? (
+        <p className="nac-empty-state" role="alert" style={{ marginBottom: "1rem" }}>
+          {loadStatus === "unavailable"
+            ? loadError
+            : loadError}
+        </p>
+      ) : null}
+
       {loading ? (
         <div className="nac-branch-battle-grid">
           {visibleBranches.map((b) => (
             <div key={b.id} className="nac-bi-skeleton" style={{ height: 160, borderRadius: 18 }} />
           ))}
         </div>
+      ) : loadStatus === "unavailable" && rows.length === 0 ? (
+        <p className="nac-empty-state">Branch metrics unavailable — retry. This is not a verified zero network.</p>
       ) : (
         <div className="nac-branch-battle-grid">
           {BRANCH_OPTIONS.map((b, i) => {
@@ -105,6 +128,7 @@ export default function BranchesView() {
             const rev = rows.find((r) => r.branch_id === id) || { qr_scans: 0, conversion_pct: 0, google_redirects: 0 };
             const menu = menuByBranch[id] || { sessions: 0, events: 0 };
             const isLeader = id === leader && rev.qr_scans > 0;
+            const showZeros = loadStatus === "success" || loadStatus === "stale";
             return (
               <motion.div
                 key={id}
@@ -126,16 +150,20 @@ export default function BranchesView() {
                   />
                 </div>
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "rgba(249,249,247,0.5)" }}>
-                  {menu.sessions} menu sessions · {menu.events} events (7D)
+                  {showZeros ? `${menu.sessions} menu sessions · ${menu.events} events` : "—"}
                 </p>
                 <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                   <div>
                     <p style={{ margin: 0, fontSize: "0.65rem", opacity: 0.5 }}>Review scans</p>
-                    <p style={{ margin: 0, fontSize: "1.4rem", fontWeight: 500 }}>{rev.qr_scans}</p>
+                    <p style={{ margin: 0, fontSize: "1.4rem", fontWeight: 500 }}>
+                      {showZeros ? rev.qr_scans : "—"}
+                    </p>
                   </div>
                   <div>
                     <p style={{ margin: 0, fontSize: "0.65rem", opacity: 0.5 }}>Conversion</p>
-                    <p style={{ margin: 0, fontSize: "1.4rem", fontWeight: 500 }}>{rev.conversion_pct}%</p>
+                    <p style={{ margin: 0, fontSize: "1.4rem", fontWeight: 500 }}>
+                      {showZeros ? `${rev.conversion_pct}%` : "—"}
+                    </p>
                   </div>
                 </div>
               </motion.div>

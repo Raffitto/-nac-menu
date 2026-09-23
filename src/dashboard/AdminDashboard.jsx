@@ -22,6 +22,7 @@ import { isAdminPlatformMode } from "../lib/platformMode";
 import { useMenuBiDashboard } from "./hooks/useMenuBiDashboard";
 import { useOperationalDashboard } from "./hooks/useOperationalDashboard";
 import { PlatformFiltersProvider, usePlatformFilters } from "./context/PlatformFiltersContext";
+import { ActiveViewProvider } from "./context/ActiveViewContext";
 import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacContext";
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
@@ -152,7 +153,6 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const {
     activeView: adminView,
     setActiveView: setAdminView,
-    isMounted,
     schedulePrefetch,
     cancelPrefetch,
   } = useKeepAliveNav(adminViewFromLocation());
@@ -182,7 +182,6 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   const filters = usePlatformFilters();
   const liveMode = filters.liveMode;
   const overviewActive = adminView === "overview";
-  const overviewMounted = isMounted("overview");
 
   const canAccessNav = rbac.canAccessNav;
   const visibleNav = useMemo(
@@ -203,14 +202,15 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
 
   const configured = isSupabaseConfigured();
 
+  // Active-only: inactive views unmount at the shell — do not fetch while hidden.
   const menuBi = useMenuBiDashboard({
-    enabled: Boolean(session) && overviewMounted && !unifiedOverview,
+    enabled: Boolean(session) && overviewActive && !unifiedOverview,
     refreshIntervalMs: liveMode && session && overviewActive ? 30000 : 0,
     source: "AdminDashboard",
   });
 
   const operationalBi = useOperationalDashboard({
-    enabled: Boolean(session) && overviewMounted && unifiedOverview,
+    enabled: Boolean(session) && overviewActive && unifiedOverview,
     refreshIntervalMs: liveMode && session && overviewActive ? 30000 : 0,
     source: "AdminDashboard",
   });
@@ -397,6 +397,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   }
 
   return (
+    <ActiveViewProvider activeView={adminView}>
     <motion.div
       className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""} ${globalSidebarCollapsed ? "admin-shell--nav-collapsed" : ""} ${isMenuPage ? "admin-shell--menu-page" : ""}`.trim()}
       style={scrollable && !intelligenceFullscreen ? { overflow: "auto", minHeight: "100vh" } : undefined}
@@ -492,12 +493,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
             : undefined
         }
       >
-        {isMounted("intelligence") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "intelligence"}
-            data-testid="pane-intelligence"
-          >
+        {adminView === "intelligence" ? (
+          <div className="admin-active-pane" data-testid="pane-intelligence">
             <Suspense fallback={<ViewFallback label="Opening Intelligence…" />}>
               {rbac.canAccessNav("intelligence") ? (
                 <IntelligenceHub />
@@ -508,12 +505,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("reviews") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "reviews"}
-            data-testid="pane-reviews"
-          >
+        {adminView === "reviews" ? (
+          <div className="admin-active-pane" data-testid="pane-reviews">
             <Suspense fallback={<ViewFallback label="Opening Reviews…" />}>
               {rbac.canAccessNav("reviews") ? (
                 <ReviewsHub />
@@ -524,12 +517,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("reports") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "reports"}
-            data-testid="pane-reports"
-          >
+        {adminView === "reports" ? (
+          <div className="admin-active-pane" data-testid="pane-reports">
             <Suspense fallback={<ViewFallback label="Opening Reports…" />}>
               {rbac.canAccessNav("reports") ? (
                 <ExportCenter />
@@ -540,12 +529,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("menu") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "menu"}
-            data-testid="pane-menu"
-          >
+        {adminView === "menu" ? (
+          <div className="admin-active-pane" data-testid="pane-menu">
             <Suspense fallback={<ViewFallback label="Opening Menu Manager…" />}>
               {rbac.canAccessNav("menu") ? (
                 <MenuEditorAuth>
@@ -558,12 +543,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("food-bible") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "food-bible"}
-            data-testid="pane-food-bible"
-          >
+        {adminView === "food-bible" ? (
+          <div className="admin-active-pane" data-testid="pane-food-bible">
             <Suspense fallback={<ViewFallback label="Opening Food Bible…" />}>
               {rbac.canAccessNav("food-bible") ? (
                 <FoodBibleOsView />
@@ -574,12 +555,8 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("branches") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "branches"}
-            data-testid="pane-branches"
-          >
+        {adminView === "branches" ? (
+          <div className="admin-active-pane" data-testid="pane-branches">
             <Suspense fallback={<ViewFallback label="Opening Branches…" />}>
               {rbac.canAccessNav("branches") ? (
                 <BranchesView />
@@ -590,24 +567,16 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
           </div>
         ) : null}
 
-        {isMounted("settings") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "settings"}
-            data-testid="pane-settings"
-          >
+        {adminView === "settings" ? (
+          <div className="admin-active-pane" data-testid="pane-settings">
             <Suspense fallback={<ViewFallback label="Opening Settings…" />}>
               <SettingsView session={session} />
             </Suspense>
           </div>
         ) : null}
 
-        {isMounted("overview") ? (
-          <div
-            className="admin-keepalive-pane"
-            hidden={adminView !== "overview"}
-            data-testid="pane-overview"
-          >
+        {adminView === "overview" ? (
+          <div className="admin-active-pane" data-testid="pane-overview">
           <>
             <header className="nac-platform-header">
               <p className="nac-platform-kicker">NAC Hospitality OS</p>
@@ -700,5 +669,6 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
         ) : null}
       </main>
     </motion.div>
+    </ActiveViewProvider>
   );
 }

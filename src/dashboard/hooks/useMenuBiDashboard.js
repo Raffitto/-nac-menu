@@ -348,8 +348,9 @@ export function useMenuBiDashboard(options = {}) {
         opsNotes,
         menuDataEmpty,
         selectedRange: filters?.selectedRange || "today",
+        error,
       }),
-    [data, partial, liveFallback, note, opsNotes, menuDataEmpty, filters?.selectedRange],
+    [data, partial, liveFallback, note, opsNotes, menuDataEmpty, filters?.selectedRange, error],
   );
 
   const dataSufficiency = useMemo(

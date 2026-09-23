@@ -10,6 +10,7 @@ export const PLATFORM_STATUS = {
   SPARSE_HISTORY: "sparse_history",
   STALE_ROLLUP: "stale_rollup",
   EMPTY: "empty",
+  UNAVAILABLE: "unavailable",
 };
 
 export const PLATFORM_STATUS_LABELS = {
@@ -20,4 +21,5 @@ export const PLATFORM_STATUS_LABELS = {
   [PLATFORM_STATUS.SPARSE_HISTORY]: "Limited history",
   [PLATFORM_STATUS.STALE_ROLLUP]: "Summaries refreshing",
   [PLATFORM_STATUS.EMPTY]: "No activity yet",
+  [PLATFORM_STATUS.UNAVAILABLE]: "Data unavailable",
 };
