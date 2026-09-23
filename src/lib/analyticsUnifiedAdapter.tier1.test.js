@@ -86,7 +86,7 @@ describe("fetchUnifiedOperationalAnalytics Tier-1 path", () => {
     expect(fetchBiItemDetailFromMenuEvents).not.toHaveBeenCalled();
   });
 
-  test("does not wait for a hung session RPC when BI is ready", async () => {
+  test("bounds a hung session RPC instead of blocking the dashboard forever", async () => {
     fetchSessionAnalytics.mockImplementation(() => new Promise(() => {}));
     fetchBiDashboard.mockResolvedValue({
       data: {
@@ -103,12 +103,16 @@ describe("fetchUnifiedOperationalAnalytics Tier-1 path", () => {
       dataSource: "rpc",
     });
     const partials = [];
+    const started = Date.now();
     const result = await fetchUnifiedOperationalAnalytics(
       {},
       { selectedRange: "today", timeRangeHours: 24 },
       { onTier1Partial: (p) => partials.push(p), deferClientPatches: true },
     );
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThan(1500);
+    expect(elapsed).toBeLessThan(8000);
     expect(Number(result.data?.total_sessions || result.data?.funnel?.qr_scans)).toBeGreaterThan(0);
     expect(partials.some((p) => Number(p.data?.total_sessions || p.data?.funnel?.qr_scans) > 0)).toBe(true);
-  }, 4000);
+  }, 9000);
 });

@@ -325,7 +325,8 @@ function buildTier1PartialFromSession(aggregates, hours) {
  * @param {(partial: object) => void} [options.onTier1Partial] Progressive KPI paint (session-first).
  * @param {boolean} [options.deferClientPatches=true] Skip blocking 12k menu_events scans on critical path.
  */
-const SESSION_ANALYTICS_SOFT_MS = 1800;
+/** Live session analytics on production returns in ~5s. 1.8s dropped that result and kept a stale rollup. */
+const SESSION_ANALYTICS_SOFT_MS = 7000;
 
 function withSoftFallback(promise, ms, fallback) {
   let timer;

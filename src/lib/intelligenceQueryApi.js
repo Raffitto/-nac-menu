@@ -20,8 +20,8 @@ import { mergeBiPayload, applySessionQualityPatch } from "./biPayloadPatches";
 import { recordPipelineFetch } from "./pipelineDiagnostics";
 import { recordRpcRefresh } from "../platform/engines/dataFreshnessEngine";
 import { assessMenuBiSufficiency } from "../platform/contracts/dataSufficiency";
-import { isMonthRangeHours, hydrateMonthToDateHybrid } from "./mtdHybridMerge";
-import { hoursToRange, rangeToSince } from "../dashboard/utils/rangeState";
+import { isMonthRangeHours } from "./mtdHybridMerge";
+import { hoursToRange } from "../dashboard/utils/rangeState";
 
 export { isTimeoutError };
 
@@ -119,21 +119,19 @@ export async function fetchBiDashboard(
   const pHours = Number(hours) || 24;
   const pBranch = normalizeBranchForRpc(branch);
   const params = { p_branch: pBranch, p_hours: pHours };
-  const useRollup = biRollupForHours(pHours);
-  const treatAsRollup = !forceLiveBi && (useRollup || skipLiveBi);
-  const primaryRpc = treatAsRollup ? "get_bi_dashboard_from_rollup" : "get_bi_dashboard";
+  // Emergency recovery: raw get_bi_dashboard statement-timeouts at 8s.
+  // Ordinary loads stay on the rollup, including Refresh. Stale rollup is shown as-is.
+  void skipLiveBi;
+  void forceLiveBi;
+  const useRollup = true;
+  const primaryRpc = "get_bi_dashboard_from_rollup";
   if (typeof window !== "undefined") {
     window.__NAC_OVERVIEW_PERF__ = {
       ...(window.__NAC_OVERVIEW_PERF__ || {}),
-      liveBiCalled: primaryRpc === "get_bi_dashboard",
+      liveBiCalled: false,
     };
   }
-  const resolvedSoftTimeout =
-    softTimeoutMs != null
-      ? softTimeoutMs
-      : !useRollup && pHours <= 24
-        ? BI_TODAY_SOFT_TIMEOUT_MS
-        : 0;
+  const resolvedSoftTimeout = softTimeoutMs != null ? softTimeoutMs : 8000;
 
   devLog("[fetchBiDashboard]", {
     phase: "rpc_start",
@@ -156,92 +154,9 @@ export async function fetchBiDashboard(
   let usedFallback = false;
   let dataSource = primaryRpcEmpty
     ? null
-    : useRollup
+    : primaryRpc === "get_bi_dashboard_from_rollup"
       ? "rollup"
       : "rpc";
-
-  if (useRollup && payload && !isBiTotalsEmpty(payload) && !error && isMonthRangeHours(pHours)) {
-    const hybridRes = await hydrateMonthToDateHybrid(
-      payload,
-      async () => {
-        const todayRes = await rpcBiDashboard(supabase, "get_bi_dashboard", {
-          p_branch: pBranch,
-          p_hours: 24,
-        });
-        if (todayRes.error || !todayRes.payload || isBiTotalsEmpty(todayRes.payload)) {
-          return null;
-        }
-        return todayRes.payload;
-      },
-    );
-    if (hybridRes?.payload) {
-      payload = hybridRes.payload;
-      partial = partial || hybridRes.partial;
-      dataSource = "hybrid";
-      if (hybridRes.note) note = hybridRes.note;
-      opsNotes = [...opsNotes, ...(hybridRes.opsNotes || [])];
-      usedFallback = true;
-    }
-  } else if (useRollup && payload && !isBiTotalsEmpty(payload) && !error && pHours >= 168) {
-    try {
-      const since = rangeToSince(hoursToRange(pHours));
-      let countQ = supabase
-        .from("menu_events")
-        .select("id", { count: "exact", head: true })
-        .gte("created_at", since)
-        .lte("created_at", new Date().toISOString());
-      if (pBranch) countQ = countQ.eq("branch_id", pBranch);
-      const { count: liveCount } = await countQ;
-      const rollupEvents = Number(payload.total_events) || 0;
-      if (
-        liveCount != null &&
-        liveCount > 0 &&
-        rollupEvents > 0 &&
-        liveCount > rollupEvents * 1.15 &&
-        liveCount - rollupEvents >= 15
-      ) {
-        const clientPayload = await fetchBiFromMenuEvents(supabase, {
-          branch: pBranch,
-          hours: pHours,
-        });
-        if (clientPayload && !isBiTotalsEmpty(clientPayload)) {
-          payload = mergeBiPayload(clientPayload, payload);
-          partial = true;
-          usedFallback = true;
-          dataSource = "client_fallback";
-          note =
-            "Rollup totals look stale for this range — merged live menu_events for accurate month/7D intelligence.";
-          opsNotes = appendOpsNote(opsNotes, note);
-        }
-      }
-    } catch {
-      /* non-blocking freshness probe */
-    }
-  }
-
-  if (treatAsRollup && (error || primaryRpcEmpty) && (!skipLiveBi || forceLiveBi)) {
-    devLog("[fetchBiDashboard]", { phase: "rollup_empty_fallback", error: error?.message });
-    const direct = await rpcBiDashboard(supabase, "get_bi_dashboard", params);
-    if (!direct.error && direct.payload && !isBiTotalsEmpty(direct.payload)) {
-      const t1 = Date.now();
-      payload = direct.payload;
-      rpcTimingsMs += Date.now() - t1;
-      partial = true;
-      usedFallback = true;
-      dataSource = "rpc";
-      if (typeof window !== "undefined") {
-        window.__NAC_OVERVIEW_PERF__ = {
-          ...(window.__NAC_OVERVIEW_PERF__ || {}),
-          liveBiCalled: true,
-        };
-      }
-      note =
-        "Loaded from menu_events (rollup empty or stale). Run refresh_menu_events_daily_rollup(45) in Supabase.";
-      error = null;
-    } else if (!error) {
-      error = direct.error;
-    }
-  }
 
   if (error && isTimeoutError(error) && pHours > 24) {
     const timeoutRes = resolveWideRangeTimeout({
@@ -257,9 +172,16 @@ export async function fetchBiDashboard(
       throw timeoutRes.throwError;
     }
     error = null;
-  } else if (error && isTimeoutError(error) && !useRollup) {
+  } else if (
+    error &&
+    isTimeoutError(error) &&
+    !useRollup &&
+    primaryRpc !== "get_bi_dashboard_from_rollup"
+  ) {
     const rollupStarted = Date.now();
-    const rollupRes = await rpcBiDashboard(supabase, "get_bi_dashboard_from_rollup", params);
+    const rollupRes = await rpcBiDashboard(supabase, "get_bi_dashboard_from_rollup", params, {
+      softTimeoutMs: 8000,
+    });
     rpcTimingsMs += Date.now() - rollupStarted;
     if (rollupRes.payload && !isBiTotalsEmpty(rollupRes.payload)) {
       payload = rollupRes.payload;
@@ -271,6 +193,13 @@ export async function fetchBiDashboard(
         : "Loaded from daily rollup after timeout. Item-level charts may be limited.";
       error = null;
     }
+  }
+
+  if (error && isTimeoutError(error) && isBiTotalsEmpty(payload)) {
+    throw Object.assign(new Error(error.message || "Operational data timed out"), {
+      code: error.code || "57014",
+      softTimeout: Boolean(error.softTimeout),
+    });
   }
 
   if (error && !isTimeoutError(error)) {
@@ -422,52 +351,42 @@ export async function fetchBiDashboard(
   };
 }
 
+function mapBranchComparisonRows(data) {
+  return buildCanonicalBranchComparison(
+    (Array.isArray(data) ? data : []).map((row) => ({
+      branch_id: normalizeBranchId(row.branch_id),
+      sessions: Number(row.sessions) || 0,
+      impressions: Number(row.impressions) || 0,
+      opens: Number(row.opens) || 0,
+      unique_visitors: Number(row.unique_visitors) || 0,
+    })),
+    { sessions: 0, impressions: 0, opens: 0, unique_visitors: 0 },
+  );
+}
+
 /**
- * Branch comparison — rollup for 7D / month.
+ * Branch comparison. Always the rollup — live get_branch_comparison scans menu_events and hits the 8s timeout.
  */
 export async function fetchBranchComparisonSafe(supabase, hours = 24) {
   if (!supabase) return { data: [], partial: false, note: null };
 
   const pHours = Number(hours) || 24;
-  const rpcName = biRollupForHours(pHours)
-    ? "get_branch_comparison_from_rollup"
-    : "get_branch_comparison";
-
-  const { data, error } = await supabase.rpc(rpcName, { p_hours: pHours });
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(
+      () => resolve({ data: null, error: { message: "statement timeout", code: "57014" } }),
+      8000,
+    );
+  });
+  const { data, error } = await Promise.race([
+    supabase.rpc("get_branch_comparison_from_rollup", { p_hours: pHours }),
+    timeout,
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 
   if (!error) {
-    const rows = buildCanonicalBranchComparison(
-      (Array.isArray(data) ? data : []).map((row) => ({
-        branch_id: normalizeBranchId(row.branch_id),
-        sessions: Number(row.sessions) || 0,
-        impressions: Number(row.impressions) || 0,
-        opens: Number(row.opens) || 0,
-        unique_visitors: Number(row.unique_visitors) || 0,
-      })),
-      { sessions: 0, impressions: 0, opens: 0, unique_visitors: 0 },
-    );
-    return { data: rows, partial: biRollupForHours(pHours), note: null };
-  }
-
-  if (isTimeoutError(error) && !biRollupForHours(pHours)) {
-    const rollup = await supabase.rpc("get_branch_comparison_from_rollup", { p_hours: pHours });
-    if (!rollup.error) {
-      const rows = buildCanonicalBranchComparison(
-        (Array.isArray(rollup.data) ? rollup.data : []).map((row) => ({
-          branch_id: normalizeBranchId(row.branch_id),
-          sessions: Number(row.sessions) || 0,
-          impressions: Number(row.impressions) || 0,
-          opens: Number(row.opens) || 0,
-          unique_visitors: Number(row.unique_visitors) || 0,
-        })),
-        { sessions: 0, impressions: 0, opens: 0, unique_visitors: 0 },
-      );
-      return {
-        data: rows,
-        partial: true,
-        note: "Branch comparison from rollup after timeout.",
-      };
-    }
+    return { data: mapBranchComparisonRows(data), partial: false, note: null };
   }
 
   if (isTimeoutError(error)) {

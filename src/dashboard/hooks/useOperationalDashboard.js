@@ -50,23 +50,39 @@ export function useOperationalDashboard(options = {}) {
     }
     setEnrichLoading(true);
     try {
+      const withDeadline = (promise, ms, fallback) => {
+        let timer;
+        const timeout = new Promise((resolve) => {
+          timer = setTimeout(() => resolve(fallback), ms);
+        });
+        return Promise.race([promise, timeout]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+      };
       const [review, feed, liveRes] = await Promise.all([
-        fetchReviewEventsSummary(supabase, {
-          branch: filters?.branch,
-          hours,
-        }),
-        fetchActivityFeed(hours, filters?.branch),
-        supabase.rpc("get_live_activity"),
+        withDeadline(
+          fetchReviewEventsSummary(supabase, {
+            branch: filters?.branch,
+            hours,
+          }),
+          10000,
+          null,
+        ),
+        withDeadline(fetchActivityFeed(hours, filters?.branch), 8000, []),
+        withDeadline(supabase.rpc("get_live_activity"), 8000, { data: null, error: { message: "timeout" } }),
       ]);
       setReviewSummary(review);
       setReviewPartialNote(
         review?._partial
           ? review._note || "Review metrics reflect today only — wider range timed out."
-          : null,
+          : review
+            ? null
+            : "Review metrics did not load. Menu metrics are still shown.",
       );
-      setActivityFeed(feed);
-      const live = liveRes?.data;
-      setActiveGuestsNow(Number(live?.active_sessions) || 0);
+      setActivityFeed(Array.isArray(feed) ? feed : []);
+      if (liveRes?.data) {
+        setActiveGuestsNow(Number(liveRes.data.active_sessions) || 0);
+      }
     } catch {
       // Keep prior enrichment on soft failure so navigation stays painted.
       setReviewPartialNote("Could not load this panel");

@@ -36,6 +36,8 @@ import {
 } from "../utils/intelligenceCache";
 
 const BI_TTL_MS = 90 * 1000;
+/** Last resort so a stalled RPC cannot leave Overview on skeletons. */
+const DASHBOARD_LOAD_DEADLINE_MS = 12000;
 
 function applyPackage(pkg, setters) {
   const {
@@ -86,6 +88,7 @@ export function useMenuBiDashboard(options = {}) {
   const [operationalTrust, setOperationalTrust] = useState(null);
   const [truth, setTruth] = useState(null);
   const dataRef = useRef(null);
+  const loadGenRef = useRef(0);
   dataRef.current = data;
 
   const hours = hoursFromPlatformFilters(filters || {});
@@ -145,6 +148,7 @@ export function useMenuBiDashboard(options = {}) {
   const load = useCallback(
     async (opts = {}) => {
       const force = Boolean(opts?.force);
+      const gen = ++loadGenRef.current;
       if (!enabled) {
         setLoading(false);
         setRefreshing(false);
@@ -177,7 +181,20 @@ export function useMenuBiDashboard(options = {}) {
       }
 
       setError("");
+      let watchdog;
+      const stillCurrent = () => loadGenRef.current === gen;
       try {
+        watchdog = setTimeout(() => {
+          if (!stillCurrent()) return;
+          if (!dataRef.current) {
+            setError("Operational data did not arrive. Retry.");
+            setMenuDataEmpty(true);
+          } else {
+            setError("Some dashboard data did not finish loading. Retry to refresh it.");
+          }
+          setLoading(false);
+          setRefreshing(false);
+        }, DASHBOARD_LOAD_DEADLINE_MS);
         const sessionOk = Boolean(rbac?.session);
         if (!sessionOk) {
           markBoot("tier1_get_session_start");
@@ -242,7 +259,7 @@ export function useMenuBiDashboard(options = {}) {
           },
           {
             deferClientPatches: true,
-            forceLiveBi: Boolean(force),
+            forceLiveBi: false,
             onTier1Partial: (partial) => {
               // Paint KPI cards as soon as session analytics lands; keep refreshing for full BI.
               if (dataRef.current && !dataRef.current._tier1Partial && !force) return;
@@ -256,6 +273,7 @@ export function useMenuBiDashboard(options = {}) {
         );
 
         markBoot("tier1_full_ready");
+        if (!stillCurrent()) return;
 
         const pkg = buildPkg(result, { tier1Partial: false });
 
@@ -276,6 +294,7 @@ export function useMenuBiDashboard(options = {}) {
           menuConfidence: pkg.truthValidation?.menuConfidence?.level,
         });
       } catch (e) {
+        if (!stillCurrent()) return;
         if (!dataRef.current && !cached?.normalized) {
           setData(null);
           setLiveFallback(false);
@@ -287,8 +306,11 @@ export function useMenuBiDashboard(options = {}) {
         }
         setError(e?.message || "Failed to load menu intelligence");
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (watchdog) clearTimeout(watchdog);
+        if (stillCurrent()) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [

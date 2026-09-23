@@ -214,6 +214,7 @@ export default function OperationalDashboard({
       partial={partial}
       note={note}
       reviewPartialNote={reviewPartialNote}
+      error={error}
       activityFeed={activityFeed}
       activeGuestsNow={activeGuestsNow}
       menuQrScans={menuQrScans}
@@ -263,6 +264,7 @@ function OperationalDashboardBody(props) {
     partial,
     note,
     reviewPartialNote,
+    error,
     activityFeed,
     activeGuestsNow,
     menuQrScans,
@@ -337,6 +339,14 @@ function OperationalDashboardBody(props) {
       </div>
 
       <PlatformStatusBanner platformStatus={platformStatus} />
+      {error ? (
+        <div className="nac-ops-user-note nac-ops-range-note--warn" role="alert">
+          <p>{error}</p>
+          <button type="button" className="glass-pill" style={{ marginTop: 8 }} onClick={reload}>
+            Retry
+          </button>
+        </div>
+      ) : null}
       {partial && note ? <p className="nac-ops-user-note">{note}</p> : null}
       {reviewPartialNote ? (
         <p className="nac-ops-user-note nac-ops-range-note--warn" role="note">
