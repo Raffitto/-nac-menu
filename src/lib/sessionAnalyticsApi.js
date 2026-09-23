@@ -70,7 +70,9 @@ async function fetchFeed(supabase, params) {
 export async function fetchSessionAnalytics(supabase, filters, options = {}) {
   const { skipFeed = false, skipLiveQuality = false } = options;
   const params = rpcParamsFromFilters(filters);
-  const useRollup = params.p_hours >= 168 || params.p_hours === MONTH_HOURS;
+  // Raw get_session_analytics scans menu_events and sits on the 8s statement timeout.
+  // Rollup semantics are kept, including a stale Today.
+  const useRollup = true;
   const mergeOpts = { skipLiveQuality };
 
   if (useRollup) {

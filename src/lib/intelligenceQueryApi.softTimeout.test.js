@@ -21,7 +21,7 @@ describe("fetchBiDashboard soft timeout", () => {
     expect(BI_TODAY_SOFT_TIMEOUT_MS).toBeLessThanOrEqual(3000);
   });
 
-  test("Today path falls back to rollup after soft timeout instead of waiting ~8s", async () => {
+  test("ordinary Today load uses the rollup and never calls get_bi_dashboard", async () => {
     const supabase = {
       rpc: jest.fn((name) => {
         if (name === "get_bi_dashboard") {
@@ -49,17 +49,16 @@ describe("fetchBiDashboard soft timeout", () => {
       branch: null,
       hours: 24,
       deferClientPatches: true,
-      softTimeoutMs: 40,
+      forceLiveBi: true,
     });
 
-    expect(supabase.rpc).toHaveBeenCalledWith("get_bi_dashboard", expect.any(Object));
+    expect(supabase.rpc).not.toHaveBeenCalledWith("get_bi_dashboard", expect.any(Object));
     expect(supabase.rpc).toHaveBeenCalledWith(
       "get_bi_dashboard_from_rollup",
       expect.any(Object),
     );
-    expect(result.partial).toBe(true);
     expect(Number(result.data?.total_sessions || result.data?.funnel?.qr_scans)).toBe(5);
-  }, 10000);
+  });
 
   test("skipLiveBi uses rollup only and never calls get_bi_dashboard", async () => {
     const supabase = {
@@ -92,6 +91,31 @@ describe("fetchBiDashboard soft timeout", () => {
     expect(supabase.rpc).toHaveBeenCalledWith("get_bi_dashboard_from_rollup", expect.any(Object));
     expect(supabase.rpc).not.toHaveBeenCalledWith("get_bi_dashboard", expect.any(Object));
     expect(Number(result.data?.total_sessions || result.data?.funnel?.qr_scans)).toBe(3);
+  });
+
+  test("a stalled today rollup settles instead of hanging the dashboard", async () => {
+    const supabase = {
+      rpc: jest.fn((name) => {
+        if (name === "get_bi_dashboard_from_rollup") return new Promise(() => {});
+        return Promise.resolve({ data: null, error: null });
+      }),
+    };
+
+    await expect(
+      fetchBiDashboard(supabase, {
+        branch: null,
+        hours: 24,
+        skipLiveBi: true,
+        deferClientPatches: true,
+        softTimeoutMs: 30,
+      }),
+    ).rejects.toMatchObject({ message: expect.stringMatching(/timeout/i) });
+
+    const rollupCalls = supabase.rpc.mock.calls.filter(
+      (call) => call[0] === "get_bi_dashboard_from_rollup",
+    );
+    expect(rollupCalls).toHaveLength(1);
+    expect(supabase.rpc).not.toHaveBeenCalledWith("get_bi_dashboard", expect.any(Object));
   });
 });
 
