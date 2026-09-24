@@ -444,19 +444,25 @@ async function withSoftTimeout(promise, ms, fallback) {
 
 export async function fetchReviewEventsSummary(supabase, { branch = null, hours = 24 } = {}) {
   if (!supabase) return null;
-
   const pBranch = normalizeBranchForRpc(branch);
+  const pHours = Number(hours) || 24;
+  return dedupeInflight(`review-summary:${pBranch || "all"}:${pHours}`, () =>
+    fetchReviewEventsSummaryOnce(supabase, { pBranch, pHours }),
+  );
+}
+
+async function fetchReviewEventsSummaryOnce(supabase, { pBranch, pHours }) {
 
   const { data, error } = await withSoftTimeout(
     supabase.rpc("get_review_events_summary", {
       p_branch: pBranch,
-      p_hours: Number(hours) || 24,
+      p_hours: pHours,
     }),
     10000,
     { data: null, error: { message: "statement timeout", code: "57014", softTimeout: true } },
   );
 
-  if (error && isTimeoutError(error) && Number(hours) > 24) {
+  if (error && isTimeoutError(error) && pHours > 24) {
     const fallback = await supabase.rpc("get_review_events_summary", {
       p_branch: pBranch,
       p_hours: 24,

@@ -551,7 +551,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   const monthOnly = q.match(
-    new RegExp(`\\b(?:for|in|during|cover(?:ing|age)?)\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`),
+    new RegExp(`\\b(?:of|for|in|during|cover(?:ing|age)?)\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`),
   );
   if (monthOnly) {
     const monthIndex = MONTH_MAP[monthOnly[1]];

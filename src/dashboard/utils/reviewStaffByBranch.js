@@ -22,6 +22,12 @@ export async function fetchStaffMergedByBranch(supabase, { hours, activeBranch =
     }));
   }
 
+  const summary = await fetchReviewEventsSummary(supabase, { branch: null, hours }).catch(() => null);
+  const attributed = staffFromReviewSummary(summary || {}).filter((row) => row.branch);
+  if (attributed.length) {
+    return attributed.sort((a, b) => b.scans - a.scans || b.google - a.google);
+  }
+
   const pairs = await Promise.all(
     CANONICAL_BRANCH_IDS.map(async (branchId) => {
       const summary = await fetchReviewEventsSummary(supabase, {

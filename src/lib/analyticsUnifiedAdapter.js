@@ -16,6 +16,7 @@ import { applyCanonicalMenuSessionsToPayload, resolveCanonicalMenuSessions, enfo
 import { enrichByEventTypeCanonical, canonicalAddonInteractionCount } from "./menuEventTypes";
 import { biEngagementDetailNeedsRefresh } from "./biDashboardNormalize";
 import { fetchBiItemDetailFromMenuEvents } from "./menuEventsBiFallback";
+import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 import { isMonthRangeHours } from "./mtdHybridMerge";
 
 export const OPERATIONAL_TRUST = {
@@ -498,6 +499,11 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, o
   );
 
   const normalized = normalizeBiDashboardPayload(mergedRaw, { hours });
+  const failureNote = biResult?.note || (biSettled.status === "rejected" ? biSettled.reason?.message : "") || "";
+  const biFailed = biSettled.status === "rejected" || isTimeoutError({ message: failureNote });
+  if (biFailed && isBiTotalsEmpty(normalized)) {
+    throw Object.assign(new Error(failureNote || "statement timeout"), { code: "57014" });
+  }
 
   opsNotes = [...opsNotes, ...(sessionResult?.opsNotes || [])];
   if (aggregates && !sessionError) {
@@ -525,7 +531,7 @@ export async function fetchUnifiedOperationalAnalytics(supabase, filters = {}, o
   });
 
   return {
-    data: normalized,
+    data: { ...normalized, _availability: "success" },
     partial: Boolean(biResult?.partial || sessionResult?.partial),
     note: biResult?.note || sessionResult?.note || null,
     opsNotes,

@@ -590,6 +590,12 @@ export function resolvePlannerTimeExpression(
   if (expr === "today") {
     return parseVaultPeriodFromQuestion("today", referenceDate) || fromQuestion;
   }
+  if (
+    (expr === "last_7_days" || expr === "last_14_days" || expr === "lately" || expr === "recently" || expr === "last_weekend")
+    && (fromQuestion?.periodType === "named_month" || fromQuestion?.isMonth)
+  ) {
+    return fromQuestion;
+  }
   if (expr === "last_14_days" || expr === "lately" || expr === "recently") {
     return parseVaultPeriodFromQuestion("last 14 days", referenceDate) || fromQuestion;
   }

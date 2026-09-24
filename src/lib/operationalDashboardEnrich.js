@@ -31,6 +31,12 @@ export function reviewCountsFromSummary(summary) {
  */
 export function mergeReviewIntoOperationalPayload(biPayload, reviewSummary) {
   if (!biPayload || typeof biPayload !== "object") return biPayload;
+  if (!reviewSummary) {
+    return {
+      ...biPayload,
+      _reviewAvailability: "unavailable",
+    };
+  }
   const review = reviewCountsFromSummary(reviewSummary);
   const funnel = {
     ...(biPayload.funnel || {}),
@@ -42,6 +48,7 @@ export function mergeReviewIntoOperationalPayload(biPayload, reviewSummary) {
     ...biPayload,
     funnel,
     review_kpis: review,
-    review_summary: reviewSummary || null,
+    review_summary: reviewSummary,
+    _reviewAvailability: "success",
   };
 }

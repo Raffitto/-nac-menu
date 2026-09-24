@@ -82,8 +82,13 @@ export function formatFreshnessSnapshot(snap = freshness) {
 /**
  * Optional Supabase probes for latest row timestamps (staff session).
  */
+let lastProbeAt = 0;
+
 export async function probeLatestEventTimestamps(supabase) {
   if (!supabase) return {};
+  const now = Date.now();
+  if (now - lastProbeAt < 60000) return {};
+  lastProbeAt = now;
 
   const out = {};
   try {

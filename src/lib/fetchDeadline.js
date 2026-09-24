@@ -14,3 +14,16 @@ export function fetchWithDeadline(input, init = {}, timeoutMs = NAC_FETCH_DEADLI
     if (timer) clearTimeout(timer);
   });
 }
+
+/** Settles even when fetch abort or the auth lock never rejects. */
+export function withDeadline(promise, timeoutMs, message = "Timed out") {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
