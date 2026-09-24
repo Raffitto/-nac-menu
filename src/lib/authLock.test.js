@@ -45,17 +45,39 @@ describe("document auth lock", () => {
     await expect(waiting).resolves.toBe("next");
   });
 
-  test("a stuck holder does not block the following operation", async () => {
-    const lock = createAuthLock({ deadlineMs: 25 });
-    const stuck = lock("lock:test", 25, () => new Promise(() => {}));
-    const waiting = lock("lock:test", 25, async () => "recovered");
+  test("a timed-out waiter never runs, and the next callback waits for fn()", async () => {
+    const lock = createAuthLock({ deadlineMs: 30 });
+    let active = 0;
+    let maxActive = 0;
+    const holder = deferred();
+    const track = (run) => async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      try {
+        return await run();
+      } finally {
+        active -= 1;
+      }
+    };
+
+    const held = lock("lock:test", 30, track(() => holder.promise));
+    const waiting = lock("lock:test", 30, track(async () => "late"));
     await expect(waiting).rejects.toThrow("Auth lock timed out");
-    await expect(lock("lock:test", 25, async () => "fresh")).resolves.toBe("fresh");
-    const raced = await Promise.race([
-      stuck.then(() => "settled"),
-      new Promise((resolve) => setTimeout(() => resolve("still-held"), 10)),
-    ]);
-    expect(raced).toBe("still-held");
+    expect(maxActive).toBe(1);
+
+    let ran = false;
+    const next = lock("lock:test", 200, track(async () => {
+      ran = true;
+      return "next";
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ran).toBe(false);
+    expect(maxActive).toBe(1);
+
+    holder.resolve("holder");
+    await expect(held).resolves.toBe("holder");
+    await expect(next).resolves.toBe("next");
+    expect(maxActive).toBe(1);
   });
 
   test("an immediate acquire skips a busy lock and does not run", async () => {
@@ -69,6 +91,14 @@ describe("document auth lock", () => {
     expect(ran).toBe(false);
     holder.resolve("ok");
     await held;
+  });
+
+  test("a rejected holder does not poison the next operation", async () => {
+    const lock = createAuthLock({ deadlineMs: 40 });
+    await expect(lock("lock:test", 40, async () => {
+      throw new Error("boom");
+    })).rejects.toThrow("boom");
+    await expect(lock("lock:test", 40, async () => "recovered")).resolves.toBe("recovered");
   });
 
   test("does not request a Web Lock", async () => {
