@@ -2,25 +2,25 @@ import { act, renderHook } from "@testing-library/react";
 import useKeepAliveNav from "./useKeepAliveNav";
 
 describe("useKeepAliveNav", () => {
-  test("starts with overview mounted and active", () => {
+  test("starts with overview active", () => {
     const { result } = renderHook(() => useKeepAliveNav("overview"));
     expect(result.current.activeView).toBe("overview");
     expect(result.current.isMounted("overview")).toBe(true);
     expect(result.current.isMounted("menu")).toBe(false);
   });
 
-  test("keeps previous views mounted after navigation", () => {
+  test("unmounts previous views after navigation (active-only)", () => {
     const { result } = renderHook(() => useKeepAliveNav("overview"));
     act(() => {
       result.current.setActiveView("menu");
     });
     expect(result.current.activeView).toBe("menu");
-    expect(result.current.isMounted("overview")).toBe(true);
+    expect(result.current.isMounted("overview")).toBe(false);
     expect(result.current.isMounted("menu")).toBe(true);
     act(() => {
       result.current.setActiveView("settings");
     });
-    expect(result.current.isMounted("menu")).toBe(true);
+    expect(result.current.isMounted("menu")).toBe(false);
     expect(result.current.isMounted("settings")).toBe(true);
   });
 

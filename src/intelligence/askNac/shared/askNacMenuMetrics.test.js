@@ -43,18 +43,17 @@ describe("fetchAskNacMenuMetrics", () => {
     expect(result.rpc).toContain("get_bi_dashboard");
   });
 
-  test("today path uses live source without hybrid diagnostics", async () => {
+  test("today path uses rollup fabric without hybrid diagnostics", async () => {
     fetchBiDashboard.mockResolvedValue({
-      data: { data_source: "rpc", funnel: { qr_scans: 12 } },
-      partial: false,
+      data: { data_source: "rollup", funnel: { qr_scans: 12 } },
+      partial: true,
       opsNotes: [],
-      dataSource: "rpc",
+      dataSource: "rollup",
     });
 
     const result = await fetchAskNacMenuMetrics({}, { branch: null, hours: 24 });
 
     expect(result.menuQrScans).toBe(12);
-    expect(result.mtdHybrid.source).toBe("live");
-    expect(result.mtdHybrid.partialLive).toBe(false);
+    expect(result.rpc).toBe("get_bi_dashboard_from_rollup");
   });
 });

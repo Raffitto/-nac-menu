@@ -87,6 +87,7 @@ export default function OperationalDashboard({
     reviewPartialNote,
     activityFeed,
     activeGuestsNow,
+    activeGuestsStatus = "success",
     reload,
   } = injectedDashboard || localDashboard;
 
@@ -217,6 +218,8 @@ export default function OperationalDashboard({
       error={error}
       activityFeed={activityFeed}
       activeGuestsNow={activeGuestsNow}
+      activeGuestsStatus={activeGuestsStatus}
+      active={active}
       menuQrScans={menuQrScans}
       reviewQrScans={reviewQrScans}
       totalSessions={totalSessions}
@@ -267,6 +270,8 @@ function OperationalDashboardBody(props) {
     error,
     activityFeed,
     activeGuestsNow,
+    activeGuestsStatus = "success",
+    active = true,
     menuQrScans,
     reviewQrScans,
     totalSessions,
@@ -439,8 +444,18 @@ function OperationalDashboardBody(props) {
           <p className="nac-bi-exec-label">
             <Users size={13} /> Active Guests
           </p>
-          <p className="nac-bi-exec-value">{activeGuestsNow.toLocaleString()}</p>
-          <p className="nac-bi-exec-sub">Guests active now</p>
+          <p className="nac-bi-exec-value">
+            {activeGuestsStatus === "unavailable" || activeGuestsNow == null
+              ? "—"
+              : activeGuestsNow.toLocaleString()}
+          </p>
+          <p className="nac-bi-exec-sub">
+            {activeGuestsStatus === "unavailable"
+              ? "Live guests unavailable — not a verified zero"
+              : activeGuestsStatus === "stale"
+                ? "Last known live count (refresh delayed)"
+                : "Guests active now"}
+          </p>
         </motion.div>
       </div>
 
@@ -468,6 +483,8 @@ function OperationalDashboardBody(props) {
           session={session}
           CATEGORY_NAMES={CATEGORY_NAMES}
           activeSessions={activeGuestsNow}
+          enabled={active}
+          status={activeGuestsStatus}
         />
         <motion.div className="bi-table nac-ops-feed">
           <h4>Recent Activity</h4>

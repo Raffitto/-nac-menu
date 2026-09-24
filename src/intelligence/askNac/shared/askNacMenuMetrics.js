@@ -33,10 +33,8 @@ export async function fetchAskNacMenuMetrics(supabase, { branch = null, hours = 
       mtdHybrid,
     }),
     rpc: dataSource === "hybrid"
-      ? "get_bi_dashboard_from_rollup+get_bi_dashboard"
-      : pHours >= 168 || pHours === 999
-        ? "get_bi_dashboard_from_rollup"
-        : "get_bi_dashboard",
+      ? "get_bi_dashboard_from_rollup+get_bi_dashboard_from_rollup"
+      : "get_bi_dashboard_from_rollup",
   };
 
   return tool;

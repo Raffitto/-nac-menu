@@ -26,6 +26,8 @@ const USER_MESSAGES = {
     "Daily summaries are catching up. Refresh in a few minutes for the latest totals.",
   [PLATFORM_STATUS.EMPTY]:
     "No menu or review activity recorded for this branch and period yet.",
+  [PLATFORM_STATUS.UNAVAILABLE]:
+    "Operational data could not be loaded for this period. Retry — this is not a verified zero.",
 };
 
 function noteImpliesStaleRollup(note) {
@@ -44,6 +46,7 @@ export function resolveMenuPlatformStatus({
   menuDataEmpty = false,
   scoresBuilding = false,
   selectedRange = "today",
+  error = null,
 } = {}) {
   const partitioned = partitionBiNotes(note, { partial, useRollup: selectedRange !== "today" });
   const technicalOps = [
@@ -59,7 +62,9 @@ export function resolveMenuPlatformStatus({
 
   let status = PLATFORM_STATUS.HEALTHY;
 
-  if (empty && !liveFallback) {
+  if (error && empty) {
+    status = PLATFORM_STATUS.UNAVAILABLE;
+  } else if (empty && !liveFallback) {
     status = PLATFORM_STATUS.EMPTY;
   } else if (scoresBuilding || sufficiency.baselineBuilding) {
     status = PLATFORM_STATUS.BASELINE_BUILDING;
@@ -76,7 +81,9 @@ export function resolveMenuPlatformStatus({
   }
 
   const userMessage =
-    partitioned.userNote || USER_MESSAGES[status] || null;
+    status === PLATFORM_STATUS.UNAVAILABLE
+      ? USER_MESSAGES[PLATFORM_STATUS.UNAVAILABLE]
+      : partitioned.userNote || USER_MESSAGES[status] || null;
 
   return {
     status,

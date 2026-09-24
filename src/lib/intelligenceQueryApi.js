@@ -1,3 +1,4 @@
+import { dedupeInflight } from "./requestDedupe";
 import { MONTH_HOURS } from "../dashboard/utils/rangeState";
 import {
   normalizeBiDashboardPayload,
@@ -106,6 +107,32 @@ export async function fetchBiDashboard(
   supabase,
   { branch = null, hours = 24, softTimeoutMs, deferClientPatches = false, skipLiveBi = false, forceLiveBi = false } = {},
 ) {
+  const pHours = Number(hours) || 24;
+  const pBranch = normalizeBranchForRpc(branch);
+  const dedupeKey = [
+    "bi",
+    pBranch || "all",
+    pHours,
+    forceLiveBi ? "live" : "rollup",
+    deferClientPatches ? "defer" : "full",
+  ].join(":");
+
+  return dedupeInflight(dedupeKey, () =>
+    fetchBiDashboardOnce(supabase, {
+      branch: pBranch,
+      hours: pHours,
+      softTimeoutMs,
+      deferClientPatches,
+      skipLiveBi,
+      forceLiveBi,
+    }),
+  );
+}
+
+async function fetchBiDashboardOnce(
+  supabase,
+  { branch = null, hours = 24, softTimeoutMs, deferClientPatches = false, skipLiveBi = false, forceLiveBi = false } = {},
+) {
   if (!supabase) {
     return {
       data: EMPTY_BI_DASHBOARD,
@@ -117,7 +144,7 @@ export async function fetchBiDashboard(
   }
 
   const pHours = Number(hours) || 24;
-  const pBranch = normalizeBranchForRpc(branch);
+  const pBranch = branch;
   const params = { p_branch: pBranch, p_hours: pHours };
   // Emergency recovery: raw get_bi_dashboard statement-timeouts at 8s.
   // Ordinary loads stay on the rollup, including Refresh. Stale rollup is shown as-is.
@@ -206,8 +233,9 @@ export async function fetchBiDashboard(
     throw error;
   }
 
-  // Client menu_events scans (up to 12k rows) are Tier-2 — never block Overview KPI paint.
-  if (!deferClientPatches && isBiTotalsEmpty(payload)) {
+  // Client menu_events scans are Tier-2 emergency only — forceLiveBi required.
+  // Ordinary interactive loads must stay on rollup (never approach 8s statement timeout).
+  if (forceLiveBi && !deferClientPatches && isBiTotalsEmpty(payload)) {
     const clientStarted = Date.now();
     const clientPayload = await fetchBiFromMenuEvents(supabase, { branch: pBranch, hours: pHours });
     rpcTimingsMs += Date.now() - clientStarted;
@@ -224,7 +252,7 @@ export async function fetchBiDashboard(
     }
   }
 
-  if (!deferClientPatches && payload && biTopItemsNeedsRefresh(payload)) {
+  if (forceLiveBi && !deferClientPatches && payload && biTopItemsNeedsRefresh(payload)) {
     const detail = await fetchBiItemDetailFromMenuEvents(supabase, {
       branch: pBranch,
       hours: pHours,
@@ -243,7 +271,7 @@ export async function fetchBiDashboard(
     }
   }
 
-  if (!deferClientPatches && payload) {
+  if (forceLiveBi && !deferClientPatches && payload) {
     const sessionRes = await applySessionQualityPatch(supabase, {
       branch: pBranch,
       hours: pHours,
