@@ -75,6 +75,14 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(listPeriodDates(last7)).toHaveLength(7);
   });
 
+  test("sales of August is August, not the last 7 days", () => {
+    const period = parseVaultPeriodFromQuestion("sales of August", new Date("2026-09-24T12:00:00Z"));
+    expect(period?.periodType).toBe("named_month");
+    expect(period?.startDate).toBe("2026-08-01");
+    expect(period?.endDate).toBe("2026-08-31");
+    expect(period?.isMonth).toBe(true);
+  });
+
   test("parses last 10 days as exactly 10 calendar dates", () => {
     const period = parseVaultPeriodFromQuestion("show sales last 10 days", REF);
     expect(period?.periodType).toBe("last_10_days");

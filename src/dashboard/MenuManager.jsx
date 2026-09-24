@@ -74,6 +74,7 @@ import MenuPublishDiffSheet from "./menuPublish/MenuPublishDiffSheet";
 import MenuPublishPreviewPanel from "./menuPublish/MenuPublishPreviewPanel";
 import MenuVersionHistorySheet from "./menuPublish/MenuVersionHistorySheet";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { withDeadline } from "../lib/fetchDeadline";
 import {
   computeHiddenUntilIso,
   getItemVisibilityBadge,
@@ -496,6 +497,7 @@ export default function MenuManager() {
   const categoriesRef = useRef([]);
   const lastLoadedCatRef = useRef(null);
   const menuLoadRequestRef = useRef(0);
+  const menuInitGenRef = useRef(0);
   const dragSnapshotRef = useRef(null);
   const collapseExpandTimerRef = useRef(null);
   const [activeDragLabel, setActiveDragLabel] = useState(null);
@@ -873,28 +875,39 @@ export default function MenuManager() {
       return undefined;
     }
 
-    let cancelled = false;
-    async function init() {
+    const generation = ++menuInitGenRef.current;
+    let active = true;
+    const current = () => active && menuInitGenRef.current === generation;
+
+    (async () => {
       setLoading(true);
+      setError("");
       try {
-        const cats = await loadCategories();
-        await Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]);
-        if (!cancelled) {
+        await withDeadline((async () => {
+          const cats = await withDeadline(loadCategories(), 12000, "Categories did not load.");
+          await withDeadline(
+            Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]),
+            12000,
+            "Menu catalogues did not load.",
+          );
+          if (!current()) return;
           const firstCategoryId = cats[0]?.id || null;
           setMenuData([]);
           setSelectedCatId(firstCategoryId);
           lastLoadedCatRef.current = firstCategoryId;
-          if (firstCategoryId) await loadMenuForCategory(firstCategoryId);
-        }
+          if (firstCategoryId) {
+            await withDeadline(loadMenuForCategory(firstCategoryId), 12000, "Menu items did not load.");
+          }
+        })(), 15000, "Menu data did not load. Retry.");
       } catch (e) {
-        if (!cancelled) setError(e?.message || "Menu data did not load. Retry.");
+        if (current()) setError(e?.message || "Menu data did not load. Retry.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (current()) setLoading(false);
       }
-    }
-    init();
+    })();
+
     return () => {
-      cancelled = true;
+      active = false;
     };
   }, [
     menuBranch,

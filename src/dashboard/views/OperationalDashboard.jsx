@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { formatExecutiveCount, executiveHeadline } from "../../lib/metricContract";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -314,6 +314,7 @@ function OperationalDashboardBody(props) {
   const langStats = data?.session_language || {};
   const arCount = Number(langStats.ar_sessions) || 0;
   const enCount = Number(langStats.en_sessions) || 0;
+  const headline = executiveHeadline(data);
 
   return (
     <section className="nac-ops-dash">
@@ -385,28 +386,28 @@ function OperationalDashboardBody(props) {
           <p className="nac-bi-exec-label">
             <Users size={13} /> Menu QR Scans
           </p>
-          <p className="nac-bi-exec-value">{menuQrScans.toLocaleString()}</p>
+          <p className="nac-bi-exec-value">{formatExecutiveCount(headline.menuQr)}</p>
           <p className="nac-bi-exec-sub">Menu experience entry</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
           <p className="nac-bi-exec-label">
             <Users size={13} /> Review QR Scans
           </p>
-          <p className="nac-bi-exec-value">{reviewQrScans.toLocaleString()}</p>
+          <p className="nac-bi-exec-value">{formatExecutiveCount(headline.reviewQr)}</p>
           <p className="nac-bi-exec-sub">Review experience entry</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
           <p className="nac-bi-exec-label">
             <Activity size={13} /> {getMetricLabel(METRIC_IDS.SESSION)}
           </p>
-          <p className="nac-bi-exec-value">{totalSessions.toLocaleString()}</p>
+          <p className="nac-bi-exec-value">{formatExecutiveCount(headline.sessions)}</p>
           <p className="nac-bi-exec-sub">Canonical menu entry sessions</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <p className="nac-bi-exec-label">
             <Zap size={13} /> {getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT)}
           </p>
-          <p className="nac-bi-exec-value">{reviewRedirect.toLocaleString()}</p>
+          <p className="nac-bi-exec-value">{formatExecutiveCount(headline.googleRedirects)}</p>
           <p className="nac-bi-exec-sub">Not {getMetricLabel(METRIC_IDS.GOOGLE_REVIEW).toLowerCase()}</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.09 }}>
