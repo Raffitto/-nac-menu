@@ -382,7 +382,12 @@ export function normalizeCapabilityResult(input: {
   coverage?: CoverageReport | null;
 }): NormalizedCapabilityResult {
   const raw = input.raw || {};
-  const source = inferSource(input.capabilityId, input.implementationTool);
+  const rawAggregation = raw.aggregation && typeof raw.aggregation === "object"
+    ? raw.aggregation as Record<string, unknown>
+    : null;
+  const source = rawAggregation?.salesSource === "commerce_orders"
+    ? "commerce_orders"
+    : inferSource(input.capabilityId, input.implementationTool);
   const authority = source === "cost_control"
     ? getSourceAuthority("cash_up").authority
     : getSourceAuthority(source).authority;

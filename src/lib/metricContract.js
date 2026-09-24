@@ -11,7 +11,13 @@ export function executiveHeadline(data) {
   return {
     menuQr: menuOk ? finite(data?.menu_qr_scans ?? data?.funnel?.qr_scans) : null,
     sessions: menuOk ? finite(data?.total_sessions ?? data?.funnel?.qr_scans) : null,
-    reviewQr: reviewOk ? finite(data?.review_kpis?.qr_scans) : null,
+    reviewQr: reviewOk
+      ? finite(
+          data?.review_kpis?.review_qr_scans
+          ?? data?.review_kpis?.qr_scans
+          ?? data?.review_qr_scans,
+        )
+      : null,
     googleRedirects: reviewOk
       ? finite(data?.review_kpis?.google_redirects ?? data?.funnel?.review_redirect)
       : null,

@@ -13,6 +13,14 @@ export type SourceAuthorityRecord = {
 };
 
 export const SOURCE_AUTHORITY_REGISTRY: Record<string, SourceAuthorityRecord> = Object.freeze({
+  commerce_orders: {
+    sourceId: "commerce_orders",
+    authority: "CANONICAL_STRUCTURED",
+    domain: "branch_sales",
+    mayOverrideCanonical: false,
+    notes:
+      "Canonical order ledger. Used for a requested sales window only when Cash Up files have no rows in that window. Never describe these totals as a Cash Up workbook.",
+  },
   cash_up: {
     sourceId: "cash_up",
     authority: "CANONICAL_STRUCTURED",
