@@ -18,6 +18,15 @@
   to = "/index.html"
   status = 200
 
+# Never cache the document users actually open. `/` was still
+# public,max-age=0 while only /index.html was no-store, so a long-lived
+# tab could keep an older runtime after deploy.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+
 # Never cache shell or pre-React routing script (old bundles stuck otherwise)
 [[headers]]
   for = "/index.html"

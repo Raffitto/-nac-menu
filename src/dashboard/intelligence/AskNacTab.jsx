@@ -124,14 +124,19 @@ export default function AskNacTab({
       setLoading(true);
 
       try {
-        const result = await askNac({
+        const result = await Promise.race([
+          askNac({
           question: text,
           supabase,
           session,
           profile: rbac?.profile ?? null,
           filters,
           conversationContext,
-        });
+        }),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Ask NAC did not respond. Try again.")), 28000);
+          }),
+        ]);
         setConversationContext((prev) =>
           result.nextContext
             ? result.nextContext

@@ -4,6 +4,7 @@
  */
 
 import { supabase as defaultSupabase } from "../../lib/supabase";
+import { fetchWithDeadline } from "../../lib/fetchDeadline";
 import { processAskNacQuestion } from "./askNacOrchestrator";
 import { createAskNacResponse, ANSWER_TYPES, CONFIDENCE_LEVELS } from "./askNacContract";
 
@@ -55,7 +56,7 @@ export async function askNac({
 
   if (preferServer && serverConfigured && session?.access_token) {
     try {
-      const res = await fetch(edgeUrl, {
+      const res = await fetchWithDeadline(edgeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -71,7 +72,7 @@ export async function askNac({
           profileHint: buildProfileHint(profile),
           filters,
         }),
-      });
+      }, 20000);
 
       if (res.ok) {
         const payload = await res.json();

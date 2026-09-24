@@ -886,6 +886,8 @@ export default function MenuManager() {
           lastLoadedCatRef.current = firstCategoryId;
           if (firstCategoryId) await loadMenuForCategory(firstCategoryId);
         }
+      } catch (e) {
+        if (!cancelled) setError(e?.message || "Menu data did not load. Retry.");
       } finally {
         if (!cancelled) setLoading(false);
       }
