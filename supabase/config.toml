@@ -48,3 +48,7 @@ enabled = true
 
 [analytics]
 enabled = false
+
+# pg_cron calls this with the Drive shared secret, which is not a user JWT.
+[functions.vault-drive-sync]
+verify_jwt = false
