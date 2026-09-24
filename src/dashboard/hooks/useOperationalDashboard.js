@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import { mergeReviewIntoOperationalPayload } from "../../lib/operationalDashboardEnrich";
@@ -45,7 +45,9 @@ export function useOperationalDashboard(options = {}) {
   const [activeGuestsStatus, setActiveGuestsStatus] = useState("loading");
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [reviewPartialNote, setReviewPartialNote] = useState(null);
+  const [reviewFreshness, setReviewFreshness] = useState("loading");
   const [enrichError, setEnrichError] = useState(null);
+  const liveInflightRef = useRef(false);
 
   const loadEnrichment = useCallback(async () => {
     if (!enabled || !supabase || menuBi.needsAuth) {
@@ -81,7 +83,12 @@ export function useOperationalDashboard(options = {}) {
           error: { message: "timeout", code: "57014" },
         }),
       ]);
-      setReviewSummary(review);
+      if (review) {
+        setReviewSummary(review);
+        setReviewFreshness("success");
+      } else {
+        setReviewFreshness("failed");
+      }
       setReviewPartialNote(
         review?._partial
           ? review._note || "Review metrics reflect today only — wider range timed out."
@@ -96,8 +103,7 @@ export function useOperationalDashboard(options = {}) {
         setActivityFeed(Array.isArray(feed?.rows) ? feed.rows : []);
       }
       if (liveRes?.error || !liveRes?.data) {
-        setActiveGuestsNow(null);
-        setActiveGuestsStatus("unavailable");
+        setActiveGuestsStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
       } else {
         setActiveGuestsNow(Number(liveRes.data.active_sessions) || 0);
         setActiveGuestsStatus("success");
@@ -105,8 +111,8 @@ export function useOperationalDashboard(options = {}) {
     } catch {
       setReviewPartialNote("Could not load this panel");
       setEnrichError("Enrichment failed — metrics below may be incomplete.");
-      setActiveGuestsNow(null);
-      setActiveGuestsStatus("unavailable");
+      setReviewFreshness("failed");
+      setActiveGuestsStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
     } finally {
       setEnrichLoading(false);
     }
@@ -121,6 +127,9 @@ export function useOperationalDashboard(options = {}) {
   useEffect(() => {
     if (!enabled || !supabase || menuBi.needsAuth || !filters?.liveMode) return undefined;
     const pollActive = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (liveInflightRef.current) return;
+      liveInflightRef.current = true;
       try {
         const liveRes = await supabase.rpc("get_live_activity");
         if (liveRes?.error || liveRes?.data == null) {
@@ -131,19 +140,32 @@ export function useOperationalDashboard(options = {}) {
         setActiveGuestsStatus("success");
       } catch {
         setActiveGuestsStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
+      } finally {
+        liveInflightRef.current = false;
       }
     };
     pollActive();
-    const id = setInterval(pollActive, 5000);
-    return () => clearInterval(id);
+    const id = setInterval(pollActive, 20000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") pollActive();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [enabled, menuBi.needsAuth, filters?.liveMode]);
 
   const data = useMemo(() => {
     if (!menuBi.data) return null;
     const merged = mergeReviewIntoOperationalPayload(menuBi.data, reviewSummary);
+    if (reviewSummary && reviewFreshness === "failed") {
+      merged._reviewAvailability = "stale";
+      merged._staleAt = merged._staleAt || menuBi.data?._staleAt || menuBi.data?._loadedAt || null;
+    }
     const truthed = applyTruthToBiPayload(merged, { hours, branch: filters?.branch });
     return applyOperationalIntegrityToPayload(truthed, { hours, branch: filters?.branch });
-  }, [menuBi.data, reviewSummary, hours, filters?.branch]);
+  }, [menuBi.data, reviewSummary, reviewFreshness, hours, filters?.branch]);
 
   const reload = useCallback(async () => {
     await menuBi.reload();

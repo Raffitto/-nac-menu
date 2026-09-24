@@ -51,7 +51,11 @@ function applyPackage(pkg, setters) {
     setOperationalTrust,
     setTruthValidation,
   } = setters;
-  setData(pkg.normalized);
+  setData({
+    ...pkg.normalized,
+    _availability: pkg.normalized?._availability === "unavailable" ? "unavailable" : "success",
+    _loadedAt: new Date().toISOString(),
+  });
   setTruth(pkg.truth);
   setPartial(pkg.partial);
   setNote(pkg.note);
@@ -295,7 +299,14 @@ export function useMenuBiDashboard(options = {}) {
         });
       } catch (e) {
         if (!stillCurrent()) return;
-        if (!dataRef.current && !cached?.normalized) {
+        if (dataRef.current) {
+          setData({
+            ...dataRef.current,
+            _availability: "stale",
+            _staleAt: dataRef.current._loadedAt || new Date().toISOString(),
+            _staleError: e?.message || "refresh failed",
+          });
+        } else if (!cached?.normalized) {
           setData(null);
           setLiveFallback(false);
           setMenuDataEmpty(true);
@@ -334,7 +345,10 @@ export function useMenuBiDashboard(options = {}) {
 
   useEffect(() => {
     if (!enabled || !refreshIntervalMs || refreshIntervalMs < 5000) return undefined;
-    const id = setInterval(() => load(), refreshIntervalMs);
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      load();
+    }, refreshIntervalMs);
     return () => clearInterval(id);
   }, [enabled, refreshIntervalMs, load]);
 

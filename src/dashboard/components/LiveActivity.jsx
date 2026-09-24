@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const POLL_INTERVAL = 5000;
+const POLL_INTERVAL = 20000;
 
 export default function LiveActivity({
   supabase,
@@ -14,13 +14,20 @@ export default function LiveActivity({
   const [data, setData] = useState(null);
   const [pollStatus, setPollStatus] = useState("loading");
   const mountedRef = useRef(true);
+  const inflightRef = useRef(false);
+  const generationRef = useRef(0);
   const categoryMap = CATEGORY_NAMES || {};
 
   const fetchLive = useCallback(async () => {
     if (!enabled || !supabase || !session) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    if (inflightRef.current) return;
+    inflightRef.current = true;
+    const requestGen = generationRef.current + 1;
+    generationRef.current = requestGen;
     try {
       const { data: result, error } = await supabase.rpc("get_live_activity");
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestGen !== generationRef.current) return;
       if (error || result == null) {
         setPollStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
         return;
@@ -28,9 +35,11 @@ export default function LiveActivity({
       setData(result);
       setPollStatus("success");
     } catch (_) {
-      if (mountedRef.current) {
+      if (mountedRef.current && requestGen === generationRef.current) {
         setPollStatus((prev) => (prev === "success" ? "stale" : "unavailable"));
       }
+    } finally {
+      inflightRef.current = false;
     }
   }, [supabase, session, enabled]);
 
@@ -39,9 +48,15 @@ export default function LiveActivity({
     mountedRef.current = true;
     fetchLive();
     const id = setInterval(fetchLive, POLL_INTERVAL);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchLive();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       mountedRef.current = false;
+      generationRef.current += 1;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [fetchLive, enabled]);
 

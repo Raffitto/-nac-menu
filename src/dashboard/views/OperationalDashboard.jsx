@@ -379,6 +379,11 @@ function OperationalDashboardBody(props) {
       <p className="bi-section-title">
         <Crown size={14} /> Executive Summary
       </p>
+      {headline.staleAt ? (
+        <p className="nac-platform-sub">
+          Last successful values from {new Date(headline.staleAt).toLocaleString()}. Refresh did not replace them.
+        </p>
+      ) : null}
       <div className="nac-bi-exec-grid nac-ops-exec-grid">
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="nac-bi-exec-label">
