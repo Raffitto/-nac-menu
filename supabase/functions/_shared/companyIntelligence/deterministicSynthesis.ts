@@ -124,7 +124,9 @@ export function synthesizeDeterministicAnswer(input: {
     parts.push(latestLead);
   } else if (sales) {
     parts.push(
-      `For ${branch} in ${coverageLead.windowLabel}, observed Cash Up net sales were ${sales.value} SAR.`,
+      `For ${branch} in ${coverageLead.windowLabel}, observed ${
+        sales.source === "commerce_orders" ? "commerce order net sales" : "Cash Up net sales"
+      } were ${sales.value} SAR.`,
     );
   }
   if (covers) {

@@ -1533,7 +1533,13 @@ async function fetchCashUpRangeBundle(
   if (aggregation.dayCount === 0) {
     const commerce = await commerceOrderSales(supabase, scopedBranch, resolvedStart, resolvedEnd);
     if (commerce) {
-      aggregation = { ...aggregation, ...commerce, salesSource: "commerce_orders" };
+      aggregation = enrichCashUpAggregationCoverageMeta({
+        ...aggregation,
+        ...commerce,
+        salesSource: "commerce_orders",
+        salesCoverageStart: resolvedStart,
+        salesCoverageEnd: commerce.latestCompletedDate || resolvedEnd,
+      }, resolvedStart, resolvedEnd) as Record<string, unknown>;
       warnings.push("Cash-up files do not cover this range. Totals are from commerce orders, not a Cash Up workbook.");
       if (coverage[0]) {
         coverage = [{

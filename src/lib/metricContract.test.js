@@ -15,6 +15,17 @@ test("timeout payload is not a verified zero", () => {
   expect(formatExecutiveCount(headline.menuQr)).toBe("—");
 });
 
+test("successful review QR uses the enriched field name", () => {
+  const headline = executiveHeadline({
+    _availability: "success",
+    _reviewAvailability: "success",
+    review_kpis: { review_qr_scans: 21, review_redirect: 1 },
+    funnel: { review_redirect: 1 },
+  });
+  expect(headline.reviewQr).toBe(21);
+  expect(formatExecutiveCount(headline.reviewQr)).toBe("21");
+});
+
 test("a successful zero stays zero", () => {
   const headline = executiveHeadline({
     _availability: "success",
