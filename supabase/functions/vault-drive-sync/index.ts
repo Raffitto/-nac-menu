@@ -138,7 +138,14 @@ async function refreshAccessToken(refreshToken: string) {
     }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(sanitizeErrorMessage(data.error_description || "Refresh failed"));
+  if (!res.ok) {
+    const code = String(data.error || "");
+    const detail = String(data.error_description || "");
+    const message = code && detail && detail !== code
+      ? `${code}: ${detail}`
+      : (detail || code || "Refresh failed");
+    throw new Error(sanitizeErrorMessage(message));
+  }
   return data;
 }
 
