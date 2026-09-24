@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { fetchWithDeadline } from "./fetchDeadline";
 
 const url = process.env.REACT_APP_SUPABASE_URL;
 const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
@@ -16,6 +17,7 @@ if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
 export const supabase =
   url && anonKey
     ? createClient(url, anonKey, {
+        global: { fetch: fetchWithDeadline },
         auth: {
           persistSession: true,
           autoRefreshToken: true,
