@@ -37,8 +37,13 @@ export function mapAuthError(raw) {
   if (lower.includes("too many requests") || lower.includes("rate limit")) {
     return "Too many attempts. Wait a moment and try again.";
   }
-  if (lower.includes("jwt expired") || lower.includes("session has expired")) {
-    return "Your session expired. Sign in again.";
+  if (
+    lower.includes("jwt expired")
+    || lower.includes("session has expired")
+    || lower.includes("invalid refresh token")
+    || lower.includes("refresh token not found")
+  ) {
+    return "Session expired — sign in again";
   }
   if (lower.includes("user not found")) {
     return "No account found for this email.";
