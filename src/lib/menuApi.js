@@ -610,6 +610,7 @@ export async function getCategories(options = {}) {
     .eq("active", true)
     .order("sort_order", { ascending: true });
   if (branchId) query = menuBranchQueryFilter(query, branchId);
+  if (options.signal) query = query.abortSignal(options.signal);
 
   const { data, error } = await query;
   return { data, error };
@@ -1455,9 +1456,10 @@ export async function deleteSection(id) {
 
 // ═══════════════ ADD-ON CRUD ═══════════════
 
-export async function getAddOns({ includeInactive = false } = {}) {
+export async function getAddOns({ includeInactive = false, signal } = {}) {
   let q = supabase.from("add_ons").select("*").order("slug");
   if (!includeInactive) q = q.eq("active", true);
+  if (signal) q = q.abortSignal(signal);
   const { data, error } = await q;
   return { data, error };
 }
@@ -1527,11 +1529,10 @@ export async function linkAddonToItemsByName(namePattern, addonSlug) {
 
 // ═══════════════ ALLERGEN READ ═══════════════
 
-export async function getAllergens() {
-  const { data, error } = await supabase
-    .from("allergens")
-    .select("*")
-    .order("code");
+export async function getAllergens(options = {}) {
+  let query = supabase.from("allergens").select("*").order("code");
+  if (options.signal) query = query.abortSignal(options.signal);
+  const { data, error } = await query;
 
   return { data, error };
 }

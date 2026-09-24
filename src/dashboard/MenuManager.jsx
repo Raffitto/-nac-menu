@@ -75,6 +75,7 @@ import MenuPublishPreviewPanel from "./menuPublish/MenuPublishPreviewPanel";
 import MenuVersionHistorySheet from "./menuPublish/MenuVersionHistorySheet";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { withDeadline } from "../lib/fetchDeadline";
+import { menuCatalogueView } from "../lib/menuCatalogueState";
 import {
   computeHiddenUntilIso,
   getItemVisibilityBadge,
@@ -449,6 +450,7 @@ export default function MenuManager() {
   const [loading, setLoading] = useState(true);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [menuInitNonce, setMenuInitNonce] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
   const [expandedSections, setExpandedSections] = useState({});
@@ -747,16 +749,20 @@ export default function MenuManager() {
 
   // ── Data Loading ──
 
-  const loadSectionsCatalog = useCallback(async () => {
-    if (!supabase) return;
+  const loadSectionsCatalog = useCallback(async (options = {}) => {
+    if (!supabase) {
+      if (options.strict) throw new Error("Menu catalogues did not load.");
+      return;
+    }
     try {
       let query = supabase
         .from("sections")
         .select("id, name_en, name_ar, category_id, sort_order, categories(name_en, slug)")
         .eq("branch_id", menuBranch)
         .order("sort_order");
-      const { data, error } = await query;
-      if (error) throw error;
+      if (options.signal) query = query.abortSignal(options.signal);
+      const { data, error: sectionError } = await query;
+      if (sectionError) throw sectionError;
       setSectionsCatalog(
         (data || []).map((s) => ({
           id: s.id,
@@ -766,21 +772,22 @@ export default function MenuManager() {
           category_name_en: s.categories?.name_en || s.categories?.slug || "",
         })),
       );
-    } catch (_) {
+    } catch (e) {
+      if (options.strict) throw e;
       setSectionsCatalog([]);
     }
   }, [menuBranch]);
 
-  const loadCategories = useCallback(async () => {
-    try {
-      const res = await getCategories({ branchId: menuBranch });
-      const cats = Array.isArray(res?.data) ? res.data : [];
-      setCategories(cats);
-      return cats;
-    } catch (e) {
-      setError("Failed to load categories");
-      return [];
+  const loadCategories = useCallback(async (options = {}) => {
+    const res = await getCategories({ branchId: menuBranch, signal: options.signal });
+    if (options.generation != null && menuInitGenRef.current !== options.generation) {
+      return Array.isArray(res?.data) ? res.data : [];
     }
+    if (res?.error) throw res.error;
+    const cats = Array.isArray(res?.data) ? res.data : [];
+    setCategories(cats);
+    if (options.generation != null && cats.length > 0) setError("");
+    return cats;
   }, [menuBranch]);
 
   const loadMenuForCategory = useCallback(async (catId) => {
@@ -844,21 +851,24 @@ export default function MenuManager() {
     }
   }, [menuBranch]);
 
-  const loadAddOns = useCallback(async () => {
+  const loadAddOns = useCallback(async (options = {}) => {
     try {
-      const res = await getAddOns({ includeInactive: true });
+      const res = await getAddOns({ includeInactive: true, signal: options.signal });
       if (res.error) throw res.error;
       setAddOns(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
+      if (options.strict) throw e;
       showToast(e?.message || "Failed to load add-ons", "error");
     }
   }, [showToast]);
 
-  const loadAllergens = useCallback(async () => {
+  const loadAllergens = useCallback(async (options = {}) => {
     try {
-      const res = await getAllergens();
+      const res = await getAllergens({ signal: options.signal });
+      if (res?.error) throw res.error;
       setAllergens(Array.isArray(res?.data) ? res.data : []);
     } catch (e) {
+      if (options.strict) throw e;
       showToast("Failed to load allergens", "error");
     }
   }, [showToast]);
@@ -878,15 +888,24 @@ export default function MenuManager() {
     const generation = ++menuInitGenRef.current;
     let active = true;
     const current = () => active && menuInitGenRef.current === generation;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const signal = controller ? controller.signal : undefined;
 
     (async () => {
       setLoading(true);
       setError("");
+      const categoryPromise = loadCategories({ signal, generation });
+      categoryPromise.catch(() => {});
       try {
         await withDeadline((async () => {
-          const cats = await withDeadline(loadCategories(), 12000, "Categories did not load.");
+          const cats = await withDeadline(categoryPromise, 12000, "Categories did not load.");
+          if (!current()) return;
           await withDeadline(
-            Promise.all([loadSectionsCatalog(), loadAddOns(), loadAllergens()]),
+            Promise.all([
+              loadSectionsCatalog({ signal, strict: true }),
+              loadAddOns({ signal, strict: true }),
+              loadAllergens({ signal, strict: true }),
+            ]),
             12000,
             "Menu catalogues did not load.",
           );
@@ -908,9 +927,12 @@ export default function MenuManager() {
 
     return () => {
       active = false;
+      menuInitGenRef.current += 1;
+      if (controller) controller.abort();
     };
   }, [
     menuBranch,
+    menuInitNonce,
     loadCategories,
     loadSectionsCatalog,
     loadAddOns,
@@ -1143,7 +1165,7 @@ export default function MenuManager() {
       await noteDraftChanged();
     } catch (e) {
       showToast("Failed to reorder", "error");
-      loadCategories();
+      loadCategories().catch(() => {});
     }
   }, [categories, loadCategories, showToast, noteDraftChanged]);
 
@@ -2750,10 +2772,24 @@ export default function MenuManager() {
               </motion.div>
             ))}
 
-            {categories.length === 0 && (
+            {menuCatalogueView({
+              loading,
+              error,
+              categoryCount: categories.length,
+            }) === "empty" && (
               <div className="mm-empty" style={{ height: 120, fontSize: 12 }}>
                 <UtensilsCrossed size={24} />
                 No categories yet
+              </div>
+            )}
+            {menuCatalogueView({
+              loading,
+              error,
+              categoryCount: categories.length,
+            }) === "failed" && (
+              <div className="mm-empty" style={{ height: 120, fontSize: 12 }}>
+                <AlertCircle size={24} />
+                Categories did not load.
               </div>
             )}
           </div>
@@ -2854,7 +2890,7 @@ export default function MenuManager() {
               <button
                 className="mm-btn mm-btn-secondary"
                 style={{ marginLeft: "auto", padding: "4px 12px", fontSize: 12 }}
-                onClick={() => { setError(""); loadMenuForCategory(selectedCatId); }}
+                onClick={() => setMenuInitNonce((n) => n + 1)}
               >
                 Retry
               </button>
