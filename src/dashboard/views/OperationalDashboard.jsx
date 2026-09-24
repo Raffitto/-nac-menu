@@ -1,3 +1,4 @@
+import React, { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { formatExecutiveCount, executiveHeadline } from "../../lib/metricContract";
 import { motion } from "framer-motion";
 import {
@@ -272,10 +273,7 @@ function OperationalDashboardBody(props) {
     activeGuestsNow,
     activeGuestsStatus = "success",
     active = true,
-    menuQrScans,
-    reviewQrScans,
     totalSessions,
-    reviewRedirect,
     googleReviewOpen,
     reviewConversionPct,
     avgTimeSpent,
