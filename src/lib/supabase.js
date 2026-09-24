@@ -1,28 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { nacAuthLock } from "./authLock";
 import { fetchWithDeadline } from "./fetchDeadline";
-
-/**
- * Safari does not reliably abort navigator.locks.request, so a stuck tab can
- * hold lock:nac-menu-supabase-auth and every later query waits forever.
- * Promise.race is independent of AbortSignal.
- */
-async function nacAuthLock(name, acquireTimeout, fn) {
-  if (typeof navigator === "undefined" || !navigator.locks?.request) return fn();
-  const timeoutMs = Math.min(Math.max(Number(acquireTimeout) || 4000, 2000), 6000);
-  let timer;
-  try {
-    return await Promise.race([
-      navigator.locks.request(name, () => fn()),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          reject(Object.assign(new Error("Auth lock timed out"), { code: "NAC_LOCK_TIMEOUT" }));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
 
 const url = process.env.REACT_APP_SUPABASE_URL;
 const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
