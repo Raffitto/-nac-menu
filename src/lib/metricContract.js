@@ -6,9 +6,24 @@ function finite(value) {
 }
 
 export function executiveHeadline(data) {
-  const menuOk = data?._availability !== "unavailable";
-  const reviewOk = data?._reviewAvailability === "success";
+  const menuState = data?._availability === "unavailable"
+    ? "unavailable"
+    : data?._availability === "stale"
+      ? "stale"
+      : "success";
+  const reviewState = data?._reviewAvailability === "stale"
+    ? "stale"
+    : data?._reviewAvailability === "success"
+      ? "success"
+      : "unavailable";
+  const menuOk = menuState !== "unavailable";
+  const reviewOk = reviewState !== "unavailable";
   return {
+    menuState,
+    reviewState,
+    staleAt: menuState === "stale" || reviewState === "stale"
+      ? data?._staleAt || data?._loadedAt || null
+      : null,
     menuQr: menuOk ? finite(data?.menu_qr_scans ?? data?.funnel?.qr_scans) : null,
     sessions: menuOk ? finite(data?.total_sessions ?? data?.funnel?.qr_scans) : null,
     reviewQr: reviewOk

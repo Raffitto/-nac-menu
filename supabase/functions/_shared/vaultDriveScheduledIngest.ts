@@ -175,7 +175,9 @@ async function refreshGoogleAccessToken(refreshToken: string) {
   });
   const data = await res.json();
   if (!res.ok) {
-    throw new Error(String(data.error_description || data.error || "Refresh failed"));
+    const code = String(data.error || "refresh_failed");
+    const detail = String(data.error_description || "");
+    throw new Error(detail && detail !== code ? `${code}: ${detail}` : code);
   }
   return data as { access_token: string; expires_in?: number };
 }
@@ -557,14 +559,40 @@ export async function runScheduledDriveIngestion(
           : message;
         folderResult.reason = reconnectRequired ? "connection_required" : "scheduled_processing_error";
         if (reconnectRequired && connection?.id) {
+          const now = new Date().toISOString();
+          const checkpoint = message.slice(0, 500);
           await admin
             .from("ask_nac_drive_connections")
             .update({
               status: "reconnect_required",
-              last_error: message.slice(0, 500),
-              updated_at: new Date().toISOString(),
+              last_error: checkpoint,
+              updated_at: now,
             })
             .eq("id", connection.id);
+          await admin.from("ask_nac_drive_sync_runs").insert({
+            folder_id: folder.id,
+            trigger_type: "scheduled",
+            status: "failed",
+            runtime_stage: "token_refresh_failed",
+            error_code: "drive_reconnect_required",
+            error: checkpoint,
+            error_message: checkpoint,
+            finished_at: now,
+            completed_at: now,
+            updated_at: now,
+            stats: {
+              scheduledIngest: true,
+              checkpoint: "token_refresh_failed",
+              publicationAdvanced: false,
+            },
+          });
+          await admin
+            .from("ask_nac_drive_sync_folders")
+            .update({
+              last_sync_at: now,
+              last_sync_status: "failed",
+            })
+            .eq("id", folder.id);
         }
         if (folderResult.runId) {
           const run = await loadRunRow(admin, folderResult.runId);

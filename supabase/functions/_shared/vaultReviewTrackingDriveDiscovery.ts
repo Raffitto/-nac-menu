@@ -201,7 +201,19 @@ export async function ingestConnectedReviewTracking(
   if (error) throw error;
   const summaries = [];
   for (const connection of connections || []) {
-    const tokens = await refreshAccessToken(String(connection.refresh_token));
+    let tokens;
+    try {
+      tokens = await refreshAccessToken(String(connection.refresh_token));
+    } catch (err) {
+      const message = (err as Error)?.message || String(err);
+      await admin.from("ask_nac_drive_connections").update({
+        status: "reconnect_required",
+        last_error: message.slice(0, 500),
+        updated_at: new Date().toISOString(),
+      }).eq("id", connection.id);
+      summaries.push({ connectionId: connection.id, ok: false, error: message.slice(0, 500) });
+      continue;
+    }
     await admin.from("ask_nac_drive_connections").update({
       access_token: tokens.access_token,
       token_expires_at: tokens.expires_in

@@ -26,6 +26,24 @@ test("successful review QR uses the enriched field name", () => {
   expect(formatExecutiveCount(headline.reviewQr)).toBe("21");
 });
 
+test("stale keeps the last successful value", () => {
+  const headline = executiveHeadline({
+    _availability: "stale",
+    _staleAt: "2026-09-24T17:00:00.000Z",
+    _loadedAt: "2026-09-24T16:00:00.000Z",
+    menu_qr_scans: 244,
+    total_sessions: 244,
+    _reviewAvailability: "stale",
+    review_kpis: { review_qr_scans: 23, review_redirect: 1 },
+    funnel: { review_redirect: 1 },
+  });
+  expect(headline.menuState).toBe("stale");
+  expect(headline.menuQr).toBe(244);
+  expect(headline.reviewQr).toBe(23);
+  expect(headline.staleAt).toBe("2026-09-24T17:00:00.000Z");
+  expect(formatExecutiveCount(headline.menuQr)).toBe("244");
+});
+
 test("a successful zero stays zero", () => {
   const headline = executiveHeadline({
     _availability: "success",

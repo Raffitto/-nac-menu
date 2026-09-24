@@ -194,13 +194,26 @@ Deno.serve(async (req) => {
         maxFilesToProcess: body?.maxFilesToProcess,
         budgetMs: body?.budgetMs,
       });
-      const reviewTracking = await ingestConnectedReviewTracking(admin, {
-        refreshAccessToken,
-        triggerType: "scheduled",
-        force: Boolean(body?.force),
-      });
+      let reviewTracking = null;
+      let reviewTrackingError = null;
+      try {
+        reviewTracking = await ingestConnectedReviewTracking(admin, {
+          refreshAccessToken,
+          triggerType: "scheduled",
+          force: Boolean(body?.force),
+        });
+      } catch (err) {
+        reviewTrackingError = sanitizeErrorMessage(err);
+      }
+      const authBlocked = summary.folderResults?.some((row) => row.reason === "connection_required")
+        || /invalid_grant|reconnect/i.test(String(reviewTrackingError || ""));
       console.info("[vault-drive-sync] scheduled_ingest complete", summary);
-      return json(200, { ok: true, ...summary, reviewTracking });
+      return json(200, {
+        ok: !authBlocked && summary.failedFiles === 0,
+        ...summary,
+        reviewTracking,
+        reviewTrackingError,
+      });
     }
 
     if (action === "ingest_review_tracking") {
