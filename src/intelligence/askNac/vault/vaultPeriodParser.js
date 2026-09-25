@@ -642,14 +642,6 @@ function clipOpenPeriod(period, referenceDate) {
   };
 }
 
-/** "so far" clips only the side that is still open. A completed month stays intact. */
-function clipSoFarSides(question, current, previous, referenceDate) {
-  if (!/\b(so far|to date)\b/.test(String(question || "").toLowerCase())) {
-    return { current, previous };
-  }
-  return clipOpenSides(current, previous, referenceDate);
-}
-
 function clipOpenSides(current, previous, referenceDate) {
   return {
     current: clipOpenPeriod(current, referenceDate),
