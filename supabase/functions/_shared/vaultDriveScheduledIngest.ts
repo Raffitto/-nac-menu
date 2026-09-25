@@ -495,6 +495,7 @@ export async function runScheduledDriveIngestion(
           runId,
           email,
           maxFilesToProcess: maxFilesPerRun,
+          deadlineMs: startedAt + budgetMs,
         });
 
         const run = await loadRunRow(admin, runId);

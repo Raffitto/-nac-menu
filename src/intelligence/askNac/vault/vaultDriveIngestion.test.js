@@ -366,6 +366,29 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(scheduledIngest).toMatch(/remaining_files/);
     expect(scheduledIngest).toMatch(/finalizeScheduledRunStop/);
     expect(scheduledIngest).toMatch(/partial: true/);
+    expect(scheduledIngest).toMatch(/deadlineMs: startedAt \+ budgetMs/);
+    expect(driveHelper).toMatch(/deadlineMs - 8_000/);
+    expect(driveHelper).toMatch(/stoppedForBudget/);
+    expect(driveHelper).toMatch(/nextFileOffset: checkpointOffset/);
+    expect(driveHelper).toMatch(/export function driveRevisionNeedsIngest/);
+    expect(driveHelper).toMatch(/pendingFiles/);
+    expect(driveHelper).toMatch(/backlogFiles/);
+    expect(driveHelper).toMatch(/loadKnownDriveModifiedTimes/);
+  });
+
+  test("a newer Drive revision is due before the backlog cursor", () => {
+    const driveRevisionNeedsIngest = (modifiedTime, knownModified) => {
+      if (!knownModified) return true;
+      if (!modifiedTime) return false;
+      const next = Date.parse(modifiedTime);
+      const prev = Date.parse(knownModified);
+      if (!Number.isFinite(next) || !Number.isFinite(prev)) return false;
+      return next > prev;
+    };
+    expect(driveRevisionNeedsIngest("2026-09-26T00:00:00Z", null)).toBe(true);
+    expect(driveRevisionNeedsIngest("2026-09-26T00:00:00Z", "2026-09-25T00:00:00Z")).toBe(true);
+    expect(driveRevisionNeedsIngest("2026-09-25T00:00:00Z", "2026-09-25T00:00:00Z")).toBe(false);
+    expect(driveRevisionNeedsIngest(null, "2026-09-25T00:00:00Z")).toBe(false);
   });
 
   test("stuck scheduled runs in running are cleaned up before processing", () => {

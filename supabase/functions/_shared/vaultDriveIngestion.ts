@@ -1909,6 +1909,43 @@ async function resolveDriveIngestOffset(
   return 0;
 }
 
+/** A Drive file is due now when this connection has never stored it, or Drive's modified time moved forward. */
+export function driveRevisionNeedsIngest(
+  modifiedTime?: string | null,
+  knownModified?: string | null,
+) {
+  if (!knownModified) return true;
+  if (!modifiedTime) return false;
+  const next = Date.parse(modifiedTime);
+  const prev = Date.parse(knownModified);
+  if (!Number.isFinite(next) || !Number.isFinite(prev)) return false;
+  return next > prev;
+}
+
+async function loadKnownDriveModifiedTimes(
+  admin: SupabaseLike,
+  driveFileIds: string[],
+  email: string,
+) {
+  const known = new Map<string, string | null>();
+  for (let i = 0; i < driveFileIds.length; i += 100) {
+    const slice = driveFileIds.slice(i, i + 100);
+    const { data, error } = await admin
+      .from("ask_nac_files")
+      .select("external_source_id, external_source_modified_at")
+      .eq("uploader_email", email)
+      .eq("status", "active")
+      .in("external_source_id", slice);
+    if (error) throw new Error(error.message);
+    for (const row of data || []) {
+      const id = String((row as { external_source_id?: string }).external_source_id || "");
+      if (!id) continue;
+      known.set(id, (row as { external_source_modified_at?: string | null }).external_source_modified_at || null);
+    }
+  }
+  return known;
+}
+
 export async function processDriveIngestionRun(
   admin: SupabaseLike,
   {
@@ -1919,6 +1956,7 @@ export async function processDriveIngestionRun(
     onlyDriveFileId = null,
     force = false,
     maxFilesToProcess = DEFAULT_MAX_FILES_TO_PROCESS,
+    deadlineMs = null,
   }: {
     accessToken: string;
     folder: DriveFolder;
@@ -1927,6 +1965,8 @@ export async function processDriveIngestionRun(
     onlyDriveFileId?: string | null;
     force?: boolean;
     maxFilesToProcess?: number;
+    /** Stop before the next file once this epoch ms is inside the reserve window. */
+    deadlineMs?: number | null;
   },
 ) {
   const counters: RunCounters = {
@@ -2096,14 +2136,37 @@ export async function processDriveIngestionRun(
       return;
     }
 
-    const startOffset = await resolveDriveIngestOffset(admin, folder.id, runStats);
-    const filesToProcess = files.slice(startOffset, startOffset + Math.max(1, maxFilesToProcess));
-    const nextFileOffset = startOffset + filesToProcess.length;
-    const leftForLater = Math.max(0, files.length - nextFileOffset);
+    const knownModified = await loadKnownDriveModifiedTimes(admin, files.map((file) => file.id), email);
+    const pendingFiles: DriveFileWithPath[] = [];
+    const backlogFiles: DriveFileWithPath[] = [];
+    for (const driveFile of files) {
+      if (driveRevisionNeedsIngest(driveFile.modifiedTime, knownModified.get(driveFile.id))) pendingFiles.push(driveFile);
+      else backlogFiles.push(driveFile);
+    }
+    const startOffset = Math.min(
+      await resolveDriveIngestOffset(admin, folder.id, runStats),
+      backlogFiles.length,
+    );
+    const fileBudget = Math.max(1, maxFilesToProcess);
+    const pendingSlice = pendingFiles.slice(0, fileBudget);
+    const backlogSlice = backlogFiles.slice(startOffset, startOffset + Math.max(0, fileBudget - pendingSlice.length));
+    const filesToProcess = [...pendingSlice, ...backlogSlice];
+    const backlogIds = new Set(backlogSlice.map((file) => file.id));
     runStats.startOffset = startOffset;
-    runStats.nextFileOffset = nextFileOffset;
+    runStats.pendingFiles = pendingFiles.length;
+    runStats.nextFileOffset = startOffset;
+    let finishedInSlice = 0;
+    let pendingFinished = 0;
+    let backlogFinished = 0;
+    let stoppedForBudget = false;
 
     for (const driveFile of filesToProcess) {
+      // Leave time to persist nextFileOffset. A worker kill mid-file used to
+      // leave the run "running" with no offset, so the next night restarted at 0.
+      if (typeof deadlineMs === "number" && Date.now() >= deadlineMs - 8_000) {
+        stoppedForBudget = true;
+        break;
+      }
       const exportInfo = resolveDriveExport(driveFile);
       if ("unsupported" in exportInfo) {
         counters.skipped_count += 1;
@@ -2115,19 +2178,41 @@ export async function processDriveIngestionRun(
           stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
         });
         await updateRun(admin, runId, {}, counters);
-        continue;
+      } else {
+        await processOneDriveFile(admin, {
+          accessToken,
+          folder,
+          runId,
+          driveFile,
+          email,
+          counters,
+          force,
+          discoveryRules,
+        });
       }
-      await processOneDriveFile(admin, {
-        accessToken,
-        folder,
-        runId,
-        driveFile,
-        email,
-        counters,
-        force,
-        discoveryRules,
-      });
+      finishedInSlice += 1;
+      if (backlogIds.has(driveFile.id)) backlogFinished += 1;
+      else pendingFinished += 1;
+      const checkpointOffset = startOffset + backlogFinished;
+      const pendingLeft = Math.max(0, pendingFiles.length - pendingFinished);
+      const backlogLeft = Math.max(0, backlogFiles.length - checkpointOffset);
+      runStats.nextFileOffset = checkpointOffset;
+      runStats.remainingFiles = pendingLeft + backlogLeft;
+      await updateRun(admin, runId, {
+        stats: {
+          startOffset,
+          nextFileOffset: checkpointOffset,
+          remainingFiles: runStats.remainingFiles,
+          pendingFiles: pendingFiles.length,
+          runtimeStage: "processing_file",
+        },
+      }, counters);
     }
+
+    const nextFileOffset = startOffset + backlogFinished;
+    const leftForLater = Math.max(0, pendingFiles.length - pendingFinished) + Math.max(0, backlogFiles.length - nextFileOffset);
+    runStats.nextFileOffset = nextFileOffset;
+    runStats.stoppedForBudget = stoppedForBudget;
 
     const finalStatus =
       traversal.truncated || leftForLater > 0
@@ -2151,12 +2236,14 @@ export async function processDriveIngestionRun(
         autoIngest: true,
         duplicateFileIdsSkipped: traversal.duplicateCount,
         truncated: traversal.truncated,
-        processedFiles: filesToProcess.length,
+        processedFiles: finishedInSlice,
         remainingFiles: leftForLater,
         truncationReason: traversal.truncated
           ? `Drive traversal hit max item limit (${MAX_DRIVE_ITEMS_PER_RUN}).`
+          : stoppedForBudget
+            ? `Stopped before the time budget elapsed after ${finishedInSlice} file(s); ${leftForLater} remain.`
           : leftForLater > 0
-            ? `Processed ${filesToProcess.length} file(s); ${leftForLater} remain. Run Sync & Ingest Drive again to continue.`
+            ? `Processed ${finishedInSlice} file(s); ${leftForLater} remain. Run Sync & Ingest Drive again to continue.`
             : null,
       },
       error: finalStatus === "failed" ? "All Drive files failed ingestion." : null,
