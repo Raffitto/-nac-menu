@@ -42,6 +42,7 @@ export function collectAskNacMetricWarnings(tool: {
   warnings?: string[];
   note?: string | null;
   partial?: boolean;
+  isMonthRange?: boolean;
   mtdHybrid?: ReturnType<typeof normalizeMtdDiagnostics>;
 }) {
   const warnings = [...(tool.warnings || [])];
@@ -59,7 +60,8 @@ export function collectAskNacMetricWarnings(tool: {
     }
   }
 
-  if (tool.partial && diag?.source === "rollup" && !diag.includesCurrentBusinessDay) {
+  const monthContext = tool.isMonthRange === true || /month-to-date/i.test(String(tool.note || ""));
+  if (monthContext && tool.partial && diag?.source === "rollup" && !diag.includesCurrentBusinessDay) {
     const rollupOnly = "Month-to-date uses rollup only — live Today slice unavailable.";
     if (!warnings.some((w) => w.includes("rollup only"))) {
       warnings.push(rollupOnly);

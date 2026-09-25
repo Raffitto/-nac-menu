@@ -120,8 +120,9 @@ export async function fetchAskNacMenuMetrics(
     rpc,
     warnings: collectAskNacMetricWarnings({
       warnings: opsWarnings,
-      note,
+      note: !isMonthRangeHours(pHours) && note && /month-to-date/i.test(note) ? null : note,
       partial,
+      isMonthRange: isMonthRangeHours(pHours),
       mtdHybrid,
     }),
   };

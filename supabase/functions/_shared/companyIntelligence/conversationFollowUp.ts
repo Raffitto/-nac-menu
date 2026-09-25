@@ -139,6 +139,43 @@ export function resolveFabricFollowUp(input: {
     };
   }
 
+  const keepComparison = inherit && prev.activePeriods?.current && prev.activePeriods?.comparison;
+  const analysisFollowUp = keepComparison && (
+    /^(?:what about|how about|and)\b/i.test(ql)
+    || /\b(per day|average spend|avg spend|covers|orders|best \d|top \d|why is|why are|first \d+ days)\b/i.test(ql)
+  );
+  if (analysisFollowUp && !resolveFollowUpPeriodFocus(extractFollowUpFocus(q) || "x", ref)?.startDate) {
+    notes.push("followup_comparison_analysis");
+    const dayClip = ql.match(/first\s+(\d{1,2})\s+days/);
+    const clipPeriod = (period: DateRange | null) => {
+      if (!period?.startDate || !dayClip) return period;
+      const n = Number(dayClip[1]);
+      const [year, month, day] = period.startDate.split("-").map(Number);
+      const end = new Date(Date.UTC(year, month - 1, day + n - 1)).toISOString().slice(0, 10);
+      const endDate = end < period.endDate ? end : period.endDate;
+      return { ...period, endDate, label: `${period.label || period.startDate} · first ${n} days` };
+    };
+    const current = clipPeriod(prev.activePeriods.current);
+    const comparison = clipPeriod(prev.activePeriods.comparison);
+    const conversation = updateConversationState(prev, {
+      activeBranchId: branchId || prev.activeBranchId,
+      activeMetricFamily: metricFamily || "commercial",
+      activeCapabilities: ["commercial.compare", "commercial.performance"],
+      activePeriods: { current, comparison },
+      previousIntent: "period_compare",
+    });
+    return {
+      usedFollowUp: true,
+      resolvedQuestion: q,
+      branchId: conversation.activeBranchId,
+      currentPeriod: current,
+      comparisonPeriod: comparison,
+      metricFamily: conversation.activeMetricFamily,
+      conversation,
+      notes,
+    };
+  }
+
   // "What about weekends only?" — filter-only change
   if (/weekend/i.test(ql) && /what about|only/i.test(ql) && prev.activePeriods.current) {
     notes.push("followup_weekend_filter");

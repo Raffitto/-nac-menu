@@ -198,16 +198,58 @@ function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions
   const namedMonthPerformance = /\bhow\s+(did|was)\b/.test(q)
     && monthToken.test(q)
     && /\b(perform|sales|revenue|business|overall)\b/.test(q);
+  const management = /\b(compare|versus|\bvs\b|best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|which month|trending|trend|share|contributed|percentage|percent|per day|lower than|higher than)\b/.test(q);
   const simple = /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q)
     || (high && /\bhow was (january|february|march|april|may|june|july|august)\b/.test(q))
-    || namedMonthPerformance;
+    || namedMonthPerformance
+    || management;
   return Boolean(simple || (high && /^vault_cash_up_summary$/.test(String(legacyRoute?.intent || ""))
     && !/\bwhy|shit|act on|briefing|lately|ramadan\b/.test(q)));
 }
 
+function deterministicCapabilities(question: string, requiresComparison: boolean): CapabilityId[] {
+  const q = question.toLowerCase();
+  if (/\b(percentage|percent|share|contributed)\b/.test(q) && !requiresComparison) {
+    return ["commercial.performance"];
+  }
+  if (/\b(best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|most orders)\b/.test(q) && !requiresComparison) {
+    return ["commercial.rank_days"];
+  }
+  if (/\b(trend|trending)\b/.test(q) && !requiresComparison) {
+    return ["commercial.trend"];
+  }
+  if (requiresComparison || /\b(compare|versus|\bvs\b|lower than|higher than)\b/.test(q)) {
+    return ["commercial.compare"];
+  }
+  return ["commercial.performance"];
+}
+
 function metricKeyMetrics(state: CompanyIntelligenceState) {
+  const byKey = new Map<string, (typeof state.evidence)[number]>();
+  for (const entry of state.evidence) {
+    if (typeof entry.value === "number" && !byKey.has(entry.metricOrEvent)) byKey.set(entry.metricOrEvent, entry);
+  }
+  const baseline = state.periods.current?.label || "Baseline";
+  const subject = state.periods.comparison?.label || "Comparison";
+  if (byKey.has("net_sales") && byKey.has("comparison_net_sales")) {
+    const rows: Array<{ label: string; value: number; source: string }> = [];
+    const push = (key: string, label: string) => {
+      const entry = byKey.get(key);
+      if (!entry || typeof entry.value !== "number") return;
+      rows.push({ label, value: entry.value, source: entry.source });
+    };
+    push("net_sales", `${baseline} net sales`);
+    push("comparison_net_sales", `${subject} net sales`);
+    push("day_count", `${baseline} represented days`);
+    push("comparison_day_count", `${subject} represented days`);
+    push("covers", `${baseline} covers`);
+    push("comparison_covers", `${subject} covers`);
+    push("orders", `${baseline} orders`);
+    push("comparison_orders", `${subject} orders`);
+    return rows;
+  }
   return state.evidence
-    .filter((e) => typeof e.value === "number")
+    .filter((e) => typeof e.value === "number" && e.metricOrEvent !== "management_brief" && e.metricOrEvent !== "delta_pct")
     .slice(0, 8)
     .map((e) => ({
       label: e.metricOrEvent,
@@ -466,8 +508,7 @@ export async function runCompanyIntelligenceOrchestration(
   let planClarificationPrompt: string | null = null;
 
   if (fastPath) {
-    capabilities = ["commercial.performance"];
-    if (requiresComparison) capabilities.push("commercial.compare");
+    capabilities = deterministicCapabilities(options.question, requiresComparison);
     state = patchIntelligenceState(state, {
       cost: {
         ...state.cost,

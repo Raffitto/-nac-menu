@@ -43,6 +43,8 @@ export function synthesizeDeterministicAnswer(input: {
   infeasibleText?: string | null;
 }): string {
   if (input.infeasibleText) return input.infeasibleText;
+  const managementBrief = input.evidence.find((e) => e.metricOrEvent === "management_brief" && e.textSummary);
+  if (managementBrief?.textSummary) return managementBrief.textSummary;
 
   const sales = input.evidence.find((e) =>
     e.metricOrEvent === "net_sales" && typeof e.value === "number" && e.source !== "event_forecast"
@@ -111,11 +113,12 @@ export function synthesizeDeterministicAnswer(input: {
   })();
   if (previousSales || input.comparisonPeriod) {
     const statement = buildComparisonStatement({
-      currentLabel: coverageLead.windowLabel || period,
-      currentValue: sales?.value,
-      previousLabel: periodLabel(input.comparisonPeriod),
-      previousValue: previousSales?.value,
-      currentCoverageStatus: input.coverageContract?.coverageStatus || (sales ? null : "NO_DATA"),
+      currentLabel: periodLabel(input.comparisonPeriod),
+      currentValue: previousSales?.value,
+      previousLabel: coverageLead.windowLabel || period,
+      previousValue: sales?.value,
+      currentCoverageStatus: input.coverageContract?.coverageStatus || (previousSales ? null : "NO_DATA"),
+      previousCoverageStatus: sales ? null : "NO_DATA",
       weekdayMismatch: input.comparability?.weekdayComposition?.match === false,
       dateOfMonthCompare: isDateOfMonthMirror(input.period, input.comparisonPeriod),
     });
@@ -129,17 +132,17 @@ export function synthesizeDeterministicAnswer(input: {
       } were ${sales.value} SAR.`,
     );
   }
-  if (covers) {
+  if (!previousSales && covers) {
     parts.push(`Covers were ${covers.value}.`);
   }
-  if (orders) {
+  if (!previousSales && orders) {
     parts.push(`Orders were ${orders.value}.`);
   }
-  if (avgSpend) {
+  if (!previousSales && avgSpend) {
     parts.push(`Average spend was ${avgSpend.value} SAR.`);
   }
 
-  if (delta && input.comparability?.status !== "not_comparable") {
+  if (delta && !previousSales && input.comparability?.status !== "not_comparable") {
     const method = input.comparability?.recommendedMethod || "matched_days";
     const direction = Number(delta.value) < 0 ? "down" : Number(delta.value) > 0 ? "up" : "flat";
     if (input.comparability?.status === "partially_comparable" || method === "matched_days" || method === "matched_weekday") {
