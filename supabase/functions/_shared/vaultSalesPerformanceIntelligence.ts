@@ -36,6 +36,32 @@ function pickMetricValue(facts, metricKey) {
   return hit ? (hit.metricValue ?? hit.metric_value) : null;
 }
 
+function isEmptyDimensions(row) {
+  const dims = row?.dimensions;
+  return !dims || Object.keys(dims).length === 0;
+}
+
+function canonicalEvidenceRank(row) {
+  const versioned = row?.fileVersionId || row?.file_version_id ? 1 : 0;
+  const pdfSnapshot = /^pdf-day/i.test(String(row?.sourceRowRef || row?.source_row_ref || "")) ? 0 : 1;
+  const created = Date.parse(row?.createdAt || row?.created_at || "") || 0;
+  return [versioned, pdfSnapshot, created];
+}
+
+/** One headline value. Workbook revisions and PDF snapshots of the same day are not summed. */
+export function pickCanonicalAggregateRow(rows = []) {
+  const aggregates = rows.filter(isEmptyDimensions);
+  const pool = aggregates.length ? aggregates : rows;
+  return pool.slice().sort((a, b) => {
+    const left = canonicalEvidenceRank(a);
+    const right = canonicalEvidenceRank(b);
+    for (let i = 0; i < left.length; i += 1) {
+      if (left[i] !== right[i]) return right[i] - left[i];
+    }
+    return 0;
+  })[0] || null;
+}
+
 /** Prefer aggregate workbook rows (no dimensions) for headline metrics. */
 export function pickAggregateMetricValue(facts, metricKey) {
   const rows = (facts || []).filter(
@@ -43,7 +69,7 @@ export function pickAggregateMetricValue(facts, metricKey) {
   );
   if (!rows.length) return null;
 
-  const aggregate = rows.find((f) => !f.dimensions || Object.keys(f.dimensions).length === 0);
+  const aggregate = pickCanonicalAggregateRow(rows.filter(isEmptyDimensions));
   if (aggregate) return aggregate.metricValue ?? aggregate.metric_value;
 
   if (metricKey === "delivery_sales" || metricKey === "delivery_orders") {
@@ -139,6 +165,9 @@ function missingSalesDatesFromAggregation(aggregation: {
   salesCoverageStart?: string | null;
   salesCoverageEnd?: string | null;
 } | null | undefined) {
+  if (Array.isArray((aggregation as { historicalMissingDates?: string[] } | null)?.historicalMissingDates)) {
+    return (aggregation as { historicalMissingDates: string[] }).historicalMissingDates;
+  }
   const start = aggregation?.requestedStartDate;
   const end = aggregation?.requestedEndDate;
   if (!start || !end) return [];
@@ -1444,6 +1473,21 @@ export function buildPerformanceOverviewAnswer(question = "", aggregation, {
   if (kpiBits.length) lines.push(`Key KPIs: ${kpiBits.join(" · ")}.`);
 
   if (previousAggregation) {
+    const previousDays = Number(previousAggregation.dayCount) || 0;
+    if (dayCount && previousDays && dayCount !== previousDays) {
+      lines.push(
+        `${previousPeriodLabel || "Comparison period"} covers ${previousDays} day(s)`
+          + `${previousAggregation.totalSales != null ? ` and ${formatCurrency(previousAggregation.totalSales)} sales` : ""}. `
+          + `This period covers ${dayCount} day(s)`
+          + `${totalSales != null ? ` and ${formatCurrency(totalSales)} sales` : ""}.`,
+      );
+      if (previousAggregation.totalSales != null && totalSales != null) {
+        lines.push(
+          `Average sales/day: ${formatCurrency(Number(totalSales) / dayCount)} versus `
+            + `${formatCurrency(Number(previousAggregation.totalSales) / previousDays)}.`,
+        );
+      }
+    }
     const comparison = buildMatchedCoverageComparison(aggregation, previousAggregation);
     if (comparison.mode === "full" && comparison.current?.totalSales != null && comparison.previous?.totalSales != null) {
       const delta = Number(comparison.current.totalSales) - Number(comparison.previous.totalSales);
@@ -1517,7 +1561,19 @@ export function buildPerformanceOverviewAnswer(question = "", aggregation, {
     );
   }
 
-  if (expected && dayCount < expected) {
+  if (aggregation?.salesCoverageEnd) {
+    lines.push(`Cash Up is available through ${formatShortSalesDate(aggregation.salesCoverageEnd)}.`);
+  }
+  const futureCount = Number(aggregation?.futureDayCount) || 0;
+  const lagCount = Number(aggregation?.sourceLagDayCount) || 0;
+  if (futureCount > 0) {
+    lines.push(`${futureCount} requested day(s) have not elapsed yet and are not missing data.`);
+  }
+  if (lagCount > 0) {
+    lines.push(`Cash Up has not arrived yet for ${lagCount} completed day(s).`);
+  }
+
+  if (expected && dayCount < expected && (missingDayCount || 0) > 0) {
     lines.push(...namedMissingCoverageLines(aggregation));
     if (!previousAggregation) {
       lines.push(

@@ -179,9 +179,11 @@ export function useMenuBiDashboard(options = {}) {
         setLoading(true);
         setRefreshing(false);
       } else {
-        // Keep previous paint while the new filter key resolves.
-        setLoading(false);
-        setRefreshing(true);
+        // A new period must not keep the previous period's numbers on screen.
+        dataRef.current = null;
+        setData(null);
+        setLoading(true);
+        setRefreshing(false);
       }
 
       setError("");

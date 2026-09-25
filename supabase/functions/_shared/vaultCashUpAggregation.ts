@@ -3,6 +3,7 @@ import {
   normalizeDeliveryPlatform,
   DELIVERY_PLATFORM_KEYS,
 } from "./vaultSalesPerformanceIntelligence.ts";
+import { addIsoDays, latestCompletedBusinessDate, riyadhIsoDate } from "./nacBusinessWeek.ts";
 
 type FactRow = Record<string, unknown>;
 
@@ -139,6 +140,41 @@ export type CashUpRangeAggregation = {
   topPlatformByOrders: string | null;
 };
 
+/** Split uncovered dates. missingDayCount counts only historical gaps. */
+export function classifyUncoveredCashUpDays(
+  startDate?: string | null,
+  endDate?: string | null,
+  presentDates: string[] = [],
+  referenceDate = new Date(),
+) {
+  const futureDates: string[] = [];
+  const currentIncompleteDates: string[] = [];
+  const sourceLagDates: string[] = [];
+  const historicalMissingDates: string[] = [];
+  if (!startDate || !endDate || startDate > endDate) {
+    return { futureDates, currentIncompleteDates, sourceLagDates, historicalMissingDates };
+  }
+  const today = riyadhIsoDate(referenceDate);
+  const completedEnd = latestCompletedBusinessDate(referenceDate);
+  const present = new Set(presentDates);
+  const presentInRange = [...present].filter((date) => date >= startDate && date <= endDate).sort();
+  const lastPresent = presentInRange[presentInRange.length - 1] || null;
+  let cursor = startDate;
+  let guard = 0;
+  while (cursor <= endDate && guard < 400) {
+    if (!present.has(cursor)) {
+      if (cursor > today) futureDates.push(cursor);
+      else if (cursor === today) currentIncompleteDates.push(cursor);
+      else if (cursor > completedEnd) sourceLagDates.push(cursor);
+      else if (!lastPresent || cursor < lastPresent) historicalMissingDates.push(cursor);
+      else sourceLagDates.push(cursor);
+    }
+    cursor = addIsoDays(cursor, 1);
+    guard += 1;
+  }
+  return { futureDates, currentIncompleteDates, sourceLagDates, historicalMissingDates };
+}
+
 /** Ensure requested-window coverage metadata is always present for matched comparisons. */
 export function enrichCashUpAggregationCoverageMeta(
   aggregation: Record<string, unknown> | CashUpRangeAggregation | null | undefined,
@@ -153,10 +189,32 @@ export function enrichCashUpAggregationCoverageMeta(
     )
     || 0;
   const dayCount = Number(aggregation.dayCount) || 0;
+  const start = (aggregation.requestedStartDate as string) || startDate || null;
+  const end = (aggregation.requestedEndDate as string) || endDate || null;
+  const present = Array.isArray(aggregation.availableDates) && (aggregation.availableDates as string[]).length
+    ? (aggregation.availableDates as string[])
+    : (Array.isArray(aggregation.dailyBreakdown)
+      ? (aggregation.dailyBreakdown as { date?: string; totalSales?: number | null }[])
+        .filter((row) => row?.date && row.totalSales != null)
+        .map((row) => String(row.date))
+      : []);
+  const coverage = present.length || dayCount === 0
+    ? classifyUncoveredCashUpDays(start, end, present)
+    : null;
   return {
     ...aggregation,
     expectedDayCount: expected || null,
-    missingDayCount: expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null),
+    missingDayCount: coverage
+      ? coverage.historicalMissingDates.length
+      : (expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null)),
+    uncoveredDayCount: expected > 0 ? Math.max(0, expected - dayCount) : 0,
+    historicalMissingDates: coverage?.historicalMissingDates || aggregation.historicalMissingDates || [],
+    futureDates: coverage?.futureDates || [],
+    currentIncompleteDates: coverage?.currentIncompleteDates || [],
+    sourceLagDates: coverage?.sourceLagDates || [],
+    futureDayCount: coverage?.futureDates.length || 0,
+    incompleteDayCount: coverage?.currentIncompleteDates.length || 0,
+    sourceLagDayCount: coverage?.sourceLagDates.length || 0,
     requestedStartDate: aggregation.requestedStartDate || startDate || null,
     requestedEndDate: aggregation.requestedEndDate || endDate || null,
   };
@@ -328,7 +386,8 @@ export function aggregateCashUpFactsOverRange({
 
   const expectedDayCount = countCalendarDaysInRange(startDate, endDate);
   const dayCount = dates.length;
-  const missingDayCount = expectedDayCount > 0 ? Math.max(0, expectedDayCount - dayCount) : 0;
+  const coverage = classifyUncoveredCashUpDays(startDate, endDate, dates);
+  const missingDayCount = coverage.historicalMissingDates.length;
 
   return {
     totalSales,
@@ -340,6 +399,13 @@ export function aggregateCashUpFactsOverRange({
     dayCount,
     expectedDayCount,
     missingDayCount,
+    historicalMissingDates: coverage.historicalMissingDates,
+    futureDates: coverage.futureDates,
+    currentIncompleteDates: coverage.currentIncompleteDates,
+    sourceLagDates: coverage.sourceLagDates,
+    futureDayCount: coverage.futureDates.length,
+    incompleteDayCount: coverage.currentIncompleteDates.length,
+    sourceLagDayCount: coverage.sourceLagDates.length,
     requestedStartDate: startDate || null,
     requestedEndDate: endDate || null,
     dailyBreakdown,

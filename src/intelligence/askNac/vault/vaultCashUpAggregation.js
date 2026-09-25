@@ -7,6 +7,7 @@ import {
   normalizeDeliveryPlatform,
   DELIVERY_PLATFORM_KEYS,
 } from "./vaultSalesPerformanceIntelligence";
+import { latestCompletedBusinessDate, riyadhIsoDate, addIsoDays } from "../shared/nacBusinessWeek";
 
 function resolveBusinessDate(fact) {
   const raw = fact?.periodEnd ?? fact?.period_end ?? fact?.periodStart ?? fact?.period_start;
@@ -182,7 +183,9 @@ export function aggregateCashUpFactsOverRange({
 
   const expectedDayCount = countCalendarDaysInRange(startDate, endDate);
   const dayCount = dates.length;
-  const missingDayCount = expectedDayCount > 0 ? Math.max(0, expectedDayCount - dayCount) : 0;
+  const coverage = classifyUncoveredCashUpDays(startDate, endDate, dates);
+  const missingDayCount = coverage.historicalMissingDates.length;
+  const uncoveredDayCount = expectedDayCount > 0 ? Math.max(0, expectedDayCount - dayCount) : 0;
 
   return {
     totalSales,
@@ -194,6 +197,14 @@ export function aggregateCashUpFactsOverRange({
     dayCount,
     expectedDayCount,
     missingDayCount,
+    uncoveredDayCount,
+    historicalMissingDates: coverage.historicalMissingDates,
+    futureDates: coverage.futureDates,
+    currentIncompleteDates: coverage.currentIncompleteDates,
+    sourceLagDates: coverage.sourceLagDates,
+    futureDayCount: coverage.futureDates.length,
+    incompleteDayCount: coverage.currentIncompleteDates.length,
+    sourceLagDayCount: coverage.sourceLagDates.length,
     requestedStartDate: startDate || null,
     requestedEndDate: endDate || null,
     dailyBreakdown,
@@ -214,6 +225,39 @@ export function buildCashUpRangeQueryLimit(startDate, endDate) {
   return Math.min(800, spanDays * 20);
 }
 
+/**
+ * Split uncovered dates into future, the incomplete current day, source lag, and real historical gaps.
+ * missingDayCount counts only historical gaps.
+ */
+export function classifyUncoveredCashUpDays(startDate, endDate, presentDates = [], referenceDate = new Date()) {
+  const futureDates = [];
+  const currentIncompleteDates = [];
+  const sourceLagDates = [];
+  const historicalMissingDates = [];
+  if (!startDate || !endDate || startDate > endDate) {
+    return { futureDates, currentIncompleteDates, sourceLagDates, historicalMissingDates };
+  }
+  const today = riyadhIsoDate(referenceDate);
+  const completedEnd = latestCompletedBusinessDate(referenceDate);
+  const present = new Set(presentDates);
+  const presentInRange = [...present].filter((date) => date >= startDate && date <= endDate).sort();
+  const lastPresent = presentInRange[presentInRange.length - 1] || null;
+  let cursor = startDate;
+  let guard = 0;
+  while (cursor <= endDate && guard < 400) {
+    if (!present.has(cursor)) {
+      if (cursor > today) futureDates.push(cursor);
+      else if (cursor === today) currentIncompleteDates.push(cursor);
+      else if (cursor > completedEnd) sourceLagDates.push(cursor);
+      else if (!lastPresent || cursor < lastPresent) historicalMissingDates.push(cursor);
+      else sourceLagDates.push(cursor);
+    }
+    cursor = addIsoDays(cursor, 1);
+    guard += 1;
+  }
+  return { futureDates, currentIncompleteDates, sourceLagDates, historicalMissingDates };
+}
+
 export function countCalendarDaysInRange(startDate, endDate) {
   if (!startDate || !endDate) return 0;
   const start = new Date(`${startDate}T12:00:00Z`);
@@ -232,10 +276,13 @@ export function enrichCashUpAggregationCoverageMeta(aggregation, startDate, endD
     )
     || 0;
   const dayCount = Number(aggregation.dayCount) || 0;
+  const classified = Array.isArray(aggregation.historicalMissingDates);
   return {
     ...aggregation,
     expectedDayCount: expected || null,
-    missingDayCount: expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null),
+    missingDayCount: classified
+      ? Number(aggregation.missingDayCount) || 0
+      : (expected > 0 ? Math.max(0, expected - dayCount) : (aggregation.missingDayCount ?? null)),
     requestedStartDate: aggregation.requestedStartDate || startDate || null,
     requestedEndDate: aggregation.requestedEndDate || endDate || null,
   };

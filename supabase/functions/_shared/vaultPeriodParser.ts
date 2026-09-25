@@ -650,6 +650,23 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
   };
 }
 
+function clipOpenPeriod(period, referenceDate) {
+  if (!period?.endDate) return period;
+  if (period.endDate < riyadhIsoDate(referenceDate)) return period;
+  return clipPeriodToCompletedDays(period, referenceDate);
+}
+
+/** "so far" clips only the side that is still open. A completed month stays intact. */
+function clipSoFarSides(question, current, previous, referenceDate) {
+  if (!/\b(so far|to date)\b/.test(String(question || "").toLowerCase())) {
+    return { current, previous };
+  }
+  return {
+    current: clipOpenPeriod(current, referenceDate),
+    previous: clipOpenPeriod(previous, referenceDate),
+  };
+}
+
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
   const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
@@ -683,6 +700,14 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     return { current, previous, isComparison: true, periodType: "day_compare", likeForLike: true };
   }
 
+  if (/\btoday\b/.test(q) && /\byesterday\b/.test(q) && /\b(compare|vs|versus|against|with|to)\b/.test(q)) {
+    const current = parseVaultPeriodFromQuestion("today", referenceDate);
+    const previous = parseVaultPeriodFromQuestion("yesterday", referenceDate);
+    if (current && previous) {
+      return { current, previous, isComparison: true, periodType: "day_compare", likeForLike: true };
+    }
+  }
+
   const customSplit = q.match(/\bcompare\s+(.+?)\s+(?:vs|versus|against|with|compared to|to)\s+(.+)$/);
   if (customSplit) {
     const previousFragment = String(customSplit[2] || "")
@@ -691,12 +716,12 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     let current = parseFlexiblePeriodFragment(customSplit[1], referenceDate);
     let previous = parseFlexiblePeriodFragment(previousFragment || customSplit[2], referenceDate);
     if (current && previous) {
-      const clipped = clipPeriodToCompletedDays(current, referenceDate);
-      if (clipped && !clipped.noCompletedDays && clipped.endDate !== current.endDate) {
-        const span = listPeriodDates(clipped).length;
+      const openClip = clipPeriodToCompletedDays(current, referenceDate);
+      if (!/\b(so far|to date)\b/.test(q) && openClip && !openClip.noCompletedDays && openClip.endDate !== current.endDate) {
+        const span = listPeriodDates(openClip).length;
         const prevDates = listPeriodDates(previous);
         const prevClipped = prevDates.slice(0, span);
-        current = clipped;
+        current = openClip;
         if (prevClipped.length) {
           previous = {
             ...previous,
@@ -706,28 +731,31 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
           };
         }
       }
+      const sided = clipSoFarSides(q, current, previous, referenceDate);
       return {
-        current: { ...current, label: current.label || formatRangeLabel(current.startDate, current.endDate) },
-        previous: { ...previous, label: previous.label || formatRangeLabel(previous.startDate, previous.endDate) },
+        current: { ...sided.current, label: sided.current.label || formatRangeLabel(sided.current.startDate, sided.current.endDate) },
+        previous: { ...sided.previous, label: sided.previous.label || formatRangeLabel(sided.previous.startDate, sided.previous.endDate) },
         periodType: "custom_compare",
         isComparison: true,
-        likeForLike: true,
+        likeForLike: !/\b(so far|to date)\b/.test(q),
       };
     }
   }
 
   const monthCompare = q.match(
-    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus|with|against|compared to)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`),
+    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(?:sales|covers|orders|guests|revenue)\\b)?(?:\\s+(20\\d{2}))?\\s+(?:compared with|compared to|versus|against|with|vs|and)\\s+(${MONTH_TOKEN})\\b`),
   );
   if (monthCompare) {
     const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);
     const previous = monthBoundsFromToken(monthCompare[3], monthCompare[4] || monthCompare[2], referenceDate);
     if (current && previous) {
+      const clipped = clipSoFarSides(q, current, previous, referenceDate);
       return {
-        current,
-        previous,
+        current: clipped.current,
+        previous: clipped.previous,
         periodType: "month_compare",
         isComparison: true,
+        likeForLike: !/\b(so far|to date)\b/.test(q),
       };
     }
   }

@@ -5,8 +5,10 @@ import {
   listPeriodDates,
   isVaultCashUpAnalyticsPeriod,
 } from "./vaultPeriodParser";
+import { pickAggregateMetricValue } from "./vaultSalesPerformanceIntelligence";
 import {
   aggregateCashUpFactsOverRange,
+  classifyUncoveredCashUpDays,
   groupCashUpFactsByBusinessDate,
   buildCashUpRangeQueryLimit,
   splitRangeIntoMonthChunks,
@@ -239,6 +241,77 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(period?.startDate).toBe("2026-01-01");
     expect(period?.endDate).toBe("2026-06-20");
     expect(listPeriodDates(period).length).toBe(period.expectedDayCount);
+  });
+
+  test("canonical cash-up selection keeps one logical fact", () => {
+    const facts = [
+      {
+        metricKey: "net_sales",
+        metricValue: 11546.04,
+        dimensions: {},
+        created_at: "2026-09-02T22:07:59Z",
+        source_row_ref: "pdf-day-2026-09-01",
+      },
+      {
+        metricKey: "net_sales",
+        metricValue: 11546.04348,
+        dimensions: {},
+        created_at: "2026-09-25T15:13:26Z",
+        file_version_id: "60e1d8b3-c5b9-4164-b25d-37a2e415ca86",
+        source_row_ref: "sheet-9-row-3",
+      },
+      {
+        metricKey: "net_sales",
+        metricValue: 4000,
+        dimensions: { shift: "lunch" },
+      },
+    ];
+    expect(pickAggregateMetricValue(facts, "net_sales")).toBe(11546.04348);
+  });
+
+  test("future days in an open month are not historical missing days", () => {
+    const coverage = classifyUncoveredCashUpDays(
+      "2026-09-01",
+      "2026-09-30",
+      ["2026-09-01", "2026-09-13", "2026-09-15", "2026-09-24"],
+      new Date("2026-09-25T12:00:00Z"),
+    );
+    expect(coverage.historicalMissingDates).toContain("2026-09-14");
+    expect(coverage.historicalMissingDates).not.toContain("2026-09-26");
+    expect(coverage.futureDates).toContain("2026-09-26");
+    expect(coverage.currentIncompleteDates).toEqual(["2026-09-25"]);
+    expect(coverage.sourceLagDates).toEqual([]);
+  });
+
+  test("parses named-month and relative comparisons", () => {
+    const ref = new Date("2026-09-25T12:00:00Z");
+    const phrases = [
+      "compare August with September so far",
+      "compare August and September",
+      "August vs September",
+      "August compared to September",
+      "compare sales in August with September",
+      "compare August sales with September sales so far",
+      "this month vs last month",
+      "this week vs last week",
+      "today vs yesterday",
+    ];
+    for (const phrase of phrases) {
+      const compare = parseVaultComparePeriodsFromQuestion(phrase, ref);
+      expect({ phrase, current: compare?.current?.startDate, previous: compare?.previous?.startDate }).toEqual({
+        phrase,
+        current: expect.any(String),
+        previous: expect.any(String),
+      });
+    }
+    const soFar = parseVaultComparePeriodsFromQuestion("compare August with September so far", ref);
+    expect(soFar.current.startDate).toBe("2026-08-01");
+    expect(soFar.current.endDate).toBe("2026-08-31");
+    expect(soFar.previous.startDate).toBe("2026-09-01");
+    expect(soFar.previous.endDate).toBe("2026-09-24");
+    const todayVs = parseVaultComparePeriodsFromQuestion("today vs yesterday", ref);
+    expect(todayVs.current.startDate).toBe("2026-09-25");
+    expect(todayVs.previous.startDate).toBe("2026-09-24");
   });
 
   test("parses compare last 7 vs previous 7", () => {
