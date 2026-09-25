@@ -43,6 +43,36 @@ function pickMetricValue(facts, metricKey) {
   return hit ? (hit.metricValue ?? hit.metric_value) : null;
 }
 
+function isEmptyDimensions(row) {
+  const dims = row?.dimensions;
+  return !dims || Object.keys(dims).length === 0;
+}
+
+function canonicalEvidenceRank(row) {
+  const versioned = row?.fileVersionId || row?.file_version_id ? 1 : 0;
+  const pdfSnapshot = /^pdf-day/i.test(String(row?.sourceRowRef || row?.source_row_ref || "")) ? 0 : 1;
+  const created = Date.parse(row?.createdAt || row?.created_at || "") || 0;
+  return [versioned, pdfSnapshot, created];
+}
+
+/**
+ * One headline value per logical fact.
+ * Multiple workbook revisions or a PDF snapshot of the same day must not be summed.
+ * Prefer a versioned workbook row, then the newest evidence.
+ */
+export function pickCanonicalAggregateRow(rows = []) {
+  const aggregates = rows.filter(isEmptyDimensions);
+  const pool = aggregates.length ? aggregates : rows;
+  return pool.slice().sort((a, b) => {
+    const left = canonicalEvidenceRank(a);
+    const right = canonicalEvidenceRank(b);
+    for (let i = 0; i < left.length; i += 1) {
+      if (left[i] !== right[i]) return right[i] - left[i];
+    }
+    return 0;
+  })[0] || null;
+}
+
 /** Prefer aggregate workbook rows (no dimensions) for headline metrics. */
 export function pickAggregateMetricValue(facts, metricKey) {
   const rows = (facts || []).filter(
@@ -50,7 +80,7 @@ export function pickAggregateMetricValue(facts, metricKey) {
   );
   if (!rows.length) return null;
 
-  const aggregate = rows.find((f) => !f.dimensions || Object.keys(f.dimensions).length === 0);
+  const aggregate = pickCanonicalAggregateRow(rows.filter(isEmptyDimensions));
   if (aggregate) return aggregate.metricValue ?? aggregate.metric_value;
 
   if (metricKey === "delivery_sales" || metricKey === "delivery_orders") {
@@ -147,6 +177,7 @@ function formatCoverageRangeLabel(start, end) {
 }
 
 function missingSalesDatesFromAggregation(aggregation) {
+  if (Array.isArray(aggregation?.historicalMissingDates)) return aggregation.historicalMissingDates;
   const start = aggregation?.requestedStartDate;
   const end = aggregation?.requestedEndDate;
   if (!start || !end) return [];

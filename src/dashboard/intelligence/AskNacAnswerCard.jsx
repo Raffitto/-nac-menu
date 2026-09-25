@@ -23,6 +23,22 @@ import {
 } from "../../intelligence/askNac/conversation/conversationVisualization";
 import AskNacConversationChart from "./AskNacConversationChart";
 
+function visibleMissingData(response) {
+  const items = (response?.missingData || []).filter((item) => String(item?.label || item?.intent || "").trim());
+  const metric = (response?.keyMetrics || []).find((row) => /missing/i.test(String(row?.label || row?.key || "")));
+  const metricCount = metric ? Number(String(metric.value ?? "").replace(/,/g, "")) : null;
+  const historical = Number(
+    response?.coverageContract?.historicalMissingDayCount
+    ?? response?.coverageContract?.missingDayCount
+    ?? response?.dataConfidence?.missingDayCount,
+  );
+  if (historical === 0 || metricCount === 0) return [];
+  return items.filter((item) => {
+    const label = String(item.label || item.intent || "");
+    return !/not elapsed|not yet expected|future day|current day is incomplete|source lag/i.test(label);
+  });
+}
+
 function ExecutiveBriefBulletSection({ title, items = [] }) {
   if (!items.length) return null;
   return (
@@ -361,11 +377,11 @@ function AskNacAnswerDetails({ response, isMissing, isError }) {
         </div>
       ) : null}
 
-      {response.missingData?.length ? (
+      {visibleMissingData(response).length ? (
         <div className="nac-ask-nac-details__block nac-ask-nac-details__block--missing">
           <h4>Missing data</h4>
           <ul>
-            {response.missingData.map((m) => (
+            {visibleMissingData(response).map((m) => (
               <li key={m.intent || m.label}>{m.label || m.intent}</li>
             ))}
           </ul>
@@ -575,11 +591,11 @@ export default function AskNacAnswerCard({
         </div>
       ) : null}
 
-      {response.missingData?.length ? (
+      {visibleMissingData(response).length ? (
         <div className="nac-ask-nac-block nac-ask-nac-block--missing">
           <h4>Missing data</h4>
           <ul>
-            {response.missingData.map((m) => (
+            {visibleMissingData(response).map((m) => (
               <li key={m.intent || m.label}>{m.label || m.intent}</li>
             ))}
           </ul>
