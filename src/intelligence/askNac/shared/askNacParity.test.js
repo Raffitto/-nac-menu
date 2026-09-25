@@ -52,6 +52,16 @@ describe("askNac mtdDiagnostics", () => {
     });
     expect(warnings.some((w) => w.includes("rollup only"))).toBe(true);
   });
+
+  test("Today rollup does not inherit the month-to-date note", () => {
+    const warnings = collectAskNacMetricWarnings({
+      partial: true,
+      isMonthRange: false,
+      mtdHybrid: normalizeMtdDiagnostics(null, "rollup"),
+      note: null,
+    });
+    expect(warnings.some((w) => /month-to-date/i.test(w))).toBe(false);
+  });
 });
 
 describe("askNac edge parity merge scenarios", () => {

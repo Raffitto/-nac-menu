@@ -123,6 +123,8 @@ function extractMetrics(tool: Record<string, unknown> | null): Array<{ key: stri
   if (previousAgg) {
     pushMetric(metrics, "comparison_net_sales", previousAgg.totalSales ?? previousAgg.net_sales ?? previousAgg.total_sales, "SAR");
     pushMetric(metrics, "comparison_covers", previousAgg.totalGuests ?? previousAgg.covers);
+    pushMetric(metrics, "comparison_orders", previousAgg.totalOrders ?? previousAgg.order_count);
+    pushMetric(metrics, "comparison_avg_spend", previousAgg.averageSpend ?? previousAgg.avg_per_guest, "SAR");
     pushMetric(metrics, "comparison_day_count", previousAgg.dayCount ?? previousAgg.day_count);
   }
   return metrics;

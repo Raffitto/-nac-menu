@@ -63,8 +63,10 @@ export function buildComparisonStatement({
     const signed = abs > 0 ? `+${abs}` : String(abs);
     const pctText = pct.value == null
       ? "percentage change unavailable"
-      : `${pct.value > 0 ? "+" : ""}${Number(pct.value.toFixed(1))}%`;
-    lines.push(`Change: ${signed} SAR (${pctText})`);
+      : `${pct.value > 0 ? "+" : ""}${Number(pct.value.toFixed(2))}%`;
+    const subjectName = currentLabel || "comparison period";
+    const baselineName = previousLabel || "baseline period";
+    lines.push(`${subjectName} vs ${baselineName}: ${signed} SAR (${pctText})`);
   }
   lines.push(...caveats);
 

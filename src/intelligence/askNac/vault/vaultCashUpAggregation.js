@@ -334,7 +334,7 @@ export function shouldSkipDailyBreakdownForRange(startDate, endDate, periodType)
 export function shouldSkipDailyBreakdownForSimpleMetric(question, periodType, startDate, endDate) {
   if (shouldSkipDailyBreakdownForRange(startDate, endDate, periodType)) return true;
   const q = String(question || "").toLowerCase();
-  if (/\b(compare|versus|\bvs\b|week over week|wow|rank|best|worst|which day)\b/.test(q)) return false;
+  if (/\b(compare|versus|\bvs\b|week over week|wow|rank|best|worst|which day|top|bottom|highest|lowest|trend|trending|share|percentage|percent|contributed)\b/.test(q)) return false;
   return ["this_week", "this_month", "last_week", "named_month", "previous_week"].includes(String(periodType || ""));
 }
 

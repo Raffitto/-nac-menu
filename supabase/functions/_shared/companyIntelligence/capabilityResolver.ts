@@ -335,6 +335,26 @@ export function normalizeCapabilityResultToEvidence(
   const evidence: EvidenceRecord[] = [];
   const coverage = finalized.coverage || null;
 
+  const rawBrief = finalized.raw && typeof finalized.raw === "object"
+    ? (finalized.raw as Record<string, unknown>).managementBrief
+    : null;
+  if (typeof rawBrief === "string" && rawBrief.trim()) {
+    evidence.push(createEvidence({
+      source: normalized.source,
+      sourceAuthority: normalized.sourceAuthority,
+      domain: "INTERNAL_STRUCTURED",
+      companyId: normalized.scope.companyId || state.scope.companyId,
+      brandId: normalized.scope.brandId || state.scope.brandId,
+      branchId: normalized.scope.branchId || state.scope.primaryBranchId,
+      period: normalized.requestedPeriod || state.periods.current,
+      metricOrEvent: "management_brief",
+      value: null,
+      textSummary: rawBrief,
+      coverage,
+      confidence: "high",
+    }));
+  }
+
   for (const m of normalized.metrics) {
     const isForecast = result.capability === "commercial.forecast"
       || String(m.metricKey || "").startsWith("forecast_");

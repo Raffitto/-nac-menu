@@ -201,6 +201,31 @@ describe("AskNacAnswerCard cash-up executive brief", () => {
     expect(screen.getByText("Riyadh leads network sales this month.")).toBeInTheDocument();
   });
 
+  test("does not show Missing data when historical missing days are zero", () => {
+    render(
+      <AskNacAnswerCard
+        variant="desktop"
+        question="compare August with September so far"
+        filters={{}}
+        response={{
+          answerType: ANSWER_TYPES.METRIC,
+          intent: ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY,
+          title: "Cash Up comparison",
+          directAnswer: "September vs August: -91,423.09 SAR (-18.47%)",
+          keyMetrics: [{ label: "Missing days", value: 0 }],
+          insights: [],
+          recommendations: [],
+          sources: [],
+          warnings: [],
+          missingData: [{ label: "September is missing six days" }],
+          coverageContract: { historicalMissingDayCount: 0, missingDayCount: 0 },
+          confidence: "high",
+        }}
+      />,
+    );
+    expect(screen.queryByText("Missing data")).not.toBeInTheDocument();
+  });
+
   test("metric answers remain unchanged when executiveBrief is absent", () => {
     render(
       <AskNacAnswerCard

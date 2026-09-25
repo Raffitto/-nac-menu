@@ -312,6 +312,36 @@ describe("vaultPeriodParser rolling periods", () => {
     const todayVs = parseVaultComparePeriodsFromQuestion("today vs yesterday", ref);
     expect(todayVs.current.startDate).toBe("2026-09-25");
     expect(todayVs.previous.startDate).toBe("2026-09-24");
+    const reversedDay = parseVaultComparePeriodsFromQuestion("yesterday vs today", ref);
+    expect(reversedDay.current.startDate).toBe("2026-09-24");
+    expect(reversedDay.previous.startDate).toBe("2026-09-25");
+    const reversedMonth = parseVaultComparePeriodsFromQuestion("compare September with August", ref);
+    expect(reversedMonth.current.startDate).toBe("2026-09-01");
+    expect(reversedMonth.current.endDate).toBe("2026-09-24");
+    expect(reversedMonth.previous.startDate).toBe("2026-08-01");
+    expect(reversedMonth.previous.endDate).toBe("2026-08-31");
+    expect(reversedMonth.likeForLike).toBe(false);
+    const likeForLike = parseVaultComparePeriodsFromQuestion("compare September MTD with previous MTD", ref);
+    expect(likeForLike.current.startDate).toBe("2026-09-01");
+    expect(likeForLike.current.endDate).toBe("2026-09-24");
+    expect(likeForLike.previous.startDate).toBe("2026-08-01");
+    expect(likeForLike.previous.endDate).toBe("2026-08-24");
+    expect(likeForLike.likeForLike).toBe(true);
+    const firstDays = parseVaultComparePeriodsFromQuestion(
+      "compare the first 24 days of August with the first 24 days of September",
+      ref,
+    );
+    expect(firstDays.current.startDate).toBe("2026-08-01");
+    expect(firstDays.current.endDate).toBe("2026-08-24");
+    expect(firstDays.previous.startDate).toBe("2026-09-01");
+    expect(firstDays.previous.endDate).toBe("2026-09-24");
+    const lastMonthFirst = parseVaultComparePeriodsFromQuestion("last month vs this month", ref);
+    expect(lastMonthFirst.current.startDate).toBe("2026-08-01");
+    expect(lastMonthFirst.previous.startDate).toBe("2026-09-01");
+    const lower = parseVaultComparePeriodsFromQuestion("why are September sales lower than August", ref);
+    expect(lower.current.startDate).toBe("2026-08-01");
+    expect(lower.current.endDate).toBe("2026-08-31");
+    expect(lower.previous.endDate).toBe("2026-09-24");
   });
 
   test("parses compare last 7 vs previous 7", () => {

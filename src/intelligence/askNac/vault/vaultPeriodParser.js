@@ -634,7 +634,12 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
 function clipOpenPeriod(period, referenceDate) {
   if (!period?.endDate) return period;
   if (period.endDate < riyadhIsoDate(referenceDate)) return period;
-  return clipPeriodToCompletedDays(period, referenceDate);
+  const clipped = clipPeriodToCompletedDays(period, referenceDate);
+  if (!clipped?.endDate || clipped.endDate === period.endDate) return clipped;
+  return {
+    ...clipped,
+    label: formatRangeLabel(clipped.startDate, clipped.endDate),
+  };
 }
 
 /** "so far" clips only the side that is still open. A completed month stays intact. */
@@ -642,10 +647,35 @@ function clipSoFarSides(question, current, previous, referenceDate) {
   if (!/\b(so far|to date)\b/.test(String(question || "").toLowerCase())) {
     return { current, previous };
   }
+  return clipOpenSides(current, previous, referenceDate);
+}
+
+function clipOpenSides(current, previous, referenceDate) {
   return {
     current: clipOpenPeriod(current, referenceDate),
     previous: clipOpenPeriod(previous, referenceDate),
   };
+}
+
+function firstMentionedIndex(question, pattern) {
+  const match = String(question || "").search(pattern);
+  return match;
+}
+
+function firstNDaysOfMonth(token, dayCount, referenceDate) {
+  const month = monthBoundsFromToken(token, null, referenceDate);
+  if (!month?.startDate) return null;
+  const n = Math.max(1, Number(dayCount) || 1);
+  const [year, monthIndex, day] = month.startDate.split("-").map(Number);
+  const end = new Date(Date.UTC(year, monthIndex - 1, day + n - 1)).toISOString().slice(0, 10);
+  const bounded = {
+    ...month,
+    endDate: end < month.endDate ? end : month.endDate,
+    label: `first ${n} days of ${month.label || token}`,
+    periodType: "first_n_days",
+    expectedDayCount: n,
+  };
+  return clipOpenPeriod(bounded, referenceDate);
 }
 
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
@@ -654,23 +684,35 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
 
   if (
     /\b(week over week|wow|w\/w)\b/.test(q)
-    || (/\bthis week\b/.test(q) && /\blast week\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q))
+    || (/\bthis week\b/.test(q) && /\blast week\b/.test(q) && /\b(compare|vs|versus|to|with)\b/.test(q))
   ) {
-    const currentRequested = parseVaultPeriodFromQuestion("this week", referenceDate);
-    const current = clipPeriodToCompletedDays(currentRequested, referenceDate);
-    const previous = current?.noCompletedDays
+    const thisWeek = clipPeriodToCompletedDays(parseVaultPeriodFromQuestion("this week", referenceDate), referenceDate);
+    const lastWeek = thisWeek?.noCompletedDays
       ? parseVaultPeriodFromQuestion("last week", referenceDate)
-      : buildPreviousEquivalentVaultPeriod(current);
+      : buildPreviousEquivalentVaultPeriod(thisWeek);
+    const lastFirst = firstMentionedIndex(q, /\blast week\b/) >= 0
+      && firstMentionedIndex(q, /\blast week\b/) < firstMentionedIndex(q, /\bthis week\b/);
+    const current = lastFirst ? lastWeek : thisWeek;
+    const previous = lastFirst ? thisWeek : lastWeek;
     if (current && previous) {
-      return { current, previous, isComparison: true, periodType: "week_compare", likeForLike: !current.noCompletedDays };
+      return { current, previous, isComparison: true, periodType: "week_compare", likeForLike: true, comparisonMode: "like_for_like" };
     }
   }
 
-  if (/\b(this month|mtd|month to date|sales this month)\b/.test(q) && /\b(last month|previous month)\b/.test(q) && /\b(compare|vs|versus|to)\b/.test(q)) {
-    const current = clipPeriodToCompletedDays(parseVaultPeriodFromQuestion("this month", referenceDate), referenceDate);
-    const previous = buildPreviousEquivalentVaultPeriod(current);
+  if (
+    /\b(this month|mtd|month to date|sales this month)\b/.test(q)
+    && /\b(last month|previous month|previous mtd|prior mtd)\b/.test(q)
+    && /\b(compare|vs|versus|to|with)\b/.test(q)
+    && !new RegExp(MONTH_TOKEN).test(q)
+  ) {
+    const thisMonth = clipPeriodToCompletedDays(parseVaultPeriodFromQuestion("this month", referenceDate), referenceDate);
+    const lastMonth = buildPreviousEquivalentVaultPeriod(thisMonth);
+    const lastFirst = firstMentionedIndex(q, /\b(last month|previous month|previous mtd|prior mtd)\b/) >= 0
+      && firstMentionedIndex(q, /\b(last month|previous month|previous mtd|prior mtd)\b/) < firstMentionedIndex(q, /\b(this month|mtd|month to date)\b/);
+    const current = lastFirst ? lastMonth : thisMonth;
+    const previous = lastFirst ? thisMonth : lastMonth;
     if (current && previous) {
-      return { current, previous, isComparison: true, periodType: "mtd_compare", likeForLike: true };
+      return { current, previous, isComparison: true, periodType: "mtd_compare", likeForLike: true, comparisonMode: "like_for_like" };
     }
   }
 
@@ -682,10 +724,54 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
   }
 
   if (/\btoday\b/.test(q) && /\byesterday\b/.test(q) && /\b(compare|vs|versus|against|with|to)\b/.test(q)) {
-    const current = parseVaultPeriodFromQuestion("today", referenceDate);
-    const previous = parseVaultPeriodFromQuestion("yesterday", referenceDate);
+    const today = parseVaultPeriodFromQuestion("today", referenceDate);
+    const yesterday = parseVaultPeriodFromQuestion("yesterday", referenceDate);
+    const yesterdayFirst = firstMentionedIndex(q, /\byesterday\b/) < firstMentionedIndex(q, /\btoday\b/);
+    const current = yesterdayFirst ? yesterday : today;
+    const previous = yesterdayFirst ? today : yesterday;
     if (current && previous) {
-      return { current, previous, isComparison: true, periodType: "day_compare", likeForLike: true };
+      return { current, previous, isComparison: true, periodType: "day_compare", likeForLike: true, comparisonMode: "like_for_like" };
+    }
+  }
+
+  const firstPair = q.match(new RegExp(`first\\s+(\\d{1,2})\\s+days\\s+of\\s+(${MONTH_TOKEN})[\\s\\S]+first\\s+\\1\\s+days\\s+of\\s+(${MONTH_TOKEN})`));
+  if (firstPair) {
+    const current = firstNDaysOfMonth(firstPair[2], firstPair[1], referenceDate);
+    const previous = firstNDaysOfMonth(firstPair[3], firstPair[1], referenceDate);
+    if (current && previous) {
+      return { current, previous, isComparison: true, periodType: "first_n_compare", likeForLike: true, comparisonMode: "like_for_like" };
+    }
+  }
+
+  if (/\b(previous mtd|prior mtd|same period last month|same number of days)\b/.test(q)) {
+    const named = q.match(new RegExp(MONTH_TOKEN));
+    const base = named
+      ? monthBoundsFromToken(named[0], null, referenceDate)
+      : parseVaultPeriodFromQuestion("this month", referenceDate);
+    let current = clipOpenPeriod(base, referenceDate);
+    if (current?.endDate && base?.endDate && current.endDate < base.endDate) {
+      current = { ...current, periodType: "this_month" };
+    }
+    const previous = buildPreviousEquivalentVaultPeriod(current);
+    if (current && previous) {
+      return { current, previous, isComparison: true, periodType: "mtd_compare", likeForLike: true, comparisonMode: "like_for_like" };
+    }
+  }
+
+  const lowerThan = q.match(new RegExp(`(${MONTH_TOKEN})(?:\\s+sales|\\s+covers|\\s+orders)?(?:\\s+is|\\s+are)?\\s+(?:lower|higher|better|worse)\\s+than\\s+(${MONTH_TOKEN})`));
+  if (lowerThan) {
+    const subject = monthBoundsFromToken(lowerThan[1], null, referenceDate);
+    const baseline = monthBoundsFromToken(lowerThan[2], null, referenceDate);
+    const sided = clipOpenSides(baseline, subject, referenceDate);
+    if (sided.current && sided.previous) {
+      return {
+        current: sided.current,
+        previous: sided.previous,
+        isComparison: true,
+        periodType: "month_compare",
+        likeForLike: false,
+        comparisonMode: "full_vs_open",
+      };
     }
   }
 
@@ -697,28 +783,14 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     let current = parseFlexiblePeriodFragment(customSplit[1], referenceDate);
     let previous = parseFlexiblePeriodFragment(previousFragment || customSplit[2], referenceDate);
     if (current && previous) {
-      const openClip = clipPeriodToCompletedDays(current, referenceDate);
-      if (!/\b(so far|to date)\b/.test(q) && openClip && !openClip.noCompletedDays && openClip.endDate !== current.endDate) {
-        const span = listPeriodDates(openClip).length;
-        const prevDates = listPeriodDates(previous);
-        const prevClipped = prevDates.slice(0, span);
-        current = openClip;
-        if (prevClipped.length) {
-          previous = {
-            ...previous,
-            endDate: prevClipped[prevClipped.length - 1],
-            expectedDayCount: prevClipped.length,
-            label: `${previous.label || formatRangeLabel(previous.startDate, previous.endDate)} (comparable days)`,
-          };
-        }
-      }
-      const sided = clipSoFarSides(q, current, previous, referenceDate);
+      const sided = clipOpenSides(current, previous, referenceDate);
       return {
         current: { ...sided.current, label: sided.current.label || formatRangeLabel(sided.current.startDate, sided.current.endDate) },
         previous: { ...sided.previous, label: sided.previous.label || formatRangeLabel(sided.previous.startDate, sided.previous.endDate) },
         periodType: "custom_compare",
         isComparison: true,
-        likeForLike: !/\b(so far|to date)\b/.test(q),
+        likeForLike: false,
+        comparisonMode: "full_vs_open",
       };
     }
   }
@@ -730,14 +802,41 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);
     const previous = monthBoundsFromToken(monthCompare[3], monthCompare[4] || monthCompare[2], referenceDate);
     if (current && previous) {
-      const clipped = clipSoFarSides(q, current, previous, referenceDate);
+      const clipped = clipOpenSides(current, previous, referenceDate);
+      const sameLength = clipped.current?.endDate && clipped.previous?.endDate
+        && clipped.current.startDate.slice(8) === clipped.previous.startDate.slice(8)
+        && clipped.current.endDate.slice(8) === clipped.previous.endDate.slice(8);
       return {
         current: clipped.current,
         previous: clipped.previous,
         periodType: "month_compare",
         isComparison: true,
-        likeForLike: !/\b(so far|to date)\b/.test(q),
+        likeForLike: Boolean(sameLength),
+        comparisonMode: sameLength ? "like_for_like" : "full_vs_open",
       };
+    }
+  }
+
+  if (/\b(which|better)\b/.test(q)) {
+    const months = [...q.matchAll(new RegExp(MONTH_TOKEN, "g"))].map((match) => match[0]);
+    if (months.length >= 2) {
+      const sided = clipOpenSides(
+        monthBoundsFromToken(months[0], null, referenceDate),
+        monthBoundsFromToken(months[1], null, referenceDate),
+        referenceDate,
+      );
+      if (sided.current?.startDate && sided.previous?.startDate) {
+        const sameLength = sided.current.startDate.slice(8) === sided.previous.startDate.slice(8)
+          && sided.current.endDate.slice(8) === sided.previous.endDate.slice(8);
+        return {
+          current: sided.current,
+          previous: sided.previous,
+          isComparison: true,
+          periodType: "month_compare",
+          likeForLike: Boolean(sameLength),
+          comparisonMode: sameLength ? "like_for_like" : "full_vs_open",
+        };
+      }
     }
   }
 

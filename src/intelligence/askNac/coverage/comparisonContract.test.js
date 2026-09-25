@@ -12,7 +12,7 @@ describe("comparison contract", () => {
     expect(statement.percentChange).toBeCloseTo(19.3125);
     expect(statement.text).toMatch(/1–5 Sep 2026: 95450 SAR/);
     expect(statement.text).toMatch(/1–5 Aug 2026: 80000 SAR/);
-    expect(statement.text).toMatch(/Change:/);
+    expect(statement.text).toMatch(/1–5 Sep 2026 vs 1–5 Aug 2026: \+15450 SAR \(\+19\.31%\)/);
   });
 
   test("zero prior period does not invent a percentage", () => {

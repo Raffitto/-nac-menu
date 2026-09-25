@@ -38,6 +38,7 @@ import {
   CASH_UP_FACTS_QUERY_LIMIT,
 } from "./vaultSalesPerformanceIntelligence.ts";
 import { assessPeriodCoverage, buildCoverageAnswerLines } from "./coverageAwareness.ts";
+import { buildPeriodSide, managementBriefForCashUp } from "./companyIntelligence/managementAnalysis.ts";
 import { coverageFromCashUpAggregation } from "./askNacCoverageContract.ts";
 import { resolveAnalyticalConfidence } from "./analyticalConfidence.ts";
 import { buildCashUpExecutiveBrief } from "./vaultCashUpExecutiveBrief.ts";
@@ -1240,6 +1241,30 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
       warnings.push(`No cash-up facts found for ${vaultCompare.previous.label}.`);
     }
 
+    const currentAgg = currentResult.aggregation as Record<string, unknown>;
+    const previousAgg = previousResult.aggregation as Record<string, unknown>;
+    const baseline = buildPeriodSide({
+      label: String(vaultCompare.current.label || ""),
+      start: vaultCompare.current.startDate,
+      end: vaultCompare.current.endDate,
+      days: currentAgg?.dayCount as number,
+      sales: currentAgg?.totalSales as number,
+      covers: currentAgg?.totalGuests as number,
+      orders: currentAgg?.totalOrders as number,
+      missingDays: (currentAgg?.missingDayCount as number) || 0,
+      source: String(currentAgg?.salesSource || "cash_up"),
+    });
+    const subject = buildPeriodSide({
+      label: String(vaultCompare.previous.label || ""),
+      start: vaultCompare.previous.startDate,
+      end: vaultCompare.previous.endDate,
+      days: previousAgg?.dayCount as number,
+      sales: previousAgg?.totalSales as number,
+      covers: previousAgg?.totalGuests as number,
+      orders: previousAgg?.totalOrders as number,
+      missingDays: (previousAgg?.missingDayCount as number) || 0,
+      source: String(previousAgg?.salesSource || "cash_up"),
+    });
     return {
       branch: scopedBranch,
       branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
@@ -1252,12 +1277,17 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
       aggregation: currentResult.aggregation,
       previousAggregation: previousResult.aggregation,
       vaultCompare,
+      managementBrief: managementBriefForCashUp({
+        question: String(context.question || ""),
+        baseline,
+        subject,
+      }),
       warnings,
       sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up compare aggregation" }],
     };
   }
 
-  return fetchCashUpRangeBundle(supabase, context, {
+  const single = await fetchCashUpRangeBundle(supabase, context, {
     startDate,
     endDate,
     vaultPeriod,
@@ -1269,6 +1299,17 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
     ),
     includeCoverage: true,
   });
+  const singleAgg = (single.aggregation || {}) as Record<string, unknown>;
+  return {
+    ...single,
+    managementBrief: managementBriefForCashUp({
+      question: String(context.question || ""),
+      daily: Array.isArray(singleAgg.dailyBreakdown) ? singleAgg.dailyBreakdown as never[] : [],
+      label: String(single.periodLabel || vaultPeriod?.label || ""),
+      missingHistoricalDays: Number(singleAgg.missingDayCount) || 0,
+      source: String(singleAgg.salesSource || "cash_up"),
+    }),
+  };
 }
 
 async function fetchCashUpAggregationFactsResilient(
