@@ -5,6 +5,7 @@
 import { isDocumentSummaryFollowUp } from "../vault/vaultDocumentSummaryRouting";
 import { resolveConversationTurn } from "./resolveConversationTurn";
 import { isConversationFollowUp } from "./conversationFollowUpTaxonomy";
+import { isComparisonAnalysisFollowUp, isSelfContainedManagementQuestion } from "./comparisonContinuity";
 
 const PERIOD_FRAGMENTS = [
   { pattern: /\blast month\b/i, text: "last month" },
@@ -190,6 +191,22 @@ export function resolveFollowUpQuestion(question, context = {}) {
   const original = normalizeQuestion(question);
   if (!original) {
     return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] };
+  }
+
+  if (isSelfContainedManagementQuestion(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Preserved the periods named in the question."],
+    };
+  }
+  const fabricPeriods = context?.fabricConversation?.activePeriods;
+  if (fabricPeriods?.current?.startDate && fabricPeriods?.comparison?.startDate && isComparisonAnalysisFollowUp(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Kept the active comparison."],
+    };
   }
 
   const documentSummary = resolveDocumentSummaryFollowUp(original, context);

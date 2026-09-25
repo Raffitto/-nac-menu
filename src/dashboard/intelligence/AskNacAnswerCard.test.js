@@ -253,4 +253,34 @@ describe("AskNacAnswerCard cash-up executive brief", () => {
     expect(screen.queryByTestId("cash-up-executive-brief")).not.toBeInTheDocument();
     expect(screen.getByText("42 menu QR scans for Khobar (Today).")).toBeInTheDocument();
   });
+
+  test("hides internal insight codes and raw RPC source names", () => {
+    render(
+      <AskNacAnswerCard
+        question="compare August with September"
+        filters={{}}
+        response={{
+          answerType: ANSWER_TYPES.METRIC,
+          title: "Ask NAC",
+          directAnswer: "September vs August: -91,423.09 SAR.",
+          keyMetrics: [{ label: "net_sales", value: 494904.26 }],
+          insights: ["partial_coverage", "causal_question_without_explanatory_evidence", "Covers rose on Fridays."],
+          recommendations: [],
+          sources: [{ name: "get_bi_dashboard_from_rollup", detail: "today" }],
+          warnings: ["number_not_in_evidence"],
+          missingData: [],
+          confidence: "high",
+          exportOptions: [],
+          isAiGenerated: false,
+        }}
+      />,
+    );
+    expect(screen.queryByText("partial_coverage")).not.toBeInTheDocument();
+    expect(screen.queryByText("causal_question_without_explanatory_evidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("number_not_in_evidence")).not.toBeInTheDocument();
+    expect(screen.queryByText("get_bi_dashboard_from_rollup")).not.toBeInTheDocument();
+    expect(screen.getByText("Menu Analytics")).toBeInTheDocument();
+    expect(screen.getByText("Covers rose on Fridays.")).toBeInTheDocument();
+    expect(screen.getByText("Net Sales")).toBeInTheDocument();
+  });
 });

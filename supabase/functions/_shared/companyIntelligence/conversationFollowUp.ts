@@ -30,6 +30,40 @@ export type FollowUpResolution = {
   notes: string[];
 };
 
+function monthWords(question: string): string[] {
+  return String(question || "").toLowerCase().match(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g) || [];
+}
+
+export function isExplicitComparisonReset(question: string): boolean {
+  const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
+  if (/^(?:and\s+)?(?:yesterday|today|last week|this week|last month|this month)$/.test(q)) return true;
+  if (/^(?:sales|covers|orders|guests|revenue)(?:\s+of)?\s+(?:yesterday|today)$/.test(q)) return true;
+  if (/\bhow many\b/.test(q)) return true;
+  return false;
+}
+
+export function isSelfContainedManagementQuestion(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  const months = monthWords(q);
+  if (months.length < 2) return false;
+  return /\b(?:compare|vs|versus|why|lower|higher|better|worse|changed|difference|explain)\b/.test(q);
+}
+
+export function isComparisonAnalysisFollowUp(question: string): boolean {
+  if (isExplicitComparisonReset(question) || isSelfContainedManagementQuestion(question)) return false;
+  const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
+  const focus = q.replace(/^(?:what about|how about|and)\s+(?:the\s+)?/, "");
+  if (/^(?:yesterday|today|last week|this week|last month|this month|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/.test(focus)
+    && !/\b(?:per day|covers|orders|spend|days)\b/.test(focus)) {
+    return false;
+  }
+  return /^(?:per day|sales per day|covers|orders|average spend|avg spend|spend per cover|average order|aov|best days?|worst days?|why)$/.test(focus)
+    || /\b(?:per day|covers|orders|average spend|spend per cover|average order|first\s+\d+\s+days|best days|worst days)\b/.test(q)
+    || /^why\b/.test(q)
+    || /\bwhat changed the most\b/.test(q)
+    || /\bwhich had the best\b/.test(q);
+}
+
 function hasInheritContext(prev: StructuredConversationState): boolean {
   return Boolean(
     prev.activePeriods?.current
@@ -140,11 +174,8 @@ export function resolveFabricFollowUp(input: {
   }
 
   const keepComparison = inherit && prev.activePeriods?.current && prev.activePeriods?.comparison;
-  const analysisFollowUp = keepComparison && (
-    /^(?:what about|how about|and)\b/i.test(ql)
-    || /\b(per day|average spend|avg spend|covers|orders|best \d|top \d|why is|why are|first \d+ days)\b/i.test(ql)
-  );
-  if (analysisFollowUp && !resolveFollowUpPeriodFocus(extractFollowUpFocus(q) || "x", ref)?.startDate) {
+  const analysisFollowUp = keepComparison && !isExplicitComparisonReset(q) && isComparisonAnalysisFollowUp(q);
+  if (analysisFollowUp) {
     notes.push("followup_comparison_analysis");
     const dayClip = ql.match(/first\s+(\d{1,2})\s+days/);
     const clipPeriod = (period: DateRange | null) => {

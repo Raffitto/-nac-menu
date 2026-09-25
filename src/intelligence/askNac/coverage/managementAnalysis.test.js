@@ -166,4 +166,16 @@ describe("rankings, trends, and mix", () => {
     expect(brief).toMatch(/2026-09-01/);
     expect(brief).not.toMatch(/\b280\b/);
   });
+
+  test("why follow-up states measured differences and refuses unproven causes", () => {
+    const brief = managementBriefForCashUp({
+      question: "why?",
+      baseline: AUGUST,
+      subject: SEPTEMBER,
+    });
+    expect(brief).toMatch(/Measured differences/);
+    expect(brief).toMatch(/Unproven causes are not in this evidence/);
+    expect(brief).toMatch(/-91,423\.09 SAR/);
+    expect(brief).not.toMatch(/causal_question_without_explanatory_evidence/);
+  });
 });

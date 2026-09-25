@@ -153,7 +153,6 @@ export function formatManagementComparison(model, { projectionRequested = false 
   ].join("\n");
 
   const totalPct = formatPct(model.sales.deltaPct);
-  const pacePct = formatPct(model.salesPerDay.deltaPct);
   const totalWord = model.sales.deltaPct == null
     ? "cannot be percent-compared"
     : model.sales.deltaPct < -0.05
@@ -377,21 +376,74 @@ export function formatContributionAnswer({ label, rows = [], focus = "top" }) {
   return lines.join("\n");
 }
 
+function comparisonFocusPreface(model, question) {
+  const q = String(question || "").toLowerCase();
+  const subject = model.subject.label;
+  const baseline = model.baseline.label;
+  if (/\bwhy\b|\bwhat changed the most\b|\bwhat explains\b|\bdifference between\b/.test(q)) {
+    return [
+      "Measured differences come from represented days, sales per day, covers, orders, spend per cover, and average order value.",
+      "Unproven causes are not in this evidence. Weather, staffing, marketing, holidays, and guest sentiment were not used.",
+    ].join("\n");
+  }
+  if (/\baverage spend\b|\bspend per cover\b|\baverage order\b|\bavg spend\b/.test(q)) {
+    return [
+      `Spend per cover — ${subject} vs ${baseline}: ${namedDelta(`${subject} vs ${baseline}`, model.spendPerCover, "SAR")}`,
+      `Average order value — ${subject} vs ${baseline}: ${namedDelta(`${subject} vs ${baseline}`, model.averageOrderValue, "SAR")}`,
+    ].join("\n");
+  }
+  if (/\bcovers\b/.test(q) && !/\borders\b/.test(q)) {
+    return [
+      namedDelta(`Covers — ${subject} vs ${baseline}`, model.covers, "count"),
+      namedDelta(`Covers/day — ${subject} vs ${baseline}`, model.coversPerDay, "count"),
+    ].join("\n");
+  }
+  if (/\borders\b/.test(q) && !/\bcovers\b/.test(q)) {
+    return [
+      namedDelta(`Orders — ${subject} vs ${baseline}`, model.orders, "count"),
+      namedDelta(`Orders/day — ${subject} vs ${baseline}`, model.ordersPerDay, "count"),
+    ].join("\n");
+  }
+  if (/\bper day\b/.test(q)) {
+    return [
+      `Daily sales pace — ${baseline}: ${formatSar(model.baseline.salesPerDay)} SAR/day`,
+      `Daily sales pace — ${subject}: ${formatSar(model.subject.salesPerDay)} SAR/day`,
+      namedDelta(`${subject} vs ${baseline}`, model.salesPerDay, "SAR"),
+    ].join("\n");
+  }
+  return "";
+}
+
 export function managementBriefForCashUp({
   question = "",
   baseline = null,
   subject = null,
   daily = [],
+  baselineDaily = [],
+  subjectDaily = [],
   label = "",
   missingHistoricalDays = 0,
   source = "cash_up",
 } = {}) {
   const q = String(question || "").toLowerCase();
+  if (baseline && subject && /\b(best|worst)\s+days?\b|\bwhich had the best\b/.test(q)) {
+    const direction = /\bworst\b/.test(q) ? "bottom" : "top";
+    const ranked = (rows) => Object.assign(Array.isArray(rows) ? rows : [], { limit: 5 });
+    return [
+      formatRankingAnswer({ label: baseline.label, metric: "sales", direction, rows: ranked(baselineDaily) }),
+      "",
+      formatRankingAnswer({ label: subject.label, metric: "sales", direction, rows: ranked(subjectDaily) }),
+      "",
+      "Days without Cash Up were excluded, not treated as zero.",
+    ].join("\n");
+  }
   if (baseline && subject) {
     const model = buildManagementComparison({ baseline, subject });
+    const preface = comparisonFocusPreface(model, q);
     const text = formatManagementComparison(model, {
       projectionRequested: /\b(at this pace|run-?rate|project|finish at|end the month)\b/.test(q),
     });
+    const combined = preface ? `${preface}\n\n${text}` : text;
     if (/\b(at this pace|run-?rate|project|finish at)\b/.test(q)) {
       const monthDays = baseline.representedDays && subject.representedDays
         ? Math.max(baseline.representedDays, subject.representedDays, 30)
@@ -402,9 +454,9 @@ export function managementBriefForCashUp({
         monthDays,
         label: subject.label,
       });
-      return projection ? `${text}\n\n${projection.text}` : text;
+      return projection ? `${combined}\n\n${projection.text}` : combined;
     }
-    return text;
+    return combined;
   }
   const metric = /\b(average spend|spend per cover|avg spend)\b/.test(q)
     ? "spend"

@@ -787,8 +787,31 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     }
   }
 
+  const betweenMonths = q.match(
+    new RegExp(`\\bbetween\\s+(${MONTH_TOKEN})\\b(?:\\s+(?:so far|to date))?\\s+and\\s+(${MONTH_TOKEN})\\b(?:\\s+(?:so far|to date))?`),
+  );
+  if (betweenMonths) {
+    const sided = clipOpenSides(
+      monthBoundsFromToken(betweenMonths[1], null, referenceDate),
+      monthBoundsFromToken(betweenMonths[2], null, referenceDate),
+      referenceDate,
+    );
+    if (sided.current?.startDate && sided.previous?.startDate) {
+      const sameLength = sided.current.endDate.slice(8) === sided.previous.endDate.slice(8)
+        && sided.current.startDate.slice(8) === sided.previous.startDate.slice(8);
+      return {
+        current: sided.current,
+        previous: sided.previous,
+        periodType: "month_compare",
+        isComparison: true,
+        likeForLike: Boolean(sameLength),
+        comparisonMode: sameLength ? "like_for_like" : "full_vs_open",
+      };
+    }
+  }
+
   const monthCompare = q.match(
-    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(?:sales|covers|orders|guests|revenue)\\b)?(?:\\s+(20\\d{2}))?\\s+(?:compared with|compared to|versus|against|with|vs|and)\\s+(${MONTH_TOKEN})\\b`),
+    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(?:sales|covers|orders|guests|revenue)\\b)?(?:\\s+(20\\d{2}))?(?:\\s+(?:so far|to date))?\\s+(?:compared with|compared to|versus|against|with|vs|and|to)\\s+(?:so far\\s+|to date\\s+)?(${MONTH_TOKEN})\\b`),
   );
   if (monthCompare) {
     const current = monthBoundsFromToken(monthCompare[1], monthCompare[2], referenceDate);

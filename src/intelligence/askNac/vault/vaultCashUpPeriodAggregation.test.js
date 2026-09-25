@@ -342,6 +342,27 @@ describe("vaultPeriodParser rolling periods", () => {
     expect(lower.current.startDate).toBe("2026-08-01");
     expect(lower.current.endDate).toBe("2026-08-31");
     expect(lower.previous.endDate).toBe("2026-09-24");
+    const higher = parseVaultComparePeriodsFromQuestion("why are August sales higher than September", ref);
+    expect(higher.current.startDate).toBe("2026-09-01");
+    expect(higher.previous.startDate).toBe("2026-08-01");
+    const changed = parseVaultComparePeriodsFromQuestion("what changed the most between August and September", ref);
+    expect(changed.current.startDate).toBe("2026-08-01");
+    expect(changed.current.endDate).toBe("2026-08-31");
+    expect(changed.previous.endDate).toBe("2026-09-24");
+    for (const phrase of [
+      "compare September so far with August",
+      "compare September so far to August",
+      "September so far vs August",
+    ]) {
+      const reversedSoFar = parseVaultComparePeriodsFromQuestion(phrase, ref);
+      expect({ phrase, start: reversedSoFar?.current?.startDate, end: reversedSoFar?.previous?.endDate }).toEqual({
+        phrase,
+        start: "2026-09-01",
+        end: "2026-08-31",
+      });
+      expect(reversedSoFar.current.endDate).toBe("2026-09-24");
+      expect(reversedSoFar.previous.startDate).toBe("2026-08-01");
+    }
   });
 
   test("parses compare last 7 vs previous 7", () => {

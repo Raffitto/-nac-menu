@@ -25,7 +25,7 @@ import {
 import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
-import { isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
+import { isComparisonAnalysisFollowUp, isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import {
@@ -179,6 +179,15 @@ export function isManagementIntelligenceQuestion(
     return true;
   }
 
+  const priorPeriods = options?.priorFabricConversation?.activePeriods;
+  if (
+    priorPeriods?.current?.startDate
+    && priorPeriods?.comparison?.startDate
+    && isComparisonAnalysisFollowUp(question)
+  ) {
+    return true;
+  }
+
   if (intent === "unknown" || legacyRoute?.confidence === "none" || legacyRoute?.confidence === "low") {
     return looksLikeManagementCommercialQuestion(question)
       || looksLikeOperationalManagementQuestion(question);
@@ -198,7 +207,7 @@ function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions
   const namedMonthPerformance = /\bhow\s+(did|was)\b/.test(q)
     && monthToken.test(q)
     && /\b(perform|sales|revenue|business|overall)\b/.test(q);
-  const management = /\b(compare|versus|\bvs\b|best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|which month|trending|trend|share|contributed|percentage|percent|per day|lower than|higher than)\b/.test(q);
+  const management = /\b(compare|versus|\bvs\b|best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|which month|trending|trend|share|contributed|percentage|percent|per day|lower than|higher than|what changed|what explains|difference between|covers|orders|average spend|spend per cover|average order|first\s+\d+\s+days|best days|worst days|why)\b/.test(q);
   const simple = /\b(yesterday|today|sales yesterday|guests yesterday|average spend)\b/.test(q)
     || (high && /\bhow was (january|february|march|april|may|june|july|august)\b/.test(q))
     || namedMonthPerformance
@@ -218,7 +227,7 @@ function deterministicCapabilities(question: string, requiresComparison: boolean
   if (/\b(trend|trending)\b/.test(q) && !requiresComparison) {
     return ["commercial.trend"];
   }
-  if (requiresComparison || /\b(compare|versus|\bvs\b|lower than|higher than)\b/.test(q)) {
+  if (requiresComparison || /\b(compare|versus|\bvs\b|lower than|higher than|what changed|what explains|difference between|why)\b/.test(q)) {
     return ["commercial.compare"];
   }
   return ["commercial.performance"];
@@ -982,7 +991,7 @@ export async function runCompanyIntelligenceOrchestration(
     answerText,
     answerType: fastPath ? "deterministic_lookup" : "management_intelligence",
     keyMetrics: metricKeyMetrics(state),
-    insights: critic.gaps || [],
+    insights: (critic.gaps || []).filter((gap) => !/^[a-z0-9_]+$/.test(String(gap || ""))),
     nextConversation,
     toolsExecuted,
     paidModelCalls: state.cost.paidModelCallsPerAnswer,

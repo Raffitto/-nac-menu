@@ -3,6 +3,7 @@
  */
 
 import { isDocumentSummaryFollowUp } from "./askNacVaultTools.ts";
+import { isComparisonAnalysisFollowUp, isSelfContainedManagementQuestion } from "./companyIntelligence/conversationFollowUp.ts";
 import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
@@ -462,6 +463,22 @@ function resolveConversationTurn(question: string, context: Record<string, unkno
 export function resolveFollowUpQuestion(question: string, context: Record<string, unknown> = {}) {
   const original = normalizeQuestion(question);
   if (!original) return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] as string[] };
+
+  if (isSelfContainedManagementQuestion(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Preserved the periods named in the question."],
+    };
+  }
+  const fabricPeriods = (context.fabricConversation as { activePeriods?: { current?: { startDate?: string }; comparison?: { startDate?: string } } } | undefined)?.activePeriods;
+  if (fabricPeriods?.current?.startDate && fabricPeriods?.comparison?.startDate && isComparisonAnalysisFollowUp(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Kept the active comparison."],
+    };
+  }
 
   const docCtx = context.lastDocumentContext as { fileIds?: string[]; fileTitles?: string[] } | undefined;
   if (docCtx?.fileIds?.length && isDocumentSummaryFollowUp(original)) {
