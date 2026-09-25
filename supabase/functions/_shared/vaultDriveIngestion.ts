@@ -1909,6 +1909,43 @@ async function resolveDriveIngestOffset(
   return 0;
 }
 
+/** A Drive file is due now when this connection has never stored it, or Drive's modified time moved forward. */
+export function driveRevisionNeedsIngest(
+  modifiedTime?: string | null,
+  knownModified?: string | null,
+) {
+  if (!knownModified) return true;
+  if (!modifiedTime) return false;
+  const next = Date.parse(modifiedTime);
+  const prev = Date.parse(knownModified);
+  if (!Number.isFinite(next) || !Number.isFinite(prev)) return false;
+  return next > prev;
+}
+
+async function loadKnownDriveModifiedTimes(
+  admin: SupabaseLike,
+  driveFileIds: string[],
+  email: string,
+) {
+  const known = new Map<string, string | null>();
+  for (let i = 0; i < driveFileIds.length; i += 100) {
+    const slice = driveFileIds.slice(i, i + 100);
+    const { data, error } = await admin
+      .from("ask_nac_files")
+      .select("external_source_id, external_source_modified_at")
+      .eq("uploader_email", email)
+      .eq("status", "active")
+      .in("external_source_id", slice);
+    if (error) throw new Error(error.message);
+    for (const row of data || []) {
+      const id = String((row as { external_source_id?: string }).external_source_id || "");
+      if (!id) continue;
+      known.set(id, (row as { external_source_modified_at?: string | null }).external_source_modified_at || null);
+    }
+  }
+  return known;
+}
+
 export async function processDriveIngestionRun(
   admin: SupabaseLike,
   {
@@ -2099,11 +2136,28 @@ export async function processDriveIngestionRun(
       return;
     }
 
-    const startOffset = await resolveDriveIngestOffset(admin, folder.id, runStats);
-    const filesToProcess = files.slice(startOffset, startOffset + Math.max(1, maxFilesToProcess));
+    const knownModified = await loadKnownDriveModifiedTimes(admin, files.map((file) => file.id), email);
+    const pendingFiles: DriveFileWithPath[] = [];
+    const backlogFiles: DriveFileWithPath[] = [];
+    for (const driveFile of files) {
+      if (driveRevisionNeedsIngest(driveFile.modifiedTime, knownModified.get(driveFile.id))) pendingFiles.push(driveFile);
+      else backlogFiles.push(driveFile);
+    }
+    const startOffset = Math.min(
+      await resolveDriveIngestOffset(admin, folder.id, runStats),
+      backlogFiles.length,
+    );
+    const fileBudget = Math.max(1, maxFilesToProcess);
+    const pendingSlice = pendingFiles.slice(0, fileBudget);
+    const backlogSlice = backlogFiles.slice(startOffset, startOffset + Math.max(0, fileBudget - pendingSlice.length));
+    const filesToProcess = [...pendingSlice, ...backlogSlice];
+    const backlogIds = new Set(backlogSlice.map((file) => file.id));
     runStats.startOffset = startOffset;
+    runStats.pendingFiles = pendingFiles.length;
     runStats.nextFileOffset = startOffset;
     let finishedInSlice = 0;
+    let pendingFinished = 0;
+    let backlogFinished = 0;
     let stoppedForBudget = false;
 
     for (const driveFile of filesToProcess) {
@@ -2137,21 +2191,26 @@ export async function processDriveIngestionRun(
         });
       }
       finishedInSlice += 1;
-      const checkpointOffset = startOffset + finishedInSlice;
+      if (backlogIds.has(driveFile.id)) backlogFinished += 1;
+      else pendingFinished += 1;
+      const checkpointOffset = startOffset + backlogFinished;
+      const pendingLeft = Math.max(0, pendingFiles.length - pendingFinished);
+      const backlogLeft = Math.max(0, backlogFiles.length - checkpointOffset);
       runStats.nextFileOffset = checkpointOffset;
-      runStats.remainingFiles = Math.max(0, files.length - checkpointOffset);
+      runStats.remainingFiles = pendingLeft + backlogLeft;
       await updateRun(admin, runId, {
         stats: {
           startOffset,
           nextFileOffset: checkpointOffset,
           remainingFiles: runStats.remainingFiles,
+          pendingFiles: pendingFiles.length,
           runtimeStage: "processing_file",
         },
       }, counters);
     }
 
-    const nextFileOffset = startOffset + finishedInSlice;
-    const leftForLater = Math.max(0, files.length - nextFileOffset);
+    const nextFileOffset = startOffset + backlogFinished;
+    const leftForLater = Math.max(0, pendingFiles.length - pendingFinished) + Math.max(0, backlogFiles.length - nextFileOffset);
     runStats.nextFileOffset = nextFileOffset;
     runStats.stoppedForBudget = stoppedForBudget;
 
