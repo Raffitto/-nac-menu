@@ -25,13 +25,38 @@ export const EXECUTIVE_METRIC_DISPLAY_LABELS = Object.freeze({
   total_sales: "Total Sales",
 });
 
+const MANAGEMENT_METRIC_LABELS = Object.freeze({
+  covers: "Covers",
+  orders: "Orders",
+  day_count: "Represented days",
+  comparison_net_sales: "Comparison net sales",
+  comparison_covers: "Comparison covers",
+  comparison_orders: "Comparison orders",
+  comparison_day_count: "Comparison represented days",
+  expectedDayCount: "Expected days",
+  missingDayCount: "Historical gaps",
+  uncoveredDayCount: "Uncovered days",
+  futureDayCount: "Future days",
+  incompleteDayCount: "Incomplete current day",
+  sourceLagDayCount: "Source lag",
+  avg_spend: "Average spend",
+  delivery_sales: "Delivery sales",
+});
+
 export function resolveExecutiveMetricLabel(metric) {
   const key = metric?.key || metric?.metricKey || metric?.metric_key;
   if (key && EXECUTIVE_METRIC_DISPLAY_LABELS[key]) {
     return EXECUTIVE_METRIC_DISPLAY_LABELS[key];
   }
+  if (key && MANAGEMENT_METRIC_LABELS[key]) return MANAGEMENT_METRIC_LABELS[key];
   const label = String(metric?.label || "").trim();
   if (/^card sales$/i.test(label)) return "Electronic Payments";
+  if (EXECUTIVE_METRIC_DISPLAY_LABELS[label]) return EXECUTIVE_METRIC_DISPLAY_LABELS[label];
+  if (MANAGEMENT_METRIC_LABELS[label]) return MANAGEMENT_METRIC_LABELS[label];
+  if (/^[a-zA-Z][a-zA-Z0-9_]*$/.test(label) && (label.includes("_") || /[a-z][A-Z]/.test(label))) {
+    const words = label.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2");
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
   return label || "Metric";
 }
 

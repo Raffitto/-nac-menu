@@ -23,6 +23,38 @@ import {
 } from "../../intelligence/askNac/conversation/conversationVisualization";
 import AskNacConversationChart from "./AskNacConversationChart";
 
+function managerSourceLabel(name) {
+  const raw = String(name || "");
+  const n = raw.toLowerCase();
+  if (/get_bi_dashboard|fetchasknacmenumetrics|menu.?metric/.test(n)) return "Menu Analytics";
+  if (/review/.test(n)) return "Review Analytics";
+  if (/commerce|foodics/.test(n)) return "Commerce Orders";
+  if (/cash_up|structured_facts|get_vault_cash_up/.test(n)) return "Cash Up";
+  if (/^get_/.test(n)) return "Verified metrics";
+  return raw;
+}
+
+function isInternalManagerCode(line) {
+  const text = String(line || "").trim();
+  if (!text) return true;
+  if (/^[a-z0-9_]+$/.test(text)) return true;
+  return /number_not_in_evidence|partial_coverage|causal_question_without_explanatory_evidence|period_length_mismatch|weekday_composition_differs|use_matched_or_normalized_method/.test(text);
+}
+
+function managerFacingResponse(response) {
+  if (!response) return response;
+  return {
+    ...response,
+    insights: (response.insights || []).filter((line) => !isInternalManagerCode(line)),
+    warnings: (response.warnings || []).filter((line) => !isInternalManagerCode(line)),
+    sources: (response.sources || []).map((source) => ({
+      ...source,
+      name: managerSourceLabel(source.name),
+      detail: source.detail || source.name,
+    })),
+  };
+}
+
 function visibleMissingData(response) {
   const items = (response?.missingData || []).filter((item) => String(item?.label || item?.intent || "").trim());
   const metric = (response?.keyMetrics || []).find((row) => /missing/i.test(String(row?.label || row?.key || "")));
@@ -513,11 +545,12 @@ function AskNacAnswerCardMobile({ response, question, filters, exportStatus, set
  * @param {{ response: object, question: string, filters?: object, variant?: 'desktop' | 'mobile' }} props
  */
 export default function AskNacAnswerCard({
-  response,
+  response: rawResponse,
   question = "",
   filters = {},
   variant = "desktop",
 }) {
+  const response = managerFacingResponse(rawResponse);
   const [exportStatus, setExportStatus] = useState("");
 
   if (!response) return null;

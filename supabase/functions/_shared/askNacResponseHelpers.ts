@@ -63,7 +63,7 @@ export function buildMenuMetricAnswerFields(
     keyMetrics: [{ label, value, source: metricSource }],
     insights,
     recommendations: [] as string[],
-    sources: [{ name: tool.rpc || "fetchAskNacMenuMetrics", detail: tool.dataSource || "verified" }],
+    sources: [{ name: "Menu Analytics", detail: tool.rpc || tool.dataSource || "verified" }],
     warnings,
     missingData: [] as unknown[],
     confidence,

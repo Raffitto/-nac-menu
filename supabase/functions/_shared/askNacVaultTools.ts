@@ -1281,6 +1281,8 @@ export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, con
         question: String(context.question || ""),
         baseline,
         subject,
+        baselineDaily: Array.isArray(currentAgg?.dailyBreakdown) ? currentAgg.dailyBreakdown : [],
+        subjectDaily: Array.isArray(previousAgg?.dailyBreakdown) ? previousAgg.dailyBreakdown : [],
       }),
       warnings,
       sources: [{ name: "ask_nac_structured_facts", detail: "multi-day cash-up compare aggregation" }],
