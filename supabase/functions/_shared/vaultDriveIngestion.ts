@@ -1919,6 +1919,7 @@ export async function processDriveIngestionRun(
     onlyDriveFileId = null,
     force = false,
     maxFilesToProcess = DEFAULT_MAX_FILES_TO_PROCESS,
+    deadlineMs = null,
   }: {
     accessToken: string;
     folder: DriveFolder;
@@ -1927,6 +1928,8 @@ export async function processDriveIngestionRun(
     onlyDriveFileId?: string | null;
     force?: boolean;
     maxFilesToProcess?: number;
+    /** Stop before the next file once this epoch ms is inside the reserve window. */
+    deadlineMs?: number | null;
   },
 ) {
   const counters: RunCounters = {
@@ -2098,12 +2101,18 @@ export async function processDriveIngestionRun(
 
     const startOffset = await resolveDriveIngestOffset(admin, folder.id, runStats);
     const filesToProcess = files.slice(startOffset, startOffset + Math.max(1, maxFilesToProcess));
-    const nextFileOffset = startOffset + filesToProcess.length;
-    const leftForLater = Math.max(0, files.length - nextFileOffset);
     runStats.startOffset = startOffset;
-    runStats.nextFileOffset = nextFileOffset;
+    runStats.nextFileOffset = startOffset;
+    let finishedInSlice = 0;
+    let stoppedForBudget = false;
 
     for (const driveFile of filesToProcess) {
+      // Leave time to persist nextFileOffset. A worker kill mid-file used to
+      // leave the run "running" with no offset, so the next night restarted at 0.
+      if (typeof deadlineMs === "number" && Date.now() >= deadlineMs - 8_000) {
+        stoppedForBudget = true;
+        break;
+      }
       const exportInfo = resolveDriveExport(driveFile);
       if ("unsupported" in exportInfo) {
         counters.skipped_count += 1;
@@ -2115,19 +2124,36 @@ export async function processDriveIngestionRun(
           stats: { folderPath: driveFile.folderPath, relativePath: driveFile.relativePath, depth: driveFile.depth },
         });
         await updateRun(admin, runId, {}, counters);
-        continue;
+      } else {
+        await processOneDriveFile(admin, {
+          accessToken,
+          folder,
+          runId,
+          driveFile,
+          email,
+          counters,
+          force,
+          discoveryRules,
+        });
       }
-      await processOneDriveFile(admin, {
-        accessToken,
-        folder,
-        runId,
-        driveFile,
-        email,
-        counters,
-        force,
-        discoveryRules,
-      });
+      finishedInSlice += 1;
+      const checkpointOffset = startOffset + finishedInSlice;
+      runStats.nextFileOffset = checkpointOffset;
+      runStats.remainingFiles = Math.max(0, files.length - checkpointOffset);
+      await updateRun(admin, runId, {
+        stats: {
+          startOffset,
+          nextFileOffset: checkpointOffset,
+          remainingFiles: runStats.remainingFiles,
+          runtimeStage: "processing_file",
+        },
+      }, counters);
     }
+
+    const nextFileOffset = startOffset + finishedInSlice;
+    const leftForLater = Math.max(0, files.length - nextFileOffset);
+    runStats.nextFileOffset = nextFileOffset;
+    runStats.stoppedForBudget = stoppedForBudget;
 
     const finalStatus =
       traversal.truncated || leftForLater > 0
@@ -2151,12 +2177,14 @@ export async function processDriveIngestionRun(
         autoIngest: true,
         duplicateFileIdsSkipped: traversal.duplicateCount,
         truncated: traversal.truncated,
-        processedFiles: filesToProcess.length,
+        processedFiles: finishedInSlice,
         remainingFiles: leftForLater,
         truncationReason: traversal.truncated
           ? `Drive traversal hit max item limit (${MAX_DRIVE_ITEMS_PER_RUN}).`
+          : stoppedForBudget
+            ? `Stopped before the time budget elapsed after ${finishedInSlice} file(s); ${leftForLater} remain.`
           : leftForLater > 0
-            ? `Processed ${filesToProcess.length} file(s); ${leftForLater} remain. Run Sync & Ingest Drive again to continue.`
+            ? `Processed ${finishedInSlice} file(s); ${leftForLater} remain. Run Sync & Ingest Drive again to continue.`
             : null,
       },
       error: finalStatus === "failed" ? "All Drive files failed ingestion." : null,

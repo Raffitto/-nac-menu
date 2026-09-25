@@ -366,6 +366,10 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(scheduledIngest).toMatch(/remaining_files/);
     expect(scheduledIngest).toMatch(/finalizeScheduledRunStop/);
     expect(scheduledIngest).toMatch(/partial: true/);
+    expect(scheduledIngest).toMatch(/deadlineMs: startedAt \+ budgetMs/);
+    expect(driveHelper).toMatch(/deadlineMs - 8_000/);
+    expect(driveHelper).toMatch(/stoppedForBudget/);
+    expect(driveHelper).toMatch(/nextFileOffset: checkpointOffset/);
   });
 
   test("stuck scheduled runs in running are cleaned up before processing", () => {
