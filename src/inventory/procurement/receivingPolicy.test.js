@@ -153,7 +153,7 @@ describe("exception inbox for quantity-only receiving", () => {
       supplierProfile: COMPANY_SETTLED,
     });
     expect(blocked.mayPost).toBe(false);
-    expect(blocked.headline).toBe("PRICE REQUIRED");
+    expect(blocked.headline).toBe("NOT READY");
 
     const settled = triageInvoice({
       invoice: {
@@ -165,7 +165,7 @@ describe("exception inbox for quantity-only receiving", () => {
       lines,
     });
     expect(settled.mayPost).toBe(false);
-    expect(settled.headline).toBe("CONFIRM PACK");
+    expect(settled.headline).toBe("NOT READY");
     expect(settled.priceNote).toBe("PRICE NOT REQUIRED — THIS DOCUMENT");
   });
 
@@ -177,7 +177,19 @@ describe("exception inbox for quantity-only receiving", () => {
         invoice_number: "18427",
         receiving_treatment: "company_settled_document",
       },
-      lines: lines.map((line) => ({ ...line, review_status: "verified" })),
+      lines: lines.map((line) => ({
+        ...line,
+        review_status: "verified",
+        ingredient_id: line.id === "bag" ? "paper" : "tissue",
+        canonical_received_quantity: line.id === "bag" ? 250 : 4000,
+        canonical_unit: "each",
+        conversion_factor: line.id === "tissue" ? 1000 : 1,
+        pack_status: line.id === "tissue" ? "verified" : null,
+      })),
+      ingredients: [
+        { id: "paper", canonical_name: "Nac Printed Paper Bag - Each" },
+        { id: "tissue", canonical_name: "Nac Printed Wet Tissue 1000 Pcs" },
+      ],
       learnedPacks: {
         2030912: { status: "verified", conversionFactor: 1000 },
       },

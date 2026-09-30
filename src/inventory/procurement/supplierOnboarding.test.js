@@ -113,14 +113,23 @@ describe("first-time supplier onboarding", () => {
       ...line,
       review_status: "verified",
       ingredient_id: line.id === "bag" ? "paper" : "tissue",
+      canonical_received_quantity: line.id === "bag" ? 250 : 4000,
+      canonical_unit: "each",
+      conversion_factor: line.id === "tissue" ? 1000 : 1,
+      pack_status: line.id === "tissue" ? "verified" : null,
     }));
+    const ingredients = [
+      { id: "paper", canonical_name: "Nac Printed Paper Bag - Each" },
+      { id: "tissue", canonical_name: "Nac Printed Wet Tissue 1000 Pcs" },
+    ];
     const inherited = triageInvoice({
       invoice: { id: "18499", supplier_id: "ecowhiz", invoice_number: "18499" },
       lines,
+      ingredients,
       supplierProfile: { settlementMode: "company_settled", priceRequiredOnReceiving: false, confirmed: true },
       learnedPacks: { 2030912: { status: "verified", conversionFactor: 1 } },
     });
-    expect(inherited.headline).toBe("PRICE REQUIRED");
+    expect(inherited.headline).toBe("1 ACTION REMAINING");
     expect(inherited.mayPost).toBe(false);
 
     const ready = triageInvoice({
@@ -131,6 +140,7 @@ describe("first-time supplier onboarding", () => {
         receiving_treatment: "company_settled_document",
       },
       lines,
+      ingredients,
       learnedPacks: { 2030912: { status: "verified", conversionFactor: 1 } },
     });
     expect(ready.headline).toBe("READY TO RECEIVE");

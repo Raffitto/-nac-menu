@@ -27,6 +27,7 @@ jest.mock("../lib/inventoryApi", () => ({
   rejectInvoice: jest.fn(),
   resolveInvoiceException: jest.fn(),
   retrieveOcrResult: jest.fn(),
+  reconcileInvoiceExceptions: jest.fn(),
   triggerInvoiceOcr: jest.fn(),
   updateInvoiceReview: jest.fn(),
   uploadInvoice: jest.fn(),

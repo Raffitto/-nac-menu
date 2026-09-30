@@ -28,6 +28,7 @@ import {
   rejectInvoice,
   resolveInvoiceException,
   retrieveOcrResult,
+  reconcileInvoiceExceptions,
   triggerInvoiceOcr,
   updateInvoiceReview,
   uploadInvoice,
@@ -134,6 +135,7 @@ export default function InvoiceIntakeView({
       setSelected(null);
       return;
     }
+    await reconcileInvoiceExceptions(selectedId);
     setSelected(await retrieveOcrResult(selectedId));
   }, [selectedId, session]);
 
@@ -341,6 +343,7 @@ export default function InvoiceIntakeView({
     return triageInvoice({
       invoice: selected,
       lines: selected.inventory_invoice_lines || [],
+      ingredients: reference.ingredients,
       existingInvoices: invoices
         .filter((row) => row.id !== selected.id)
         .map((row) => ({
@@ -353,7 +356,7 @@ export default function InvoiceIntakeView({
           status: row.status,
         })),
     });
-  }, [invoices, selected]);
+  }, [invoices, reference.ingredients, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -505,9 +508,9 @@ export default function InvoiceIntakeView({
 
               {inbox && (
                 <p className={`inv-inbox inv-inbox--${inbox.tone}`} data-testid="inventory-inbox">
-                  <strong>{inbox.headline}</strong>
+                  <strong>{inbox.readiness?.headline || inbox.headline}</strong>
                   {" "}
-                  {inbox.recognized}/{inbox.total} lines recognized. {inbox.label}
+                  {inbox.readiness?.summary || `${inbox.recognized}/${inbox.total} lines recognized. ${inbox.label}`}
                   {inbox.priceNote ? ` ${inbox.priceNote}` : ""}
                 </p>
               )}
