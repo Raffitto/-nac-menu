@@ -21,7 +21,6 @@ import {
   createIngredient,
   assignHumanCode,
   updateReceivedQuantity,
-  confirmSupplierReceivingProfile,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
   generateMatchCandidates,
@@ -33,6 +32,7 @@ import {
   updateInvoiceReview,
   uploadInvoice,
 } from "../lib/inventoryApi";
+import InvoiceOnboarding from "./InvoiceOnboarding";
 import { triageInvoice } from "./procurement/inboxTriage";
 import {
   classifyDocumentKind,
@@ -541,24 +541,17 @@ export default function InvoiceIntakeView({
                     </p>
                   );
                 })}
-                {selected.supplier_id && supplierProfileFromRow(reference.suppliers.find((row) => row.id === selected.supplier_id)).priceRequiredOnReceiving !== false && (
-                  <button
-                    type="button"
-                    className="inv-button inv-button--secondary"
-                    disabled={busy === "profile"}
-                    onClick={() => run("profile", async () => {
-                      await confirmSupplierReceivingProfile({
-                        supplierId: selected.supplier_id,
-                        settlementMode: "company_settled",
-                        priceRequiredOnReceiving: false,
-                      });
-                      await refreshList();
-                    }, "Supplier marked company-settled. Restaurant receiving no longer requires a document price. No stock was posted.")}
-                  >
-                    Confirm company-settled — price not required
-                  </button>
-                )}
               </section>
+              <InvoiceOnboarding
+                invoice={selected}
+                ingredients={reference.ingredients}
+                profileConfirmed={supplierProfileFromRow(reference.suppliers.find((row) => row.id === selected.supplier_id)).confirmed}
+                onChanged={async () => {
+                  await refreshList();
+                  await refreshSelected();
+                }}
+                run={run}
+              />
 
               <div className="inv-summary">
                 <article>

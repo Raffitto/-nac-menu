@@ -1094,3 +1094,28 @@
   color: #f5f2eb;
   font-size: 13px;
 }
+.inv-onboard {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 18px;
+}
+.inv-onboard-choice,
+.inv-onboard label {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+}
+.inv-onboard .inv-button {
+  min-height: 48px;
+  width: 100%;
+  justify-content: center;
+}
+.inv-onboard input,
+.inv-onboard select {
+  width: 100%;
+  min-height: 44px;
+}
+
