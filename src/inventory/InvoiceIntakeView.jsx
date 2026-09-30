@@ -32,6 +32,7 @@ import {
   uploadInvoice,
 } from "../lib/inventoryApi";
 import { triageInvoice } from "./procurement/inboxTriage";
+import { buildInvoiceDocument, groupInvoicePages, lineReviewState } from "./procurement/documentPages";
 import { nextHumanCode } from "./procurement/humanCodes";
 import { CANONICAL_UNITS } from "./ingredientMaster";
 import "./invoice-intake.css";
@@ -100,7 +101,7 @@ export default function InvoiceIntakeView({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [postedReceipt, setPostedReceipt] = useState(null);
-  const [file, setFile] = useState(null);
+  const [pages, setPages] = useState([]);
   const [uploadSupplierId, setUploadSupplierId] = useState("");
 
   const refreshList = useCallback(async () => {
@@ -150,21 +151,33 @@ export default function InvoiceIntakeView({
     }
   };
 
+  const addPages = (fileList) => {
+    const grouped = groupInvoicePages([...pages, ...Array.from(fileList || [])]);
+    if (!grouped.ok) {
+      setError(grouped.reason);
+      return;
+    }
+    setError("");
+    setPages(grouped.pages.map((page) => page.file));
+  };
+
   const handleUpload = async (event) => {
     event.preventDefault();
-    if (!file) return;
+    if (!pages.length) return;
     const result = await run("upload", async () => {
+      const file = await buildInvoiceDocument(pages);
       const uploaded = await uploadInvoice({
         branchId,
         file,
         supplierId: uploadSupplierId || null,
         currency: "SAR",
+        notes: pages.length > 1 ? `${pages.length} photos combined into one invoice.` : null,
       });
       setSelectedId(uploaded.invoice.id);
       if (!uploaded.duplicate) await triggerInvoiceOcr(uploaded.invoice.id);
       return uploaded;
     }, "Invoice uploaded and sent for extraction.");
-    if (result) setFile(null);
+    if (result) setPages([]);
   };
 
   const handleHeaderSave = async (event) => {
@@ -332,22 +345,39 @@ export default function InvoiceIntakeView({
               <span>Take photo</span>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 capture="environment"
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                onChange={(event) => {
+                  addPages(event.target.files);
+                  event.target.value = "";
+                }}
               />
             </label>
             <label className="inv-file">
               <Upload size={18} />
-              <span>{file?.name || "Choose photo or PDF"}</span>
+              <span>{pages.length ? `${pages.length} page${pages.length === 1 ? "" : "s"}` : "Choose photo or PDF"}</span>
               <input
                 type="file"
-                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(event) => {
+                  addPages(event.target.files);
+                  event.target.value = "";
+                }}
               />
             </label>
           </div>
-          <button className="inv-button inv-button--primary" disabled={!file || busy === "upload"}>
+          {!!pages.length && (
+            <ol className="inv-pages">
+              {pages.map((page, index) => (
+                <li key={`${page.name}-${index}`}>
+                  Page {index + 1}: {page.name}
+                  <button type="button" onClick={() => setPages(pages.filter((_, item) => item !== index))}>Remove</button>
+                </li>
+              ))}
+            </ol>
+          )}
+          <button className="inv-button inv-button--primary" disabled={!pages.length || busy === "upload"}>
             {busy === "upload" ? <Loader2 className="inv-spin" size={17} /> : <ScanLine size={17} />}
             Upload & extract
           </button>
@@ -540,8 +570,8 @@ export default function InvoiceIntakeView({
                       <span>{money(line.line_total, selected.currency)}</span>
                     </div>
                     <div className="inv-line-match">
-                      <span className={`inv-status inv-status--${line.review_status === "needs_review" ? "warning" : "success"}`}>
-                        {line.review_status.replaceAll("_", " ")}
+                      <span className={`inv-status inv-status--${lineReviewState(line).tone === "recognized" ? "success" : "warning"}`}>
+                        {lineReviewState(line).label}
                       </span>
                       <strong>
                         {ingredientLabel(reference.ingredients.find(({ id }) => id === line.ingredient_id))}
