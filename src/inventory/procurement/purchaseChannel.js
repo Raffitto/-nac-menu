@@ -77,6 +77,15 @@ export function crossSupplierOpportunity({ current = null, alternative = null } 
   if (!comparable(current, alternative)) {
     return { comparable: false, reason: "units_not_comparable" };
   }
+  if (current.costPerBase == null || alternative.costPerBase == null) {
+    return { comparable: false, reason: "price_absent" };
+  }
+  if (
+    (current.costBasis && current.costBasis !== "actual_document_price")
+    || (alternative.costBasis && alternative.costBasis !== "actual_document_price")
+  ) {
+    return { comparable: false, reason: "not_commercial_price" };
+  }
   if (current.supplierId === alternative.supplierId) {
     return { comparable: false, reason: "same_supplier" };
   }

@@ -308,6 +308,18 @@ export async function normalizeInvoiceLines(invoiceId, lines) {
   return results;
 }
 
+export async function confirmLinePack(invoiceId, lineId, packStatus = "verified") {
+  return unwrap(
+    requireClient().rpc("inventory_update_invoice_line", {
+      p_invoice_id: invoiceId,
+      p_line_id: lineId,
+      p_patch: { packStatus },
+      p_reason: "pack_conversion_confirmed",
+    }),
+    "Confirm pack conversion"
+  );
+}
+
 export async function updateReceivedQuantity(invoiceId, lineId, receivedQuantity) {
   return unwrap(
     requireClient().rpc("inventory_update_invoice_line", {
@@ -438,6 +450,23 @@ export async function fetchInventoryReferenceData(branchId) {
     ),
   ]);
   return { ingredients, suppliers, locations };
+}
+
+export async function confirmSupplierReceivingProfile({
+  supplierId,
+  settlementMode,
+  priceRequiredOnReceiving,
+  reason = "manager_confirmed_receiving_profile",
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_confirm_supplier_profile", {
+      p_supplier_id: supplierId,
+      p_settlement_mode: settlementMode,
+      p_price_required: priceRequiredOnReceiving,
+      p_reason: reason,
+    }),
+    "Confirm supplier receiving profile"
+  );
 }
 
 export async function fetchReceiptHistory({ branchId, supplierId, from, to }) {

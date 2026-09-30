@@ -106,20 +106,20 @@ describe("units, price, and cash market", () => {
 });
 
 describe("inventory inbox", () => {
-  test("a missing price blocks posting and a confirmed line can post", () => {
+  test("a missing price blocks an ordinary receipt, and a confirmed priced line can be received", () => {
     const blocked = triageInvoice({
       invoice: { id: "new", supplier_id: "a", invoice_number: "1" },
       lines: [{ id: "l1", active: true, review_status: "verified", original_quantity: 2, unit_price: null }],
     });
     expect(blocked.mayPost).toBe(false);
-    expect(blocked.tone).toBe("blocked");
+    expect(blocked.headline).toBe("PRICE REQUIRED");
 
     const ready = triageInvoice({
       invoice: { id: "new", supplier_id: "a", invoice_number: "2" },
       lines: [{ id: "l1", active: true, review_status: "verified", original_quantity: 2, unit_price: 9 }],
     });
     expect(ready.mayPost).toBe(true);
-    expect(ready.headline).toBe("READY TO POST");
+    expect(ready.headline).toBe("READY TO RECEIVE");
     expect(supplierPriceWriteAllowed("cash_market")).toBe(false);
     expect(supplierPriceWriteAllowed("supplier_credit")).toBe(true);
   });
