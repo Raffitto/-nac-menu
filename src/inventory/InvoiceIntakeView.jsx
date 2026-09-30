@@ -17,9 +17,11 @@ import { supabase } from "../lib/supabase";
 import {
   approveInvoice,
   confirmLineMapping,
+  confirmLinePack,
   createIngredient,
   assignHumanCode,
   updateReceivedQuantity,
+  confirmSupplierReceivingProfile,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
   generateMatchCandidates,
@@ -32,6 +34,12 @@ import {
   uploadInvoice,
 } from "../lib/inventoryApi";
 import { triageInvoice } from "./procurement/inboxTriage";
+import {
+  classifyDocumentKind,
+  resolvePriceRequirement,
+  suggestCodeFamily,
+  supplierProfileFromRow,
+} from "./procurement/receivingPolicy";
 import { buildInvoiceDocument, groupInvoicePages, lineReviewState } from "./procurement/documentPages";
 import {
   invoiceCaptureError,
@@ -39,7 +47,6 @@ import {
   invoiceNeedsExtraction,
   uploadStageLabel,
 } from "./procurement/captureFailure";
-import { nextHumanCode } from "./procurement/humanCodes";
 import { CANONICAL_UNITS } from "./ingredientMaster";
 import "./invoice-intake.css";
 
@@ -332,9 +339,11 @@ export default function InvoiceIntakeView({
   );
   const inbox = useMemo(() => {
     if (!selected) return null;
+    const supplier = reference.suppliers.find((row) => row.id === selected.supplier_id) || null;
     return triageInvoice({
       invoice: selected,
       lines: selected.inventory_invoice_lines || [],
+      supplierProfile: supplierProfileFromRow(supplier),
       existingInvoices: invoices
         .filter((row) => row.id !== selected.id)
         .map((row) => ({
@@ -347,7 +356,7 @@ export default function InvoiceIntakeView({
           status: row.status,
         })),
     });
-  }, [invoices, selected]);
+  }, [invoices, reference.suppliers, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -502,8 +511,54 @@ export default function InvoiceIntakeView({
                   <strong>{inbox.headline}</strong>
                   {" "}
                   {inbox.recognized}/{inbox.total} lines recognized. {inbox.label}
+                  {inbox.priceNote ? ` ${inbox.priceNote}` : ""}
                 </p>
               )}
+
+              <section className="inv-inbox" data-testid="receiving-card">
+                <strong>{reference.suppliers.find((row) => row.id === selected.supplier_id)?.supplier_name || "Confirm supplier"}</strong>
+                <p>#{selected.invoice_number || "—"} · {selected.invoice_date || "date pending"}</p>
+                <p>{classifyDocumentKind(`${selected.raw_ocr_text || ""} ${selected.notes || ""}`) === "delivery_note"
+                  ? "Delivery note. This can still be restaurant receiving evidence."
+                  : "Receiving document."}</p>
+                {(selected.inventory_invoice_lines || []).filter((line) => line.active !== false).map((line) => {
+                  const supplier = reference.suppliers.find((row) => row.id === selected.supplier_id) || null;
+                  const price = resolvePriceRequirement({
+                    profile: supplierProfileFromRow(supplier),
+                    channel: selected.purchase_channel || "supplier_credit",
+                    line,
+                  });
+                  const suggestion = suggestCodeFamily(line.original_description);
+                  return (
+                    <p key={`card-${line.id}`}>
+                      {line.original_description}
+                      {" · "}
+                      {line.original_quantity ?? "—"} {line.original_unit || ""}
+                      {line.supplier_sku ? ` · SKU ${line.supplier_sku}` : ""}
+                      {price.basis === "company_settled_price_not_required" ? " · No price required" : ""}
+                      {price.basis === "price_missing_but_required" ? " · Price required" : ""}
+                      {!line.ingredient_id && suggestion.family ? ` · Suggested ${suggestion.label} (${suggestion.family}), not allocated` : ""}
+                    </p>
+                  );
+                })}
+                {selected.supplier_id && supplierProfileFromRow(reference.suppliers.find((row) => row.id === selected.supplier_id)).priceRequiredOnReceiving !== false && (
+                  <button
+                    type="button"
+                    className="inv-button inv-button--secondary"
+                    disabled={busy === "profile"}
+                    onClick={() => run("profile", async () => {
+                      await confirmSupplierReceivingProfile({
+                        supplierId: selected.supplier_id,
+                        settlementMode: "company_settled",
+                        priceRequiredOnReceiving: false,
+                      });
+                      await refreshList();
+                    }, "Supplier marked company-settled. Restaurant receiving no longer requires a document price. No stock was posted.")}
+                  >
+                    Confirm company-settled — price not required
+                  </button>
+                )}
+              </section>
 
               <div className="inv-summary">
                 <article>
@@ -616,7 +671,7 @@ export default function InvoiceIntakeView({
                       <span>Invoiced {line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
                       <span>Received {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""}</span>
                       <span>Pack {line.pack_quantity ?? "?"} × {line.pack_size ?? "?"} {line.pack_unit || ""}</span>
-                      <span>{money(line.line_total, selected.currency)}</span>
+                      <span>{line.unit_price == null && line.line_total == null ? "Price absent" : money(line.line_total, selected.currency)}</span>
                     </div>
                     <div className="inv-line-match">
                       <span className={`inv-status inv-status--${lineReviewState(line).tone === "recognized" ? "success" : "warning"}`}>
@@ -652,6 +707,16 @@ export default function InvoiceIntakeView({
                         </button>
                         <button className="inv-button inv-button--secondary" disabled={busy === `line:${line.id}`}>Verify line</button>
                       </form>
+                    )}
+                    {!FINAL_STATUSES.has(selected.status) && line.supplier_sku && line.pack_status !== "verified" && (
+                      <button
+                        type="button"
+                        className="inv-button inv-button--ghost"
+                        disabled={busy === `pack:${line.id}`}
+                        onClick={() => run(`pack:${line.id}`, () => confirmLinePack(selected.id, line.id), "Pack conversion verified for this supplier SKU. Stock is still not posted.")}
+                      >
+                        Confirm pack conversion
+                      </button>
                     )}
                     {!FINAL_STATUSES.has(selected.status) && (
                       <form className="inv-map-form" onSubmit={(event) => handleReceived(event, line)}>
@@ -701,7 +766,9 @@ export default function InvoiceIntakeView({
                           Create, code, and map
                         </button>
                         <small>
-                          Next {nextHumanCode("F", reference.ingredients.map((row) => row.human_code).filter(Boolean)).code} is only an example. The database assigns the real code when you confirm.
+                          {suggestCodeFamily(line.original_description).family
+                            ? `Suggestion: ${suggestCodeFamily(line.original_description).label} (${suggestCodeFamily(line.original_description).family}). Confirm a family before a code is issued. This does not allocate a code.`
+                            : "Choose a family. Food is not the default, and no code is allocated until you confirm."}
                         </small>
                       </form>
                     )}
