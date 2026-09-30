@@ -751,7 +751,7 @@ export default function InvoiceIntakeView({
                           min="0"
                           required
                           placeholder="Received quantity"
-                          defaultValue={line.original_quantity ?? ""}
+                          defaultValue={line.canonical_received_quantity ?? line.original_quantity ?? ""}
                         />
                         <input name="conversionFactor" type="number" step="0.0000000001" min="0" defaultValue="1" />
                         <button className="inv-button inv-button--secondary" disabled={busy === `create:${line.id}`}>

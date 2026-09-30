@@ -157,7 +157,12 @@ export default function InvoiceOnboarding({
         </form>
       )}
 
-      {supplierKnown && profileConfirmed && (invoice.inventory_invoice_lines || []).filter((line) => line.active !== false && !line.ingredient_id).map((line) => {
+      {supplierKnown && profileConfirmed && (invoice.inventory_invoice_lines || []).filter((line) => {
+        if (line.active === false) return false;
+        if (!line.ingredient_id) return true;
+        const linked = ingredients.find((item) => item.id === line.ingredient_id);
+        return linked ? !ingredientSuggestionIsSafe(line.original_description, linked.canonical_name) : false;
+      }).map((line) => {
         const suggestion = suggestCodeFamily(line.original_description);
         const matches = ingredients.filter((ingredient) => ingredientSuggestionIsSafe(
           line.original_description,
