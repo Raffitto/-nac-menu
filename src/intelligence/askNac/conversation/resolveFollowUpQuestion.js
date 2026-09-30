@@ -5,7 +5,13 @@
 import { isDocumentSummaryFollowUp } from "../vault/vaultDocumentSummaryRouting";
 import { resolveConversationTurn } from "./resolveConversationTurn";
 import { isConversationFollowUp } from "./conversationFollowUpTaxonomy";
-import { isComparisonAnalysisFollowUp, isSelfContainedManagementQuestion } from "./comparisonContinuity";
+import {
+  isAmbiguousManagementFollowUp,
+  isBranchOnlyFollowUp,
+  isComparisonAnalysisFollowUp,
+  isNonCommercialSourceQuestion,
+  isSelfContainedManagementQuestion,
+} from "./comparisonContinuity";
 
 const PERIOD_FRAGMENTS = [
   { pattern: /\blast month\b/i, text: "last month" },
@@ -193,6 +199,13 @@ export function resolveFollowUpQuestion(question, context = {}) {
     return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] };
   }
 
+  if (isNonCommercialSourceQuestion(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Switched to the source named in this question."],
+    };
+  }
   if (isSelfContainedManagementQuestion(original)) {
     return {
       resolvedQuestion: original,
@@ -201,11 +214,18 @@ export function resolveFollowUpQuestion(question, context = {}) {
     };
   }
   const fabricPeriods = context?.fabricConversation?.activePeriods;
-  if (fabricPeriods?.current?.startDate && fabricPeriods?.comparison?.startDate && isComparisonAnalysisFollowUp(original)) {
+  if (
+    fabricPeriods?.current?.startDate
+    && (
+      isComparisonAnalysisFollowUp(original)
+      || isBranchOnlyFollowUp(original)
+      || isAmbiguousManagementFollowUp(original)
+    )
+  ) {
     return {
       resolvedQuestion: original,
       usedContext: false,
-      resolutionNotes: ["Kept the active comparison."],
+      resolutionNotes: ["Kept the active management context."],
     };
   }
 

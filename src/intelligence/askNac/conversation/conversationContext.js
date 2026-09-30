@@ -2,6 +2,7 @@
  * Session-only Ask NAC conversation memory (no database persistence).
  */
 
+import { isNonCommercialSourceQuestion } from "./comparisonContinuity";
 import {
   captureConversationStateFromTurn,
   createEmptyConversationState,
@@ -93,7 +94,7 @@ export function updateConversationContext(context = {}, payload = {}) {
     previousState: base.activeState,
   });
 
-  return {
+  const next = {
     ...base,
     lastQuestion: question ?? base.lastQuestion,
     lastResolvedQuestion: nextResolvedQuestion,
@@ -114,6 +115,10 @@ export function updateConversationContext(context = {}, payload = {}) {
       : (response?.pendingSession?.status === "complete" ? null : (response?.pendingSessionId ?? base.pendingSessionId)),
     awaitingInput: Boolean(response?.awaitingInput),
   };
+  if (isNonCommercialSourceQuestion(question || "")) {
+    delete next.fabricConversation;
+  }
+  return next;
 }
 
 export function resetConversationContext() {
