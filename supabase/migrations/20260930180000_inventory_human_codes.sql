@@ -1,5 +1,6 @@
 -- Human inventory codes (F1, B1, CL1, ...). UUID remains the identity.
 -- Issued numbers are never recycled. Allocation locks the family row.
+-- Existing ingredients are left unclassified. A code is issued only when a person chooses a family.
 
 alter table public.inventory_ingredients
   add column if not exists inventory_family text

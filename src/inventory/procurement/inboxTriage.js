@@ -59,20 +59,25 @@ export function triageInvoice({
   });
 
   let tone = "ready";
+  let headline = "READY TO POST";
   let label = "Ready to post";
   if (duplicate.mayPost === false) {
     tone = "blocked";
-    label = duplicate.reason || "Possible duplicate";
+    headline = "BLOCKED";
+    label = "Possible duplicate invoice";
   } else if (!active.length || missingNumbers) {
     tone = "blocked";
+    headline = "BLOCKED";
     label = !active.length ? "No extracted lines" : "A quantity or price is missing";
   } else if (recognized < active.length) {
     tone = "confirm";
-    label = `Confirm ${active.length - recognized} item${active.length - recognized === 1 ? "" : "s"}`;
+    headline = "NEEDS REVIEW";
+    label = `${active.length - recognized} item${active.length - recognized === 1 ? "" : "s"} need confirmation`;
   }
 
   return {
     tone,
+    headline,
     label,
     recognized,
     total: active.length,

@@ -6,6 +6,7 @@ import {
   classifyPurchaseChannel,
   crossSupplierOpportunity,
   sameSupplierPriceChange,
+  supplierPriceWriteAllowed,
   PURCHASE_CHANNEL,
 } from "./purchaseChannel";
 import { triageInvoice } from "./inboxTriage";
@@ -118,7 +119,9 @@ describe("inventory inbox", () => {
       lines: [{ id: "l1", active: true, review_status: "verified", original_quantity: 2, unit_price: 9 }],
     });
     expect(ready.mayPost).toBe(true);
-    expect(ready.label).toBe("Ready to post");
+    expect(ready.headline).toBe("READY TO POST");
+    expect(supplierPriceWriteAllowed("cash_market")).toBe(false);
+    expect(supplierPriceWriteAllowed("supplier_credit")).toBe(true);
   });
 
   test("price spike is a warning, not a posted fact", () => {

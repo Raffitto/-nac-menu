@@ -78,6 +78,7 @@ export default function InvoiceIntakeView({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [postedReceipt, setPostedReceipt] = useState(null);
   const [file, setFile] = useState(null);
   const [uploadSupplierId, setUploadSupplierId] = useState("");
 
@@ -159,6 +160,9 @@ export default function InvoiceIntakeView({
       tax: values.get("tax"),
       total: values.get("total"),
       reason: "invoice_intake_review",
+      purchaseChannel: values.get("purchaseChannel") || "supplier_credit",
+      purchaseReason: values.get("purchaseReason") || "",
+      receivingLocationId: values.get("receivingLocationId") || "",
     }), "Invoice header saved.");
   };
 
@@ -339,8 +343,23 @@ export default function InvoiceIntakeView({
                 </button>
               </div>
 
+              {postedReceipt && (
+                <section className="inv-inbox inv-inbox--ready" data-testid="receipt-posted">
+                  <strong>RECEIVED</strong>
+                  <p>{postedReceipt.supplier} · {postedReceipt.number}</p>
+                  <p>{postedReceipt.lines} items · {money(postedReceipt.total, postedReceipt.currency)}</p>
+                  <p>{postedReceipt.location}</p>
+                  <p>Inventory updated. Repeated approval does not post a second receipt.</p>
+                  {postedReceipt.channel === "cash_market" && (
+                    <p>Cash / local market{postedReceipt.reason ? ` · ${postedReceipt.reason.replaceAll("_", " ")}` : ""}. This price is not the regular supplier benchmark.</p>
+                  )}
+                </section>
+              )}
+
               {inbox && (
                 <p className={`inv-inbox inv-inbox--${inbox.tone}`} data-testid="inventory-inbox">
+                  <strong>{inbox.headline}</strong>
+                  {" "}
                   {inbox.recognized}/{inbox.total} lines recognized. {inbox.label}
                 </p>
               )}
@@ -378,6 +397,32 @@ export default function InvoiceIntakeView({
                 <label>Invoice date<input type="date" name="invoiceDate" defaultValue={selected.invoice_date || ""} required /></label>
                 <label>Effective receipt date<input type="date" name="effectiveReceiptDate" defaultValue={selected.effective_receipt_date || selected.invoice_date || ""} required /></label>
                 <label>Purchase order<input name="purchaseOrderReference" defaultValue={selected.purchase_order_reference || ""} /></label>
+                <label>Channel
+                  <select name="purchaseChannel" defaultValue={selected.purchase_channel || "supplier_credit"}>
+                    <option value="supplier_credit">Supplier credit</option>
+                    <option value="cash_market">Cash / local market</option>
+                  </select>
+                </label>
+                <label>Cash reason
+                  <select name="purchaseReason" defaultValue={selected.purchase_reason || ""}>
+                    <option value="">Normal order</option>
+                    <option value="supplier_shortage">Supplier shortage</option>
+                    <option value="supplier_unavailable">Supplier unavailable</option>
+                    <option value="urgent_requirement">Urgent requirement</option>
+                    <option value="quality_rejection">Quality rejection</option>
+                    <option value="price_opportunity">Price opportunity</option>
+                    <option value="emergency_purchase">Emergency purchase</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>Receiving location
+                  <select name="receivingLocationId" defaultValue={selected.receiving_location_id || ""}>
+                    <option value="">Default receiving location</option>
+                    {(reference.locations || []).map((location) => (
+                      <option key={location.id} value={location.id}>{location.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <label>Subtotal<input type="number" step="0.000001" name="subtotal" defaultValue={selected.subtotal ?? ""} required /></label>
                 <label>Discount<input type="number" step="0.000001" name="discount" defaultValue={selected.discount ?? "0"} required /></label>
                 <label>Tax<input type="number" step="0.000001" name="tax" defaultValue={selected.tax ?? "0"} required /></label>
@@ -501,7 +546,21 @@ export default function InvoiceIntakeView({
                   <button
                     className="inv-button inv-button--primary"
                     disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || inbox?.mayPost === false || busy === "approve"}
-                    onClick={() => run("approve", () => approveInvoice(selected.id), "Invoice posted. Repeated approval will return this receipt.")}
+                    onClick={() => run("approve", async () => {
+                      const result = await approveInvoice(selected.id);
+                      setPostedReceipt({
+                        supplier: selected.inventory_suppliers?.supplier_name || "Supplier",
+                        number: selected.invoice_number || selected.source_filename,
+                        total: selected.total,
+                        currency: selected.currency,
+                        lines: selected.inventory_invoice_lines?.filter((line) => line.active !== false).length || 0,
+                        channel: selected.purchase_channel || "supplier_credit",
+                        reason: selected.purchase_reason,
+                        location: (reference.locations || []).find((row) => row.id === selected.receiving_location_id)?.name || "Default receiving location",
+                        status: result?.status,
+                      });
+                      return result;
+                    }, "Invoice posted. A repeated approval returns the same receipt.")}
                   >
                     {busy === "approve" ? <Loader2 className="inv-spin" size={17} /> : <CheckCircle2 size={17} />}
                     Approve & post

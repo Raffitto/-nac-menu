@@ -19,6 +19,10 @@ export const CASH_REASONS = Object.freeze([
   "other",
 ]);
 
+export function supplierPriceWriteAllowed(channel) {
+  return classifyPurchaseChannel({ channel }).updatesSupplierPriceHistory;
+}
+
 export function classifyPurchaseChannel({ channel = null, reason = null } = {}) {
   const normalized = String(channel || "").toLowerCase();
   if (normalized === PURCHASE_CHANNEL.CASH_MARKET || normalized === "cash") {
