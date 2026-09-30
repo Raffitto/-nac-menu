@@ -1,7 +1,7 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InvoiceIntakeView from "./InvoiceIntakeView";
-import { fetchInventoryReferenceData, fetchInvoiceHistory } from "../lib/inventoryApi";
+import { fetchInventoryReferenceData, fetchInvoiceHistory, triggerInvoiceOcr, uploadInvoice } from "../lib/inventoryApi";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 
 jest.mock("../dashboard/hooks/usePlatformSession", () => ({
@@ -67,5 +67,35 @@ describe("InvoiceIntakeView", () => {
       expect(fetchInvoiceHistory).toHaveBeenCalledWith({ branchId: "khobar" });
       expect(fetchInventoryReferenceData).toHaveBeenCalledWith("khobar");
     });
+  });
+
+  test("keeps the photographed page and offers retry when the source upload is aborted", async () => {
+    usePlatformSession.mockReturnValue({
+      session: { user: { id: "user-1", email: "manager@nac.test" } },
+      checked: true,
+      issue: null,
+    });
+    fetchInvoiceHistory.mockResolvedValue([]);
+    fetchInventoryReferenceData.mockResolvedValue({ ingredients: [], suppliers: [], locations: [] });
+    uploadInvoice.mockRejectedValue(Object.assign(
+      new Error("Invoice photo could not be uploaded. Your photo is still selected — tap Retry."),
+      { stage: "upload" },
+    ));
+    jest.spyOn(console, "error").mockImplementation(() => {});
+
+    render(<InvoiceIntakeView />);
+    await screen.findByText("Upload supplier invoice");
+    const camera = document.querySelector('input[capture="environment"]');
+    fireEvent.change(camera, {
+      target: { files: [new File(["photo"], "image.jpg", { type: "image/jpeg" })] },
+    });
+    expect(await screen.findByText(/Page 1: image.jpg/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Upload & extract" }));
+
+    expect(await screen.findByText(/Your photo is still selected — tap Retry/)).toBeInTheDocument();
+    expect(screen.getByText(/Page 1: image.jpg/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(triggerInvoiceOcr).not.toHaveBeenCalled();
+    console.error.mockRestore();
   });
 });
