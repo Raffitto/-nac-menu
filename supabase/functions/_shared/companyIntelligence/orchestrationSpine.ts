@@ -25,7 +25,14 @@ import {
 import { critiqueEvidence } from "./evidenceCritic.ts";
 import { assessFeasibility } from "./feasibilityGate.ts";
 import { buildInfeasibleComparisonAnswer } from "./askNacFabricBridge.ts";
-import { isComparisonAnalysisFollowUp, isPeriodOnlyFollowUpTurn, resolveFabricFollowUp } from "./conversationFollowUp.ts";
+import {
+  isAmbiguousManagementFollowUp,
+  isBranchOnlyFollowUp,
+  isComparisonAnalysisFollowUp,
+  isNonCommercialSourceQuestion,
+  isPeriodOnlyFollowUpTurn,
+  resolveFabricFollowUp,
+} from "./conversationFollowUp.ts";
 import type { StructuredConversationState } from "./conversationState.ts";
 import { synthesizeDeterministicAnswer } from "./deterministicSynthesis.ts";
 import {
@@ -167,6 +174,7 @@ export function isManagementIntelligenceQuestion(
     referenceDate?: Date;
   },
 ) {
+  if (isNonCommercialSourceQuestion(question)) return false;
   const intent = String(legacyRoute?.intent || "");
   if (/^vault_cash_up|^vault_operational|^vault_business_reasoning|^executive_analysis/.test(intent)) {
     return true;
@@ -179,11 +187,13 @@ export function isManagementIntelligenceQuestion(
     return true;
   }
 
-  const priorPeriods = options?.priorFabricConversation?.activePeriods;
   if (
-    priorPeriods?.current?.startDate
-    && priorPeriods?.comparison?.startDate
-    && isComparisonAnalysisFollowUp(question)
+    hasFabricInheritContext(options?.priorFabricConversation)
+    && (
+      isComparisonAnalysisFollowUp(question)
+      || isBranchOnlyFollowUp(question)
+      || isAmbiguousManagementFollowUp(question)
+    )
   ) {
     return true;
   }
@@ -221,13 +231,14 @@ function deterministicCapabilities(question: string, requiresComparison: boolean
   if (/\b(percentage|percent|share|contributed)\b/.test(q) && !requiresComparison) {
     return ["commercial.performance"];
   }
-  if (/\b(best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|most orders)\b/.test(q) && !requiresComparison) {
+  if (requiresComparison) return ["commercial.compare"];
+  if (/\b(best|worst|top\s+\d|bottom\s+\d|highest|lowest|which day|most orders)\b/.test(q)) {
     return ["commercial.rank_days"];
   }
-  if (/\b(trend|trending)\b/.test(q) && !requiresComparison) {
+  if (/\b(trend|trending)\b/.test(q)) {
     return ["commercial.trend"];
   }
-  if (requiresComparison || /\b(compare|versus|\bvs\b|lower than|higher than|what changed|what explains|difference between|why)\b/.test(q)) {
+  if (/\b(compare|versus|\bvs\b|lower than|higher than|difference between)\b/.test(q)) {
     return ["commercial.compare"];
   }
   return ["commercial.performance"];
@@ -261,7 +272,7 @@ function metricKeyMetrics(state: CompanyIntelligenceState) {
     .filter((e) => typeof e.value === "number" && e.metricOrEvent !== "management_brief" && e.metricOrEvent !== "delta_pct")
     .slice(0, 8)
     .map((e) => ({
-      label: e.metricOrEvent,
+      label: String(e.metricOrEvent || "Metric").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
       value: e.value,
       source: e.source,
     }));
@@ -419,6 +430,33 @@ export async function runCompanyIntelligenceOrchestration(
       nextHolidayDate: followUp.nextHolidayDate || null,
     },
   });
+
+  if (followUp.clarification) {
+    state = transition(state, "COMPLETE", {
+      answer: { text: followUp.clarification, verified: true },
+      cost: {
+        ...state.cost,
+        deterministicRouteUsed: true,
+        plannerUsed: false,
+        paidModelCallsPerAnswer: 0,
+        verifierOk: true,
+        latencyMs: Date.now() - started,
+        requestCategory: "clarification",
+      },
+    });
+    return {
+      state,
+      answerText: followUp.clarification,
+      answerType: "clarification",
+      keyMetrics: [],
+      insights: [],
+      nextConversation: followUp.conversation,
+      toolsExecuted: [],
+      paidModelCalls: 0,
+      coverageContract: null,
+      correctionNeeded: false,
+    };
+  }
 
   const branch = state.scope.primaryBranchId;
   const requiresComparison = Boolean(state.periods.comparison)

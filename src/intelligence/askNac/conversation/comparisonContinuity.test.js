@@ -91,6 +91,101 @@ describe("comparison continuity", () => {
     expect(out.yesterday.subject).toBeFalsy();
   });
 
+  test("modifiers, resets, branch, source, and ambiguity stay deterministic", () => {
+    const out = runFabric(`
+      const previous = ${JSON.stringify(PREVIOUS)};
+      const ref = new Date(${JSON.stringify(REF)});
+      const questions = [
+        "same but per day",
+        "which one is stronger daily?",
+        "what changed?",
+        "why though?",
+        "top 5 days?",
+        "first 10 days",
+        "same comparison but orders",
+        "what about covers instead?",
+        "what about Riyadh?",
+      ];
+      const rows = questions.map((question) => {
+        const resolved = mod.resolveFabricFollowUp({ question, previous, referenceDate: ref });
+        return {
+          question,
+          baseline: resolved.currentPeriod && resolved.currentPeriod.startDate,
+          baselineEnd: resolved.currentPeriod && resolved.currentPeriod.endDate,
+          subject: resolved.comparisonPeriod && resolved.comparisonPeriod.startDate,
+          subjectEnd: resolved.comparisonPeriod && resolved.comparisonPeriod.endDate,
+          branch: resolved.branchId,
+          clarification: resolved.clarification || null,
+          metric: resolved.conversation.management && resolved.conversation.management.metric,
+        };
+      });
+      const ambiguous = mod.resolveFabricFollowUp({ question: "what about that?", previous, referenceDate: ref });
+      const forgotten = mod.resolveFabricFollowUp({ question: "forget that, sales yesterday", previous, referenceDate: ref });
+      const yesterday = mod.resolveFabricFollowUp({ question: "sales yesterday", previous, referenceDate: ref });
+      const perDayAfter = mod.resolveFabricFollowUp({
+        question: "per day?",
+        previous: yesterday.conversation,
+        referenceDate: ref,
+      });
+      const menu = mod.resolveFabricFollowUp({ question: "how many menu QR scans today?", previous, referenceDate: ref });
+      const salesAfterMenu = mod.resolveFabricFollowUp({
+        question: "sales yesterday",
+        previous: menu.conversation,
+        referenceDate: ref,
+      });
+      const why = mod.defaultTemporalService.resolveFromQuestion("why are September sales lower than August?", ref);
+      const reversed = mod.defaultTemporalService.resolveFromQuestion("compare September so far with August", ref);
+      const nowReversed = mod.defaultTemporalService.resolveFromQuestion("now September vs August", ref);
+      return {
+        rows,
+        ambiguous: ambiguous.clarification,
+        forgotten: {
+          baseline: forgotten.currentPeriod && forgotten.currentPeriod.startDate,
+          subject: forgotten.comparisonPeriod && forgotten.comparisonPeriod.startDate,
+        },
+        perDayAfter: {
+          baseline: perDayAfter.currentPeriod && perDayAfter.currentPeriod.startDate,
+          subject: perDayAfter.comparisonPeriod && perDayAfter.comparisonPeriod.startDate,
+        },
+        menuSource: menu.conversation.management && menu.conversation.management.source,
+        menuComparison: menu.comparisonPeriod && menu.comparisonPeriod.startDate,
+        salesAfterMenu: {
+          baseline: salesAfterMenu.currentPeriod && salesAfterMenu.currentPeriod.startDate,
+          subject: salesAfterMenu.comparisonPeriod && salesAfterMenu.comparisonPeriod.startDate,
+        },
+        why: { baseline: why.range && why.range.startDate, subject: why.compareRange && why.compareRange.startDate },
+        reversed: { baseline: reversed.range && reversed.range.startDate, subject: reversed.compareRange && reversed.compareRange.startDate },
+        nowReversed: { baseline: nowReversed.range && nowReversed.range.startDate, subject: nowReversed.compareRange && nowReversed.compareRange.startDate },
+      };
+    `);
+
+    for (const row of out.rows) {
+      expect(row.baseline).toBe("2026-08-01");
+      expect(row.subject).toBe("2026-09-01");
+      if (row.question === "first 10 days") {
+        expect(row.baselineEnd).toBe("2026-08-10");
+        expect(row.subjectEnd).toBe("2026-09-10");
+      }
+    }
+    expect(out.rows.find((row) => row.question === "what about Riyadh?").branch).toBe("riyadh");
+    expect(out.rows.find((row) => row.question === "same comparison but orders").metric).toBe("orders");
+    expect(out.ambiguous).toMatch(/which period/i);
+    expect(out.forgotten.baseline).toBe("2026-09-24");
+    expect(out.forgotten.subject).toBeFalsy();
+    expect(out.perDayAfter.baseline).toBe("2026-09-24");
+    expect(out.perDayAfter.subject).toBeFalsy();
+    expect(out.menuSource).toBe("menu_analytics");
+    expect(out.menuComparison).toBeFalsy();
+    expect(out.salesAfterMenu.baseline).toBe("2026-09-24");
+    expect(out.salesAfterMenu.subject).toBeFalsy();
+    expect(out.why.baseline).toBe("2026-08-01");
+    expect(out.why.subject).toBe("2026-09-01");
+    expect(out.reversed.baseline).toBe("2026-09-01");
+    expect(out.reversed.subject).toBe("2026-08-01");
+    expect(out.nowReversed.baseline).toBe("2026-09-01");
+    expect(out.nowReversed.subject).toBe("2026-08-01");
+  });
+
   test("client follow-up resolver does not rewrite an active comparison or a named-month why", () => {
     const context = {
       lastQuestion: "compare August with September so far",

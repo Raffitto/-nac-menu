@@ -3,7 +3,13 @@
  */
 
 import { isDocumentSummaryFollowUp } from "./askNacVaultTools.ts";
-import { isComparisonAnalysisFollowUp, isSelfContainedManagementQuestion } from "./companyIntelligence/conversationFollowUp.ts";
+import {
+  isAmbiguousManagementFollowUp,
+  isBranchOnlyFollowUp,
+  isComparisonAnalysisFollowUp,
+  isNonCommercialSourceQuestion,
+  isSelfContainedManagementQuestion,
+} from "./companyIntelligence/conversationFollowUp.ts";
 import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
@@ -212,7 +218,7 @@ export function updateConversationContextEdge(context: Record<string, unknown> =
     previousState: base.activeState as ReturnType<typeof createEmptyConversationState>,
   });
 
-  return {
+  const next = {
     ...base,
     lastQuestion: question ?? base.lastQuestion,
     lastResolvedQuestion: resolvedQuestion,
@@ -223,6 +229,10 @@ export function updateConversationContextEdge(context: Record<string, unknown> =
     lastDataset: response?.conversationDataset ?? base.lastDataset,
     activeState,
   };
+  if (isNonCommercialSourceQuestion(String(question || ""))) {
+    delete (next as { fabricConversation?: unknown }).fabricConversation;
+  }
+  return next;
 }
 
 function extractBranchFragment(text: string) {
@@ -464,6 +474,13 @@ export function resolveFollowUpQuestion(question: string, context: Record<string
   const original = normalizeQuestion(question);
   if (!original) return { resolvedQuestion: original, usedContext: false, resolutionNotes: [] as string[] };
 
+  if (isNonCommercialSourceQuestion(original)) {
+    return {
+      resolvedQuestion: original,
+      usedContext: false,
+      resolutionNotes: ["Switched to the source named in this question."],
+    };
+  }
   if (isSelfContainedManagementQuestion(original)) {
     return {
       resolvedQuestion: original,
@@ -472,11 +489,18 @@ export function resolveFollowUpQuestion(question: string, context: Record<string
     };
   }
   const fabricPeriods = (context.fabricConversation as { activePeriods?: { current?: { startDate?: string }; comparison?: { startDate?: string } } } | undefined)?.activePeriods;
-  if (fabricPeriods?.current?.startDate && fabricPeriods?.comparison?.startDate && isComparisonAnalysisFollowUp(original)) {
+  if (
+    fabricPeriods?.current?.startDate
+    && (
+      isComparisonAnalysisFollowUp(original)
+      || isBranchOnlyFollowUp(original)
+      || isAmbiguousManagementFollowUp(original)
+    )
+  ) {
     return {
       resolvedQuestion: original,
       usedContext: false,
-      resolutionNotes: ["Kept the active comparison."],
+      resolutionNotes: ["Kept the active management context."],
     };
   }
 

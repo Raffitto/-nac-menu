@@ -196,7 +196,9 @@ export function formatManagementComparison(model, { projectionRequested = false 
   const driver = largestDriver(model);
   if (driver) lines.push("", driver);
   if (base.source === "commerce_orders" || subject.source === "commerce_orders") {
-    lines.push("", "Source: commerce orders where Cash Up has no days. This is not a Cash Up total.");
+    lines.push("", "Source: Commerce Orders. Cash Up has no days in this window, so this is not a Cash Up total.");
+  } else {
+    lines.push("", "Source: Cash Up.");
   }
   if (projectionRequested && subject.salesPerDay != null && subject.representedDays) {
     lines.push("", "No month-end projection was requested in a way that changes the actual totals above.");
@@ -380,10 +382,11 @@ function comparisonFocusPreface(model, question) {
   const q = String(question || "").toLowerCase();
   const subject = model.subject.label;
   const baseline = model.baseline.label;
-  if (/\bwhy\b|\bwhat changed the most\b|\bwhat explains\b|\bdifference between\b/.test(q)) {
+  if (/\bwhy\b|\bwhat changed\b|\bwhat explains\b|\bdifference between\b/.test(q)) {
     return [
       "Measured differences come from represented days, sales per day, covers, orders, spend per cover, and average order value.",
-      "Unproven causes are not in this evidence. Weather, staffing, marketing, holidays, and guest sentiment were not used.",
+      "The current data can measure these differences but does not establish an external cause.",
+      "Unproven causes are not in this evidence.",
     ].join("\n");
   }
   if (/\baverage spend\b|\bspend per cover\b|\baverage order\b|\bavg spend\b/.test(q)) {
@@ -404,7 +407,7 @@ function comparisonFocusPreface(model, question) {
       namedDelta(`Orders/day — ${subject} vs ${baseline}`, model.ordersPerDay, "count"),
     ].join("\n");
   }
-  if (/\bper day\b/.test(q)) {
+  if (/\bper day\b|\bstronger daily\b|\bdoing better per day\b/.test(q)) {
     return [
       `Daily sales pace — ${baseline}: ${formatSar(model.baseline.salesPerDay)} SAR/day`,
       `Daily sales pace — ${subject}: ${formatSar(model.subject.salesPerDay)} SAR/day`,
@@ -412,6 +415,40 @@ function comparisonFocusPreface(model, question) {
     ].join("\n");
   }
   return "";
+}
+
+function isShortManagementFollowUp(question) {
+  const q = String(question || "").toLowerCase();
+  if (/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/.test(q)) {
+    return false;
+  }
+  return q.length <= 96
+    && /\b(per day|covers|orders|average spend|avg spend|spend per cover|average order|why|what changed|best days|worst days|top\s+\d+\s+days|first\s+\d+\s+days|stronger daily|doing better per day)\b/.test(q);
+}
+
+function formatFocusedComparison(model, question) {
+  const q = String(question || "").toLowerCase();
+  const base = model.baseline;
+  const subject = model.subject;
+  const anchor = `${base.label} (${base.start || "start"} to ${base.end || "end"}) compared with ${subject.label} (${subject.start || "start"} to ${subject.end || "end"}).`;
+  const preface = comparisonFocusPreface(model, q);
+  if (/\bwhy\b|\bwhat changed\b|\bwhat explains\b/.test(q)) {
+    const pace = model.salesPerDay.deltaPct == null
+      ? "a daily pace that cannot be percent-compared"
+      : `running ${Math.abs(model.salesPerDay.deltaPct).toFixed(2)}% ${model.salesPerDay.deltaPct >= 0 ? "above" : "below"}`;
+    const interpretation = model.comparisonMode === "like_for_like"
+      ? `${subject.label} vs ${base.label}: both sides use the same represented-day count.`
+      : `${subject.label} has ${subject.representedDays ?? "?"} represented days versus ${base.representedDays ?? "?"} in ${base.label}. On a daily basis, ${subject.label} is ${pace} ${base.label}.`;
+    return [
+      anchor,
+      preface,
+      interpretation,
+      namedDelta(`${subject.label} vs ${base.label} total sales`, model.sales, "SAR"),
+      namedDelta("Daily sales pace", model.salesPerDay, "SAR"),
+      largestDriver(model),
+    ].filter(Boolean).join("\n");
+  }
+  return [anchor, preface].filter(Boolean).join("\n\n");
 }
 
 export function managementBriefForCashUp({
@@ -426,9 +463,10 @@ export function managementBriefForCashUp({
   source = "cash_up",
 } = {}) {
   const q = String(question || "").toLowerCase();
-  if (baseline && subject && /\b(best|worst)\s+days?\b|\bwhich had the best\b/.test(q)) {
+  if (baseline && subject && /\b(best|worst)\s+days?\b|\btop\s+\d+\s+days?\b|\bwhich had the best\b/.test(q)) {
     const direction = /\bworst\b/.test(q) ? "bottom" : "top";
-    const ranked = (rows) => Object.assign(Array.isArray(rows) ? rows : [], { limit: 5 });
+    const limitMatch = q.match(/\btop\s+(\d{1,2})\s+days?\b/);
+    const ranked = (rows) => Object.assign(Array.isArray(rows) ? rows : [], { limit: limitMatch ? Number(limitMatch[1]) : 5 });
     return [
       formatRankingAnswer({ label: baseline.label, metric: "sales", direction, rows: ranked(baselineDaily) }),
       "",
@@ -439,6 +477,9 @@ export function managementBriefForCashUp({
   }
   if (baseline && subject) {
     const model = buildManagementComparison({ baseline, subject });
+    if (isShortManagementFollowUp(q)) {
+      return formatFocusedComparison(model, q);
+    }
     const preface = comparisonFocusPreface(model, q);
     const text = formatManagementComparison(model, {
       projectionRequested: /\b(at this pace|run-?rate|project|finish at|end the month)\b/.test(q),

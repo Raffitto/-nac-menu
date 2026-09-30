@@ -3,8 +3,8 @@
  * Follow-ups modify ONLY dimensions explicitly changed by the user.
  */
 
-import type { StructuredConversationState } from "./conversationState.ts";
-import { createEmptyConversationState, updateConversationState } from "./conversationState.ts";
+import type { ManagementContext, StructuredConversationState } from "./conversationState.ts";
+import { createEmptyConversationState, emptyManagementContext, updateConversationState } from "./conversationState.ts";
 import { defaultTemporalService } from "./temporalService.ts";
 import { normalizeBranchId } from "./scope.ts";
 import type { DateRange } from "./types.ts";
@@ -28,17 +28,47 @@ export type FollowUpResolution = {
   metricFamily: string | null;
   conversation: StructuredConversationState;
   notes: string[];
+  clarification?: string | null;
 };
 
 function monthWords(question: string): string[] {
   return String(question || "").toLowerCase().match(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/g) || [];
 }
 
-export function isExplicitComparisonReset(question: string): boolean {
+export function stripContextReset(question: string): { question: string; reset: boolean } {
+  const raw = String(question || "").trim();
+  const match = raw.match(/^(?:forget that|forget it|start over|never mind|reset context)(?:\s+that)?[,:]?\s*(.*)$/i);
+  if (!match) return { question: raw, reset: false };
+  return { question: String(match[1] || "").trim(), reset: true };
+}
+
+export function isNonCommercialSourceQuestion(question: string): boolean {
+  const q = String(question || "").toLowerCase();
+  if (/\b(menu qr|menu scans?|qr scans?)\b/.test(q) && !/\b(net sales|cash up|covers per|orders per)\b/.test(q)) return true;
+  if (/\b(review qr|google reviews?|google redirects?|review events?)\b/.test(q)) return true;
+  return false;
+}
+
+export function isAmbiguousManagementFollowUp(question: string): boolean {
   const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
+  if (/^(?:what|how) about that$/.test(q)) return true;
+  if (/^and the previous month$/.test(q)) return true;
+  return false;
+}
+
+export function isBranchOnlyFollowUp(question: string): boolean {
+  const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
+  const focus = q.replace(/^(?:what about|how about|and)\s+(?:the\s+)?/, "");
+  return /^(?:riyadh|jeddah|khobar|al khobar)$/.test(focus);
+}
+
+export function isExplicitComparisonReset(question: string): boolean {
+  const q = stripContextReset(question).question.toLowerCase().replace(/[?!.]+$/g, "").trim();
   if (/^(?:and\s+)?(?:yesterday|today|last week|this week|last month|this month)$/.test(q)) return true;
+  if (/^(?:what about|how about)\s+(?:yesterday|today|last week|this week|last month|this month)$/.test(q)) return true;
   if (/^(?:sales|covers|orders|guests|revenue)(?:\s+of)?\s+(?:yesterday|today)$/.test(q)) return true;
-  if (/\bhow many\b/.test(q)) return true;
+  if (/\bhow many\b/.test(q) && !/\b(covers|orders)\b/.test(q)) return true;
+  if (/\bhow many\b/.test(q) && /\b(today|yesterday)\b/.test(q)) return true;
   return false;
 }
 
@@ -50,18 +80,62 @@ export function isSelfContainedManagementQuestion(question: string): boolean {
 }
 
 export function isComparisonAnalysisFollowUp(question: string): boolean {
-  if (isExplicitComparisonReset(question) || isSelfContainedManagementQuestion(question)) return false;
+  if (
+    isExplicitComparisonReset(question)
+    || isSelfContainedManagementQuestion(question)
+    || isNonCommercialSourceQuestion(question)
+    || isAmbiguousManagementFollowUp(question)
+    || isBranchOnlyFollowUp(question)
+  ) return false;
   const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
-  const focus = q.replace(/^(?:what about|how about|and)\s+(?:the\s+)?/, "");
+  if (/\b(visuali[sz]e|chart|graph|break it down|daily breakdown)\b/.test(q)) return false;
+  const focus = q.replace(/^(?:what about|how about|and|same but|same comparison but)\s+(?:the\s+)?/, "");
   if (/^(?:yesterday|today|last week|this week|last month|this month|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/.test(focus)
     && !/\b(?:per day|covers|orders|spend|days)\b/.test(focus)) {
     return false;
   }
-  return /^(?:per day|sales per day|covers|orders|average spend|avg spend|spend per cover|average order|aov|best days?|worst days?|why)$/.test(focus)
-    || /\b(?:per day|covers|orders|average spend|spend per cover|average order|first\s+\d+\s+days|best days|worst days)\b/.test(q)
+  return /^(?:per day|sales per day|covers|orders|average spend|avg spend|spend per cover|average order|aov|best days?|worst days?|why|why though|what changed)$/.test(focus)
+    || /\b(?:per day|covers|orders|average spend|spend per cover|average order|first\s+\d+\s+days|best days|worst days|top\s+\d+\s+days|stronger daily|doing better per day)\b/.test(q)
     || /^why\b/.test(q)
-    || /\bwhat changed the most\b/.test(q)
-    || /\bwhich had the best\b/.test(q);
+    || /\bwhat changed\b/.test(q)
+    || /\bwhich had the best\b/.test(q)
+    || /\bwhich one is (?:doing better|stronger|higher|lower)\b/.test(q)
+    || /\bsame (?:but|comparison)\b/.test(q);
+}
+
+function inferManagement(
+  question: string,
+  prev: StructuredConversationState,
+  periods: { current: DateRange | null; comparison: DateRange | null },
+): ManagementContext {
+  const q = String(question || "").toLowerCase();
+  const metric = /\bcovers\b/.test(q)
+    ? "covers"
+    : /\borders\b/.test(q)
+      ? "orders"
+      : /\b(average spend|avg spend|spend per cover|average order|\baov\b)\b/.test(q)
+        ? "average_spend"
+        : /\b(per day|stronger daily|doing better per day)\b/.test(q)
+          ? "sales_per_day"
+          : (prev.management?.metric || "net_sales");
+  const top = q.match(/\btop\s+(\d{1,2})\b/);
+  const first = q.match(/\bfirst\s+(\d{1,2})\s+days\b/);
+  const previousSource = prev.management?.source;
+  const source = previousSource === "menu_analytics" || previousSource === "review_analytics"
+    ? "cash_up"
+    : (previousSource || "cash_up");
+  return {
+    capability: periods.comparison
+      ? "comparison"
+      : (/\b(best|worst|top\s+\d+)\b/.test(q) ? "ranking" : "period"),
+    metric,
+    source,
+    mode: first
+      ? "like_for_like"
+      : (periods.comparison ? (prev.management?.mode === "like_for_like" && !first ? prev.management.mode : "full_vs_open") : "single_period"),
+    rankingDirection: /\bworst\b/.test(q) ? "bottom" : (/\b(best|top)\b/.test(q) ? "top" : (prev.management?.rankingDirection || null)),
+    topN: top ? Number(top[1]) : (/\b(best|worst)\s+days?\b/.test(q) ? 5 : (prev.management?.topN || null)),
+  };
 }
 
 function hasInheritContext(prev: StructuredConversationState): boolean {
@@ -131,9 +205,11 @@ export function resolveFabricFollowUp(input: {
   referenceDate?: Date;
 }): FollowUpResolution {
   const prev = input.previous || createEmptyConversationState();
-  const q = String(input.question || "").trim();
+  const stripped = stripContextReset(input.question);
+  const q = stripped.reset ? stripped.question : String(input.question || "").trim();
   const ql = q.toLowerCase();
   const notes: string[] = [];
+  if (stripped.reset) notes.push("context_reset");
   const ref = input.referenceDate || new Date();
 
   let branchId = normalizeBranchId(input.branchHint) || prev.activeBranchId || null;
@@ -141,9 +217,53 @@ export function resolveFabricFollowUp(input: {
   if (mentioned) branchId = mentioned;
   // Never invent a branch id from free text; keep previous or hint only.
 
-  const inherit = hasInheritContext(prev);
+  const inherit = hasInheritContext(prev) && !stripped.reset;
   const metricFamily = prev.activeMetricFamily || (inherit ? "commercial" : null);
   const previousIntent = prev.previousIntent || (inherit ? "performance_overview" : null);
+
+  if (isNonCommercialSourceQuestion(q)) {
+    const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
+    const source = /\breview|google redirect/.test(ql) ? "review_analytics" : "menu_analytics";
+    const conversation = updateConversationState(createEmptyConversationState(), {
+      activeBranchId: branchId,
+      activePeriods: { current: temporal.range || null, comparison: null },
+      activeMetricFamily: null,
+      activeCapabilities: [],
+      previousIntent: null,
+      management: {
+        ...emptyManagementContext(),
+        capability: "period",
+        source,
+        mode: "single_period",
+      },
+    });
+    notes.push("source_switch");
+    return {
+      usedFollowUp: false,
+      resolvedQuestion: q,
+      branchId,
+      currentPeriod: temporal.range || null,
+      comparisonPeriod: null,
+      metricFamily: null,
+      conversation,
+      notes,
+    };
+  }
+
+  if (isAmbiguousManagementFollowUp(q) && prev.activePeriods?.current) {
+    notes.push("clarification");
+    return {
+      usedFollowUp: true,
+      resolvedQuestion: q,
+      branchId,
+      currentPeriod: prev.activePeriods.current,
+      comparisonPeriod: prev.activePeriods.comparison,
+      metricFamily: prev.activeMetricFamily,
+      conversation: prev,
+      notes,
+      clarification: "Say which period, metric, or branch to use. I kept the current analysis instead of guessing.",
+    };
+  }
 
   // "Why the difference?" — keep periods, flip to compare intent
   if (/^why the difference\??$/i.test(ql) && prev.activePeriods.current) {
@@ -194,6 +314,56 @@ export function resolveFabricFollowUp(input: {
       activeCapabilities: ["commercial.compare", "commercial.performance"],
       activePeriods: { current, comparison },
       previousIntent: "period_compare",
+      management: inferManagement(q, prev, { current, comparison }),
+    });
+    return {
+      usedFollowUp: true,
+      resolvedQuestion: q,
+      branchId: conversation.activeBranchId,
+      currentPeriod: current,
+      comparisonPeriod: comparison,
+      metricFamily: conversation.activeMetricFamily,
+      conversation,
+      notes,
+    };
+  }
+
+  if (isComparisonAnalysisFollowUp(q) && prev.activePeriods?.current && !prev.activePeriods?.comparison) {
+    notes.push("followup_single_period_modifier");
+    const current = prev.activePeriods.current;
+    const conversation = updateConversationState(prev, {
+      activeBranchId: branchId || prev.activeBranchId,
+      activeMetricFamily: metricFamily || "commercial",
+      activeCapabilities: ["commercial.performance"],
+      activePeriods: { current, comparison: null },
+      previousIntent: "performance_overview",
+      management: inferManagement(q, prev, { current, comparison: null }),
+    });
+    return {
+      usedFollowUp: true,
+      resolvedQuestion: q,
+      branchId: conversation.activeBranchId,
+      currentPeriod: current,
+      comparisonPeriod: null,
+      metricFamily: conversation.activeMetricFamily,
+      conversation,
+      notes,
+    };
+  }
+
+  if (isBranchOnlyFollowUp(q) && prev.activePeriods?.current) {
+    notes.push("followup_branch");
+    const current = prev.activePeriods.current;
+    const comparison = prev.activePeriods.comparison;
+    const conversation = updateConversationState(prev, {
+      activeBranchId: branchId || prev.activeBranchId,
+      activeMetricFamily: metricFamily || "commercial",
+      activePeriods: { current, comparison },
+      activeCapabilities: comparison
+        ? ["commercial.compare", "commercial.performance"]
+        : ["commercial.performance"],
+      previousIntent: comparison ? "period_compare" : (previousIntent || "performance_overview"),
+      management: inferManagement(q, prev, { current, comparison }),
     });
     return {
       usedFollowUp: true,
@@ -297,30 +467,36 @@ export function resolveFabricFollowUp(input: {
     }
   }
 
-  // Fresh question — resolve temporally; keep company/brand/branch when present
+  // Fresh question — resolve temporally; keep company/brand/branch when present.
+  // A resolved period with no comparison clears the previous comparison.
+  // An unresolved question does not invent last-7-days here.
   const temporal = defaultTemporalService.resolveFromQuestion(q, ref);
-  const freshMetric = inherit && !temporal.range && metricFamily
-    ? metricFamily
-    : (metricFamily || "commercial");
-  const conversation = updateConversationState(prev, {
+  const hasNewPeriod = Boolean(temporal.range?.startDate);
+  const freshMetric = hasNewPeriod ? (metricFamily || "commercial") : (inherit ? metricFamily : "commercial");
+  const nextCurrent = hasNewPeriod ? temporal.range : (inherit ? prev.activePeriods.current : temporal.range);
+  const nextComparison = hasNewPeriod ? (temporal.compareRange || null) : (inherit ? prev.activePeriods.comparison : null);
+  const conversation = updateConversationState(stripped.reset ? createEmptyConversationState() : prev, {
     activeCompanyId: prev.activeCompanyId || "nac_hospitality",
     activeBrandId: prev.activeBrandId || "nac",
     activeBranchId: branchId,
     activeMetricFamily: freshMetric,
-    activeCapabilities: temporal.range ? prev.activeCapabilities : prev.activeCapabilities,
+    activeCapabilities: hasNewPeriod && nextComparison
+      ? ["commercial.compare", "commercial.performance"]
+      : (hasNewPeriod ? ["commercial.performance"] : prev.activeCapabilities),
     activePeriods: {
-      current: temporal.range,
-      comparison: temporal.compareRange,
+      current: nextCurrent,
+      comparison: nextComparison,
     },
-    previousIntent: temporal.range ? (previousIntent || prev.previousIntent) : prev.previousIntent,
+    previousIntent: nextComparison ? "period_compare" : (hasNewPeriod ? "performance_overview" : prev.previousIntent),
+    management: inferManagement(q, prev, { current: nextCurrent, comparison: nextComparison }),
   });
 
   return {
-    usedFollowUp: false,
+    usedFollowUp: stripped.reset && hasNewPeriod,
     resolvedQuestion: q,
     branchId,
-    currentPeriod: temporal.range,
-    comparisonPeriod: temporal.compareRange,
+    currentPeriod: nextCurrent,
+    comparisonPeriod: nextComparison,
     forecastPeriod: temporal.forecastRange || null,
     nextHolidayDate: temporal.nextHolidayDate || null,
     eventWindow: temporal.eventWindow || null,
