@@ -9,6 +9,7 @@ export const NAV_ITEMS = [
   { id: "reports", label: "Reports", legacyViews: ["export-center", "reports"] },
   { id: "menu", label: "Menu", legacyViews: ["menu-manager"] },
   { id: "food-bible", label: "Food Bible", legacyViews: ["food-bible", "recipes"] },
+  { id: "inventory", label: "Inventory", legacyViews: ["inventory"] },
   { id: "branches", label: "Branches", legacyViews: ["branches"] },
   { id: "settings", label: "Settings", legacyViews: ["settings"] },
 ];
@@ -182,6 +183,7 @@ export function isScrollableView(view) {
     "menu",
     "food-bible",
     "recipes",
+    "inventory",
     "branches",
     "settings",
   ].includes(view);

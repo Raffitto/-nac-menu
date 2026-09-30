@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   BookOpen,
+  Package,
   FileDown,
 } from "lucide-react";
 import useCollapsibleSidebar from "./hooks/useCollapsibleSidebar";
@@ -60,6 +61,7 @@ const BranchesView = lazy(() => import("./views/BranchesView"));
 const SettingsView = lazy(() => import("./views/SettingsView"));
 const MenuManager = lazy(() => import("./MenuManager"));
 const FoodBibleOsView = lazy(() => import("./views/FoodBibleOsView"));
+const InventoryApp = lazy(() => import("../inventory/InventoryApp"));
 const ExportCenter = lazy(() => import("./exportCenter/ExportCenter"));
 const OperationalDashboard = lazy(() => import("./views/OperationalDashboard"));
 const LegacyOverviewPanel = lazy(() => import("./views/LegacyOverviewPanel"));
@@ -69,6 +71,7 @@ const VIEW_PREFETCHERS = {
   reviews: () => import("./views/ReviewsHub"),
   menu: () => import("./MenuManager"),
   "food-bible": () => import("./views/FoodBibleOsView"),
+  inventory: () => import("../inventory/InventoryApp"),
   branches: () => import("./views/BranchesView"),
   settings: () => import("./views/SettingsView"),
 };
@@ -80,6 +83,7 @@ const NAV_ICONS = {
   reports: FileDown,
   menu: UtensilsCrossed,
   "food-bible": BookOpen,
+  inventory: Package,
   branches: Store,
   settings: Settings,
 };
@@ -550,6 +554,18 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 <FoodBibleOsView />
               ) : (
                 <AccessDeniedPanel message="Food Bible access is not enabled for your NAC OS role." />
+              )}
+            </Suspense>
+          </div>
+        ) : null}
+
+        {adminView === "inventory" ? (
+          <div className="admin-active-pane" data-testid="pane-inventory">
+            <Suspense fallback={<ViewFallback label="Opening Inventory…" />}>
+              {rbac.canAccessNav("inventory") ? (
+                <InventoryApp embedded />
+              ) : (
+                <AccessDeniedPanel message="Inventory access is not enabled for your NAC OS role." />
               )}
             </Suspense>
           </div>

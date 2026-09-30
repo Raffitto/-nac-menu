@@ -50,6 +50,7 @@ function permissionSummary(profile, rbac) {
   if (rbac?.canAccessNav?.("reports")) items.push("Reports");
   if (rbac?.canAccessNav?.("menu")) items.push("Menu");
   if (rbac?.canAccessNav?.("food-bible")) items.push("Food Bible");
+  if (rbac?.canAccessNav?.("inventory")) items.push("Inventory");
   if (rbac?.canAccessNav?.("branches")) items.push("Branches");
   if (rbac?.canAccessNav?.("settings")) items.push("Settings");
   if (rbac?.hasPermission?.("manage:menu")) items.push("Manage menu");

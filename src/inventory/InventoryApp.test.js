@@ -75,6 +75,15 @@ describe("InventoryApp", () => {
     });
   });
 
+  test("stays inside NAC OS when opened from the main navigation", async () => {
+    window.history.replaceState({}, "", "/?view=inventory");
+    render(<InventoryApp embedded />);
+    expect(await screen.findByText("Take photo")).toBeInTheDocument();
+    expect(screen.getByText("Choose photo or PDF")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+    expect(new URLSearchParams(window.location.search).get("view")).toBe("inventory");
+  });
+
   test("requires authentication", () => {
     usePlatformSession.mockReturnValue({ session: null, checked: true, issue: null });
     render(<InventoryApp />);
