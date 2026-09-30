@@ -17,6 +17,9 @@ import { supabase } from "../lib/supabase";
 import {
   approveInvoice,
   confirmLineMapping,
+  createIngredient,
+  assignHumanCode,
+  updateReceivedQuantity,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
   generateMatchCandidates,
@@ -28,6 +31,9 @@ import {
   updateInvoiceReview,
   uploadInvoice,
 } from "../lib/inventoryApi";
+import { triageInvoice } from "./procurement/inboxTriage";
+import { nextHumanCode } from "./procurement/humanCodes";
+import { CANONICAL_UNITS } from "./ingredientMaster";
 import "./invoice-intake.css";
 
 const BRANCHES = [
@@ -56,6 +62,22 @@ function money(value, currency = "SAR") {
   return `${Number(value).toFixed(2)} ${currency}`;
 }
 
+const CODE_FAMILIES = [
+  ["F", "Food"],
+  ["B", "Bar"],
+  ["C", "Consumable"],
+  ["CL", "Cleaning"],
+  ["P", "Packaging"],
+  ["E", "Equipment"],
+  ["M", "Maintenance"],
+];
+
+function ingredientLabel(ingredient) {
+  if (!ingredient) return "Canonical ingredient required";
+  const code = ingredient.human_code ? `${ingredient.human_code} ` : "";
+  return `${code}${ingredient.canonical_name}`;
+}
+
 function confidence(value) {
   if (value == null) return "—";
   return `${Math.round(Number(value) * 100)}%`;
@@ -77,6 +99,7 @@ export default function InvoiceIntakeView({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [postedReceipt, setPostedReceipt] = useState(null);
   const [file, setFile] = useState(null);
   const [uploadSupplierId, setUploadSupplierId] = useState("");
 
@@ -158,6 +181,9 @@ export default function InvoiceIntakeView({
       tax: values.get("tax"),
       total: values.get("total"),
       reason: "invoice_intake_review",
+      purchaseChannel: values.get("purchaseChannel") || "supplier_credit",
+      purchaseReason: values.get("purchaseReason") || "",
+      receivingLocationId: values.get("receivingLocationId") || "",
     }), "Invoice header saved.");
   };
 
@@ -182,6 +208,47 @@ export default function InvoiceIntakeView({
     }), "Line mapping verified and saved.");
   };
 
+  const handleCreateItem = async (event, line) => {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const family = values.get("family");
+    const name = String(values.get("name") || "").trim();
+    const unit = values.get("baseUnit");
+    const received = values.get("receivedQuantity");
+    if (!family || !name || !unit || !received) {
+      setError("Name, family, unit, and received quantity are required before a new item is created.");
+      return;
+    }
+    await run(`create:${line.id}`, async () => {
+      const created = await createIngredient({
+        canonicalName: name,
+        category: values.get("category") || null,
+        baseInventoryUnit: unit,
+      });
+      const coded = await assignHumanCode(created.id, family);
+      await confirmLineMapping({
+        invoiceLineId: line.id,
+        ingredientId: coded.id,
+        conversionFactor: values.get("conversionFactor") || "1",
+        canonicalQuantity: received,
+        canonicalUnit: unit,
+        createVerifiedAlias: false,
+        reason: "created_from_invoice_line",
+      });
+      return coded;
+    }, "New item coded and mapped. This invoice stayed open.");
+  };
+
+  const handleReceived = async (event, line) => {
+    event.preventDefault();
+    const received = new FormData(event.currentTarget).get("receivedQuantity");
+    await run(
+      `received:${line.id}`,
+      () => updateReceivedQuantity(selected.id, line.id, received),
+      "Received quantity saved. The stock movement uses this quantity."
+    );
+  };
+
   const openSource = async () => {
     await run("source", async () => {
       const url = await getInvoiceSourceUrl(selected);
@@ -201,6 +268,24 @@ export default function InvoiceIntakeView({
     ).length || 0,
     [selected]
   );
+  const inbox = useMemo(() => {
+    if (!selected) return null;
+    return triageInvoice({
+      invoice: selected,
+      lines: selected.inventory_invoice_lines || [],
+      existingInvoices: invoices
+        .filter((row) => row.id !== selected.id)
+        .map((row) => ({
+          id: row.id,
+          fileHash: row.file_hash,
+          supplierId: row.supplier_id,
+          invoiceNumber: row.invoice_number,
+          invoiceDate: row.invoice_date,
+          total: row.total,
+          status: row.status,
+        })),
+    });
+  }, [invoices, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -241,15 +326,27 @@ export default function InvoiceIntakeView({
               <option key={supplier.id} value={supplier.id}>{supplier.supplier_name}</option>
             ))}
           </select>
-          <label className="inv-file">
-            <Upload size={18} />
-            <span>{file?.name || "Choose invoice"}</span>
-            <input
-              type="file"
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
-            />
-          </label>
+          <div className="inv-capture">
+            <label className="inv-file">
+              <ScanLine size={18} />
+              <span>Take photo</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            <label className="inv-file">
+              <Upload size={18} />
+              <span>{file?.name || "Choose photo or PDF"}</span>
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
           <button className="inv-button inv-button--primary" disabled={!file || busy === "upload"}>
             {busy === "upload" ? <Loader2 className="inv-spin" size={17} /> : <ScanLine size={17} />}
             Upload & extract
@@ -308,6 +405,27 @@ export default function InvoiceIntakeView({
                 </button>
               </div>
 
+              {postedReceipt && (
+                <section className="inv-inbox inv-inbox--ready" data-testid="receipt-posted">
+                  <strong>RECEIVED</strong>
+                  <p>{postedReceipt.supplier} · {postedReceipt.number}</p>
+                  <p>{postedReceipt.lines} items · {money(postedReceipt.total, postedReceipt.currency)}</p>
+                  <p>{postedReceipt.location}</p>
+                  <p>Inventory updated. Repeated approval does not post a second receipt.</p>
+                  {postedReceipt.channel === "cash_market" && (
+                    <p>Cash / local market{postedReceipt.reason ? ` · ${postedReceipt.reason.replaceAll("_", " ")}` : ""}. This price is not the regular supplier benchmark.</p>
+                  )}
+                </section>
+              )}
+
+              {inbox && (
+                <p className={`inv-inbox inv-inbox--${inbox.tone}`} data-testid="inventory-inbox">
+                  <strong>{inbox.headline}</strong>
+                  {" "}
+                  {inbox.recognized}/{inbox.total} lines recognized. {inbox.label}
+                </p>
+              )}
+
               <div className="inv-summary">
                 <article>
                   <strong>{selected.inventory_invoice_lines?.length || 0}</strong>
@@ -341,6 +459,32 @@ export default function InvoiceIntakeView({
                 <label>Invoice date<input type="date" name="invoiceDate" defaultValue={selected.invoice_date || ""} required /></label>
                 <label>Effective receipt date<input type="date" name="effectiveReceiptDate" defaultValue={selected.effective_receipt_date || selected.invoice_date || ""} required /></label>
                 <label>Purchase order<input name="purchaseOrderReference" defaultValue={selected.purchase_order_reference || ""} /></label>
+                <label>Channel
+                  <select name="purchaseChannel" defaultValue={selected.purchase_channel || "supplier_credit"}>
+                    <option value="supplier_credit">Supplier credit</option>
+                    <option value="cash_market">Cash / local market</option>
+                  </select>
+                </label>
+                <label>Cash reason
+                  <select name="purchaseReason" defaultValue={selected.purchase_reason || ""}>
+                    <option value="">Normal order</option>
+                    <option value="supplier_shortage">Supplier shortage</option>
+                    <option value="supplier_unavailable">Supplier unavailable</option>
+                    <option value="urgent_requirement">Urgent requirement</option>
+                    <option value="quality_rejection">Quality rejection</option>
+                    <option value="price_opportunity">Price opportunity</option>
+                    <option value="emergency_purchase">Emergency purchase</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>Receiving location
+                  <select name="receivingLocationId" defaultValue={selected.receiving_location_id || ""}>
+                    <option value="">Default receiving location</option>
+                    {(reference.locations || []).map((location) => (
+                      <option key={location.id} value={location.id}>{location.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <label>Subtotal<input type="number" step="0.000001" name="subtotal" defaultValue={selected.subtotal ?? ""} required /></label>
                 <label>Discount<input type="number" step="0.000001" name="discount" defaultValue={selected.discount ?? "0"} required /></label>
                 <label>Tax<input type="number" step="0.000001" name="tax" defaultValue={selected.tax ?? "0"} required /></label>
@@ -390,7 +534,8 @@ export default function InvoiceIntakeView({
                       <small>SKU {line.supplier_sku || "—"} · OCR {confidence(line.ocr_confidence)}</small>
                     </div>
                     <div className="inv-line-numbers">
-                      <span>{line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
+                      <span>Invoiced {line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
+                      <span>Received {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""}</span>
                       <span>Pack {line.pack_quantity ?? "?"} × {line.pack_size ?? "?"} {line.pack_unit || ""}</span>
                       <span>{money(line.line_total, selected.currency)}</span>
                     </div>
@@ -399,7 +544,7 @@ export default function InvoiceIntakeView({
                         {line.review_status.replaceAll("_", " ")}
                       </span>
                       <strong>
-                        {reference.ingredients.find(({ id }) => id === line.ingredient_id)?.canonical_name || "Canonical ingredient required"}
+                        {ingredientLabel(reference.ingredients.find(({ id }) => id === line.ingredient_id))}
                       </strong>
                       <small>
                         {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""} · {line.match_method?.replaceAll("_", " ") || "unmatched"}
@@ -411,7 +556,7 @@ export default function InvoiceIntakeView({
                           <option value="">Choose canonical ingredient</option>
                           {reference.ingredients.map((ingredient) => (
                             <option key={ingredient.id} value={ingredient.id}>
-                              {ingredient.canonical_name} ({ingredient.base_inventory_unit})
+                              {ingredientLabel(ingredient)} ({ingredient.base_inventory_unit})
                             </option>
                           ))}
                         </select>
@@ -427,6 +572,58 @@ export default function InvoiceIntakeView({
                           Suggest
                         </button>
                         <button className="inv-button inv-button--secondary" disabled={busy === `line:${line.id}`}>Verify line</button>
+                      </form>
+                    )}
+                    {!FINAL_STATUSES.has(selected.status) && (
+                      <form className="inv-map-form" onSubmit={(event) => handleReceived(event, line)}>
+                        <label>Received quantity
+                          <input
+                            name="receivedQuantity"
+                            type="number"
+                            step="0.0000000001"
+                            min="0"
+                            required
+                            defaultValue={line.canonical_received_quantity ?? line.original_quantity ?? ""}
+                          />
+                        </label>
+                        <button className="inv-button inv-button--ghost" disabled={busy === `received:${line.id}`}>
+                          Save received quantity
+                        </button>
+                      </form>
+                    )}
+                    {!FINAL_STATUSES.has(selected.status) && !line.ingredient_id && (
+                      <form className="inv-map-form" onSubmit={(event) => handleCreateItem(event, line)}>
+                        <strong>Create new item</strong>
+                        <input name="name" required placeholder="Canonical name" defaultValue="" />
+                        <select name="family" required defaultValue="">
+                          <option value="">Choose code family</option>
+                          {CODE_FAMILIES.map(([code, label]) => (
+                            <option key={code} value={code}>{label} ({code})</option>
+                          ))}
+                        </select>
+                        <input name="category" placeholder="Category label, optional" />
+                        <select name="baseUnit" required defaultValue="">
+                          <option value="">Base unit</option>
+                          {CANONICAL_UNITS.map((unit) => (
+                            <option key={unit.value} value={unit.value}>{unit.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          name="receivedQuantity"
+                          type="number"
+                          step="0.0000000001"
+                          min="0"
+                          required
+                          placeholder="Received quantity"
+                          defaultValue={line.original_quantity ?? ""}
+                        />
+                        <input name="conversionFactor" type="number" step="0.0000000001" min="0" defaultValue="1" />
+                        <button className="inv-button inv-button--secondary" disabled={busy === `create:${line.id}`}>
+                          Create, code, and map
+                        </button>
+                        <small>
+                          Next {nextHumanCode("F", reference.ingredients.map((row) => row.human_code).filter(Boolean)).code} is only an example. The database assigns the real code when you confirm.
+                        </small>
                       </form>
                     )}
                     {!!line.match_candidates?.length && (
@@ -463,8 +660,22 @@ export default function InvoiceIntakeView({
                   </button>
                   <button
                     className="inv-button inv-button--primary"
-                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || busy === "approve"}
-                    onClick={() => run("approve", () => approveInvoice(selected.id), "Invoice posted. Repeated approval will return this receipt.")}
+                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || inbox?.mayPost === false || busy === "approve"}
+                    onClick={() => run("approve", async () => {
+                      const result = await approveInvoice(selected.id);
+                      setPostedReceipt({
+                        supplier: selected.inventory_suppliers?.supplier_name || "Supplier",
+                        number: selected.invoice_number || selected.source_filename,
+                        total: selected.total,
+                        currency: selected.currency,
+                        lines: selected.inventory_invoice_lines?.filter((line) => line.active !== false).length || 0,
+                        channel: selected.purchase_channel || "supplier_credit",
+                        reason: selected.purchase_reason,
+                        location: (reference.locations || []).find((row) => row.id === selected.receiving_location_id)?.name || "Default receiving location",
+                        status: result?.status,
+                      });
+                      return result;
+                    }, "Invoice posted. A repeated approval returns the same receipt.")}
                   >
                     {busy === "approve" ? <Loader2 className="inv-spin" size={17} /> : <CheckCircle2 size={17} />}
                     Approve & post
