@@ -16,6 +16,7 @@ import {
   supplierWordingFromInvoice,
 } from "./procurement/supplierOnboarding";
 import { classifyDocumentKind, interpretSupplierPack, suggestCodeFamily, suggestReceivingTreatment } from "./procurement/receivingPolicy";
+import { ingredientSuggestionIsSafe } from "./procurement/receivingReadiness";
 
 const FAMILIES = [
   ["P", "Packaging"],
@@ -158,10 +159,10 @@ export default function InvoiceOnboarding({
 
       {supplierKnown && profileConfirmed && (invoice.inventory_invoice_lines || []).filter((line) => line.active !== false && !line.ingredient_id).map((line) => {
         const suggestion = suggestCodeFamily(line.original_description);
-        const matches = ingredients.filter((ingredient) => {
-          const token = String(line.original_description || "").toLowerCase().split(/\s+/).find((part) => part.length >= 6);
-          return token && String(ingredient.canonical_name || "").toLowerCase().includes(token);
-        }).slice(0, 3);
+        const matches = ingredients.filter((ingredient) => ingredientSuggestionIsSafe(
+          line.original_description,
+          ingredient.canonical_name,
+        )).slice(0, 3);
         return (
           <article key={line.id} className="inv-onboard-choice">
             <strong>{line.original_description}</strong>
@@ -175,8 +176,8 @@ export default function InvoiceOnboarding({
                   await confirmLineMapping({
                     invoiceLineId: line.id,
                     ingredientId: ingredient.id,
-                    conversionFactor: "1",
-                    canonicalQuantity: line.original_quantity,
+                    conversionFactor: line.conversion_factor || "1",
+                    canonicalQuantity: line.canonical_received_quantity || line.original_quantity,
                     canonicalUnit: ingredient.base_inventory_unit,
                     createVerifiedAlias: true,
                     reason: "matched_on_invoice",
@@ -201,8 +202,8 @@ export default function InvoiceOnboarding({
                   await confirmLineMapping({
                     invoiceLineId: line.id,
                     ingredientId: created.id,
-                    conversionFactor: "1",
-                    canonicalQuantity: line.original_quantity,
+                    conversionFactor: line.conversion_factor || "1",
+                    canonicalQuantity: line.canonical_received_quantity || line.original_quantity,
                     canonicalUnit: values.get("baseUnit"),
                     createVerifiedAlias: false,
                     reason: "created_on_invoice",

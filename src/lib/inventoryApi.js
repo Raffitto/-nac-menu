@@ -476,6 +476,13 @@ export async function attachSupplierToInvoice({
   );
 }
 
+export async function reconcileInvoiceExceptions(invoiceId) {
+  return unwrap(
+    requireClient().rpc("inventory_reconcile_invoice_exceptions", { p_invoice_id: invoiceId }),
+    "Reconcile invoice exceptions"
+  );
+}
+
 export async function confirmDocumentReceivingTreatment({ invoiceId, treatment }) {
   return unwrap(
     requireClient().rpc("inventory_confirm_document_treatment", {

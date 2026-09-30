@@ -112,11 +112,24 @@ describe("inventory inbox", () => {
       lines: [{ id: "l1", active: true, review_status: "verified", original_quantity: 2, unit_price: null }],
     });
     expect(blocked.mayPost).toBe(false);
-    expect(blocked.headline).toBe("PRICE REQUIRED");
+    expect(blocked.headline).toBe("NOT READY");
 
     const ready = triageInvoice({
-      invoice: { id: "new", supplier_id: "a", invoice_number: "2" },
-      lines: [{ id: "l1", active: true, review_status: "verified", original_quantity: 2, unit_price: 9 }],
+      invoice: { id: "new", supplier_id: "a", invoice_number: "2", receiving_treatment: "normal_supplier_invoice" },
+      lines: [{
+        id: "l1",
+        active: true,
+        review_status: "verified",
+        ingredient_id: "item",
+        original_description: "Tomatoes",
+        original_quantity: 2,
+        canonical_received_quantity: 2,
+        canonical_unit: "kilogram",
+        conversion_factor: 1,
+        unit_price: 9,
+        line_total: 18,
+      }],
+      ingredients: [{ id: "item", canonical_name: "Tomatoes" }],
     });
     expect(ready.mayPost).toBe(true);
     expect(ready.headline).toBe("READY TO RECEIVE");

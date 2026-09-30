@@ -1,5 +1,6 @@
 import { classifyInvoiceDuplicate } from "./duplicateEngine";
 import { classifySupplierLineMapping } from "./mappingEngine";
+import { evaluateInvoiceReadiness } from "./receivingReadiness";
 import {
   interpretSupplierPack,
   RECEIVING_TREATMENT,
@@ -127,6 +128,27 @@ export function triageInvoice({
     label = `${active.length - recognized} item${active.length - recognized === 1 ? "" : "s"} need confirmation`;
   }
 
+  const readiness = evaluateInvoiceReadiness({
+    invoice,
+    lines: active.map((line) => {
+      const sku = line.supplier_sku || line.supplierSku;
+      const learned = learnedPacks[sku];
+      return learned ? { ...line, learnedPack: true, pack_status: line.pack_status || "verified", conversion_factor: line.conversion_factor || learned.conversionFactor } : line;
+    }),
+    ingredients,
+    duplicateMayPost: duplicate.mayPost,
+  });
+  if (!readiness.ready && readiness.actions.length) {
+    tone = "confirm";
+    headline = readiness.headline;
+    label = readiness.summary;
+  }
+  if (readiness.ready) {
+    tone = "ready";
+    headline = "READY TO RECEIVE";
+    label = "All receiving checks complete.";
+  }
+
   return {
     tone,
     headline,
@@ -136,6 +158,7 @@ export function triageInvoice({
     total: active.length,
     duplicate,
     lines: assessed,
-    mayPost: tone === "ready",
+    readiness,
+    mayPost: readiness.ready && tone === "ready",
   };
 }
