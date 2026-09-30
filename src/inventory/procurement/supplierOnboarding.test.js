@@ -83,13 +83,13 @@ describe("first-time supplier onboarding", () => {
     expect(result.candidates).toEqual([]);
   });
 
-  test("policy choices are explicit and company-settled is not preselected", () => {
+  test("document choices are explicit and none is preselected", () => {
     expect(RECEIVING_POLICY_CHOICES.map((choice) => choice.id)).toEqual([
-      "supplier_credit",
-      "company_settled",
+      "normal_supplier_invoice",
+      "company_settled_document",
       "cash_market",
     ]);
-    expect(RECEIVING_POLICY_CHOICES.find((choice) => choice.id === "company_settled").priceRequiredOnReceiving).toBe(false);
+    expect(RECEIVING_POLICY_CHOICES.every((choice) => choice.treatment === choice.id)).toBe(true);
   });
 
   test("paper bags suggest packaging and tissue suggests consumable without allocating a code", () => {
@@ -108,30 +108,33 @@ describe("first-time supplier onboarding", () => {
     expect(choices[1].canonicalQuantity).toBe("4000");
   });
 
-  test("a second Ecowhiz document reuses the verified supplier, policy, and SKU pack", () => {
+  test("a later Ecowhiz document reuses the SKU pack only when this document is confirmed", () => {
+    const lines = ECOWHIZ_INVOICE.inventory_invoice_lines.map((line) => ({
+      ...line,
+      review_status: "verified",
+      ingredient_id: line.id === "bag" ? "paper" : "tissue",
+    }));
+    const inherited = triageInvoice({
+      invoice: { id: "18499", supplier_id: "ecowhiz", invoice_number: "18499" },
+      lines,
+      supplierProfile: { settlementMode: "company_settled", priceRequiredOnReceiving: false, confirmed: true },
+      learnedPacks: { 2030912: { status: "verified", conversionFactor: 1 } },
+    });
+    expect(inherited.headline).toBe("PRICE REQUIRED");
+    expect(inherited.mayPost).toBe(false);
+
     const ready = triageInvoice({
       invoice: {
         id: "18499",
         supplier_id: "ecowhiz",
         invoice_number: "18499",
-        invoice_date: "2026-10-02",
+        receiving_treatment: "company_settled_document",
       },
-      lines: ECOWHIZ_INVOICE.inventory_invoice_lines.map((line) => ({
-        ...line,
-        review_status: "verified",
-        ingredient_id: line.id === "bag" ? "paper" : "tissue",
-      })),
-      supplierProfile: {
-        settlementMode: "company_settled",
-        priceRequiredOnReceiving: false,
-        confirmed: true,
-      },
-      learnedPacks: {
-        2030912: { status: "verified", conversionFactor: 1, explanation: "Tracked as packs." },
-      },
+      lines,
+      learnedPacks: { 2030912: { status: "verified", conversionFactor: 1 } },
     });
     expect(ready.headline).toBe("READY TO RECEIVE");
-    expect(ready.priceNote).toBe("PRICE NOT REQUIRED — COMPANY SETTLED");
+    expect(ready.priceNote).toBe("PRICE NOT REQUIRED — THIS DOCUMENT");
     expect(ready.mayPost).toBe(true);
   });
 

@@ -56,10 +56,11 @@ describe("Ecowhiz 18426 receiving understanding", () => {
     }
   });
 
-  test("unknown supplier policy still requires a price, and a confirmed company-settled profile does not", () => {
+  test("a supplier profile does not waive a price; only this document's confirmation does", () => {
     const bag = { unit_price: null, line_total: null, original_quantity: 250 };
-    expect(resolvePriceRequirement({ profile: null, line: bag }).required).toBe(true);
-    const settled = resolvePriceRequirement({ profile: COMPANY_SETTLED, line: bag });
+    expect(resolvePriceRequirement({ treatment: null, line: bag }).required).toBe(true);
+    expect(resolvePriceRequirement({ profile: COMPANY_SETTLED, line: bag }).required).toBe(true);
+    const settled = resolvePriceRequirement({ treatment: "company_settled_document", line: bag });
     expect(settled.required).toBe(false);
     expect(settled.basis).toBe(COST_BASIS.COMPANY_SETTLED);
     expect(settled.updatesSupplierPriceHistory).toBe(false);
@@ -69,13 +70,10 @@ describe("Ecowhiz 18426 receiving understanding", () => {
 
   test("cash market and ordinary credit still require an actual price", () => {
     const line = { unit_price: null, line_total: null };
-    expect(resolvePriceRequirement({ profile: COMPANY_SETTLED, channel: "cash_market", line }).required).toBe(true);
+    expect(resolvePriceRequirement({ treatment: "cash_market", line }).required).toBe(true);
+    expect(resolvePriceRequirement({ treatment: "normal_supplier_invoice", line }).basis).toBe(COST_BASIS.MISSING_REQUIRED);
     expect(resolvePriceRequirement({
-      profile: { settlementMode: SETTLEMENT_MODE.SUPPLIER_CREDIT, priceRequiredOnReceiving: true },
-      line,
-    }).basis).toBe(COST_BASIS.MISSING_REQUIRED);
-    expect(resolvePriceRequirement({
-      profile: { settlementMode: SETTLEMENT_MODE.SUPPLIER_CREDIT, priceRequiredOnReceiving: true },
+      treatment: "normal_supplier_invoice",
       line: { unit_price: 8.2, line_total: 16.4 },
     })).toMatchObject({
       required: true,
@@ -148,35 +146,44 @@ describe("exception inbox for quantity-only receiving", () => {
     review_status: "needs_review",
   }));
 
-  test("asks for a price until the supplier profile says it is not required", () => {
+  test("asks for a price until this document is confirmed company-settled", () => {
     const blocked = triageInvoice({
       invoice: { id: "18426", supplier_id: "ecowhiz", invoice_number: "18426" },
       lines,
+      supplierProfile: COMPANY_SETTLED,
     });
     expect(blocked.mayPost).toBe(false);
     expect(blocked.headline).toBe("PRICE REQUIRED");
 
     const settled = triageInvoice({
-      invoice: { id: "18426", supplier_id: "ecowhiz", invoice_number: "18426" },
+      invoice: {
+        id: "18426",
+        supplier_id: "ecowhiz",
+        invoice_number: "18426",
+        receiving_treatment: "company_settled_document",
+      },
       lines,
-      supplierProfile: COMPANY_SETTLED,
     });
     expect(settled.mayPost).toBe(false);
     expect(settled.headline).toBe("CONFIRM PACK");
-    expect(settled.priceNote).toBe("PRICE NOT REQUIRED — COMPANY SETTLED");
+    expect(settled.priceNote).toBe("PRICE NOT REQUIRED — THIS DOCUMENT");
   });
 
   test("a verified company-settled document with a learned pack can be ready to receive", () => {
     const ready = triageInvoice({
-      invoice: { id: "18427", supplier_id: "ecowhiz", invoice_number: "18427", supplier_id_present: true },
+      invoice: {
+        id: "18427",
+        supplier_id: "ecowhiz",
+        invoice_number: "18427",
+        receiving_treatment: "company_settled_document",
+      },
       lines: lines.map((line) => ({ ...line, review_status: "verified" })),
-      supplierProfile: COMPANY_SETTLED,
       learnedPacks: {
         2030912: { status: "verified", conversionFactor: 1000 },
       },
     });
     expect(ready.headline).toBe("READY TO RECEIVE");
     expect(ready.mayPost).toBe(true);
-    expect(ready.priceNote).toBe("PRICE NOT REQUIRED — COMPANY SETTLED");
+    expect(ready.priceNote).toBe("PRICE NOT REQUIRED — THIS DOCUMENT");
   });
 });

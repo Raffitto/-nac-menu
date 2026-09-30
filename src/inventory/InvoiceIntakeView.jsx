@@ -38,7 +38,6 @@ import {
   classifyDocumentKind,
   resolvePriceRequirement,
   suggestCodeFamily,
-  supplierProfileFromRow,
 } from "./procurement/receivingPolicy";
 import { buildInvoiceDocument, groupInvoicePages, lineReviewState } from "./procurement/documentPages";
 import {
@@ -339,11 +338,9 @@ export default function InvoiceIntakeView({
   );
   const inbox = useMemo(() => {
     if (!selected) return null;
-    const supplier = reference.suppliers.find((row) => row.id === selected.supplier_id) || null;
     return triageInvoice({
       invoice: selected,
       lines: selected.inventory_invoice_lines || [],
-      supplierProfile: supplierProfileFromRow(supplier),
       existingInvoices: invoices
         .filter((row) => row.id !== selected.id)
         .map((row) => ({
@@ -356,7 +353,7 @@ export default function InvoiceIntakeView({
           status: row.status,
         })),
     });
-  }, [invoices, reference.suppliers, selected]);
+  }, [invoices, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -522,9 +519,8 @@ export default function InvoiceIntakeView({
                   ? "Delivery note. This can still be restaurant receiving evidence."
                   : "Receiving document."}</p>
                 {(selected.inventory_invoice_lines || []).filter((line) => line.active !== false).map((line) => {
-                  const supplier = reference.suppliers.find((row) => row.id === selected.supplier_id) || null;
                   const price = resolvePriceRequirement({
-                    profile: supplierProfileFromRow(supplier),
+                    treatment: selected.receiving_treatment,
                     channel: selected.purchase_channel || "supplier_credit",
                     line,
                   });
@@ -545,7 +541,7 @@ export default function InvoiceIntakeView({
               <InvoiceOnboarding
                 invoice={selected}
                 ingredients={reference.ingredients}
-                profileConfirmed={supplierProfileFromRow(reference.suppliers.find((row) => row.id === selected.supplier_id)).confirmed}
+                profileConfirmed={Boolean(selected.receiving_treatment)}
                 onChanged={async () => {
                   await refreshList();
                   await refreshSelected();

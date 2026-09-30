@@ -61,25 +61,42 @@ export function supplierProfileFromRow(row = null) {
   };
 }
 
-export function companySettledPriceNotRequired(profile, channel = "supplier_credit") {
-  if (channel === "cash_market") return false;
-  return profile?.settlementMode === SETTLEMENT_MODE.COMPANY_SETTLED
-    && profile?.priceRequiredOnReceiving === false;
+export const RECEIVING_TREATMENT = Object.freeze({
+  NORMAL: "normal_supplier_invoice",
+  COMPANY_SETTLED_DOCUMENT: "company_settled_document",
+  CASH_MARKET: "cash_market",
+});
+
+function confirmedTreatment(document = {}) {
+  return document.receiving_treatment || document.receivingTreatment || document.treatment || null;
+}
+
+/**
+ * A supplier profile is never the receiving rule.
+ * Only a human confirmation stored on this document can waive a price.
+ */
+export function companySettledPriceNotRequired(document = {}, channel = "supplier_credit") {
+  if (channel === "cash_market" || confirmedTreatment(document) === RECEIVING_TREATMENT.CASH_MARKET) return false;
+  return confirmedTreatment(document) === RECEIVING_TREATMENT.COMPANY_SETTLED_DOCUMENT;
 }
 
 /**
  * Whether this receiving event needs a document price.
  * Null stays null. Zero is not used as a stand-in.
+ * An unconfirmed suggestion does not waive the price.
  */
 export function resolvePriceRequirement({
-  profile = null,
+  treatment = null,
+  document = null,
   channel = "supplier_credit",
   line = {},
 } = {}) {
   const unitPrice = line.unit_price ?? line.unitPrice;
   const lineTotal = line.line_total ?? line.lineTotal;
   const present = priceIsPresent(unitPrice) || priceIsPresent(lineTotal);
-  if (channel === "cash_market") {
+  const decided = treatment || confirmedTreatment(document || {});
+  const cash = channel === "cash_market" || decided === RECEIVING_TREATMENT.CASH_MARKET;
+  if (cash) {
     return {
       required: true,
       basis: present ? COST_BASIS.ACTUAL : COST_BASIS.MISSING_REQUIRED,
@@ -88,7 +105,7 @@ export function resolvePriceRequirement({
       storedPrice: present ? (unitPrice ?? lineTotal) : null,
     };
   }
-  if (companySettledPriceNotRequired(profile, channel)) {
+  if (decided === RECEIVING_TREATMENT.COMPANY_SETTLED_DOCUMENT) {
     return {
       required: false,
       basis: COST_BASIS.COMPANY_SETTLED,
@@ -100,9 +117,55 @@ export function resolvePriceRequirement({
   return {
     required: true,
     basis: present ? COST_BASIS.ACTUAL : COST_BASIS.MISSING_REQUIRED,
-    updatesSupplierPriceHistory: present && channel !== "cash_market",
+    updatesSupplierPriceHistory: present,
     updatesWeightedAverage: present,
     storedPrice: present ? (unitPrice ?? lineTotal) : null,
+  };
+}
+
+/**
+ * Document evidence can suggest a treatment. A previous document never decides this one.
+ */
+export function suggestReceivingTreatment({
+  documentKind = null,
+  lines = [],
+  priorDecisions = [],
+} = {}) {
+  const active = (lines || []).filter((line) => line.active !== false);
+  const pricesPresent = active.some((line) => priceIsPresent(line.unit_price ?? line.unitPrice) || priceIsPresent(line.line_total ?? line.lineTotal));
+  const pricesAbsent = active.length > 0 && active.every((line) => !priceIsPresent(line.unit_price ?? line.unitPrice) && !priceIsPresent(line.line_total ?? line.lineTotal));
+  const priorSettled = (priorDecisions || []).filter((row) => row.treatment === RECEIVING_TREATMENT.COMPANY_SETTLED_DOCUMENT && row.confirmed).length;
+  if (pricesPresent) {
+    return {
+      treatment: RECEIVING_TREATMENT.NORMAL,
+      confirmed: false,
+      authoritativeFromHistory: false,
+      reason: "Suggested because this document has prices.",
+    };
+  }
+  if (documentKind === DOCUMENT_KIND.DELIVERY_NOTE && pricesAbsent) {
+    return {
+      treatment: RECEIVING_TREATMENT.COMPANY_SETTLED_DOCUMENT,
+      confirmed: false,
+      authoritativeFromHistory: false,
+      reason: priorSettled
+        ? "Suggested because this document is a delivery note and contains no prices. An earlier document was confirmed separately and does not decide this one."
+        : "Suggested because this document is a delivery note and contains no prices.",
+    };
+  }
+  if (pricesAbsent) {
+    return {
+      treatment: null,
+      confirmed: false,
+      authoritativeFromHistory: false,
+      reason: "Prices are absent, but this document is not a delivery note. Company settlement is not assumed.",
+    };
+  }
+  return {
+    treatment: null,
+    confirmed: false,
+    authoritativeFromHistory: false,
+    reason: "Choose how this document should be received.",
   };
 }
 
