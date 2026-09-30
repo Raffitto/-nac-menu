@@ -30,6 +30,12 @@ jest.mock("../lib/inventoryApi", () => ({
   triggerInvoiceOcr: jest.fn(),
   updateInvoiceReview: jest.fn(),
   uploadInvoice: jest.fn(),
+  supplierCandidatesForInvoice: jest.fn(async () => ({ name: null, vat: null, candidates: [] })),
+  attachSupplierToInvoice: jest.fn(),
+  confirmSupplierReceivingProfile: jest.fn(),
+  confirmLinePack: jest.fn(),
+  createIngredient: jest.fn(),
+  assignHumanCode: jest.fn(),
 }));
 
 describe("InvoiceIntakeView", () => {

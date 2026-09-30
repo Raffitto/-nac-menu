@@ -452,6 +452,30 @@ export async function fetchInventoryReferenceData(branchId) {
   return { ingredients, suppliers, locations };
 }
 
+export async function supplierCandidatesForInvoice(invoiceId) {
+  return unwrap(
+    requireClient().rpc("inventory_supplier_candidates", { p_invoice_id: invoiceId }),
+    "Find supplier candidates"
+  );
+}
+
+export async function attachSupplierToInvoice({
+  invoiceId,
+  supplierId = null,
+  createName = null,
+  confirmSeparate = false,
+}) {
+  return unwrap(
+    requireClient().rpc("inventory_attach_supplier_to_invoice", {
+      p_invoice_id: invoiceId,
+      p_supplier_id: supplierId,
+      p_create_name: createName,
+      p_confirm_separate: confirmSeparate,
+    }),
+    "Attach supplier to invoice"
+  );
+}
+
 export async function confirmSupplierReceivingProfile({
   supplierId,
   settlementMode,
