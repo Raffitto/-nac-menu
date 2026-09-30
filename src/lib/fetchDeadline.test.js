@@ -1,4 +1,4 @@
-import { fetchWithDeadline, isRefreshTokenRequest } from "./fetchDeadline";
+import { fetchWithDeadline, isRefreshTokenRequest, deadlineForRequest, NAC_FETCH_DEADLINE_MS, NAC_INVOICE_TRANSFER_DEADLINE_MS } from "./fetchDeadline";
 
 describe("fetchWithDeadline", () => {
   const originalFetch = global.fetch;
@@ -51,5 +51,26 @@ describe("fetchWithDeadline", () => {
     );
     caller.abort();
     await expect(pending).rejects.toThrow("aborted");
+  });
+
+  test("keeps the 12s deadline for ordinary REST and a longer one for invoice transfer", () => {
+    const storage = "https://example.supabase.co/storage/v1/object/inventory-invoices/khobar/hash/image.jpg";
+    const ocr = "https://example.supabase.co/functions/v1/inventory-invoice-ocr";
+    const rest = "https://example.supabase.co/rest/v1/inventory_invoices";
+    expect(deadlineForRequest(rest, { method: "GET" })).toBe(NAC_FETCH_DEADLINE_MS);
+    expect(deadlineForRequest(storage, { method: "POST" })).toBe(NAC_INVOICE_TRANSFER_DEADLINE_MS);
+    expect(deadlineForRequest(ocr, { method: "POST" })).toBe(NAC_INVOICE_TRANSFER_DEADLINE_MS);
+    expect(deadlineForRequest(storage, { method: "GET" })).toBe(NAC_FETCH_DEADLINE_MS);
+  });
+
+  test("arms the long transfer deadline for a storage upload", async () => {
+    const spy = jest.spyOn(global, "setTimeout");
+    global.fetch = () => Promise.resolve({ ok: true });
+    await fetchWithDeadline(
+      "https://example.supabase.co/storage/v1/object/inventory-invoices/khobar/hash/image.jpg",
+      { method: "POST" },
+    );
+    expect(spy).toHaveBeenCalledWith(expect.any(Function), NAC_INVOICE_TRANSFER_DEADLINE_MS);
+    spy.mockRestore();
   });
 });

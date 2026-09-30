@@ -21,6 +21,10 @@ import {
 } from "../inventory/foodBible";
 import { fetchMenuCatalogueForBranch } from "./menuApi";
 import { mustForkNewDraft, validateRecipeVersionForActivation } from "../inventory/truth/recipeActivation";
+import {
+  invoiceCaptureError,
+  storageObjectAlreadyExists,
+} from "../inventory/procurement/captureFailure";
 
 const FOOD_BIBLE_CATEGORY_SELECT = "id,name_en,name_ar,sort_order,branch_id";
 const FOOD_BIBLE_SECTION_SELECT = "id,category_id,name_en,name_ar,sort_order,branch_id";
@@ -162,6 +166,26 @@ export async function hashInvoiceFile(file) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function invoiceContentType(file) {
+  const type = String(file?.type || "").toLowerCase();
+  if (type) return type;
+  const name = String(file?.name || "").toLowerCase();
+  if (name.endsWith(".pdf")) return "application/pdf";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+async function invoiceByFileHash(client, fileHash, stage) {
+  const { data, error } = await client
+    .from("inventory_invoices")
+    .select("*")
+    .eq("file_hash", fileHash)
+    .maybeSingle();
+  if (error) throw invoiceCaptureError(stage, error);
+  return data;
+}
+
 export async function uploadInvoice({
   branchId,
   file,
@@ -172,55 +196,65 @@ export async function uploadInvoice({
   currency = "SAR",
   notes = null,
   idempotencyKey,
+  onStage,
 }) {
   const client = requireClient();
-  const uploaderId = await currentUserId();
-  const fileHash = await hashInvoiceFile(file);
+  let uploaderId;
+  try {
+    uploaderId = await currentUserId();
+  } catch (error) {
+    throw invoiceCaptureError("auth", error);
+  }
+  let fileHash;
+  try {
+    fileHash = await hashInvoiceFile(file);
+  } catch (error) {
+    throw invoiceCaptureError("prepare", error);
+  }
   const objectPath = `${branchId}/${fileHash}/${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-  const existing = await unwrap(
-    client.from("inventory_invoices").select("*").eq("file_hash", fileHash).maybeSingle(),
-    "Check duplicate invoice file"
-  );
+  const existing = await invoiceByFileHash(client, fileHash, "upload");
   if (existing) return { invoice: existing, duplicate: true };
 
-  await unwrap(
-    client.storage.from("inventory-invoices").upload(objectPath, file, {
-      contentType: file.type,
-      upsert: false,
-    }),
-    "Upload source invoice"
-  );
-
-  try {
-    const invoice = await unwrap(
-      client.from("inventory_invoices").insert({
-        branch_id: branchId,
-        supplier_id: supplierId,
-        source_filename: file.name,
-        storage_bucket: "inventory-invoices",
-        storage_path: objectPath,
-        mime_type: file.type,
-        file_size_bytes: file.size,
-        file_hash: fileHash,
-        status: "uploaded",
-        ocr_status: "pending",
-        processing_status: "uploaded",
-        approval_status: "pending",
-        uploader_id: uploaderId,
-        invoice_number: invoiceNumber,
-        invoice_date: invoiceDate,
-        effective_receipt_date: effectiveReceiptDate || invoiceDate,
-        currency,
-        notes,
-        idempotency_key: idempotencyKey || `upload:${branchId}:${fileHash}`,
-      }).select().single(),
-      "Register invoice"
-    );
-    return { invoice, duplicate: false };
-  } catch (error) {
-    await client.storage.from("inventory-invoices").remove([objectPath]);
-    throw error;
+  onStage?.("uploading");
+  const uploaded = await client.storage.from("inventory-invoices").upload(objectPath, file, {
+    contentType: invoiceContentType(file),
+    upsert: false,
+  });
+  if (uploaded.error && !storageObjectAlreadyExists(uploaded.error)) {
+    throw invoiceCaptureError("upload", uploaded.error);
   }
+
+  onStage?.("registering");
+  const contentType = invoiceContentType(file);
+  const { data: invoice, error: insertError } = await client.from("inventory_invoices").insert({
+    branch_id: branchId,
+    supplier_id: supplierId,
+    source_filename: file.name,
+    storage_bucket: "inventory-invoices",
+    storage_path: objectPath,
+    mime_type: contentType,
+    file_size_bytes: file.size,
+    file_hash: fileHash,
+    status: "uploaded",
+    ocr_status: "pending",
+    processing_status: "uploaded",
+    approval_status: "pending",
+    uploader_id: uploaderId,
+    invoice_number: invoiceNumber,
+    invoice_date: invoiceDate,
+    effective_receipt_date: effectiveReceiptDate || invoiceDate,
+    currency,
+    notes,
+    idempotency_key: idempotencyKey || `upload:${branchId}:${fileHash}`,
+  }).select().single();
+  if (!insertError) return { invoice, duplicate: false };
+
+  const raced = await invoiceByFileHash(client, fileHash, "register");
+  if (raced) return { invoice: raced, duplicate: true };
+  if (!storageObjectAlreadyExists(uploaded.error)) {
+    await client.storage.from("inventory-invoices").remove([objectPath]);
+  }
+  throw invoiceCaptureError("register", insertError);
 }
 
 export async function triggerInvoiceOcr(invoiceId, idempotencyKey = `ocr:${invoiceId}`) {

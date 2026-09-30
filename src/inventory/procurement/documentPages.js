@@ -1,5 +1,6 @@
 /**
- * One invoice document. Several photos become one PDF before upload.
+ * One invoice document. A single photo or PDF is uploaded unchanged.
+ * Several photos become one PDF before upload.
  * HEIC is rejected until a tested conversion exists.
  */
 
@@ -64,7 +65,7 @@ function readAsDataUrl(file) {
 export async function buildInvoiceDocument(files = []) {
   const grouped = groupInvoicePages(files);
   if (!grouped.ok) throw new Error(grouped.reason);
-  if (grouped.pages.length === 1 && grouped.pages[0].kind === "pdf") return grouped.pages[0].file;
+  if (grouped.pages.length === 1) return grouped.pages[0].file;
   const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
   for (let index = 0; index < grouped.pages.length; index += 1) {

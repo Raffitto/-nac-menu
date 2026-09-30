@@ -1,4 +1,4 @@
-import { classifyInvoiceFile, groupInvoicePages, lineReviewState, receivingLocationAllowed } from "./documentPages";
+import { buildInvoiceDocument, classifyInvoiceFile, groupInvoicePages, lineReviewState, receivingLocationAllowed } from "./documentPages";
 
 describe("phone invoice pages", () => {
   test("rejects HEIC and accepts jpeg, png, webp, and pdf", () => {
@@ -21,6 +21,11 @@ describe("phone invoice pages", () => {
       { name: "invoice.pdf", type: "application/pdf" },
       { name: "extra.jpg", type: "image/jpeg" },
     ]).ok).toBe(false);
+  });
+
+  test("a single camera photo stays the original file", async () => {
+    const photo = new File(["jpeg-bytes"], "image.jpg", { type: "image/jpeg" });
+    await expect(buildInvoiceDocument([photo])).resolves.toBe(photo);
   });
 
   test("line states stay uncertain until required facts exist", () => {

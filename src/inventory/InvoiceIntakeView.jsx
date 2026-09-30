@@ -33,6 +33,12 @@ import {
 } from "../lib/inventoryApi";
 import { triageInvoice } from "./procurement/inboxTriage";
 import { buildInvoiceDocument, groupInvoicePages, lineReviewState } from "./procurement/documentPages";
+import {
+  invoiceCaptureError,
+  invoiceCaptureFailureMessage,
+  invoiceNeedsExtraction,
+  uploadStageLabel,
+} from "./procurement/captureFailure";
 import { nextHumanCode } from "./procurement/humanCodes";
 import { CANONICAL_UNITS } from "./ingredientMaster";
 import "./invoice-intake.css";
@@ -103,6 +109,8 @@ export default function InvoiceIntakeView({
   const [postedReceipt, setPostedReceipt] = useState(null);
   const [pages, setPages] = useState([]);
   const [uploadSupplierId, setUploadSupplierId] = useState("");
+  const [uploadStage, setUploadStage] = useState("");
+  const [uploadFailed, setUploadFailed] = useState(false);
 
   const refreshList = useCallback(async () => {
     if (!session) return;
@@ -163,8 +171,19 @@ export default function InvoiceIntakeView({
 
   const handleUpload = async (event) => {
     event.preventDefault();
-    if (!pages.length) return;
-    const result = await run("upload", async () => {
+    if (!pages.length || busy) return;
+    setBusy("upload");
+    setError("");
+    setNotice("");
+    setUploadFailed(false);
+    let savedInvoice = null;
+    let stage = "preparing";
+    const markStage = (next) => {
+      stage = next;
+      setUploadStage(next);
+    };
+    try {
+      markStage("preparing");
       const file = await buildInvoiceDocument(pages);
       const uploaded = await uploadInvoice({
         branchId,
@@ -172,12 +191,42 @@ export default function InvoiceIntakeView({
         supplierId: uploadSupplierId || null,
         currency: "SAR",
         notes: pages.length > 1 ? `${pages.length} photos combined into one invoice.` : null,
+        onStage: markStage,
       });
+      savedInvoice = uploaded.invoice;
       setSelectedId(uploaded.invoice.id);
-      if (!uploaded.duplicate) await triggerInvoiceOcr(uploaded.invoice.id);
-      return uploaded;
-    }, "Invoice uploaded and sent for extraction.");
-    if (result) setPages([]);
+      const extract = invoiceNeedsExtraction(uploaded.invoice);
+      if (extract) {
+        markStage("extracting");
+        try {
+          await triggerInvoiceOcr(uploaded.invoice.id);
+        } catch (error) {
+          throw invoiceCaptureError("extract", error);
+        }
+      }
+      markStage("review");
+      await refreshList();
+      await refreshSelected();
+      setNotice(extract
+        ? "Invoice uploaded and sent for extraction."
+        : "This photo is already in the review queue.");
+      setPages([]);
+    } catch (err) {
+      console.error("[invoice-capture]", err.stage || stage, err.cause || err);
+      setError(err.stage ? err.message : invoiceCaptureFailureMessage(savedInvoice ? "extract" : "prepare", err));
+      setUploadFailed(true);
+      if (savedInvoice) {
+        try {
+          await refreshList();
+          await refreshSelected();
+        } catch (refreshError) {
+          console.error("[invoice-capture] review refresh", refreshError);
+        }
+      }
+    } finally {
+      setBusy("");
+      setUploadStage("");
+    }
   };
 
   const handleHeaderSave = async (event) => {
@@ -379,7 +428,7 @@ export default function InvoiceIntakeView({
           )}
           <button className="inv-button inv-button--primary" disabled={!pages.length || busy === "upload"}>
             {busy === "upload" ? <Loader2 className="inv-spin" size={17} /> : <ScanLine size={17} />}
-            Upload & extract
+            {busy === "upload" ? uploadStageLabel(uploadStage) : (uploadFailed ? "Retry" : "Upload & extract")}
           </button>
         </form>
       </section>
