@@ -78,6 +78,24 @@ export async function createIngredient(input) {
   return mapIngredientRow(row);
 }
 
+export async function assignHumanCode(ingredientId, family) {
+  const client = requireClient();
+  const allocated = await unwrap(
+    client.rpc("allocate_inventory_human_code", { p_family: family }),
+    "Allocate human inventory code"
+  );
+  const code = typeof allocated === "string" ? allocated : null;
+  if (!code) throw new Error("Human code allocation did not return a code.");
+  const row = await unwrap(
+    client.from("inventory_ingredients").update({
+      human_code: code,
+      inventory_family: family,
+    }).eq("id", ingredientId).select().single(),
+    "Store human inventory code"
+  );
+  return mapIngredientRow(row);
+}
+
 export async function createSupplier(input) {
   const createdBy = input.createdBy || await currentUserId();
   const supplier = await unwrap(
@@ -254,6 +272,18 @@ export async function normalizeInvoiceLines(invoiceId, lines) {
     ));
   }
   return results;
+}
+
+export async function updateReceivedQuantity(invoiceId, lineId, receivedQuantity) {
+  return unwrap(
+    requireClient().rpc("inventory_update_invoice_line", {
+      p_invoice_id: invoiceId,
+      p_line_id: lineId,
+      p_patch: { receivedQuantity },
+      p_reason: "received_quantity_confirmed",
+    }),
+    "Update received quantity"
+  );
 }
 
 export async function generateMatchCandidates(invoiceLineId) {

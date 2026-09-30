@@ -17,6 +17,9 @@ import { supabase } from "../lib/supabase";
 import {
   approveInvoice,
   confirmLineMapping,
+  createIngredient,
+  assignHumanCode,
+  updateReceivedQuantity,
   fetchInventoryReferenceData,
   fetchInvoiceHistory,
   generateMatchCandidates,
@@ -29,6 +32,8 @@ import {
   uploadInvoice,
 } from "../lib/inventoryApi";
 import { triageInvoice } from "./procurement/inboxTriage";
+import { nextHumanCode } from "./procurement/humanCodes";
+import { CANONICAL_UNITS } from "./ingredientMaster";
 import "./invoice-intake.css";
 
 const BRANCHES = [
@@ -55,6 +60,22 @@ function statusTone(status) {
 function money(value, currency = "SAR") {
   if (value == null || value === "") return "—";
   return `${Number(value).toFixed(2)} ${currency}`;
+}
+
+const CODE_FAMILIES = [
+  ["F", "Food"],
+  ["B", "Bar"],
+  ["C", "Consumable"],
+  ["CL", "Cleaning"],
+  ["P", "Packaging"],
+  ["E", "Equipment"],
+  ["M", "Maintenance"],
+];
+
+function ingredientLabel(ingredient) {
+  if (!ingredient) return "Canonical ingredient required";
+  const code = ingredient.human_code ? `${ingredient.human_code} ` : "";
+  return `${code}${ingredient.canonical_name}`;
 }
 
 function confidence(value) {
@@ -185,6 +206,47 @@ export default function InvoiceIntakeView({
       createVerifiedAlias: Boolean(values.get("learnAlias")),
       reason: "invoice_intake_manual_mapping",
     }), "Line mapping verified and saved.");
+  };
+
+  const handleCreateItem = async (event, line) => {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const family = values.get("family");
+    const name = String(values.get("name") || "").trim();
+    const unit = values.get("baseUnit");
+    const received = values.get("receivedQuantity");
+    if (!family || !name || !unit || !received) {
+      setError("Name, family, unit, and received quantity are required before a new item is created.");
+      return;
+    }
+    await run(`create:${line.id}`, async () => {
+      const created = await createIngredient({
+        canonicalName: name,
+        category: values.get("category") || null,
+        baseInventoryUnit: unit,
+      });
+      const coded = await assignHumanCode(created.id, family);
+      await confirmLineMapping({
+        invoiceLineId: line.id,
+        ingredientId: coded.id,
+        conversionFactor: values.get("conversionFactor") || "1",
+        canonicalQuantity: received,
+        canonicalUnit: unit,
+        createVerifiedAlias: false,
+        reason: "created_from_invoice_line",
+      });
+      return coded;
+    }, "New item coded and mapped. This invoice stayed open.");
+  };
+
+  const handleReceived = async (event, line) => {
+    event.preventDefault();
+    const received = new FormData(event.currentTarget).get("receivedQuantity");
+    await run(
+      `received:${line.id}`,
+      () => updateReceivedQuantity(selected.id, line.id, received),
+      "Received quantity saved. The stock movement uses this quantity."
+    );
   };
 
   const openSource = async () => {
@@ -472,7 +534,8 @@ export default function InvoiceIntakeView({
                       <small>SKU {line.supplier_sku || "—"} · OCR {confidence(line.ocr_confidence)}</small>
                     </div>
                     <div className="inv-line-numbers">
-                      <span>{line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
+                      <span>Invoiced {line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
+                      <span>Received {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""}</span>
                       <span>Pack {line.pack_quantity ?? "?"} × {line.pack_size ?? "?"} {line.pack_unit || ""}</span>
                       <span>{money(line.line_total, selected.currency)}</span>
                     </div>
@@ -481,7 +544,7 @@ export default function InvoiceIntakeView({
                         {line.review_status.replaceAll("_", " ")}
                       </span>
                       <strong>
-                        {reference.ingredients.find(({ id }) => id === line.ingredient_id)?.canonical_name || "Canonical ingredient required"}
+                        {ingredientLabel(reference.ingredients.find(({ id }) => id === line.ingredient_id))}
                       </strong>
                       <small>
                         {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""} · {line.match_method?.replaceAll("_", " ") || "unmatched"}
@@ -493,7 +556,7 @@ export default function InvoiceIntakeView({
                           <option value="">Choose canonical ingredient</option>
                           {reference.ingredients.map((ingredient) => (
                             <option key={ingredient.id} value={ingredient.id}>
-                              {ingredient.canonical_name} ({ingredient.base_inventory_unit})
+                              {ingredientLabel(ingredient)} ({ingredient.base_inventory_unit})
                             </option>
                           ))}
                         </select>
@@ -509,6 +572,58 @@ export default function InvoiceIntakeView({
                           Suggest
                         </button>
                         <button className="inv-button inv-button--secondary" disabled={busy === `line:${line.id}`}>Verify line</button>
+                      </form>
+                    )}
+                    {!FINAL_STATUSES.has(selected.status) && (
+                      <form className="inv-map-form" onSubmit={(event) => handleReceived(event, line)}>
+                        <label>Received quantity
+                          <input
+                            name="receivedQuantity"
+                            type="number"
+                            step="0.0000000001"
+                            min="0"
+                            required
+                            defaultValue={line.canonical_received_quantity ?? line.original_quantity ?? ""}
+                          />
+                        </label>
+                        <button className="inv-button inv-button--ghost" disabled={busy === `received:${line.id}`}>
+                          Save received quantity
+                        </button>
+                      </form>
+                    )}
+                    {!FINAL_STATUSES.has(selected.status) && !line.ingredient_id && (
+                      <form className="inv-map-form" onSubmit={(event) => handleCreateItem(event, line)}>
+                        <strong>Create new item</strong>
+                        <input name="name" required placeholder="Canonical name" defaultValue="" />
+                        <select name="family" required defaultValue="">
+                          <option value="">Choose code family</option>
+                          {CODE_FAMILIES.map(([code, label]) => (
+                            <option key={code} value={code}>{label} ({code})</option>
+                          ))}
+                        </select>
+                        <input name="category" placeholder="Category label, optional" />
+                        <select name="baseUnit" required defaultValue="">
+                          <option value="">Base unit</option>
+                          {CANONICAL_UNITS.map((unit) => (
+                            <option key={unit.value} value={unit.value}>{unit.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          name="receivedQuantity"
+                          type="number"
+                          step="0.0000000001"
+                          min="0"
+                          required
+                          placeholder="Received quantity"
+                          defaultValue={line.original_quantity ?? ""}
+                        />
+                        <input name="conversionFactor" type="number" step="0.0000000001" min="0" defaultValue="1" />
+                        <button className="inv-button inv-button--secondary" disabled={busy === `create:${line.id}`}>
+                          Create, code, and map
+                        </button>
+                        <small>
+                          Next {nextHumanCode("F", reference.ingredients.map((row) => row.human_code).filter(Boolean)).code} is only an example. The database assigns the real code when you confirm.
+                        </small>
                       </form>
                     )}
                     {!!line.match_candidates?.length && (
