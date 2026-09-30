@@ -28,6 +28,7 @@ import {
   updateInvoiceReview,
   uploadInvoice,
 } from "../lib/inventoryApi";
+import { triageInvoice } from "./procurement/inboxTriage";
 import "./invoice-intake.css";
 
 const BRANCHES = [
@@ -201,6 +202,24 @@ export default function InvoiceIntakeView({
     ).length || 0,
     [selected]
   );
+  const inbox = useMemo(() => {
+    if (!selected) return null;
+    return triageInvoice({
+      invoice: selected,
+      lines: selected.inventory_invoice_lines || [],
+      existingInvoices: invoices
+        .filter((row) => row.id !== selected.id)
+        .map((row) => ({
+          id: row.id,
+          fileHash: row.file_hash,
+          supplierId: row.supplier_id,
+          invoiceNumber: row.invoice_number,
+          invoiceDate: row.invoice_date,
+          total: row.total,
+          status: row.status,
+        })),
+    });
+  }, [invoices, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -241,15 +260,27 @@ export default function InvoiceIntakeView({
               <option key={supplier.id} value={supplier.id}>{supplier.supplier_name}</option>
             ))}
           </select>
-          <label className="inv-file">
-            <Upload size={18} />
-            <span>{file?.name || "Choose invoice"}</span>
-            <input
-              type="file"
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
-            />
-          </label>
+          <div className="inv-capture">
+            <label className="inv-file">
+              <ScanLine size={18} />
+              <span>Take photo</span>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+              />
+            </label>
+            <label className="inv-file">
+              <Upload size={18} />
+              <span>{file?.name || "Choose photo or PDF"}</span>
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+              />
+            </label>
+          </div>
           <button className="inv-button inv-button--primary" disabled={!file || busy === "upload"}>
             {busy === "upload" ? <Loader2 className="inv-spin" size={17} /> : <ScanLine size={17} />}
             Upload & extract
@@ -307,6 +338,12 @@ export default function InvoiceIntakeView({
                   <ExternalLink size={16} /> Original invoice
                 </button>
               </div>
+
+              {inbox && (
+                <p className={`inv-inbox inv-inbox--${inbox.tone}`} data-testid="inventory-inbox">
+                  {inbox.recognized}/{inbox.total} lines recognized. {inbox.label}
+                </p>
+              )}
 
               <div className="inv-summary">
                 <article>
@@ -463,7 +500,7 @@ export default function InvoiceIntakeView({
                   </button>
                   <button
                     className="inv-button inv-button--primary"
-                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || busy === "approve"}
+                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || inbox?.mayPost === false || busy === "approve"}
                     onClick={() => run("approve", () => approveInvoice(selected.id), "Invoice posted. Repeated approval will return this receipt.")}
                   >
                     {busy === "approve" ? <Loader2 className="inv-spin" size={17} /> : <CheckCircle2 size={17} />}

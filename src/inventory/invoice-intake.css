@@ -227,6 +227,13 @@
   border-radius: 10px;
   background: var(--inv-panel-2);
 }
+.inv-capture { display: flex; flex-wrap: wrap; gap: 10px; }
+.inv-capture .inv-file { min-height: 48px; }
+.inv-inbox { margin: 0 0 14px; padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+.inv-inbox--ready { background: rgba(92, 158, 110, .16); }
+.inv-inbox--confirm { background: rgba(224, 173, 98, .16); }
+.inv-inbox--blocked { background: rgba(223, 130, 120, .16); }
+
 .inv-summary strong, .inv-summary span { display: block; }
 .inv-summary strong { margin-bottom: 4px; font-size: 18px; }
 .inv-summary span { color: var(--inv-muted); font-size: 11px; }
