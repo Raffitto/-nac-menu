@@ -17,14 +17,15 @@ import {
 import "./invoice-intake.css";
 import "./foodBibleEditorUx.css";
 
-export default function InventoryApp() {
+export default function InventoryApp({ embedded = false }) {
   const { session, checked, issue } = usePlatformSession();
   const [branchId, setBranchId] = useState(inventoryBranchFromLocation);
   const [activeTab, setActiveTab] = useState(inventoryTabFromLocation);
 
   useEffect(() => {
+    if (embedded) return;
     syncInventoryLocation({ branchId, activeTab });
-  }, [branchId, activeTab]);
+  }, [branchId, activeTab, embedded]);
 
   if (!checked || !session) {
     return (

@@ -43,6 +43,7 @@ describe("NAC OS RBAC", () => {
       expect(canAccessNav(profile, "intelligence")).toBe(true);
       expect(canAccessNav(profile, "reports")).toBe(true);
       expect(canAccessNav(profile, "food-bible")).toBe(true);
+      expect(canAccessNav(profile, "inventory")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "competitive")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_SYSTEM)).toBe(true);
@@ -69,6 +70,8 @@ describe("NAC OS RBAC", () => {
       expect(hasPerm(profile, PERMISSIONS.MANAGE_SYSTEM)).toBe(false);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_MENU)).toBe(false);
       expect(hasPerm(profile, PERMISSIONS.VIEW_MENU)).toBe(true);
+      expect(hasPerm(profile, PERMISSIONS.VIEW_INVENTORY)).toBe(true);
+      expect(canAccessNav(profile, "inventory")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.VIEW_EXECUTIVE_EXPORT)).toBe(true);
     });
   });
@@ -127,6 +130,7 @@ describe("NAC OS RBAC", () => {
       expect(canAccessNav(profile, "reviews")).toBe(true);
       expect(canAccessNav(profile, "reports")).toBe(true);
       expect(canAccessNav(profile, "food-bible")).toBe(true);
+      expect(canAccessNav(profile, "inventory")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "sales")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_IMPORTS)).toBe(true);
@@ -193,6 +197,7 @@ describe("NAC OS RBAC", () => {
       expect(allowedBranchIds(profile)).toEqual([]);
       expect(canAccessNav(profile, "intelligence")).toBe(false);
       expect(canAccessNav(profile, "food-bible")).toBe(false);
+      expect(canAccessNav(profile, "inventory")).toBe(false);
     });
   });
 });

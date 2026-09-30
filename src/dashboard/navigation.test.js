@@ -124,6 +124,24 @@ describe("NAC OS Reports navigation", () => {
   });
 });
 
+describe("NAC OS Inventory navigation", () => {
+  test("exposes Inventory as a primary nav item after Food Bible", () => {
+    const ids = NAV_ITEMS.map((item) => item.id);
+    expect(ids).toContain("inventory");
+    expect(NAV_ITEMS.find((item) => item.id === "inventory").label).toBe("Inventory");
+    expect(ids.indexOf("inventory")).toBe(ids.indexOf("food-bible") + 1);
+    expect(navIdFromLegacyView("inventory")).toBe("inventory");
+    expect(isScrollableView("inventory")).toBe(true);
+  });
+
+  test("reads Inventory from the admin view query", () => {
+    window.history.replaceState({}, "", "/?view=inventory");
+    expect(adminViewFromLocation()).toBe("inventory");
+    window.history.replaceState({}, "", "/");
+    expect(adminViewFromLocation()).toBe("overview");
+  });
+});
+
 describe("NAC OS Food Bible navigation", () => {
   test("exposes Food Bible as a primary nav item", () => {
     expect(NAV_ITEMS.map((item) => item.id)).toContain("food-bible");
