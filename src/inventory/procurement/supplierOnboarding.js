@@ -69,25 +69,22 @@ export function classifySupplierCandidates({ name = "", vat = null, suppliers = 
 
 export const RECEIVING_POLICY_CHOICES = Object.freeze([
   {
-    id: "supplier_credit",
-    settlementMode: "supplier_credit",
-    priceRequiredOnReceiving: true,
-    title: "Supplier invoices us normally",
-    detail: "Prices are required when receiving.",
+    id: "normal_supplier_invoice",
+    treatment: "normal_supplier_invoice",
+    title: "Normal supplier invoice",
+    detail: "Prices on this document are required and used for purchasing history.",
   },
   {
-    id: "company_settled",
-    settlementMode: "company_settled",
-    priceRequiredOnReceiving: false,
-    title: "Company settles this supplier centrally",
-    detail: "Restaurant receives stock from delivery notes. Prices are not required here.",
+    id: "company_settled_document",
+    treatment: "company_settled_document",
+    title: "Company already settled this delivery",
+    detail: "Prices are not required for this document. Quantities will be received without treating them as free stock.",
   },
   {
     id: "cash_market",
-    settlementMode: "cash_market",
-    priceRequiredOnReceiving: true,
+    treatment: "cash_market",
     title: "Cash / local market purchase",
-    detail: "The actual amount paid is required.",
+    detail: "Enter the amount actually paid.",
   },
 ]);
 

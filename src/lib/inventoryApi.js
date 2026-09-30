@@ -476,6 +476,17 @@ export async function attachSupplierToInvoice({
   );
 }
 
+export async function confirmDocumentReceivingTreatment({ invoiceId, treatment }) {
+  return unwrap(
+    requireClient().rpc("inventory_confirm_document_treatment", {
+      p_invoice_id: invoiceId,
+      p_treatment: treatment,
+      p_reason: "confirmed_for_this_document",
+    }),
+    "Confirm how this document is received"
+  );
+}
+
 export async function confirmSupplierReceivingProfile({
   supplierId,
   settlementMode,

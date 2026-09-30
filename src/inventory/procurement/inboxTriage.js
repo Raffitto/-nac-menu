@@ -1,10 +1,9 @@
 import { classifyInvoiceDuplicate } from "./duplicateEngine";
 import { classifySupplierLineMapping } from "./mappingEngine";
 import {
-  companySettledPriceNotRequired,
   interpretSupplierPack,
+  RECEIVING_TREATMENT,
   resolvePriceRequirement,
-  supplierProfileFromRow,
 } from "./receivingPolicy";
 
 /**
@@ -18,10 +17,9 @@ export function triageInvoice({
   catalogueItems = [],
   ingredients = [],
   approvedMappings = [],
-  supplierProfile = null,
   learnedPacks = {},
 } = {}) {
-  const profile = supplierProfile?.settlementMode ? supplierProfile : supplierProfileFromRow(supplierProfile);
+  const treatment = invoice.receiving_treatment || invoice.receivingTreatment || null;
   const channel = invoice.purchase_channel || invoice.purchaseChannel || "supplier_credit";
   const duplicate = classifyInvoiceDuplicate({
     candidate: {
@@ -53,7 +51,7 @@ export function triageInvoice({
           : null
       ),
     });
-    const price = resolvePriceRequirement({ profile, channel, line });
+    const price = resolvePriceRequirement({ treatment, channel, line });
     if (review === "verified" || review === "auto_matched") {
       return {
         lineId: line.id,
@@ -92,8 +90,8 @@ export function triageInvoice({
   const priceRequired = assessed.some((row) => row.price?.basis === "price_missing_but_required");
   const packUncertain = assessed.some((row) => row.pack?.blocksPosting);
   const supplierMissing = !(invoice.supplier_id || invoice.supplierId);
-  const priceNote = companySettledPriceNotRequired(profile, channel)
-    ? "PRICE NOT REQUIRED — COMPANY SETTLED"
+  const priceNote = treatment === RECEIVING_TREATMENT.COMPANY_SETTLED_DOCUMENT
+    ? "PRICE NOT REQUIRED — THIS DOCUMENT"
     : null;
 
   let tone = "ready";

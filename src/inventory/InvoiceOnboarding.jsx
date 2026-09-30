@@ -3,11 +3,10 @@ import {
   attachSupplierToInvoice,
   confirmLineMapping,
   confirmLinePack,
-  confirmSupplierReceivingProfile,
+  confirmDocumentReceivingTreatment,
   createIngredient,
   assignHumanCode,
   supplierCandidatesForInvoice,
-  updateInvoiceReview,
 } from "../lib/inventoryApi";
 import { CANONICAL_UNITS } from "./ingredientMaster";
 import {
@@ -16,7 +15,7 @@ import {
   RECEIVING_POLICY_CHOICES,
   supplierWordingFromInvoice,
 } from "./procurement/supplierOnboarding";
-import { interpretSupplierPack, suggestCodeFamily } from "./procurement/receivingPolicy";
+import { classifyDocumentKind, interpretSupplierPack, suggestCodeFamily, suggestReceivingTreatment } from "./procurement/receivingPolicy";
 
 const FAMILIES = [
   ["P", "Packaging"],
@@ -36,6 +35,10 @@ export default function InvoiceOnboarding({
   run,
 }) {
   const wording = supplierWordingFromInvoice(invoice);
+  const suggestion = suggestReceivingTreatment({
+    documentKind: classifyDocumentKind(`${invoice?.raw_ocr_text || ""} ${invoice?.notes || ""} ${invoice?.structured_extraction?.documentLabel || ""}`),
+    lines: invoice?.inventory_invoice_lines || [],
+  });
   const [candidates, setCandidates] = useState(null);
   const [setupError, setSetupError] = useState("");
   const [policyChoice, setPolicyChoice] = useState("");
@@ -119,29 +122,26 @@ export default function InvoiceOnboarding({
             event.preventDefault();
             const choice = RECEIVING_POLICY_CHOICES.find((item) => item.id === policyChoice);
             if (!choice) return;
-            run("profile", async () => {
-              await confirmSupplierReceivingProfile({
-                supplierId: invoice.supplier_id,
-                settlementMode: choice.settlementMode,
-                priceRequiredOnReceiving: choice.priceRequiredOnReceiving,
-                reason: "confirmed_on_invoice",
+            run("treatment", async () => {
+              await confirmDocumentReceivingTreatment({
+                invoiceId: invoice.id,
+                treatment: choice.treatment,
               });
-              if (choice.id === "cash_market") {
-                await updateInvoiceReview(invoice.id, {
-                  purchaseChannel: "cash_market",
-                  reason: "confirmed_on_invoice",
-                });
-              }
               await onChanged();
-            }, "Receiving policy saved. No stock was posted.");
+            }, "This document’s receiving choice was saved. Future invoices from this supplier are unchanged. No stock was posted.");
           }}
         >
-          <h3>How is this supplier handled?</h3>
+          <h3>How should this delivery be received?</h3>
+          <p>This choice applies to this document only.</p>
+          {suggestion.treatment && (
+            <p>Suggested: {RECEIVING_POLICY_CHOICES.find((choice) => choice.id === suggestion.treatment)?.title}. {suggestion.reason}</p>
+          )}
+          {!suggestion.treatment && <p>{suggestion.reason}</p>}
           {RECEIVING_POLICY_CHOICES.map((choice) => (
             <label key={choice.id} className="inv-onboard-choice">
               <input
                 type="radio"
-                name="receivingPolicy"
+                name="receivingTreatment"
                 value={choice.id}
                 checked={policyChoice === choice.id}
                 onChange={() => setPolicyChoice(choice.id)}
@@ -151,7 +151,7 @@ export default function InvoiceOnboarding({
             </label>
           ))}
           <button className="inv-button inv-button--primary" type="submit" disabled={!policyChoice}>
-            Save supplier handling
+            Save this document only
           </button>
         </form>
       )}
