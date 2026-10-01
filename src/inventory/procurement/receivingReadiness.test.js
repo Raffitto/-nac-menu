@@ -1,4 +1,4 @@
-import { evaluateInvoiceReadiness, ingredientSuggestionIsSafe } from "./receivingReadiness";
+import { evaluateInvoiceReadiness, ingredientSuggestionIsSafe, isOperationalReceivingLocation } from "./receivingReadiness";
 import { suggestReceivingTreatment } from "./receivingPolicy";
 
 const paper = { id: "paper", canonical_name: "Nac Printed Paper Bag - Each" };
@@ -8,6 +8,7 @@ describe("18426 readiness after Raffi's confirmations", () => {
   const invoice = {
     supplier_id: "ecowhiz",
     receiving_treatment: "company_settled_document",
+    receiving_location_id: "khobar-store",
     invoice_number: "18426",
   };
   const lines = [
@@ -42,12 +43,30 @@ describe("18426 readiness after Raffi's confirmations", () => {
     },
   ];
 
+  test("stays unposted until a receiving location is chosen", () => {
+    const result = evaluateInvoiceReadiness({
+      invoice: { ...invoice, receiving_location_id: null },
+      lines,
+      ingredients: [paper, tissue],
+    });
+    expect(result.ready).toBe(false);
+    expect(result.headline).toBe("1 ACTION REMAINING");
+    expect(result.actions).toEqual(["Choose where this delivery was received."]);
+    expect(result.priceRequired).toBe(false);
+    expect(result.lineState.map((line) => line.price.storedPrice)).toEqual([null, null]);
+  });
+
   test("is ready when each SKU is its own item and the document treatment is confirmed", () => {
     const result = evaluateInvoiceReadiness({ invoice, lines, ingredients: [paper, tissue] });
     expect(result.ready).toBe(true);
     expect(result.headline).toBe("READY TO RECEIVE");
     expect(result.priceRequired).toBe(false);
     expect(result.lineState.map((line) => line.price.storedPrice)).toEqual([null, null]);
+  });
+
+  test("a verification fixture is not a receiving location", () => {
+    expect(isOperationalReceivingLocation({ active: true, name: "NAC INVENTORY E2E TEST LOCATION" })).toBe(false);
+    expect(isOperationalReceivingLocation({ active: true, name: "Khobar dry store" })).toBe(true);
   });
 
   test("does not treat a shared word as a safe item match", () => {
@@ -75,7 +94,7 @@ describe("18426 readiness after Raffi's confirmations", () => {
     expect(suggestion.treatment).toBe("normal_supplier_invoice");
     expect(suggestion.confirmed).toBe(false);
     const learned = evaluateInvoiceReadiness({
-      invoice: { supplier_id: "ecowhiz", receiving_treatment: null },
+      invoice: { supplier_id: "ecowhiz", receiving_treatment: null, receiving_location_id: "khobar-store" },
       lines: [{
         id: "next",
         active: true,
@@ -98,7 +117,7 @@ describe("18426 readiness after Raffi's confirmations", () => {
 
   test("a later tissue delivery reuses the 1000-piece conversion without inheriting settlement", () => {
     const result = evaluateInvoiceReadiness({
-      invoice: { supplier_id: "ecowhiz", receiving_treatment: null },
+      invoice: { supplier_id: "ecowhiz", receiving_treatment: null, receiving_location_id: "khobar-store" },
       lines: [{
         id: "next-tissue",
         active: true,

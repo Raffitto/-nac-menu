@@ -123,7 +123,7 @@ describe("first-time supplier onboarding", () => {
       { id: "tissue", canonical_name: "Nac Printed Wet Tissue 1000 Pcs" },
     ];
     const inherited = triageInvoice({
-      invoice: { id: "18499", supplier_id: "ecowhiz", invoice_number: "18499" },
+      invoice: { id: "18499", supplier_id: "ecowhiz", invoice_number: "18499", receiving_location_id: "store" },
       lines,
       ingredients,
       supplierProfile: { settlementMode: "company_settled", priceRequiredOnReceiving: false, confirmed: true },
@@ -138,6 +138,7 @@ describe("first-time supplier onboarding", () => {
         supplier_id: "ecowhiz",
         invoice_number: "18499",
         receiving_treatment: "company_settled_document",
+        receiving_location_id: "store",
       },
       lines,
       ingredients,

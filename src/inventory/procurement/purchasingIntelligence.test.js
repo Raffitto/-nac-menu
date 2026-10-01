@@ -115,7 +115,7 @@ describe("inventory inbox", () => {
     expect(blocked.headline).toBe("NOT READY");
 
     const ready = triageInvoice({
-      invoice: { id: "new", supplier_id: "a", invoice_number: "2", receiving_treatment: "normal_supplier_invoice" },
+      invoice: { id: "new", supplier_id: "a", invoice_number: "2", receiving_treatment: "normal_supplier_invoice", receiving_location_id: "store" },
       lines: [{
         id: "l1",
         active: true,
