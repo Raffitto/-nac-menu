@@ -265,6 +265,8 @@
 .inv-exception em { color: var(--inv-muted); font-size: 10px; }
 .inv-exception--blocking { border-left: 3px solid var(--inv-red); }
 .inv-exception--review, .inv-exception--warning { border-left: 3px solid var(--inv-amber); }
+.inv-exceptions--history { color: var(--inv-muted); }
+.inv-exception--resolved { border-left: 3px solid transparent; opacity: .72; }
 
 .inv-line {
   display: grid;
