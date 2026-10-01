@@ -1,6 +1,8 @@
 import { normalizeText } from "../inventoryIntelligence";
 import { interpretSupplierPack, resolvePriceRequirement } from "./receivingPolicy";
 
+export { isOperationalReceivingLocation } from "./receivingLocation";
+
 const WEAK_TOKENS = new Set([
   "nac", "printed", "each", "pcs", "pieces", "piece", "pack", "packs", "supplier", "item",
 ]);
@@ -20,12 +22,6 @@ export function documentHasReceivingLocation(invoice = {}) {
   if (invoice.hasReceivingLocation === false) return false;
   if (invoice.hasReceivingLocation === true) return true;
   return Boolean(invoice.receiving_location_id || invoice.receivingLocationId);
-}
-
-/** Test and verification fixtures are not a real receiving dock. */
-export function isOperationalReceivingLocation(location) {
-  if (!location || location.active === false) return false;
-  return !/\b(e2e test|inv-ocr-verify|verification receiving)\b/i.test(String(location.name || ""));
 }
 
 /**

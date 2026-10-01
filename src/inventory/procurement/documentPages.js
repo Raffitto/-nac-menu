@@ -50,9 +50,6 @@ export function lineReviewState(line = {}) {
   return { tone: "confirm", label: "CONFIRM MATCH" };
 }
 
-const KITCHEN_BLOCKED = new Set(["bar"]);
-const BAR_BLOCKED = new Set(["kitchen", "pastry"]);
-
 function readAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -79,8 +76,7 @@ export async function buildInvoiceDocument(files = []) {
   return new File([blob], "invoice-pages.pdf", { type: "application/pdf" });
 }
 
-export function receivingLocationAllowed(role, locationType) {
-  if (role === "kitchen_inventory_manager") return !KITCHEN_BLOCKED.has(locationType);
-  if (role === "bar_inventory_manager") return !BAR_BLOCKED.has(locationType);
+/** Kitchen and bar managers share the branch restaurant. Location type is not their permission boundary. */
+export function receivingLocationAllowed() {
   return true;
 }

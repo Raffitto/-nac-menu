@@ -37,6 +37,7 @@ import InvoiceOnboarding from "./InvoiceOnboarding";
 import { triageInvoice } from "./procurement/inboxTriage";
 import { classifyPostOutcome, humanizePostError, isAmbiguousPostError } from "./procurement/postOutcome";
 import { isOperationalReceivingLocation } from "./procurement/receivingReadiness";
+import { resolveReceivingLocation } from "./procurement/receivingLocation";
 import { createActionLock } from "../lib/nacActionGuard";
 import {
   classifyDocumentKind,
@@ -173,7 +174,11 @@ export default function InvoiceIntakeView({
       lines: lines.length,
       channel: invoice?.purchase_channel || "supplier_credit",
       reason: invoice?.purchase_reason,
-      location: (reference.locations || []).find((row) => row.id === invoice?.receiving_location_id)?.name || "Receiving location",
+      location: resolveReceivingLocation({
+        explicitLocationId: invoice?.receiving_location_id,
+        locations: reference.locations,
+        branchId: invoice?.branch_id,
+      }).location?.name || "Receiving location",
       status: result?.status || "posted",
       treatment: invoice?.receiving_treatment,
     });
@@ -441,14 +446,20 @@ export default function InvoiceIntakeView({
     () => (reference.locations || []).filter(isOperationalReceivingLocation),
     [reference.locations]
   );
+  const locationResolution = useMemo(() => {
+    if (!selected) return { location: null, source: "missing", requiresChoice: false };
+    return resolveReceivingLocation({
+      explicitLocationId: selected.receiving_location_id,
+      locations: reference.locations,
+      branchId: selected.branch_id || branchId,
+    });
+  }, [branchId, reference.locations, selected]);
   const inbox = useMemo(() => {
     if (!selected) return null;
-    const locationIsOperational = operationalLocations.some((row) => row.id === selected.receiving_location_id);
-    const hasDefaultReceivingLocation = operationalLocations.some((row) => row.is_default_receiving);
     return triageInvoice({
       invoice: {
         ...selected,
-        hasReceivingLocation: locationIsOperational || (!selected.receiving_location_id && hasDefaultReceivingLocation),
+        hasReceivingLocation: Boolean(locationResolution.location),
       },
       lines: selected.inventory_invoice_lines || [],
       ingredients: reference.ingredients,
@@ -464,7 +475,7 @@ export default function InvoiceIntakeView({
           status: row.status,
         })),
     });
-  }, [invoices, operationalLocations, reference.ingredients, selected]);
+  }, [invoices, locationResolution.location, reference.ingredients, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -632,6 +643,12 @@ export default function InvoiceIntakeView({
                 <p>{classifyDocumentKind(`${selected.raw_ocr_text || ""} ${selected.notes || ""}`) === "delivery_note"
                   ? "Delivery note. This can still be restaurant receiving evidence."
                   : "Receiving document."}</p>
+                {locationResolution.location && (
+                  <p data-testid="receiving-location">
+                    Receiving at {locationResolution.location.name}
+                    {locationResolution.source === "explicit" ? "" : " · automatic"}
+                  </p>
+                )}
                 {(selected.inventory_invoice_lines || []).filter((line) => line.active !== false).map((line) => {
                   const price = resolvePriceRequirement({
                     treatment: selected.receiving_treatment,
@@ -712,14 +729,6 @@ export default function InvoiceIntakeView({
                     <option value="price_opportunity">Price opportunity</option>
                     <option value="emergency_purchase">Emergency purchase</option>
                     <option value="other">Other</option>
-                  </select>
-                </label>
-                <label>Receiving location
-                  <select name="receivingLocationId" defaultValue={selected.receiving_location_id || ""}>
-                    <option value="">Choose a receiving location</option>
-                    {operationalLocations.map((location) => (
-                      <option key={location.id} value={location.id}>{location.name}</option>
-                    ))}
                   </select>
                 </label>
                 <label>Subtotal<input type="number" step="0.000001" name="subtotal" defaultValue={selected.subtotal ?? ""} required /></label>
