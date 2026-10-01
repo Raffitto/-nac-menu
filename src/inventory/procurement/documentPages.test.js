@@ -38,11 +38,10 @@ describe("phone invoice pages", () => {
     }).label).toBe("RECOGNIZED");
   });
 
-  test("kitchen and bar cannot receive into each other's locations", () => {
-    expect(receivingLocationAllowed("kitchen_inventory_manager", "bar")).toBe(false);
-    expect(receivingLocationAllowed("kitchen_inventory_manager", "kitchen")).toBe(true);
-    expect(receivingLocationAllowed("bar_inventory_manager", "kitchen")).toBe(false);
-    expect(receivingLocationAllowed("bar_inventory_manager", "bar")).toBe(true);
-    expect(receivingLocationAllowed("super_admin", "bar")).toBe(true);
+  test("kitchen and bar managers share the restaurant location", () => {
+    expect(receivingLocationAllowed("kitchen_inventory_manager", "restaurant")).toBe(true);
+    expect(receivingLocationAllowed("bar_inventory_manager", "restaurant")).toBe(true);
+    expect(receivingLocationAllowed("kitchen_inventory_manager", "bar")).toBe(true);
+    expect(receivingLocationAllowed("bar_inventory_manager", "kitchen")).toBe(true);
   });
 });

@@ -269,6 +269,16 @@ describe("Approve and post result", () => {
     expect(await screen.findByText("POSTED")).toBeInTheDocument();
   });
 
+  test("one canonical restaurant location is used automatically and the test location is ignored", async () => {
+    const button = await openDocument(readyDocument({ receiving_location_id: null, branch_id: "khobar" }), [
+      { id: "e2e", name: "NAC INVENTORY E2E TEST LOCATION", active: true, is_default_receiving: false, branch_id: "khobar" },
+      { id: "restaurant", name: "NAC Khobar Restaurant", active: true, is_default_receiving: true, branch_id: "khobar", location_type: "restaurant" },
+    ]);
+    expect(button).toBeEnabled();
+    expect(screen.getByTestId("receiving-location")).toHaveTextContent("Receiving at NAC Khobar Restaurant · automatic");
+    expect(screen.queryByRole("button", { name: "Save receiving location" })).not.toBeInTheDocument();
+  });
+
   test("company-settled null prices stay valid, and a missing location blocks posting", async () => {
     const button = await openDocument(readyDocument({ receiving_location_id: null }), []);
     expect(button).toBeDisabled();
