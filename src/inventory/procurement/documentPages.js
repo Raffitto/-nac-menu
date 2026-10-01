@@ -4,6 +4,8 @@
  * HEIC is rejected until a tested conversion exists.
  */
 
+import { deriveReceiptPack } from "./receivingQuantity";
+
 export function classifyInvoiceFile(file) {
   const type = String(file?.type || "").toLowerCase();
   const name = String(file?.name || "").toLowerCase();
@@ -35,17 +37,20 @@ export function groupInvoicePages(files = []) {
   return { ok: true, reason: null, pages, pageCount: pages.length };
 }
 
-export function lineReviewState(line = {}) {
-  const qty = line.original_quantity ?? line.quantity;
+export function lineReviewState(line = {}, { priceRequired = null } = {}) {
   const price = line.unit_price ?? line.line_total ?? line.lineTotal;
+  const priceMissing = price == null || price === "";
+  const mapped = ["verified", "auto_matched"].includes(line.review_status) && line.ingredient_id;
+  if (mapped && deriveReceiptPack(line).ok && !(priceRequired && priceMissing)) {
+    return { tone: "recognized", label: "Verified" };
+  }
+  const qty = line.original_quantity ?? line.quantity;
   const unit = line.original_unit || line.unit;
-  if (qty == null || qty === "" || price == null || price === "" || !unit) {
+  if (qty == null || qty === "" || (priceRequired !== false && priceMissing) || !unit) {
     return { tone: "missing", label: "MISSING INFORMATION" };
   }
   if (line.review_status === "ignored") return { tone: "blocked", label: "BLOCKED" };
-  if (["verified", "auto_matched"].includes(line.review_status) && line.ingredient_id) {
-    return { tone: "recognized", label: "RECOGNIZED" };
-  }
+  if (mapped) return { tone: "recognized", label: "RECOGNIZED" };
   if (!line.ingredient_id) return { tone: "new", label: "NEW ITEM" };
   return { tone: "confirm", label: "CONFIRM MATCH" };
 }

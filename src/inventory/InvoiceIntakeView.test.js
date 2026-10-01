@@ -269,6 +269,20 @@ describe("Approve and post result", () => {
     expect(await screen.findByText("POSTED")).toBeInTheDocument();
   });
 
+  test("verified conversions replace unresolved pack wording", async () => {
+    await openDocument(readyDocument({
+      inventory_invoice_lines: receivingLines.map((line) => ({ ...line, match_method: "manual_review" })),
+    }));
+    expect(screen.getByText("Supplier delivered: 250 each")).toBeInTheDocument();
+    expect(screen.getByText("Received into inventory: 250 each")).toBeInTheDocument();
+    expect(screen.getByText("Supplier delivered: 4 × 1000 pcs")).toBeInTheDocument();
+    expect(screen.getByText("Received into inventory: 4000 each")).toBeInTheDocument();
+    expect(screen.queryByText(/Pack \?/)).not.toBeInTheDocument();
+    expect(screen.queryByText("MISSING INFORMATION")).not.toBeInTheDocument();
+    expect(screen.queryByText(/manual review/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("Verified").length).toBeGreaterThan(0);
+  });
+
   test("one canonical restaurant location is used automatically and the test location is ignored", async () => {
     const button = await openDocument(readyDocument({ receiving_location_id: null, branch_id: "khobar" }), [
       { id: "e2e", name: "NAC INVENTORY E2E TEST LOCATION", active: true, is_default_receiving: false, branch_id: "khobar" },

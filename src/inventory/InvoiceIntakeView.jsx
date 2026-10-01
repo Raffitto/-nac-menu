@@ -45,6 +45,7 @@ import {
   suggestCodeFamily,
 } from "./procurement/receivingPolicy";
 import { buildInvoiceDocument, groupInvoicePages, lineReviewState } from "./procurement/documentPages";
+import { describeReceivedLine } from "./procurement/receivingQuantity";
 import {
   invoiceCaptureError,
   invoiceCaptureFailureMessage,
@@ -740,10 +741,10 @@ export default function InvoiceIntakeView({
                 </button>
               </form>
 
-              {!!selected.inventory_invoice_exceptions?.length && (
+              {!!selected.inventory_invoice_exceptions?.some((item) => item.status === "open") && (
                 <section className="inv-exceptions">
                   <h3>Exceptions</h3>
-                  {selected.inventory_invoice_exceptions.map((item) => (
+                  {selected.inventory_invoice_exceptions.filter((item) => item.status === "open").map((item) => (
                     <div key={item.id} className={`inv-exception inv-exception--${item.severity}`}>
                       <AlertTriangle size={16} />
                       <span><strong>{item.exception_type.replaceAll("_", " ")}</strong>{item.message}</span>
@@ -770,9 +771,30 @@ export default function InvoiceIntakeView({
                 </section>
               )}
 
+              {!!selected.inventory_invoice_exceptions?.some((item) => item.status !== "open") && (
+                <section className="inv-exceptions inv-exceptions--history">
+                  <h3>Resolved observations</h3>
+                  <p>These OCR notes are closed. They do not block receiving.</p>
+                  {selected.inventory_invoice_exceptions.filter((item) => item.status !== "open").map((item) => (
+                    <div key={item.id} className="inv-exception inv-exception--resolved">
+                      <span><strong>{item.exception_type.replaceAll("_", " ")}</strong> {item.message}</span>
+                      <em>{item.status}</em>
+                    </div>
+                  ))}
+                </section>
+              )}
+
               <section className="inv-lines">
                 <h3>Invoice lines</h3>
-                {selected.inventory_invoice_lines?.map((line) => (
+                {selected.inventory_invoice_lines?.map((line) => {
+                  const delivery = describeReceivedLine(line);
+                  const priceRequired = resolvePriceRequirement({
+                    treatment: selected.receiving_treatment,
+                    channel: selected.purchase_channel || "supplier_credit",
+                    line,
+                  }).required;
+                  const review = lineReviewState(line, { priceRequired });
+                  return (
                   <article key={line.id} className="inv-line">
                     <div className="inv-line-source">
                       <span>Original supplier wording</span>
@@ -780,21 +802,32 @@ export default function InvoiceIntakeView({
                       <small>SKU {line.supplier_sku || "—"} · OCR {confidence(line.ocr_confidence)}</small>
                     </div>
                     <div className="inv-line-numbers">
-                      <span>Invoiced {line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
-                      <span>Received {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""}</span>
-                      <span>Pack {line.pack_quantity ?? "?"} × {line.pack_size ?? "?"} {line.pack_unit || ""}</span>
+                      {delivery.verified ? (
+                        <>
+                          <span>{delivery.supplier}</span>
+                          <span>{delivery.received}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Invoiced {line.original_quantity ?? "—"} {line.original_unit || "unit pending"}</span>
+                          <span>Received {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""}</span>
+                          <span>{delivery.packLabel}</span>
+                        </>
+                      )}
                       <span>{line.unit_price == null && line.line_total == null ? "Price absent" : money(line.line_total, selected.currency)}</span>
                     </div>
                     <div className="inv-line-match">
-                      <span className={`inv-status inv-status--${lineReviewState(line).tone === "recognized" ? "success" : "warning"}`}>
-                        {lineReviewState(line).label}
+                      <span className={`inv-status inv-status--${review.tone === "recognized" ? "success" : "warning"}`}>
+                        {review.label}
                       </span>
                       <strong>
                         {ingredientLabel(reference.ingredients.find(({ id }) => id === line.ingredient_id))}
                       </strong>
-                      <small>
-                        {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""} · {line.match_method?.replaceAll("_", " ") || "unmatched"}
-                      </small>
+                      {review.label !== "Verified" && (
+                        <small>
+                          {line.canonical_received_quantity ?? "—"} {line.canonical_unit || ""} · {line.match_method?.replaceAll("_", " ") || "unmatched"}
+                        </small>
+                      )}
                     </div>
                     {!FINAL_STATUSES.has(selected.status) && !["verified", "auto_matched"].includes(line.review_status) && (
                       <form className="inv-map-form" onSubmit={(event) => handleMapLine(event, line)}>
@@ -894,7 +927,8 @@ export default function InvoiceIntakeView({
                       </div>
                     )}
                   </article>
-                ))}
+                  );
+                })}
               </section>
 
               <footer className="inv-approval" aria-busy={postPhase === "posting"}>

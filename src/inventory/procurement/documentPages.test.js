@@ -36,6 +36,16 @@ describe("phone invoice pages", () => {
     expect(lineReviewState({
       original_quantity: 2, unit_price: 1, original_unit: "kg", review_status: "verified", ingredient_id: "ing",
     }).label).toBe("RECOGNIZED");
+    expect(lineReviewState({
+      original_quantity: 250,
+      original_unit: "Each",
+      conversion_factor: 1,
+      canonical_received_quantity: 250,
+      canonical_unit: "each",
+      review_status: "verified",
+      ingredient_id: "paper",
+      unit_price: null,
+    }, { priceRequired: false }).label).toBe("Verified");
   });
 
   test("kitchen and bar managers share the restaurant location", () => {
