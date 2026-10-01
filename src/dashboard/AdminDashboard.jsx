@@ -28,6 +28,7 @@ import { RbacProvider, RbacBranchConstraint, useRbac } from "./context/RbacConte
 import AccessDeniedPanel from "./components/AccessDeniedPanel";
 import GlobalFilterBar from "./components/GlobalFilterBar";
 import AdminBootShell from "./components/AdminBootShell";
+import NacActionPresenter from "./components/NacActionPresenter";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS, adminViewFromLocation, syncAdminViewLocation } from "./navigation";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
@@ -116,30 +117,42 @@ export default function AdminDashboard(props) {
 
   if (isAdminPlatformMode()) {
     if (!authChecked) {
-      return <AdminBootShell message="Restoring your session…" />;
+      return (
+        <>
+          <AdminBootShell message="Restoring your session…" />
+          <NacActionPresenter />
+        </>
+      );
     }
     if (!isSupabaseConfigured()) {
       return (
-        <NacAnalyticsSignIn
-          kicker="NAC Hospitality OS"
-          title="NAC Hospitality OS"
-          subtitle={formatSupabaseSetupMessage()}
-        />
+        <>
+          <NacAnalyticsSignIn
+            kicker="NAC Hospitality OS"
+            title="NAC Hospitality OS"
+            subtitle={formatSupabaseSetupMessage()}
+          />
+          <NacActionPresenter />
+        </>
       );
     }
     if (!session) {
       return (
-        <NacAnalyticsSignIn
-          kicker="NAC Hospitality OS"
-          title="Sign in"
-          subtitle="Sign in with your NAC staff account"
-          sessionIssue={authIssue}
-        />
+        <>
+          <NacAnalyticsSignIn
+            kicker="NAC Hospitality OS"
+            title="Sign in"
+            subtitle="Sign in with your NAC staff account"
+            sessionIssue={authIssue}
+          />
+          <NacActionPresenter />
+        </>
       );
     }
   }
 
   return (
+    <>
     <PlatformFiltersProvider>
       <RbacProvider session={session}>
         <AdminDashboardContent
@@ -150,6 +163,8 @@ export default function AdminDashboard(props) {
         />
       </RbacProvider>
     </PlatformFiltersProvider>
+    <NacActionPresenter />
+    </>
   );
 }
 

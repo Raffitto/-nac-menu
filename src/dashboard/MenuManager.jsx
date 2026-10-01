@@ -7,6 +7,7 @@ import React, {
   lazy,
   Suspense,
 } from "react";
+import { beginGuardedAction, endGuardedAction } from "../lib/nacActionGuard";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -632,6 +633,8 @@ export default function MenuManager() {
     options = {},
   ) => {
     const { silentToast = false } = options;
+    if (!beginGuardedAction({ id: "menu-publish", scope: "global", label: "Publishing menu…" })) return null;
+    try {
     const idempotencyKey =
       key ||
       `${menuBranch}:${changeSummary?.action || "publish"}:${
@@ -663,6 +666,9 @@ export default function MenuManager() {
       });
     }
     return result.data;
+    } finally {
+      endGuardedAction("menu-publish");
+    }
   }, [menuBranch, loadPublishStatus]);
 
   const publishIntel = useMenuPublishIntelligence({

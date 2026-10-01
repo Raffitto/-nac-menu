@@ -16,6 +16,7 @@ import {
 } from "./inventoryShared";
 import "./invoice-intake.css";
 import "./foodBibleEditorUx.css";
+import NacActionPresenter from "../dashboard/components/NacActionPresenter";
 
 export default function InventoryApp({ embedded = false }) {
   const { session, checked, issue } = usePlatformSession();
@@ -29,6 +30,7 @@ export default function InventoryApp({ embedded = false }) {
 
   if (!checked || !session) {
     return (
+      <>
       <NacAnalyticsSignIn
         checking={!checked}
         kicker="NAC Inventory"
@@ -44,10 +46,13 @@ export default function InventoryApp({ embedded = false }) {
         subtitle="Authorized purchasing, inventory, and operations team members"
         sessionIssue={issue}
       />
+      {!embedded ? <NacActionPresenter /> : null}
+      </>
     );
   }
 
   return (
+    <>
     <main className="inv-page">
       <header className="inv-header">
         <div>
@@ -101,5 +106,7 @@ export default function InventoryApp({ embedded = false }) {
         />
       )}
     </main>
+    {!embedded ? <NacActionPresenter /> : null}
+    </>
   );
 }

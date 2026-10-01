@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import InvoiceIntakeView from "./InvoiceIntakeView";
+import { resetGuardedActions } from "../lib/nacActionGuard";
 import {
   approveInvoice,
   fetchInventoryReferenceData,
@@ -50,6 +51,7 @@ jest.mock("../lib/inventoryApi", () => ({
 describe("InvoiceIntakeView", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetGuardedActions();
     window.history.replaceState({}, "", "/inventory");
   });
 
@@ -192,6 +194,7 @@ async function openDocument(invoice, locations, retrieve) {
 describe("Approve and post result", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetGuardedActions();
     window.history.replaceState({}, "", "/inventory");
   });
 

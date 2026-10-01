@@ -38,7 +38,7 @@ import { triageInvoice } from "./procurement/inboxTriage";
 import { classifyPostOutcome, humanizePostError, isAmbiguousPostError } from "./procurement/postOutcome";
 import { isOperationalReceivingLocation } from "./procurement/receivingReadiness";
 import { resolveReceivingLocation } from "./procurement/receivingLocation";
-import { createActionLock } from "../lib/nacActionGuard";
+import { beginGuardedAction, createActionLock, endGuardedAction, updateGuardedAction } from "../lib/nacActionGuard";
 import {
   classifyDocumentKind,
   resolvePriceRequirement,
@@ -213,6 +213,10 @@ export default function InvoiceIntakeView({
     if (!selected?.id) return;
     if (postPhase === "posting" || postPhase === "posted" || postPhase === "uncertain") return;
     if (!postLockRef.current.tryAcquire()) return;
+    if (!beginGuardedAction({ id: "inventory-approve", scope: "global", label: "Posting receipt…" })) {
+      postLockRef.current.release();
+      return;
+    }
     setPostPhase("posting");
     setPostMessage("Posting receipt…");
     setBusy("approve");
@@ -226,6 +230,7 @@ export default function InvoiceIntakeView({
     }
     let invoiceAfter;
     if (error && isAmbiguousPostError(error)) {
+      updateGuardedAction("inventory-approve", { label: "Confirming status…" });
       try {
         invoiceAfter = await retrieveOcrResult(selected.id);
         setSelected(invoiceAfter);
@@ -251,6 +256,7 @@ export default function InvoiceIntakeView({
     } else {
       applyPostOutcome(outcome, invoiceAfter);
     }
+    endGuardedAction("inventory-approve");
     setBusy("");
   };
 
@@ -285,6 +291,7 @@ export default function InvoiceIntakeView({
   const handleUpload = async (event) => {
     event.preventDefault();
     if (!pages.length || busy) return;
+    if (!beginGuardedAction({ id: "inventory-upload", scope: "global", label: "Uploading invoice…" })) return;
     setBusy("upload");
     setError("");
     setNotice("");
@@ -294,6 +301,9 @@ export default function InvoiceIntakeView({
     const markStage = (next) => {
       stage = next;
       setUploadStage(next);
+      updateGuardedAction("inventory-upload", {
+        label: next === "extracting" ? "Extracting invoice…" : "Uploading invoice…",
+      });
     };
     try {
       markStage("preparing");
@@ -337,6 +347,7 @@ export default function InvoiceIntakeView({
         }
       }
     } finally {
+      endGuardedAction("inventory-upload");
       setBusy("");
       setUploadStage("");
     }
