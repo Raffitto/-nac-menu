@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, Lock, WifiOff } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { beginGuardedAction, endGuardedAction } from "../../lib/nacActionGuard";
 import {
   formatSupabaseSetupMessage,
   isBrowserOffline,
@@ -42,14 +43,19 @@ export default function NacAnalyticsSignIn({
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!supabase || offline) return;
+    if (!beginGuardedAction({ id: "sign-in", scope: "global", label: "Signing in…" })) return;
     setLoginError("");
     setLoginLoading(true);
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    setLoginLoading(false);
-    if (err) setLoginError(mapAuthError(err.message));
+    try {
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (err) setLoginError(mapAuthError(err.message));
+    } finally {
+      endGuardedAction("sign-in");
+      setLoginLoading(false);
+    }
   };
 
   if (checking) {
