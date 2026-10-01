@@ -117,6 +117,11 @@
 .inv-banner button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .inv-banner--error { background: rgba(166, 68, 60, .22); color: #f1aaa2; }
 .inv-banner--success { background: rgba(68, 125, 98, .22); color: #a7d6bf; }
+.inv-post-status { margin: 0; font-weight: 650; }
+.inv-post-status--posting,
+.inv-post-status--posted { color: #a7d6bf; }
+.inv-post-status--rejected,
+.inv-post-status--uncertain { color: #f1aaa2; }
 
 .inv-upload-card {
   justify-content: space-between;

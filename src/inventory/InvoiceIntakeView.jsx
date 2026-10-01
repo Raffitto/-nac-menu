@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -35,6 +35,9 @@ import {
 } from "../lib/inventoryApi";
 import InvoiceOnboarding from "./InvoiceOnboarding";
 import { triageInvoice } from "./procurement/inboxTriage";
+import { classifyPostOutcome, humanizePostError, isAmbiguousPostError } from "./procurement/postOutcome";
+import { isOperationalReceivingLocation } from "./procurement/receivingReadiness";
+import { createActionLock } from "../lib/nacActionGuard";
 import {
   classifyDocumentKind,
   resolvePriceRequirement,
@@ -114,6 +117,10 @@ export default function InvoiceIntakeView({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [postedReceipt, setPostedReceipt] = useState(null);
+  const [postPhase, setPostPhase] = useState("idle");
+  const [postMessage, setPostMessage] = useState("");
+  const postLockRef = useRef(null);
+  if (!postLockRef.current) postLockRef.current = createActionLock();
   const [pages, setPages] = useState([]);
   const [uploadSupplierId, setUploadSupplierId] = useState("");
   const [uploadStage, setUploadStage] = useState("");
@@ -148,6 +155,98 @@ export default function InvoiceIntakeView({
   useEffect(() => {
     refreshSelected().catch((err) => setError(err.message));
   }, [refreshSelected]);
+
+  useEffect(() => {
+    setPostPhase("idle");
+    setPostMessage("");
+    setPostedReceipt(null);
+    postLockRef.current?.release();
+  }, [selectedId]);
+
+  const rememberPosted = (invoice, result) => {
+    const lines = (invoice?.inventory_invoice_lines || []).filter((line) => line.active !== false);
+    setPostedReceipt({
+      supplier: invoice?.inventory_suppliers?.supplier_name || "Supplier",
+      number: invoice?.invoice_number || invoice?.source_filename,
+      total: invoice?.total,
+      currency: invoice?.currency,
+      lines: lines.length,
+      channel: invoice?.purchase_channel || "supplier_credit",
+      reason: invoice?.purchase_reason,
+      location: (reference.locations || []).find((row) => row.id === invoice?.receiving_location_id)?.name || "Receiving location",
+      status: result?.status || "posted",
+      treatment: invoice?.receiving_treatment,
+    });
+  };
+
+  const applyPostOutcome = (outcome, invoice) => {
+    const message = outcome.state === "rejected" ? humanizePostError(outcome.message) : outcome.message;
+    setPostPhase(outcome.state);
+    setPostMessage(message);
+    if (outcome.state === "posted" && invoice) rememberPosted(invoice, { status: "posted" });
+    if (outcome.state === "rejected") {
+      setError(message);
+      postLockRef.current.release();
+    }
+  };
+
+  const confirmPostingStatus = async () => {
+    if (!selected?.id) return;
+    try {
+      const invoiceAfter = await retrieveOcrResult(selected.id);
+      setSelected(invoiceAfter);
+      const outcome = classifyPostOutcome({ error: new Error("timeout"), invoiceAfter });
+      applyPostOutcome(outcome, invoiceAfter);
+    } catch {
+      setPostPhase("uncertain");
+      setPostMessage("Posting status could not be confirmed. Refresh status before trying again.");
+    }
+  };
+
+  const approveAndPost = async () => {
+    if (!selected?.id) return;
+    if (postPhase === "posting" || postPhase === "posted" || postPhase === "uncertain") return;
+    if (!postLockRef.current.tryAcquire()) return;
+    setPostPhase("posting");
+    setPostMessage("Posting receipt…");
+    setBusy("approve");
+    setError("");
+    let result = null;
+    let error = null;
+    try {
+      result = await approveInvoice(selected.id);
+    } catch (err) {
+      error = err;
+    }
+    let invoiceAfter;
+    if (error && isAmbiguousPostError(error)) {
+      try {
+        invoiceAfter = await retrieveOcrResult(selected.id);
+        setSelected(invoiceAfter);
+      } catch {
+        invoiceAfter = null;
+      }
+    }
+    const outcome = classifyPostOutcome({
+      error,
+      result,
+      invoiceAfter: error && isAmbiguousPostError(error) ? invoiceAfter : undefined,
+    });
+    if (outcome.state === "posted") {
+      setPostPhase("posted");
+      setPostMessage(outcome.message);
+      rememberPosted(invoiceAfter || selected, result);
+      try {
+        await refreshList();
+        await refreshSelected();
+      } catch {
+        setPostMessage("Posted. This document already has one receipt. Reopen it if the ledger has not refreshed.");
+      }
+    } else {
+      applyPostOutcome(outcome, invoiceAfter);
+    }
+    setBusy("");
+  };
 
   const run = async (label, operation, successMessage) => {
     setBusy(label);
@@ -338,10 +437,19 @@ export default function InvoiceIntakeView({
     ).length || 0,
     [selected]
   );
+  const operationalLocations = useMemo(
+    () => (reference.locations || []).filter(isOperationalReceivingLocation),
+    [reference.locations]
+  );
   const inbox = useMemo(() => {
     if (!selected) return null;
+    const locationIsOperational = operationalLocations.some((row) => row.id === selected.receiving_location_id);
+    const hasDefaultReceivingLocation = operationalLocations.some((row) => row.is_default_receiving);
     return triageInvoice({
-      invoice: selected,
+      invoice: {
+        ...selected,
+        hasReceivingLocation: locationIsOperational || (!selected.receiving_location_id && hasDefaultReceivingLocation),
+      },
       lines: selected.inventory_invoice_lines || [],
       ingredients: reference.ingredients,
       existingInvoices: invoices
@@ -356,7 +464,7 @@ export default function InvoiceIntakeView({
           status: row.status,
         })),
     });
-  }, [invoices, reference.ingredients, selected]);
+  }, [invoices, operationalLocations, reference.ingredients, selected]);
 
   if (!embedded && (!checked || !session)) {
     return (
@@ -495,11 +603,14 @@ export default function InvoiceIntakeView({
 
               {postedReceipt && (
                 <section className="inv-inbox inv-inbox--ready" data-testid="receipt-posted">
-                  <strong>RECEIVED</strong>
+                  <strong>POSTED</strong>
                   <p>{postedReceipt.supplier} · {postedReceipt.number}</p>
                   <p>{postedReceipt.lines} items · {money(postedReceipt.total, postedReceipt.currency)}</p>
                   <p>{postedReceipt.location}</p>
                   <p>Inventory updated. Repeated approval does not post a second receipt.</p>
+                  {postedReceipt.treatment === "company_settled_document" && (
+                    <p>Quantities were received without a supplier price. No cost benchmark was written.</p>
+                  )}
                   {postedReceipt.channel === "cash_market" && (
                     <p>Cash / local market{postedReceipt.reason ? ` · ${postedReceipt.reason.replaceAll("_", " ")}` : ""}. This price is not the regular supplier benchmark.</p>
                   )}
@@ -605,8 +716,8 @@ export default function InvoiceIntakeView({
                 </label>
                 <label>Receiving location
                   <select name="receivingLocationId" defaultValue={selected.receiving_location_id || ""}>
-                    <option value="">Default receiving location</option>
-                    {(reference.locations || []).map((location) => (
+                    <option value="">Choose a receiving location</option>
+                    {operationalLocations.map((location) => (
                       <option key={location.id} value={location.id}>{location.name}</option>
                     ))}
                   </select>
@@ -777,18 +888,55 @@ export default function InvoiceIntakeView({
                 ))}
               </section>
 
-              <footer className="inv-approval">
+              <footer className="inv-approval" aria-busy={postPhase === "posting"}>
                 <div>
                   <span className="inv-step">3</span>
                   <div>
                     <h3>Approve and post</h3>
-                    <p>Creates one receipt, immutable movements, cost history, and recipe/menu cost snapshots atomically.</p>
+                    <p>Creates one receipt and the quantity movements for this document. A second click cannot create a second receipt.</p>
                   </div>
                 </div>
                 <div>
+                  {postMessage && (
+                    <p className={`inv-post-status inv-post-status--${postPhase}`} role="status" aria-live="assertive">
+                      {postMessage}
+                    </p>
+                  )}
+                  {postPhase === "uncertain" && (
+                    <button type="button" className="inv-button inv-button--secondary" onClick={confirmPostingStatus}>
+                      Refresh status
+                    </button>
+                  )}
+                  {inbox?.readiness?.actions?.includes("Choose where this delivery was received.") && postPhase !== "posted" && (
+                    operationalLocations.length ? (
+                      <form onSubmit={(event) => {
+                        event.preventDefault();
+                        const receivingLocationId = new FormData(event.currentTarget).get("receivingLocationId");
+                        if (!receivingLocationId) return;
+                        run("location", () => updateInvoiceReview(selected.id, {
+                          receivingLocationId,
+                          reason: "Receiving location confirmed for this document.",
+                        }), "Receiving location saved. Stock is still not posted.");
+                      }}>
+                        <label>Receiving location
+                          <select name="receivingLocationId" required defaultValue="">
+                            <option value="">Choose a receiving location</option>
+                            {operationalLocations.map((location) => (
+                              <option key={location.id} value={location.id}>{location.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button className="inv-button inv-button--secondary" disabled={busy === "location"}>
+                          Save receiving location
+                        </button>
+                      </form>
+                    ) : (
+                      <p role="status">No receiving location is configured for this branch. Nothing has been posted.</p>
+                    )
+                  )}
                   <button
                     className="inv-button inv-button--danger"
-                    disabled={FINAL_STATUSES.has(selected.status) || busy === "reject"}
+                    disabled={FINAL_STATUSES.has(selected.status) || busy === "reject" || postPhase === "posting" || postPhase === "uncertain"}
                     onClick={() => {
                       const reason = window.prompt("Reason for rejecting this invoice:");
                       if (reason) run("reject", () => rejectInvoice(selected.id, reason), "Invoice rejected.");
@@ -798,25 +946,11 @@ export default function InvoiceIntakeView({
                   </button>
                   <button
                     className="inv-button inv-button--primary"
-                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || inbox?.mayPost === false || busy === "approve"}
-                    onClick={() => run("approve", async () => {
-                      const result = await approveInvoice(selected.id);
-                      setPostedReceipt({
-                        supplier: selected.inventory_suppliers?.supplier_name || "Supplier",
-                        number: selected.invoice_number || selected.source_filename,
-                        total: selected.total,
-                        currency: selected.currency,
-                        lines: selected.inventory_invoice_lines?.filter((line) => line.active !== false).length || 0,
-                        channel: selected.purchase_channel || "supplier_credit",
-                        reason: selected.purchase_reason,
-                        location: (reference.locations || []).find((row) => row.id === selected.receiving_location_id)?.name || "Default receiving location",
-                        status: result?.status,
-                      });
-                      return result;
-                    }, "Invoice posted. A repeated approval returns the same receipt.")}
+                    disabled={FINAL_STATUSES.has(selected.status) || unresolved > 0 || blocking > 0 || inbox?.mayPost === false || postPhase === "posting" || postPhase === "posted" || postPhase === "uncertain"}
+                    onClick={approveAndPost}
                   >
-                    {busy === "approve" ? <Loader2 className="inv-spin" size={17} /> : <CheckCircle2 size={17} />}
-                    Approve & post
+                    {postPhase === "posting" ? <Loader2 className="inv-spin" size={17} /> : <CheckCircle2 size={17} />}
+                    {postPhase === "posting" ? "Posting receipt…" : postPhase === "posted" ? "Posted" : "Approve & post"}
                   </button>
                 </div>
               </footer>

@@ -16,6 +16,18 @@ export function ingredientSuggestionIsSafe(description, ingredientName) {
   return needed.some((token) => name.includes(token));
 }
 
+export function documentHasReceivingLocation(invoice = {}) {
+  if (invoice.hasReceivingLocation === false) return false;
+  if (invoice.hasReceivingLocation === true) return true;
+  return Boolean(invoice.receiving_location_id || invoice.receivingLocationId);
+}
+
+/** Test and verification fixtures are not a real receiving dock. */
+export function isOperationalReceivingLocation(location) {
+  if (!location || location.active === false) return false;
+  return !/\b(e2e test|inv-ocr-verify|verification receiving)\b/i.test(String(location.name || ""));
+}
+
 /**
  * One readiness decision for a receiving document.
  * Historical OCR exceptions are not passed in; current line and treatment truth is.
@@ -34,6 +46,7 @@ export function evaluateInvoiceReadiness({
 
   if (!(invoice.supplier_id || invoice.supplierId)) actions.push("Create or match the supplier.");
   if (!treatment) actions.push("Choose how this document should be received.");
+  if (!documentHasReceivingLocation(invoice)) actions.push("Choose where this delivery was received.");
   if (duplicateMayPost === false) actions.push("This document matches one that was already received.");
 
   const lineState = active.map((line) => {

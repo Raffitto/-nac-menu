@@ -176,6 +176,7 @@ describe("exception inbox for quantity-only receiving", () => {
         supplier_id: "ecowhiz",
         invoice_number: "18427",
         receiving_treatment: "company_settled_document",
+        receiving_location_id: "store",
       },
       lines: lines.map((line) => ({
         ...line,
