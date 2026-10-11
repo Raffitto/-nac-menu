@@ -36,29 +36,35 @@ while IFS= read -r f; do
   esac
 done < <(git ls-files)
 
-RULES=(
-  "private-key|-----BEGIN ([A-Z]+ )?PRIVATE KEY-----"
-  "supabase-service-role-jwt|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*(c2VydmljZV9yb2xl|NlcnZpY2Vfcm9sZ|zZXJ2aWNlX3JvbG)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}"
-  "jwt|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-  "supabase-secret-key|sb_secret_[A-Za-z0-9_-]{16,}"
-  "supabase-pat|sbp_[A-Za-z0-9]{32,}"
-  "google-oauth-secret|GOCSPX-[A-Za-z0-9_-]{16,}"
-  "google-oauth-refresh-token|(^|[^A-Za-z0-9/:])1//0[A-Za-z0-9_-]{30,}"
-  "google-api-key|AIza[0-9A-Za-z_-]{35}"
-  "openai-key|(^|[^A-Za-z0-9])sk-(proj-|svcacct-)?[A-Za-z0-9_-]{32,}"
-  "stripe-live-key|(sk|rk)_live_[0-9A-Za-z]{20,}"
-  "github-token|(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})"
-  "slack-token|xox[abprs]-[A-Za-z0-9-]{10,}"
-  "aws-access-key|AKIA[0-9A-Z]{16}"
-  "twilio-api-key|(^|[^A-Za-z0-9])SK[0-9a-fA-F]{32}([^A-Za-z0-9]|$)"
-  "twilio-credential|[Tt][Ww][Ii][Ll][Ii][Oo][A-Za-z0-9_]*['\"]?[[:space:]]*[:=][[:space:]]*['\"]?(AC)?[0-9a-f]{32}"
-  "sendgrid-key|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}"
-  "npm-token|(npm_[A-Za-z0-9]{36}|_authToken=[^\$[:space:]{]{8,})"
-  "netlify-token|nfp_[A-Za-z0-9]{36,}"
-  "resend-key|(^|[^A-Za-z0-9_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{16,}"
-  "hex-api-key|(^|[^A-Za-z0-9_])key_[0-9a-f]{64}([^0-9a-f]|$)"
-  "db-url-with-password|(postgres(ql)?|mysql|mongodb(\+srv)?|rediss?)://[^:/@[:space:]]+:([^@[:space:]<{\$]|\$[^{@[:space:]]){6,}@"
-)
+# Quoted heredoc: a double-quoted array eats \`\$\`, so the DB-URL rule's
+# literal dollar became an end anchor and the fixture never matched.
+RULES=()
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  RULES+=("$line")
+done <<'RULES'
+private-key|-----BEGIN ([A-Z]+ )?PRIVATE KEY-----
+supabase-service-role-jwt|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*(c2VydmljZV9yb2xl|NlcnZpY2Vfcm9sZ|zZXJ2aWNlX3JvbG)[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}
+jwt|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}
+supabase-secret-key|sb_secret_[A-Za-z0-9_-]{16,}
+supabase-pat|sbp_[A-Za-z0-9]{32,}
+google-oauth-secret|GOCSPX-[A-Za-z0-9_-]{16,}
+google-oauth-refresh-token|(^|[^A-Za-z0-9/:])1//0[A-Za-z0-9_-]{30,}
+google-api-key|AIza[0-9A-Za-z_-]{35}
+openai-key|(^|[^A-Za-z0-9])sk-(proj-|svcacct-)?[A-Za-z0-9_-]{32,}
+stripe-live-key|(sk|rk)_live_[0-9A-Za-z]{20,}
+github-token|(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})
+slack-token|xox[abprs]-[A-Za-z0-9-]{10,}
+aws-access-key|AKIA[0-9A-Z]{16}
+twilio-api-key|(^|[^A-Za-z0-9])SK[0-9a-fA-F]{32}([^A-Za-z0-9]|$)
+twilio-credential|[Tt][Ww][Ii][Ll][Ii][Oo][A-Za-z0-9_]*['"]?[[:space:]]*[:=][[:space:]]*['"]?(AC)?[0-9a-f]{32}
+sendgrid-key|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}
+npm-token|(npm_[A-Za-z0-9]{36}|_authToken=[^\$[:space:]{]{8,})
+netlify-token|nfp_[A-Za-z0-9]{36,}
+resend-key|(^|[^A-Za-z0-9_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{16,}
+hex-api-key|(^|[^A-Za-z0-9_])key_[0-9a-f]{64}([^0-9a-f]|$)
+db-url-with-password|(postgres(ql)?|mysql|mongodb(\+srv)?|rediss?)://[^:/@[:space:]]+:([^@[:space:]<{\$]|\$[^{@[:space:]]){6,}@
+RULES
 
 report() { # stdin: "file:line" ; $1 rule
   while IFS= read -r loc; do
