@@ -43,8 +43,13 @@ async function readPublishedThrough(supabase, branch) {
     .eq("dataset", "order_items")
     .order("data_through", { ascending: false })
     .limit(1);
-  if (fresh.error) return { publishedThrough: null, known: false };
-  return { publishedThrough: fresh.data?.[0]?.data_through || null, known: true };
+  if (fresh.error) return { publishedThrough: null, known: false, note: "the freshness record could not be read" };
+  const publishedThrough = fresh.data?.[0]?.data_through || null;
+  return {
+    publishedThrough,
+    known: Boolean(publishedThrough),
+    note: publishedThrough ? null : "no freshness record exists for this branch",
+  };
 }
 
 /**
@@ -199,13 +204,16 @@ export async function queryIngredientConsumption(supabase, {
       orderStatusVerified: sales.orderStatusVerified,
       unsplittableRows: sales.unsplittableRows || 0,
       reason: sales.reason,
+      // R6: unreadable or missing publication freshness downgrades PROVISIONAL.
+      publicationVerified: freshness.known,
+      publicationNote: freshness.note,
     },
     recoveredEvidence: exportApplies
       ? recoveredEvidenceForIngredient(sales.rows, ingredient.name)
       : { links: [], excluded: [] },
   });
   const notes = [];
-  if (!freshness.known) notes.push("Publication freshness could not be read; only the 08:00 AST business-day cutoff was applied.");
+  if (!freshness.known) notes.push(`Publication freshness is unknown (${freshness.note}); only the 08:00 AST business-day cutoff was applied.`);
   if (!exportApplies) notes.push(`The recovered Foodics recipe export is dated ${FOODICS_RECIPE_EXPORT_AS_OF} and has no effective date covering ${window.start}.`);
   if (notes.length) summary.reason = `${summary.reason} ${notes.join(" ")}`;
   return summary;

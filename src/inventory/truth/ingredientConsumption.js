@@ -62,6 +62,76 @@ function memoizedGraphAt(graphInput) {
   };
 }
 
+const RIYADH_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** Asia/Riyadh (fixed UTC+3, no DST) date and time of a full timestamp, or null for date-only values. */
+function riyadhDateTime(value) {
+  const raw = String(value || "");
+  if (!raw.includes("T")) return null;
+  const ms = Date.parse(raw);
+  if (!Number.isFinite(ms)) return null;
+  const iso = new Date(ms + RIYADH_OFFSET_MS).toISOString();
+  return { date: iso.slice(0, 10), time: iso.slice(11, 16), atMidnight: iso.slice(11, 23) === "00:00:00.000" };
+}
+
+function saleDate(row) {
+  return row.business_date || row.sold_on || row.order_date || row.period_start || null;
+}
+
+/**
+ * Recipe versions that start or end inside a business day on which a relevant
+ * product was sold (Oracle D1.1 R4). Sales carry no time of day, so the version
+ * active at business-day close is applied to the whole day; this is disclosed.
+ */
+export function versionChangesWithinSaleDays({ graphInput, salesRows = [], menuItemIds = [] }) {
+  const recipes = graphInput?.recipes || [];
+  const versions = graphInput?.versions || [];
+  const lines = graphInput?.lines || [];
+  const versionRecipe = new Map(versions.map((version) => [version.id, version.recipe_id]));
+  const children = new Map();
+  for (const line of lines) {
+    const parent = versionRecipe.get(line.recipe_version_id || line.recipeVersionId);
+    const child = line.sub_recipe_id || line.subRecipeId;
+    if (!parent || !child) continue;
+    if (!children.has(parent)) children.set(parent, new Set());
+    children.get(parent).add(child);
+  }
+  const wanted = new Set(menuItemIds.filter(Boolean));
+  const datesByRecipe = new Map();
+  const visit = (recipeId, dates, seen = new Set()) => {
+    if (!recipeId || seen.has(recipeId)) return;
+    seen.add(recipeId);
+    if (!datesByRecipe.has(recipeId)) datesByRecipe.set(recipeId, new Set());
+    for (const date of dates) datesByRecipe.get(recipeId).add(date);
+    for (const child of children.get(recipeId) || []) visit(child, dates, seen);
+  };
+  for (const recipe of recipes) {
+    const menuItemId = recipe.menu_item_id || recipe.menuItemId;
+    if (!menuItemId || !wanted.has(menuItemId)) continue;
+    const dates = new Set(salesRows
+      .filter((row) => row.matched_menu_item_id === menuItemId && Number(row.quantity_sold) > 0)
+      .map(saleDate)
+      .filter(Boolean));
+    if (dates.size) visit(recipe.id, dates);
+  }
+  const recipeName = new Map(recipes.map((recipe) => [recipe.id, recipe.name || recipe.id]));
+  const out = [];
+  const seenKeys = new Set();
+  for (const version of versions) {
+    const dates = datesByRecipe.get(version.recipe_id);
+    if (!dates) continue;
+    for (const bound of [version.effective_from || version.effectiveFrom, version.effective_to || version.effectiveTo]) {
+      const at = riyadhDateTime(bound);
+      if (!at || at.atMidnight || !dates.has(at.date)) continue;
+      const key = `${version.recipe_id}|${at.date}|${at.time}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      out.push({ recipeId: version.recipe_id, recipeName: recipeName.get(version.recipe_id), businessDate: at.date, changedAt: `${at.time} AST` });
+    }
+  }
+  return out.sort((a, b) => `${a.businessDate}${a.recipeName}`.localeCompare(`${b.businessDate}${b.recipeName}`));
+}
+
 /**
  * @param {object} p
  * @param {{id:string,name:string}} p.ingredient
@@ -233,6 +303,19 @@ export function summarizeIngredientConsumptionWithTruth({
     engine: "inventory_truth",
   };
 
+  const versionChanges = versionChangesWithinSaleDays({
+    graphInput,
+    salesRows: eligible,
+    menuItemIds: [
+      ...contributions.map((item) => item.menuItemId),
+      ...ledger.partialSales.map((driver) => driver.menuItemId),
+    ],
+  });
+  common.versionChangesWithinDay = versionChanges;
+  const versionNote = versionChanges.length
+    ? ` ${versionChanges.map((change) => `The recipe for ${change.recipeName} changed during business day ${change.businessDate} (at ${change.changedAt}); the version active at the close of that day is applied to all of that day's sales, because sales carry no time of day.`).join(" ")}`
+    : "";
+
   const incompatible = excluded.filter((item) => item.reason === "incompatible_units");
   if (incompatible.length) {
     return unavailable(common, `${ingredient.name} has incompatible units in the recipe for ${incompatible.map((item) => item.product).join(", ")}; units are never summed across dimensions. No total is shown.`);
@@ -245,29 +328,46 @@ export function summarizeIngredientConsumptionWithTruth({
         : `${positive.length} sold rows are in this period, and none are linked by menu id to an active recipe that uses ${ingredient.name}.`;
     return unavailable(common, `${why} No total is shown.`);
   }
-  if (excluded.length || unverifiedEvidence.length) {
+  // Sold products with no active Food Bible recipe: their use of this ingredient is unknown (R6).
+  const uncoveredProducts = (ledger.uncoveredSales || [])
+    .filter((driver) => compareDecimal(String(driver.soldQuantity || "0"), "0") > 0)
+    .map((driver) => ({
+      product: driver.displayName || "Unnamed product",
+      menuItemId: driver.menuItemId || null,
+      soldQuantity: driver.soldQuantity,
+      reason: driver.menuItemId ? "no_active_recipe" : "no_menu_item_match",
+    }));
+  common.uncoveredProducts = uncoveredProducts;
+  const publicationUnverified = sales.publicationVerified === false;
+
+  if (excluded.length || unverifiedEvidence.length || uncoveredProducts.length || publicationUnverified) {
+    const uncoveredNames = [...new Set(uncoveredProducts.map((item) => item.product))];
     const missing = [
       ...excluded.map((item) => `${item.product} (${item.reason})`),
       ...[...new Set(unverifiedEvidence.map((item) => item.product))].map((name) => `${name} (unverified export only)`),
+      ...uncoveredNames.slice(0, 8).map((name) => `${name} (no active Food Bible recipe)`),
+      ...(uncoveredNames.length > 8 ? [`${uncoveredNames.length - 8} more products with no active Food Bible recipe`] : []),
     ];
+    const parts = [];
+    if (missing.length) parts.push(`${missing.join(", ")} also may use ${ingredient.name} and could not be counted.`);
+    if (publicationUnverified) {
+      parts.push(`Canonical Foodics publication for ${window.label} could not be confirmed (${sales.publicationNote || "no freshness record"}), so the sales read may be incomplete.`);
+    }
     return {
       ...common,
       status: CONSUMPTION_STATUS.PARTIAL,
       quantity: null,
       unit,
       coveredSubset: { quantity: subset, unit, products: productList, label: "Complete Food Bible products only. This is not a total." },
-      reason: `Not a total: ${missing.join(", ")} also may use ${ingredient.name} and could not be counted.`,
+      reason: `Not a total: ${parts.join(" ")}${versionNote}`,
     };
   }
-  const uncoveredNote = ledger.coverage.recipeUncoveredSoldRows
-    ? ` ${ledger.coverage.recipeUncoveredSoldRows} sold rows have no active Food Bible recipe; their use of ${ingredient.name} is unknown.`
-    : "";
   return {
     ...common,
     status: CONSUMPTION_STATUS.PROVISIONAL,
     quantity: subset,
     unit,
     products: productList,
-    reason: `Computed by the Inventory Truth recipe engine: dated recipe versions per sale day, nested sub-recipes, and unit conversion to the ingredient base unit.${uncoveredNote}`,
+    reason: `Computed by the Inventory Truth recipe engine: dated recipe versions per sale day, nested sub-recipes, and unit conversion to the ingredient base unit. Every sold product in the period has an active Food Bible recipe.${versionNote}`,
   };
 }
