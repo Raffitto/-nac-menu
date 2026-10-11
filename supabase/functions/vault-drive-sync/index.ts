@@ -228,14 +228,10 @@ Deno.serve(async (req) => {
       if (!serviceRoleKey) return json(500, { error: "Service role not configured" });
       const authHeader = req.headers.get("Authorization") || "";
       const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-      let serviceRoleJwt = false;
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1] || ""));
-        serviceRoleJwt = payload?.role === "service_role";
-      } catch {
-        serviceRoleJwt = false;
-      }
-      const allowed = token === serviceRoleKey || serviceRoleJwt || validateScheduledIngestSecret(req);
+      // Do not trust JWT payloads decoded without signature verification.
+      // Internal callers must present the exact configured service-role key
+      // or the independently validated scheduled-ingest secret.
+      const allowed = token === serviceRoleKey || validateScheduledIngestSecret(req);
       if (!allowed) return json(401, { error: "Review tracking ingest requires service role or scheduled secret." });
       const admin = createClient(supabaseUrl, serviceRoleKey);
       const reviewTracking = await ingestConnectedReviewTracking(admin, {
