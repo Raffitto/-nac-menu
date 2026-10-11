@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "https://esm.sh/@supabase/supabase-js@2.49.1": "./stubs/supabase-js.ts",
+    "../../supabase/functions/_shared/vaultReviewTrackingDriveDiscovery.ts": "./stubs/vaultReviewTrackingDriveDiscovery.ts",
+    "../../supabase/functions/_shared/vaultDriveIngestion.ts": "./stubs/vaultDriveIngestion.ts"
+  }
+}

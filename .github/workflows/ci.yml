@@ -1,0 +1,46 @@
+# Minimal, unprivileged CI gate (security batch S1).
+# - No secrets, read-only token, no deploy steps, pull_request (not pull_request_target).
+# - Third-party actions pinned by full commit SHA.
+# NOTE: another batch also proposes .github/workflows/ci.yml. If both land, merge the `jobs:`
+# maps; job ids here (`no-secrets`, `edge-function-tests`) are chosen to avoid collisions.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-secrets:
+    name: no-secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan tracked files for credentials
+        run: bash scripts/check-no-secrets.sh
+
+  edge-function-tests:
+    name: edge-function-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Edge Function tests (offline, --deny-net)
+        run: >-
+          deno test --no-check --deny-net --allow-env --allow-read
+          --import-map=tests/edge-functions/import_map.json tests/edge-functions/

@@ -9,6 +9,7 @@ import {
   processDriveIngestionRun,
   type DriveFolder,
 } from "./vaultDriveIngestion.ts";
+import { timingSafeEqualString } from "./internalAuth.ts";
 
 /** Stop before Supabase worker kill (~80s). Leave headroom for JSON response. */
 export const SCHEDULED_INGEST_BUDGET_MS = 50_000;
@@ -141,11 +142,13 @@ export function isScheduledIngestSecretConfigured(): boolean {
   return Boolean(String(Deno.env.get("DRIVE_SCHEDULED_INGEST_SECRET") || "").trim());
 }
 
-export function validateScheduledIngestSecret(req: Request): boolean {
+export async function validateScheduledIngestSecret(req: Request): Promise<boolean> {
   const expected = String(Deno.env.get("DRIVE_SCHEDULED_INGEST_SECRET") || "").trim();
   if (!expected) return false;
   const token = extractBearerToken(req.headers.get("Authorization"));
-  return Boolean(token && token === expected);
+  if (!token) return false;
+  // Digest-based constant-time comparison: no early return on length or content.
+  return await timingSafeEqualString(token, expected);
 }
 
 function budgetRemainingMs(startedAt: number, budgetMs: number): number {
