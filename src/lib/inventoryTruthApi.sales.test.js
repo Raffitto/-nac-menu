@@ -16,7 +16,9 @@ function chain(result) {
     in: jest.fn(() => query),
     gte: jest.fn(() => query),
     lte: jest.fn(() => query),
-    range: jest.fn(async () => result),
+    order: jest.fn(() => query),
+    // Ordered pager: first page returns the rows, the next page is empty (end of data).
+    range: jest.fn(async (from) => (from === 0 || result.error ? result : { data: [], error: null })),
     then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
   };
   return query;
