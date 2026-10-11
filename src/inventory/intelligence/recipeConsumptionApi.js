@@ -1,4 +1,4 @@
-import { parseConsumptionQuestion, resolveConsumptionWindow } from "./consumptionEvidence";
+import { consumptionQuestionFor, parseConsumptionQuestion, resolveConsumptionWindow } from "./consumptionEvidence";
 import { summarizeIngredientConsumptionWithTruth } from "../truth/ingredientConsumption";
 import {
   isMissingRelationError,
@@ -107,7 +107,7 @@ export async function queryIngredientConsumption(supabase, {
       status: "UNAVAILABLE",
       postsStock: false,
       quantity: null,
-      reason: "Name the branch and whether you mean yesterday or last week.",
+      reason: "Name the branch and the period: yesterday, last week, on YYYY-MM-DD, or from YYYY-MM-DD to YYYY-MM-DD.",
     };
   }
   // Fail closed (Oracle D1.1 R2): a missing/unauthenticated profile, or a branch
@@ -117,6 +117,15 @@ export async function queryIngredientConsumption(supabase, {
   }
   const freshness = await readPublishedThrough(supabase, parsed.branch);
   const window = resolveConsumptionWindow(parsed.period, { now: instant, publishedThrough: freshness.publishedThrough });
+  if (!window) {
+    return {
+      status: "UNAVAILABLE",
+      postsStock: false,
+      quantity: null,
+      branchId: parsed.branch,
+      reason: "That date range is not valid (dates must be real YYYY-MM-DD dates, start on or before end, at most 62 days).",
+    };
+  }
   const ingredientName = parsed.ingredient || "";
   const { data: ingredients, error: ingredientError } = ingredientName
     ? await supabase
@@ -141,12 +150,23 @@ export async function queryIngredientConsumption(supabase, {
   const named = ingredients.map((item) => ({ id: item.id, name: item.canonical_name, baseUom: item.base_inventory_unit || null }));
   const ingredient = named.length === 1 ? named[0] : null;
   if (!ingredient || !window || window.status === "UNAVAILABLE") {
-    return summarizeIngredientConsumptionWithTruth({
+    const refused = summarizeIngredientConsumptionWithTruth({
       ingredient: ingredient || named[0],
       ingredients: named,
       branchId: parsed.branch,
       window,
     });
+    if (window?.availableWindow && parsed.ingredient) {
+      // R3: a follow-up the parser accepts (round-trip tested).
+      refused.suggestedQuestion = consumptionQuestionFor({
+        ingredient: parsed.ingredient,
+        branch: parsed.branch,
+        start: window.availableWindow.start,
+        end: window.availableWindow.end,
+      });
+      refused.reason = `${refused.reason} Try: “${refused.suggestedQuestion}”`;
+    }
+    return refused;
   }
   const sales = await loadAuthoritativeSales(supabase, parsed.branch, window);
   const graphInput = await readRecipeGraphInputs(supabase, { branchId: parsed.branch });

@@ -16,10 +16,14 @@ export function parseConsumptionQuestion(question = "") {
     || /\bhow much\b/.test(q);
   if (!asks) return null;
   const branch = BRANCHES.find((id) => new RegExp(`\\b${id}\\b`).test(q)) || null;
-  const named = q.match(/\bhow much\s+([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(should|did|would|have|khobar|riyadh|jeddah|yesterday|last|this|today|in)\b/);
+  const named = q.match(/\bhow much\s+([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(should|did|would|have|khobar|riyadh|jeddah|yesterday|last|this|today|in|on|from|between)\b/);
   const ingredient = named ? named[1].replace(/\s+(should|have)$/, "").trim() : null;
   let period = null;
-  if (/\byesterday\b/.test(q)) period = "yesterday";
+  const range = q.match(/\b(?:from|between)\s+(\d{4}-\d{2}-\d{2})\s+(?:to|and|until|through)\s+(\d{4}-\d{2}-\d{2})\b/);
+  const single = q.match(/\bon\s+(\d{4}-\d{2}-\d{2})\b/);
+  if (range) period = { kind: "range", start: range[1], end: range[2] };
+  else if (single) period = { kind: "range", start: single[1], end: single[1] };
+  else if (/\byesterday\b/.test(q)) period = "yesterday";
   else if (/\blast week\b|\bpast week\b/.test(q)) period = "last_week";
   else if (/\btoday\b/.test(q)) period = "today";
   const topic = /\bincomplete recipes\b/.test(q)
@@ -33,7 +37,34 @@ export function parseConsumptionQuestion(question = "") {
  * `today` is an ISO date (already a Riyadh date) or a Date/instant (converted
  * to the Riyadh date). Never a UTC slice of the current instant.
  */
+/** Longest explicit date range accepted for a consumption question. */
+export const MAX_CONSUMPTION_RANGE_DAYS = 62;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validIsoDate(value) {
+  if (!ISO_DATE.test(String(value || ""))) return false;
+  return addIsoDays(value, 0) === value;
+}
+
+/** Period phrase that parseConsumptionQuestion accepts ("on D" or "from A to B"). */
+export function consumptionPeriodPhrase(start, end) {
+  return start === end ? `on ${start}` : `from ${start} to ${end}`;
+}
+
+/** A consumption question the parser and both routers accept (round-trip tested, R3). */
+export function consumptionQuestionFor({ ingredient, branch, start, end }) {
+  const branchName = String(branch || "").replace(/^./, (c) => c.toUpperCase());
+  return `How much ${ingredient} should ${branchName} have consumed ${consumptionPeriodPhrase(start, end)}?`;
+}
+
 export function consumptionWindow(period, today) {
+  if (period && typeof period === "object" && period.kind === "range") {
+    const { start, end } = period;
+    if (!validIsoDate(start) || !validIsoDate(end) || start > end) return null;
+    if (listInclusiveIsoDates(start, end).length > MAX_CONSUMPTION_RANGE_DAYS) return null;
+    return { start, end, label: start === end ? start : `${start} to ${end}` };
+  }
   const todayIso = today instanceof Date || typeof today === "number"
     ? riyadhYmd(new Date(today))
     : String(today || "");
@@ -94,7 +125,8 @@ export function resolveConsumptionWindow(period, { now = new Date(), publishedTh
     status: "UNAVAILABLE",
     missingDates,
     availableWindow,
-    reason: `${reason}${availableWindow ? ` Ask for ${availableWindow.start} to ${availableWindow.end} for complete days.` : ""} No total is shown for ${window.label}.`,
+    suggestedPeriod: availableWindow ? consumptionPeriodPhrase(availableWindow.start, availableWindow.end) : null,
+    reason: `${reason} No total is shown for ${window.label}.${availableWindow ? ` Complete days: ask ${consumptionPeriodPhrase(availableWindow.start, availableWindow.end)}.` : ""}`,
   };
 }
 
