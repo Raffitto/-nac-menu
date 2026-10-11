@@ -28,6 +28,8 @@ jobs:
           persist-credentials: false
       - name: Scan tracked files for credentials
         run: bash scripts/check-no-secrets.sh
+      - name: Self-test the scanner (synthetic runtime values, never printed)
+        run: bash scripts/check-no-secrets.test.sh
 
   edge-function-tests:
     name: edge-function-tests
