@@ -33,7 +33,10 @@ describe("recovered Foodics recipe relationships", () => {
     };
     const result = await pageCommerceSales(supabase, "khobar", { start: "2026-10-10", end: "2026-10-10" }, { pageSize: 1000, maxPages: 2 });
     expect(result.complete).toBe(false);
-    expect(result.rows.length).toBe(2000);
+    // The stub repeats the same 1000 ids on every page; duplicates are now dropped and counted.
+    expect(result.rawRowCount).toBe(2000);
+    expect(result.rows.length).toBe(1000);
+    expect(result.droppedRows.byReason.duplicate_row).toBe(1000);
   });
 
   test("recovered milk links are not invented for French Toast", () => {

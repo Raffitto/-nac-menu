@@ -105,6 +105,7 @@ export const ASK_NAC_INTENTS = {
   DELIVERY_SALES: "delivery_sales",
   GOOGLE_REVIEWS: "google_reviews",
   FOODICS_QUERY: "foodics_query",
+  THEORETICAL_CONSUMPTION: "theoretical_consumption",
   ...VAULT_INTENTS,
   UNKNOWN: "unknown",
 } as const;
@@ -130,7 +131,27 @@ const BRANCH_ALIASES: Record<string, string[]> = {
   jeddah: ["jeddah", "jedda"],
 };
 
+/**
+ * Theoretical ingredient consumption ("How much milk should Khobar have consumed
+ * yesterday?"). Mirrors the client rule in src/intelligence/askNac/intentRouter.js.
+ */
+export function scoreTheoreticalConsumptionIntent(q: string): number {
+  if (/\b(wastage|waste|breakage|broken glass|spillage)\b/.test(q)) return 0;
+  if (/\b(sales|revenue|net sales|gross sales|sold)\b/.test(q)) return 0;
+  if (/\b(should have used|theoretical consumption|incomplete recipes|recipe coverage|verified recipes)\b/.test(q)) {
+    return 40;
+  }
+  if (/\bhow much\b/.test(q) && /\b(consum\w*|should)\b/.test(q)) return 40;
+  return 0;
+}
+
 const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext?: Record<string, unknown> | null }) => number }[] = [
+  {
+    id: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
+    score(q) {
+      return scoreTheoreticalConsumptionIntent(q);
+    },
+  },
   {
     id: ASK_NAC_INTENTS.TEACH_OPERATOR,
     score(q) {
@@ -964,6 +985,96 @@ async function runQueryTool(
   }
 }
 
+export const THEORETICAL_CONSUMPTION_HANDOFF = {
+  kind: "client_local_tool",
+  intent: "theoretical_consumption",
+  tool: "queryIngredientConsumption",
+  engine: "src/inventory/truth",
+} as const;
+
+function buildTheoreticalConsumptionHandoff({
+  route,
+  question,
+  effectiveQuestion,
+  conversationContext,
+  profileHint,
+  filterBranch,
+  requestStartedAt,
+  routeIntentStartedAt,
+}: {
+  route: ReturnType<typeof routeIntent>;
+  question: string;
+  effectiveQuestion: string;
+  conversationContext: Record<string, unknown> | null;
+  profileHint: Record<string, unknown> | null;
+  filterBranch: string | null;
+  requestStartedAt: number;
+  routeIntentStartedAt: number;
+}) {
+  const authorized = resolveAuthorizedIntelligenceScope({
+    mentionedBranch: route.branchMention || null,
+    filterBranch,
+    profile: (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    },
+  });
+  const denied = authorized.unauthorizedBranch || null;
+  const reason = denied
+    ? `Your access does not include ${branchDisplayName(denied)}.`
+    : "Theoretical consumption is computed in the NAC app by the Inventory Truth recipe engine. The server does not compute a total.";
+  const tool = {
+    status: "UNAVAILABLE",
+    quantity: null,
+    unit: null,
+    postsStock: false,
+    reason,
+    engine: "inventory_truth",
+    executedBy: denied ? "none" : "client",
+  };
+  const now = Math.round(performance.now() - requestStartedAt);
+  return attachResponseMeta({
+    answerType: denied ? "feasibility_block" : "client_handoff",
+    title: "Theoretical ingredient consumption",
+    directAnswer: `${reason} No stock was posted.`,
+    keyMetrics: [],
+    insights: [],
+    recommendations: [],
+    confidence: "none",
+    periodLabel: null,
+    branchLabel: route.branchMention ? branchDisplayName(route.branchMention) : null,
+    intent: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
+    tool,
+    postsStock: false,
+    handoff: denied ? null : { ...THEORETICAL_CONSUMPTION_HANDOFF, question: effectiveQuestion, branchMention: route.branchMention || null },
+    warnings: denied ? [`Unauthorized branch scope: ${denied}`] : [],
+    missingData: denied ? ["unauthorized_branch"] : [],
+    routingConfidence: route.confidence,
+    nextContext: updateConversationContextEdge(
+      (conversationContext || {}) as Record<string, unknown>,
+      {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: { intent: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION, directAnswer: reason },
+      },
+    ),
+    serverConnected: true,
+    aiConnected: false,
+    localFallback: false,
+  }, buildAskNacTimingMs({
+    total: now,
+    routeIntent: Math.round(performance.now() - routeIntentStartedAt),
+    selectedTool: 0,
+    vaultTool: 0,
+    executiveEvidenceV2: 0,
+    openAiNarration: 0,
+    datasetReuse: 0,
+    knowledgeHealth: 0,
+  }), true);
+}
+
 export async function processAskNacOnEdge(
   supabase: SupabaseClient,
   {
@@ -1097,6 +1208,24 @@ export async function processAskNacOnEdge(
         resolutionNotes: humanLoop.resolutionNotes,
       },
     };
+  }
+
+  // Theoretical consumption: explicit client hand-off (D1, Oracle T1-T3).
+  // The canonical recipe engine (src/inventory/truth) is browser JavaScript and is
+  // not bundled into this Edge Function, so the server does not compute a total.
+  // It returns a structured hand-off; the NAC client runs the same read-only tool
+  // locally and labels the answer localFallback. No data is read here.
+  if (route.intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION) {
+    return buildTheoreticalConsumptionHandoff({
+      route,
+      question,
+      effectiveQuestion,
+      conversationContext: conversationContext as Record<string, unknown> | null,
+      profileHint: profileHint as Record<string, unknown> | null,
+      filterBranch: (mergedFilters.branch as string | null) || null,
+      requestStartedAt,
+      routeIntentStartedAt,
+    });
   }
 
   // Company Intelligence Fabric spine — authoritative path for management-intelligence questions.

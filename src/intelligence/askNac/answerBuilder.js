@@ -666,10 +666,18 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
           metricEntry("Ingredient", tool?.ingredient || "Not identified"),
           metricEntry("Quantity", tool?.quantity, { unit: tool?.unit || "" }),
           metricEntry("Status", tool?.status || "UNAVAILABLE"),
+          ...(tool?.coveredSubset
+            ? [metricEntry("Complete products only (not a total)", tool.coveredSubset.quantity, { unit: tool.coveredSubset.unit || "" })]
+            : []),
         ],
-        insights: [tool?.reason, "Theoretical only. No stock was posted."].filter(Boolean),
+        insights: [
+          tool?.reason,
+          ...(tool?.excluded || []).slice(0, 8).map((item) => `Not counted: ${item.product} (${item.reason}).`),
+          ...(tool?.unverifiedEvidence || []).slice(0, 4).map((item) => `Unverified Foodics export: ${item.product} lists ${item.childName} ${item.quantityPerUnit} ${item.unit || ""} per unit (not counted).`.replace(/\s+\(/, " (")),
+          "Theoretical only. No stock was posted.",
+        ].filter(Boolean),
         warnings: tool?.verification ? [tool.verification] : [],
-        sources: [{ label: "Food Bible recipe link and Foodics sales rows", kind: "read_only" }],
+        sources: [{ label: "Inventory Truth recipe engine (Food Bible recipes) and canonical Foodics sales rows", kind: "read_only" }],
       });
     default:
       return buildMissingDataResponse(route, readiness || { missingData: [], reasons: ["Unsupported intent."] });

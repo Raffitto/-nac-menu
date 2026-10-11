@@ -116,7 +116,7 @@ const INTENT_RULES = [
       if (/\b(should have used|theoretical consumption|incomplete recipes|recipe coverage|verified recipes)\b/.test(q)) {
         return 19;
       }
-      if (/\bhow much\b/.test(q) && /\b(consum|should)\b/.test(q)) return 19;
+      if (/\bhow much\b/.test(q) && /\b(consum\w*|should)\b/.test(q)) return 19;
       return 0;
     },
   },

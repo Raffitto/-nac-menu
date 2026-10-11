@@ -212,6 +212,9 @@ export async function processAskNacQuestion({
       response: deterministic,
       route,
     }),
+    // Theoretical consumption exposes the shared tool result (same shape as the
+    // Edge hand-off: status, quantity, unit, reason, postsStock:false).
+    ...(route.intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION ? { tool, postsStock: false } : {}),
     localFallback: true,
     aiConnected: false,
   };
