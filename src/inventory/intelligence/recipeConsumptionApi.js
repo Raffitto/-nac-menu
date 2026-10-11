@@ -1,6 +1,53 @@
-import { consumptionWindow, parseConsumptionQuestion } from "./consumptionEvidence";
+import { consumptionWindow, parseConsumptionQuestion, summarizeIngredientConsumption } from "./consumptionEvidence";
+import { COMMERCE_ITEM_SELECT, mapCommerceItemRow, SALES_SOURCE } from "../truth/salesSource";
 
-const PAGE = 1000;
+const PAGE = 5000;
+
+async function loadAuthoritativeSales(supabase, branch, window) {
+  const commerce = await supabase
+    .from("commerce_order_items")
+    .select(COMMERCE_ITEM_SELECT)
+    .eq("branch_id", branch)
+    .gte("business_date", window.start)
+    .lte("business_date", window.end)
+    .limit(PAGE);
+  if (!commerce.error) {
+    const rows = (commerce.data || []).map(mapCommerceItemRow).filter(Boolean);
+    let latestSalesDate = null;
+    if (!rows.length) {
+      const fresh = await supabase
+        .from("commerce_dataset_freshness")
+        .select("data_through")
+        .eq("branch_id", branch)
+        .eq("dataset", "order_items")
+        .limit(1);
+      latestSalesDate = fresh.data?.[0]?.data_through || null;
+    }
+    return { rows, source: SALES_SOURCE.CANONICAL_COMMERCE, latestSalesDate };
+  }
+  if (commerce.error && !/does not exist|schema cache/i.test(String(commerce.error.message || commerce.error))) {
+    throw commerce.error;
+  }
+  const legacy = await supabase
+    .from("foodics_sales_items")
+    .select("raw_item_name, matched_menu_item_id, quantity_sold, is_modifier, semantic_class, period_start, period_end")
+    .eq("branch_id", branch)
+    .gte("period_start", window.start)
+    .lte("period_end", window.end)
+    .limit(PAGE);
+  if (legacy.error) throw legacy.error;
+  let latestSalesDate = null;
+  if (!legacy.data?.length) {
+    const latest = await supabase
+      .from("foodics_sales_items")
+      .select("period_end")
+      .eq("branch_id", branch)
+      .order("period_end", { ascending: false })
+      .limit(1);
+    latestSalesDate = latest.data?.[0]?.period_end || null;
+  }
+  return { rows: legacy.data || [], source: SALES_SOURCE.FOODICS_SALES_ITEMS, latestSalesDate };
+}
 
 function branchAllowed(profile, branchId) {
   if (profile?.branchScope && profile.branchScope !== branchId && !profile?.allBranches) {
@@ -39,7 +86,6 @@ export async function queryIngredientConsumption(supabase, {
     .ilike("canonical_name", `%${parsed.ingredient}%`)
     .limit(8);
   if (ingredientError) throw ingredientError;
-  const { summarizeIngredientConsumption } = await import("./consumptionEvidence");
   if (!ingredients?.length) {
     return {
       status: "UNAVAILABLE",
@@ -84,45 +130,38 @@ export async function queryIngredientConsumption(supabase, {
   if (recipeError) throw recipeError;
   const recipeById = Object.fromEntries((recipes || []).map((recipe) => [recipe.id, recipe]));
   const versionById = Object.fromEntries((versions || []).map((version) => [version.id, version]));
-  const recipeLinks = (lines || []).flatMap((line) => {
+  const recipeLinks = [];
+  const notYetEffective = [];
+  (lines || []).forEach((line) => {
     const version = versionById[line.recipe_version_id];
     const recipe = version ? recipeById[version.recipe_id] : null;
-    if (!version || version.status !== "active" || !recipe?.active || !recipe.menu_item_id) return [];
+    if (!version || version.status !== "active" || !recipe?.active || !recipe.menu_item_id) return;
     const from = String(version.effective_from || "").slice(0, 10);
     const to = version.effective_to ? String(version.effective_to).slice(0, 10) : null;
-    if (from > window.end || (to && to <= window.start)) return [];
-    return [{
+    if (from > window.end || (to && to <= window.start)) {
+      if (from > window.end) notYetEffective.push({ from, menuItemId: recipe.menu_item_id });
+      return;
+    }
+    recipeLinks.push({
       menuItemId: recipe.menu_item_id,
       outputQuantity: recipe.output_quantity,
       canonicalQuantity: line.canonical_quantity,
       canonicalUnit: line.canonical_unit,
-    }];
+    });
   });
-  const { data: sales, error: salesError } = await supabase
-    .from("foodics_sales_items")
-    .select("raw_item_name, matched_menu_item_id, quantity_sold, is_modifier, semantic_class, period_start, period_end")
-    .eq("branch_id", parsed.branch)
-    .gte("period_start", window.start)
-    .lte("period_end", window.end)
-    .limit(PAGE);
-  if (salesError) throw salesError;
-  let latestSalesDate = null;
-  if (!sales?.length) {
-    const { data: latest } = await supabase
-      .from("foodics_sales_items")
-      .select("period_end")
-      .eq("branch_id", parsed.branch)
-      .order("period_end", { ascending: false })
-      .limit(1);
-    latestSalesDate = latest?.[0]?.period_end || null;
-  }
-  return summarizeIngredientConsumption({
+  const salesLoad = await loadAuthoritativeSales(supabase, parsed.branch, window);
+  const summary = summarizeIngredientConsumption({
     ingredient,
     ingredients: [ingredient],
     branchId: parsed.branch,
     window,
-    sales: sales || [],
+    sales: salesLoad.rows,
     recipeLinks,
-    latestSalesDate,
+    latestSalesDate: salesLoad.latestSalesDate,
+    source: salesLoad.source,
   });
+  if (!summary.quantity && notYetEffective.length) {
+    summary.reason = `${summary.reason} A later recipe version starts ${notYetEffective[0].from} and was not applied to this date.`;
+  }
+  return summary;
 }
