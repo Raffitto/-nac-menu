@@ -15,6 +15,7 @@ import {
   SYN_INGREDIENTS,
   SYN_NOW,
   synItemPage,
+  SYN_PROFILE,
 } from "../__fixtures__/oracle-d1/synFixtures";
 
 const DAY = { start: "2026-10-10", end: "2026-10-10", label: "2026-10-10" };
@@ -98,6 +99,7 @@ describe("T5 cap reached means UNAVAILABLE", () => {
     const result = await queryIngredientConsumption(stub, {
       question: "How much SYN-milk should Khobar have consumed yesterday?",
       now: SYN_NOW,
+      profile: SYN_PROFILE,
     });
     expectUnavailable(result, /incomplete sales read/);
   });

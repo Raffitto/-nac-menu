@@ -7,6 +7,7 @@ import {
   readRecipeGraphInputs,
 } from "../truth/readers";
 import { CANONICAL_COMMERCE_SOURCE } from "../truth/salesSource";
+import { canProfileReadBranch } from "../../lib/rbacIntelligenceScope";
 import { FOODICS_RECIPE_EXPORT_AS_OF, recoveredEvidenceForIngredient } from "./foodicsRecipeRecovery";
 
 /**
@@ -81,13 +82,6 @@ export async function loadAuthoritativeSales(supabase, branch, window, options =
   };
 }
 
-function branchAllowed(profile, branchId) {
-  if (profile?.branchScope && profile.branchScope !== branchId && !profile?.allBranches) {
-    return false;
-  }
-  return true;
-}
-
 function resolveNow({ now, today }) {
   if (now) return now instanceof Date ? now : new Date(now);
   if (today && /^\d{4}-\d{2}-\d{2}$/.test(String(today))) return new Date(`${today}T12:00:00+03:00`);
@@ -116,7 +110,9 @@ export async function queryIngredientConsumption(supabase, {
       reason: "Name the branch and whether you mean yesterday or last week.",
     };
   }
-  if (!branchAllowed(profile, parsed.branch)) {
+  // Fail closed (Oracle D1.1 R2): a missing/unauthenticated profile, or a branch
+  // outside branchScope / allowedBranchIds, is refused before any read.
+  if (!canProfileReadBranch(profile, parsed.branch)) {
     return { status: "UNAVAILABLE", postsStock: false, quantity: null, reason: "This account cannot read that branch." };
   }
   const freshness = await readPublishedThrough(supabase, parsed.branch);

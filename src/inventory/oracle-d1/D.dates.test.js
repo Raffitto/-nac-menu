@@ -14,7 +14,7 @@ import { computeTheoreticalLedger } from "../truth/consumption";
 import { GRAPH_STATUS } from "../truth/contracts";
 import { versionCoversTimestamp } from "../truth/recipeValidityContract";
 import { allTrackedWriteCalls, trackedStub } from "../__fixtures__/oracle-d1/supabaseStub";
-import { consumptionTables, SYN_INGREDIENTS, synGraph, synItem } from "../__fixtures__/oracle-d1/synFixtures";
+import { consumptionTables, SYN_INGREDIENTS, synGraph, synItem, SYN_PROFILE } from "../__fixtures__/oracle-d1/synFixtures";
 
 function expectUnavailable(result, pattern) {
   expect(result.status).toBe("UNAVAILABLE");
@@ -47,7 +47,7 @@ describe("T14 AST day boundary for 'yesterday'", () => {
 
   test("end to end through the Ask NAC tool", async () => {
     const stub = trackedStub({ tables: consumptionTables({ items: [synItem({ id: "SYN-I-T14", date: "2026-10-11", menuItemId: "SYN-M-LATTE" })] }) });
-    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk should Khobar have consumed yesterday?", now: NOW });
+    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk should Khobar have consumed yesterday?", now: NOW, profile: SYN_PROFILE });
     expectUnavailable(result, /not complete/);
     expect(result.missingDates).toEqual(["2026-10-11"]);
     expect(stub.readsOf("commerce_order_items")).toHaveLength(0);
@@ -57,7 +57,7 @@ describe("T14 AST day boundary for 'yesterday'", () => {
 describe("T15 'today' is refused", () => {
   test("UNAVAILABLE (business day not complete) with missingDates", async () => {
     const stub = trackedStub({ tables: consumptionTables({ items: [synItem({ id: "SYN-I-T15", date: "2026-10-12", menuItemId: "SYN-M-LATTE" })] }) });
-    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk did Khobar consume today?", now: "2026-10-12T15:00:00Z" });
+    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk did Khobar consume today?", now: "2026-10-12T15:00:00Z", profile: SYN_PROFILE });
     expectUnavailable(result, /Business day 2026-10-12 is not complete/);
     expect(result.missingDates).toEqual(["2026-10-12"]);
   });
@@ -81,7 +81,7 @@ describe("T16 freshness clipping", () => {
       synItem({ id: `SYN-I-T16-${i}`, date, menuItemId: "SYN-M-LATTE" })
     ));
     const stub = trackedStub({ tables: consumptionTables({ items, freshness: "2026-10-08" }) });
-    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk should Khobar have consumed last week?", now: NOW });
+    const result = await queryIngredientConsumption(stub, { question: "How much SYN-milk should Khobar have consumed last week?", now: NOW, profile: SYN_PROFILE });
     expectUnavailable(result, /2026-10-09, 2026-10-10 are not published/);
     expect(result.missingDates).toEqual(["2026-10-09", "2026-10-10"]);
     expect(result.availableWindow).toEqual({ start: "2026-10-04", end: "2026-10-08" });

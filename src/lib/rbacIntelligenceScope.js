@@ -22,6 +22,27 @@ function branchAllowed(profile, branchId) {
   return allowedBranchIds(profile).includes(id);
 }
 
+/**
+ * Fail-closed branch read check for tools that read branch data directly
+ * (Ask NAC theoretical consumption). Unlike the presentation filters in this
+ * file, a missing or unauthenticated profile is DENIED.
+ * - allBranches profile: any canonical branch.
+ * - explicit allowedBranchIds list: only those branches.
+ * - branchScope: only that branch.
+ * - anything else: denied.
+ */
+export function canProfileReadBranch(profile, branchId) {
+  if (!profile?.authenticated) return false;
+  const id = normalizeBranchId(branchId);
+  if (!id) return false;
+  if (profile.allBranches === true) return true;
+  if (Array.isArray(profile.allowedBranchIds)) {
+    return profile.allowedBranchIds.map(normalizeBranchId).filter(Boolean).includes(id);
+  }
+  if (profile.branchScope) return normalizeBranchId(profile.branchScope) === id;
+  return false;
+}
+
 /** Cache / fetch key segment — prevents cross-role intelligence cache bleed. */
 export function rbacScopeCacheKey(profile) {
   if (!profile?.authenticated) return "anon";

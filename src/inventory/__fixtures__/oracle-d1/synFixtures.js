@@ -162,3 +162,6 @@ export const SYN_RECOVERED = Object.freeze({
     { parentSku: "SYN-sk-P2", parentName: "SYN-P2", childSku: "SYN-sk-SOAK", childName: "SYN-Milk soaking mix", qty: null, unit: null },
   ],
 });
+
+/** Authenticated network-wide profile (the consumption tool fails closed without one). */
+export const SYN_PROFILE = Object.freeze({ authenticated: true, allBranches: true, role: "owner", branchScope: null });

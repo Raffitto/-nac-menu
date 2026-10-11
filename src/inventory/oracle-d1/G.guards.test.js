@@ -9,7 +9,7 @@ import productsFile from "../intelligence/data/foodicsProductIndex.json";
 import { summarizeRecoveredFixture } from "../intelligence/foodicsRecipeRecovery";
 import { queryIngredientConsumption } from "../intelligence/recipeConsumptionApi";
 import { allTrackedWriteCalls, trackedStub, trackedStubCount } from "../__fixtures__/oracle-d1/supabaseStub";
-import { consumptionTables, SYN_NOW, synItem } from "../__fixtures__/oracle-d1/synFixtures";
+import { consumptionTables, SYN_NOW, synItem, SYN_PROFILE } from "../__fixtures__/oracle-d1/synFixtures";
 
 const norm = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 
@@ -94,7 +94,7 @@ describe("T28 no stock writes", () => {
     ];
     for (const scenario of scenarios) {
       const stub = trackedStub({ tables: consumptionTables({ items: scenario.items, freshness: "2026-10-11" }) });
-      const result = await queryIngredientConsumption(stub, { question: scenario.question, now: SYN_NOW });
+      const result = await queryIngredientConsumption(stub, { question: scenario.question, now: SYN_NOW, profile: SYN_PROFILE });
       expect(result.postsStock).toBe(false);
       for (const call of stub.calls) if (call.table) tablesTouched.add(call.table);
       const methods = new Set(stub.calls.map((call) => call.method));
