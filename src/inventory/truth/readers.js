@@ -206,6 +206,12 @@ export async function readLegacyFoodicsSales(client, {
 export const INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
 export const RECIPE_SELECT = "id,name,normalized_name,name_en,recipe_type,menu_item_id,branch_id,output_quantity,output_unit,active";
 export const VERSION_SELECT = "id,recipe_id,version_number,status,yield_percentage,effective_from,effective_to";
+/**
+ * Graph reads for Ask NAC consumption also carry the version documentation
+ * (existing jsonb column, 20260716190000_food_bible_recipe_foundation.sql) for the
+ * explicit noTrackedIngredients flag (D1.2 R6c).
+ */
+export const GRAPH_VERSION_SELECT = `${VERSION_SELECT},documentation`;
 export const LINE_SELECT = "id,recipe_version_id,ingredient_id,sub_recipe_id,quantity,unit,canonical_quantity,canonical_unit";
 
 const IN_CHUNK = 100;
@@ -236,7 +242,7 @@ export async function readRecipeGraphInputs(client, {
   for (let i = 0; i < recipeIds.length; i += IN_CHUNK) {
     const chunk = recipeIds.slice(i, i + IN_CHUNK);
     const read = await readAllPages(
-      () => client.from("inventory_recipe_versions").select(VERSION_SELECT).in("recipe_id", chunk).in("status", ["active", "retired"]),
+      () => client.from("inventory_recipe_versions").select(GRAPH_VERSION_SELECT).in("recipe_id", chunk).in("status", ["active", "retired"]),
       options,
     );
     if (read.error) return { recipes: [], versions: [], lines: [], ingredients: [], complete: false, error: read.error };

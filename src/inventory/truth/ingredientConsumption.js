@@ -9,11 +9,15 @@
  * - PARTIAL: some products are complete, but at least one sold product is
  *   incomplete, conflicted, or only has unverified export evidence for this
  *   ingredient. quantity is null; coveredSubset carries the complete part only.
+ *   reasonCodes: PARTIAL_RECIPE_COVERAGE and/or PUBLICATION_UNVERIFIED.
+ *   lowerBound ("at least X", not a total) only when publication is confirmed.
+ *   unitCoverage: share of units sold whose use of the ingredient is known.
+ *   uncoveredProducts: one entry per product, ranked by units sold.
  * - UNAVAILABLE: no total can be stated (quantity null, reason non-empty).
  * postsStock is always false. Nothing here writes.
  */
 
-import { addDecimal, compareDecimal } from "../inventoryIntelligence";
+import { addDecimal, compareDecimal, subtractDecimal } from "../inventoryIntelligence";
 import { CONVERSION_STATUS } from "./contracts";
 import { computeTheoreticalLedger } from "./consumption";
 import { buildRecipeGraph } from "./recipeGraph";
@@ -76,6 +80,87 @@ function riyadhDateTime(value) {
 
 function saleDate(row) {
   return row.business_date || row.sold_on || row.order_date || row.period_start || null;
+}
+
+/** Reason codes on a PARTIAL answer: which fix unblocks the total (D1.2 R6b). */
+export const PARTIAL_REASON = Object.freeze({
+  RECIPE_COVERAGE: "PARTIAL_RECIPE_COVERAGE",
+  PUBLICATION_UNVERIFIED: "PUBLICATION_UNVERIFIED",
+});
+
+function sumDecimal(...lists) {
+  return lists.flat().reduce((total, value) => addDecimal(total, String(value)), "0");
+}
+
+function maxDecimal(a, b) {
+  return compareDecimal(a, b) >= 0 ? a : b;
+}
+
+function percentOf(part, whole) {
+  const p = Number(part);
+  const w = Number(whole);
+  if (!Number.isFinite(p) || !Number.isFinite(w) || w <= 0) return null;
+  return Math.round((p / w) * 1000) / 10;
+}
+
+function unitCoverage(coverage) {
+  if (coverage.sharePercent == null) return "";
+  return `Recipe use of this ingredient is known for ${coverage.unitsCounted} of ${coverage.unitsSold} units sold (${coverage.sharePercent}%).`;
+}
+
+/** Uncovered products, one entry per product, largest units sold first (D1.2 R6d). */
+function rankByUnitsSold(items) {
+  const byKey = new Map();
+  for (const item of items) {
+    const key = item.menuItemId || `name:${item.product}`;
+    const current = byKey.get(key);
+    if (current) current.soldQuantity = addDecimal(current.soldQuantity, item.soldQuantity);
+    else byKey.set(key, { ...item, soldQuantity: String(item.soldQuantity) });
+  }
+  return [...byKey.values()].sort((a, b) => compareDecimal(b.soldQuantity, a.soldQuantity)
+    || String(a.product).localeCompare(String(b.product)));
+}
+
+function productNameFor(rows, menuItemId) {
+  const row = rows.find((sale) => sale.matched_menu_item_id === menuItemId);
+  return row?.display_name || row?.raw_item_name || row?.item_name || "Unnamed product";
+}
+
+function businessDayClose(date) {
+  return Date.parse(`${date}T23:59:59.999+03:00`);
+}
+
+/**
+ * Explicit Food Bible flag (inventory_recipe_versions.documentation.noTrackedIngredients
+ * === true) on every recipe version applied to this menu item's sale days. Never
+ * inferred from names (D1.2 R6c).
+ */
+function flaggedNoTrackedIngredients({ graphInput, menuItemId, salesRows }) {
+  const recipeIds = new Set((graphInput?.recipes || [])
+    .filter((recipe) => (recipe.menu_item_id || recipe.menuItemId) === menuItemId && recipe.active !== false)
+    .map((recipe) => recipe.id));
+  if (!recipeIds.size) return false;
+  const dates = [...new Set(salesRows
+    .filter((row) => row.matched_menu_item_id === menuItemId && Number(row.quantity_sold) > 0)
+    .map(saleDate)
+    .filter(Boolean))];
+  if (!dates.length) return false;
+  const versions = (graphInput?.versions || []).filter((version) => recipeIds.has(version.recipe_id)
+    && ["active", "retired"].includes(version.status || "active"));
+  return dates.every((date) => {
+    const at = businessDayClose(date);
+    const applied = versions.filter((version) => {
+      const fromRaw = version.effective_from || version.effectiveFrom;
+      const toRaw = version.effective_to || version.effectiveTo;
+      const from = fromRaw ? Date.parse(fromRaw) : -Infinity;
+      const to = toRaw ? Date.parse(toRaw) : Infinity;
+      return !Number.isNaN(from) && !Number.isNaN(to) && from <= at && at < to;
+    });
+    return applied.length > 0 && applied.every((version) => {
+      const doc = version.documentation || {};
+      return doc.noTrackedIngredients === true || doc.no_tracked_ingredients === true;
+    });
+  });
 }
 
 /**
@@ -329,23 +414,68 @@ export function summarizeIngredientConsumptionWithTruth({
     return unavailable(common, `${why} No total is shown.`);
   }
   // Sold products with no active Food Bible recipe: their use of this ingredient is unknown (R6).
-  const uncoveredProducts = (ledger.uncoveredSales || [])
-    .filter((driver) => compareDecimal(String(driver.soldQuantity || "0"), "0") > 0)
-    .map((driver) => ({
-      product: driver.displayName || "Unnamed product",
-      menuItemId: driver.menuItemId || null,
-      soldQuantity: driver.soldQuantity,
-      reason: driver.menuItemId ? "no_active_recipe" : "no_menu_item_match",
-    }));
+  // Covered products whose recipe expands to no ingredients at all count only when the
+  // Food Bible explicitly flags them "no tracked ingredients" (D1.2 R6c); never inferred.
+  const ingredientBearing = new Set(ledger.rows.flatMap((entry) => (entry.menuItems || []).map((item) => item.menuItemId)));
+  const notCovered = new Set([
+    ...(ledger.uncoveredSales || []).map((driver) => driver.menuItemId),
+    ...ledger.partialSales.map((driver) => driver.menuItemId),
+  ].filter(Boolean));
+  const noTrackedIngredientItems = [];
+  const emptyUnflagged = [];
+  for (const [menuItemId, sold] of netByMenuItem.entries()) {
+    if (compareDecimal(sold, "0") <= 0 || notCovered.has(menuItemId) || ingredientBearing.has(menuItemId)) continue;
+    const product = productNameFor(eligible, menuItemId);
+    const entry = { product, menuItemId, soldQuantity: sold };
+    if (flaggedNoTrackedIngredients({ graphInput, menuItemId, salesRows: eligible })) {
+      noTrackedIngredientItems.push({ ...entry, noTrackedIngredients: true });
+    } else {
+      emptyUnflagged.push({ ...entry, reason: "recipe_has_no_ingredients_unflagged" });
+    }
+  }
+  const uncoveredProducts = rankByUnitsSold([
+    ...(ledger.uncoveredSales || [])
+      .filter((driver) => compareDecimal(String(driver.soldQuantity || "0"), "0") > 0)
+      .map((driver) => ({
+        product: driver.displayName || "Unnamed product",
+        menuItemId: driver.menuItemId || null,
+        soldQuantity: String(driver.soldQuantity),
+        reason: driver.menuItemId ? "no_active_recipe" : "no_menu_item_match",
+      })),
+    ...emptyUnflagged,
+  ]);
   common.uncoveredProducts = uncoveredProducts;
-  const publicationUnverified = sales.publicationVerified === false;
+  common.noTrackedIngredientItems = noTrackedIngredientItems;
 
-  if (excluded.length || unverifiedEvidence.length || uncoveredProducts.length || publicationUnverified) {
+  // Share of units sold whose use of this ingredient is known (D1.2 R6a).
+  const unitsSold = sumDecimal(positive.map((sale) => String(sale.quantity_sold)), eligible.filter((sale) => Number(sale.quantity_sold) < 0).map((sale) => String(sale.quantity_sold)));
+  const unitsUnknown = sumDecimal([
+    ...uncoveredProducts.map((item) => item.soldQuantity),
+    ...excluded.filter((item) => item.source === EVIDENCE_SOURCE.FOOD_BIBLE_MENU_LINK).map((item) => String(item.soldQuantity || "0")),
+  ]);
+  const unitsCounted = maxDecimal(subtractDecimal(unitsSold, unitsUnknown), "0");
+  common.unitCoverage = {
+    unitsSold,
+    unitsCounted,
+    sharePercent: percentOf(unitsCounted, unitsSold),
+    label: "Share of units sold whose recipe use of this ingredient is known.",
+  };
+
+  const publicationUnverified = sales.publicationVerified === false;
+  const recipeCoverageGap = excluded.length > 0 || unverifiedEvidence.length > 0 || uncoveredProducts.length > 0;
+
+  if (recipeCoverageGap || publicationUnverified) {
+    const reasonCodes = [
+      ...(recipeCoverageGap ? [PARTIAL_REASON.RECIPE_COVERAGE] : []),
+      ...(publicationUnverified ? [PARTIAL_REASON.PUBLICATION_UNVERIFIED] : []),
+    ];
     const uncoveredNames = [...new Set(uncoveredProducts.map((item) => item.product))];
     const missing = [
       ...excluded.map((item) => `${item.product} (${item.reason})`),
       ...[...new Set(unverifiedEvidence.map((item) => item.product))].map((name) => `${name} (unverified export only)`),
-      ...uncoveredNames.slice(0, 8).map((name) => `${name} (no active Food Bible recipe)`),
+      ...uncoveredProducts.slice(0, 8).map((item) => `${item.soldQuantity} sold of ${item.product} (${item.reason === "recipe_has_no_ingredients_unflagged"
+        ? "recipe has no ingredients and is not flagged as no tracked ingredients"
+        : "no active Food Bible recipe"})`),
       ...(uncoveredNames.length > 8 ? [`${uncoveredNames.length - 8} more products with no active Food Bible recipe`] : []),
     ];
     const parts = [];
@@ -353,13 +483,28 @@ export function summarizeIngredientConsumptionWithTruth({
     if (publicationUnverified) {
       parts.push(`Canonical Foodics publication for ${window.label} could not be confirmed (${sales.publicationNote || "no freshness record"}), so the sales read may be incomplete.`);
     }
+    // "At least X" is a true lower bound only when the sales read is known complete:
+    // refunds are netted and over-refunds refused, and every counted contribution is
+    // positive, so uncounted products can only add. With publication unconfirmed,
+    // unread refund rows could lower it, so no lower bound is stated.
+    const lowerBound = publicationUnverified
+      ? null
+      : {
+        quantity: subset,
+        unit,
+        label: `At least ${subset} ${unit || ""}`.trim() + ". A lower bound from complete Food Bible products only; this is not a total.",
+      };
+    const coverageNote = ` ${unitCoverage(common.unitCoverage)}`;
     return {
       ...common,
       status: CONSUMPTION_STATUS.PARTIAL,
       quantity: null,
       unit,
+      reasonCodes,
+      lowerBound,
+      lowerBoundWithheld: lowerBound ? null : "Publication is unconfirmed, so unread refund rows could lower the covered figure; no lower bound is stated.",
       coveredSubset: { quantity: subset, unit, products: productList, label: "Complete Food Bible products only. This is not a total." },
-      reason: `Not a total: ${parts.join(" ")}${versionNote}`,
+      reason: `Not a total: ${parts.join(" ")}${coverageNote}${versionNote}`,
     };
   }
   return {
@@ -367,7 +512,8 @@ export function summarizeIngredientConsumptionWithTruth({
     status: CONSUMPTION_STATUS.PROVISIONAL,
     quantity: subset,
     unit,
+    reasonCodes: [],
     products: productList,
-    reason: `Computed by the Inventory Truth recipe engine: dated recipe versions per sale day, nested sub-recipes, and unit conversion to the ingredient base unit. Every sold product in the period has an active Food Bible recipe.${versionNote}`,
+    reason: `Computed by the Inventory Truth recipe engine: dated recipe versions per sale day, nested sub-recipes, and unit conversion to the ingredient base unit. Every sold product in the period has an active Food Bible recipe.${noTrackedIngredientItems.length ? ` ${noTrackedIngredientItems.map((item) => item.product).join(", ")} ${noTrackedIngredientItems.length === 1 ? "is" : "are"} flagged in the Food Bible as having no tracked ingredients.` : ""}${versionNote}`,
   };
 }

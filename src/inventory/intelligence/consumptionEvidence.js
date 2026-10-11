@@ -223,7 +223,9 @@ export function formatConsumptionAnswer(result, todayLabel) {
       `${result.ingredient}: no total.`,
       scope ? `${scope}.` : null,
       result.reason,
-      `Complete products only: ${result.coveredSubset.quantity} ${result.coveredSubset.unit || ""}`.trim() + " (not a total).",
+      result.lowerBound
+        ? result.lowerBound.label
+        : `Complete products only: ${result.coveredSubset.quantity} ${result.coveredSubset.unit || ""}`.trim() + " (not a total).",
       result.verification,
       "Theoretical only. No stock was posted.",
     ].filter(Boolean).join(" ");

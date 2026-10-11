@@ -42,6 +42,7 @@ export function synGraph(recipes = [], ingredients = Object.values(SYN_INGREDIEN
         yield_percentage: version.yield ?? null,
         effective_from: version.effectiveFrom ?? null,
         effective_to: version.effectiveTo ?? null,
+        documentation: version.documentation ?? {},
       });
       for (const line of version.lines || []) {
         lineSeq += 1;
