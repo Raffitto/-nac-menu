@@ -10,6 +10,30 @@ const QUESTIONS = [
   "What is the theoretical consumption of SYN-milk in Khobar yesterday?",
 ];
 
+// Oracle D1.1 R1: "how much ... should" alone must not capture these.
+const NEGATIVES = [
+  "How much variance should we expect in Jeddah cash up?",
+  "How much cash should be in the Khobar safe?",
+  "How much petty cash should Khobar have?",
+  "How much should Riyadh have deposited yesterday?",
+  "How much should we order of milk for Khobar?",
+  "How much stock should we hold in Khobar?",
+];
+
+Deno.test("R1 edge routeIntent does not route cash, deposit, variance, order or stock questions to consumption", () => {
+  for (const question of NEGATIVES) {
+    assert.notEqual(routeIntent(question).intent, "theoretical_consumption", question);
+  }
+  assert.equal(routeIntent(NEGATIVES[0]).intent, "vault_cash_up_summary");
+  for (const question of [
+    "How much SYN-milk should Khobar have used yesterday?",
+    "How much SYN-milk did Khobar consume yesterday?",
+    "How much SYN-milk should Khobar have consumed from 2026-10-04 to 2026-10-08?",
+  ]) {
+    assert.equal(routeIntent(question).intent, "theoretical_consumption", question);
+  }
+});
+
 type Call = { table: string | null; method: string };
 
 function stubClient() {

@@ -133,15 +133,24 @@ const BRANCH_ALIASES: Record<string, string[]> = {
 
 /**
  * Theoretical ingredient consumption ("How much milk should Khobar have consumed
- * yesterday?"). Mirrors the client rule in src/intelligence/askNac/intentRouter.js.
+ * yesterday?"). Requires real consumption/usage wording (consum*, used, usage,
+ * theoretical, recipe coverage); "how much ... should" alone is NOT enough
+ * (cash-up variance, safe cash, petty cash, deposits, ordering and stock
+ * questions must keep their own routes). Mirrored exactly in
+ * src/intelligence/askNac/intentRouter.js and
+ * supabase/functions/_shared/askNacOrchestrator.ts (Oracle D1.1 R1).
  */
-export function scoreTheoreticalConsumptionIntent(q: string): number {
-  if (/\b(wastage|waste|breakage|broken glass|spillage)\b/.test(q)) return 0;
-  if (/\b(sales|revenue|net sales|gross sales|sold)\b/.test(q)) return 0;
-  if (/\b(should have used|theoretical consumption|incomplete recipes|recipe coverage|verified recipes)\b/.test(q)) {
-    return 40;
-  }
-  if (/\bhow much\b/.test(q) && /\b(consum\w*|should)\b/.test(q)) return 40;
+// Below the vault cash-up and sales rules (which score >= 20 when they match).
+export const THEORETICAL_CONSUMPTION_SCORE = 16;
+const CONSUMPTION_EXCLUDED_TOPICS = /\b(wastage|waste|breakage|broken glass|spillage|sales|revenue|net sales|gross sales|sold|cash|cash ?ups?|safe|petty|deposit\w*|variance|float|till|orders?|ordering|re-?order\w*|purchas\w*|stock\w*|hold|par levels?|invoices?|suppliers?)\b/;
+const CONSUMPTION_EXPLICIT = /\b(should have used|theoretical (consumption|usage|use)|incomplete recipes|recipe coverage|verified recipes)\b/;
+const CONSUMPTION_USAGE_TERM = /\b(consum\w*|used|usage)\b/;
+
+export function scoreTheoreticalConsumptionIntent(q: string, score = THEORETICAL_CONSUMPTION_SCORE): number {
+  const text = String(q || "").toLowerCase();
+  if (CONSUMPTION_EXCLUDED_TOPICS.test(text)) return 0;
+  if (CONSUMPTION_EXPLICIT.test(text)) return score;
+  if (/\bhow much\b/.test(text) && CONSUMPTION_USAGE_TERM.test(text)) return score;
   return 0;
 }
 
@@ -283,6 +292,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      // Explicit ingredient-consumption wording with a date range is not a cash-up
+      // question (the consumption rule already excludes cash/sales/variance terms).
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
       const period = parseVaultPeriodFromQuestion(q);
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
