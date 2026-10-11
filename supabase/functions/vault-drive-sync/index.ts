@@ -30,6 +30,7 @@ import {
 } from "../_shared/vaultDriveScheduledIngest.ts";
 import { authorizeInternalCaller } from "../_shared/internalAuth.ts";
 import { createDriveBranchAuthorizer } from "../_shared/vaultDriveAuthorization.ts";
+import { createOwnerAuthority } from "../_shared/vaultDriveOwnerAuthorization.ts";
 import {
   ingestConnectedReviewTracking,
   resolveReviewTrackingHits,
@@ -261,9 +262,10 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user?.email) return json(401, { error: "Invalid session" });
 
     const userEmail = userData.user.email.toLowerCase();
-    // F15: service-role writes below bypass RLS, so branch/role authorization is enforced here
-    // using the caller's JWT-scoped client and the existing DB authorization helpers.
-    const driveAuthz = createDriveBranchAuthorizer(supabase, userEmail);
+    // F15 / X1: service-role writes below bypass RLS, so branch/role authorization is enforced
+    // here with the SAME per-owner, per-branch rule the nightly job uses (caller = owner).
+    // Without a service-role key the reads fall back to the caller's RLS view (fails closed).
+    const driveAuthz = createDriveBranchAuthorizer(createOwnerAuthority(admin), userEmail);
 
     const redirectUri =
       body?.redirectUri ||

@@ -1,5 +1,6 @@
 -- ============================================================================================
--- NOT APPLIED. PROPOSAL ONLY (security batch S1 / S1.1, finding F15-b).
+-- NOT APPLIED. PROPOSAL ONLY (security batch S1 / S1.1 / S1.2, finding F15-b).
+-- S1.2: label / folder_name changes count as escalations (Sentinel S1.1 note, L06).
 -- Stored OUTSIDE supabase/migrations so `supabase db push` cannot pick it up.
 -- Preconditions before anyone applies it:
 --   1. Sentinel review + owner approval.
@@ -41,7 +42,7 @@
 --     and can DELETE them (new owner-scoped DELETE policy + grant), including legacy foreign-branch
 --     rows. DELETE cascades to ask_nac_drive_sync_runs, ask_nac_drive_sync_run_files and
 --     ask_nac_drive_discovery_candidates for that folder, so prefer disabling when that history matters.
---   * Run-status/bookkeeping updates (last_sync_*, labels, etc.) on existing rows are not re-checked,
+--   * Run-status/bookkeeping updates (last_sync_*, etc.) on existing rows are not re-checked,
 --     so the nightly writer's status updates never fail on legacy rows.
 -- No table/data changes; the column CHECKs (khobar/riyadh/jeddah) already exist.
 -- ============================================================================================
@@ -130,6 +131,9 @@ begin
       or new.connection_id is distinct from old.connection_id
       or new.drive_folder_id is distinct from old.drive_folder_id
       or new.report_type is distinct from old.report_type
+      -- ingestion derives the report type from the label/folder name (vaultDriveIngestion.ts)
+      or new.label is distinct from old.label
+      or new.folder_name is distinct from old.folder_name
       or (new.enabled and not coalesce(old.enabled, false))
       or (new.auto_ingest and not coalesce(old.auto_ingest, false))
       or (new.schedule = 'daily' and old.schedule is distinct from 'daily')

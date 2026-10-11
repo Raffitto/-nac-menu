@@ -1,7 +1,8 @@
 /**
  * F15 regression: user-triggered vault-drive-sync actions run with a service-role client, so the
- * handler must enforce the existing role/branch model (ask_nac_vault_* and nac_menu_* helpers)
- * before registering folders or queueing/processing ingestion. Real handler, offline stubs.
+ * handler must enforce the role/branch model before registering folders or queueing/processing
+ * ingestion. Since S1.2 the user path uses the same per-owner rule as the nightly job
+ * (vaultDriveOwnerAuthorization.ts). Real handler, offline stubs.
  */
 import { assert, assertEquals } from "../assert.ts";
 import { call, SCHED_SECRET, state } from "../harness.ts";
@@ -199,4 +200,108 @@ Deno.test("F15-N1 nightly scheduled_ingest is unaffected by user authorization",
   assertEquals(r.status, 200, JSON.stringify(r.body));
   assertEquals(state.reviewTrackingIngests, [{ triggerType: "scheduled" }]);
   assertEquals(state.rpcCalls.length, 0);
+});
+
+// ── S1.2 / Sentinel X1: one per-owner, per-branch rule on the user path ─────
+function seedX1() {
+  seed();
+  for (const u of [U.x1Primary, U.x1Access]) {
+    seedFolder(`x1-khobar-${u.token}`, u, "khobar");
+    seedFolder(`x1-riyadh-${u.token}`, u, "riyadh"); // legacy / directly-written Riyadh row
+    table("ask_nac_drive_sync_folders").push({
+      id: `x1-root-riyadh-${u.token}`, connection_id: `conn-${u.token}`, drive_folder_id: `root-r-${u.token}`,
+      folder_name: "Daily", branch_id: "riyadh", default_branch_id: "riyadh", enabled: true, is_discovery_root: true,
+    });
+    table("ask_nac_drive_sync_runs").push({ id: `run-riyadh-${u.token}`, folder_id: `x1-riyadh-${u.token}`, stats: {} });
+    table("ask_nac_drive_sync_runs").push({ id: `run-khobar-${u.token}`, folder_id: `x1-khobar-${u.token}`, stats: {} });
+  }
+}
+const runsOn = (prefix: string) => state.createdRuns.filter((x) => String(x.folderId).startsWith(prefix));
+
+for (const [label, u] of [["primary=riyadh", U.x1Primary], ["access=riyadh", U.x1Access]] as const) {
+  Deno.test(`X1-R Khobar GM with Riyadh vault ${label} cannot register a Riyadh folder`, async () => {
+    seedX1();
+    for (const extra of [{ branchId: "riyadh" }, { branchId: "khobar", defaultBranchId: "riyadh" }, { defaultBranchId: "Riyadh" }]) {
+      const r = await register(u, extra);
+      assertEquals(r.status, 403, `${JSON.stringify(extra)} -> ${JSON.stringify(r.body)}`);
+    }
+    assertEquals(folderWrites().length, 0);
+    assertEquals(state.rpcCalls.length, 0, "user path must not consult the widened RPCs");
+  });
+
+  Deno.test(`X1-P Khobar GM with Riyadh vault ${label} cannot process a Riyadh run`, async () => {
+    seedX1();
+    const r = await call({ action: "process_run", runId: `run-riyadh-${u.token}` }, bearer(u));
+    assertEquals(r.status, 200, JSON.stringify(r.body));
+    assertEquals(state.processedRuns.length, 0);
+    assertEquals(r.body?.processedRuns?.[0]?.reason, "not_authorized_for_branch");
+  });
+
+  Deno.test(`X1-S Khobar GM with Riyadh vault ${label}: sync_ingest/retry never touch Riyadh`, async () => {
+    seedX1();
+    const one = await call({ action: "sync_ingest", folderId: `x1-riyadh-${u.token}` }, bearer(u));
+    assertEquals(one.status, 403);
+    const retry = await call({ action: "retry_file", folderId: `x1-riyadh-${u.token}`, driveFileId: "f1" }, bearer(u));
+    assertEquals(retry.status, 403);
+    assertEquals(state.createdRuns.length, 0);
+    const all = await call({ action: "sync_ingest" }, bearer(u));
+    assertEquals(all.status, 202, JSON.stringify(all.body));
+    assertEquals(runsOn("x1-").map((x) => x.folderId), [`x1-khobar-${u.token}`]); // own branch still works
+    assertEquals(state.processedRuns.filter((x) => String(x.folderId).includes("riyadh")).length, 0);
+  });
+
+  Deno.test(`X1-D Khobar GM with Riyadh vault ${label}: discover_folders ignores the Riyadh root`, async () => {
+    seedX1();
+    const r = await call({ action: "discover_folders" }, bearer(u));
+    assertEquals(r.status, 403, JSON.stringify(r.body));
+    assertEquals(state.writes.filter((w) => w.table === "ask_nac_drive_discovery_candidates").length, 0);
+  });
+
+  Deno.test(`X1-OK Khobar GM with Riyadh vault ${label} keeps own-branch flows (register, process, connect)`, async () => {
+    seedX1();
+    const reg = await register(u, { branchId: "khobar" });
+    assertEquals([reg.status, reg.body?.folder?.branch_id], [200, "khobar"]);
+    const p = await call({ action: "process_run", runId: `run-khobar-${u.token}` }, bearer(u));
+    assertEquals(p.status, 200, JSON.stringify(p.body));
+    assertEquals(state.processedRuns.map((x) => x.folderId), [`x1-khobar-${u.token}`]);
+    const a = await call({ action: "authorize", redirectUri: "https://example.invalid/cb" }, bearer(u));
+    assertEquals(a.status, 200);
+  });
+}
+
+Deno.test("X1-REG legitimate GM / CEO / developer flows still work on the user path", async () => {
+  seed();
+  seedFolder("f-dev-riyadh", U.developer, "riyadh");
+  seedFolder("f-dev-brand", U.developer, null);
+  const cases: Array<[typeof U.ceo, Record<string, unknown>]> = [
+    [U.khobarGm, { branchId: "khobar" }], [U.riyadhGm, { branchId: "riyadh" }], [U.menuOnlyGm, { branchId: "khobar" }],
+    [U.ceo, { branchId: "riyadh" }], [U.ceo, { branchId: null, autoIngest: false }], [U.developer, { branchId: "jeddah" }], [U.developer, { branchId: null, autoIngest: false }],
+  ];
+  for (const [u, extra] of cases) {
+    const r = await register(u, { ...extra, folderId: `drive-${u.token}-${extra.branchId}` });
+    assertEquals(r.status, 200, `${u.email} ${JSON.stringify(extra)} -> ${JSON.stringify(r.body)}`);
+  }
+  const dev = await call({ action: "sync_ingest" }, bearer(U.developer));
+  assertEquals(dev.status, 202, JSON.stringify(dev.body));
+  assertEquals(state.createdRuns.filter((x) => String(x.folderId).startsWith("f-dev")).map((x) => x.folderId).sort(), ["f-dev-brand", "f-dev-riyadh"]);
+  assertEquals(state.reviewTrackingResolves.map((x) => x.branchId), ["khobar"]);
+  for (const u of [U.khobarGm, U.ceo, U.developer, U.menuOnlyGm]) {
+    assertEquals((await call({ action: "authorize", redirectUri: "https://example.invalid/cb" }, bearer(u))).status, 200, u.email);
+  }
+});
+
+Deno.test("X2 menu_staff_scope email case does not matter on the user path", async () => {
+  seed();
+  const r = await register(U.upperGm, { branchId: "khobar" });
+  assertEquals(r.status, 200, JSON.stringify(r.body));
+  assertEquals((await register(U.upperGm, { branchId: "riyadh", folderId: "drive-x" })).status, 403);
+});
+
+Deno.test("X1-FC user path fails closed when staff tables cannot be read", async () => {
+  seed();
+  for (const t of ["ask_nac_staff", "ask_nac_roles", "ask_nac_user_branch_access", "menu_staff_scope"]) state.failTables.add(t);
+  assertEquals((await register(U.ceo, { branchId: "khobar" })).status, 403);
+  assertEquals((await call({ action: "sync_ingest" }, bearer(U.ceo))).status, 403);
+  assertEquals((await call({ action: "authorize", redirectUri: "https://example.invalid/cb" }, bearer(U.ceo))).status, 403);
+  assertEquals([folderWrites().length, state.createdRuns.length], [0, 0]);
 });

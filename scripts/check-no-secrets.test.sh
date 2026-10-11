@@ -21,6 +21,13 @@ declare -A POS=(
   [generic-high-entropy-assignment]="$(r "$AN" 40)"
   [openai-key]="sk-proj-$(r "$AN" 40)"
   [github-token]="ghp_$(r "$AN" 36)"
+  [netlify-token]="nfp_$(r "$AN" 40)"
+  [resend-key]="re_$(r "$AN" 8)_$(r "$AN" 24)"
+  [hex-api-key]="key_$(r "$HEX" 64)"
+  [db-url-with-password]="postgresql://app:$(r "$AN" 6)\$$(r "$AN" 4)/$(r "$AN" 6)@db.internal:5432/x"
+  [generic-high-entropy-assignment#yaml]="$(r "$AN" 32)"
+  [generic-high-entropy-assignment#b64pad]="$(r "$AN" 30)=="
+  [generic-high-entropy-assignment#midword]="$(r "$AN" 12)test$(r "$AN" 20)"
 )
 i=0
 for k in "${!POS[@]}"; do
@@ -28,6 +35,9 @@ for k in "${!POS[@]}"; do
   case "$k" in
     twilio-credential) printf 'TWILIO_ACCOUNT_SID = "%s"\n' "$v" ;;
     generic-high-entropy-assignment) printf 'const PAYMENT_WEBHOOK_SECRET = "%s";\n' "$v" ;;
+    generic-high-entropy-assignment#yaml) printf 'database:\n  password: %s\n' "$v" | tail -n 1 ;;
+    generic-high-entropy-assignment#b64pad) printf 'SIGNING_KEY=%s\n' "$v" ;;
+    generic-high-entropy-assignment#midword) printf 'export WEBHOOK_TOKEN="%s"\n' "$v" ;;
     *) printf 'value = "%s"\n' "$v" ;;
   esac > "src/pos_$i.txt"
   echo "${k%%#*}" > "src/pos_$i.expect"
@@ -39,6 +49,10 @@ export const ONBOARDING_STORAGE_KEY = "nac.menu-manager.onboarding.v1.dismissed"
 export const SERVICE_KEY = "test-service-role-key-0123456789abcdef";
 const token = process.env.GITHUB_TOKEN;
 api_key: ${{ secrets.API_KEY }}
+const url = "postgresql://app:${PGPASSWORD}@db.internal:5432/x";
+password: ${{ secrets.DB_PASSWORD }}
+const passwordHint = "use-at-least-twelve-characters";
+export const SCHED_SECRET = "dummy_scheduled_secret_1234567890";
 N
 printf 'const STRIPE = "sk_live_%s"; // no-secrets-allow\n' "$(r "$AN" 30)" > src/allowed.ts
 # binary file containing a secret-shaped string: skipped explicitly (-I)
@@ -55,7 +69,7 @@ for f in src/neg.ts src/allowed.ts src/blob.bin; do
   if echo "$OUT" | grep -q " $f:"; then echo "FAIL false positive in $f"; pass=0; else echo "OK   not reported: $f"; fi
 done
 leak=0; for v in "${POS[@]}"; do case "$OUT" in *"$v"*) leak=1;; esac; done
-for frag in sk_live_ rk_live_ 'SG.' npm_ ghp_ '1//0' eyJ; do case "$OUT" in *"$frag"*) leak=1;; esac; done
+for frag in sk_live_ rk_live_ 'SG.' npm_ ghp_ '1//0' eyJ nfp_ re_ key_ 'postgresql://'; do case "$OUT" in *"$frag"*) leak=1;; esac; done
 [ "$leak" -eq 0 ] && echo "OK   no secret value (or prefix) printed" || { echo "FAIL value printed"; pass=0; }
 [ "$RC" -eq 1 ] && echo "OK   exit code 1" || { echo "FAIL exit code $RC"; pass=0; }
 [ "$pass" -eq 1 ] && echo "FIXTURE TEST PASSED" || { echo "FIXTURE TEST FAILED"; exit 1; }

@@ -13,7 +13,8 @@
  *   menu authority   = menu_staff_scope role developer/ceo with branch null  (all branches)
  *                      | role branch_gm with branch = target                    (NAC OS RBAC)
  *
- * Same two-system rule as the user path (vaultDriveAuthorization.ts) and the NOT_APPLIED SQL helper
+ * Since S1.2 this is the ONLY rule: the user path (vaultDriveAuthorization.ts) calls it for the
+ * authenticated caller. Same rule as the NOT_APPLIED SQL helper
  * ask_nac_drive_owner_can_ingest_branch(). FAILS CLOSED: a table read error contributes no authority.
  */
 import { normalizeDriveBranchId } from "./vaultDriveAuthorization.ts";
@@ -23,11 +24,31 @@ type Row = Record<string, any>;
 
 const lower = (v: unknown) => String(v ?? "").trim().toLowerCase();
 
-async function readAll(admin: SupabaseLike, table: string, columns: string): Promise<Row[]> {
+const PAGE_SIZE = 1000; // PostgREST default max-rows
+const MAX_PAGES = 100;
+
+/**
+ * Reads a whole (small) staff table, paginated so a PostgREST row cap can never silently truncate
+ * authority. Any error on any page => [] (fail closed: no authority).
+ */
+async function readAll(admin: SupabaseLike, table: string, columns: string, orderBy: string[]): Promise<Row[]> {
   try {
-    const { data, error } = await admin.from(table).select(columns);
-    if (error || !Array.isArray(data)) return [];
-    return data as Row[];
+    const rows: Row[] = [];
+    for (let page = 0; page < MAX_PAGES; page++) {
+      let q = admin.from(table).select(columns);
+      if (typeof q?.range !== "function") {
+        // minimal clients without range(): single read
+        const { data, error } = await q;
+        return error || !Array.isArray(data) ? [] : (data as Row[]);
+      }
+      for (const col of orderBy) if (typeof q.order === "function") q = q.order(col, { ascending: true });
+      const from = page * PAGE_SIZE;
+      const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+      if (error || !Array.isArray(data)) return [];
+      rows.push(...(data as Row[]));
+      if (data.length < PAGE_SIZE) return rows;
+    }
+    return []; // implausibly large staff table: fail closed
   } catch {
     return [];
   }
@@ -50,10 +71,10 @@ export function createOwnerAuthority(admin: SupabaseLike): OwnerAuthority {
 
   const load = () => (loaded ??= (async () => {
     const [staffRows, roleRows, accessRows, menuRows] = await Promise.all([
-      readAll(admin, "ask_nac_staff", "email,vault_role,primary_branch_id"),
-      readAll(admin, "ask_nac_roles", "code,cross_branch,can_upload"),
-      readAll(admin, "ask_nac_user_branch_access", "email,branch_id"),
-      readAll(admin, "menu_staff_scope", "email,branch_id,role"),
+      readAll(admin, "ask_nac_staff", "email,vault_role,primary_branch_id", ["email"]),
+      readAll(admin, "ask_nac_roles", "code,cross_branch,can_upload", ["code"]),
+      readAll(admin, "ask_nac_user_branch_access", "email,branch_id", ["email", "branch_id"]),
+      readAll(admin, "menu_staff_scope", "email,branch_id,role", ["email"]),
     ]);
     const staff = new Map(staffRows.map((r) => [lower(r.email), r]));
     const roles = new Map(roleRows.map((r) => [lower(r.code), r]));

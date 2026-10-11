@@ -55,6 +55,10 @@ Deno.test("F15-C2 skipped connections are reported without owner emails", async 
   // staff, branchNoUpload, riyadhGm, restrictedMenu, unmapped (ceo / khobarGm / menuOnlyGm are authorized)
   assertEquals(skipped.length, 5);
   assert(skipped.every((x: any) => x.skipped === "owner_not_authorized_for_branch" && !("email" in x)));
+  // S1.2: no owner email in ANY summary (authorized ones included); responses reach pg_net storage
+  const all = r.body?.reviewTracking || [];
+  assert(all.some((x: any) => !x.skipped), "has an authorized summary");
+  assert(!JSON.stringify(all).includes("@"), "no email in review-tracking summaries");
 });
 
 Deno.test("F15-C3 cross-branch admin and NAC OS Khobar branch_gm remain authorized nightly", async () => {

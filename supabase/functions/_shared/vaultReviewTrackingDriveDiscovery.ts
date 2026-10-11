@@ -260,7 +260,7 @@ export async function ingestConnectedReviewTracking(
       : [];
     summaries.push({
       connectionId: connection.id,
-      email: connection.user_email,
+      // owner email intentionally omitted: summaries reach HTTP/pg_net responses (Sentinel S1.1 note)
       discovered: hits.length,
       hits: hits.map((hit) => ({
         fileId: hit.fileId,

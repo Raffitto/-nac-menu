@@ -9,20 +9,22 @@
 #
 # LIMITATIONS (this is a tripwire, not a full scanner; GitHub secret scanning / gitleaks are stronger):
 #   * Regex/heuristic only: no provider verification, no base64/hex/URL decoding, no detection of
-#     values split across lines or built by string concatenation.
-#   * Scans the current tree of tracked files only: not git history, not untracked/ignored files,
-#     not CI logs, not Supabase/Vercel environment settings.
-#   * The generic *_KEY/*_SECRET/*_TOKEN rule needs a literal >= 24-char value with letters AND
-#     digits and Shannon entropy >= 3.5 bits/char; values containing test/dummy/example/fake/
-#     placeholder/changeme/xxx/redacted/your are treated as fixtures, and lowercase dotted/dashed
-#     identifiers (>= 3 segments, none longer than 16 chars, e.g. storage keys) are ignored.
-#     Short, low-entropy or identifier-shaped secrets therefore pass.
+#     values split across lines or built by string concatenation (e.g. a JWT assembled from parts).
+#   * Scans the current tree of tracked files only: not git history (a secret removed in a later
+#     commit is not flagged), not untracked/ignored files, not CI logs, not hosted env settings.
+#   * Any line carrying "no-secrets-allow" is skipped; review such lines (CODEOWNERS recommended).
+#   * The generic rule covers *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_PASSWD and bare password/
+#     passwd/secret keys (YAML/JSON). It needs a literal >= 24-char value with letters AND digits
+#     and Shannon entropy >= 3.5 bits/char. Values that START with test/dummy/example/fake/
+#     placeholder/changeme/your/sample/mock, or contain xxxx/redacted, are treated as fixtures;
+#     lowercase dotted/dashed identifiers (>= 3 segments, none longer than 16 chars, e.g. storage
+#     keys) are ignored. Short, low-entropy or identifier-shaped secrets therefore pass.
 #   * Twilio auth tokens and Account SIDs are only matched next to a "twilio" name.
+#   * The scanner also scans itself (its regexes do not match their own source).
 #   * File paths containing ':' may be reported with a truncated path.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-SELF="scripts/check-no-secrets.sh"
 fail=0
 
 # Forbidden files (templates like .env.example are allowed).
@@ -52,7 +54,10 @@ RULES=(
   "twilio-credential|[Tt][Ww][Ii][Ll][Ii][Oo][A-Za-z0-9_]*['\"]?[[:space:]]*[:=][[:space:]]*['\"]?(AC)?[0-9a-f]{32}"
   "sendgrid-key|SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}"
   "npm-token|(npm_[A-Za-z0-9]{36}|_authToken=[^\$[:space:]{]{8,})"
-  "db-url-with-password|postgres(ql)?://[^:/@[:space:]]+:[^@/[:space:]\$\{<]{6,}@"
+  "netlify-token|nfp_[A-Za-z0-9]{36,}"
+  "resend-key|(^|[^A-Za-z0-9_])re_[A-Za-z0-9]{8}_[A-Za-z0-9]{16,}"
+  "hex-api-key|(^|[^A-Za-z0-9_])key_[0-9a-f]{64}([^0-9a-f]|$)"
+  "db-url-with-password|(postgres(ql)?|mysql|mongodb(\+srv)?|rediss?)://[^:/@[:space:]]+:([^@[:space:]<{\$]|\$[^{@[:space:]]){6,}@"
 )
 
 report() { # stdin: "file:line" ; $1 rule
@@ -65,14 +70,15 @@ report() { # stdin: "file:line" ; $1 rule
 for rule in "${RULES[@]}"; do
   name="${rule%%|*}"; re="${rule#*|}"
   # -I: skip binaries explicitly. Content never leaves the pipe: allow-marker filter, then cut.
-  report "$name" < <(git grep -I -n -E -e "$re" -- . ":(exclude)$SELF" 2>/dev/null \
+  report "$name" < <(git grep -I -n -E -e "$re" -- . 2>/dev/null \
     | grep -v "no-secrets-allow" | cut -d: -f1,2 || true)
 done
 
 # Generic high-entropy literal assigned to *_KEY / *_SECRET / *_TOKEN (any case).
 report "generic-high-entropy-assignment" < <(git grep -I -n -i -E \
-    -e "[A-Za-z0-9]_?(KEY|SECRET|TOKEN)['\"]?[[:space:]]*(:|=|:=|=>)[[:space:]]*['\"\`]?[A-Za-z0-9+/_.=-]{24,}" \
-    -- . ":(exclude)$SELF" 2>/dev/null | grep -v "no-secrets-allow" | awk '
+    -e "[A-Za-z0-9]_?(KEY|SECRET|TOKEN|PASSWORD|PASSWD)['\"]?[[:space:]]*(:|=|:=|=>)[[:space:]]*['\"\`]?[A-Za-z0-9+/_.=-]{24,}" \
+    -e "(^|[^A-Za-z0-9])(PASSWORD|PASSWD|SECRET)['\"]?[[:space:]]*(:|=|:=|=>)[[:space:]]*['\"\`]?[A-Za-z0-9+/_.=-]{24,}" \
+    -- . 2>/dev/null | grep -v "no-secrets-allow" | awk '
   function entropy(s,   i, n, c, h, cnt) {
     n = length(s); delete cnt
     for (i = 1; i <= n; i++) cnt[substr(s, i, 1)]++
@@ -82,12 +88,15 @@ report "generic-high-entropy-assignment" < <(git grep -I -n -i -E \
   {
     split($0, p, ":"); loc = p[1] ":" p[2]
     line = substr($0, length(p[1]) + length(p[2]) + 3)
-    while (match(line, /[A-Za-z0-9]_?([Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Tt][Oo][Kk][Ee][Nn])["\047]?[ \t]*(:|=|:=|=>)[ \t]*["\047`]?[A-Za-z0-9+\/_.=-]+/)) {
-      m = substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH)
-      v = m; sub(/^.*(:|=|=>)[ \t]*["\047`]?/, "", v)
+    l = tolower(line)
+    while (match(l, /([a-z0-9]_?(key|secret|token|password|passwd)|(^|[^a-z0-9])(password|passwd|secret))["\047]?[ \t]*(:|=|:=|=>)[ \t]*["\047`]?[a-z0-9+\/_.=-]+/)) {
+      m = substr(line, RSTART, RLENGTH); line = substr(line, RSTART + RLENGTH); l = substr(l, RSTART + RLENGTH)
+      match(m, /(:|=)[ \t]*["\047`]?/); v = substr(m, RSTART + RLENGTH)   # leftmost separator
+      sub(/^>[ \t]*["\047`]?/, "", v)                                     # "=>" form
       if (length(v) < 24) continue
       if (v !~ /[0-9]/ || v !~ /[A-Za-z]/) continue
-      if (tolower(v) ~ /(test|dummy|example|fake|placeholder|changeme|xxx|redacted|your)/) continue
+      # fixture values: only a LEADING marker word (test-..., dummy_...) or obvious redaction
+      if (tolower(v) ~ /^(test|dummy|example|fake|placeholder|changeme|your|sample|mock)([-_.]|$)/ || tolower(v) ~ /(xxxx|redacted)/) continue
       if (entropy(v) < 3.5) continue
       # dotted/dashed lowercase identifiers (storage keys, event names), every segment <= 16 chars
       if (v ~ /^[a-z0-9]+([._:-][a-z0-9]+)+$/) {
