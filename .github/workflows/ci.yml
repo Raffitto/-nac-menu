@@ -12,22 +12,59 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Actions are pinned to full commit SHAs (tag in the comment). SHAs were read
+# with `git ls-remote https://github.com/<owner>/<repo>.git refs/tags/<tag>`.
+
 jobs:
-  test:
-    name: npm ci, Jest, Deno tests
+  # Gate for the D1 data-accuracy batch. Green on its own, independent of the
+  # failures already on main. Mark "D1 acceptance (Oracle T1-T28 + Deno)" as a
+  # required status check in branch protection.
+  d1-acceptance:
+    name: D1 acceptance (Oracle T1-T28 + Deno)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # Node 24 (Active LTS). The edge routing tests import .ts under Node
+          # (type stripping), which needs Node >= 22.6.
+          node-version: "24"
+          cache: npm
+
+      - name: Install (lockfile only)
+        run: npm ci
+
+      - name: Oracle D1 Jest tests
+        run: npx react-scripts test --watchAll=false src/inventory/oracle-d1
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+
+      - name: Deno tests (supabase/functions, network denied)
+        run: deno test --no-check --deny-net --allow-read --allow-env --permit-no-files supabase/functions
+
+  # Whole Jest suite. Currently red because of 15 failures that already exist
+  # on main (see TEST-RESULTS.md); not a gate for D1 until those are fixed.
+  full-suite:
+    name: Full Jest suite
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          # Node 24 (Active LTS). The Edge-orchestrator routing tests import .ts
-          # files under Node (type stripping), which needs Node >= 22.6.
           node-version: "24"
           cache: npm
 
@@ -36,10 +73,3 @@ jobs:
 
       - name: Jest (react-scripts)
         run: npx react-scripts test --watchAll=false
-
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Deno tests (supabase/functions, network denied)
-        run: deno test --no-check --deny-net --allow-read --allow-env --permit-no-files supabase/functions
