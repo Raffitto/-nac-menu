@@ -1,6 +1,10 @@
 /* global BigInt */
 
-const UNIT_ALIASES = Object.freeze({
+/**
+ * The single measurement-unit alias table, shared by inventory, Food Bible,
+ * truth/uom (recipes) and the recipe-explosion path. Add aliases here only.
+ */
+export const MEASUREMENT_UNIT_ALIASES = Object.freeze({
   each: "each",
   ea: "each",
   item: "each",
@@ -12,9 +16,11 @@ const UNIT_ALIASES = Object.freeze({
   grams: "gram",
   g: "gram",
   gm: "gram",
+  gms: "gram",
   kilogram: "kilogram",
   kilograms: "kilogram",
   kg: "kilogram",
+  kgs: "kilogram",
   millilitre: "millilitre",
   milliliter: "millilitre",
   millilitres: "millilitre",
@@ -25,6 +31,15 @@ const UNIT_ALIASES = Object.freeze({
   litres: "litre",
   liters: "litre",
   l: "litre",
+  ltr: "litre",
+  ltrs: "litre",
+});
+
+/**
+ * Packaging units count as "each" only for purchasing / pack conversion.
+ * Recipe lines never accept them (a bottle is not a measured quantity).
+ */
+export const PACKAGING_UNIT_ALIASES = Object.freeze({
   bottle: "each",
   bottles: "each",
   carton: "each",
@@ -33,6 +48,11 @@ const UNIT_ALIASES = Object.freeze({
   cases: "each",
   box: "each",
   boxes: "each",
+});
+
+export const UNIT_ALIASES = Object.freeze({
+  ...MEASUREMENT_UNIT_ALIASES,
+  ...PACKAGING_UNIT_ALIASES,
 });
 
 const UNIT_DIMENSIONS = Object.freeze({
@@ -137,10 +157,27 @@ export function normalizeText(value) {
     .replace(/\s+/g, " ");
 }
 
+/** Canonical unit for an alias (measurement or packaging), or null when unknown or blank. */
+export function normalizeUnitOrNull(value) {
+  if (value == null || String(value).trim() === "") return null;
+  return UNIT_ALIASES[normalizeText(value)] || null;
+}
+
+/** Canonical measurement unit, or null. Packaging units are refused. Used for recipe lines. */
+export function normalizeMeasurementUnit(value) {
+  if (value == null || String(value).trim() === "") return null;
+  return MEASUREMENT_UNIT_ALIASES[normalizeText(value)] || null;
+}
+
 export function normalizeUnit(value) {
-  const unit = UNIT_ALIASES[normalizeText(value)];
+  const unit = normalizeUnitOrNull(value);
   if (!unit) throw new Error(`Unsupported unit: ${value}`);
   return unit;
+}
+
+export function unitDimension(value) {
+  const unit = normalizeUnitOrNull(value);
+  return unit ? UNIT_DIMENSIONS[unit] : null;
 }
 
 export function areUnitsCompatible(left, right) {

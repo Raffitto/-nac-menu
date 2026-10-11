@@ -29,9 +29,9 @@ describe("restaurant intelligence foundation", () => {
     expect(result.postsStock).toBe(false);
     expect(result.complete).toBe(true);
     expect(result.totals).toEqual(expect.arrayContaining([
-      expect.objectContaining({ sku: "sk-2492", quantity: "2", unit: "pcs" }),
-      expect.objectContaining({ sku: "sk-2375", quantity: "50", unit: "gm" }),
-      expect.objectContaining({ sku: "sk-egg", quantity: "0.5", unit: "pcs" }),
+      expect.objectContaining({ sku: "sk-2492", quantity: "2", unit: "each" }),
+      expect.objectContaining({ sku: "sk-2375", quantity: "50", unit: "gram" }),
+      expect.objectContaining({ sku: "sk-egg", quantity: "0.5", unit: "each" }),
     ]));
     expect(result.totals.some((row) => row.sku === "sk-0628")).toBe(false);
   });
