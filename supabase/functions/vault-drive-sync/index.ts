@@ -33,6 +33,7 @@ import { createDriveBranchAuthorizer } from "../_shared/vaultDriveAuthorization.
 import {
   ingestConnectedReviewTracking,
   resolveReviewTrackingHits,
+  REVIEW_TRACKING_BRANCH,
 } from "../_shared/vaultReviewTrackingDriveDiscovery.ts";
 
 const corsHeaders = {
@@ -262,11 +263,17 @@ Deno.serve(async (req) => {
     const userEmail = userData.user.email.toLowerCase();
     // F15: service-role writes below bypass RLS, so branch/role authorization is enforced here
     // using the caller's JWT-scoped client and the existing DB authorization helpers.
-    const driveAuthz = createDriveBranchAuthorizer(supabase);
+    const driveAuthz = createDriveBranchAuthorizer(supabase, userEmail);
 
     const redirectUri =
       body?.redirectUri ||
       `${supabaseUrl}/functions/v1/vault-drive-sync?action=callback`;
+
+    // F15-c: connecting Google Drive requires Drive-ingestion authority (vault uploader or NAC OS
+    // RBAC developer/ceo/branch_gm). Connections feed the nightly service-role ingestion.
+    if ((action === "authorize" || action === "callback") && !(await driveAuthz.canIngest())) {
+      return json(403, { error: "Your role is not allowed to connect Google Drive for ingestion." });
+    }
 
     if (action === "authorize") {
       const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
@@ -558,7 +565,7 @@ Deno.serve(async (req) => {
       const { data: ownedRoots, error: rootsError } = await folderQuery;
       if (rootsError) return json(500, { error: sanitizeErrorMessage(rootsError.message) });
       if (!ownedRoots?.length) return json(400, { error: "Register a Daily or Weekly discovery root first." });
-      const { allowed: roots } = await driveAuthz.partitionFolders<(typeof ownedRoots)[number]>(ownedRoots);
+      const { allowed: roots, denied: unauthorizedRoots } = await driveAuthz.partitionFolders<(typeof ownedRoots)[number]>(ownedRoots);
       if (!roots.length) return json(403, { error: "You are not authorized for the branches of these discovery roots." });
 
       const allClassifications: Record<string, unknown>[] = [];
@@ -601,7 +608,7 @@ Deno.serve(async (req) => {
       }
 
       const summary = buildDiscoverySummary(allClassifications);
-      return json(200, { ok: true, summary, items: allClassifications });
+      return json(200, { ok: true, summary, items: allClassifications, skippedUnauthorized: unauthorizedRoots.length });
     }
 
     if (action === "run_status") {
@@ -802,7 +809,7 @@ Deno.serve(async (req) => {
       if (!runnableFolders.length || (folderRowId && unauthorizedFolders.length)) {
         return json(403, { error: "You are not authorized to ingest Drive folders for this branch." });
       }
-      const reviewTrackingAuthorized = (await driveAuthz.authorizeBranch("khobar")).ok;
+      const reviewTrackingAuthorized = (await driveAuthz.authorizeBranch(REVIEW_TRACKING_BRANCH)).ok;
 
       const runs = [];
       for (const connection of connections || []) {
@@ -823,7 +830,7 @@ Deno.serve(async (req) => {
           const hits = await resolveReviewTrackingHits(admin, {
             accessToken: tokens.access_token,
             connectionId: connection.id,
-            branchId: "khobar",
+            branchId: REVIEW_TRACKING_BRANCH,
           });
           for (const hit of hits) {
             if (runnableFolders.some((folder) => folder.id === hit.hostFolder.id) && !hit.hostFolder.is_discovery_root) {

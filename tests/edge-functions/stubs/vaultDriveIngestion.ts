@@ -24,6 +24,14 @@ export async function processDriveIngestionRun(_admin: unknown, opts: { folder: 
 export async function verifyDriveFolderAccess(_accessToken: string, folderId: string) {
   return { id: folderId, name: `Folder ${folderId}`, mimeType: "application/vnd.google-apps.folder" };
 }
+export async function searchDriveFiles(accessToken: string, _query: string, _pageToken?: string) {
+  return { files: [...(state.driveFiles[accessToken] || [])], nextPageToken: undefined };
+}
+export async function getDriveFile(accessToken: string, driveFileId: string) {
+  const file = (state.driveFiles[accessToken] || []).find((f) => f.id === driveFileId);
+  if (!file) throw new Error("offline stub: Drive file not found");
+  return file;
+}
 export async function walkDriveFolderTree() {
   return { files: [], foldersScanned: 0, maxDepth: 0, truncated: false, duplicateCount: 0 };
 }

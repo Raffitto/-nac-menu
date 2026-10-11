@@ -12,10 +12,18 @@ Deno.env.set("DRIVE_SCHEDULED_INGEST_SECRET", SCHED_SECRET);
 Deno.env.set("GOOGLE_CLIENT_ID", "test-client-id");
 Deno.env.set("GOOGLE_CLIENT_SECRET", "test-client-secret");
 
-globalThis.fetch = ((input: Request | URL | string) => {
+globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   if (url === "https://oauth2.googleapis.com/token") {
-    return Promise.resolve(new Response(JSON.stringify({ access_token: "test-google-access", expires_in: 3600 }), { status: 200 }));
+    const form = new URLSearchParams(String(init?.body ?? ""));
+    const grant = form.get("grant_type");
+    const accessToken = grant === "refresh_token" ? `access:${form.get("refresh_token")}` : `access:code:${form.get("code")}`;
+    const body: Record<string, unknown> = { access_token: accessToken, expires_in: 3600 };
+    if (grant === "authorization_code") body.refresh_token = `rt-from-${form.get("code")}`;
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  }
+  if (url === "https://www.googleapis.com/oauth2/v2/userinfo") {
+    return Promise.resolve(new Response(JSON.stringify({ email: "google-account@test.local" }), { status: 200 }));
   }
   return Promise.reject(new Error(`offline test: unexpected fetch to ${url}`));
 }) as typeof fetch;

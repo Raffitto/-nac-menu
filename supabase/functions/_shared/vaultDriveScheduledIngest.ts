@@ -10,6 +10,7 @@ import {
   type DriveFolder,
 } from "./vaultDriveIngestion.ts";
 import { timingSafeEqualString } from "./internalAuth.ts";
+import { createOwnerAuthority } from "./vaultDriveOwnerAuthorization.ts";
 
 /** Stop before Supabase worker kill (~80s). Leave headroom for JSON response. */
 export const SCHEDULED_INGEST_BUDGET_MS = 50_000;
@@ -392,6 +393,10 @@ export async function runScheduledDriveIngestion(
 
   const foldersToProcess = maxFolders ? eligible.slice(0, maxFolders) : eligible;
   let foldersProcessed = 0;
+  // F15-b: folder rows can be written directly via PostgREST (RLS checks ownership only), so the
+  // nightly service-role job only ingests folders whose connection OWNER is authorized for the
+  // folder's branch. Fails closed. Authorized owners are unaffected.
+  const ownerAuthority = createOwnerAuthority(admin);
 
   for (const folderRow of foldersToProcess) {
     if (budgetExhausted(startedAt, budgetMs)) {
@@ -441,6 +446,16 @@ export async function runScheduledDriveIngestion(
       folderResult = emptyFolderResult(folderRow, {
         status: "failed",
         error: "Drive connection is missing user_email.",
+      });
+      summary.folderResults.push(folderResult);
+      continue;
+    }
+
+    if (!(await ownerAuthority.canIngestBranch(email, folder.branch_id || folder.default_branch_id || null))) {
+      folderResult = emptyFolderResult(folderRow, {
+        status: "skipped",
+        reason: "owner_not_authorized_for_branch",
+        error: "Connection owner is not authorized to ingest Drive data for this folder's branch.",
       });
       summary.folderResults.push(folderResult);
       continue;

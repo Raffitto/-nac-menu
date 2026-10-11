@@ -12,6 +12,11 @@ import {
   verifyDriveFolderAccess,
   type DriveFolder,
 } from "./vaultDriveIngestion.ts";
+import { normalizeDriveBranchId } from "./vaultDriveAuthorization.ts";
+import { createOwnerAuthority, type OwnerAuthority } from "./vaultDriveOwnerAuthorization.ts";
+
+/** Review-tracking workbooks are attributed to this branch (see resolveReviewTrackingHits callers). */
+export const REVIEW_TRACKING_BRANCH = "khobar";
 
 type SupabaseLike = {
   from: (table: string) => any;
@@ -75,10 +80,15 @@ export async function ensureReviewTrackingHostFolder(
     parentId: string | null;
     parentName: string | null;
   },
-): Promise<DriveFolder> {
+): Promise<DriveFolder | null> {
+  // Never re-use (or re-label) a folder row that belongs to a different branch: that would ingest
+  // review tracking into a foreign branch or create queued runs on legacy foreign-branch rows.
   if (parentId) {
     const existing = await loadKhobarConnectionFolder(admin, connectionId, parentId);
-    if (existing) return existing;
+    if (existing) {
+      const existingBranch = normalizeDriveBranchId(existing.branch_id || existing.default_branch_id);
+      return existingBranch === normalizeDriveBranchId(branchId) ? existing : null;
+    }
     const parentLabel = String(parentName || "");
     const skipWalkParent = /^(my drive|root)$/i.test(parentLabel.trim());
     const dedicatedParent = !skipWalkParent && Boolean(parentId);
@@ -116,6 +126,7 @@ export async function ensureReviewTrackingHostFolder(
     .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,is_discovery_root,enabled")
     .eq("connection_id", connectionId)
     .eq("report_type", "google_review_tracking")
+    .eq("branch_id", branchId)
     .eq("enabled", true)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -126,12 +137,13 @@ export async function ensureReviewTrackingHostFolder(
     .from("ask_nac_drive_sync_folders")
     .select("id,connection_id,drive_folder_id,folder_name,label,default_branch_id,default_department,branch_id,department,report_type,sensitivity,auto_ingest,is_discovery_root,enabled")
     .eq("connection_id", connectionId)
+    .eq("branch_id", branchId)
     .eq("enabled", true)
     .order("is_discovery_root", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!fallback) throw new Error("No registered Drive folder available to host review-tracking ingest.");
-  return fallback;
+  // No same-branch host available: skip this hit rather than borrowing another branch's folder.
+  return fallback || null;
 }
 
 export async function resolveReviewTrackingHits(
@@ -165,6 +177,7 @@ export async function resolveReviewTrackingHits(
       parentId,
       parentName,
     });
+    if (!hostFolder) continue;
     hits.push({
       fileId: file.id,
       fileName: file.name,
@@ -185,11 +198,13 @@ export async function ingestConnectedReviewTracking(
     triggerType = "manual",
     force = false,
     connectionId = null,
+    ownerAuthority = createOwnerAuthority(admin),
   }: {
     refreshAccessToken: (refreshToken: string) => Promise<{ access_token: string; expires_in?: number }>;
     triggerType?: string;
     force?: boolean;
     connectionId?: string | null;
+    ownerAuthority?: OwnerAuthority;
   },
 ) {
   let query = admin
@@ -201,6 +216,12 @@ export async function ingestConnectedReviewTracking(
   if (error) throw error;
   const summaries = [];
   for (const connection of connections || []) {
+    // F15-c: only connections whose OWNER is authorized to ingest for the review-tracking branch.
+    // Checked before touching the connection (no token refresh, no host-folder writes).
+    if (!(await ownerAuthority.canIngestBranch(connection.user_email, REVIEW_TRACKING_BRANCH))) {
+      summaries.push({ connectionId: connection.id, ok: false, skipped: "owner_not_authorized_for_branch" });
+      continue;
+    }
     let tokens;
     try {
       tokens = await refreshAccessToken(String(connection.refresh_token));
@@ -226,7 +247,7 @@ export async function ingestConnectedReviewTracking(
     const hits = await resolveReviewTrackingHits(admin, {
       accessToken: tokens.access_token,
       connectionId: connection.id,
-      branchId: "khobar",
+      branchId: REVIEW_TRACKING_BRANCH,
     });
     const ingested = hits.length
       ? await ingestReviewTrackingHits(admin, {

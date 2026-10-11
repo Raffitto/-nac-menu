@@ -2,6 +2,7 @@
 // Service-role client: unrestricted. User client: identity from the bearer token (state.users),
 // minimal RLS emulation for ask_nac_drive_sync_folders (connection ownership, as in production policy).
 import { type Row, state, table } from "./state.ts";
+import { SQL_HELPERS } from "./sqlHelpers.ts";
 
 export type SupabaseClient = any;
 
@@ -56,6 +57,12 @@ class Query {
     return this;
   }
   private run(): { data: any; error: any } {
+    if (!this.ctx.service && this.ctx.email && state.rpcErrors.has(this.ctx.email)) {
+      return { data: null, error: { message: "stub: read failure" } };
+    }
+    if (this.ctx.service && state.failTables.has(this.name)) {
+      return { data: null, error: { message: "stub: service read failure" } };
+    }
     const rows = table(this.name);
     const client = this.ctx.service ? "service" : "user";
     if (this.op === "insert" || this.op === "upsert") {
@@ -92,9 +99,14 @@ export function createClient(_url: string, key: string, opts?: { global?: { head
     from: (name: string) => new Query(ctx, name),
     rpc: (fn: string, args: Row = {}) => {
       state.rpcCalls.push({ email, fn, args });
+      // Explicit per-user override first (used for fail-closed tests), else emulate the SQL helper
+      // from the fake tables. Unknown functions / no session => error.
       const perm = email ? state.perms[email]?.[fn] : undefined;
-      if (perm === undefined) return Promise.resolve({ data: null, error: { message: `stub: rpc ${fn} not permitted` } });
-      return Promise.resolve({ data: typeof perm === "function" ? perm(args) : perm, error: null });
+      if (perm !== undefined) return Promise.resolve({ data: typeof perm === "function" ? perm(args) : perm, error: null });
+      if (email && state.rpcErrors.has(email)) return Promise.resolve({ data: null, error: { message: "stub: rpc failure" } });
+      const helper = SQL_HELPERS[fn];
+      if (!email || !helper) return Promise.resolve({ data: null, error: { message: `stub: rpc ${fn} not available` } });
+      return Promise.resolve({ data: helper(email, args), error: null });
     },
     storage: { from: () => new Query(ctx, "__storage") },
     auth: {

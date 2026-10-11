@@ -4,61 +4,19 @@
  * before registering folders or queueing/processing ingestion. Real handler, offline stubs.
  */
 import { assert, assertEquals } from "../assert.ts";
-import { call, resetState, SCHED_SECRET, state } from "../harness.ts";
+import { call, SCHED_SECRET, state } from "../harness.ts";
 import { table } from "../stubs/state.ts";
-
-const U = {
-  ceo: { token: "tok-ceo", email: "ceo@test.local" },
-  khobarGm: { token: "tok-khobar-gm", email: "khobar-gm@test.local" },
-  riyadhGm: { token: "tok-riyadh-gm", email: "riyadh-gm@test.local" },
-  menuOnlyGm: { token: "tok-menu-gm", email: "menu-gm@test.local" },
-  staff: { token: "tok-staff", email: "staff@test.local" },
-  unmapped: { token: "tok-unmapped", email: "unmapped@test.local" },
-};
-const only = (b: string) => (a: Record<string, unknown>) => a.p_branch === b;
+import { bearer, seedFolder, seedIdentities, U } from "../fixtures.ts";
 
 function seed() {
-  resetState();
-  for (const u of Object.values(U)) state.users[u.token] = u.email;
-  state.perms[U.ceo.email] = {
-    ask_nac_vault_can_upload: true, ask_nac_vault_has_all_branches: true, nac_menu_staff_all_branches: true,
-    ask_nac_vault_branch_allowed: true, nac_menu_can_edit_branch: true,
-  };
-  state.perms[U.khobarGm.email] = {
-    ask_nac_vault_can_upload: true, ask_nac_vault_has_all_branches: false, nac_menu_staff_all_branches: false,
-    ask_nac_vault_branch_allowed: only("khobar"), nac_menu_can_edit_branch: only("khobar"),
-  };
-  state.perms[U.riyadhGm.email] = {
-    ask_nac_vault_can_upload: true, ask_nac_vault_has_all_branches: false, nac_menu_staff_all_branches: false,
-    ask_nac_vault_branch_allowed: only("riyadh"), nac_menu_can_edit_branch: only("riyadh"),
-  };
-  // NAC OS RBAC branch_gm not mapped in ask_nac_staff: vault branch check false, menu scope true.
-  state.perms[U.menuOnlyGm.email] = {
-    ask_nac_vault_can_upload: true, ask_nac_vault_has_all_branches: false, nac_menu_staff_all_branches: false,
-    ask_nac_vault_branch_allowed: false, nac_menu_can_edit_branch: only("khobar"),
-  };
-  state.perms[U.staff.email] = {
-    ask_nac_vault_can_upload: false, ask_nac_vault_has_all_branches: false, nac_menu_staff_all_branches: false,
-    ask_nac_vault_branch_allowed: false, nac_menu_can_edit_branch: false,
-  };
-  // U.unmapped: no RPC results at all -> every RPC errors -> must fail closed.
-  for (const u of Object.values(U)) {
-    table("ask_nac_drive_connections").push({ id: `conn-${u.token}`, user_email: u.email, refresh_token: `rt-${u.token}`, status: "active" });
-  }
-  const folder = (id: string, owner: { token: string }, branch: string | null, extra = {}) =>
-    table("ask_nac_drive_sync_folders").push({
-      id, connection_id: `conn-${owner.token}`, drive_folder_id: `drive-${id}`, folder_name: id, label: id,
-      branch_id: branch, default_branch_id: branch, department: "operations", report_type: "cash_up",
-      auto_ingest: true, enabled: true, is_discovery_root: false, ...extra,
-    });
-  folder("f-khobar", U.khobarGm, "khobar");
-  folder("f-riyadh-by-khobar-gm", U.khobarGm, "riyadh"); // legacy row registered before the fix
-  folder("f-riyadh", U.riyadhGm, "riyadh");
-  folder("f-staff-jeddah", U.staff, "jeddah");
-  folder("f-ceo-brand", U.ceo, null);
-  folder("f-ceo-jeddah", U.ceo, "jeddah");
+  seedIdentities();
+  seedFolder("f-khobar", U.khobarGm, "khobar");
+  seedFolder("f-riyadh-by-khobar-gm", U.khobarGm, "riyadh"); // legacy row registered before the fix
+  seedFolder("f-riyadh", U.riyadhGm, "riyadh");
+  seedFolder("f-staff-jeddah", U.staff, "jeddah");
+  seedFolder("f-ceo-brand", U.ceo, null);
+  seedFolder("f-ceo-jeddah", U.ceo, "jeddah");
 }
-const bearer = (u: { token: string }) => `Bearer ${u.token}`;
 const folderWrites = () => state.writes.filter((w) => w.table === "ask_nac_drive_sync_folders");
 const register = (u: { token: string }, extra: Record<string, unknown>) =>
   call({ action: "register_folder", folderId: "drive-new", folderName: "Cash Up", autoIngest: true, ...extra }, bearer(u));
@@ -127,6 +85,20 @@ Deno.test("F15-R9 branch spelling variants normalise like nac_normalize_branch_i
   assertEquals([r.status, r.body?.folder?.branch_id], [200, "khobar"]);
 });
 
+Deno.test("F15-R10 branch ACCESS without can_upload cannot register (mutation-gap guard)", async () => {
+  seed();
+  const r = await register(U.branchNoUpload, { branchId: "khobar" });
+  assertEquals(r.status, 403, JSON.stringify(r.body));
+  assertEquals(folderWrites().length, 0);
+});
+
+Deno.test("F15-R11 'restricted' NAC OS menu role on a branch cannot register", async () => {
+  seed();
+  const r = await register(U.restrictedMenu, { branchId: "khobar" });
+  assertEquals(r.status, 403);
+  assertEquals(folderWrites().length, 0);
+});
+
 // ── sync_ingest / retry_file ───────────────────────────────────────────────
 Deno.test("F15-S1 sync_ingest queues only folders of branches the caller is authorized for", async () => {
   seed();
@@ -180,6 +152,14 @@ Deno.test("F15-S7 a user never queues another user's folders", async () => {
   seed();
   await call({ action: "sync_ingest" }, bearer(U.ceo));
   assert(!state.createdRuns.some((x) => ["f-khobar", "f-riyadh", "f-staff-jeddah"].includes(x.folderId)));
+});
+
+Deno.test("F15-S8 branch ACCESS without can_upload cannot trigger ingest (mutation-gap guard)", async () => {
+  seed();
+  seedFolder("f-bnu-khobar", U.branchNoUpload, "khobar");
+  const r = await call({ action: "sync_ingest" }, bearer(U.branchNoUpload));
+  assertEquals(r.status, 403);
+  assertEquals([state.createdRuns.length, state.reviewTrackingResolves.length], [0, 0]);
 });
 
 // ── process_run ────────────────────────────────────────────────────────────

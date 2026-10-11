@@ -42,3 +42,16 @@ Deno.test("validateScheduledIngestSecret is digest-based (source check: no === /
   assertEquals(/timingSafeEqualString\(/.test(body), true);
   assertEquals(/===\s*expected|\.length\s*!==/.test(body), false);
 });
+
+// Timing is not observable in a unit test, so guard the implementation shape instead:
+// secret comparison must stay digest-based with no early length/equality short-circuit.
+Deno.test("source guard: secret comparisons stay constant-time", async () => {
+  const root = new URL("../../../supabase/functions/", import.meta.url);
+  const src = await Deno.readTextFile(new URL("_shared/internalAuth.ts", root));
+  const body = src.slice(src.indexOf("export async function timingSafeEqualString"), src.indexOf("export function extractBearer"));
+  assertEquals(/crypto\.subtle\.digest\("SHA-256"/.test(body), true, "digest-based");
+  assertEquals(/\.length\s*!==?|===\s*b\b|a\s*===\s*b/.test(body), false, "no early length/equality return");
+  const sched = await Deno.readTextFile(new URL("_shared/vaultDriveScheduledIngest.ts", root));
+  assertEquals(/token\s*===|===\s*(secret|expected)\b|\.length\s*!==\s*(secret|expected)/.test(sched), false, "scheduled secret uses timingSafeEqualString");
+  assertEquals(sched.includes("timingSafeEqualString"), true);
+});
