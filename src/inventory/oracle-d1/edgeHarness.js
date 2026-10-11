@@ -65,4 +65,21 @@ function routeEdge(question) {
   return JSON.parse(stdout.trim().split("\n").pop()).intent;
 }
 
-module.exports = { runEdge, routeEdge, orchestratorPath };
+function routeEdgeMany(questions) {
+  const script = `
+    globalThis.Deno = { env: { get: () => undefined } };
+    import(${JSON.stringify(orchestratorPath)}).then((mod) => {
+      const qs = ${JSON.stringify(questions)};
+      process.stdout.write(JSON.stringify(qs.map((q) => mod.routeIntent(q).intent)));
+    }).catch((err) => { console.error(err); process.exit(1); });
+  `;
+  const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+  });
+  const intents = JSON.parse(stdout.trim().split("\n").pop());
+  return Object.fromEntries(questions.map((q, i) => [q, intents[i]]));
+}
+
+module.exports = { runEdge, routeEdge, routeEdgeMany, orchestratorPath };
