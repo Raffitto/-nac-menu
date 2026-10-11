@@ -131,26 +131,53 @@ const BRANCH_ALIASES: Record<string, string[]> = {
   jeddah: ["jeddah", "jedda"],
 };
 
-/**
- * Theoretical ingredient consumption ("How much milk should Khobar have consumed
- * yesterday?"). Requires real consumption/usage wording (consum*, used, usage,
- * theoretical, recipe coverage); "how much ... should" alone is NOT enough
- * (cash-up variance, safe cash, petty cash, deposits, ordering and stock
- * questions must keep their own routes). Mirrored exactly in
- * src/intelligence/askNac/intentRouter.js and
- * supabase/functions/_shared/askNacOrchestrator.ts (Oracle D1.1 R1).
- */
 // Below the vault cash-up and sales rules (which score >= 20 when they match).
 export const THEORETICAL_CONSUMPTION_SCORE = 16;
-const CONSUMPTION_EXCLUDED_TOPICS = /\b(wastage|waste|breakage|broken glass|spillage|sales|revenue|net sales|gross sales|sold|cash|cash ?ups?|safe|petty|deposit\w*|variance|float|till|orders?|ordering|re-?order\w*|purchas\w*|stock\w*|hold|par levels?|invoices?|suppliers?)\b/;
-const CONSUMPTION_EXPLICIT = /\b(should have used|theoretical (consumption|usage|use)|incomplete recipes|recipe coverage|verified recipes)\b/;
-const CONSUMPTION_USAGE_TERM = /\b(consum\w*|used|usage)\b/;
+/**
+ * Theoretical ingredient consumption routing rule (Oracle D1.2 R1b).
+ * IDENTICAL in src/intelligence/askNac/intentRouter.js and
+ * supabase/functions/_shared/askNacOrchestrator.ts; both run the committed
+ * probe set in src/inventory/__fixtures__/oracle-d1/routingProbes.json.
+ *
+ * Routes to consumption when:
+ * - explicit wording: "should have used", "theoretical consumption/usage",
+ *   recipe coverage, incomplete/verified recipes; or
+ * - "how much <thing> ..." with a usage verb (consume*, use/used/uses/using,
+ *   usage, go/went through); or
+ * - a usage noun ("milk usage", "Milk consumption") with a branch and a period.
+ * Never when:
+ * - wastage/breakage wording;
+ * - cash-up, safe, petty cash, deposit, stock-level, par-level, ordering or
+ *   purchase-order PHRASES appear (bare "stock" is an ingredient: chicken stock);
+ * - the thing being measured (the "how much <thing>" object, or the whole
+ *   question when there is no object) is a payment, finance or utility term
+ *   (card, mada, discount, budget, cash, tips, refund, electricity, gas, ...);
+ * - sales/sold/revenue appear and there is no ingredient object.
+ */
+const CONSUMPTION_ALWAYS_EXCLUDED = /\b(wastage|waste|wasted|breakage|broken glass|spillage)\b/;
+const CONSUMPTION_CONTEXT_EXCLUDED = /\b(cash[\s-]?ups?|cashups?|cash reports?|cash variance|variance|shortages?|overages?|petty cash|in the safe|the [a-z]+ safe|safe (?:cash|balance|count)|deposited|deposit (?:made|amount|slip)|make (?:a|the) deposit|in stock|stock ?(?:levels?|counts?|take|on hand)|stocktakes?|(?:hold|keep|carry)\b[^?.!]{0,30}\bstock|stock\b[^?.!]{0,30}\b(?:hold|keep|carry)|par levels?|order from|re-?order\w*|should we order|how many orders|purchase orders?|invoices?)\b/;
+const CONSUMPTION_NON_INGREDIENT = /\b(card|cards|card payments?|payments?|mada|visa|mastercard|amex|apple ?pay|stc ?pay|discounts?|vouchers?|coupons?|promos?|promotions?|tips?|budgets?|cash|float|petty|money|sar|riyals?|refunds?|revenue|deposits?|electricity|power|gas|utilities|utility|fuel|diesel|petrol|labou?r|hours|staff)\b/;
+const CONSUMPTION_EXPLICIT = /\b(should have used|theoretical (?:consumption|usage|use)|incomplete recipes|recipe coverage|verified recipes)\b/;
+const CONSUMPTION_USAGE_VERB = /\b(consum\w*|use|used|uses|using|usage|(?:go|goes|went|gone|going) through)\b/;
+const CONSUMPTION_USAGE_NOUN = /\b(usage|consumption)\b/;
+const CONSUMPTION_SALES_WORD = /\b(sales|sold|revenue)\b/;
+const CONSUMPTION_BRANCH = /\b(khobar|al khobar|alkhobar|riyadh|riyad|jeddah|jedda)\b/;
+const CONSUMPTION_PERIOD = /\b(yesterday|today|last week|this week|past week|last \d+ days|on \d{4}-\d{2}-\d{2}|from \d{4}-\d{2}-\d{2}|between \d{4}-\d{2}-\d{2})\b/;
+const CONSUMPTION_HOW_MUCH_OBJECT = /\bhow much(?:\s+of(?:\s+(?:the|our))?)?(.*?)(?=\s+(?:should|did|does|do|was|were|is|are|has|have|had|will|would|could|can|went|go|goes|gone|got|get|in|at|for|from|on|between|during|by|per|khobar|riyadh|jeddah|yesterday|today|tomorrow|last|this|consum\w*|use|used|uses|using|usage)\b|\s*[?.!]|$)/;
 
 export function scoreTheoreticalConsumptionIntent(q: string, score = THEORETICAL_CONSUMPTION_SCORE): number {
-  const text = String(q || "").toLowerCase();
-  if (CONSUMPTION_EXCLUDED_TOPICS.test(text)) return 0;
+  const text = String(q || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (CONSUMPTION_ALWAYS_EXCLUDED.test(text)) return 0;
+  if (CONSUMPTION_CONTEXT_EXCLUDED.test(text)) return 0;
+  const howMuch = text.match(CONSUMPTION_HOW_MUCH_OBJECT);
+  const object = howMuch ? howMuch[1].trim() : "";
+  if (CONSUMPTION_NON_INGREDIENT.test(object || text)) return 0;
   if (CONSUMPTION_EXPLICIT.test(text)) return score;
-  if (/\bhow much\b/.test(text) && CONSUMPTION_USAGE_TERM.test(text)) return score;
+  if (!object && CONSUMPTION_SALES_WORD.test(text)) return 0;
+  if (howMuch && CONSUMPTION_USAGE_VERB.test(text)) return score;
+  if (!howMuch && CONSUMPTION_USAGE_NOUN.test(text) && CONSUMPTION_BRANCH.test(text) && CONSUMPTION_PERIOD.test(text)) {
+    return score;
+  }
   return 0;
 }
 

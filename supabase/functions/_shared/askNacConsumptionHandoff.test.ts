@@ -34,6 +34,22 @@ Deno.test("R1 edge routeIntent does not route cash, deposit, variance, order or 
   }
 });
 
+// Oracle D1.2 R1b: Oracle's full 68-probe set, committed with expected routes.
+// The Jest suite runs the same fixture on the client router.
+Deno.test("R1b edge routeIntent passes all 68 Oracle routing probes", async () => {
+  const url = new URL("../../../src/inventory/__fixtures__/oracle-d1/routingProbes.json", import.meta.url);
+  const { probes } = JSON.parse(await Deno.readTextFile(url)) as {
+    probes: { question: string; expect: { edge: string } }[];
+  };
+  assert.equal(probes.length, 68);
+  const failures = probes
+    .map((p) => ({ question: p.question, expected: p.expect.edge, got: routeIntent(p.question).intent }))
+    .filter((r) => (r.expected === "!theoretical_consumption"
+      ? r.got === "theoretical_consumption"
+      : r.got !== r.expected));
+  assert.deepEqual(failures, []);
+});
+
 type Call = { table: string | null; method: string };
 
 function stubClient() {

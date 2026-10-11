@@ -12,12 +12,18 @@ const BRANCHES = ["khobar", "riyadh", "jeddah"];
 export function parseConsumptionQuestion(question = "") {
   const q = String(question || "").toLowerCase();
   if (/\b(wastage|waste|breakage|broken glass|spillage)\b/.test(q)) return null;
-  const asks = /\b(consum|should (we |i )?have used|theoretical|recipe coverage|incomplete recipes|unresolved conversions)\b/.test(q)
+  const asks = /\b(consum\w*|usage|should (we |i )?have used|theoretical|recipe coverage|incomplete recipes|unresolved conversions)\b/.test(q)
     || /\bhow much\b/.test(q);
   if (!asks) return null;
   const branch = BRANCHES.find((id) => new RegExp(`\\b${id}\\b`).test(q)) || null;
-  const named = q.match(/\bhow much\s+([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(should|did|would|have|khobar|riyadh|jeddah|yesterday|last|this|today|in|on|from|between)\b/);
-  const ingredient = named ? named[1].replace(/\s+(should|have)$/, "").trim() : null;
+  // "how much milk should/did/was ...", "usage/consumption of milk in ...",
+  // "what was the milk usage ...", "milk consumption khobar yesterday" (D1.2 R1b).
+  const named = q.match(/\bhow much\s+(?:of\s+(?:the\s+)?)?([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(should|did|does|do|was|were|is|are|would|have|has|khobar|riyadh|jeddah|yesterday|last|this|today|in|on|from|between)\b/)
+    || q.match(/\b(?:usage|consumption|use)\s+of\s+([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(?:in|at|for|khobar|riyadh|jeddah|yesterday|last|this|today|on|from|between)\b/)
+    || q.match(/^(?:what (?:was|is|were) (?:the |our )?)?([a-z0-9][a-z0-9 '&-]{1,40}?)\s+(?:usage|consumption)\b/);
+  const ingredient = named
+    ? (named[1].replace(/\s+(should|have)$/, "").replace(/^theoretical\s+/, "").trim() || null)
+    : null;
   let period = null;
   const range = q.match(/\b(?:from|between)\s+(\d{4}-\d{2}-\d{2})\s+(?:to|and|until|through)\s+(\d{4}-\d{2}-\d{2})\b/);
   const single = q.match(/\bon\s+(\d{4}-\d{2}-\d{2})\b/);
