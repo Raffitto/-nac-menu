@@ -15,4 +15,5 @@ Shadow calculations only. They do not post stock, rewrite receipts, or fill Marl
 
 ## Not in this release
 
-Ask NAC still routes wastage questions to the existing vault breakage intent. The new explanation function is available to that layer and is not a second chatbot.
+Ask NAC can ask how much of a named ingredient a branch should have consumed. The answer uses stored recipe quantities and Foodics sales linked by menu id. If that link or the sales period is missing, the answer says so and does not invent a quantity. Wastage questions stay on the vault breakage intent.
+

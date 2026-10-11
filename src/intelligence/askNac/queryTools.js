@@ -8,6 +8,7 @@ import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
 import { periodLabelFromHours } from "../../dashboard/utils/businessDay";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent } from "./intentRouter";
+import { queryIngredientConsumption } from "../../inventory/intelligence/recipeConsumptionApi";
 import { queryOperationalKnowledge } from "./vault/knowledgeQueryTools";
 import { runVaultQueryTool } from "./vault/vaultQueryTools";
 import {
@@ -215,6 +216,12 @@ export async function runAskNacQueryTool(supabase, intent, context = {}) {
       return getFoodicsCategorySales(supabase, context);
     case ASK_NAC_INTENTS.BRANCH_SALES:
       return getFoodicsBranchSalesComparison(supabase, context);
+    case ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION:
+      return queryIngredientConsumption(supabase, {
+        question: context.question,
+        profile: context.profile,
+        today: context.today || new Date().toISOString().slice(0, 10),
+      });
     default:
       return null;
   }

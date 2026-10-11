@@ -17,6 +17,7 @@ import {
 } from "./procurement/supplierOnboarding";
 import { classifyDocumentKind, interpretSupplierPack, suggestCodeFamily, suggestReceivingTreatment } from "./procurement/receivingPolicy";
 import { ingredientSuggestionIsSafe } from "./procurement/receivingReadiness";
+import { beginGuardedAction, endGuardedAction } from "../lib/nacActionGuard";
 
 const FAMILIES = [
   ["P", "Packaging"],
@@ -69,10 +70,15 @@ export default function InvoiceOnboarding({
 
   if (!invoice) return null;
 
-  const attach = (input) => run("supplier", async () => {
-    await attachSupplierToInvoice({ invoiceId: invoice.id, ...input });
-    await onChanged();
-  }, "Supplier saved on this document. No stock was posted.");
+  const attach = (input) => {
+    if (!beginGuardedAction({ id: `supplier:${invoice.id}`, scope: "global", label: "Saving supplier…" })) return null;
+    return run("supplier", async () => {
+      await attachSupplierToInvoice({ invoiceId: invoice.id, ...input });
+      await onChanged();
+    }, "Supplier saved on this document. No stock was posted.").finally(() => {
+      endGuardedAction(`supplier:${invoice.id}`);
+    });
+  };
 
   return (
     <section className="inv-onboard" data-testid="supplier-onboarding">
