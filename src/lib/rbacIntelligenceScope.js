@@ -32,7 +32,8 @@ function branchAllowed(profile, branchId) {
  * - anything else: denied.
  */
 export function canProfileReadBranch(profile, branchId) {
-  if (!profile?.authenticated) return false;
+  // Strictly boolean true: "yes", 1 or any other truthy value is not authenticated (D1.2 R2).
+  if (profile?.authenticated !== true) return false;
   const id = normalizeBranchId(branchId);
   if (!id) return false;
   if (profile.allBranches === true) return true;
