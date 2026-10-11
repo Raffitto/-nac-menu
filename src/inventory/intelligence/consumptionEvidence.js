@@ -65,8 +65,20 @@ export function summarizeIngredientConsumption({
   recipeLinks = [],
   latestSalesDate = null,
   source = null,
+  salesComplete = true,
   accessDenied = false,
 } = {}) {
+  if (salesComplete === false) {
+    return {
+      status: "UNAVAILABLE",
+      postsStock: false,
+      quantity: null,
+      branchId,
+      periodLabel: window?.label || null,
+      ingredient: ingredient?.name || null,
+      reason: "The sales read stopped before the period was finished. No total is shown.",
+    };
+  }
   if (accessDenied) {
     return { status: "UNAVAILABLE", postsStock: false, quantity: null, reason: "This account cannot read that branch." };
   }
@@ -86,7 +98,10 @@ export function summarizeIngredientConsumption({
   }
   const eligible = sales.filter(saleCountsAsSold);
   const linkedIds = new Set(recipeLinks.map((link) => link.menuItemId).filter(Boolean));
-  const covered = eligible.filter((row) => linkedIds.has(row.matched_menu_item_id));
+  const productIds = new Set(recipeLinks.map((link) => link.productId).filter(Boolean));
+  const covered = eligible.filter((row) => (
+    linkedIds.has(row.matched_menu_item_id) || productIds.has(row.foodics_product_id)
+  ));
   if (!eligible.length) {
     const through = latestSalesDate
       ? ` Canonical Foodics sales for this branch are published through ${latestSalesDate}.`
@@ -118,7 +133,10 @@ export function summarizeIngredientConsumption({
   let quantity = "0";
   const products = {};
   covered.forEach((row) => {
-    const link = recipeLinks.find((item) => item.menuItemId === row.matched_menu_item_id);
+    const link = recipeLinks.find((item) => (
+      (item.menuItemId && item.menuItemId === row.matched_menu_item_id)
+      || (item.productId && item.productId === row.foodics_product_id)
+    ));
     if (!link) return;
     const part = scaleStoredRecipeQuantity(row.quantity_sold, link.outputQuantity, link.canonicalQuantity);
     quantity = addDecimal(quantity, part);

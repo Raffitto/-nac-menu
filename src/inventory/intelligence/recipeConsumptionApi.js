@@ -1,20 +1,32 @@
 import { consumptionWindow, parseConsumptionQuestion, summarizeIngredientConsumption } from "./consumptionEvidence";
 import { COMMERCE_ITEM_SELECT, mapCommerceItemRow, SALES_SOURCE } from "../truth/salesSource";
+import { recoveredLinksForIngredient, FOODICS_RECIPE_EXPORT_AS_OF } from "./foodicsRecipeRecovery";
 
-const PAGE = 5000;
+export async function pageCommerceSales(supabase, branch, window, { pageSize = 1000, maxPages = 20 } = {}) {
+  const rows = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const commerce = await supabase
+      .from("commerce_order_items")
+      .select(COMMERCE_ITEM_SELECT)
+      .eq("branch_id", branch)
+      .gte("business_date", window.start)
+      .lte("business_date", window.end)
+      .order("source_order_item_id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (commerce.error) return { error: commerce.error, rows, complete: false };
+    const chunk = commerce.data || [];
+    rows.push(...chunk.map(mapCommerceItemRow).filter(Boolean));
+    if (chunk.length < pageSize) return { error: null, rows, complete: true };
+  }
+  return { error: null, rows, complete: false };
+}
 
 async function loadAuthoritativeSales(supabase, branch, window) {
-  const commerce = await supabase
-    .from("commerce_order_items")
-    .select(COMMERCE_ITEM_SELECT)
-    .eq("branch_id", branch)
-    .gte("business_date", window.start)
-    .lte("business_date", window.end)
-    .limit(PAGE);
+  const commerce = await pageCommerceSales(supabase, branch, window);
   if (!commerce.error) {
-    const rows = (commerce.data || []).map(mapCommerceItemRow).filter(Boolean);
     let latestSalesDate = null;
-    if (!rows.length) {
+    if (!commerce.rows.length) {
       const fresh = await supabase
         .from("commerce_dataset_freshness")
         .select("data_through")
@@ -23,9 +35,14 @@ async function loadAuthoritativeSales(supabase, branch, window) {
         .limit(1);
       latestSalesDate = fresh.data?.[0]?.data_through || null;
     }
-    return { rows, source: SALES_SOURCE.CANONICAL_COMMERCE, latestSalesDate };
+    return {
+      rows: commerce.rows,
+      complete: commerce.complete,
+      source: SALES_SOURCE.CANONICAL_COMMERCE,
+      latestSalesDate,
+    };
   }
-  if (commerce.error && !/does not exist|schema cache/i.test(String(commerce.error.message || commerce.error))) {
+  if (!/does not exist|schema cache/i.test(String(commerce.error.message || commerce.error))) {
     throw commerce.error;
   }
   const legacy = await supabase
@@ -34,7 +51,7 @@ async function loadAuthoritativeSales(supabase, branch, window) {
     .eq("branch_id", branch)
     .gte("period_start", window.start)
     .lte("period_end", window.end)
-    .limit(PAGE);
+    .limit(5000);
   if (legacy.error) throw legacy.error;
   let latestSalesDate = null;
   if (!legacy.data?.length) {
@@ -46,7 +63,7 @@ async function loadAuthoritativeSales(supabase, branch, window) {
       .limit(1);
     latestSalesDate = latest.data?.[0]?.period_end || null;
   }
-  return { rows: legacy.data || [], source: SALES_SOURCE.FOODICS_SALES_ITEMS, latestSalesDate };
+  return { rows: legacy.data || [], complete: true, source: SALES_SOURCE.FOODICS_SALES_ITEMS, latestSalesDate };
 }
 
 function branchAllowed(profile, branchId) {
@@ -150,6 +167,9 @@ export async function queryIngredientConsumption(supabase, {
     });
   });
   const salesLoad = await loadAuthoritativeSales(supabase, parsed.branch, window);
+  if (window.start >= FOODICS_RECIPE_EXPORT_AS_OF) {
+    recipeLinks.push(...recoveredLinksForIngredient(salesLoad.rows, ingredient.name));
+  }
   const summary = summarizeIngredientConsumption({
     ingredient,
     ingredients: [ingredient],
@@ -159,9 +179,13 @@ export async function queryIngredientConsumption(supabase, {
     recipeLinks,
     latestSalesDate: salesLoad.latestSalesDate,
     source: salesLoad.source,
+    salesComplete: salesLoad.complete,
   });
   if (!summary.quantity && notYetEffective.length) {
     summary.reason = `${summary.reason} A later recipe version starts ${notYetEffective[0].from} and was not applied to this date.`;
+  }
+  if (window.start < FOODICS_RECIPE_EXPORT_AS_OF) {
+    summary.reason = `${summary.reason} The recovered Foodics recipe export is dated ${FOODICS_RECIPE_EXPORT_AS_OF} and has no effective date covering ${window.start}.`;
   }
   return summary;
 }
