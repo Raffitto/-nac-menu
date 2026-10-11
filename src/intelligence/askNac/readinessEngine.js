@@ -114,6 +114,14 @@ export function assessIntentReadinessSync(
     };
   }
 
+  if (intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION) {
+    const blocked = vaultCrossBranchBlocked(branchMention, profile);
+    if (blocked) {
+      return { status: READINESS.BLOCKED, canQuery: false, reasons: [blocked], missingData: [] };
+    }
+    return { status: READINESS.READY, canQuery: true, reasons: [], missingData: [] };
+  }
+
   if (intent === ASK_NAC_INTENTS.UNKNOWN) {
     return {
       status: READINESS.MISSING,

@@ -11,6 +11,7 @@ import {
   sourceEntry,
 } from "./askNacContract";
 import { ASK_NAC_INTENTS, isVaultDataIntent, isVaultDocumentIntent } from "./intentRouter";
+import { formatConsumptionAnswer } from "../../inventory/intelligence/consumptionEvidence";
 import { READINESS } from "./readinessEngine";
 import { CONFIDENCE_LABELS } from "../../platform/contracts/dataConfidence";
 import { buildVaultAnswer } from "./vault/vaultAnswerBuilder";
@@ -656,6 +657,20 @@ export function buildDeterministicAskNacAnswer(route, tool, readiness) {
       return foodicsCategoryResponse(route, tool);
     case ASK_NAC_INTENTS.BRANCH_SALES:
       return foodicsBranchSalesResponse(route, tool);
+    case ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION:
+      return createAskNacResponse({
+        answerType: ANSWER_TYPES.METRIC,
+        title: "Theoretical ingredient consumption",
+        directAnswer: formatConsumptionAnswer(tool),
+        keyMetrics: [
+          metricEntry("Ingredient", tool?.ingredient || "Not identified"),
+          metricEntry("Quantity", tool?.quantity, { unit: tool?.unit || "" }),
+          metricEntry("Status", tool?.status || "UNAVAILABLE"),
+        ],
+        insights: [tool?.reason, "Theoretical only. No stock was posted."].filter(Boolean),
+        warnings: tool?.verification ? [tool.verification] : [],
+        sources: [{ label: "Food Bible recipe link and Foodics sales rows", kind: "read_only" }],
+      });
     default:
       return buildMissingDataResponse(route, readiness || { missingData: [], reasons: ["Unsupported intent."] });
   }

@@ -85,6 +85,7 @@ export const ASK_NAC_INTENTS = Object.freeze({
   VAULT_DRIVE_APPROVE_RULES: "vault_drive_approve_rules",
   VAULT_DAILY_BRIEFING_SUMMARY: "vault_daily_briefing_summary",
   VAULT_BREAKAGE_SUMMARY: "vault_breakage_summary",
+  THEORETICAL_CONSUMPTION: "theoretical_consumption",
   VAULT_KNOWLEDGE_HEALTH: "vault_knowledge_health",
   UNKNOWN: "unknown",
 });
@@ -107,6 +108,18 @@ const BRANCH_ALIASES = Object.freeze({
 });
 
 const INTENT_RULES = [
+  {
+    id: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
+    score(q) {
+      if (/\b(wastage|waste|breakage|broken glass|spillage)\b/.test(q)) return 0;
+      if (/\b(sales|revenue|net sales|gross sales|sold)\b/.test(q)) return 0;
+      if (/\b(should have used|theoretical consumption|incomplete recipes|recipe coverage|verified recipes)\b/.test(q)) {
+        return 19;
+      }
+      if (/\bhow much\b/.test(q) && /\b(consum|should)\b/.test(q)) return 19;
+      return 0;
+    },
+  },
   {
     id: ASK_NAC_INTENTS.VAULT_TEACH_OPERATOR,
     score(q) {

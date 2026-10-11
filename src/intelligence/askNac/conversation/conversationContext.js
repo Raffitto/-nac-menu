@@ -65,6 +65,10 @@ function pickEntityFromResponse(response) {
     const period = response.periodLabel || response.vaultPeriod?.label;
     if (period) return period;
   }
+  if (response.intent === "theoretical_consumption") {
+    const metric = response.keyMetrics?.find((item) => item.label === "Ingredient");
+    if (metric?.value && metric.value !== "Not identified") return String(metric.value);
+  }
   return null;
 }
 
