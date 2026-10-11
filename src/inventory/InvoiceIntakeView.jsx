@@ -405,7 +405,9 @@ export default function InvoiceIntakeView({
       setError("Name, family, unit, and received quantity are required before a new item is created.");
       return;
     }
-    await run(`create:${line.id}`, async () => {
+    if (!beginGuardedAction({ id: `create-item:${line.id}`, scope: "global", label: "Creating item…" })) return;
+    try {
+      await run(`create:${line.id}`, async () => {
       const created = await createIngredient({
         canonicalName: name,
         category: values.get("category") || null,
@@ -423,6 +425,9 @@ export default function InvoiceIntakeView({
       });
       return coded;
     }, "New item coded and mapped. This invoice stayed open.");
+    } finally {
+      endGuardedAction(`create-item:${line.id}`);
+    }
   };
 
   const handleReceived = async (event, line) => {
@@ -993,7 +998,10 @@ export default function InvoiceIntakeView({
                     disabled={FINAL_STATUSES.has(selected.status) || busy === "reject" || postPhase === "posting" || postPhase === "uncertain"}
                     onClick={() => {
                       const reason = window.prompt("Reason for rejecting this invoice:");
-                      if (reason) run("reject", () => rejectInvoice(selected.id, reason), "Invoice rejected.");
+                      if (!reason) return;
+                      if (!beginGuardedAction({ id: `reject:${selected.id}`, scope: "global", label: "Rejecting invoice…" })) return;
+                      run("reject", () => rejectInvoice(selected.id, reason), "Invoice rejected.")
+                        .finally(() => endGuardedAction(`reject:${selected.id}`));
                     }}
                   >
                     Reject
