@@ -9,28 +9,25 @@ r() { LC_ALL=C tr -dc "$1" </dev/urandom | head -c "$2"; }
 AN='A-Za-z0-9'; HEX='0-9a-f'
 b64() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
 SRJWT="$(b64 '{"alg":"HS256","typ":"JWT"}').$(b64 '{"iss":"supabase","role":"service_role","ref":"'$(r a-z 20)'"}').$(r "$AN" 43)"
-# Keys are quoted. Unquoted hyphenated subscripts are arithmetic, and `set -u`
-# then aborts on the first word (observed: "stripe: unbound variable") before
-# any fixture runs. CI uses Bash 5; this is the form Bash 4+ accepts.
 declare -A POS=(
-  ["stripe-live-key"]="sk_live_$(r "$AN" 30)"
-  ["stripe-live-key#rk"]="rk_live_$(r "$AN" 30)"
-  ["google-oauth-refresh-token"]="1//0$(r "$AN" 60)"
-  ["supabase-service-role-jwt"]="$SRJWT"
-  ["twilio-api-key"]="SK$(r "$HEX" 32)"
-  ["twilio-credential"]="AC$(r "$HEX" 32)"
-  ["sendgrid-key"]="SG.$(r "$AN" 22).$(r "$AN" 43)"
-  ["npm-token"]="npm_$(r "$AN" 36)"
-  ["generic-high-entropy-assignment"]="$(r "$AN" 40)"
-  ["openai-key"]="sk-proj-$(r "$AN" 40)"
-  ["github-token"]="ghp_$(r "$AN" 36)"
-  ["netlify-token"]="nfp_$(r "$AN" 40)"
-  ["resend-key"]="re_$(r "$AN" 8)_$(r "$AN" 24)"
-  ["hex-api-key"]="key_$(r "$HEX" 64)"
-  ["db-url-with-password"]="postgresql://app:$(r "$AN" 6)\$$(r "$AN" 4)/$(r "$AN" 6)@db.internal:5432/x"
-  ["generic-high-entropy-assignment#yaml"]="$(r "$AN" 32)"
-  ["generic-high-entropy-assignment#b64pad"]="$(r "$AN" 30)=="
-  ["generic-high-entropy-assignment#midword"]="$(r "$AN" 12)test$(r "$AN" 20)"
+  [stripe-live-key]="sk_live_$(r "$AN" 30)"
+  [stripe-live-key#rk]="rk_live_$(r "$AN" 30)"
+  [google-oauth-refresh-token]="1//0$(r "$AN" 60)"
+  [supabase-service-role-jwt]="$SRJWT"
+  [twilio-api-key]="SK$(r "$HEX" 32)"
+  [twilio-credential]="AC$(r "$HEX" 32)"
+  [sendgrid-key]="SG.$(r "$AN" 22).$(r "$AN" 43)"
+  [npm-token]="npm_$(r "$AN" 36)"
+  [generic-high-entropy-assignment]="$(r "$AN" 40)"
+  [openai-key]="sk-proj-$(r "$AN" 40)"
+  [github-token]="ghp_$(r "$AN" 36)"
+  [netlify-token]="nfp_$(r "$AN" 40)"
+  [resend-key]="re_$(r "$AN" 8)_$(r "$AN" 24)"
+  [hex-api-key]="key_$(r "$HEX" 64)"
+  [db-url-with-password]="postgresql://app:$(r "$AN" 6)\$$(r "$AN" 4)/$(r "$AN" 6)@db.internal:5432/x"
+  [generic-high-entropy-assignment#yaml]="$(r "$AN" 32)"
+  [generic-high-entropy-assignment#b64pad]="$(r "$AN" 30)=="
+  [generic-high-entropy-assignment#midword]="$(r "$AN" 12)test$(r "$AN" 20)"
 )
 i=0
 for k in "${!POS[@]}"; do
