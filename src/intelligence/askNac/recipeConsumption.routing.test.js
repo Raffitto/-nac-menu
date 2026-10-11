@@ -40,8 +40,29 @@ describe("living recipe questions", () => {
     expect(result.status).toBe("UNAVAILABLE");
     expect(result.quantity).toBeNull();
     expect(result.postsStock).toBe(false);
-    expect(formatConsumptionAnswer(result)).toMatch(/2026-08-31/);
+    expect(formatConsumptionAnswer(result)).toMatch(/published through 2026-08-31/);
     expect(formatConsumptionAnswer(result)).toMatch(/No stock was posted/);
+  });
+
+  test("does not apply a recipe version that starts after the sale date", () => {
+    const result = summarizeIngredientConsumption({
+      ingredient: { name: "Coconut Milk" },
+      ingredients: [{ name: "Coconut Milk" }],
+      branchId: "khobar",
+      window: { start: "2026-08-15", end: "2026-08-15", label: "2026-08-15" },
+      sales: [{
+        raw_item_name: "King Prawn rendang",
+        matched_menu_item_id: "menu-prawn",
+        quantity_sold: 1,
+        is_modifier: false,
+        semantic_class: "menu_item",
+      }],
+      recipeLinks: [],
+      source: "canonical_commerce",
+    });
+    expect(result.quantity).toBeNull();
+    expect(result.coverage).toEqual({ eligibleSoldRows: 1, recipeLinkedRows: 0 });
+    expect(result.postsStock).toBe(false);
   });
 
   test("scales a linked sale and ignores modifiers and non-positive quantities", () => {

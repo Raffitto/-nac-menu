@@ -64,6 +64,7 @@ export function summarizeIngredientConsumption({
   sales = [],
   recipeLinks = [],
   latestSalesDate = null,
+  source = null,
   accessDenied = false,
 } = {}) {
   if (accessDenied) {
@@ -87,6 +88,9 @@ export function summarizeIngredientConsumption({
   const linkedIds = new Set(recipeLinks.map((link) => link.menuItemId).filter(Boolean));
   const covered = eligible.filter((row) => linkedIds.has(row.matched_menu_item_id));
   if (!eligible.length) {
+    const through = latestSalesDate
+      ? ` Canonical Foodics sales for this branch are published through ${latestSalesDate}.`
+      : "";
     return {
       status: "UNAVAILABLE",
       postsStock: false,
@@ -94,10 +98,9 @@ export function summarizeIngredientConsumption({
       branchId,
       periodLabel: window.label,
       ingredient: ingredient.name,
+      source: source || null,
       coverage: { eligibleSoldRows: 0, recipeLinkedRows: 0 },
-      reason: latestSalesDate
-        ? `No Khobar sales rows fall in ${window.label}. The latest imported sales period ends ${latestSalesDate}.`
-        : `No sales rows fall in ${window.label}.`,
+      reason: `No completed sales rows fall in ${window.label}.${through}`,
     };
   }
   if (!covered.length) {
