@@ -707,7 +707,8 @@ export function runInventoryReadinessAudit({
     return {
       ingredientId: ingredient.id,
       name: ingredient.canonical_name || ingredient.canonicalName,
-      theoreticalQuantity: theoretical?.quantityTheoreticallyConsumed || "0",
+      // PARTIAL ledger rows carry null (not a total); keep null rather than "0".
+      theoreticalQuantity: theoretical ? (theoretical.quantityTheoreticallyConsumed ?? null) : "0",
       ...classified,
     };
   }).sort((left, right) => Number(right.theoreticalQuantity || 0) - Number(left.theoreticalQuantity || 0));

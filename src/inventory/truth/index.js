@@ -252,7 +252,9 @@ export function traceIngredientQuantity(canonicalIngredientId, engineResult) {
     displayName: row.displayName,
     quantity: row.quantityTheoreticallyConsumed,
     baseUom: row.baseUom,
-    explanation: `${row.displayName} theoretical consumption is ${row.quantityTheoreticallyConsumed} ${row.baseUom || ""}`.trim(),
+    explanation: row.completeness === "PARTIAL"
+      ? `${row.displayName} theoretical consumption is not complete: ${(row.partialMenuItems || []).length} sold product(s) could not be fully expanded. Complete products only: ${row.coveredSubsetQuantity} ${row.baseUom || ""} (not a total).`.trim()
+      : `${row.displayName} theoretical consumption is ${row.quantityTheoreticallyConsumed} ${row.baseUom || ""}`.trim(),
     traces: row.traces,
     menuItems: row.menuItems,
     recipes: row.recipes,

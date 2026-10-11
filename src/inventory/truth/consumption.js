@@ -15,7 +15,11 @@ import {
 } from "./contracts";
 import { resolveCanonicalCost } from "./costTruth";
 import { resolveCanonicalIngredient } from "./identity";
-import { expandRecipeToIngredients, resolveMenuItemRecipe } from "./recipeGraph";
+import {
+  expandRecipeToIngredients,
+  issueIngredientScope,
+  resolveMenuItemRecipe,
+} from "./recipeGraph";
 import { summarizeUomCoverage } from "./uom";
 
 export function aggregateSalesDrivers(salesRows = []) {
@@ -64,14 +68,18 @@ export function computeTheoreticalLedger({
   const identityById = new Map((identities || []).map((row) => [row.canonicalIngredientId, row]));
   const ledger = new Map();
   const uncovered = [];
+  const partial = [];
   const uomLines = [];
   const recipeIssues = [];
   let coveredRows = 0;
   let uncoveredRows = 0;
+  let partialRows = 0;
   let coveredQty = "0";
   let uncoveredQty = "0";
+  let partialQty = "0";
   let coveredRevenue = null;
   let uncoveredRevenue = null;
+  let partialRevenue = null;
 
   const addRevenue = (current, add) => {
     if (add == null) return current;
@@ -110,35 +118,70 @@ export function computeTheoreticalLedger({
       outputNeeded: driver.soldQuantity,
       graph: activeGraph,
     });
-    recipeIssues.push(...expansion.issues);
-    coveredRows += driver.soldRows;
-    coveredQty = addDecimal(coveredQty, driver.soldQuantity);
-    coveredRevenue = addRevenue(coveredRevenue, driver.mappedRevenue);
+    recipeIssues.push(...expansion.issues.map((issue) => ({
+      ...issue,
+      menuItemId: issue.menuItemId || driver.menuItemId,
+    })));
+    // A driver whose expansion has any issue is PARTIAL, never "covered".
+    const blocking = expansion.issues.filter((issue) => issueIngredientScope(issue) !== undefined);
+    const isPartial = blocking.length > 0;
+    const affectedIngredientIds = new Set(
+      blocking.map((issue) => issueIngredientScope(issue)).filter(Boolean),
+    );
+    if (isPartial) {
+      for (const entry of expansion.ingredients.values()) affectedIngredientIds.add(entry.ingredientId);
+      partial.push({
+        ...driver,
+        recipeId: resolved.recipe.id,
+        recipeName: resolved.recipe.name || resolved.recipe.id,
+        issues: blocking,
+        // opaque: part of the recipe tree is unknown, so any ingredient may be missing.
+        opaque: blocking.some((issue) => issueIngredientScope(issue) === null),
+        affectedIngredientIds: [...affectedIngredientIds],
+      });
+      partialRows += driver.soldRows;
+      partialQty = addDecimal(partialQty, driver.soldQuantity);
+      partialRevenue = addRevenue(partialRevenue, driver.mappedRevenue);
+    } else {
+      coveredRows += driver.soldRows;
+      coveredQty = addDecimal(coveredQty, driver.soldQuantity);
+      coveredRevenue = addRevenue(coveredRevenue, driver.mappedRevenue);
+    }
 
-    for (const entry of expansion.ingredients.values()) {
-      uomLines.push({ conversionStatus: entry.conversionStatus });
-      const identity = identityById.get(entry.ingredientId) || resolveCanonicalIngredient(
-        activeGraph.ingredientById.get(entry.ingredientId) || { id: entry.ingredientId },
+    const ensureRow = (ingredientId, entry = {}) => {
+      const identity = identityById.get(ingredientId) || resolveCanonicalIngredient(
+        activeGraph.ingredientById.get(ingredientId) || { id: ingredientId },
       );
-      const current = ledger.get(entry.ingredientId) || {
+      const current = ledger.get(ingredientId) || {
         ...identity,
         quantityTheoreticallyConsumed: "0",
-        baseUom: entry.baseUom,
-        conversionStatus: entry.conversionStatus,
+        coveredSubsetQuantity: "0",
+        completeness: "COMPLETE",
+        partialMenuItems: [],
+        baseUom: entry.baseUom || null,
+        conversionStatus: entry.conversionStatus || null,
         menuItems: [],
         recipes: [],
         traces: [],
-        cost: costByIngredientId[entry.ingredientId] || null,
+        cost: costByIngredientId[ingredientId] || null,
       };
-      current.quantityTheoreticallyConsumed = addDecimal(
-        current.quantityTheoreticallyConsumed,
-        entry.quantityBase,
-      );
+      if (!current.baseUom && entry.baseUom) current.baseUom = entry.baseUom;
+      ledger.set(ingredientId, current);
+      return current;
+    };
+
+    for (const entry of expansion.ingredients.values()) {
+      uomLines.push({ conversionStatus: entry.conversionStatus });
+      const current = ensureRow(entry.ingredientId, entry);
+      if (!isPartial) {
+        current.coveredSubsetQuantity = addDecimal(current.coveredSubsetQuantity, entry.quantityBase);
+      }
       current.menuItems.push({
         menuItemId: driver.menuItemId,
         displayName: driver.displayName,
         soldQuantity: driver.soldQuantity,
         contribution: entry.quantityBase,
+        complete: !isPartial,
       });
       for (const trace of entry.traces) {
         current.recipes.push(...trace.path.map((step) => ({
@@ -154,29 +197,46 @@ export function computeTheoreticalLedger({
           branchId: branchId || driver.branchId,
         });
       }
-      ledger.set(entry.ingredientId, current);
+    }
+    if (isPartial) {
+      for (const ingredientId of affectedIngredientIds) {
+        const current = ensureRow(ingredientId);
+        current.completeness = "PARTIAL";
+        current.partialMenuItems.push({
+          menuItemId: driver.menuItemId,
+          displayName: driver.displayName,
+          recipeId: resolved.recipe.id,
+          issues: blocking.map((issue) => issue.code),
+        });
+      }
     }
   }
 
   const rows = [...ledger.values()].map((row) => ({
     ...row,
+    // A total is never a partial sum: an ingredient touched by a partial driver has no total.
+    quantityTheoreticallyConsumed: row.completeness === "PARTIAL" ? null : row.coveredSubsetQuantity,
     recipes: [...new Map(row.recipes.map((recipe) => [recipe.recipeId, recipe])).values()],
     cost: row.cost || resolveCanonicalCost(graph.ingredientById.get(row.canonicalIngredientId) || {}),
   }));
 
-  const soldRows = coveredRows + uncoveredRows;
-  const soldQty = addDecimal(coveredQty, uncoveredQty);
+  const soldRows = coveredRows + uncoveredRows + partialRows;
+  const soldQty = addDecimal(addDecimal(coveredQty, uncoveredQty), partialQty);
   const uom = summarizeUomCoverage(uomLines);
   const identityCovered = rows.filter((row) => row.canonicalIngredientId).length;
   return {
     rows,
     uncoveredSales: uncovered,
+    partialSales: partial,
     coverage: {
       soldItemRows: soldRows,
       soldQuantity: soldQty,
       recipeCoveredSoldRows: coveredRows,
       recipeUncoveredSoldRows: uncoveredRows,
+      recipePartialSoldRows: partialRows,
+      recipeOpaquePartialSoldRows: partial.filter((row) => row.opaque).reduce((sum, row) => sum + row.soldRows, 0),
       mappedRevenue: coveredRevenue,
+      partialRevenue,
       unmappedRevenue: uncoveredRevenue,
       recipeCoveragePct: soldRows ? coveredRows / soldRows : null,
       uomCoveragePct: uom.coveragePct,
@@ -364,6 +424,7 @@ export function classifyVarianceReasons({
     if (issue.code === GRAPH_STATUS.INVALID_QUANTITY) push(VARIANCE_REASON.RECIPE_QUANTITY_SUSPECT);
   }
   if ((theoretical?.coverage?.recipeUncoveredSoldRows || 0) > 0) push(VARIANCE_REASON.SALES_MAPPING_GAP);
+  if ((theoretical?.coverage?.recipePartialSoldRows || 0) > 0) push(VARIANCE_REASON.SALES_MAPPING_GAP);
   if (actual?.actualCoverageStatus === ACTUAL_COVERAGE.UNAVAILABLE || actual?.actualCoverageStatus === ACTUAL_COVERAGE.PARTIAL) {
     push(VARIANCE_REASON.STOCK_COUNT_GAP);
     if (actual.actualCoverageStatus === ACTUAL_COVERAGE.PARTIAL) push(VARIANCE_REASON.ACTUAL_SOURCE_PARTIAL);
