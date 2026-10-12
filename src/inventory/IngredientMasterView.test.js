@@ -10,6 +10,7 @@ import {
   setIngredientActive,
   updateIngredient,
 } from "../lib/inventoryApi";
+import { inventoryQueryCache } from "../lib/branchQueryCache";
 
 jest.mock("../lib/inventoryApi", () => ({
   createIngredient: jest.fn(),
@@ -62,6 +63,7 @@ const sampleIngredients = [
 
 describe("IngredientMasterView", () => {
   beforeEach(() => {
+    inventoryQueryCache.invalidate("khobar");
     jest.clearAllMocks();
     fetchIngredients.mockResolvedValue(sampleIngredients);
     fetchInventoryStaffAccess.mockResolvedValue(managerAccess);

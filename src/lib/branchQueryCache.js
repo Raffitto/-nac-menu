@@ -32,6 +32,7 @@ export function createBranchQueryCache() {
 }
 
 export const inventoryQueryCache = createBranchQueryCache();
+export const sessionAnalyticsQueryCache = createBranchQueryCache();
 
 export async function cachedBranchLoad(cache, branchId, name, loader, { ttlMs = 20000 } = {}) {
   const hit = cache.peek(branchId, name);

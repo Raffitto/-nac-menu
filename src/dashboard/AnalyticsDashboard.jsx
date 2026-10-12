@@ -35,7 +35,7 @@ import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { rangeExportLabel, rangeToHours } from "./utils/rangeState";
 import { businessDayExportNote, periodLabelFromHours } from "./utils/businessDay";
 import { formatDayLabel, formatHourLabel } from "./utils/formatters";
-import { fetchSessionAnalytics } from "../lib/sessionAnalyticsApi";
+import { loadCachedSessionAnalytics } from "../lib/sessionAnalyticsApi";
 import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
 import SessionStabilizationDiagnostics from "./components/SessionStabilizationDiagnostics";
@@ -120,8 +120,10 @@ export default function AnalyticsDashboard() {
   const [byRole, setByRole] = useState({});
   const [byBranch, setByBranch] = useState({});
   const [operationalTrust, setOperationalTrust] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [fromCache, setFromCache] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ invalidate = false } = {}) => {
     if (!supabase || !session) return;
     setLoading(true);
     setLoadingMessage("Aggregating analytics…");
@@ -130,7 +132,9 @@ export default function AnalyticsDashboard() {
     setOpsNotes([]);
 
     try {
-      const result = await fetchSessionAnalytics(supabase, filters);
+      const result = await loadCachedSessionAnalytics(supabase, filters, { invalidate });
+      setUpdatedAt(result.updatedAt || Date.now());
+      setFromCache(Boolean(result.fromCache));
       setAggregates(result.aggregates);
       setTopAddons(result.topAddons);
       setFeed(result.feed || []);
@@ -290,18 +294,19 @@ export default function AnalyticsDashboard() {
               {periodLabelFromHours(filters?.timeRangeHours ?? rangeToHours(filters?.selectedRange || "today"))}
               {" · "}
               {businessDayExportNote()}
+              {updatedAt ? ` · ${fromCache ? "saved rollup" : "rollup"} ${new Date(updatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Riyadh" })} Asia/Riyadh` : ""}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <OperationalTrustBadge trust={operationalTrust} />
             <span className="nac-an__pill">
               <Sparkles size={14} />
-              Live
+              {fromCache ? "Saved" : "Live"}
             </span>
             <button
               type="button"
               className="nac-an__btn"
-              onClick={() => loadData()}
+              onClick={() => loadData({ invalidate: true })}
               disabled={loading}
             >
               <RefreshCw size={16} className={loading ? "nac-an-spin" : ""} />
