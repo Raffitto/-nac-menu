@@ -37,7 +37,8 @@
     "eject": "react-scripts eject",
     "supabase:link": "supabase link",
     "supabase:push": "supabase db push",
-    "supabase:migration:new": "supabase migration new"
+    "supabase:migration:new": "supabase migration new",
+    "test:edge": "deno test --no-check --deny-net --allow-env --allow-read --import-map=tests/edge-functions/import_map.json tests/edge-functions/"
   },
   "eslintConfig": {
     "extends": [

@@ -1,3 +1,7 @@
+# Combined CI: security batch S1 and data-accuracy batch D1.
+# - No secrets, read-only token, no deploy steps, pull_request (not pull_request_target).
+# - Third-party actions pinned to full commit SHAs.
+# Job ids are stable: no-secrets, edge-function-tests, d1-acceptance, full-suite.
 name: CI
 
 on:
@@ -12,13 +16,37 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Actions are pinned to full commit SHAs (tag in the comment). SHAs were read
-# with `git ls-remote https://github.com/<owner>/<repo>.git refs/tags/<tag>`.
-
 jobs:
-  # Gate for the D1 data-accuracy batch. Green on its own, independent of the
-  # failures already on main. Mark "D1 acceptance (Oracle T1-T28 + Deno)" as a
-  # required status check in branch protection.
+  no-secrets:
+    name: no-secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan tracked files for credentials
+        run: bash scripts/check-no-secrets.sh
+      - name: Self-test the scanner (synthetic runtime values, never printed)
+        run: bash scripts/check-no-secrets.test.sh
+
+  edge-function-tests:
+    name: edge-function-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Edge Function tests (offline, --deny-net)
+        run: >-
+          deno test --no-check --deny-net --allow-env --allow-read
+          --import-map=tests/edge-functions/import_map.json tests/edge-functions/
+
+  # Gate for the D1 data-accuracy batch. Independent of the full Jest suite.
   d1-acceptance:
     name: D1 acceptance (Oracle T1-T28 + Deno)
     runs-on: ubuntu-latest
@@ -45,16 +73,12 @@ jobs:
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
-          # Exact version, not a moving range. v2.9.7 is the latest stable 2.x
-          # (GitHub release v2.9.7, published 2026-09-17, not a prerelease;
-          # https://dl.deno.land/release-latest.txt = v2.9.7, checked 2026-10-12).
+          # Exact version, not a moving range. v2.9.7 is the latest stable 2.x.
           deno-version: 2.9.7
 
       - name: Deno tests (supabase/functions, network denied)
         run: deno test --no-check --deny-net --allow-read --allow-env --permit-no-files supabase/functions
 
-  # Whole Jest suite. Currently red because of 15 failures that already exist
-  # on main (see TEST-RESULTS.md); not a gate for D1 until those are fixed.
   full-suite:
     name: Full Jest suite
     runs-on: ubuntu-latest
