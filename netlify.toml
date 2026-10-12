@@ -7,6 +7,7 @@
 [build]
   command = "npm run build"
   publish = "build"
+  ignore = "node ./scripts/netlify-ignore-non-runtime.mjs"
 
 [build.environment]
   NODE_VERSION = "20"

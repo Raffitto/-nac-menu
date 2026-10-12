@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import MenuImage from "./MenuImage";
 import "./category-card.css";
 import { getCategoryArtStyle } from "../lib/categoryArtNormalization";
 import {
@@ -24,7 +25,7 @@ export default function CategoryCard({ category, isArabic, onClick, index = 0 })
       type="button"
       className={`nac-category-card nac-category-card--${category.id} ${langClass}`}
       onClick={onClick}
-      initial={{ opacity: 0, y: 30 }}
+      initial={index >= 4 ? false : { opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
         delay: index * 0.06,
@@ -39,12 +40,11 @@ export default function CategoryCard({ category, isArabic, onClick, index = 0 })
           className="nac-category-card__art-wrap"
           style={getCategoryArtStyle(category.id, isArabic)}
         >
-          <img
+          <MenuImage
             className="nac-category-card__icon"
             src={iconSrc}
             alt=""
-            loading="lazy"
-            decoding="async"
+            priority={index < 2}
           />
         </span>
       </span>
