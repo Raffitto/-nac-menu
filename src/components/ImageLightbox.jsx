@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { menuImageSources } from "../lib/menuImageSources";
 
 function isValidSrc(src) {
   return typeof src === "string" && src.trim().length > 0;
@@ -54,7 +55,7 @@ export default function ImageLightbox({ open, src, alt, onClose }) {
             <X size={22} />
           </motion.button>
           <motion.img
-            src={src.trim()}
+            src={menuImageSources(src.trim()).expand}
             alt={alt || ""}
             className="img-lightbox-photo"
             initial={{ scale: 0.92, opacity: 0 }}

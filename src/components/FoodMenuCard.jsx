@@ -67,7 +67,7 @@ export default function FoodMenuCard({
         )}
         <div className="menu-card-media">
           {hasImageSrc(menuItem) && (
-            <MenuImage src={menuItem.image} alt="" />
+            <MenuImage src={menuItem.image} alt="" priority={sectionIndex === 0 && itemIndex < 2} />
           )}
           {hasImageSrc(menuItem) && (
             <button

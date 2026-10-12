@@ -6,6 +6,7 @@ import { aggregateStaffReviewStats } from "./utils/staffReviewStats";
 import { buildBranchReviewComparison } from "./utils/reviewEventMetrics";
 import { branchDisplayName, rangeToSince } from "./utils/rangeState";
 import LiveActivityFeed from "./reviews/LiveActivityFeed";
+import { useVisiblePolling } from "../lib/useVisiblePolling";
 import { PlatformFiltersProvider } from "./context/PlatformFiltersContext";
 import "./styles/platform-os.css";
 import "./styles/leaderboard.css";
@@ -31,10 +32,10 @@ function LeaderboardInner() {
     setBranches(buildBranchReviewComparison(data || []));
   }, []);
 
+  useVisiblePolling(load, 30000, Boolean(supabase && isSupabaseConfigured()));
+
   useEffect(() => {
     load();
-    const id = setInterval(load, 30000);
-    return () => clearInterval(id);
   }, [load]);
 
   useEffect(() => {

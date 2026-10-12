@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue, useTransform, useDragControls, MotionConfig } from "framer-motion";
 import { X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
@@ -1108,6 +1108,7 @@ if (adminMode) {
   return <AdminDashboard onBack={() => setAdminMode(false)} />;
 }
   return (
+    <MotionConfig reducedMotion="user">
     <div
   className={`site ${isArabic ? "rtl" : ""}`}
   onTouchStart={(e) => (touchStartX.current = e.changedTouches[0].clientX)}
@@ -1631,5 +1632,6 @@ localStorage.setItem(
     </motion.div>
   )}
     </div>
+    </MotionConfig>
   );
 }
