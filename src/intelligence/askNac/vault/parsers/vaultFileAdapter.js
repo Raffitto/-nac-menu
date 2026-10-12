@@ -3,7 +3,6 @@
  */
 
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import {
   createIntermediate,
   textLinesToMatrix,
@@ -57,6 +56,7 @@ async function readXlsxMatrix(file) {
     typeof file.arrayBuffer === "function"
       ? await file.arrayBuffer()
       : file.buffer || file.content;
+  const XLSX = await import("xlsx");
   const workbook = XLSX.read(buffer, { type: "array" });
   const sections = workbook.SheetNames.map((sheetName) => {
     const sheet = workbook.Sheets[sheetName];
