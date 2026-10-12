@@ -1,0 +1,8 @@
+-- NOT APPLIED. Proposal only. Do not run against production.
+-- menu_events duplicate index, measured in the 2026-10-12 performance audit.
+-- idx_menu_events_created_at_desc duplicates menu_events_created_at_idx (about 150 MB).
+-- Dropping it needs a later approved migration. This file is comments so it cannot change the database.
+--
+-- The intraday rollup refresh_menu_events_daily_rollup_intraday() averages about 3.6 seconds
+-- every 15 minutes. A later change should refresh only today's watermark, not the full table.
+-- There is no review-events rollup. get_review_events_summary stays the reader until one is reviewed.

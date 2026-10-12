@@ -8,6 +8,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import { cachedBranchLoad, inventoryQueryCache } from "../lib/branchQueryCache";
 import {
   createIngredient,
   fetchIngredientDependencySummary,
@@ -70,15 +71,21 @@ export default function IngredientMasterView({ branchId }) {
   const canEditNetwork = canManageNetworkIngredients(access);
   const canEdit = canEditBranch || canEditNetwork;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ invalidate = false } = {}) => {
+    if (invalidate) inventoryQueryCache.invalidate(branchId, "ingredients");
     setLoading(true);
     setError("");
     try {
-      const [rows, staffAccess] = await Promise.all([
-        fetchIngredients({ branchId, includeInactive: true }),
+      const [loaded, staffAccess] = await Promise.all([
+        cachedBranchLoad(
+          inventoryQueryCache,
+          branchId,
+          "ingredients",
+          () => fetchIngredients({ branchId, includeInactive: true }),
+        ),
         fetchInventoryStaffAccess(),
       ]);
-      setIngredients(rows);
+      setIngredients(loaded.data);
       setAccess(staffAccess);
     } catch (err) {
       setError(friendlyIngredientError(err, "Could not load ingredients."));
@@ -205,7 +212,7 @@ export default function IngredientMasterView({ branchId }) {
         setNotice("Ingredient updated.");
       }
       closePanel();
-      await refresh();
+      await refresh({ invalidate: true });
     } catch (err) {
       setError(friendlyIngredientError(err, "Could not save ingredient."));
     } finally {
@@ -227,7 +234,7 @@ export default function IngredientMasterView({ branchId }) {
       setNotice("Ingredient deactivated.");
       closePanel();
       setStatusFilter("inactive");
-      await refresh();
+      await refresh({ invalidate: true });
     } catch (err) {
       setError(friendlyIngredientError(err, "Could not deactivate ingredient."));
     } finally {
@@ -245,7 +252,7 @@ export default function IngredientMasterView({ branchId }) {
       setNotice("Ingredient reactivated.");
       closePanel();
       setStatusFilter("active");
-      await refresh();
+      await refresh({ invalidate: true });
     } catch (err) {
       setError(friendlyIngredientError(err, "Could not reactivate ingredient."));
     } finally {
