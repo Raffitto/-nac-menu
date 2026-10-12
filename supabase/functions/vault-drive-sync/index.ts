@@ -28,9 +28,13 @@ import {
   runScheduledDriveIngestion,
   validateScheduledIngestSecret,
 } from "../_shared/vaultDriveScheduledIngest.ts";
+import { authorizeInternalCaller } from "../_shared/internalAuth.ts";
+import { createDriveBranchAuthorizer } from "../_shared/vaultDriveAuthorization.ts";
+import { createOwnerAuthority } from "../_shared/vaultDriveOwnerAuthorization.ts";
 import {
   ingestConnectedReviewTracking,
   resolveReviewTrackingHits,
+  REVIEW_TRACKING_BRANCH,
 } from "../_shared/vaultReviewTrackingDriveDiscovery.ts";
 
 const corsHeaders = {
@@ -188,7 +192,7 @@ Deno.serve(async (req) => {
       if (!isScheduledIngestSecretConfigured()) {
         return json(503, { error: "Scheduled ingest not configured (DRIVE_SCHEDULED_INGEST_SECRET)." });
       }
-      if (!validateScheduledIngestSecret(req)) {
+      if (!(await validateScheduledIngestSecret(req))) {
         return json(401, { error: "Invalid scheduled ingest secret" });
       }
 
@@ -226,17 +230,14 @@ Deno.serve(async (req) => {
     if (action === "ingest_review_tracking") {
       if (req.method !== "POST") return json(405, { error: "Method not allowed" });
       if (!serviceRoleKey) return json(500, { error: "Service role not configured" });
-      const authHeader = req.headers.get("Authorization") || "";
-      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-      let serviceRoleJwt = false;
-      try {
-        const payload = JSON.parse(atob(token.split(".")[1] || ""));
-        serviceRoleJwt = payload?.role === "service_role";
-      } catch {
-        serviceRoleJwt = false;
-      }
-      const allowed = token === serviceRoleKey || serviceRoleJwt || validateScheduledIngestSecret(req);
-      if (!allowed) return json(401, { error: "Review tracking ingest requires service role or scheduled secret." });
+      // Do not trust JWT payloads decoded without signature verification.
+      // Internal callers must present the exact configured service-role key
+      // or the scheduled-ingest secret (constant-time comparison).
+      const internalAuth = await authorizeInternalCaller(req.headers.get("Authorization"), {
+        serviceRoleKey,
+        scheduledSecret: Deno.env.get("DRIVE_SCHEDULED_INGEST_SECRET"),
+      });
+      if (!internalAuth.ok) return json(401, { error: "Review tracking ingest requires service role or scheduled secret." });
       const admin = createClient(supabaseUrl, serviceRoleKey);
       const reviewTracking = await ingestConnectedReviewTracking(admin, {
         refreshAccessToken,
@@ -261,10 +262,20 @@ Deno.serve(async (req) => {
     if (userErr || !userData?.user?.email) return json(401, { error: "Invalid session" });
 
     const userEmail = userData.user.email.toLowerCase();
+    // F15 / X1: service-role writes below bypass RLS, so branch/role authorization is enforced
+    // here with the SAME per-owner, per-branch rule the nightly job uses (caller = owner).
+    // Without a service-role key the reads fall back to the caller's RLS view (fails closed).
+    const driveAuthz = createDriveBranchAuthorizer(createOwnerAuthority(admin), userEmail);
 
     const redirectUri =
       body?.redirectUri ||
       `${supabaseUrl}/functions/v1/vault-drive-sync?action=callback`;
+
+    // F15-c: connecting Google Drive requires Drive-ingestion authority (vault uploader or NAC OS
+    // RBAC developer/ceo/branch_gm). Connections feed the nightly service-role ingestion.
+    if ((action === "authorize" || action === "callback") && !(await driveAuthz.canIngest())) {
+      return json(403, { error: "Your role is not allowed to connect Google Drive for ingestion." });
+    }
 
     if (action === "authorize") {
       const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
@@ -469,6 +480,11 @@ Deno.serve(async (req) => {
     }
 
     if (action === "register_folder") {
+      const branchDecision = await driveAuthz.authorizeBranch(body?.branchId || body?.defaultBranchId || null);
+      if (!branchDecision.ok) return json(branchDecision.status, { error: branchDecision.reason });
+      const defaultBranchDecision = await driveAuthz.authorizeBranch(body?.defaultBranchId || body?.branchId || null);
+      if (!defaultBranchDecision.ok) return json(defaultBranchDecision.status, { error: defaultBranchDecision.reason });
+
       const { data: connection } = await admin
         .from("ask_nac_drive_connections")
         .select("id,refresh_token,token_expires_at")
@@ -510,9 +526,9 @@ Deno.serve(async (req) => {
             drive_folder_id: folderId,
             folder_name: folderName,
             label: body?.label || folderName,
-            default_branch_id: body?.defaultBranchId || body?.branchId || null,
+            default_branch_id: defaultBranchDecision.branchId,
             default_department: body?.defaultDepartment || body?.department || "operations",
-            branch_id: body?.branchId || body?.defaultBranchId || null,
+            branch_id: branchDecision.branchId,
             department: body?.department || body?.defaultDepartment || "operations",
             report_type: reportType,
             sensitivity: body?.sensitivity || "internal",
@@ -548,9 +564,11 @@ Deno.serve(async (req) => {
         .eq("is_discovery_root", true);
       const folderRowId = String(body?.folderRowId || "").trim();
       if (folderRowId) folderQuery = folderQuery.eq("id", folderRowId);
-      const { data: roots, error: rootsError } = await folderQuery;
+      const { data: ownedRoots, error: rootsError } = await folderQuery;
       if (rootsError) return json(500, { error: sanitizeErrorMessage(rootsError.message) });
-      if (!roots?.length) return json(400, { error: "Register a Daily or Weekly discovery root first." });
+      if (!ownedRoots?.length) return json(400, { error: "Register a Daily or Weekly discovery root first." });
+      const { allowed: roots, denied: unauthorizedRoots } = await driveAuthz.partitionFolders<(typeof ownedRoots)[number]>(ownedRoots);
+      if (!roots.length) return json(403, { error: "You are not authorized for the branches of these discovery roots." });
 
       const allClassifications: Record<string, unknown>[] = [];
       for (const root of roots) {
@@ -592,7 +610,7 @@ Deno.serve(async (req) => {
       }
 
       const summary = buildDiscoverySummary(allClassifications);
-      return json(200, { ok: true, summary, items: allClassifications });
+      return json(200, { ok: true, summary, items: allClassifications, skippedUnauthorized: unauthorizedRoots.length });
     }
 
     if (action === "run_status") {
@@ -646,6 +664,10 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", runId);
           processedRuns.push({ runId, ok: false });
+          continue;
+        }
+        if (!(await driveAuthz.authorizeBranch(driveAuthz.folderBranch(folder))).ok) {
+          processedRuns.push({ runId, ok: false, reason: "not_authorized_for_branch" });
           continue;
         }
 
@@ -780,14 +802,22 @@ Deno.serve(async (req) => {
         .eq("user_email", userEmail);
 
       const connectionById = new Map((connections || []).map((connection) => [connection.id, connection]));
-      const runnableFolders = folders.filter((folder) => connectionById.get(folder.connection_id)?.refresh_token);
-      if (!runnableFolders.length) {
+      const ownedFolders = folders.filter((folder) => connectionById.get(folder.connection_id)?.refresh_token);
+      if (!ownedFolders.length) {
         return json(400, { error: "Drive connection not found or revoked." });
       }
+      // F15: only ingest folders whose branch the caller is authorized for.
+      const { allowed: runnableFolders, denied: unauthorizedFolders } = await driveAuthz.partitionFolders<(typeof ownedFolders)[number]>(ownedFolders);
+      if (!runnableFolders.length || (folderRowId && unauthorizedFolders.length)) {
+        return json(403, { error: "You are not authorized to ingest Drive folders for this branch." });
+      }
+      const reviewTrackingAuthorized = (await driveAuthz.authorizeBranch(REVIEW_TRACKING_BRANCH)).ok;
 
       const runs = [];
       for (const connection of connections || []) {
         if (!connection?.refresh_token) continue;
+        // Review-tracking discovery attributes hits to Khobar; skip it for callers not authorized there.
+        if (!reviewTrackingAuthorized) continue;
         try {
           const tokens = await refreshAccessToken(connection.refresh_token);
           await admin.from("ask_nac_drive_connections").update({
@@ -802,7 +832,7 @@ Deno.serve(async (req) => {
           const hits = await resolveReviewTrackingHits(admin, {
             accessToken: tokens.access_token,
             connectionId: connection.id,
-            branchId: "khobar",
+            branchId: REVIEW_TRACKING_BRANCH,
           });
           for (const hit of hits) {
             if (runnableFolders.some((folder) => folder.id === hit.hostFolder.id) && !hit.hostFolder.is_discovery_root) {
@@ -894,6 +924,7 @@ Deno.serve(async (req) => {
         runIds: runs.map((run) => run.runId),
         queued: runs.length,
         skippedActive,
+        skippedUnauthorized: unauthorizedFolders.length,
         status: "queued",
         requiresClientProcessing: true,
       });
