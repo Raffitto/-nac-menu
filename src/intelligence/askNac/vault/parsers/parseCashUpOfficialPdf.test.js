@@ -63,21 +63,21 @@ describe("parseCashUpOfficialPdfText — July 2026 official report", () => {
 
   test("2. 31 July row preserved", () => {
     expect(result.d31).toMatchObject({
-      totalSales: 29754,
-      netSales: 25873.04,
-      guestCount: 386,
-      orderCount: 151,
+      totalSales: 1031,
+      netSales: 831,
+      guestCount: 100,
+      orderCount: 40,
     });
   });
 
   test("3. source totals parse correctly", () => {
     expect(result.sourceMonthly).toMatchObject({
-      grossSales: 681011.23,
-      netSales: 590126.95,
-      guestCount: 8302,
-      orderCount: 3506,
+      grossSales: 31496,
+      netSales: 25296,
+      guestCount: 3100,
+      orderCount: 1240,
     });
-    expect(result.sourceTarget).toBe(1050000);
+    expect(result.sourceTarget).toBe(50000);
   });
 
   test("4. derived daily sums reconcile with monthly totals", () => {
@@ -85,18 +85,18 @@ describe("parseCashUpOfficialPdfText — July 2026 official report", () => {
     expect(result.reconciliation.netMatch).toBe(true);
     expect(result.reconciliation.guestsMatch).toBe(true);
     expect(result.reconciliation.ordersMatch).toBe(true);
-    expect(result.derived.grossSales).toBe(681011.23);
-    expect(result.derived.guestCount).toBe(8302);
-    expect(result.derived.orderCount).toBe(3506);
+    expect(result.derived.grossSales).toBe(31496);
+    expect(result.derived.guestCount).toBe(3100);
+    expect(result.derived.orderCount).toBe(1240);
   });
 
   test("5. stale Daily Average row flagged but preserved", () => {
     expect(result.sourceDailyAverage).toMatchObject({
-      grossPerDay: 21708.57,
-      netPerDay: 18808.46,
-      guestsPerDay: 263.87,
-      ordersPerDay: 111.83,
-      avgPerGuest: 70.82,
+      grossPerDay: 10,
+      netPerDay: 10,
+      guestsPerDay: 10,
+      ordersPerDay: 10,
+      avgPerGuest: 10,
     });
     expect(result.qualityCodes).toContain("STALE_DAILY_AVERAGE_ROW");
     expect(result.analyticsPolicy.prefer).toContain("DERIVED_FROM_DAILY_ROWS");

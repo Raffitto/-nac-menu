@@ -121,6 +121,19 @@ function buildCustomRangePeriod(startDate, endDate, label, periodType = "custom_
   };
 }
 
+/** Actual-to-date end: not after today, and not after the 08:00 Asia/Riyadh completed day. */
+function capHalfToCompleted(startDate, naturalEnd, referenceDate) {
+  const today = riyadhIsoDate(referenceDate);
+  const completed = latestCompletedBusinessDate(referenceDate);
+  let end = naturalEnd;
+  if (end > today) end = today;
+  if (end > completed) end = completed;
+  if (end < startDate) {
+    return { endDate: startDate, noCompletedDays: true, expectedDayCount: 0 };
+  }
+  return { endDate: end, noCompletedDays: false };
+}
+
 function monthBounds(year, monthIndex) {
   const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
   return {
@@ -219,8 +232,12 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
     const monthIndex = MONTH_MAP[firstHalfMonth[1]];
     const year = resolveYearForMonth(monthIndex, firstHalfMonth[2], referenceDate);
     const startDate = isoDate(year, monthIndex + 1, 1);
-    const endDate = isoDate(year, monthIndex + 1, 15);
-    return buildCustomRangePeriod(startDate, endDate, `first half of ${formatRangeLabel(startDate, endDate).split("–")[1]?.trim() || firstHalfMonth[1]}`, "first_half");
+    const naturalEnd = isoDate(year, monthIndex + 1, 15);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, `first half of ${firstHalfMonth[1]} ${year}`, "first_half"),
+      ...capped,
+    };
   }
 
   const secondHalfMonth = q.match(new RegExp(`\\bsecond\\s+half\\s+(?:of\\s+)?${MONTH_PATTERN}(?:\\s+(20\\d{2}))?\\b`));
@@ -228,30 +245,36 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
     const monthIndex = MONTH_MAP[secondHalfMonth[1]];
     const year = resolveYearForMonth(monthIndex, secondHalfMonth[2], referenceDate);
     const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-    let endDay = lastDay;
-    const isCurrentMonth = year === referenceDate.getFullYear() && monthIndex === referenceDate.getMonth();
-    if (isCurrentMonth) endDay = Math.min(lastDay, referenceDate.getDate());
     const startDate = isoDate(year, monthIndex + 1, 16);
-    const endDate = isoDate(year, monthIndex + 1, endDay);
-    return buildCustomRangePeriod(startDate, endDate, `second half of ${secondHalfMonth[1]} ${year}`, "second_half");
+    const naturalEnd = isoDate(year, monthIndex + 1, lastDay);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, `second half of ${secondHalfMonth[1]} ${year}`, "second_half"),
+      ...capped,
+    };
   }
 
   if (/\bfirst\s+half\s+(?:of\s+)?this\s+month\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const m = referenceDate.getMonth();
-    const startDate = isoDate(y, m + 1, 1);
-    const endDate = isoDate(y, m + 1, 15);
-    return buildCustomRangePeriod(startDate, endDate, "first half this month", "first_half");
+    const [y, m] = riyadhIsoDate(referenceDate).split("-").map(Number);
+    const startDate = isoDate(y, m, 1);
+    const naturalEnd = isoDate(y, m, 15);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, "first half this month", "first_half"),
+      ...capped,
+    };
   }
 
   if (/\bsecond\s+half\s+(?:of\s+)?this\s+month\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const m = referenceDate.getMonth();
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const endDay = Math.min(lastDay, referenceDate.getDate());
-    const startDate = isoDate(y, m + 1, 16);
-    const endDate = isoDate(y, m + 1, endDay);
-    return buildCustomRangePeriod(startDate, endDate, "second half this month", "second_half");
+    const [y, m] = riyadhIsoDate(referenceDate).split("-").map(Number);
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const startDate = isoDate(y, m, 16);
+    const naturalEnd = isoDate(y, m, lastDay);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, "second half this month", "second_half"),
+      ...capped,
+    };
   }
 
   return null;
@@ -633,9 +656,6 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
 
 function clipOpenPeriod(period, referenceDate) {
   if (!period?.endDate) return period;
-  // Named halves are already capped on the reference calendar date by
-  // parseHalfMonthPhrase. Do not move that inclusive end back one business day.
-  if (period.periodType === "first_half" || period.periodType === "second_half") return period;
   if (period.endDate < riyadhIsoDate(referenceDate)) return period;
   const clipped = clipPeriodToCompletedDays(period, referenceDate);
   if (!clipped?.endDate || clipped.endDate === period.endDate) return clipped;

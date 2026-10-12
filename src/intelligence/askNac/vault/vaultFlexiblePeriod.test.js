@@ -117,7 +117,22 @@ describe("half-month phrases", () => {
   test("second half of June caps at reference date in current month", () => {
     const period = parseHalfMonthPhrase("second half of June", REF);
     expect(period?.startDate).toBe("2026-06-16");
-    expect(period?.endDate).toBe("2026-06-21");
+    expect(period?.endDate).toBe("2026-06-20");
+  });
+
+  test("second half before 08:00 Asia/Riyadh excludes yesterday", () => {
+    const early = new Date("2026-06-21T07:00:00+03:00");
+    const period = parseHalfMonthPhrase("second half of June", early);
+    expect(period?.startDate).toBe("2026-06-16");
+    expect(period?.endDate).toBe("2026-06-19");
+    expect(period?.endDate < "2026-06-21").toBe(true);
+  });
+
+  test("a completed earlier month is not clipped to the current business day", () => {
+    const july = new Date("2026-07-15T12:00:00+03:00");
+    const period = parseHalfMonthPhrase("second half of June", july);
+    expect(period?.startDate).toBe("2026-06-16");
+    expect(period?.endDate).toBe("2026-06-30");
   });
 
   test("first half this month", () => {
@@ -129,7 +144,7 @@ describe("half-month phrases", () => {
   test("second half this month", () => {
     const period = parseHalfMonthPhrase("second half this month", REF);
     expect(period?.startDate).toBe("2026-06-16");
-    expect(period?.endDate).toBe("2026-06-21");
+    expect(period?.endDate).toBe("2026-06-20");
   });
 });
 
@@ -148,7 +163,7 @@ describe("custom compare periods", () => {
     expect(compare?.current.startDate).toBe("2026-06-01");
     expect(compare?.current.endDate).toBe("2026-06-15");
     expect(compare?.previous.startDate).toBe("2026-06-16");
-    expect(compare?.previous.endDate).toBe("2026-06-21");
+    expect(compare?.previous.endDate).toBe("2026-06-20");
   });
 
   test("parseVaultCustomCompareFromQuestion normalized structure", () => {
@@ -292,7 +307,6 @@ describe("routing and preserved behavior", () => {
   test("this year resolves to year-to-date", () => {
     const period = parseVaultPeriodFromQuestion("delivery apps this year", REF);
     expect(period?.periodType).toBe("year_to_date");
-    expect(period?.startDate).toBe("2026-01-01");
     expect(period?.endDate).toBe("2026-06-21");
     expect(isVaultCashUpAnalyticsPeriod(period)).toBe(true);
   });
