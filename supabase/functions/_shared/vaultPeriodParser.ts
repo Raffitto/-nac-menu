@@ -652,6 +652,9 @@ function clipPeriodToCompletedDays(period, referenceDate = new Date()) {
 
 function clipOpenPeriod(period, referenceDate) {
   if (!period?.endDate) return period;
+  // Named halves are already capped on the reference calendar date by
+  // parseHalfMonthPhrase. Do not move that inclusive end back one business day.
+  if (period.periodType === "first_half" || period.periodType === "second_half") return period;
   if (period.endDate < riyadhIsoDate(referenceDate)) return period;
   const clipped = clipPeriodToCompletedDays(period, referenceDate);
   if (!clipped?.endDate || clipped.endDate === period.endDate) return clipped;
@@ -706,7 +709,15 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     const current = lastFirst ? lastWeek : thisWeek;
     const previous = lastFirst ? thisWeek : lastWeek;
     if (current && previous) {
-      return { current, previous, isComparison: true, periodType: "week_compare", likeForLike: true, comparisonMode: "like_for_like" };
+      const incomplete = Boolean(current.noCompletedDays);
+      return {
+        current,
+        previous,
+        isComparison: true,
+        periodType: "week_compare",
+        likeForLike: !incomplete,
+        comparisonMode: incomplete ? "incomplete_current_period" : "like_for_like",
+      };
     }
   }
 

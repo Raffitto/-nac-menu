@@ -2,10 +2,10 @@ import { applyBusinessSemantics } from "./businessSemantics";
 import { normalizeAskNacQuestion } from "./normalizeQuestion";
 
 describe("businessSemantics", () => {
-  test("sales yesterday resolves to net sales yesterday", () => {
+  test("sales yesterday stays a commerce sales question", () => {
     const out = applyBusinessSemantics("sales yesterday");
-    expect(out.text).toMatch(/net sales/i);
-    expect(out.text).toMatch(/yesterday/i);
+    expect(out.text).toMatch(/\bsales yesterday\b/i);
+    expect(out.text).not.toMatch(/\bnet sales\b/i);
   });
 
   test("how much did we make yesterday resolves to net sales", () => {

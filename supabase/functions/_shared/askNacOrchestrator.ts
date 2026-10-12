@@ -318,6 +318,10 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
         return 0;
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      // Reviews, operational change, and bare commerce sales are not Cash Up.
+      if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (/^(sales|revenue)\s+(today|yesterday|this week|this month)\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -462,6 +466,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (/^(sales|revenue)\s+(today|yesterday|this week|this month)\b/.test(q)) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 0;

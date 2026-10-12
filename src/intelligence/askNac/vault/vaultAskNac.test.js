@@ -129,9 +129,9 @@ describe("vault intentRouter", () => {
     expect(route.intent).not.toBe(ASK_NAC_INTENTS.SALES_TOTAL);
   });
 
-  test("routes sales yesterday to vault cash-up (net sales single day)", () => {
+  test("routes sales yesterday to canonical commerce sales", () => {
     const route = routeAskNacIntent("Sales yesterday");
-    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
     expect(route.vaultPeriod?.isSingleDay).toBe(true);
   });
 

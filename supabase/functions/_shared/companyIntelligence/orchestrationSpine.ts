@@ -211,6 +211,8 @@ export function isManagementIntelligenceQuestion(
 
 function isExplicitFastPath(question: string, legacyRoute?: OrchestrationOptions["legacyRoute"]) {
   const q = question.toLowerCase();
+  // Diagnostic questions need the heuristic planner (commercial plus operations.review).
+  if (/\b(why|shit)\b/.test(q)) return false;
   const high = legacyRoute?.confidence === "high";
   const monthToken =
     /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/;
