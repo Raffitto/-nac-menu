@@ -125,7 +125,7 @@ function isVaultQueryIntent(intent: string): boolean {
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
-import { SALES_SOURCE, selectSalesSource } from "./salesSourcePolicy.js";
+import { SALES_SOURCE, selectSalesSource, isComparisonSalesSource } from "./salesSourcePolicy.js";
 import { executeMixedTodayYesterdaySales, lockMixedSalesRoute } from "./mixedSalesExecution.ts";
 
 const BRANCH_ALIASES: Record<string, string[]> = {
@@ -327,8 +327,8 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
       const salesSource = selectSalesSource(q);
-      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
-      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 36;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -474,8 +474,8 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       const salesSource = selectSalesSource(q);
-      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 0;
-      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 14;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 0;
@@ -1264,8 +1264,8 @@ export async function processAskNacOnEdge(
     };
   }
   const referenceDate = new Date();
-  route = lockMixedSalesRoute(route, referenceDate);
-  const mixedSalesComparison = route.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY;
+  route = lockMixedSalesRoute(route, referenceDate, effectiveQuestion);
+  const mixedSalesComparison = isComparisonSalesSource(route.salesSource);
 
   // Theoretical consumption: explicit client hand-off (D1, Oracle T1-T3).
   // The canonical recipe engine (src/inventory/truth) is browser JavaScript and is
@@ -1619,7 +1619,9 @@ export async function processAskNacOnEdge(
   const vaultToolMs = isVaultQueryIntent(route.intent) ? selectedToolMs : 0;
   const knowledgeHealthMs = route.intent === VAULT_INTENTS.KNOWLEDGE_HEALTH ? selectedToolMs : 0;
 
-  const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
+  const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
+    || isVaultDocumentIntent(route.intent)
+    || Boolean(tool?.authorizationDenied || tool?.comparison);
   const routeWithQuestion = { ...route, question: effectiveQuestion };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
@@ -1629,15 +1631,17 @@ export async function processAskNacOnEdge(
   deterministic.readiness = readiness;
 
   const executiveEvidenceStartedAt = performance.now();
-  deterministic = await applyExecutiveIntelligenceV2({
-    supabase,
-    route: routeWithQuestion,
-    tool,
-    response: deterministic,
-    userEmail: effectiveUserEmail,
-    profile: profileHint as Record<string, unknown> | null,
-    filters: mergedFilters as Record<string, unknown>,
-  }) as typeof deterministic;
+  if (!tool?.authorizationDenied && !tool?.comparison) {
+    deterministic = await applyExecutiveIntelligenceV2({
+      supabase,
+      route: routeWithQuestion,
+      tool,
+      response: deterministic,
+      userEmail: effectiveUserEmail,
+      profile: profileHint as Record<string, unknown> | null,
+      filters: mergedFilters as Record<string, unknown>,
+    }) as typeof deterministic;
+  }
   const executiveEvidenceV2Ms = Math.round(performance.now() - executiveEvidenceStartedAt);
 
   const isCashUpQuestion = /\bcash\s*up\b/i.test(effectiveQuestion);

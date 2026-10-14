@@ -4,6 +4,7 @@
  */
 
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { extractDocumentSearchTerms } from "./vaultDocumentSearchRouting";
 import {
@@ -245,6 +246,22 @@ export async function getVaultFacts(
     limit,
   } = {},
 ) {
+  if (reportType === "cash_up") {
+    const denial = salesQueryDenied(profile, {
+      mentionedBranch: branchMention || branch,
+      filterBranch: filters?.branch,
+    });
+    if (denial) {
+      return {
+        authorizationDenied: true,
+        deniedBranch: denial.deniedBranch,
+        allowedBranches: denial.allowedBranches,
+        branch: null,
+        facts: [],
+        sources: [],
+      };
+    }
+  }
   const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
   let query = supabase.from("ask_nac_structured_facts").select(FACT_SELECT);
   query = periodOverlapFilter(query, startDate, endDate);
@@ -1081,7 +1098,20 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       };
     }
     case "vault_cash_up_summary": {
-      if (context.mixedSalesSide === "yesterday") {
+      const denial = salesQueryDenied(context.profile, {
+        mentionedBranch: context.branchMention,
+        filterBranch: context.filters?.branch || context.branch,
+      });
+      if (denial) {
+        return {
+          authorizationDenied: true,
+          deniedBranch: denial.deniedBranch,
+          allowedBranches: denial.allowedBranches,
+          facts: [],
+          aggregation: null,
+        };
+      }
+      if (context.mixedSalesSide === "yesterday" || context.mixedSalesSide === "locked") {
         const yesterday = context.vaultPeriod?.startDate
           ? context.vaultPeriod
           : parseVaultPeriodFromQuestion("yesterday", context.referenceDate || new Date());

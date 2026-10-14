@@ -306,8 +306,8 @@ const INTENT_RULES = [
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
       const salesSource = selectSalesSource(q);
-      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
-      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 36;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -471,8 +471,8 @@ const INTENT_RULES = [
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       const salesSource = selectSalesSource(q);
-      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 0;
-      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 14;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;

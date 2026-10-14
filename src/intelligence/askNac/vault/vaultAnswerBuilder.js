@@ -11,7 +11,7 @@ import {
   sourceEntry,
 } from "../askNacContract";
 import { ASK_NAC_INTENTS } from "../intentRouter";
-import { describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
+import { describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
 import {
   collectVaultSources,
   extractDocumentSearchTerms,
@@ -275,7 +275,44 @@ export function buildVaultCoverageListAnswer(route, tool, readiness) {
   });
 }
 
+function salesBranchName(id) {
+  if (id === "khobar") return "Khobar";
+  if (id === "riyadh") return "Riyadh";
+  if (id === "jeddah") return "Jeddah";
+  return id || "that branch";
+}
+
+function buildSalesAuthorizationOrComparisonAnswer(route, tool, readiness) {
+  if (tool?.authorizationDenied) {
+    const denied = salesBranchName(tool.deniedBranch);
+    const allowed = (tool.allowedBranches || []).map(salesBranchName).filter(Boolean).join(", ") || "your assigned branch";
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: ANSWER_TYPES.MISSING_DATA,
+      title: "Branch not authorized",
+      directAnswer: `Your access does not include ${denied}. Sales were not retrieved. You can query: ${allowed}.`,
+      keyMetrics: [],
+      warnings: [],
+    });
+  }
+  if (tool?.comparison) {
+    const directAnswer = describeAuthorizedSalesComparison(tool.comparison);
+    const incomplete = /unavailable|coverage is incomplete/i.test(directAnswer);
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: incomplete ? ANSWER_TYPES.MISSING_DATA : ANSWER_TYPES.COMPARISON,
+      title: "Sales comparison",
+      directAnswer,
+      keyMetrics: [],
+      warnings: ["Operational and accounting figures are shown separately and are not added together."],
+    });
+  }
+  return null;
+}
+
 export function buildVaultCashUpAnswer(route, tool, readiness) {
+  const gated = buildSalesAuthorizationOrComparisonAnswer(route, tool, readiness);
+  if (gated) return gated;
   const facts = tool?.facts || [];
   const aggregation = tool?.aggregation || null;
 
@@ -1048,6 +1085,10 @@ function buildVaultDriveDiscoveryAnswer(route, tool, readiness) {
 }
 
 export function buildVaultAnswer(route, tool, readiness) {
+  if (tool?.authorizationDenied || tool?.comparison) {
+    return buildVaultCashUpAnswer(route, tool, readiness);
+  }
+
   if (tool?.documentFallback?.matches?.length) {
     return buildVaultDocumentSearchAnswer(
       { ...route, intent: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH },

@@ -600,6 +600,10 @@ function operationalKnowledgeResponse(route, tool) {
  * Build deterministic structured response from routing + tool output.
  */
 export function buildDeterministicAskNacAnswer(route, tool, readiness) {
+  if (tool?.authorizationDenied || tool?.comparison) {
+    return buildVaultAnswer(route, tool, readiness);
+  }
+
   if (readiness?.status === READINESS.BLOCKED) {
     return buildBlockedResponse(route, readiness);
   }

@@ -10,6 +10,10 @@ jest.mock("../../../lib/foodicsApi", () => ({
 
 import { getBatchForExportPeriod, getBatchSalesItems } from "../../../lib/foodicsApi";
 import { processAskNacQuestion } from "../askNacOrchestrator";
+import { executeMixedTodayYesterdaySales } from "./mixedSalesExecution";
+import { getFoodicsSalesSummary } from "../foodics/foodicsQueryTools";
+import { runVaultQueryTool } from "../vault/vaultQueryTools";
+import { parseVaultPeriodFromQuestion } from "../vault/vaultPeriodParser";
 
 const REF = new Date("2026-10-14T15:00:00+03:00");
 const TODAY = "2026-10-14";
@@ -236,5 +240,211 @@ describe("mixed today versus yesterday execution", () => {
     });
     expect(windows.some((window) => window.start === YESTERDAY && window.end === YESTERDAY)).toBe(true);
     expect(windows.some((window) => window.start === "2026-10-12" || window.end === "2026-10-12")).toBe(false);
+  });
+});
+
+const KHOBAR_ONLY = { authenticated: true, allBranches: false, branchScope: "khobar", allowedBranchIds: ["khobar"] };
+const RIYADH_ONLY = { authenticated: true, allBranches: false, branchScope: "riyadh", allowedBranchIds: ["riyadh"] };
+
+function countingSupabase() {
+  const calls = [];
+  return {
+    calls,
+    from(table) {
+      calls.push(table);
+      return queryApi(() => ({ data: [], error: null }), () => {});
+    },
+  };
+}
+
+describe("operational sales authorization", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("a Khobar user is denied Riyadh mixed sales before either source is queried", async () => {
+    const supabase = countingSupabase();
+    const result = await executeMixedTodayYesterdaySales(supabase, {
+      question: "Riyadh sales today vs yesterday",
+      branchMention: "riyadh",
+      profile: KHOBAR_ONLY,
+      referenceDate: REF,
+    });
+    expect(result.authorizationDenied).toBe(true);
+    expect(result.deniedBranch).toBe("riyadh");
+    expect(getBatchForExportPeriod).not.toHaveBeenCalled();
+    expect(supabase.calls).toEqual([]);
+  });
+
+  test("a Riyadh user is denied Khobar mixed sales before either source is queried", async () => {
+    const supabase = countingSupabase();
+    const result = await executeMixedTodayYesterdaySales(supabase, {
+      question: "Khobar sales today vs yesterday",
+      branchMention: "khobar",
+      profile: RIYADH_ONLY,
+      referenceDate: REF,
+    });
+    expect(result.authorizationDenied).toBe(true);
+    expect(result.deniedBranch).toBe("khobar");
+    expect(getBatchForExportPeriod).not.toHaveBeenCalled();
+    expect(supabase.calls).toEqual([]);
+  });
+
+  test("company-wide access can query a named branch", async () => {
+    getBatchForExportPeriod.mockResolvedValue(null);
+    await executeMixedTodayYesterdaySales(countingSupabase(), {
+      question: "Riyadh sales today vs yesterday",
+      branchMention: "riyadh",
+      profile: { authenticated: true, allBranches: true },
+      referenceDate: REF,
+    });
+    expect(getBatchForExportPeriod).toHaveBeenCalled();
+  });
+
+  test("single-source Foodics and Cash Up deny a foreign branch before querying", async () => {
+    const supabase = countingSupabase();
+    const foodics = await getFoodicsSalesSummary(supabase, {
+      question: "Riyadh sales today",
+      branchMention: "riyadh",
+      profile: KHOBAR_ONLY,
+      foodicsPeriod: { startDate: TODAY, endDate: TODAY },
+    });
+    const cashUp = await runVaultQueryTool(supabase, "vault_cash_up_summary", {
+      question: "Riyadh sales yesterday",
+      branchMention: "riyadh",
+      profile: KHOBAR_ONLY,
+      vaultPeriod: { startDate: YESTERDAY, endDate: YESTERDAY, isSingleDay: true },
+    });
+    expect(foodics.authorizationDenied).toBe(true);
+    expect(cashUp.authorizationDenied).toBe(true);
+    expect(getBatchForExportPeriod).not.toHaveBeenCalled();
+    expect(supabase.calls).toEqual([]);
+  });
+
+  test("Khobar sales are labeled Khobar and are not a company total", async () => {
+    getBatchForExportPeriod.mockResolvedValue({
+      id: "batch-khobar",
+      branch_id: "khobar",
+      period_start: TODAY,
+      period_end: TODAY,
+    });
+    getBatchSalesItems.mockResolvedValue([{ net_sales: 11101, quantity_sold: 1, raw_item_name: "Synthetic plate" }]);
+    const answer = await processAskNacQuestion({
+      question: "Compare sales today vs yesterday",
+      supabase: supabaseFor(BRANCHES[0]),
+      profile: KHOBAR_ONLY,
+      options: { referenceDate: REF },
+    });
+    const text = String(answer.directAnswer || "");
+    expect(text).toMatch(/Khobar/);
+    expect(text).toMatch(/not a company total/);
+    expect(text).not.toMatch(/Riyadh/);
+    expect(text).not.toMatch(/Jeddah/);
+    expect(shows(text, 11101)).toBe(true);
+  });
+
+  test("a company-wide question does not present Khobar as the company total when other branches are unavailable", async () => {
+    getBatchForExportPeriod.mockImplementation(async (_type, branchId) => {
+      if (branchId !== "khobar") return null;
+      return { id: "batch-khobar", branch_id: "khobar", period_start: TODAY, period_end: TODAY };
+    });
+    getBatchSalesItems.mockResolvedValue([{ net_sales: 11101, quantity_sold: 1, raw_item_name: "Synthetic plate" }]);
+    const supabase = {
+      from(table) {
+        return queryApi((filters) => {
+          if (table !== "ask_nac_structured_facts" || filters.branch_id !== "khobar") return { data: [], error: null };
+          if (filters["gte:period_end"] !== YESTERDAY) return { data: [], error: null };
+          return {
+            data: [{
+              branch_id: "khobar",
+              report_type: "cash_up",
+              metric_key: "net_sales",
+              metric_value: 22201,
+              period_start: YESTERDAY,
+              period_end: YESTERDAY,
+            }],
+            error: null,
+          };
+        }, () => {});
+      },
+    };
+    const answer = await processAskNacQuestion({
+      question: "Compare sales today vs yesterday",
+      supabase,
+      profile: { authenticated: true, allBranches: true },
+      options: { referenceDate: REF },
+    });
+    const text = String(answer.directAnswer || "");
+    expect(text).toMatch(/Khobar/);
+    expect(text).toMatch(/Riyadh unavailable/);
+    expect(text).toMatch(/Jeddah unavailable/);
+    expect(text).toMatch(/coverage is incomplete/);
+    expect(text).not.toMatch(/Company Foodics operational\/live total: 11,101/);
+    expect(text).not.toMatch(/Company official Cash Up total: 22,201/);
+  });
+
+  test.each([
+    ["Compare sales this week vs last week", "this week", "last week"],
+    ["Compare sales this month vs last month", "this month", "last month"],
+  ])("%s uses Foodics for the open period and Cash Up for the completed period", async (question, currentToken, previousToken) => {
+    const current = parseVaultPeriodFromQuestion(currentToken, REF);
+    const previous = parseVaultPeriodFromQuestion(previousToken, REF);
+    const foodicsWindows = [];
+    const cashUpWindows = [];
+    getBatchForExportPeriod.mockImplementation(async (_type, _branch, startDate, endDate) => {
+      foodicsWindows.push({ startDate, endDate });
+      return null;
+    });
+    const supabase = {
+      from() {
+        return queryApi((filters) => {
+          if (filters["gte:period_end"]) {
+            cashUpWindows.push({ start: filters["gte:period_end"], end: filters["lte:period_start"] });
+          }
+          return { data: [], error: null };
+        }, () => {});
+      },
+    };
+    const answer = await processAskNacQuestion({
+      question,
+      supabase,
+      profile: KHOBAR_ONLY,
+      options: { referenceDate: REF },
+    });
+    expect(foodicsWindows).toEqual([{ startDate: current.startDate, endDate: current.endDate }]);
+    expect(cashUpWindows).toEqual([{ start: previous.startDate, end: previous.endDate }]);
+    const text = String(answer.directAnswer || "");
+    expect(text).toMatch(/Foodics operational\/live/);
+    expect(text).toMatch(/Cash Up/);
+    expect(text).toMatch(/not added together/);
+    expect(text).toMatch(/Khobar/);
+  });
+
+  test("an explicit Foodics comparison uses Foodics for both periods", async () => {
+    const foodicsWindows = [];
+    getBatchForExportPeriod.mockImplementation(async (_type, _branch, startDate, endDate) => {
+      foodicsWindows.push({ startDate, endDate });
+      return {
+        id: `batch-${startDate}`,
+        branch_id: "khobar",
+        period_start: startDate,
+        period_end: endDate,
+      };
+    });
+    getBatchSalesItems.mockImplementation(async () => [{ net_sales: 11101, quantity_sold: 1, raw_item_name: "Synthetic plate" }]);
+    const supabase = countingSupabase();
+    const answer = await processAskNacQuestion({
+      question: "Compare Foodics sales today vs yesterday",
+      supabase,
+      profile: KHOBAR_ONLY,
+      options: { referenceDate: REF },
+    });
+    expect(foodicsWindows).toEqual([
+      { startDate: TODAY, endDate: TODAY },
+      { startDate: YESTERDAY, endDate: YESTERDAY },
+    ]);
+    expect(supabase.calls).toEqual([]);
+    expect(String(answer.directAnswer || "")).toMatch(/Foodics/);
+    expect(String(answer.directAnswer || "")).not.toMatch(/Cash Up/);
   });
 });

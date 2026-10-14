@@ -4,7 +4,8 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
-import { describeMixedSalesResult, SALES_SOURCE } from "./salesSourcePolicy.js";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
+import { describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "./salesSourcePolicy.js";
 import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
 import {
   assessSearchMatchConfidence,
@@ -444,6 +445,23 @@ export async function getVaultFacts(
     limit,
   }: Record<string, unknown> = {},
 ) {
+  if (reportType === "cash_up") {
+    const filterRecord = filters as { branch?: unknown } | undefined;
+    const denial = salesQueryDenied(profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+      mentionedBranch: branchMention || branch,
+      filterBranch: filterRecord?.branch,
+    });
+    if (denial) {
+      return {
+        authorizationDenied: true,
+        deniedBranch: denial.deniedBranch,
+        allowedBranches: denial.allowedBranches,
+        branch: null,
+        facts: [],
+        sources: [],
+      };
+    }
+  }
   const scopedBranch = (branch as string | null) ?? resolveBranch({ branchMention, filters, profile });
   let query = supabase.from("ask_nac_structured_facts").select(FACT_SELECT);
   query = periodOverlapFilter(query, startDate as string, endDate as string);
@@ -767,7 +785,21 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       };
     }
     case VAULT_INTENTS.CASH_UP: {
-      if (context.mixedSalesSide === "yesterday") {
+      const filters = context.filters as { branch?: unknown } | undefined;
+      const denial = salesQueryDenied(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+        mentionedBranch: context.branchMention,
+        filterBranch: filters?.branch || context.branch,
+      });
+      if (denial) {
+        return {
+          authorizationDenied: true,
+          deniedBranch: denial.deniedBranch,
+          allowedBranches: denial.allowedBranches,
+          facts: [],
+          aggregation: null,
+        };
+      }
+      if (context.mixedSalesSide === "yesterday" || context.mixedSalesSide === "locked") {
         const locked = (context.vaultPeriod as VaultPeriod | undefined)?.startDate
           ? (context.vaultPeriod as VaultPeriod)
           : parseVaultPeriodFromQuestion("yesterday", (context.referenceDate as Date) || new Date());
@@ -2449,7 +2481,56 @@ function resolveRouteQuestion(route: Record<string, unknown>) {
   return String(route.question || debug?.nlu?.normalizedQuestion || "");
 }
 
+function salesBranchName(id: unknown) {
+  if (id === "khobar") return "Khobar";
+  if (id === "riyadh") return "Riyadh";
+  if (id === "jeddah") return "Jeddah";
+  return id ? String(id) : "that branch";
+}
+
+function buildSalesAuthorizationOrComparisonAnswer(
+  route: Record<string, unknown>,
+  tool: Record<string, unknown>,
+  readiness: Record<string, unknown> | null,
+): AskNacAnswer | null {
+  if (tool?.authorizationDenied) {
+    const denied = salesBranchName(tool.deniedBranch);
+    const allowed = ((tool.allowedBranches as unknown[]) || []).map(salesBranchName).filter(Boolean).join(", ") || "your assigned branch";
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: "missing_data",
+      title: "Branch not authorized",
+      directAnswer: `Your access does not include ${denied}. Sales were not retrieved. You can query: ${allowed}.`,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      missingData: [],
+      exportOptions: [],
+      warnings: [],
+    };
+  }
+  if (tool?.comparison) {
+    const directAnswer = describeAuthorizedSalesComparison(tool.comparison);
+    const incomplete = /unavailable|coverage is incomplete/i.test(directAnswer);
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: incomplete ? "missing_data" : "comparison",
+      title: "Sales comparison",
+      directAnswer,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      missingData: [],
+      exportOptions: [],
+      warnings: ["Operational and accounting figures are shown separately and are not added together."],
+    };
+  }
+  return null;
+}
+
 function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
+  const gated = buildSalesAuthorizationOrComparisonAnswer(route, tool, readiness);
+  if (gated) return gated;
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
   const aggregation = tool?.aggregation as Record<string, unknown> | null | undefined;
 
@@ -3095,6 +3176,9 @@ export function buildVaultAnswer(
   tool: Record<string, unknown> | null,
   readiness: Record<string, unknown> | null = null,
 ): AskNacAnswer {
+  if (tool?.authorizationDenied || tool?.comparison) {
+    return buildVaultCashUpAnswer(route, tool || {}, readiness);
+  }
   const documentFallback = tool?.documentFallback as Record<string, unknown> | undefined;
   if ((documentFallback?.matches as unknown[])?.length) {
     return buildVaultAnswer(

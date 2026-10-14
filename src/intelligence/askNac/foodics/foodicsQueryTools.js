@@ -15,6 +15,7 @@ import {
   parseFoodicsComparePeriods,
   parseFoodicsPeriodFromQuestion,
 } from "./foodicsPeriodParser";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 
 const DEFAULT_IMPORT_TYPE = IMPORT_TYPE.WAITER_PRODUCT_SALES;
 
@@ -100,7 +101,23 @@ function buildFoodicsToolBase({ batch, branch, period, rankingBasis, limit }) {
   };
 }
 
+function foodicsDenial(context = {}) {
+  const denial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention,
+    filterBranch: context.filters?.branch || context.branch,
+  });
+  if (!denial) return null;
+  return {
+    authorizationDenied: true,
+    deniedBranch: denial.deniedBranch,
+    allowedBranches: denial.allowedBranches,
+    missingBatch: true,
+  };
+}
+
 export async function getFoodicsSalesSummary(supabase, context = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return denied;
   const branch = resolveBranch(context);
   const period =
     context.foodicsPeriod ||

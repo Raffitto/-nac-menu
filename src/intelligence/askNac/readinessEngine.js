@@ -16,6 +16,7 @@ import {
 import { isSalesPerformanceExecutiveQuery } from "./vault/vaultSalesPerformanceIntelligence";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { canFetchCrossBranchComparison } from "../../lib/rbacQueryScope";
+import { salesQueryDenied } from "./shared/salesBranchAuthorization";
 import { branchDisplayName } from "../../dashboard/utils/rangeState";
 import { probeFoodicsBatchForPeriod } from "./foodics/foodicsQueryTools";
 import { extractDocumentSearchTerms, probeVaultCoverage } from "./vault/vaultQueryTools";
@@ -509,7 +510,11 @@ export async function assessIntentReadiness(intent, context = {}) {
   }
 
   if (isVaultDataIntent(intent)) {
-    if (context.salesSource === "mixed_today_yesterday") {
+    if (
+      context.salesSource === "mixed_today_yesterday"
+      || context.salesSource === "mixed_open_vs_completed"
+      || context.salesSource === "foodics_comparison"
+    ) {
       return {
         status: READINESS.READY,
         canQuery: true,
@@ -669,6 +674,39 @@ export async function assessIntentReadiness(intent, context = {}) {
 
   if (!context.supabase) {
     return sync;
+  }
+
+  const salesDenial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention,
+    filterBranch: context.branch,
+  });
+  if (salesDenial) {
+    const deniedName = salesDenial.deniedBranch === "riyadh"
+      ? "Riyadh"
+      : salesDenial.deniedBranch === "jeddah"
+        ? "Jeddah"
+        : salesDenial.deniedBranch === "khobar"
+          ? "Khobar"
+          : "that branch";
+    const allowed = (salesDenial.allowedBranches || [])
+      .map((id) => (id === "khobar" ? "Khobar" : id === "riyadh" ? "Riyadh" : id === "jeddah" ? "Jeddah" : id))
+      .join(", ") || "your assigned branch";
+    return {
+      status: READINESS.BLOCKED,
+      canQuery: false,
+      reasons: [`Your access does not include ${deniedName}. Sales were not retrieved. You can query: ${allowed}.`],
+      missingData: [],
+    };
+  }
+
+  if (context.salesSource === "foodics_comparison") {
+    return {
+      status: READINESS.READY,
+      canQuery: true,
+      reasons: [],
+      missingData: [],
+      note: "Both periods are queried from Foodics.",
+    };
   }
 
   const branch = context.branch ?? null;

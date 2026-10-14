@@ -54,10 +54,14 @@ test("a today versus yesterday comparison stays two sources", () => {
   for (const question of [
     "sales today vs yesterday",
     "Compare sales today vs yesterday",
-    "compare foodics sales today vs yesterday",
   ]) {
     expect(selectSalesSource(question)).toBe(SALES_SOURCE.MIXED_TODAY_YESTERDAY);
   }
+  expect(selectSalesSource("compare foodics sales today vs yesterday")).toBe(SALES_SOURCE.FOODICS_COMPARISON);
+  expect(routeAskNacIntent("compare foodics sales today vs yesterday").intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+  expect(selectSalesSource("this week vs last week")).toBe(SALES_SOURCE.MIXED_OPEN_VS_COMPLETED);
+  expect(selectSalesSource("this month vs last month")).toBe(SALES_SOURCE.MIXED_OPEN_VS_COMPLETED);
+  expect(routeAskNacIntent("compare foodics sales this week vs last week").salesSource).toBe(SALES_SOURCE.FOODICS_COMPARISON);
 });
 
 test("order count wording stays on Foodics", () => {

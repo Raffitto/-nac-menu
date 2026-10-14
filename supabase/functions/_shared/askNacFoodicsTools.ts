@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 import {
   DEFAULT_IMPORT_TYPE,
   type FoodicsPeriod,
@@ -188,7 +189,24 @@ async function loadBatchWithItems(
   return { batch, items: rawItems, aggregated };
 }
 
+function foodicsDenial(context: Record<string, unknown> = {}) {
+  const filters = context.filters as { branch?: unknown } | undefined;
+  const denial = salesQueryDenied(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+    mentionedBranch: context.branchMention,
+    filterBranch: filters?.branch || context.branch,
+  });
+  if (!denial) return null;
+  return {
+    authorizationDenied: true,
+    deniedBranch: denial.deniedBranch,
+    allowedBranches: denial.allowedBranches,
+    missingBatch: true,
+  };
+}
+
 export async function getFoodicsSalesSummary(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return denied;
   const branch = resolveBranch(context);
   const period = (context.foodicsPeriod as FoodicsPeriod) ||
     parseFoodicsPeriodFromQuestion(String(context.question || "")) ||

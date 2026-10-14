@@ -3,7 +3,7 @@
  */
 
 import { routeAskNacIntent, isFoodicsCompareIntent, isFoodicsDataIntent, ASK_NAC_INTENTS } from "./intentRouter";
-import { SALES_SOURCE } from "./shared/salesSourcePolicy";
+import { isComparisonSalesSource } from "./shared/salesSourcePolicy";
 import { executeMixedTodayYesterdaySales, lockMixedSalesRoute } from "./shared/mixedSalesExecution";
 import { assessIntentReadiness, assessIntentReadinessSync } from "./readinessEngine";
 import { runAskNacQueryTool } from "./queryTools";
@@ -100,7 +100,7 @@ export async function processAskNacQuestion({
     };
   }
   const referenceDate = options.referenceDate instanceof Date ? options.referenceDate : new Date();
-  route = lockMixedSalesRoute(route, referenceDate);
+  route = lockMixedSalesRoute(route, referenceDate, effectiveQuestion);
   route = applyReviewPeriodDefaults(route, effectiveFilters);
   const periodFallbackWarnings = [];
 
@@ -151,7 +151,7 @@ export async function processAskNacQuestion({
   const effectiveReadiness = syncBlocked.status === "blocked" ? syncBlocked : readiness;
 
   let tool = null;
-  if (effectiveReadiness.canQuery && route.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
+  if (effectiveReadiness.canQuery && isComparisonSalesSource(route.salesSource)) {
     tool = await executeMixedTodayYesterdaySales(supabase, {
       hours: route.period.hours,
       period: route.period,
@@ -198,15 +198,17 @@ export async function processAskNacQuestion({
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
   }
 
-  deterministic = await applyExecutiveIntelligenceV2({
-    supabase,
-    route: { ...route, question: effectiveQuestion },
-    tool,
-    response: deterministic,
-    userEmail,
-    profile,
-    filters: effectiveFilters,
-  });
+  if (!tool?.authorizationDenied && !tool?.comparison) {
+    deterministic = await applyExecutiveIntelligenceV2({
+      supabase,
+      route: { ...route, question: effectiveQuestion },
+      tool,
+      response: deterministic,
+      userEmail,
+      profile,
+      filters: effectiveFilters,
+    });
+  }
 
   const conversationResolution = {
     originalQuestion: prepareResult.originalQuestion,
