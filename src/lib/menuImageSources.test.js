@@ -1,14 +1,15 @@
 import { buildMenuSources } from "./menuImageSources";
 
-test("responsive sources stay on the same photo and list widths", () => {
+test("cards use a same-size WebP and the expanded photo stays original", () => {
   const sources = buildMenuSources("/menu-icons/latte.jpg", {
-    widths: [480, 960],
-    formats: ["avif", "webp"],
+    widths: [1400],
+    formats: ["webp"],
   });
   expect(sources.fallback).toBe("/menu-icons/latte.jpg");
-  expect(sources.avif).toBe("/menu-icons/latte-480.avif 480w, /menu-icons/latte-960.avif 960w");
-  expect(sources.webp).toBe("/menu-icons/latte-480.webp 480w, /menu-icons/latte-960.webp 960w");
-  expect(sources.expand).toBe("/menu-icons/latte-960.webp");
+  expect(sources.avif).toBeNull();
+  expect(sources.webp).toBe("/menu-icons/latte-1400.webp 1400w");
+  expect(sources.card).toBe("/menu-icons/latte-1400.webp");
+  expect(sources.expand).toBe("/menu-icons/latte.jpg");
 });
 
 test("unknown photos keep the original file", () => {
