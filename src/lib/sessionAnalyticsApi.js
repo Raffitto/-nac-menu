@@ -7,6 +7,7 @@ import { appendOpsNote, partitionBiNotes } from "./biOpsNotes";
 import { isTimeoutError } from "../dashboard/utils/supabaseResilience";
 import { applySessionQualityToAggregates } from "./biPayloadPatches";
 import { sessionQualityIsEmpty } from "./sessionQualityAggregate";
+import { sessionAnalyticsQueryCache } from "./branchQueryCache";
 
 function rpcParamsFromFilters(filters) {
   const selectedRange = filters?.selectedRange || "today";
@@ -67,6 +68,33 @@ async function fetchFeed(supabase, params) {
  * @param {boolean} [options.skipFeed=false] Skip activity feed (Tier-1 / overview path).
  * @param {boolean} [options.skipLiveQuality=false] Skip client menu_events quality scan.
  */
+export function sessionAnalyticsCacheName(filters = {}) {
+  return [
+    "session-analytics",
+    filters.selectedRange || "today",
+    filters.timeRangeHours ?? "",
+    filters.language || "all",
+    filters.eventType || "all",
+    filters.shift || "all",
+    filters.dayType || "all",
+    filters.role || "all",
+  ].join("|");
+}
+
+/** Repeat reads within 20s reuse the same branch rollup. After that, the next view waits for a new rollup. */
+export async function loadCachedSessionAnalytics(supabase, filters, { invalidate = false, ttlMs = 20000, ...options } = {}) {
+  const branchId = normalizeBranchForRpc(filters?.branch) || "all";
+  const name = sessionAnalyticsCacheName(filters);
+  if (invalidate) sessionAnalyticsQueryCache.invalidate(branchId, name);
+  const hit = sessionAnalyticsQueryCache.peek(branchId, name);
+  if (hit && Date.now() - hit.updatedAt < ttlMs) {
+    return { ...hit.data, updatedAt: hit.updatedAt, fromCache: true };
+  }
+  const result = await fetchSessionAnalytics(supabase, filters, options);
+  const row = sessionAnalyticsQueryCache.put(branchId, name, result);
+  return { ...result, updatedAt: row.updatedAt, fromCache: false };
+}
+
 export async function fetchSessionAnalytics(supabase, filters, options = {}) {
   const { skipFeed = false, skipLiveQuality = false } = options;
   const params = rpcParamsFromFilters(filters);

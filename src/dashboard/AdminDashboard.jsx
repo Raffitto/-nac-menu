@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from "react";
-import { motion } from "framer-motion";
+import { motion, MotionConfig } from "framer-motion";
 import {
   LayoutDashboard,
   UtensilsCrossed,
@@ -416,6 +416,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <ActiveViewProvider activeView={adminView}>
     <motion.div
       className={`admin-shell ${intelligenceFullscreen ? "admin-shell--intelligence-fullscreen" : ""} ${globalSidebarCollapsed ? "admin-shell--nav-collapsed" : ""} ${isMenuPage ? "admin-shell--menu-page" : ""}`.trim()}
@@ -701,5 +702,6 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
       </main>
     </motion.div>
     </ActiveViewProvider>
+    </MotionConfig>
   );
 }

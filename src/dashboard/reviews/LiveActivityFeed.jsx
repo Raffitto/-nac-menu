@@ -13,6 +13,7 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { branchDisplayName, rangeToSince } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
+import { useVisiblePolling } from "../../lib/useVisiblePolling";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 import { shouldCountReviewEvent } from "../utils/isProductionStaff";
 import { resolveRbacQueryBranch } from "../../lib/rbacQueryScope";
@@ -138,12 +139,15 @@ function LiveActivityFeed({ maxItems = 25 }) {
     }
   }, [maxItems, filters, rbac?.profile]);
 
+  useVisiblePolling(fetchRecent, 8000, Boolean(supabase));
+
   useEffect(() => {
     mounted.current = true;
     fetchRecent();
-    const poll = setInterval(fetchRecent, 8000);
 
-    if (!supabase) return () => clearInterval(poll);
+    if (!supabase) return () => {
+      mounted.current = false;
+    };
 
     const channel = supabase
       .channel("nac-live-activity-feed")
@@ -161,7 +165,6 @@ function LiveActivityFeed({ maxItems = 25 }) {
 
     return () => {
       mounted.current = false;
-      clearInterval(poll);
       supabase.removeChannel(channel);
     };
   }, [fetchRecent]);
