@@ -81,9 +81,9 @@ function shiftLocalDate(referenceDate, dayDelta) {
 }
 
 function resolveYearForMonth(monthIndex, explicitYear, referenceDate) {
-  let year = explicitYear ? Number(explicitYear) : referenceDate.getFullYear();
-  if (!explicitYear && monthIndex > referenceDate.getMonth()) year -= 1;
-  return year;
+  if (explicitYear) return Number(explicitYear);
+  const { year, month } = calendarYmdInTz(referenceDate, PERIOD_TZ);
+  return monthIndex > month - 1 ? year - 1 : year;
 }
 
 function formatDayMonthLabel(year, monthIndex, day) {
@@ -184,10 +184,11 @@ function monthToDateBounds(referenceDate) {
 
 function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }) {
   const n = Math.max(1, Math.floor(Number(days) || 0));
-  const end = shiftLocalDate(referenceDate, endOffset);
-  const start = shiftLocalDate(end, -(n - 1));
-  const startDate = isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate());
-  const endDate = isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate());
+  const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+  const end = addCalendarDays(today.year, today.month, today.day, endOffset);
+  const start = addCalendarDays(end.year, end.month, end.day, -(n - 1));
+  const startDate = isoDate(start.year, start.month, start.day);
+  const endDate = isoDate(end.year, end.month, end.day);
   return {
     startDate,
     endDate,
@@ -546,18 +547,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (/\blast\s+month\b/.test(q)) {
-    const shifted = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
-    return monthBounds(shifted.getFullYear(), shifted.getMonth());
+    const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+    const prev = addCalendarDays(today.year, today.month, 1, -1);
+    return monthBounds(prev.year, prev.month - 1);
   }
 
   if (/\b(this year|year to date|year-to-date|ytd)\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const startDate = isoDate(y, 1, 1);
-    const endDate = isoDate(y, referenceDate.getMonth() + 1, referenceDate.getDate());
+    const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+    const startDate = isoDate(today.year, 1, 1);
+    const endDate = isoDate(today.year, today.month, today.day);
     return {
       startDate,
       endDate,
-      label: `${y} year-to-date`,
+      label: `${today.year} year-to-date`,
       periodType: "year_to_date",
       isSingleDay: false,
       isRange: true,

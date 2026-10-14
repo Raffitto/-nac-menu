@@ -125,15 +125,35 @@ function isVaultQueryIntent(intent: string): boolean {
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
-function isBareCommerceSalesQuestion(q: string) {
-  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  const stripped = String(q || "")
+const OPERATIONAL_COMMERCE_SIGNAL =
+  /\b(items? sold|product performance|waiter sales|orders|covers|average check|avg check)\b/;
+
+function stripBranchWords(q: string) {
+  return String(q || "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/\byesterdays\b/g, "yesterday")
     .replace(/\b(khobar|riyadh|jeddah|al khobar|alkhobar|nac|branch|in|for|at|the)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return /^(sales|revenue)\s+(today|yesterday|this week|this month)$/.test(stripped)
-    || /^(today|yesterday|this week|this month)\s+(sales|revenue)$/.test(stripped);
+}
+
+function isOfficialCompletedSalesQuestion(q: string) {
+  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
+  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
+  const stripped = stripBranchWords(q);
+  return /^(sales|revenue)\s+yesterday$/.test(stripped)
+    || /^yesterday\s+(sales|revenue)$/.test(stripped);
+}
+
+function isBareCommerceSalesQuestion(q: string) {
+  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
+  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
+  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
+  if (isOfficialCompletedSalesQuestion(q)) return false;
+  const stripped = stripBranchWords(q);
+  return /^(sales|revenue)\s+today$/.test(stripped)
+    || /^today\s+(sales|revenue)$/.test(stripped);
 }
 
 const BRANCH_ALIASES: Record<string, string[]> = {
@@ -332,7 +352,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       // Reviews, operational change, and bare commerce sales are not Cash Up.
       if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return 0;
       if (isBareCommerceSalesQuestion(q)) return 0;
+      if (isOfficialCompletedSalesQuestion(q)) return 34;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -477,6 +499,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (isOfficialCompletedSalesQuestion(q)) return 0;
       if (isBareCommerceSalesQuestion(q)) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;

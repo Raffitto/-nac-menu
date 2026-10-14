@@ -311,9 +311,9 @@ describe("routing and preserved behavior", () => {
     expect(isVaultCashUpAnalyticsPeriod(period)).toBe(true);
   });
 
-  test("sales yesterday routes to commerce sales with a single day", () => {
+  test("sales yesterday routes to cash up with a single day", () => {
     const route = routeAskNacIntent("sales yesterday");
-    expect(route.intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
     expect(route.vaultPeriod?.isSingleDay).toBe(true);
   });
 });

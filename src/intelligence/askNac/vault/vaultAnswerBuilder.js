@@ -266,7 +266,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
         ...baseVaultFields(route, tool, readiness),
         answerType: ANSWER_TYPES.MISSING_DATA,
         title: `Cash-up · ${tool?.periodLabel || "query"}`,
-        directAnswer: `No cash-up structured facts matched ${tool?.periodLabel || route?.vaultPeriod?.label || "the requested period"}.`,
+        directAnswer: `No cash-up structured facts matched ${tool?.periodLabel || route?.vaultPeriod?.label || "the requested period"}. Official Cash Up is unavailable, so Foodics figures are not used. Ask for Foodics operational sales if you want that separate total.`,
         warnings: tool?.warnings || [],
       });
     }

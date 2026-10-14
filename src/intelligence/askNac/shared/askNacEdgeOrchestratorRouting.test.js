@@ -89,10 +89,21 @@ describe("Ask NAC Edge orchestrator intent routing", () => {
     expect(route.intent).not.toBe("sales_total");
   });
 
-  test('routes bare "sales yesterday" to canonical commerce sales_total', () => {
-    const route = routeQuestionViaEdgeOrchestrator("sales yesterday");
+  test.each([
+    "sales yesterday",
+    "Yesterday's sales",
+    "Khobar sales yesterday",
+    "Yesterday sales Khobar",
+    "Riyadh sales yesterday",
+  ])('routes official sales to cash up: %s', (question) => {
+    const route = routeQuestionViaEdgeOrchestrator(question);
+    expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
+    expect(route.intent).not.toBe("sales_total");
+  });
+
+  test('routes today sales to commerce because cash up is not complete yet', () => {
+    const route = routeQuestionViaEdgeOrchestrator("sales today");
     expect(route.intent).toBe("sales_total");
-    expect(route.intent).not.toBe(VAULT_CASH_UP_INTENT);
   });
 
   test('routes "delivery apps this year" to vault_cash_up_summary, not delivery_sales stub', () => {

@@ -101,16 +101,37 @@ const CASH_UP_DAY_SALES_SIGNAL =
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
-/** Bare commerce sales. Branch words may sit before or after the period. */
-function isBareCommerceSalesQuestion(q) {
-  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  const stripped = String(q || "")
+const OPERATIONAL_COMMERCE_SIGNAL =
+  /\b(items? sold|product performance|waiter sales|orders|covers|average check|avg check)\b/;
+
+function stripBranchWords(q) {
+  return String(q || "")
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/\byesterdays\b/g, "yesterday")
     .replace(/\b(khobar|riyadh|jeddah|al khobar|alkhobar|nac|branch|in|for|at|the)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return /^(sales|revenue)\s+(today|yesterday|this week|this month)$/.test(stripped)
-    || /^(today|yesterday|this week|this month)\s+(sales|revenue)$/.test(stripped);
+}
+
+/** Completed official sales. Branch words may sit before or after the period. */
+function isOfficialCompletedSalesQuestion(q) {
+  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
+  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
+  const stripped = stripBranchWords(q);
+  return /^(sales|revenue)\s+yesterday$/.test(stripped)
+    || /^yesterday\s+(sales|revenue)$/.test(stripped);
+}
+
+/** Today's sales stay on Foodics. A completed Cash Up workbook is not available yet. */
+function isBareCommerceSalesQuestion(q) {
+  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
+  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
+  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
+  if (isOfficialCompletedSalesQuestion(q)) return false;
+  const stripped = stripBranchWords(q);
+  return /^(sales|revenue)\s+today$/.test(stripped)
+    || /^today\s+(sales|revenue)$/.test(stripped);
 }
 
 const BRANCH_ALIASES = Object.freeze({
@@ -314,7 +335,9 @@ const INTENT_RULES = [
       // Reviews, operational change, and bare commerce sales are not Cash Up.
       if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return 0;
       if (isBareCommerceSalesQuestion(q)) return 0;
+      if (isOfficialCompletedSalesQuestion(q)) return 34;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -477,9 +500,10 @@ const INTENT_RULES = [
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (isOfficialCompletedSalesQuestion(q)) return 0;
       if (isBareCommerceSalesQuestion(q)) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
-      if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
+      if (/\b(sales|revenue|net sales)\s+(today|this week|this month)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) {
         return 13;
