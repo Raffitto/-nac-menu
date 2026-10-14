@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { routeAskNacIntent, ASK_NAC_INTENTS } from "../intentRouter";
-import { selectSalesSource, SALES_SOURCE, mixedSalesComparisonLabel } from "./salesSourcePolicy";
+import { selectSalesSource, SALES_SOURCE, mixedSalesComparisonLabel, mixedSalesSides } from "./salesSourcePolicy";
 
 const root = path.resolve(__dirname, "../../../..");
 const clientPolicy = fs.readFileSync(path.join(root, "src/intelligence/askNac/shared/salesSourcePolicy.js"), "utf8");
@@ -43,6 +43,35 @@ test("operational metrics stay on Foodics for a completed day", () => {
   for (const question of ["covers yesterday", "average check yesterday", "orders yesterday", "items sold yesterday", "waiter sales yesterday"]) {
     expect(selectSalesSource(question)).toBe(SALES_SOURCE.FOODICS_OPERATIONAL);
     expect(routeAskNacIntent(question).intent).not.toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+  }
+});
+
+test("a today versus yesterday comparison stays two sources", () => {
+  const sides = mixedSalesSides();
+  expect(sides.today).toBe(SALES_SOURCE.FOODICS_LIVE);
+  expect(sides.yesterday).toBe(SALES_SOURCE.CASH_UP);
+  expect(sides.comparison).toBe(SALES_SOURCE.MIXED_TODAY_YESTERDAY);
+  for (const question of [
+    "sales today vs yesterday",
+    "Compare sales today vs yesterday",
+    "compare foodics sales today vs yesterday",
+  ]) {
+    expect(selectSalesSource(question)).toBe(SALES_SOURCE.MIXED_TODAY_YESTERDAY);
+  }
+});
+
+test("order count wording stays on Foodics", () => {
+  for (const question of [
+    "order count yesterday",
+    "number of orders yesterday",
+    "orders yesterday",
+    "how many orders did we have yesterday",
+  ]) {
+    expect(selectSalesSource(question)).toBe(SALES_SOURCE.FOODICS_OPERATIONAL);
+    const route = routeAskNacIntent(question);
+    expect(route.intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.UNKNOWN);
+    expect(route.intent).not.toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
   }
 });
 

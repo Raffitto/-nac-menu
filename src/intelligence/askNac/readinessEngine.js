@@ -509,6 +509,15 @@ export async function assessIntentReadiness(intent, context = {}) {
   }
 
   if (isVaultDataIntent(intent)) {
+    if (context.salesSource === "mixed_today_yesterday") {
+      return {
+        status: READINESS.READY,
+        canQuery: true,
+        reasons: [],
+        missingData: [],
+        note: "Today and yesterday are queried from their own sources.",
+      };
+    }
     if (!context.supabase) return sync;
 
     const branch = context.branch ?? null;

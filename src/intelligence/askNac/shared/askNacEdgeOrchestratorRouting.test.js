@@ -101,6 +101,18 @@ describe("Ask NAC Edge orchestrator intent routing", () => {
     expect(route.intent).not.toBe("sales_total");
   });
 
+  test.each([
+    "order count yesterday",
+    "number of orders yesterday",
+    "orders yesterday",
+    "how many orders did we have yesterday",
+  ])("routes operational order count to Foodics: %s", (question) => {
+    const route = routeQuestionViaEdgeOrchestrator(question);
+    expect(route.intent).toBe("sales_total");
+    expect(route.intent).not.toBe("unknown");
+    expect(route.intent).not.toBe(VAULT_CASH_UP_INTENT);
+  });
+
   test('routes today sales to commerce because cash up is not complete yet', () => {
     const route = routeQuestionViaEdgeOrchestrator("sales today");
     expect(route.intent).toBe("sales_total");

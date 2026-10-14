@@ -11,7 +11,7 @@ import {
   sourceEntry,
 } from "../askNacContract";
 import { ASK_NAC_INTENTS } from "../intentRouter";
-import { mixedSalesComparisonLabel, SALES_SOURCE } from "../shared/salesSourcePolicy";
+import { describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
 import {
   collectVaultSources,
   extractDocumentSearchTerms,
@@ -74,6 +74,24 @@ function formatNumber(value) {
   const n = Number(value);
   if (Number.isFinite(n)) return n.toLocaleString();
   return String(value);
+}
+
+function finiteSales(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function foodicsNetSales(foodics) {
+  if (!foodics || foodics.missingBatch || foodics.missingPeriod) return null;
+  return finiteSales(foodics.totals?.netSales);
+}
+
+function cashUpNetSales(cashUp) {
+  const facts = cashUp?.facts || [];
+  const row = facts.find((fact) => (fact.metricKey || fact.metric_key) === "net_sales");
+  if (!row) return null;
+  return finiteSales(row.metricValue ?? row.metric_value);
 }
 
 function vaultConfidence(tool) {
@@ -262,13 +280,34 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
   const aggregation = tool?.aggregation || null;
 
   if (route?.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
-    const cashUpAvailable = Boolean(aggregation && aggregation.dayCount > 0);
+    const todayNet = foodicsNetSales(tool?.foodicsToday);
+    const yesterdayNet = cashUpNetSales(tool?.cashUpYesterday);
+    const described = describeMixedSalesResult({
+      todayDate: tool?.todayPeriod?.startDate || "today",
+      yesterdayDate: tool?.yesterdayPeriod?.startDate || "yesterday",
+      todayNetSales: todayNet,
+      yesterdayNetSales: yesterdayNet,
+    });
+    const metrics = [];
+    if (described.todayText != null) {
+      metrics.push(metricEntry(`Today ${tool?.todayPeriod?.startDate || ""}`.trim(), described.todayText, {
+        unit: "SAR",
+        source: "Foodics operational/live",
+      }));
+    }
+    if (described.yesterdayText != null) {
+      metrics.push(metricEntry(`Yesterday ${tool?.yesterdayPeriod?.startDate || ""}`.trim(), described.yesterdayText, {
+        unit: "SAR",
+        source: "Cash Up",
+      }));
+    }
     return createAskNacResponse({
       ...baseVaultFields(route, tool, readiness),
-      answerType: cashUpAvailable ? ANSWER_TYPES.METRIC : ANSWER_TYPES.MISSING_DATA,
+      answerType: todayNet == null || yesterdayNet == null ? ANSWER_TYPES.MISSING_DATA : ANSWER_TYPES.COMPARISON,
       title: "Sales today vs yesterday",
-      directAnswer: mixedSalesComparisonLabel(cashUpAvailable),
-      warnings: ["Today is not read from Cash Up, and the two sources are not added together."],
+      directAnswer: described.directAnswer,
+      keyMetrics: metrics,
+      warnings: ["Operational and accounting figures may not be directly comparable and are not added together."],
     });
   }
 

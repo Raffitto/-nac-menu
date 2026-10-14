@@ -126,6 +126,7 @@ const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
 import { SALES_SOURCE, selectSalesSource } from "./salesSourcePolicy.js";
+import { executeMixedTodayYesterdaySales, lockMixedSalesRoute } from "./mixedSalesExecution.ts";
 
 const BRANCH_ALIASES: Record<string, string[]> = {
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -1262,6 +1263,9 @@ export async function processAskNacOnEdge(
       },
     };
   }
+  const referenceDate = new Date();
+  route = lockMixedSalesRoute(route, referenceDate);
+  const mixedSalesComparison = route.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY;
 
   // Theoretical consumption: explicit client hand-off (D1, Oracle T1-T3).
   // The canonical recipe engine (src/inventory/truth) is browser JavaScript and is
@@ -1298,7 +1302,7 @@ export async function processAskNacOnEdge(
     referenceDate: new Date(),
   });
 
-  if (useFabricSpine) {
+  if (useFabricSpine && !mixedSalesComparison) {
     const spineStartedAt = performance.now();
 
     const profileAccess = (profileHint || {}) as {
@@ -1499,7 +1503,9 @@ export async function processAskNacOnEdge(
 
   // Legacy non-management path: keep planner enrichment for Foodics hijacks outside spine.
   const plannerStartedAt = performance.now();
-  const legacyAuthorized = resolveAuthorizedIntelligenceScope({
+  const legacyAuthorized = mixedSalesComparison
+    ? { scope: { primaryBranchId: route.branchMention || (mergedFilters.branch as string | null) || null } }
+    : resolveAuthorizedIntelligenceScope({
     mentionedBranch: route.branchMention || null,
     filterBranch: (mergedFilters.branch as string | null) || null,
     profile: (profileHint || {}) as {
@@ -1509,19 +1515,21 @@ export async function processAskNacOnEdge(
       allowedBranchIds?: string[] | null;
     },
   });
-  const plannerEnrichment = await enrichRouteWithManagementPlanner(
-    route as unknown as Record<string, unknown>,
-    effectiveQuestion,
-    {
-      branchHint: (legacyAuthorized.scope.primaryBranchId
-        || route.branchMention
-        || mergedFilters.branch
-        || null) as string | null,
-      conversationContext: conversationContext as Record<string, unknown> | null,
-      filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
-      referenceDate: new Date(),
-    },
-  );
+  const plannerEnrichment = mixedSalesComparison
+    ? { plannerUsed: false, plannerSource: null, applied: false, plan: null }
+    : await enrichRouteWithManagementPlanner(
+      route as unknown as Record<string, unknown>,
+      effectiveQuestion,
+      {
+        branchHint: (legacyAuthorized.scope.primaryBranchId
+          || route.branchMention
+          || mergedFilters.branch
+          || null) as string | null,
+        conversationContext: conversationContext as Record<string, unknown> | null,
+        filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
+        referenceDate,
+      },
+    );
   managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
   if (plannerEnrichment.plannerUsed) {
     route = plannerEnrichment.route as typeof route;
@@ -1562,7 +1570,20 @@ export async function processAskNacOnEdge(
 
   let tool: Record<string, unknown> | null = null;
   const selectedToolStartedAt = performance.now();
-  if (readiness.canQuery) {
+  if (readiness.canQuery && mixedSalesComparison) {
+    tool = await executeMixedTodayYesterdaySales(supabase, {
+      hours: route.period.hours,
+      period: route.period,
+      branchMention: route.branchMention,
+      filters: mergedFilters,
+      profile: profileHint,
+      branch: mergedFilters.branch,
+      question: effectiveQuestion,
+      foodicsPeriod: route.foodicsPeriod,
+      vaultPeriod: route.vaultPeriod,
+      referenceDate,
+    }) as Record<string, unknown>;
+  } else if (readiness.canQuery) {
     tool = await runQueryTool(supabase, route.intent, {
       hours: route.period.hours,
       period: route.period,

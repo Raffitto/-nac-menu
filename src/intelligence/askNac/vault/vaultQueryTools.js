@@ -29,7 +29,7 @@ import {
   shouldUseChunkedCashUpFetch,
   splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation";
-import { isVaultCashUpAnalyticsPeriod, parseVaultComparePeriodsFromQuestion } from "./vaultPeriodParser";
+import { isVaultCashUpAnalyticsPeriod, parseVaultComparePeriodsFromQuestion, parseVaultPeriodFromQuestion } from "./vaultPeriodParser";
 import {
   extractOperationalReviewTheme,
   groupOperationalMatches,
@@ -1081,9 +1081,24 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       };
     }
     case "vault_cash_up_summary": {
+      if (context.mixedSalesSide === "yesterday") {
+        const yesterday = context.vaultPeriod?.startDate
+          ? context.vaultPeriod
+          : parseVaultPeriodFromQuestion("yesterday", context.referenceDate || new Date());
+        return await getVaultFacts(supabase, {
+          ...context,
+          startDate: yesterday.startDate,
+          endDate: yesterday.endDate,
+          reportType: "cash_up",
+          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+          limit: CASH_UP_FACTS_QUERY_LIMIT,
+        });
+      }
       const question = String(context.question || "").toLowerCase();
       const vaultPeriod = context.vaultPeriod || {};
-      const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
+      const vaultCompare = context.suppressVaultCompare
+        ? null
+        : (context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || ""));
       const queryFocus = String(context.queryFocus || "");
       const performanceOverview = Boolean(context.performanceOverview);
       const hasResolvedWindow = Boolean(vaultPeriod?.startDate || vaultCompare?.current?.startDate);

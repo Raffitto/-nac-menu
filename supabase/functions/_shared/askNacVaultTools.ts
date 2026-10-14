@@ -4,7 +4,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
-import { mixedSalesComparisonLabel, SALES_SOURCE } from "./salesSourcePolicy.js";
+import { describeMixedSalesResult, SALES_SOURCE } from "./salesSourcePolicy.js";
 import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
 import {
   assessSearchMatchConfidence,
@@ -767,9 +767,24 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
       };
     }
     case VAULT_INTENTS.CASH_UP: {
+      if (context.mixedSalesSide === "yesterday") {
+        const locked = (context.vaultPeriod as VaultPeriod | undefined)?.startDate
+          ? (context.vaultPeriod as VaultPeriod)
+          : parseVaultPeriodFromQuestion("yesterday", (context.referenceDate as Date) || new Date());
+        return await getVaultFacts(supabase, {
+          ...context,
+          startDate: locked?.startDate,
+          endDate: locked?.endDate,
+          reportType: "cash_up",
+          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+          limit: CASH_UP_FACTS_QUERY_LIMIT,
+        });
+      }
       const question = String(context.question || "").toLowerCase();
-      const vaultCompare = (context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
-        || parseVaultComparePeriodsFromQuestion(String(context.question || ""));
+      const vaultCompare = context.suppressVaultCompare
+        ? null
+        : ((context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
+          || parseVaultComparePeriodsFromQuestion(String(context.question || "")));
       const queryFocus = String(context.queryFocus || context.route?.queryFocus || "");
       const performanceOverview = Boolean(context.performanceOverview || context.route?.performanceOverview);
       const hasResolvedWindow = Boolean(vaultPeriod?.startDate || vaultCompare?.current?.startDate);
@@ -2220,6 +2235,25 @@ function formatNumber(value: unknown) {
   return String(value);
 }
 
+function finiteSales(value: unknown) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function foodicsNetSales(foodics: Record<string, unknown> | null | undefined) {
+  if (!foodics || foodics.missingBatch || foodics.missingPeriod) return null;
+  const totals = foodics.totals as { netSales?: unknown } | undefined;
+  return finiteSales(totals?.netSales);
+}
+
+function cashUpNetSales(cashUp: Record<string, unknown> | null | undefined) {
+  const facts = (cashUp?.facts as Record<string, unknown>[]) || [];
+  const row = facts.find((fact) => (fact.metricKey || fact.metric_key) === "net_sales");
+  if (!row) return null;
+  return finiteSales(row.metricValue ?? row.metric_value);
+}
+
 function vaultConfidence(tool: Record<string, unknown>) {
   const sources = (tool?.vaultSources as Record<string, unknown>[]) ||
     collectVaultSources(tool?.facts as Record<string, unknown>[] || [], tool?.coverage as Record<string, unknown>[] || []);
@@ -2420,18 +2454,40 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
   const aggregation = tool?.aggregation as Record<string, unknown> | null | undefined;
 
   if (route?.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
-    const cashUpAvailable = Boolean(aggregation && (aggregation.dayCount as number) > 0);
+    const todayPeriod = tool?.todayPeriod as { startDate?: string } | undefined;
+    const yesterdayPeriod = tool?.yesterdayPeriod as { startDate?: string } | undefined;
+    const todayNet = foodicsNetSales(tool?.foodicsToday as Record<string, unknown> | undefined);
+    const yesterdayNet = cashUpNetSales(tool?.cashUpYesterday as Record<string, unknown> | undefined);
+    const described = describeMixedSalesResult({
+      todayDate: todayPeriod?.startDate || "today",
+      yesterdayDate: yesterdayPeriod?.startDate || "yesterday",
+      todayNetSales: todayNet,
+      yesterdayNetSales: yesterdayNet,
+    });
+    const metrics = [];
+    if (described.todayText != null) {
+      metrics.push(metricEntry(`Today ${todayPeriod?.startDate || ""}`.trim(), described.todayText, {
+        unit: "SAR",
+        source: "Foodics operational/live",
+      }));
+    }
+    if (described.yesterdayText != null) {
+      metrics.push(metricEntry(`Yesterday ${yesterdayPeriod?.startDate || ""}`.trim(), described.yesterdayText, {
+        unit: "SAR",
+        source: "Cash Up",
+      }));
+    }
     return {
       ...baseVaultFields(route, tool, readiness),
-      answerType: cashUpAvailable ? "metric" : "missing_data",
+      answerType: todayNet == null || yesterdayNet == null ? "missing_data" : "comparison",
       title: "Sales today vs yesterday",
-      directAnswer: mixedSalesComparisonLabel(cashUpAvailable),
-      keyMetrics: [],
+      directAnswer: described.directAnswer,
+      keyMetrics: metrics,
       insights: [],
       recommendations: [],
       missingData: [],
       exportOptions: [],
-      warnings: ["Today is not read from Cash Up, and the two sources are not added together."],
+      warnings: ["Operational and accounting figures may not be directly comparable and are not added together."],
     };
   }
 
