@@ -4,6 +4,7 @@ import NacAnalyticsSignIn from "../dashboard/components/NacAnalyticsSignIn";
 import { usePlatformSession } from "../dashboard/hooks/usePlatformSession";
 import { supabase } from "../lib/supabase";
 import InvoiceIntakeView from "./InvoiceIntakeView";
+import ManagerReceivingView from "./ManagerReceivingView";
 import IngredientMasterView from "./IngredientMasterView";
 import FoodBibleView from "./FoodBibleView";
 import InventoryTruthView from "./InventoryTruthView";
@@ -95,6 +96,8 @@ export default function InventoryApp({ embedded = false }) {
 
       {activeTab === "invoices" ? (
         <InvoiceIntakeView embedded branchId={branchId} setBranchId={setBranchId} />
+      ) : activeTab === "receiving" ? (
+        <ManagerReceivingView branchId={branchId} />
       ) : activeTab === "ingredients" ? (
         <IngredientMasterView branchId={branchId} />
       ) : activeTab === "truth" ? (
