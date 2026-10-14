@@ -44,10 +44,30 @@ console.log("NAC REVIEW ROUTING LOADED", window.location.href);
     return false;
   }
 
+  function isExactRiyadhGuestReviewQr(search) {
+    var params = new URLSearchParams(search || "");
+    var keys = [];
+    params.forEach(function (_value, key) {
+      keys.push(key);
+    });
+    if (keys.length !== 3) return false;
+    return (
+      params.get("store") === "riyadh" &&
+      params.get("role") === "guest" &&
+      params.get("app") === "review"
+    );
+  }
+
+  function shouldRedirectPrintedRiyadhGuestToMenu(search, hostname) {
+    var host = (hostname || "").toLowerCase();
+    return host === "nacmenu.netlify.app" && isExactRiyadhGuestReviewQr(search);
+  }
+
   function detectReviewQrMode(search, hostname) {
     var params = new URLSearchParams(search || "");
     var host = (hostname || "").toLowerCase();
 
+    if (shouldRedirectPrintedRiyadhGuestToMenu(search, host)) return false;
     if (params.get("app") === "review") return true;
     if (isReviewOnlyHost(host)) return true;
 
@@ -99,6 +119,14 @@ console.log("NAC REVIEW ROUTING LOADED", window.location.href);
   function applyRouting() {
     var host = (w.location.hostname || "").toLowerCase();
     var search = w.location.search || "";
+
+    if (shouldRedirectPrintedRiyadhGuestToMenu(search, host)) {
+      var menuHome = CANONICAL_REVIEW_ORIGIN + "/";
+      if (w.location.href !== menuHome) {
+        w.location.replace(menuHome);
+        return;
+      }
+    }
 
     if (shouldRedirectToCanonical(host, search)) {
       try {

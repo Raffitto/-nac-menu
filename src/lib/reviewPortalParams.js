@@ -39,6 +39,23 @@ function paramHasValue(params, key) {
   return val != null && String(val).trim() !== "";
 }
 
+/** Printed nacmenu QR that should open the menu homepage, not ReviewPortal. */
+export function isExactRiyadhGuestReviewQr(search) {
+  const params = new URLSearchParams(search || "");
+  const keys = [...params.keys()];
+  if (keys.length !== 3) return false;
+  return (
+    params.get("store") === "riyadh" &&
+    params.get("role") === "guest" &&
+    params.get("app") === "review"
+  );
+}
+
+export function shouldRedirectPrintedRiyadhGuestToMenu(search, hostname) {
+  const host = (hostname || "").toLowerCase();
+  return host === "nacmenu.netlify.app" && isExactRiyadhGuestReviewQr(search);
+}
+
 export function branchFromHostname(hostname) {
   const h = (hostname || "").toLowerCase();
   if (h.includes("khobar")) return "khobar";
@@ -87,6 +104,13 @@ export function detectReviewQrMode(search, hostname) {
         ? window.location.hostname
         : ""
   ).toLowerCase();
+
+  if (shouldRedirectPrintedRiyadhGuestToMenu(
+    search != null ? search : "",
+    host,
+  )) {
+    return false;
+  }
 
   if (params.get("app") === "review") return true;
   if (isReviewOnlyHostname(host)) return true;
