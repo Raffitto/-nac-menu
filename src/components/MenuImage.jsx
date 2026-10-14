@@ -9,23 +9,17 @@ export default function MenuImage({ src, alt = "", className = "", priority = fa
   const loading = priority ? "eager" : "lazy";
 
   return (
-    <picture>
-      {sources.avif ? (
-        <source type="image/avif" srcSet={sources.avif} sizes={sources.sizes} />
-      ) : null}
-      {sources.webp ? (
-        <source type="image/webp" srcSet={sources.webp} sizes={sources.sizes} />
-      ) : null}
-      <img
-        src={sources.fallback}
-        alt={alt}
-        className={`menu-img-fade ${loaded ? "menu-img-fade--loaded" : ""} ${className}`.trim()}
-        loading={loading}
-        fetchPriority={priority ? "high" : "auto"}
-        decoding="async"
-        draggable={false}
-        onLoad={() => setLoaded(true)}
-      />
-    </picture>
+    <img
+      src={sources.card}
+      srcSet={sources.webp || undefined}
+      sizes={sources.webp ? sources.sizes : undefined}
+      alt={alt}
+      className={`menu-img-fade ${loaded ? "menu-img-fade--loaded" : ""} ${className}`.trim()}
+      loading={loading}
+      fetchPriority={priority ? "high" : "auto"}
+      decoding="async"
+      draggable={false}
+      onLoad={() => setLoaded(true)}
+    />
   );
 }
