@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
+import { mixedSalesComparisonLabel, SALES_SOURCE } from "./salesSourcePolicy.js";
 import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
 import {
   assessSearchMatchConfidence,
@@ -2417,6 +2418,22 @@ function resolveRouteQuestion(route: Record<string, unknown>) {
 function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
   const aggregation = tool?.aggregation as Record<string, unknown> | null | undefined;
+
+  if (route?.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
+    const cashUpAvailable = Boolean(aggregation && (aggregation.dayCount as number) > 0);
+    return {
+      ...baseVaultFields(route, tool, readiness),
+      answerType: cashUpAvailable ? "metric" : "missing_data",
+      title: "Sales today vs yesterday",
+      directAnswer: mixedSalesComparisonLabel(cashUpAvailable),
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      missingData: [],
+      exportOptions: [],
+      warnings: ["Today is not read from Cash Up, and the two sources are not added together."],
+    };
+  }
 
   if (aggregation) {
     if ((aggregation.dayCount as number) === 0) {

@@ -16,7 +16,6 @@ export const BUSINESS_SEMANTICS_REPLACEMENTS: [RegExp, string][] = [
   [/\bhow much sales\b/gi, "what were net sales"],
   [/(?<!\bbranch\s)(?<!\bdelivery\s)(?<!\bnet\s)(?<!\bcategory\s)(?<!\btop\s)\bsales\b(?!\s+(?:today|yesterday|this week|this month)\b)/gi, "net sales"],
   [/\bguest count\b/gi, "guest count"],
-  [/\bcovers\b/gi, "guest count"],
   [/\bguests\b/gi, "guest count"],
   [/\bchecks\b/gi, "orders"],
   [/\baverage check\b/gi, "average spend"],

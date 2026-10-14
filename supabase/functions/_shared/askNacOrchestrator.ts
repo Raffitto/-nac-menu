@@ -125,36 +125,7 @@ function isVaultQueryIntent(intent: string): boolean {
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
-const OPERATIONAL_COMMERCE_SIGNAL =
-  /\b(items? sold|product performance|waiter sales|orders|covers|average check|avg check)\b/;
-
-function stripBranchWords(q: string) {
-  return String(q || "")
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/\byesterdays\b/g, "yesterday")
-    .replace(/\b(khobar|riyadh|jeddah|al khobar|alkhobar|nac|branch|in|for|at|the)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isOfficialCompletedSalesQuestion(q: string) {
-  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  const stripped = stripBranchWords(q);
-  return /^(sales|revenue)\s+yesterday$/.test(stripped)
-    || /^yesterday\s+(sales|revenue)$/.test(stripped);
-}
-
-function isBareCommerceSalesQuestion(q: string) {
-  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
-  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  if (isOfficialCompletedSalesQuestion(q)) return false;
-  const stripped = stripBranchWords(q);
-  return /^(sales|revenue)\s+today$/.test(stripped)
-    || /^today\s+(sales|revenue)$/.test(stripped);
-}
+import { SALES_SOURCE, selectSalesSource } from "./salesSourcePolicy.js";
 
 const BRANCH_ALIASES: Record<string, string[]> = {
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -323,6 +294,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.RECEPTION,
     score(q) {
+      if (selectSalesSource(q) === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(reservations?|covers|walk[\s-]?ins?|no[\s-]?shows?|cancellations?|reception)\b/.test(q)) return 16;
       return 0;
@@ -352,9 +324,10 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       // Reviews, operational change, and bare commerce sales are not Cash Up.
       if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
-      if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return 0;
-      if (isBareCommerceSalesQuestion(q)) return 0;
-      if (isOfficialCompletedSalesQuestion(q)) return 34;
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -499,8 +472,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
-      if (isOfficialCompletedSalesQuestion(q)) return 0;
-      if (isBareCommerceSalesQuestion(q)) return 14;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 0;
@@ -750,6 +724,7 @@ export function routeIntent(question: string, options: {
     whyMetricFocus,
     performanceOverview,
     queryFocus: salesQueryFocus,
+    salesSource: selectSalesSource(q),
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {

@@ -3,6 +3,7 @@
  * OpenAI must never choose intents; only this router does.
  */
 
+import { SALES_SOURCE, selectSalesSource } from "./shared/salesSourcePolicy";
 import { normalizeBranchId } from "../../dashboard/utils/branchIdentity";
 import { hoursToRange, MONTH_HOURS, branchDisplayName } from "../../dashboard/utils/rangeState";
 import {
@@ -100,39 +101,6 @@ const CASH_UP_DAY_SALES_SIGNAL =
   /\b(net sales|gross sales|cash sales|card sales|delivery sales|total sales|revenue)\b/;
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
-
-const OPERATIONAL_COMMERCE_SIGNAL =
-  /\b(items? sold|product performance|waiter sales|orders|covers|average check|avg check)\b/;
-
-function stripBranchWords(q) {
-  return String(q || "")
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/\byesterdays\b/g, "yesterday")
-    .replace(/\b(khobar|riyadh|jeddah|al khobar|alkhobar|nac|branch|in|for|at|the)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Completed official sales. Branch words may sit before or after the period. */
-function isOfficialCompletedSalesQuestion(q) {
-  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  const stripped = stripBranchWords(q);
-  return /^(sales|revenue)\s+yesterday$/.test(stripped)
-    || /^yesterday\s+(sales|revenue)$/.test(stripped);
-}
-
-/** Today's sales stay on Foodics. A completed Cash Up workbook is not available yet. */
-function isBareCommerceSalesQuestion(q) {
-  if (CASH_UP_INTENT_SIGNAL.test(q)) return false;
-  if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return false;
-  if (/\b(net|gross|cash|card|delivery)\s+sales\b/.test(q)) return false;
-  if (isOfficialCompletedSalesQuestion(q)) return false;
-  const stripped = stripBranchWords(q);
-  return /^(sales|revenue)\s+today$/.test(stripped)
-    || /^today\s+(sales|revenue)$/.test(stripped);
-}
 
 const BRANCH_ALIASES = Object.freeze({
   khobar: ["khobar", "al khobar", "alkhobar"],
@@ -304,6 +272,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_RECEPTION_SUMMARY,
     score(q) {
+      if (selectSalesSource(q) === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(reservations?|covers|walk[\s-]?ins?|no[\s-]?shows?|cancellations?|reception)\b/.test(q)) {
         return 16;
@@ -335,9 +304,10 @@ const INTENT_RULES = [
       // Reviews, operational change, and bare commerce sales are not Cash Up.
       if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
-      if (OPERATIONAL_COMMERCE_SIGNAL.test(q)) return 0;
-      if (isBareCommerceSalesQuestion(q)) return 0;
-      if (isOfficialCompletedSalesQuestion(q)) return 34;
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
       // Explicit ingredient-consumption wording with a date range is not a cash-up
       // question (the consumption rule already excludes cash/sales/variance terms).
@@ -500,8 +470,9 @@ const INTENT_RULES = [
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
-      if (isOfficialCompletedSalesQuestion(q)) return 0;
-      if (isBareCommerceSalesQuestion(q)) return 14;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;
@@ -721,6 +692,7 @@ export function routeAskNacIntent(question, options = {}) {
     rankChangeDirection:
       intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE ? detectRankChangeDirection(normalized.text) : null,
     vaultPeriod: parseVaultPeriodFromQuestion(normalized.text),
+    salesSource: selectSalesSource(normalized.text),
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKind(normalized.text) : null,
     debug: {

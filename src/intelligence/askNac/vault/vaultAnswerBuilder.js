@@ -11,6 +11,7 @@ import {
   sourceEntry,
 } from "../askNacContract";
 import { ASK_NAC_INTENTS } from "../intentRouter";
+import { mixedSalesComparisonLabel, SALES_SOURCE } from "../shared/salesSourcePolicy";
 import {
   collectVaultSources,
   extractDocumentSearchTerms,
@@ -259,6 +260,17 @@ export function buildVaultCoverageListAnswer(route, tool, readiness) {
 export function buildVaultCashUpAnswer(route, tool, readiness) {
   const facts = tool?.facts || [];
   const aggregation = tool?.aggregation || null;
+
+  if (route?.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
+    const cashUpAvailable = Boolean(aggregation && aggregation.dayCount > 0);
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: cashUpAvailable ? ANSWER_TYPES.METRIC : ANSWER_TYPES.MISSING_DATA,
+      title: "Sales today vs yesterday",
+      directAnswer: mixedSalesComparisonLabel(cashUpAvailable),
+      warnings: ["Today is not read from Cash Up, and the two sources are not added together."],
+    });
+  }
 
   if (aggregation) {
     if (aggregation.dayCount === 0) {
