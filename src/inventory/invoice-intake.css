@@ -12,6 +12,44 @@
 
 * { box-sizing: border-box; }
 
+.inv-receive {
+  display: grid;
+  gap: 16px;
+  max-width: 920px;
+}
+
+.inv-receive-form {
+  display: grid;
+  gap: 12px;
+}
+
+.inv-receive-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--inv-muted);
+  font-size: 13px;
+}
+
+.inv-receive-form input,
+.inv-receive-form select,
+.inv-receive-form button {
+  width: 100%;
+  min-height: 44px;
+}
+
+@media (min-width: 720px) {
+  .inv-receive-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .inv-receive-form button {
+    grid-column: 1 / -1;
+    width: auto;
+    justify-self: start;
+    padding-inline: 18px;
+  }
+}
+
 .inv-page {
   min-height: 100vh;
   padding: 28px;
