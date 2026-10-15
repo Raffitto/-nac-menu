@@ -196,6 +196,9 @@ export function canonicalCashUpSales(facts, onlyBranch) {
   const wanted = onlyBranch ? cashUpBranchKey({ branch_id: onlyBranch }) : "";
   const chosen = new Map();
   for (const fact of facts || []) {
+    const start = String(fact?.periodStart ?? fact?.period_start ?? "").trim().slice(0, 10);
+    const end = String(fact?.periodEnd ?? fact?.period_end ?? "").trim().slice(0, 10);
+    if (!start || start !== end) continue;
     const rank = cashUpFactRank(fact);
     if (!rank[0]) continue;
     const value = Number(fact.metricValue ?? fact.metric_value);

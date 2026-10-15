@@ -1,7 +1,11 @@
--- PENDING OWNER APPROVAL. Do not apply with the application change.
--- The live RPC still selects one canonical row per date across every branch.
--- This replacement keeps one canonical row per branch, date, and metric,
--- then sums those branches into the day and the period.
+-- PENDING. Not applied. Owner approval required before this SQL is run.
+-- Replaces get_vault_cash_up_range_aggregate from 20260925190000.
+-- One canonical Cash Up fact per branch, business date, and metric.
+-- Only single-day rows are counted: period_start must equal period_end.
+-- Monthly and other multi-day summary rows are excluded.
+-- Branch totals are summed. Revisions of the same branch-day are not summed.
+-- EXECUTE is revoked from public and anon.
+-- Rollback: 20261015120100_cash_up_range_sum_branches_rollback.sql
 -- Review QR objects are not modified.
 
 create or replace function public.get_vault_cash_up_range_aggregate(
@@ -77,6 +81,7 @@ begin
       and f.period_start <= p_end_date
       and f.period_end >= p_start_date
       and (p_branch_id is null or f.branch_id = p_branch_id)
+      and f.period_start = f.period_end
       and f.archived_at is null
     order by
       f.branch_id,
@@ -241,4 +246,8 @@ end;
 $$;
 
 comment on function public.get_vault_cash_up_range_aggregate(date, date, text, boolean) is
-  'Cash-up range totals summed across distinct branches and business dates. Not applied until owner approval.';
+  'Cash-up range totals from single-day facts only, summed across authorized branches. Pending owner approval.';
+
+revoke all on function public.get_vault_cash_up_range_aggregate(date, date, text, boolean) from public;
+revoke all on function public.get_vault_cash_up_range_aggregate(date, date, text, boolean) from anon;
+grant execute on function public.get_vault_cash_up_range_aggregate(date, date, text, boolean) to authenticated;

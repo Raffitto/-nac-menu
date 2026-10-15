@@ -13,6 +13,13 @@ function resolveBusinessDate(fact: FactRow) {
   return text || null;
 }
 
+/** A daily Cash Up fact covers exactly one business date. Month and range summaries do not. */
+export function isSingleDayCashUpFact(fact: FactRow) {
+  const start = String(fact?.periodStart ?? fact?.period_start ?? "").trim().slice(0, 10);
+  const end = String(fact?.periodEnd ?? fact?.period_end ?? "").trim().slice(0, 10);
+  return Boolean(start) && start === end;
+}
+
 function branchKeyOf(fact: FactRow) {
   const raw = String(fact?.branchId ?? fact?.branch_id ?? "").toLowerCase();
   if (raw.includes("khobar")) return "khobar";
@@ -151,6 +158,7 @@ export function aggregateDeliveryPlatformBreakdown(
 export function groupCashUpFactsByBusinessDate(facts: FactRow[] = []) {
   const groups: Record<string, FactRow[]> = {};
   for (const fact of facts) {
+    if (!isSingleDayCashUpFact(fact)) continue;
     const date = resolveBusinessDate(fact);
     if (!date) continue;
     if (!groups[date]) groups[date] = [];
@@ -382,7 +390,12 @@ export function aggregateCashUpFactsOverRange({
   includeDailyBreakdown?: boolean;
 }): CashUpRangeAggregation {
   void branchId;
-  const dates = Object.keys(factsByDate)
+  const dailyFactsByDate: Record<string, FactRow[]> = {};
+  for (const [date, rows] of Object.entries(factsByDate)) {
+    const daily = (rows || []).filter(isSingleDayCashUpFact);
+    if (daily.length) dailyFactsByDate[date] = daily;
+  }
+  const dates = Object.keys(dailyFactsByDate)
     .filter((date) => (!startDate || date >= startDate) && (!endDate || date <= endDate))
     .sort();
 
@@ -392,7 +405,7 @@ export function aggregateCashUpFactsOverRange({
   }
 
   const dailyMeasured = dates.map((date) => {
-    const dayFacts = factsByDate[date] || [];
+    const dayFacts = dailyFactsByDate[date] || [];
     const sales = sumDaySales(dayFacts);
     const guests = sumCanonicalMetricAcrossBranches(dayFacts, "guest_count");
     const orders = sumCanonicalMetricAcrossBranches(dayFacts, "order_count");
@@ -431,7 +444,7 @@ export function aggregateCashUpFactsOverRange({
     averageSpend = totalSales / totalGuests;
   }
 
-  const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
+  const platformAgg = aggregateDeliveryPlatformBreakdown(dailyFactsByDate, startDate, endDate);
 
   const salesDates = dailyMeasured.filter((row) => row.totalSales != null).map((row) => row.date);
   const deliveryOrderDates = dailyMeasured.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date);

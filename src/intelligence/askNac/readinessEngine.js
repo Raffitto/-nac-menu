@@ -51,8 +51,12 @@ function foodicsMissingMessage({ startDate, endDate, branch, periodLabel }) {
 }
 
 function vaultMissingMessage({ periodLabel, branch, reportTypes = [] }) {
+  const period = periodLabel || "the requested period";
+  if (reportTypes.length === 1 && reportTypes[0] === "cash_up") {
+    return `Official Cash Up is unavailable for ${period} for ${branchLabel(branch)}. Foodics figures are not used.`;
+  }
   const types = reportTypes.length ? reportTypes.join(", ") : "uploaded reports";
-  return `No Data Vault coverage for ${types} on ${periodLabel || "the requested period"} for ${branchLabel(branch)}. Upload matching files in Ask NAC Data Vault.`;
+  return `No Data Vault coverage for ${types} on ${period} for ${branchLabel(branch)}. Upload matching files in Ask NAC Data Vault.`;
 }
 
 function vaultCrossBranchBlocked(branchMention, profile) {

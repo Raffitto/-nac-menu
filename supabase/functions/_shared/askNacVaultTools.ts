@@ -85,6 +85,7 @@ import {
   coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
+  isSingleDayCashUpFact,
   shouldSkipDailyBreakdownForRange,
   shouldSkipDailyBreakdownForSimpleMetric,
   shouldUseChunkedCashUpFetch,
@@ -656,7 +657,9 @@ export async function getVaultCashUpAggregationFacts(
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
-  const facts = (data || []).map((row) => mapVaultAggregationFactRow(row as Record<string, unknown>));
+  const facts = (data || [])
+    .map((row) => mapVaultAggregationFactRow(row as Record<string, unknown>))
+    .filter(isSingleDayCashUpFact);
   return {
     branch: scopedBranch,
     branchLabel: scopedBranch ? branchDisplayName(scopedBranch) : "Network",
@@ -1485,45 +1488,6 @@ async function fetchCashUpAggregationFactsResilient(
   };
 }
 
-async function commerceOrderSales(
-  supabase: SupabaseClient,
-  branch: string | null,
-  start: string | null | undefined,
-  end: string | null | undefined,
-) {
-  if (!start || !end) return null;
-  let query = supabase
-    .from("commerce_orders")
-    .select("business_date, net_sales, covers")
-    .gte("business_date", start)
-    .lte("business_date", end)
-    .limit(8000);
-  if (branch) query = query.eq("branch_id", branch);
-  const { data, error } = await query;
-  if (error || !data?.length || data.length >= 8000) return null;
-  const days = new Set<string>();
-  let totalSales = 0;
-  let totalGuests = 0;
-  let latest = "";
-  for (const row of data) {
-    const day = String(row.business_date || "");
-    if (day) days.add(day);
-    totalSales += Number(row.net_sales) || 0;
-    totalGuests += Number(row.covers) || 0;
-    if (day > latest) latest = day;
-  }
-  if (!days.size) return null;
-  return {
-    dayCount: days.size,
-    totalSales,
-    totalGuests,
-    totalOrders: data.length,
-    averageSpend: totalGuests > 0 ? totalSales / totalGuests : null,
-    latestCompletedDate: latest,
-    salesSource: "commerce_orders",
-  };
-}
-
 async function fetchCashUpRangeBundle(
   supabase: SupabaseClient,
   context: Record<string, unknown>,
@@ -1674,30 +1638,10 @@ async function fetchCashUpRangeBundle(
   }
 
   if (aggregation.dayCount === 0) {
-    const commerce = await commerceOrderSales(supabase, scopedBranch, resolvedStart, resolvedEnd);
-    if (commerce) {
-      aggregation = enrichCashUpAggregationCoverageMeta({
-        ...aggregation,
-        ...commerce,
-        salesSource: "commerce_orders",
-        salesCoverageStart: resolvedStart,
-        salesCoverageEnd: commerce.latestCompletedDate || resolvedEnd,
-      }, resolvedStart, resolvedEnd) as Record<string, unknown>;
-      warnings.push("Cash-up files do not cover this range. Totals are from commerce orders, not a Cash Up workbook.");
-      if (coverage[0]) {
-        coverage = [{
-          ...coverage[0],
-          availableDays: commerce.dayCount,
-          availableRecords: commerce.dayCount,
-          freshness: commerce.latestCompletedDate,
-        }];
-      }
-    } else {
-      warnings.push("No structured cash-up facts matched this date range under your access scope.");
-      const latestCompletedDate = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
-      if (latestCompletedDate && latestCompletedDate !== resolvedStart && latestCompletedDate !== resolvedEnd) {
-        aggregation = { ...aggregation, latestCompletedDate };
-      }
+    warnings.push("Official Cash Up is unavailable for this date range. Foodics and commerce orders were not substituted.");
+    const latestCompletedDate = await resolveLatestCompletedCashUpDate(supabase, scopedBranch);
+    if (latestCompletedDate && latestCompletedDate !== resolvedStart && latestCompletedDate !== resolvedEnd) {
+      aggregation = { ...aggregation, latestCompletedDate };
     }
   } else if (aggregation.dayCount < 2 && isVaultCashUpAnalyticsPeriod(resolvedPeriod || null)) {
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
@@ -2698,10 +2642,6 @@ function buildVaultCashUpAnswer(route: Record<string, unknown>, tool: Record<str
       aggregation as never,
       (route?.vaultPeriod as { label?: string; periodType?: string }) || { label: String(tool.periodLabel || ""), periodType: (route?.vaultPeriod as { periodType?: string })?.periodType },
     ) || directAnswer;
-    if (aggregation.salesSource === "commerce_orders") {
-      directAnswer = `Cash-up files do not cover this period. Commerce orders for ${spokenPeriod}: ${directAnswer}`;
-    }
-
     const isPlatformQuery = isDeliveryPlatformPeriodQuery(question) && !previousAggregation;
     const isPerformanceOverview =
       Boolean(route.performanceOverview)

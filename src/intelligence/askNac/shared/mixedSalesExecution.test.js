@@ -510,6 +510,16 @@ describe("operational sales authorization", () => {
                 file_version_id: "workbook-v2",
                 created_at: "2026-10-14T01:00:00Z",
               },
+              {
+                branch_id: branchId,
+                report_type: "cash_up",
+                metric_key: "net_sales",
+                metric_value: 100499,
+                period_start: "2026-10-01",
+                period_end: YESTERDAY,
+                file_version_id: "month-summary",
+                created_at: "2026-10-14T02:00:00Z",
+              },
             ],
             error: null,
           };
@@ -529,6 +539,7 @@ describe("operational sales authorization", () => {
     expect(text).toMatch(/Company official Cash Up total: 700 SAR/);
     expect(text).toMatch(/Company Foodics operational\/live total: 70 SAR/);
     expect(text).not.toMatch(/9,999/);
+    expect(text).not.toMatch(/100,499/);
     expect(text).not.toMatch(/\b770\b/);
     expect(text).toMatch(/not added together/i);
     expect(text).toMatch(new RegExp(YESTERDAY));
