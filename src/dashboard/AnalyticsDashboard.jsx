@@ -494,7 +494,7 @@ export default function AnalyticsDashboard() {
               >
                 <div className="flex items-center gap-2 text-xs text-white/50 mb-3">
                   <Zap size={14} className="text-gold" />
-                  Avg time spent
+                  Avg recorded duration
                 </div>
                 <div className="nac-an__stat-value text-3xl">
                   {avgTimeSpent >= 60

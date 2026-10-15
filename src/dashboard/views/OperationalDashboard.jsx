@@ -424,10 +424,10 @@ function OperationalDashboardBody(props) {
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
           <p className="nac-bi-exec-label">
-            <Timer size={13} /> Avg Session
+            <Timer size={13} /> Avg recorded duration
           </p>
           <p className="nac-bi-exec-value">{avgTimeSpent > 0 ? formatDuration(avgTimeSpent) : "—"}</p>
-          <p className="nac-bi-exec-sub">Time on menu</p>
+          <p className="nac-bi-exec-sub">Positive samples only. Zeros excluded.</p>
         </motion.div>
         <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
           <p className="nac-bi-exec-label">

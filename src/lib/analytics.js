@@ -238,7 +238,12 @@ export function trackSectionOpen({
   });
 }
 
-/** Add-on opened from item modal. */
+/**
+ * Historical duplicate of the modal's add_on_click.
+ * Do not call this beside trackEvent for the same click. The shadow is
+ * metadata.source = add_on_open. Rankings ignore that shadow only when the
+ * real click is also present.
+ */
 export function trackAddOnOpen({ language, categoryId, sectionTitleEn, menuItem, addOn }) {
   trackEvent({
     event_type: "add_on_click",

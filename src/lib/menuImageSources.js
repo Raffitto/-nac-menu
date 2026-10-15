@@ -24,3 +24,15 @@ export function menuImageSources(src) {
   const key = src.startsWith("/") ? src : `/${src}`;
   return buildMenuSources(src, manifest.images?.[key] || null);
 }
+
+/** Display URL for a customization photo. Uses an existing same-size WebP only when one is published. */
+export function customizationDisplaySrc(src) {
+  const sources = menuImageSources(src);
+  const display = sources.card || src || "";
+  const fallback = sources.expand || sources.fallback || src || "";
+  return {
+    display,
+    fallback,
+    usesVariant: Boolean(sources.webp) && display !== fallback,
+  };
+}
