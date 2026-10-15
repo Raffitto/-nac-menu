@@ -126,6 +126,36 @@ describe("menu event detail aggregation", () => {
     expect(aggregateMenuEventDetails(FIXTURE)).toEqual(aggregateMenuEventDetails(FIXTURE));
   });
 
+  test("two real clicks inside the three-second window both count", () => {
+    const rows = [
+      event({
+        event_type: "add_on_click",
+        item_name_en: "Rigatoni Pink Sauce",
+        add_on_name: "Add Chicken",
+        created_at: "2026-10-14T12:00:00.000Z",
+      }),
+      event({
+        event_type: "add_on_click",
+        item_name_en: "Rigatoni Pink Sauce",
+        add_on_name: "Add Chicken",
+        created_at: "2026-10-14T12:00:02.000Z",
+      }),
+    ];
+    const result = summarizeMenuEventDetails(aggregateMenuEventDetails(rows));
+    expect(result.top_addon_pairs[0].clicks).toBe(2);
+  });
+
+  test("a missing duration is excluded from the average", () => {
+    const rows = [
+      event({ event_type: "time_spent", metadata: { duration_seconds: 80 } }),
+      event({ event_type: "time_spent", session_id: "s2", metadata: {} }),
+    ];
+    const result = summarizeMenuEventDetails(aggregateMenuEventDetails(rows));
+    expect(result.avg_time_spent).toBe(80);
+    expect(result.duration_samples).toBe(1);
+    expect(result.duration_note).toMatch(/excluded/i);
+  });
+
   test("two real clicks ten seconds apart both count", () => {
     const rows = [
       event({

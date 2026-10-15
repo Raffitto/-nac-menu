@@ -264,7 +264,7 @@ export function summarizeMenuEventDetails(detailRows = [], { branch = null, lang
   const languages = { en: 0, ar: 0, unknown: 0 };
   for (const row of detailRows) {
     if (scope.branch && row.branchId !== scope.branch) continue;
-    if (row.kind === "duration") {
+    if (row.kind === "duration" && matchesScope(row, scope)) {
       durationSum += row.metricSum;
       durationCount += row.eventCount;
     }
@@ -281,6 +281,8 @@ export function summarizeMenuEventDetails(detailRows = [], { branch = null, lang
     top_searches: topSearches,
     top_addon_pairs: topAddonPairs,
     avg_time_spent: durationCount > 0 ? Math.round(durationSum / durationCount) : 0,
+    duration_samples: durationCount,
+    duration_note: "Average of recorded positive durations only. Zero and missing durations are excluded.",
     lang_behavior: {
       en: langEntry(languages.en),
       ar: langEntry(languages.ar),

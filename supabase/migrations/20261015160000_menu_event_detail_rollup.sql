@@ -49,6 +49,11 @@ begin
     return 0;
   end if;
 
+  -- Same lock as the cron refresh. A second request in this transaction succeeds.
+  -- A concurrent cron uses try-lock and returns 0 instead of failing.
+  -- A cancelled call rolls back, so the previous detail rows stay and the range can be rerun.
+  perform pg_advisory_xact_lock(88442201);
+
   delete from public.menu_events_detail_daily
   where day_key >= p_from
     and day_key <= p_to;
@@ -279,6 +284,10 @@ as $detail$
       from scoped
       where kind = 'duration'
     ), 0),
+    'duration_samples', coalesce((
+      select sum(event_count)::bigint from scoped where kind = 'duration'
+    ), 0),
+    'duration_note', 'Average of recorded positive durations only. Zero and missing durations are excluded.',
     'lang_behavior', jsonb_build_object(
       'en', jsonb_build_object(
         'sessions', coalesce((select sum(session_count)::bigint from scoped where kind = 'language' and key1 = 'en'), 0),
