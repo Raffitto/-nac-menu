@@ -2,6 +2,8 @@
  * Branch memory retrieval for Ask NAC executive intelligence.
  */
 
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
+
 const MEMORY_SELECT = "id, branch_id, category, fact, priority";
 
 /**
@@ -10,7 +12,9 @@ const MEMORY_SELECT = "id, branch_id, category, fact, priority";
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ branch?: string|null, categories?: string[] }} params
  */
-export async function fetchBranchMemory(supabase, { branch, categories } = {}) {
+export async function fetchBranchMemory(supabase, { branch, categories, profile } = {}) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return { branch: branch || null, memories: [], sources: [], authorizationDenied: true };
   if (!branch) return { branch: null, memories: [], sources: [] };
 
   let query = supabase

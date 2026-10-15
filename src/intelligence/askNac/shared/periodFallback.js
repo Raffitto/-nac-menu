@@ -7,6 +7,7 @@ import { getLatestBatchByType } from "../../../lib/foodicsApi";
 import { IMPORT_TYPE } from "../../../dashboard/config/foodicsImportTypes";
 import { MONTH_HOURS } from "../../../dashboard/utils/rangeState";
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
+import { salesQueryDenied } from "./salesBranchAuthorization";
 
 const DEFAULT_IMPORT_TYPE = IMPORT_TYPE.WAITER_PRODUCT_SALES;
 
@@ -74,6 +75,13 @@ export async function resolveFoodicsPeriodWithFallback(
   }
 
   if (supabase) {
+    const denial = salesQueryDenied(profile, {
+      mentionedBranch: branch,
+      filterBranch: filters.branch || branch,
+    });
+    if (denial) {
+      return { period: null, source: null, warnings: [] };
+    }
     const scopedBranch = resolveRbacQueryBranch(profile, branch);
     try {
       const batch = await getLatestBatchByType(DEFAULT_IMPORT_TYPE, scopedBranch, profile);

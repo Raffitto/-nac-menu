@@ -34,10 +34,26 @@ function finiteSales(value: unknown) {
 
 function cashUpValue(result: Record<string, unknown> | null) {
   if (!result || result.authorizationDenied) return null;
+  const aggregation = result.aggregation as { totalSales?: number | null } | null | undefined;
+  if (aggregation?.totalSales != null) return finiteSales(aggregation.totalSales);
   const facts = (result.facts as Record<string, unknown>[]) || [];
-  const row = facts.find((fact) => fact.metricKey === "net_sales" || fact.metric_key === "net_sales");
-  if (!row) return null;
-  return finiteSales(row.metricValue ?? row.metric_value);
+  const chosen = new Map<string, { rank: number; value: number }>();
+  for (const fact of facts) {
+    const keyName = String(fact.metricKey || fact.metric_key || "");
+    const rank = keyName === "net_sales" ? 3 : keyName === "total_sales" ? 2 : keyName === "gross_sales" ? 1 : 0;
+    if (!rank) continue;
+    const date = String(fact.periodEnd || fact.period_end || fact.periodStart || fact.period_start || "").slice(0, 10);
+    const branch = String(fact.branchId || fact.branch_id || "").toLowerCase();
+    const value = finiteSales(fact.metricValue ?? fact.metric_value);
+    if (value == null) continue;
+    const slot = `${branch}|${date}`;
+    const prev = chosen.get(slot);
+    if (!prev || rank > prev.rank) chosen.set(slot, { rank, value });
+  }
+  if (!chosen.size) return null;
+  let sum = 0;
+  for (const row of chosen.values()) sum += row.value;
+  return sum;
 }
 
 function foodicsValue(result: Record<string, unknown> | null) {
@@ -120,7 +136,7 @@ export async function executeMixedTodayYesterdaySales(
     filterBranch: filters?.branch || context.branch,
   });
 
-  if (profile && !decision.ok) {
+  if (!decision.ok) {
     return {
       authorizationDenied: true,
       deniedBranch: decision.deniedBranch,

@@ -15,7 +15,7 @@ import {
   parseFoodicsComparePeriods,
   parseFoodicsPeriodFromQuestion,
 } from "./foodicsPeriodParser";
-import { salesQueryDenied } from "../shared/salesBranchAuthorization";
+import { authorizeSalesBranches, salesQueryDenied } from "../shared/salesBranchAuthorization";
 
 const DEFAULT_IMPORT_TYPE = IMPORT_TYPE.WAITER_PRODUCT_SALES;
 
@@ -168,6 +168,8 @@ export async function getFoodicsSalesSummary(supabase, context = {}) {
 }
 
 export async function getFoodicsTopItems(supabase, context = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, topItems: [] };
   const branch = resolveBranch(context);
   const period =
     context.foodicsPeriod ||
@@ -201,6 +203,8 @@ export async function getFoodicsTopItems(supabase, context = {}) {
 }
 
 export async function compareFoodicsTopItems(supabase, context = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, topItems: [] };
   const branch = resolveBranch(context);
   const compare =
     context.foodicsCompare ||
@@ -266,6 +270,8 @@ export async function compareFoodicsTopItems(supabase, context = {}) {
 }
 
 export async function getFoodicsCategorySales(supabase, context = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, categories: [] };
   const branch = resolveBranch(context);
   const period =
     context.foodicsPeriod ||
@@ -316,6 +322,18 @@ export async function getFoodicsCategorySales(supabase, context = {}) {
 
 /** Branch-level totals when multiple branch batches overlap a period label. */
 export async function getFoodicsBranchSalesComparison(supabase, context = {}) {
+  const decision = authorizeSalesBranches(context.profile, {
+    mentionedBranch: context.branchMention,
+    filterBranch: context.filters?.branch || context.branch,
+  });
+  if (!decision.ok) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: decision.deniedBranch,
+      allowedBranches: decision.allowedBranches,
+      branches: [],
+    };
+  }
   const period =
     context.foodicsPeriod ||
     parseFoodicsPeriodFromQuestion(context.question || "") ||
@@ -325,9 +343,14 @@ export async function getFoodicsBranchSalesComparison(supabase, context = {}) {
     return { missingPeriod: true, branches: [] };
   }
 
-  const batches = await getImportBatches(50, DEFAULT_IMPORT_TYPE, context.profile);
+  const batches = await getImportBatches(50, DEFAULT_IMPORT_TYPE, context.profile, {
+    branchId: decision.branches.length === 1 ? decision.branches[0] : null,
+  });
+  const allowed = new Set(decision.branches);
   const matching = (batches || []).filter(
-    (b) => b.period_start <= period.endDate && b.period_end >= period.startDate,
+    (b) => allowed.has(String(b.branch_id || "").toLowerCase())
+      && b.period_start <= period.endDate
+      && b.period_end >= period.startDate,
   );
 
   const branches = [];
@@ -356,6 +379,8 @@ export async function getFoodicsBranchSalesComparison(supabase, context = {}) {
 }
 
 export async function probeFoodicsBatchForPeriod(supabase, { branch, startDate, endDate, profile }) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return null;
   if (!startDate || !endDate) return null;
   return getBatchForExportPeriod(DEFAULT_IMPORT_TYPE, branch, startDate, endDate, profile);
 }

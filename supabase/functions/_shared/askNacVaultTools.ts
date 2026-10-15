@@ -81,6 +81,7 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  countCalendarDaysInRange,
   coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
@@ -560,6 +561,23 @@ export async function getVaultCoverage(
     slim = false,
   }: Record<string, unknown> = {},
 ) {
+  if (!reportType || reportType === "cash_up") {
+    const filterRecord = filters as { branch?: unknown } | undefined;
+    const denial = salesQueryDenied(profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+      mentionedBranch: branchMention || branch,
+      filterBranch: filterRecord?.branch || branch,
+    });
+    if (denial) {
+      return {
+        authorizationDenied: true,
+        deniedBranch: denial.deniedBranch,
+        allowedBranches: denial.allowedBranches,
+        branch: null,
+        coverage: [],
+        sources: [],
+      };
+    }
+  }
   const scopedBranch = (branch as string | null) ?? resolveBranch({ branchMention, filters, profile });
   const cacheKey = {
     branch: scopedBranch,
@@ -755,6 +773,20 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
     case VAULT_INTENTS.COVERAGE_LIST:
       return getVaultReportSources(supabase, context);
     case VAULT_INTENTS.BUSINESS_REASONING: {
+      const reasoningFilters = context.filters as { branch?: unknown } | undefined;
+      const reasoningDenial = salesQueryDenied(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+        mentionedBranch: context.branchMention,
+        filterBranch: reasoningFilters?.branch || context.branch,
+      });
+      if (reasoningDenial) {
+        return {
+          authorizationDenied: true,
+          deniedBranch: reasoningDenial.deniedBranch,
+          allowedBranches: reasoningDenial.allowedBranches,
+          facts: [],
+          aggregation: null,
+        };
+      }
       const vaultCompare = (context.vaultCompare as { current?: VaultPeriod; previous?: VaultPeriod } | null)
         || parseVaultComparePeriodsFromQuestion(String(context.question || ""));
       const vaultPeriod = (context.vaultPeriod as VaultPeriod | undefined)?.startDate
@@ -774,7 +806,7 @@ export async function runVaultQueryTool(supabase: SupabaseClient, intent: string
           vaultCompare: cashUp.vaultCompare || vaultCompare,
           vaultPeriod,
         }),
-        fetchExecutiveMemory(supabase, { branch: cashUp.branch as string | null }),
+        fetchExecutiveMemory(supabase, { branch: cashUp.branch as string | null, profile: context.profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null }),
       ]);
       return {
         ...cashUp,
@@ -1242,6 +1274,22 @@ export async function resolveLatestCashUpBusinessDate(
 }
 
 export async function getVaultCashUpFactsOverRange(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const rangeFilters = context.filters as { branch?: unknown } | undefined;
+  const rangeDenial = salesQueryDenied(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+    mentionedBranch: context.branchMention,
+    filterBranch: rangeFilters?.branch || context.branch,
+  });
+  if (rangeDenial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: rangeDenial.deniedBranch,
+      allowedBranches: rangeDenial.allowedBranches,
+      facts: [],
+      aggregation: null,
+      coverage: [],
+      sources: [],
+    };
+  }
   const vaultPeriod = (context.vaultPeriod as VaultPeriod | undefined) || undefined;
   const startDate = vaultPeriod?.startDate;
   const endDate = vaultPeriod?.endDate;
@@ -1510,7 +1558,8 @@ async function fetchCashUpRangeBundle(
   const resolvedDailyBreakdown = includeDailyBreakdown
     ?? !shouldSkipDailyBreakdownForRange(resolvedStart, resolvedEnd, resolvedPeriod?.periodType);
 
-  const useRpc = shouldUseCashUpRangeRpc({
+  const spanDays = countCalendarDaysInRange(resolvedStart, resolvedEnd);
+  const useRpc = spanDays > 30 && shouldUseCashUpRangeRpc({
     startDate: resolvedStart,
     endDate: resolvedEnd,
     periodType: resolvedPeriod?.periodType,
@@ -1651,8 +1700,12 @@ async function fetchCashUpRangeBundle(
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
 
+  const coveredBranchLabel = !scopedBranch && (aggregation as { branchCoverageLabel?: string | null })?.branchCoverageLabel
+    ? (aggregation as { branchCoverageLabel?: string | null }).branchCoverageLabel
+    : factsResult.branchLabel;
   return {
     ...factsResult,
+    branchLabel: coveredBranchLabel,
     periodLabel: resolvedPeriod?.label || `${resolvedStart} – ${resolvedEnd}`,
     coverage,
     vaultSources: collectVaultSources((factsResult.facts as Record<string, unknown>[]) || [], coverage),
@@ -1665,6 +1718,22 @@ async function fetchCashUpRangeBundle(
 }
 
 export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const latestFilters = context.filters as { branch?: unknown } | undefined;
+  const latestDenial = salesQueryDenied(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+    mentionedBranch: context.branchMention,
+    filterBranch: latestFilters?.branch || context.branch,
+  });
+  if (latestDenial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: latestDenial.deniedBranch,
+      allowedBranches: latestDenial.allowedBranches,
+      facts: [],
+      coverage: [],
+      vaultSources: [],
+      periodLabel: "latest cash-up",
+    };
+  }
   const scopedBranch = resolveBranch(context);
   const selectedTool = "getLatestVaultCashUpFacts";
   const productionTrace = createEmptyCashUpProductionTrace();

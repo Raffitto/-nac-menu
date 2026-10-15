@@ -7,6 +7,7 @@ import { getVaultCoverage, getVaultFacts } from "../vault/vaultQueryTools";
 import { fetchManualInputsForPeriod } from "../executive/manualInputs";
 import { fetchCashUpRangeAggregationViaRpc } from "../vault/vaultCashUpRangeRpc";
 import { computeKnowledgeHealth } from "./knowledgeHealthEngine";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 import { summarizeCompilerStageDiagnostics } from "./compilerStageDiagnostics";
 
 const INGESTION_SELECT = "id, status, stage, error, finished_at, compiler_stage, compiler_stages, compilation_manifest, file_id, ask_nac_files!inner(id, title, primary_branch_id, report_type)";
@@ -65,6 +66,17 @@ export async function gatherKnowledgeHealthSnapshot(supabase, context = {}) {
 
   const branch = context.branch || context.branchMention || context.filters?.branch || null;
   const branchLabel = branch ? branchDisplayName(branch) : "Network";
+  const denial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention || branch,
+    filterBranch: context.filters?.branch || branch,
+  });
+  if (denial) {
+    return computeKnowledgeHealth({
+      branch,
+      branchLabel,
+      disclosures: ["Coverage and Cash Up were not read because branch access was not authorized."],
+    });
+  }
   const period = resolvePeriod(context);
   const ingestionSince = addDays(period.endDate, -30);
 

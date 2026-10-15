@@ -5,10 +5,10 @@
 import { fetchBranchMemory } from "./branchMemory";
 import { fetchOperatorMemory } from "./operatorMemory";
 
-export async function fetchExecutiveMemory(supabase, { branch } = {}) {
+export async function fetchExecutiveMemory(supabase, { branch, profile } = {}) {
   const [branchResult, operatorResult] = await Promise.all([
-    fetchBranchMemory(supabase, { branch }),
-    fetchOperatorMemory(supabase, { branch }),
+    fetchBranchMemory(supabase, { branch, profile }),
+    fetchOperatorMemory(supabase, { branch, profile }),
   ]);
 
   const branchMemories = (branchResult.memories || []).map((m) => ({

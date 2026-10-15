@@ -3,7 +3,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
-import { salesQueryDenied } from "./salesBranchAuthorization.ts";
+import { authorizeSalesBranches, salesQueryDenied } from "./salesBranchAuthorization.ts";
 import {
   DEFAULT_IMPORT_TYPE,
   type FoodicsPeriod,
@@ -241,6 +241,8 @@ export async function getFoodicsSalesSummary(supabase: SupabaseClient, context: 
 }
 
 export async function getFoodicsTopItems(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, topItems: [] };
   const branch = resolveBranch(context);
   const period = (context.foodicsPeriod as FoodicsPeriod) ||
     parseFoodicsPeriodFromQuestion(String(context.question || "")) ||
@@ -268,6 +270,8 @@ export async function getFoodicsTopItems(supabase: SupabaseClient, context: Reco
 }
 
 export async function compareFoodicsTopItems(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, topItems: [] };
   const branch = resolveBranch(context);
   const compare = (context.foodicsCompare as ReturnType<typeof parseFoodicsComparePeriods>) ||
     parseFoodicsComparePeriods(String(context.question || ""));
@@ -329,6 +333,8 @@ export async function compareFoodicsTopItems(supabase: SupabaseClient, context: 
 }
 
 export async function getFoodicsCategorySales(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
+  const denied = foodicsDenial(context);
+  if (denied) return { ...denied, categories: [] };
   const branch = resolveBranch(context);
   const period = (context.foodicsPeriod as FoodicsPeriod) ||
     parseFoodicsPeriodFromQuestion(String(context.question || "")) ||
@@ -371,6 +377,19 @@ export async function getFoodicsBranchSalesComparison(
   supabase: SupabaseClient,
   context: Record<string, unknown> = {},
 ) {
+  const filters = context.filters as { branch?: unknown } | undefined;
+  const decision = authorizeSalesBranches(context.profile as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+    mentionedBranch: context.branchMention,
+    filterBranch: filters?.branch || context.branch,
+  });
+  if (!decision.ok) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: decision.deniedBranch,
+      allowedBranches: decision.allowedBranches,
+      branches: [],
+    };
+  }
   const period = (context.foodicsPeriod as FoodicsPeriod) ||
     parseFoodicsPeriodFromQuestion(String(context.question || "")) ||
     null;
@@ -381,6 +400,7 @@ export async function getFoodicsBranchSalesComparison(
     .from("foodics_import_batches")
     .select("*")
     .eq("import_type", DEFAULT_IMPORT_TYPE)
+    .in("branch_id", decision.branches)
     .lte("period_start", period.endDate)
     .gte("period_end", period.startDate)
     .order("uploaded_at", { ascending: false })

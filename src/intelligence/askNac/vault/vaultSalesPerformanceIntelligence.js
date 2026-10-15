@@ -1449,6 +1449,14 @@ export function buildCashUpPeriodAggregateAnswer(question = "", aggregation, {
 } = {}) {
   if (!aggregation) return null;
 
+  const included = aggregation.branchesIncluded || [];
+  if (
+    aggregation.branchCoverageLabel
+    && (/^network/i.test(String(branchLabel || "")) || included.length > 1)
+  ) {
+    branchLabel = aggregation.branchCoverageLabel;
+  }
+
   const focus = scoreSalesPerformanceQueryFocus(question);
 
   if (focus === "day_ranking") {

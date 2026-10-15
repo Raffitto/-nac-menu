@@ -1,7 +1,8 @@
 /**
  * Branch gate for operational sales queries (Foodics and Cash Up).
  * Review-tracking permissions are not decided here.
- * Company-wide access stays allowed. A scoped user cannot read another branch.
+ * Missing profile, staff, or branch permissions are denied.
+ * Company-wide access is allowed only when authenticated and allBranches is exactly true.
  */
 
 const BRANCH_ORDER = ["khobar", "riyadh", "jeddah"];
@@ -36,13 +37,13 @@ export function authorizeSalesBranches(
   const filter = normalizeSalesBranch(filterBranch);
   const requested = mentioned || filter;
 
-  if (!profile) {
+  if (!profile || profile.authenticated !== true) {
     return {
-      ok: true,
-      deniedBranch: null,
+      ok: false,
+      deniedBranch: requested,
       allowedBranches: [],
-      branches: requested ? [requested] : [],
-      unrestricted: true,
+      branches: [],
+      unrestricted: false,
       companyWide: false,
     };
   }
@@ -76,22 +77,6 @@ export function authorizeSalesBranches(
     if (normalized && !allowed.includes(normalized)) allowed.push(normalized);
   }
   const allowedBranches = sortBranches(allowed);
-  const scoped = Boolean(
-    profile.authenticated
-    || profile.branchScope
-    || (Array.isArray(profile.allowedBranchIds) && profile.allowedBranchIds.length),
-  );
-
-  if (!scoped) {
-    return {
-      ok: true,
-      deniedBranch: null,
-      allowedBranches,
-      branches: requested ? [requested] : allowedBranches,
-      unrestricted: true,
-      companyWide: false,
-    };
-  }
 
   if (mentioned && filter && mentioned !== filter) {
     return { ok: false, deniedBranch: mentioned, allowedBranches, branches: [], unrestricted: false, companyWide: false };
@@ -115,7 +100,6 @@ export function salesQueryDenied(
   profile: { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: Array<string | null> | null; authenticated?: boolean | null } | null | undefined,
   scope: { mentionedBranch?: unknown; filterBranch?: unknown } = {},
 ) {
-  if (!profile) return null;
   const decision = authorizeSalesBranches(profile, scope);
   return decision.ok ? null : decision;
 }

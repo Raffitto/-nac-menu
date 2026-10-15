@@ -31,6 +31,7 @@ Deno.test("mixed Cash Up query uses yesterday even when the question says today"
   await runVaultQueryTool(fakeSupabase(windows) as never, "vault_cash_up_summary", {
     question: "Compare sales today vs yesterday",
     mixedSalesSide: "yesterday",
+    profile: { authenticated: true, allBranches: true },
     referenceDate: new Date("2026-10-14T15:00:00+03:00"),
   });
   if (!windows.some((window) => window.start === "2026-10-13" && window.end === "2026-10-13")) {

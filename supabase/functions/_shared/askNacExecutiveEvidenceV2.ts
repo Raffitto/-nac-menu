@@ -5,6 +5,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1
 import { VAULT_INTENTS } from "./askNacVaultTools.ts";
 import { getVaultFacts, searchVaultDocuments } from "./askNacVaultTools.ts";
 import { fetchExecutiveMemory } from "./askNacExecutiveMemory.ts";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 import { createPendingSession } from "./askNacHumanInLoop.ts";
 
 const EXECUTIVE_QUERY_INTENTS = new Set([
@@ -68,13 +69,16 @@ async function augmentGathered(
   context: Record<string, unknown>,
 ) {
   const branch = context.branch as string | null;
+  const profile = context.profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null;
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return;
   const vaultPeriod = context.vaultPeriod as { startDate?: string; endDate?: string } | undefined;
   const base = { branch, vaultPeriod, startDate: vaultPeriod?.startDate, endDate: vaultPeriod?.endDate, profile: context.profile };
   const [briefing, logbook, memory, dashboards] = await Promise.all([
     getVaultFacts(supabase, { ...base, reportType: "daily_briefing" }).catch(() => ({ facts: [] })),
     getVaultFacts(supabase, { ...base, reportType: "daily_logbook" }).catch(() => ({ facts: [] })),
     (!(gathered.operatorMemory as unknown[])?.length)
-      ? fetchExecutiveMemory(supabase, { branch: branch || undefined }).catch(() => ({ branchMemories: [], operatorMemories: [] }))
+      ? fetchExecutiveMemory(supabase, { branch: branch || undefined, profile }).catch(() => ({ branchMemories: [], operatorMemories: [] }))
       : Promise.resolve(null),
     searchVaultDocuments(supabase, { ...base, searchTerms: "weekly dashboard", reportTypes: ["weekly_dashboard"] }).catch(() => ({ matches: [] })),
   ]);

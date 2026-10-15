@@ -11,6 +11,7 @@ import { assessPeriodCoverage } from "./coverageAwareness.ts";
 import { resolveAnalyticalConfidence } from "./analyticalConfidence.ts";
 import { fetchBranchMemory } from "./askNacBranchMemory.ts";
 import { fetchOperatorMemory } from "./askNacExecutiveMemory.ts";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 
 function addDays(iso: string, days: number) {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -58,6 +59,20 @@ export async function collectWeeklyDashboardData(
     profile?: Record<string, unknown> | null;
   },
 ) {
+  const denial = salesQueryDenied(profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null, {
+    mentionedBranch: branch,
+    filterBranch: branch,
+  });
+  if (denial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: denial.deniedBranch,
+      allowedBranches: denial.allowedBranches,
+      weekAggregation: { dayCount: 0, totalSales: null },
+      ninetyAggregation: { dayCount: 0 },
+      sourceRegistry: [],
+    };
+  }
   const label = branchLabel || branchDisplayName(branch);
   const { startDate, endDate } = vaultPeriod;
   const ninetyStart = addDays(endDate, -89);
@@ -78,8 +93,8 @@ export async function collectWeeklyDashboardData(
     getVaultFacts(supabase, { branch, startDate, endDate, metricKeys: ["google_review_1", "google_review_2", "google_review_3", "google_review_4", "google_review_5"] }).catch(() => ({ facts: [] })),
     getVaultFacts(supabase, { branch, startDate, endDate, reportType: "daily_logbook" }).catch(() => ({ facts: [] })),
     getVaultCoverage(supabase, { branch, startDate, endDate, slim: true }).catch(() => ({ coverage: [] })),
-    fetchBranchMemory(supabase, { branch }),
-    fetchOperatorMemory(supabase, { branch }),
+    fetchBranchMemory(supabase, { branch, profile: profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null }),
+    fetchOperatorMemory(supabase, { branch, profile: profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null }),
     getFoodicsTopItems(supabase, { branch, profile, foodicsPeriod: { startDate, endDate, label: vaultPeriod.periodLabel }, topLimit: 10 }).catch(() => ({ topItems: [], missingBatch: true })),
   ]);
 

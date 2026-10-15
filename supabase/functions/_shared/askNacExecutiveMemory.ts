@@ -4,13 +4,18 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { fetchBranchMemory } from "./askNacBranchMemory.ts";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
+
+type MemoryProfile = { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: Array<string | null> | null } | null;
 
 const OPERATOR_SELECT = "id, branch_id, category, fact, taught_by, created_at";
 
 export async function fetchOperatorMemory(
   supabase: SupabaseClient,
-  { branch }: { branch?: string | null } = {},
+  { branch, profile }: { branch?: string | null; profile?: MemoryProfile } = {},
 ) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return { branch, memories: [], sources: [], authorizationDenied: true };
   let query = supabase
     .from("ask_nac_operator_memory")
     .select(OPERATOR_SELECT)
@@ -44,11 +49,11 @@ export async function fetchOperatorMemory(
 
 export async function fetchExecutiveMemory(
   supabase: SupabaseClient,
-  { branch }: { branch?: string | null } = {},
+  { branch, profile }: { branch?: string | null; profile?: MemoryProfile } = {},
 ) {
   const [branchResult, operatorResult] = await Promise.all([
-    fetchBranchMemory(supabase, { branch }),
-    fetchOperatorMemory(supabase, { branch }),
+    fetchBranchMemory(supabase, { branch, profile }),
+    fetchOperatorMemory(supabase, { branch, profile }),
   ]);
 
   const branchMemories = (branchResult.memories || []).map((m) => ({

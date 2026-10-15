@@ -3,6 +3,7 @@
  */
 
 import { inferOperatorMemoryCategory } from "./teachNacParser";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 
 const MEMORY_SELECT = "id, branch_id, category, fact, taught_by, created_at";
 
@@ -42,7 +43,9 @@ export async function storeOperatorMemory(
   };
 }
 
-export async function fetchOperatorMemory(supabase, { branch } = {}) {
+export async function fetchOperatorMemory(supabase, { branch, profile } = {}) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return { branch, memories: [], sources: [], authorizationDenied: true };
   let query = supabase
     .from("ask_nac_operator_memory")
     .select(MEMORY_SELECT)

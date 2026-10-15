@@ -1,6 +1,6 @@
 /**
  * Server-side Ask NAC access profile from JWT-backed staff tables.
- * Merges with client profileHint without trusting client network grants alone.
+ * Client profile hints are recorded for diagnostics and never grant access.
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
@@ -10,7 +10,7 @@ import {
   type AccessProfileHint,
 } from "./companyIntelligence/scope.ts";
 
-const NETWORK_VAULT_ROLES = new Set(["ceo", "super_admin"]);
+const CANONICAL_BRANCHES = ["khobar", "riyadh", "jeddah"];
 
 function uniqBranches(values: Array<string | null | undefined>): string[] {
   const out: string[] = [];
@@ -23,7 +23,9 @@ function uniqBranches(values: Array<string | null | undefined>): string[] {
 
 /**
  * Load authorized branch access using the caller's JWT (RLS applies).
- * Does not broaden RBAC — only reads ask_nac_staff / ask_nac_user_branch_access / vault RPCs.
+ * Permissions come only from ask_nac_staff, ask_nac_user_branch_access,
+ * and ask_nac_vault_has_all_branches(). A missing staff row or branch
+ * grant denies. Company-wide access stays only when that RPC returns true.
  */
 export async function loadAskNacAuthProfileHint(
   supabase: SupabaseClient,
@@ -42,74 +44,70 @@ export async function loadAskNacAuthProfileHint(
 }> {
   const client = normalizeAccessProfileHint((clientHint || null) as AccessProfileHint | null);
   const source: string[] = [];
-  if (client) source.push("client_profile_hint");
 
   let vaultRole: string | null = null;
   let primaryBranchId: string | null = null;
   let allowedBranchIds: string[] = [];
   let allBranchesRpc: boolean | null = null;
+  let staffFound = false;
 
   try {
-    const { data: staff } = await supabase
+    const { data: staff, error } = await supabase
       .from("ask_nac_staff")
       .select("vault_role, primary_branch_id")
       .maybeSingle();
-    if (staff) {
+    if (!error && staff) {
+      staffFound = true;
       source.push("ask_nac_staff");
       vaultRole = staff.vault_role ? String(staff.vault_role) : null;
       primaryBranchId = normalizeBranchId(staff.primary_branch_id);
     }
   } catch {
-    // Keep client hint if staff lookup fails.
+    staffFound = false;
   }
 
   try {
-    const { data: rows } = await supabase
+    const { data: rows, error } = await supabase
       .from("ask_nac_user_branch_access")
       .select("branch_id");
-    if (Array.isArray(rows) && rows.length) {
+    if (!error && Array.isArray(rows) && rows.length) {
       source.push("ask_nac_user_branch_access");
       allowedBranchIds = uniqBranches(rows.map((r: { branch_id?: string }) => r.branch_id));
     }
   } catch {
-    // optional
+    allowedBranchIds = [];
   }
 
   try {
-    const { data: hasAll } = await supabase.rpc("ask_nac_vault_has_all_branches");
-    if (typeof hasAll === "boolean") {
+    const { data: hasAll, error } = await supabase.rpc("ask_nac_vault_has_all_branches");
+    if (!error && typeof hasAll === "boolean") {
       source.push("ask_nac_vault_has_all_branches");
       allBranchesRpc = hasAll;
     }
   } catch {
-    // optional
+    allBranchesRpc = null;
   }
 
   if (primaryBranchId && !allowedBranchIds.includes(primaryBranchId)) {
     allowedBranchIds = [primaryBranchId, ...allowedBranchIds];
   }
-  for (const branch of client?.allowedBranchIds || []) {
-    const normalized = normalizeBranchId(branch);
-    if (normalized && !allowedBranchIds.includes(normalized)) allowedBranchIds.push(normalized);
-  }
 
-  const networkFromVaultRole = vaultRole != null && NETWORK_VAULT_ROLES.has(vaultRole);
-  // Prefer server vault truth when available; never let a client hint grant network if vault denies it.
-  const allBranches = allBranchesRpc != null
-    ? allBranchesRpc
-    : (networkFromVaultRole || Boolean(client?.allBranches));
-
+  const allBranches = allBranchesRpc === true;
+  const trusted = allBranches || staffFound || allowedBranchIds.length > 0;
   const branchScope = allBranches
     ? null
-    : (normalizeBranchId(client?.branchScope) || primaryBranchId);
+    : (primaryBranchId && allowedBranchIds.includes(primaryBranchId)
+      ? primaryBranchId
+      : (allowedBranchIds.length === 1 ? allowedBranchIds[0] : null));
 
   const profileHint: AccessProfileHint = {
-    role: client?.role || vaultRole,
+    role: vaultRole,
     branchScope,
     allBranches,
+    authenticated: trusted,
     allowedBranchIds: allBranches
-      ? (allowedBranchIds.length ? allowedBranchIds : ["khobar", "riyadh", "jeddah"])
-      : (allowedBranchIds.length ? allowedBranchIds : (branchScope ? [branchScope] : [])),
+      ? (allowedBranchIds.length ? allowedBranchIds : [...CANONICAL_BRANCHES])
+      : allowedBranchIds,
     primary_branch_id: primaryBranchId,
     primaryBranchId,
     vault_role: vaultRole,

@@ -3,6 +3,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 
 export const DEFAULT_IMPORT_TYPE = "waiter_product_sales";
 
@@ -145,6 +146,14 @@ export async function resolveFoodicsPeriodWithFallback(
   if (timeRangeHours === 999 || selectedRange === "month") {
     const mtd = monthBounds(new Date().getFullYear(), new Date().getMonth());
     return { period: mtd, source: "filters_mtd", warnings };
+  }
+
+  const denial = salesQueryDenied(profileHint as { allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null; authenticated?: boolean | null } | null, {
+    mentionedBranch: branch,
+    filterBranch: filters.branch,
+  });
+  if (denial) {
+    return { period: null, source: "none", warnings: [] };
   }
 
   let query = supabase
