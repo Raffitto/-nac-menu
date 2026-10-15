@@ -11,7 +11,7 @@ import {
   sourceEntry,
 } from "../askNacContract";
 import { ASK_NAC_INTENTS } from "../intentRouter";
-import { describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
+import { canonicalCashUpSales, describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
 import {
   collectVaultSources,
   extractDocumentSearchTerms,
@@ -88,10 +88,9 @@ function foodicsNetSales(foodics) {
 }
 
 function cashUpNetSales(cashUp) {
-  const facts = cashUp?.facts || [];
-  const row = facts.find((fact) => (fact.metricKey || fact.metric_key) === "net_sales");
-  if (!row) return null;
-  return finiteSales(row.metricValue ?? row.metric_value);
+  if (!cashUp) return null;
+  if (cashUp.canonicalTotal != null) return finiteSales(cashUp.canonicalTotal);
+  return canonicalCashUpSales(cashUp.facts);
 }
 
 function vaultConfidence(tool) {

@@ -9,7 +9,7 @@ import { parseVaultPeriodFromQuestion } from "../vault/vaultPeriodParser";
 import { getFoodicsSalesSummary } from "../foodics/foodicsQueryTools";
 import { runVaultQueryTool } from "../vault/vaultQueryTools";
 import { authorizeSalesBranches } from "./salesBranchAuthorization";
-import { SALES_SOURCE, isComparisonSalesSource, resolveSalesComparison } from "./salesSourcePolicy";
+import { canonicalCashUpSales, SALES_SOURCE, isComparisonSalesSource, resolveSalesComparison } from "./salesSourcePolicy";
 
 const TODAY_YESTERDAY = {
   kind: SALES_SOURCE.MIXED_TODAY_YESTERDAY,
@@ -23,27 +23,9 @@ function finiteSales(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function cashUpValue(result) {
+function cashUpValue(result, onlyBranch) {
   if (!result || result.authorizationDenied) return null;
-  if (result.aggregation?.totalSales != null) return finiteSales(result.aggregation.totalSales);
-  const facts = result.facts || [];
-  const chosen = new Map();
-  for (const fact of facts) {
-    const keyName = fact.metricKey || fact.metric_key;
-    const rank = keyName === "net_sales" ? 3 : keyName === "total_sales" ? 2 : keyName === "gross_sales" ? 1 : 0;
-    if (!rank) continue;
-    const date = String(fact.periodEnd || fact.period_end || fact.periodStart || fact.period_start || "").slice(0, 10);
-    const branch = String(fact.branchId || fact.branch_id || "").toLowerCase();
-    const value = finiteSales(fact.metricValue ?? fact.metric_value);
-    if (value == null) continue;
-    const slot = `${branch}|${date}`;
-    const prev = chosen.get(slot);
-    if (!prev || rank > prev.rank) chosen.set(slot, { rank, value });
-  }
-  if (!chosen.size) return null;
-  let sum = 0;
-  for (const row of chosen.values()) sum += row.value;
-  return sum;
+  return canonicalCashUpSales(result.facts, onlyBranch);
 }
 
 function foodicsValue(result) {
@@ -90,7 +72,7 @@ async function fetchSide(supabase, side, period, context, referenceDate) {
       performanceOverview: false,
       referenceDate,
     });
-    return { value: cashUpValue(result), raw: result };
+    return { value: cashUpValue(result, context.branch || context.branchMention), raw: result };
   }
   const result = await getFoodicsSalesSummary(supabase, {
     ...context,
@@ -126,6 +108,7 @@ export async function executeMixedTodayYesterdaySales(supabase, context = {}) {
   const previousPeriod = parseVaultPeriodFromQuestion(plan.previous.token, referenceDate);
   const currentRows = [];
   const previousRows = [];
+  const cashUpFacts = [];
   let firstCurrent = null;
   let firstPrevious = null;
 
@@ -142,6 +125,8 @@ export async function executeMixedTodayYesterdaySales(supabase, context = {}) {
     const previous = await fetchSide(supabase, plan.previous, previousPeriod, scoped, referenceDate);
     if (!firstCurrent) firstCurrent = current.raw;
     if (!firstPrevious) firstPrevious = previous.raw;
+    if (plan.previous.source === SALES_SOURCE.CASH_UP) cashUpFacts.push(...(previous.raw?.facts || []));
+    if (plan.current.source === SALES_SOURCE.CASH_UP) cashUpFacts.push(...(current.raw?.facts || []));
     currentRows.push({ branch, value: current.value });
     previousRows.push({ branch, value: previous.value });
   }
@@ -171,8 +156,10 @@ export async function executeMixedTodayYesterdaySales(supabase, context = {}) {
     todayPeriod: currentPeriod,
     yesterdayPeriod: previousPeriod,
     foodicsToday: plan.current.source === SALES_SOURCE.CASH_UP ? null : firstCurrent,
-    cashUpYesterday: plan.previous.source === SALES_SOURCE.CASH_UP ? firstPrevious : null,
-    facts: firstPrevious?.facts || [],
+    cashUpYesterday: plan.previous.source === SALES_SOURCE.CASH_UP
+      ? { ...(firstPrevious || {}), facts: cashUpFacts, canonicalTotal: canonicalCashUpSales(cashUpFacts) }
+      : null,
+    facts: cashUpFacts.length ? cashUpFacts : (firstPrevious?.facts || []),
     aggregation: null,
   };
 }

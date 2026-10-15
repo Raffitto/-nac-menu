@@ -5,7 +5,7 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { branchDisplayName } from "./askNacFoodicsTools.ts";
 import { salesQueryDenied } from "./salesBranchAuthorization.ts";
-import { describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "./salesSourcePolicy.js";
+import { canonicalCashUpSales, describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "./salesSourcePolicy.js";
 import { coercePlainTextDirectAnswer } from "./askNacResponseHelpers.ts";
 import {
   assessSearchMatchConfidence,
@@ -102,7 +102,7 @@ const LOGBOOK_SUMMARY_FACT_SELECT =
   "file_id,period_start,period_end,metric_key,metric_value,dimensions";
 
 const FACT_SELECT =
-  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
+  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file_version_id,source_row_ref,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
 
 const CASH_UP_RANGE_FACT_SELECT =
   "id,file_id,branch_id,report_type,metric_key,metric_value,dimensions,period_start,period_end,confidence";
@@ -359,6 +359,9 @@ export function mapVaultFactRow(row: Record<string, unknown>) {
     dimensions: (row.dimensions as Record<string, unknown>) || {},
     periodStart: row.period_start,
     periodEnd: row.period_end,
+    createdAt: row.created_at,
+    fileVersionId: row.file_version_id,
+    sourceRowRef: row.source_row_ref,
     grain: row.grain,
     confidence: row.confidence,
     fileTitle: file?.title || file?.original_filename || null,
@@ -2349,10 +2352,9 @@ function foodicsNetSales(foodics: Record<string, unknown> | null | undefined) {
 }
 
 function cashUpNetSales(cashUp: Record<string, unknown> | null | undefined) {
-  const facts = (cashUp?.facts as Record<string, unknown>[]) || [];
-  const row = facts.find((fact) => (fact.metricKey || fact.metric_key) === "net_sales");
-  if (!row) return null;
-  return finiteSales(row.metricValue ?? row.metric_value);
+  if (!cashUp) return null;
+  if (cashUp.canonicalTotal != null) return finiteSales(cashUp.canonicalTotal);
+  return canonicalCashUpSales((cashUp.facts as Record<string, unknown>[]) || []);
 }
 
 function vaultConfidence(tool: Record<string, unknown>) {

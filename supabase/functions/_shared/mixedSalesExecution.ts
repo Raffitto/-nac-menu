@@ -9,7 +9,7 @@ import { parseVaultPeriodFromQuestion } from "./vaultPeriodParser.ts";
 import { getFoodicsSalesSummary } from "./askNacFoodicsTools.ts";
 import { runVaultQueryTool } from "./askNacVaultTools.ts";
 import { authorizeSalesBranches } from "./salesBranchAuthorization.ts";
-import { SALES_SOURCE, isComparisonSalesSource, resolveSalesComparison } from "./salesSourcePolicy.js";
+import { canonicalCashUpSales, SALES_SOURCE, isComparisonSalesSource, resolveSalesComparison } from "./salesSourcePolicy.js";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 type VaultPeriod = {
@@ -32,28 +32,9 @@ function finiteSales(value: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
-function cashUpValue(result: Record<string, unknown> | null) {
+function cashUpValue(result: Record<string, unknown> | null, onlyBranch?: unknown) {
   if (!result || result.authorizationDenied) return null;
-  const aggregation = result.aggregation as { totalSales?: number | null } | null | undefined;
-  if (aggregation?.totalSales != null) return finiteSales(aggregation.totalSales);
-  const facts = (result.facts as Record<string, unknown>[]) || [];
-  const chosen = new Map<string, { rank: number; value: number }>();
-  for (const fact of facts) {
-    const keyName = String(fact.metricKey || fact.metric_key || "");
-    const rank = keyName === "net_sales" ? 3 : keyName === "total_sales" ? 2 : keyName === "gross_sales" ? 1 : 0;
-    if (!rank) continue;
-    const date = String(fact.periodEnd || fact.period_end || fact.periodStart || fact.period_start || "").slice(0, 10);
-    const branch = String(fact.branchId || fact.branch_id || "").toLowerCase();
-    const value = finiteSales(fact.metricValue ?? fact.metric_value);
-    if (value == null) continue;
-    const slot = `${branch}|${date}`;
-    const prev = chosen.get(slot);
-    if (!prev || rank > prev.rank) chosen.set(slot, { rank, value });
-  }
-  if (!chosen.size) return null;
-  let sum = 0;
-  for (const row of chosen.values()) sum += row.value;
-  return sum;
+  return canonicalCashUpSales((result.facts as Record<string, unknown>[]) || [], onlyBranch);
 }
 
 function foodicsValue(result: Record<string, unknown> | null) {
@@ -111,7 +92,7 @@ async function fetchSide(
       performanceOverview: false,
       referenceDate,
     }) as Record<string, unknown>;
-    return { value: cashUpValue(result), raw: result };
+    return { value: cashUpValue(result, context.branch || context.branchMention), raw: result };
   }
   const result = await getFoodicsSalesSummary(supabase, {
     ...context,
@@ -152,6 +133,7 @@ export async function executeMixedTodayYesterdaySales(
   const previousPeriod = parseVaultPeriodFromQuestion(plan.previous.token, referenceDate) as VaultPeriod;
   const currentRows: Array<{ branch: string | null; value: number | null }> = [];
   const previousRows: Array<{ branch: string | null; value: number | null }> = [];
+  const cashUpFacts: Record<string, unknown>[] = [];
   let firstCurrent: Record<string, unknown> | null = null;
   let firstPrevious: Record<string, unknown> | null = null;
 
@@ -168,6 +150,8 @@ export async function executeMixedTodayYesterdaySales(
     const previous = await fetchSide(supabase, plan.previous, previousPeriod, scoped, referenceDate);
     if (!firstCurrent) firstCurrent = current.raw;
     if (!firstPrevious) firstPrevious = previous.raw;
+    if (plan.previous.source === SALES_SOURCE.CASH_UP) cashUpFacts.push(...((previous.raw?.facts as Record<string, unknown>[]) || []));
+    if (plan.current.source === SALES_SOURCE.CASH_UP) cashUpFacts.push(...((current.raw?.facts as Record<string, unknown>[]) || []));
     currentRows.push({ branch, value: current.value });
     previousRows.push({ branch, value: previous.value });
   }
@@ -185,8 +169,10 @@ export async function executeMixedTodayYesterdaySales(
     todayPeriod: currentPeriod,
     yesterdayPeriod: previousPeriod,
     foodicsToday: plan.current.source === SALES_SOURCE.CASH_UP ? null : firstCurrent,
-    cashUpYesterday: plan.previous.source === SALES_SOURCE.CASH_UP ? firstPrevious : null,
-    facts: (firstPrevious?.facts as unknown[]) || [],
+    cashUpYesterday: plan.previous.source === SALES_SOURCE.CASH_UP
+      ? { ...(firstPrevious || {}), facts: cashUpFacts, canonicalTotal: canonicalCashUpSales(cashUpFacts) }
+      : null,
+    facts: cashUpFacts.length ? cashUpFacts : ((firstPrevious?.facts as unknown[]) || []),
     aggregation: null,
   };
 }

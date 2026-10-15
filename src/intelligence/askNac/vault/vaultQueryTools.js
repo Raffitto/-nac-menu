@@ -120,7 +120,7 @@ function attachLogbookFileTitles(facts = [], coverage = []) {
 export { attachLogbookFileTitles };
 
 const FACT_SELECT =
-  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
+  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file_version_id,source_row_ref,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
 
 const CASH_UP_RANGE_FACT_SELECT =
   "id,file_id,branch_id,report_type,metric_key,metric_value,dimensions,period_start,period_end,confidence";
@@ -160,6 +160,9 @@ export function mapVaultFactRow(row) {
     dimensions: row.dimensions || {},
     periodStart: row.period_start,
     periodEnd: row.period_end,
+    createdAt: row.created_at,
+    fileVersionId: row.file_version_id,
+    sourceRowRef: row.source_row_ref,
     grain: row.grain,
     confidence: row.confidence,
     fileTitle: file?.title || file?.original_filename || null,

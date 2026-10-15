@@ -174,6 +174,53 @@ export function mixedSalesSides() {
   });
 }
 
+function cashUpFactRank(fact) {
+  const key = fact.metricKey || fact.metric_key;
+  const metric = key === "net_sales" ? 3 : key === "total_sales" ? 2 : key === "gross_sales" ? 1 : 0;
+  const versioned = fact.fileVersionId || fact.file_version_id ? 1 : 0;
+  const workbook = /^pdf-day/i.test(String(fact.sourceRowRef || fact.source_row_ref || "")) ? 0 : 1;
+  const created = Date.parse(fact.createdAt || fact.created_at || "") || 0;
+  return [metric, versioned, workbook, created];
+}
+
+function cashUpBranchKey(fact) {
+  const raw = String(fact?.branchId || fact?.branch_id || "").toLowerCase();
+  if (raw.includes("khobar")) return "khobar";
+  if (raw.includes("riyadh")) return "riyadh";
+  if (raw.includes("jeddah") || raw.includes("jedda")) return "jeddah";
+  return raw;
+}
+
+/** One canonical sales figure per branch and business date, then the sum. Revisions are not added. */
+export function canonicalCashUpSales(facts, onlyBranch) {
+  const wanted = onlyBranch ? cashUpBranchKey({ branch_id: onlyBranch }) : "";
+  const chosen = new Map();
+  for (const fact of facts || []) {
+    const rank = cashUpFactRank(fact);
+    if (!rank[0]) continue;
+    const value = Number(fact.metricValue ?? fact.metric_value);
+    if (!Number.isFinite(value)) continue;
+    const branch = cashUpBranchKey(fact);
+    if (wanted && branch !== wanted) continue;
+    const date = String(fact.periodEnd || fact.period_end || fact.periodStart || fact.period_start || "").slice(0, 10);
+    const slot = `${branch}|${date}`;
+    const prev = chosen.get(slot);
+    if (!prev) {
+      chosen.set(slot, { rank, value });
+      continue;
+    }
+    for (let i = 0; i < rank.length; i += 1) {
+      if (rank[i] === prev.rank[i]) continue;
+      if (rank[i] > prev.rank[i]) chosen.set(slot, { rank, value });
+      break;
+    }
+  }
+  if (!chosen.size) return null;
+  let sum = 0;
+  for (const row of chosen.values()) sum += row.value;
+  return sum;
+}
+
 export function formatSalesFigure(value) {
   if (value == null || value === "") return null;
   const n = Number(value);

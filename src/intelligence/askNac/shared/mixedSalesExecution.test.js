@@ -447,4 +447,91 @@ describe("operational sales authorization", () => {
     expect(String(answer.directAnswer || "")).toMatch(/Foodics/);
     expect(String(answer.directAnswer || "")).not.toMatch(/Cash Up/);
   });
+
+  test("company-wide today vs yesterday sums every branch Cash Up and does not use the first row", async () => {
+    const cashUp = {
+      khobar: 100,
+      riyadh: 200,
+      jeddah: 400,
+    };
+    const foodics = {
+      khobar: 10,
+      riyadh: 20,
+      jeddah: 40,
+    };
+    getBatchForExportPeriod.mockImplementation(async (_type, branchId, startDate, endDate) => {
+      if (startDate !== TODAY || endDate !== TODAY) return null;
+      return {
+        id: `batch-${branchId}`,
+        branch_id: branchId,
+        period_start: TODAY,
+        period_end: TODAY,
+        source_file_name: `${branchId}-today.xlsx`,
+      };
+    });
+    getBatchSalesItems.mockImplementation(async (batchId) => {
+      const branchId = String(batchId).replace("batch-", "");
+      return [{
+        raw_item_name: "Synthetic plate",
+        matched_menu_item_name: "Synthetic plate",
+        quantity_sold: 1,
+        net_sales: foodics[branchId],
+        gross_sales: foodics[branchId],
+      }];
+    });
+    const supabase = {
+      from(table) {
+        return queryApi((filters) => {
+          if (table !== "ask_nac_structured_facts") return { data: [], error: null };
+          if (filters["gte:period_end"] !== YESTERDAY || filters["lte:period_start"] !== YESTERDAY) {
+            return { data: [], error: null };
+          }
+          const branchId = filters.branch_id;
+          if (!cashUp[branchId]) return { data: [], error: null };
+          return {
+            data: [
+              {
+                branch_id: branchId,
+                report_type: "cash_up",
+                metric_key: "net_sales",
+                metric_value: 9999,
+                period_start: YESTERDAY,
+                period_end: YESTERDAY,
+                source_row_ref: "pdf-day-stale",
+                created_at: "2026-10-13T01:00:00Z",
+              },
+              {
+                branch_id: branchId,
+                report_type: "cash_up",
+                metric_key: "net_sales",
+                metric_value: cashUp[branchId],
+                period_start: YESTERDAY,
+                period_end: YESTERDAY,
+                file_version_id: "workbook-v2",
+                created_at: "2026-10-14T01:00:00Z",
+              },
+            ],
+            error: null,
+          };
+        }, () => {});
+      },
+    };
+    const answer = await processAskNacQuestion({
+      question: "Compare sales today vs yesterday",
+      supabase,
+      profile: { authenticated: true, allBranches: true },
+      options: { referenceDate: REF },
+    });
+    const text = String(answer.directAnswer || "");
+    expect(text).toMatch(/Khobar 100 SAR/);
+    expect(text).toMatch(/Riyadh 200 SAR/);
+    expect(text).toMatch(/Jeddah 400 SAR/);
+    expect(text).toMatch(/Company official Cash Up total: 700 SAR/);
+    expect(text).toMatch(/Company Foodics operational\/live total: 70 SAR/);
+    expect(text).not.toMatch(/9,999/);
+    expect(text).not.toMatch(/\b770\b/);
+    expect(text).toMatch(/not added together/i);
+    expect(text).toMatch(new RegExp(YESTERDAY));
+    expect(text).toMatch(new RegExp(TODAY));
+  });
 });
