@@ -81,7 +81,6 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
-  countCalendarDaysInRange,
   coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
@@ -1525,8 +1524,7 @@ async function fetchCashUpRangeBundle(
   const resolvedDailyBreakdown = includeDailyBreakdown
     ?? !shouldSkipDailyBreakdownForRange(resolvedStart, resolvedEnd, resolvedPeriod?.periodType);
 
-  const spanDays = countCalendarDaysInRange(resolvedStart, resolvedEnd);
-  const useRpc = spanDays > 30 && shouldUseCashUpRangeRpc({
+  const useRpc = shouldUseCashUpRangeRpc({
     startDate: resolvedStart,
     endDate: resolvedEnd,
     periodType: resolvedPeriod?.periodType,

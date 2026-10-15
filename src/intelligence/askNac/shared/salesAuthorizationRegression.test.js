@@ -198,10 +198,50 @@ describe("cash-up 7 and 30 day totals", () => {
     expect(answer).not.toMatch(/\b100 SAR\b/);
   });
 
-  test("a 30-day execution sums every authorized branch-day instead of the first row", async () => {
+  test("a 30-day execution uses the Cash Up RPC instead of the first fact row", async () => {
     const dates = isoDays("2026-09-01", 30);
-    const rows = periodFacts(dates, { khobar: 10, riyadh: 5 });
-    const supabase = countingSupabase(rows);
+    const calls = [];
+    const supabase = {
+      calls,
+      from(table) {
+        calls.push(table);
+        const api = {
+          select() { return api; },
+          eq() { return api; },
+          lte() { return api; },
+          gte() { return api; },
+          neq() { return api; },
+          in() { return api; },
+          order() { return api; },
+          limit() { return api; },
+          not() { return api; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null }).then(resolve, reject);
+          },
+        };
+        return api;
+      },
+      rpc(name, args) {
+        calls.push(`rpc:${name}`);
+        calls.push(args);
+        return Promise.resolve({
+          data: {
+            totalSales: 450,
+            totalGuests: 420,
+            totalOrders: 90,
+            averageSpend: 450 / 420,
+            dayCount: 30,
+            salesCoverageStart: "2026-09-01",
+            salesCoverageEnd: "2026-09-30",
+            availableDates: dates,
+            branchesIncluded: ["khobar", "riyadh"],
+            dailyBreakdown: [],
+            deliveryPlatformBreakdown: {},
+          },
+          error: null,
+        });
+      },
+    };
     const result = await getVaultCashUpFactsOverRange(supabase, {
       profile: COMPANY,
       question: "what are sales for the last 30 days",
@@ -213,15 +253,16 @@ describe("cash-up 7 and 30 day totals", () => {
       },
     });
     expect(result.authorizationDenied).toBeUndefined();
-    expect(result.aggregation.totalSales).toBe(30 * 15);
+    expect(result.aggregation.totalSales).toBe(450);
     expect(result.aggregation.dayCount).toBe(30);
-    expect(result.aggregation.missingDayCount).toBe(0);
     expect(result.aggregation.branchesIncluded).toEqual(["khobar", "riyadh"]);
+    expect(result.aggregation.branchCoverageLabel).toBe("Khobar and Riyadh");
     expect(result.aggregation.salesCoverageStart).toBe("2026-09-01");
     expect(result.aggregation.salesCoverageEnd).toBe("2026-09-30");
     expect(result.branchLabel).toBe("Khobar and Riyadh");
-    expect(supabase.calls).toContain("ask_nac_structured_facts");
-    expect(supabase.calls.some((name) => String(name).startsWith("rpc:"))).toBe(false);
+    expect(calls).toContain("rpc:get_vault_cash_up_range_aggregate");
+    expect(calls).not.toContain("ask_nac_structured_facts");
+    expect(calls).not.toContain("commerce_orders");
     const answer = buildCashUpPeriodAggregateAnswer("sales last 30 days", result.aggregation, {
       branchLabel: result.branchLabel,
       periodLabel: "last 30 days",

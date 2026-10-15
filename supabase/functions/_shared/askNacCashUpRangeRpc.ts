@@ -4,8 +4,37 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+const BRANCH_LABELS: Record<string, string> = { khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" };
+const BRANCH_ORDER = ["khobar", "riyadh", "jeddah"];
+
+function includedBranches(value: unknown) {
+  const raw = Array.isArray(value) ? value : [];
+  const ids: string[] = [];
+  for (const item of raw) {
+    const text = String(item || "").toLowerCase();
+    const id = text.includes("khobar")
+      ? "khobar"
+      : text.includes("riyadh")
+        ? "riyadh"
+        : (text.includes("jeddah") || text.includes("jedda"))
+          ? "jeddah"
+          : "";
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return BRANCH_ORDER.filter((branch) => ids.includes(branch));
+}
+
+function labelIncludedBranches(ids: string[]) {
+  const labels = ids.map((id) => BRANCH_LABELS[id]).filter(Boolean);
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
 export function mapRpcAggregationRow(row: Record<string, unknown> = {}) {
   const dailyBreakdown = Array.isArray(row.dailyBreakdown) ? row.dailyBreakdown : [];
+  const branchesIncluded = includedBranches(row.branchesIncluded);
 
   return {
     totalSales: row.totalSales != null ? Number(row.totalSales) : null,
@@ -23,6 +52,8 @@ export function mapRpcAggregationRow(row: Record<string, unknown> = {}) {
     deliveryPlatformBreakdown: row.deliveryPlatformBreakdown || {},
     topPlatformBySales: (row.topPlatformBySales as string) || null,
     topPlatformByOrders: (row.topPlatformByOrders as string) || null,
+    branchesIncluded,
+    branchCoverageLabel: labelIncludedBranches(branchesIncluded),
   };
 }
 
