@@ -1613,6 +1613,8 @@ export function buildCashUpPeriodAggregateAnswer(
     requestedEndDate?: string | null;
     salesCoverageStart?: string | null;
     salesCoverageEnd?: string | null;
+    branchesIncluded?: string[];
+    branchCoverageLabel?: string | null;
     dailyBreakdown?: { date?: string; totalSales?: number | null }[];
     deliveryPlatformBreakdown?: Record<string, DeliveryPlatformRow>;
     topPlatformBySales?: string | null;
@@ -1631,6 +1633,14 @@ export function buildCashUpPeriodAggregateAnswer(
   } = {},
 ) {
   if (!aggregation) return null;
+
+  const included = aggregation.branchesIncluded || [];
+  if (
+    aggregation.branchCoverageLabel
+    && (/^network/i.test(String(branchLabel || "")) || included.length > 1)
+  ) {
+    branchLabel = aggregation.branchCoverageLabel;
+  }
 
   const focus = scoreSalesPerformanceQueryFocus(question);
 

@@ -5,7 +5,14 @@ set -uo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)/check-no-secrets.sh"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 cd "$T" && git init -q && mkdir -p scripts src && cp "$SRC" scripts/
-r() { LC_ALL=C tr -dc "$1" </dev/urandom | head -c "$2"; }
+r() {
+  local alphabet="$1" count="$2" out
+  # head closes this pipe early. Keep pipefail off so a SIGPIPE cannot truncate the fixture.
+  set +o pipefail
+  out=$(LC_ALL=C tr -dc "$alphabet" </dev/urandom | head -c "$count")
+  set -o pipefail
+  printf '%s' "$out"
+}
 AN='A-Za-z0-9'; HEX='0-9a-f'
 b64() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
 SRJWT="$(b64 '{"alg":"HS256","typ":"JWT"}').$(b64 '{"iss":"supabase","role":"service_role","ref":"'$(r a-z 20)'"}').$(r "$AN" 43)"
@@ -18,16 +25,16 @@ declare -A POS=(
   [twilio-credential]="AC$(r "$HEX" 32)"
   [sendgrid-key]="SG.$(r "$AN" 22).$(r "$AN" 43)"
   [npm-token]="npm_$(r "$AN" 36)"
-  [generic-high-entropy-assignment]="$(r "$AN" 40)"
+  [generic-high-entropy-assignment]="$(r "$AN" 38)A1"
   [openai-key]="sk-proj-$(r "$AN" 40)"
   [github-token]="ghp_$(r "$AN" 36)"
   [netlify-token]="nfp_$(r "$AN" 40)"
   [resend-key]="re_$(r "$AN" 8)_$(r "$AN" 24)"
   [hex-api-key]="key_$(r "$HEX" 64)"
   [db-url-with-password]="postgresql://app:$(r "$AN" 6)\$$(r "$AN" 4)/$(r "$AN" 6)@db.internal:5432/x"
-  [generic-high-entropy-assignment#yaml]="$(r "$AN" 32)"
-  [generic-high-entropy-assignment#b64pad]="$(r "$AN" 30)=="
-  [generic-high-entropy-assignment#midword]="$(r "$AN" 12)test$(r "$AN" 20)"
+  [generic-high-entropy-assignment#yaml]="$(r "$AN" 30)A1"
+  [generic-high-entropy-assignment#b64pad]="$(r "$AN" 28)A1=="
+  [generic-high-entropy-assignment#midword]="$(r "$AN" 16)A1$(r "$AN" 16)"
 )
 i=0
 for k in "${!POS[@]}"; do
@@ -35,7 +42,7 @@ for k in "${!POS[@]}"; do
   case "$k" in
     twilio-credential) printf 'TWILIO_ACCOUNT_SID = "%s"\n' "$v" ;;
     generic-high-entropy-assignment) printf 'const PAYMENT_WEBHOOK_SECRET = "%s";\n' "$v" ;;
-    generic-high-entropy-assignment#yaml) printf 'database:\n  password: %s\n' "$v" | tail -n 1 ;;
+    generic-high-entropy-assignment#yaml) printf '  password: %s\n' "$v" ;;
     generic-high-entropy-assignment#b64pad) printf 'SIGNING_KEY=%s\n' "$v" ;;
     generic-high-entropy-assignment#midword) printf 'export WEBHOOK_TOKEN="%s"\n' "$v" ;;
     *) printf 'value = "%s"\n' "$v" ;;

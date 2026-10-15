@@ -133,7 +133,8 @@ describe("supplier and ingredient normalization", () => {
 describe("unit and pack conversion", () => {
   test.each([
     ["L", "litre"],
-    ["ltr", null],
+    ["ltr", "litre"],
+    ["cup", null],
     ["KG", "kilogram"],
     ["ml", "millilitre"],
     ["pcs", "each"],

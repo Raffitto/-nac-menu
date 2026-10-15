@@ -3,6 +3,7 @@
  * OpenAI must never choose intents; only this router does.
  */
 
+import { SALES_SOURCE, selectSalesSource } from "./shared/salesSourcePolicy";
 import { normalizeBranchId } from "../../dashboard/utils/branchIdentity";
 import { hoursToRange, MONTH_HOURS, branchDisplayName } from "../../dashboard/utils/rangeState";
 import {
@@ -107,17 +108,60 @@ const BRANCH_ALIASES = Object.freeze({
   jeddah: ["jeddah", "jedda"],
 });
 
+export const THEORETICAL_CONSUMPTION_SCORE = 19;
+/**
+ * Theoretical ingredient consumption routing rule (Oracle D1.2 R1b).
+ * IDENTICAL in src/intelligence/askNac/intentRouter.js and
+ * supabase/functions/_shared/askNacOrchestrator.ts; both run the committed
+ * probe set in src/inventory/__fixtures__/oracle-d1/routingProbes.json.
+ *
+ * Routes to consumption when:
+ * - explicit wording: "should have used", "theoretical consumption/usage",
+ *   recipe coverage, incomplete/verified recipes; or
+ * - "how much <thing> ..." with a usage verb (consume*, use/used/uses/using,
+ *   usage, go/went through); or
+ * - a usage noun ("milk usage", "Milk consumption") with a branch and a period.
+ * Never when:
+ * - wastage/breakage wording;
+ * - cash-up, safe, petty cash, deposit, stock-level, par-level, ordering or
+ *   purchase-order PHRASES appear (bare "stock" is an ingredient: chicken stock);
+ * - the thing being measured (the "how much <thing>" object, or the whole
+ *   question when there is no object) is a payment, finance or utility term
+ *   (card, mada, discount, budget, cash, tips, refund, electricity, gas, ...);
+ * - sales/sold/revenue appear and there is no ingredient object.
+ */
+const CONSUMPTION_ALWAYS_EXCLUDED = /\b(wastage|waste|wasted|breakage|broken glass|spillage)\b/;
+const CONSUMPTION_CONTEXT_EXCLUDED = /\b(cash[\s-]?ups?|cashups?|cash reports?|cash variance|variance|shortages?|overages?|petty cash|in the safe|the [a-z]+ safe|safe (?:cash|balance|count)|deposited|deposit (?:made|amount|slip)|make (?:a|the) deposit|in stock|stock ?(?:levels?|counts?|take|on hand)|stocktakes?|(?:hold|keep|carry)\b[^?.!]{0,30}\bstock|stock\b[^?.!]{0,30}\b(?:hold|keep|carry)|par levels?|order from|re-?order\w*|should we order|how many orders|purchase orders?|invoices?)\b/;
+const CONSUMPTION_NON_INGREDIENT = /\b(card|cards|card payments?|payments?|mada|visa|mastercard|amex|apple ?pay|stc ?pay|discounts?|vouchers?|coupons?|promos?|promotions?|tips?|budgets?|cash|float|petty|money|sar|riyals?|refunds?|revenue|deposits?|electricity|power|gas|utilities|utility|fuel|diesel|petrol|labou?r|hours|staff)\b/;
+const CONSUMPTION_EXPLICIT = /\b(should have used|theoretical (?:consumption|usage|use)|incomplete recipes|recipe coverage|verified recipes)\b/;
+const CONSUMPTION_USAGE_VERB = /\b(consum\w*|use|used|uses|using|usage|(?:go|goes|went|gone|going) through)\b/;
+const CONSUMPTION_USAGE_NOUN = /\b(usage|consumption)\b/;
+const CONSUMPTION_SALES_WORD = /\b(sales|sold|revenue)\b/;
+const CONSUMPTION_BRANCH = /\b(khobar|al khobar|alkhobar|riyadh|riyad|jeddah|jedda)\b/;
+const CONSUMPTION_PERIOD = /\b(yesterday|today|last week|this week|past week|last \d+ days|on \d{4}-\d{2}-\d{2}|from \d{4}-\d{2}-\d{2}|between \d{4}-\d{2}-\d{2})\b/;
+const CONSUMPTION_HOW_MUCH_OBJECT = /\bhow much(?:\s+of(?:\s+(?:the|our))?)?(.*?)(?=\s+(?:should|did|does|do|was|were|is|are|has|have|had|will|would|could|can|went|go|goes|gone|got|get|in|at|for|from|on|between|during|by|per|khobar|riyadh|jeddah|yesterday|today|tomorrow|last|this|consum\w*|use|used|uses|using|usage)\b|\s*[?.!]|$)/;
+
+export function scoreTheoreticalConsumptionIntent(q, score = THEORETICAL_CONSUMPTION_SCORE) {
+  const text = String(q || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (CONSUMPTION_ALWAYS_EXCLUDED.test(text)) return 0;
+  if (CONSUMPTION_CONTEXT_EXCLUDED.test(text)) return 0;
+  const howMuch = text.match(CONSUMPTION_HOW_MUCH_OBJECT);
+  const object = howMuch ? howMuch[1].trim() : "";
+  if (CONSUMPTION_NON_INGREDIENT.test(object || text)) return 0;
+  if (CONSUMPTION_EXPLICIT.test(text)) return score;
+  if (!object && CONSUMPTION_SALES_WORD.test(text)) return 0;
+  if (howMuch && CONSUMPTION_USAGE_VERB.test(text)) return score;
+  if (!howMuch && CONSUMPTION_USAGE_NOUN.test(text) && CONSUMPTION_BRANCH.test(text) && CONSUMPTION_PERIOD.test(text)) {
+    return score;
+  }
+  return 0;
+}
+
 const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
     score(q) {
-      if (/\b(wastage|waste|breakage|broken glass|spillage)\b/.test(q)) return 0;
-      if (/\b(sales|revenue|net sales|gross sales|sold)\b/.test(q)) return 0;
-      if (/\b(should have used|theoretical consumption|incomplete recipes|recipe coverage|verified recipes)\b/.test(q)) {
-        return 19;
-      }
-      if (/\bhow much\b/.test(q) && /\b(consum|should)\b/.test(q)) return 19;
-      return 0;
+      return scoreTheoreticalConsumptionIntent(q, THEORETICAL_CONSUMPTION_SCORE);
     },
   },
   {
@@ -228,6 +272,7 @@ const INTENT_RULES = [
   {
     id: ASK_NAC_INTENTS.VAULT_RECEPTION_SUMMARY,
     score(q) {
+      if (selectSalesSource(q) === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(reservations?|covers|walk[\s-]?ins?|no[\s-]?shows?|cancellations?|reception)\b/.test(q)) {
         return 16;
@@ -256,7 +301,17 @@ const INTENT_RULES = [
         return 0;
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      // Reviews, operational change, and bare commerce sales are not Cash Up.
+      if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      // Explicit ingredient-consumption wording with a date range is not a cash-up
+      // question (the consumption rule already excludes cash/sales/variance terms).
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
       const period = parseVaultPeriodFromQuestion(q);
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
@@ -415,8 +470,11 @@ const INTENT_RULES = [
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
-      if (/\b(sales|revenue)\s+(today|this week|this month|yesterday)\b/.test(q)) return 13;
+      if (/\b(sales|revenue|net sales)\s+(today|this week|this month)\b/.test(q)) return 13;
       if (hasVaultDayPeriod(q)) return 0;
       if (/\b(total sales|sales total|what were sales|how much sales|sales in|sales for|revenue in|revenue for)\b/.test(q)) {
         return 13;
@@ -634,6 +692,7 @@ export function routeAskNacIntent(question, options = {}) {
     rankChangeDirection:
       intent === ASK_NAC_INTENTS.ITEM_RANK_CHANGE ? detectRankChangeDirection(normalized.text) : null,
     vaultPeriod: parseVaultPeriodFromQuestion(normalized.text),
+    salesSource: selectSalesSource(normalized.text),
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKind(normalized.text) : null,
     debug: {

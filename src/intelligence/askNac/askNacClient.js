@@ -7,6 +7,28 @@ import { supabase as defaultSupabase } from "../../lib/supabase";
 import { fetchWithDeadline } from "../../lib/fetchDeadline";
 import { processAskNacQuestion } from "./askNacOrchestrator";
 import { createAskNacResponse, ANSWER_TYPES, CONFIDENCE_LEVELS } from "./askNacContract";
+import { ASK_NAC_INTENTS, routeAskNacIntent } from "./intentRouter";
+
+/**
+ * Intents the server hands to the client (explicit hand-off), or that an older
+ * deployed server cannot route (it answers "unknown"). For these the client runs
+ * its own read-only tool and labels the answer localFallback (Oracle T3).
+ */
+export const CLIENT_EXECUTED_INTENTS = Object.freeze([ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION]);
+
+export function serverAnswerNeedsLocalExecution(payload, question) {
+  const handoff = payload?.handoff;
+  if (handoff?.kind === "client_local_tool" && CLIENT_EXECUTED_INTENTS.includes(handoff.intent)) {
+    return { reason: "handoff", intent: handoff.intent };
+  }
+  if (!payload?.intent || payload.intent === ASK_NAC_INTENTS.UNKNOWN) {
+    const local = routeAskNacIntent(question);
+    if (CLIENT_EXECUTED_INTENTS.includes(local?.intent)) {
+      return { reason: "server_unknown", intent: local.intent };
+    }
+  }
+  return null;
+}
 
 const ASK_NAC_FUNCTION = "ask-nac";
 
@@ -76,6 +98,29 @@ export async function askNac({
 
       if (res.ok) {
         const payload = await res.json();
+        const runLocally = serverAnswerNeedsLocalExecution(payload, question);
+        if (runLocally) {
+          const local = await processAskNacQuestion({
+            question,
+            supabase,
+            profile,
+            filters,
+            conversationContext,
+            session,
+          });
+          return {
+            ...local,
+            serverConnected: true,
+            localFallback: true,
+            aiConnected: false,
+            warnings: [
+              ...(local.warnings || []),
+              runLocally.reason === "handoff"
+                ? "Computed on this device by the Inventory Truth recipe engine (server hand-off)."
+                : "The Ask NAC server could not route this question; computed on this device instead.",
+            ],
+          };
+        }
         return {
           ...payload,
           serverConnected: payload.serverConnected !== false,

@@ -82,12 +82,40 @@ describe("Ask NAC Edge orchestrator intent routing", () => {
     "gross sales yesterday",
     "cash sales yesterday",
     "card sales yesterday",
-    "sales yesterday",
   ])("routes day-metric cash-up prompt to vault_cash_up_summary: %s", (question) => {
     const route = routeQuestionViaEdgeOrchestrator(question);
     expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
     expect(route.intent).not.toBeUndefined();
     expect(route.intent).not.toBe("sales_total");
+  });
+
+  test.each([
+    "sales yesterday",
+    "Yesterday's sales",
+    "Khobar sales yesterday",
+    "Yesterday sales Khobar",
+    "Riyadh sales yesterday",
+  ])('routes official sales to cash up: %s', (question) => {
+    const route = routeQuestionViaEdgeOrchestrator(question);
+    expect(route.intent).toBe(VAULT_CASH_UP_INTENT);
+    expect(route.intent).not.toBe("sales_total");
+  });
+
+  test.each([
+    "order count yesterday",
+    "number of orders yesterday",
+    "orders yesterday",
+    "how many orders did we have yesterday",
+  ])("routes operational order count to Foodics: %s", (question) => {
+    const route = routeQuestionViaEdgeOrchestrator(question);
+    expect(route.intent).toBe("sales_total");
+    expect(route.intent).not.toBe("unknown");
+    expect(route.intent).not.toBe(VAULT_CASH_UP_INTENT);
+  });
+
+  test('routes today sales to commerce because cash up is not complete yet', () => {
+    const route = routeQuestionViaEdgeOrchestrator("sales today");
+    expect(route.intent).toBe("sales_total");
   });
 
   test('routes "delivery apps this year" to vault_cash_up_summary, not delivery_sales stub', () => {

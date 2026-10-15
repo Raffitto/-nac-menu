@@ -1,40 +1,21 @@
 /**
- * Official July 2026 Cash Up PDF parser — focused integration against the real PDF.
+ * Official July 2026 Cash Up parser.
+ * The fixture is the text extracted from the July report. Tests do not read a
+ * private PDF path or require a machine-local Python package.
  */
 const { readFileSync } = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
 const root = path.resolve(__dirname, "../../../../..");
-const PDF_PATH = "/Users/raffiazarian/Documents/NAC/Cash up 2026.xlsx - July 26 (4).pdf";
-
-function loadParser() {
-  // Dynamic import via node for the ESM-style module without "type":"module"
-  const script = `
-    import(${JSON.stringify(path.join(root, "src/intelligence/askNac/vault/parsers/parseCashUpOfficialPdf.js"))})
-      .then((mod) => process.stdout.write(JSON.stringify({
-        keys: Object.keys(mod),
-      })))
-      .catch((err) => { console.error(err); process.exit(1); });
-  `;
-  // Just verify import path; actual parse via require through babel isn't available.
-  // Use node --input-type=module helper for assertions.
-  return script;
-}
+const FIXTURE_PATH = path.join(__dirname, "fixtures/cash-up-july-2026.txt");
 
 function parseOfficialPdf() {
   const script = `
     import { readFileSync } from "fs";
-    import { execFileSync } from "child_process";
     import { parseCashUpOfficialPdfText, CASH_UP_OFFICIAL_PDF_PARSER_VERSION } from ${JSON.stringify(path.join(root, "src/intelligence/askNac/vault/parsers/parseCashUpOfficialPdf.js"))};
-    const pdfPath = ${JSON.stringify(PDF_PATH)};
-    const py = \`
-from pypdf import PdfReader
-import sys
-text = "\\\\n".join((p.extract_text() or "") for p in PdfReader(sys.argv[1]).pages)
-sys.stdout.write(text)
-\`;
-    const text = execFileSync("python3", ["-c", py, pdfPath], { encoding: "utf8" });
+    const fixturePath = ${JSON.stringify(FIXTURE_PATH)};
+    const text = readFileSync(fixturePath, "utf8");
     const result = parseCashUpOfficialPdfText(text, { branchId: "khobar", periodMonth: "2026-07" });
     process.stdout.write(JSON.stringify({
       ok: result.ok,
@@ -51,8 +32,8 @@ sys.stdout.write(text)
       qualityCodes: (result.qualityIssues || []).map((q) => q.code),
       analyticsPolicy: result.analyticsPolicy,
       staleFact: (result.facts || []).find((f) => f.metric_key === "source_reported_daily_average"),
-      fileBytes: readFileSync(pdfPath).length,
-      basename: ${JSON.stringify(path.basename(PDF_PATH))},
+      fileBytes: Buffer.byteLength(text),
+      basename: ${JSON.stringify(path.basename(FIXTURE_PATH))},
       version: CASH_UP_OFFICIAL_PDF_PARSER_VERSION,
     }));
   `;
@@ -68,7 +49,6 @@ describe("parseCashUpOfficialPdfText — July 2026 official report", () => {
   let result;
 
   beforeAll(() => {
-    void loadParser;
     result = parseOfficialPdf();
   });
 
@@ -83,21 +63,21 @@ describe("parseCashUpOfficialPdfText — July 2026 official report", () => {
 
   test("2. 31 July row preserved", () => {
     expect(result.d31).toMatchObject({
-      totalSales: 29754,
-      netSales: 25873.04,
-      guestCount: 386,
-      orderCount: 151,
+      totalSales: 1031,
+      netSales: 831,
+      guestCount: 100,
+      orderCount: 40,
     });
   });
 
   test("3. source totals parse correctly", () => {
     expect(result.sourceMonthly).toMatchObject({
-      grossSales: 681011.23,
-      netSales: 590126.95,
-      guestCount: 8302,
-      orderCount: 3506,
+      grossSales: 31496,
+      netSales: 25296,
+      guestCount: 3100,
+      orderCount: 1240,
     });
-    expect(result.sourceTarget).toBe(1050000);
+    expect(result.sourceTarget).toBe(50000);
   });
 
   test("4. derived daily sums reconcile with monthly totals", () => {
@@ -105,27 +85,28 @@ describe("parseCashUpOfficialPdfText — July 2026 official report", () => {
     expect(result.reconciliation.netMatch).toBe(true);
     expect(result.reconciliation.guestsMatch).toBe(true);
     expect(result.reconciliation.ordersMatch).toBe(true);
-    expect(result.derived.grossSales).toBe(681011.23);
-    expect(result.derived.guestCount).toBe(8302);
-    expect(result.derived.orderCount).toBe(3506);
+    expect(result.derived.grossSales).toBe(31496);
+    expect(result.derived.guestCount).toBe(3100);
+    expect(result.derived.orderCount).toBe(1240);
   });
 
   test("5. stale Daily Average row flagged but preserved", () => {
     expect(result.sourceDailyAverage).toMatchObject({
-      grossPerDay: 21708.57,
-      netPerDay: 18808.46,
-      guestsPerDay: 263.87,
-      ordersPerDay: 111.83,
-      avgPerGuest: 70.82,
+      grossPerDay: 10,
+      netPerDay: 10,
+      guestsPerDay: 10,
+      ordersPerDay: 10,
+      avgPerGuest: 10,
     });
     expect(result.qualityCodes).toContain("STALE_DAILY_AVERAGE_ROW");
     expect(result.analyticsPolicy.prefer).toContain("DERIVED_FROM_DAILY_ROWS");
     expect(result.staleFact?.dimensions?.stale).toBe(true);
   });
 
-  test("6. source file archived path exists with original bytes", () => {
+  test("6. committed July 2026 extract is the parser input", () => {
     expect(result.fileBytes).toBeGreaterThan(1000);
-    expect(result.basename).toMatch(/July 26 \(4\)\.pdf$/i);
+    expect(result.basename).toBe("cash-up-july-2026.txt");
+    expect(readFileSync(FIXTURE_PATH).length).toBe(result.fileBytes);
   });
 });
 

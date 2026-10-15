@@ -27,7 +27,7 @@ describe("MenuManager production layout and loading contract", () => {
   });
 
   test("initial category and item query failures cannot leave a silent blank editor", () => {
-    expect(componentSource).toContain("await loadMenuForCategory(firstCategoryId)");
+    expect(componentSource).toContain("await withDeadline(loadMenuForCategory(firstCategoryId), 12000, \"Menu items did not load.\")");
     expect(componentSource).toContain("if (itemErr) throw itemErr");
     expect(componentSource).toContain("MENU_CATALOGUE_SELECT");
     expect(componentSource).toMatch(/\.select\(MENU_CATALOGUE_SELECT\)/);

@@ -20,6 +20,8 @@ describe("canonical sales source contract", () => {
           branch_id: "khobar",
           business_date: "2026-08-05",
           net_sales: 360,
+          // A missing status is no longer treated as completed (Oracle T11).
+          status: "completed",
         }],
       },
       foodicsRows: [{

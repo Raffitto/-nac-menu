@@ -4,6 +4,7 @@
  */
 
 import { resolveRbacQueryBranch } from "../../../lib/rbacQueryScope";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 import { branchDisplayName } from "../../../dashboard/utils/rangeState";
 import { extractDocumentSearchTerms } from "./vaultDocumentSearchRouting";
 import {
@@ -21,6 +22,7 @@ import {
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
+  countCalendarDaysInRange,
   coverageRowsFromCashUpAggregation,
   enrichCashUpAggregationCoverageMeta,
   groupCashUpFactsByBusinessDate,
@@ -29,7 +31,7 @@ import {
   shouldUseChunkedCashUpFetch,
   splitRangeIntoMonthChunks,
 } from "./vaultCashUpAggregation";
-import { isVaultCashUpAnalyticsPeriod, parseVaultComparePeriodsFromQuestion } from "./vaultPeriodParser";
+import { isVaultCashUpAnalyticsPeriod, parseVaultComparePeriodsFromQuestion, parseVaultPeriodFromQuestion } from "./vaultPeriodParser";
 import {
   extractOperationalReviewTheme,
   groupOperationalMatches,
@@ -118,7 +120,7 @@ function attachLogbookFileTitles(facts = [], coverage = []) {
 export { attachLogbookFileTitles };
 
 const FACT_SELECT =
-  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
+  "id,file_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,confidence,created_at,file_version_id,source_row_ref,file:ask_nac_files(id,title,original_filename,classification_confidence,parser_version,sensitivity_level)";
 
 const CASH_UP_RANGE_FACT_SELECT =
   "id,file_id,branch_id,report_type,metric_key,metric_value,dimensions,period_start,period_end,confidence";
@@ -158,6 +160,9 @@ export function mapVaultFactRow(row) {
     dimensions: row.dimensions || {},
     periodStart: row.period_start,
     periodEnd: row.period_end,
+    createdAt: row.created_at,
+    fileVersionId: row.file_version_id,
+    sourceRowRef: row.source_row_ref,
     grain: row.grain,
     confidence: row.confidence,
     fileTitle: file?.title || file?.original_filename || null,
@@ -245,6 +250,22 @@ export async function getVaultFacts(
     limit,
   } = {},
 ) {
+  if (reportType === "cash_up") {
+    const denial = salesQueryDenied(profile, {
+      mentionedBranch: branchMention || branch,
+      filterBranch: filters?.branch,
+    });
+    if (denial) {
+      return {
+        authorizationDenied: true,
+        deniedBranch: denial.deniedBranch,
+        allowedBranches: denial.allowedBranches,
+        branch: null,
+        facts: [],
+        sources: [],
+      };
+    }
+  }
   const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
   let query = supabase.from("ask_nac_structured_facts").select(FACT_SELECT);
   query = periodOverlapFilter(query, startDate, endDate);
@@ -273,6 +294,22 @@ export async function getVaultCoverage(
   supabase,
   { branch, startDate, endDate, reportType, profile, branchMention, filters, slim = false } = {},
 ) {
+  if (!reportType || reportType === "cash_up") {
+    const denial = salesQueryDenied(profile, {
+      mentionedBranch: branchMention || branch,
+      filterBranch: filters?.branch || branch,
+    });
+    if (denial) {
+      return {
+        authorizationDenied: true,
+        deniedBranch: denial.deniedBranch,
+        allowedBranches: denial.allowedBranches,
+        branch: null,
+        coverage: [],
+        sources: [],
+      };
+    }
+  }
   const scopedBranch = branch ?? resolveBranch({ profile, branchMention, filters });
   const cacheKey = { branch: scopedBranch, startDate, endDate, reportType, slim };
   const cached = getCachedVaultCoverage(cacheKey);
@@ -511,6 +548,21 @@ export async function resolveLatestCashUpBusinessDate(supabase, { branch, fileId
 }
 
 export async function getVaultCashUpFactsOverRange(supabase, context = {}) {
+  const denial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention || context.branch,
+    filterBranch: context.filters?.branch || context.branch,
+  });
+  if (denial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: denial.deniedBranch,
+      allowedBranches: denial.allowedBranches,
+      facts: [],
+      aggregation: null,
+      coverage: [],
+      sources: [],
+    };
+  }
   const vaultPeriod = context.vaultPeriod || {};
   const { startDate, endDate } = vaultPeriod;
   const scopedBranch = resolveBranch(context);
@@ -681,7 +733,8 @@ async function fetchCashUpRangeBundle(
   const resolvedDailyBreakdown = includeDailyBreakdown
     ?? !shouldSkipDailyBreakdownForRange(resolvedStart, resolvedEnd, resolvedPeriod?.periodType);
 
-  const useRpc = shouldUseCashUpRangeRpc({
+  const spanDays = countCalendarDaysInRange(resolvedStart, resolvedEnd);
+  const useRpc = spanDays > 30 && shouldUseCashUpRangeRpc({
     startDate: resolvedStart,
     endDate: resolvedEnd,
     periodType: resolvedPeriod?.periodType,
@@ -783,8 +836,12 @@ async function fetchCashUpRangeBundle(
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
 
+  const coveredBranchLabel = !scopedBranch && aggregation?.branchCoverageLabel
+    ? aggregation.branchCoverageLabel
+    : factsResult.branchLabel;
   return {
     ...factsResult,
+    branchLabel: coveredBranchLabel,
     periodLabel: resolvedPeriod?.label || `${resolvedStart} – ${resolvedEnd}`,
     coverage,
     vaultSources: collectVaultSources(factsResult.facts, coverage),
@@ -796,6 +853,21 @@ async function fetchCashUpRangeBundle(
 }
 
 export async function getLatestVaultCashUpFacts(supabase, context = {}) {
+  const denial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention || context.branch,
+    filterBranch: context.filters?.branch || context.branch,
+  });
+  if (denial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: denial.deniedBranch,
+      allowedBranches: denial.allowedBranches,
+      facts: [],
+      coverage: [],
+      vaultSources: [],
+      periodLabel: "latest cash-up",
+    };
+  }
   const scopedBranch = resolveBranch(context);
   let coverageQuery = supabase
     .from("ask_nac_data_coverage")
@@ -1054,6 +1126,19 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
     case "vault_coverage_list":
       return getVaultReportSources(supabase, context);
     case "vault_business_reasoning": {
+      const denial = salesQueryDenied(context.profile, {
+        mentionedBranch: context.branchMention,
+        filterBranch: context.filters?.branch || context.branch,
+      });
+      if (denial) {
+        return {
+          authorizationDenied: true,
+          deniedBranch: denial.deniedBranch,
+          allowedBranches: denial.allowedBranches,
+          facts: [],
+          aggregation: null,
+        };
+      }
       const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
       const vaultPeriod = context.vaultPeriod?.startDate ? context.vaultPeriod : vaultCompare?.current;
       const cashUp = await getVaultCashUpFactsOverRange(supabase, {
@@ -1070,7 +1155,7 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
           vaultCompare: cashUp.vaultCompare || vaultCompare,
           vaultPeriod,
         }),
-        fetchExecutiveMemory(supabase, { branch: cashUp.branch }),
+        fetchExecutiveMemory(supabase, { branch: cashUp.branch, profile: context.profile }),
       ]);
       return {
         ...cashUp,
@@ -1081,9 +1166,37 @@ export async function runVaultQueryTool(supabase, intent, context = {}) {
       };
     }
     case "vault_cash_up_summary": {
+      const denial = salesQueryDenied(context.profile, {
+        mentionedBranch: context.branchMention,
+        filterBranch: context.filters?.branch || context.branch,
+      });
+      if (denial) {
+        return {
+          authorizationDenied: true,
+          deniedBranch: denial.deniedBranch,
+          allowedBranches: denial.allowedBranches,
+          facts: [],
+          aggregation: null,
+        };
+      }
+      if (context.mixedSalesSide === "yesterday" || context.mixedSalesSide === "locked") {
+        const yesterday = context.vaultPeriod?.startDate
+          ? context.vaultPeriod
+          : parseVaultPeriodFromQuestion("yesterday", context.referenceDate || new Date());
+        return await getVaultFacts(supabase, {
+          ...context,
+          startDate: yesterday.startDate,
+          endDate: yesterday.endDate,
+          reportType: "cash_up",
+          metricKeys: CASH_UP_STRUCTURED_METRIC_KEYS,
+          limit: CASH_UP_FACTS_QUERY_LIMIT,
+        });
+      }
       const question = String(context.question || "").toLowerCase();
       const vaultPeriod = context.vaultPeriod || {};
-      const vaultCompare = context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || "");
+      const vaultCompare = context.suppressVaultCompare
+        ? null
+        : (context.vaultCompare || parseVaultComparePeriodsFromQuestion(context.question || ""));
       const queryFocus = String(context.queryFocus || "");
       const performanceOverview = Boolean(context.performanceOverview);
       const hasResolvedWindow = Boolean(vaultPeriod?.startDate || vaultCompare?.current?.startDate);

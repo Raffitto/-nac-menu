@@ -220,7 +220,9 @@ export async function runAskNacQueryTool(supabase, intent, context = {}) {
       return queryIngredientConsumption(supabase, {
         question: context.question,
         profile: context.profile,
-        today: context.today || new Date().toISOString().slice(0, 10),
+        // Asia/Riyadh business dates are resolved inside; never a UTC date slice.
+        now: context.now || new Date(),
+        today: context.today || null,
       });
     default:
       return null;

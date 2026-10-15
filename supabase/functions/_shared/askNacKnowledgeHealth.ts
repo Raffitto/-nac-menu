@@ -7,6 +7,7 @@ import { getVaultCoverage, getVaultFacts } from "./askNacVaultTools.ts";
 import { fetchCashUpRangeAggregationViaRpc } from "./askNacCashUpRangeRpc.ts";
 import { assessDomainReadinessPlaceholders } from "./knowledgeTaxonomy.ts";
 import { summarizeCompilerStageDiagnostics } from "./compilerStageTracking.ts";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 
 const COVERAGE_TYPE_WEIGHTS: Record<string, number> = {
   cash_up: 0.45,
@@ -363,6 +364,25 @@ export async function runKnowledgeHealthQuery(supabase: SupabaseClient, context:
     ? { startDate: vp.startDate, endDate: vp.endDate, label: vp.label || `${vp.startDate} – ${vp.endDate}` }
     : defaultPeriod();
   const ingestionSince = addDays(period.endDate, -30);
+  const denial = salesQueryDenied(context.profile as { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: string[] | null } | null, {
+    mentionedBranch: context.branchMention || branch,
+    filterBranch: (context.filters as { branch?: unknown } | undefined)?.branch || branch,
+  });
+  if (denial) {
+    const knowledgeHealth = computeHealth({
+      branch,
+      branchLabel,
+      disclosures: ["Coverage and Cash Up were not read because branch access was not authorized."],
+    });
+    return {
+      authorizationDenied: true,
+      deniedBranch: denial.deniedBranch,
+      allowedBranches: denial.allowedBranches,
+      knowledgeHealth,
+      focus: detectKnowledgeHealthFocus(String(context.question || "")),
+      sources: knowledgeHealth.sources,
+    };
+  }
 
   const [
     coverageResult,

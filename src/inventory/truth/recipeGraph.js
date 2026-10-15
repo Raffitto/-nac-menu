@@ -181,18 +181,19 @@ export function expandRecipeToIngredients({
   const traces = [];
 
   for (const line of analyticalRecipeLines(node.lines || [], graph.ingredientById) ) {
+    const ingredientId = line.ingredient_id || line.ingredientId;
+    const subRecipeId = line.sub_recipe_id || line.subRecipeId;
+    const lineRef = ingredientId && !subRecipeId ? { ingredientId } : { subRecipeId: subRecipeId || null };
     const qty = lineQuantity(line);
     if (qty == null) {
-      issues.push({ code: GRAPH_STATUS.MISSING_QUANTITY, recipeId, lineId: line.id });
+      issues.push({ code: GRAPH_STATUS.MISSING_QUANTITY, recipeId, lineId: line.id, ...lineRef });
       continue;
     }
     if (compareDecimal(qty, "0") <= 0) {
-      issues.push({ code: GRAPH_STATUS.INVALID_QUANTITY, recipeId, lineId: line.id, quantity: qty });
+      issues.push({ code: GRAPH_STATUS.INVALID_QUANTITY, recipeId, lineId: line.id, quantity: qty, ...lineRef });
       continue;
     }
 
-    const ingredientId = line.ingredient_id || line.ingredientId;
-    const subRecipeId = line.sub_recipe_id || line.subRecipeId;
     const required = multiplyDecimal(qty, scale);
     const step = {
       recipeId,
@@ -291,6 +292,27 @@ export function expandRecipeToIngredients({
     traces,
     yieldStatus,
   };
+}
+
+/**
+ * Which ingredient an expansion issue is about.
+ * Returns the ingredient id when the issue is confined to one ingredient line
+ * (unit conversion, missing or invalid quantity on an ingredient line).
+ * Returns null when the issue hides an unknown part of the recipe tree
+ * (missing or circular sub-recipe, inactive version, sub-recipe unit failure,
+ * empty line): any ingredient may be affected.
+ */
+export function issueIngredientScope(issue) {
+  if (!issue) return null;
+  if (issue.code === "YIELD_UNKNOWN") return undefined;
+  return issue.ingredientId || null;
+}
+
+/** True when an expansion issue can change the quantity of this ingredient. */
+export function issueAffectsIngredient(issue, ingredientId) {
+  const scope = issueIngredientScope(issue);
+  if (scope === undefined) return false;
+  return scope === null || scope === ingredientId;
 }
 
 export function resolveMenuItemRecipe(graph, menuItemId, { namedCandidates = [] } = {}) {

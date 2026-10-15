@@ -13,12 +13,72 @@ function resolveBusinessDate(fact: FactRow) {
   return text || null;
 }
 
-function pickDaySales(facts: FactRow[] = []) {
-  return (
-    pickAggregateMetricValue(facts, "net_sales")
-    ?? pickAggregateMetricValue(facts, "total_sales")
-    ?? pickAggregateMetricValue(facts, "gross_sales")
-  );
+/** A daily Cash Up fact covers exactly one business date. Month and range summaries do not. */
+export function isSingleDayCashUpFact(fact: FactRow) {
+  const start = String(fact?.periodStart ?? fact?.period_start ?? "").trim().slice(0, 10);
+  const end = String(fact?.periodEnd ?? fact?.period_end ?? "").trim().slice(0, 10);
+  return Boolean(start) && start === end;
+}
+
+function branchKeyOf(fact: FactRow) {
+  const raw = String(fact?.branchId ?? fact?.branch_id ?? "").toLowerCase();
+  if (raw.includes("khobar")) return "khobar";
+  if (raw.includes("riyadh")) return "riyadh";
+  if (raw.includes("jeddah") || raw.includes("jedda")) return "jeddah";
+  return "";
+}
+
+function rowsByBranch(facts: FactRow[] = []) {
+  const groups = new Map<string, FactRow[]>();
+  for (const fact of facts || []) {
+    const branch = branchKeyOf(fact) || "_";
+    if (!groups.has(branch)) groups.set(branch, []);
+    groups.get(branch)!.push(fact);
+  }
+  return groups;
+}
+
+export function sumCanonicalMetricAcrossBranches(facts: FactRow[] = [], metricKey: string) {
+  let sum = 0;
+  let any = false;
+  const branches: string[] = [];
+  for (const [branch, rows] of rowsByBranch(facts)) {
+    const value = pickAggregateMetricValue(rows, metricKey);
+    if (value == null || !Number.isFinite(Number(value))) continue;
+    sum += Number(value);
+    any = true;
+    if (branch !== "_") branches.push(branch);
+  }
+  return { value: any ? sum : null, branches };
+}
+
+function sumDaySales(facts: FactRow[] = []) {
+  let sum = 0;
+  let any = false;
+  const branches: string[] = [];
+  for (const [branch, rows] of rowsByBranch(facts)) {
+    const value = pickAggregateMetricValue(rows, "net_sales")
+      ?? pickAggregateMetricValue(rows, "total_sales")
+      ?? pickAggregateMetricValue(rows, "gross_sales");
+    if (value == null || !Number.isFinite(Number(value))) continue;
+    sum += Number(value);
+    any = true;
+    if (branch !== "_") branches.push(branch);
+  }
+  return { value: any ? sum : null, branches };
+}
+
+const BRANCH_COVERAGE_NAMES: Record<string, string> = { khobar: "Khobar", riyadh: "Riyadh", jeddah: "Jeddah" };
+const BRANCH_COVERAGE_ORDER = ["khobar", "riyadh", "jeddah"];
+
+export function branchCoverageLabel(branchIds: string[] = []) {
+  const labels = BRANCH_COVERAGE_ORDER
+    .filter((id) => branchIds.includes(id))
+    .map((id) => BRANCH_COVERAGE_NAMES[id]);
+  if (!labels.length) return null;
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
 }
 
 function sumNumbers(values: number[] = []) {
@@ -98,6 +158,7 @@ export function aggregateDeliveryPlatformBreakdown(
 export function groupCashUpFactsByBusinessDate(facts: FactRow[] = []) {
   const groups: Record<string, FactRow[]> = {};
   for (const fact of facts) {
+    if (!isSingleDayCashUpFact(fact)) continue;
     const date = resolveBusinessDate(fact);
     if (!date) continue;
     if (!groups[date]) groups[date] = [];
@@ -138,6 +199,8 @@ export type CashUpRangeAggregation = {
   }>;
   topPlatformBySales: string | null;
   topPlatformByOrders: string | null;
+  branchesIncluded?: string[];
+  branchCoverageLabel?: string | null;
 };
 
 /** Split uncovered dates. missingDayCount counts only historical gaps. */
@@ -327,42 +390,48 @@ export function aggregateCashUpFactsOverRange({
   includeDailyBreakdown?: boolean;
 }): CashUpRangeAggregation {
   void branchId;
-  const dates = Object.keys(factsByDate)
+  const dailyFactsByDate: Record<string, FactRow[]> = {};
+  for (const [date, rows] of Object.entries(factsByDate)) {
+    const daily = (rows || []).filter(isSingleDayCashUpFact);
+    if (daily.length) dailyFactsByDate[date] = daily;
+  }
+  const dates = Object.keys(dailyFactsByDate)
     .filter((date) => (!startDate || date >= startDate) && (!endDate || date <= endDate))
     .sort();
 
-  const dailyBreakdown = includeDailyBreakdown ? dates.map((date) => {
-    const dayFacts = factsByDate[date] || [];
-    const totalSales = pickDaySales(dayFacts);
-    const totalGuests = pickAggregateMetricValue(dayFacts, "guest_count");
-    const totalOrders = pickAggregateMetricValue(dayFacts, "order_count");
-    const totalDeliverySales = pickAggregateMetricValue(dayFacts, "delivery_sales");
-    const totalDeliveryOrders = pickAggregateMetricValue(dayFacts, "delivery_orders");
+  const includedBranches = new Set<string>();
+  function rememberBranches(branches: string[] = []) {
+    for (const branch of branches) includedBranches.add(branch);
+  }
+
+  const dailyMeasured = dates.map((date) => {
+    const dayFacts = dailyFactsByDate[date] || [];
+    const sales = sumDaySales(dayFacts);
+    const guests = sumCanonicalMetricAcrossBranches(dayFacts, "guest_count");
+    const orders = sumCanonicalMetricAcrossBranches(dayFacts, "order_count");
+    const deliverySales = sumCanonicalMetricAcrossBranches(dayFacts, "delivery_sales");
+    const deliveryOrders = sumCanonicalMetricAcrossBranches(dayFacts, "delivery_orders");
+    rememberBranches(sales.branches);
+    rememberBranches(guests.branches);
+    rememberBranches(orders.branches);
+    rememberBranches(deliverySales.branches);
+    rememberBranches(deliveryOrders.branches);
     return {
       date,
-      totalSales: totalSales != null ? Number(totalSales) : null,
-      totalGuests: totalGuests != null ? Number(totalGuests) : null,
-      totalOrders: totalOrders != null ? Number(totalOrders) : null,
-      totalDeliverySales: totalDeliverySales != null ? Number(totalDeliverySales) : null,
-      totalDeliveryOrders: totalDeliveryOrders != null ? Number(totalDeliveryOrders) : null,
+      totalSales: sales.value != null ? Number(sales.value) : null,
+      totalGuests: guests.value != null ? Number(guests.value) : null,
+      totalOrders: orders.value != null ? Number(orders.value) : null,
+      totalDeliverySales: deliverySales.value != null ? Number(deliverySales.value) : null,
+      totalDeliveryOrders: deliveryOrders.value != null ? Number(deliveryOrders.value) : null,
     };
-  }) : [];
+  });
+  const dailyBreakdown = includeDailyBreakdown ? dailyMeasured : [];
 
-  const salesValues = includeDailyBreakdown
-    ? dailyBreakdown.map((row) => row.totalSales).filter((v): v is number => v != null)
-    : dates.map((date) => pickDaySales(factsByDate[date] || [])).filter((v): v is number => v != null);
-  const guestValues = includeDailyBreakdown
-    ? dailyBreakdown.map((row) => row.totalGuests).filter((v): v is number => v != null)
-    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "guest_count")).filter((v): v is number => v != null);
-  const orderValues = includeDailyBreakdown
-    ? dailyBreakdown.map((row) => row.totalOrders).filter((v): v is number => v != null)
-    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "order_count")).filter((v): v is number => v != null);
-  const deliverySalesValues = includeDailyBreakdown
-    ? dailyBreakdown.map((row) => row.totalDeliverySales).filter((v): v is number => v != null)
-    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_sales")).filter((v): v is number => v != null);
-  const deliveryOrderValues = includeDailyBreakdown
-    ? dailyBreakdown.map((row) => row.totalDeliveryOrders).filter((v): v is number => v != null)
-    : dates.map((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders")).filter((v): v is number => v != null);
+  const salesValues = dailyMeasured.map((row) => row.totalSales).filter((v): v is number => v != null);
+  const guestValues = dailyMeasured.map((row) => row.totalGuests).filter((v): v is number => v != null);
+  const orderValues = dailyMeasured.map((row) => row.totalOrders).filter((v): v is number => v != null);
+  const deliverySalesValues = dailyMeasured.map((row) => row.totalDeliverySales).filter((v): v is number => v != null);
+  const deliveryOrderValues = dailyMeasured.map((row) => row.totalDeliveryOrders).filter((v): v is number => v != null);
 
   const totalSales = salesValues.length ? sumNumbers(salesValues) : null;
   const totalGuests = guestValues.length ? sumNumbers(guestValues) : null;
@@ -375,14 +444,11 @@ export function aggregateCashUpFactsOverRange({
     averageSpend = totalSales / totalGuests;
   }
 
-  const platformAgg = aggregateDeliveryPlatformBreakdown(factsByDate, startDate, endDate);
+  const platformAgg = aggregateDeliveryPlatformBreakdown(dailyFactsByDate, startDate, endDate);
 
-  const salesDates = includeDailyBreakdown
-    ? dailyBreakdown.filter((row) => row.totalSales != null).map((row) => row.date)
-    : dates.filter((date) => pickDaySales(factsByDate[date] || []) != null);
-  const deliveryOrderDates = includeDailyBreakdown
-    ? dailyBreakdown.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date)
-    : dates.filter((date) => pickAggregateMetricValue(factsByDate[date] || [], "delivery_orders") != null);
+  const salesDates = dailyMeasured.filter((row) => row.totalSales != null).map((row) => row.date);
+  const deliveryOrderDates = dailyMeasured.filter((row) => row.totalDeliveryOrders != null).map((row) => row.date);
+  const branchesIncluded = BRANCH_COVERAGE_ORDER.filter((id) => includedBranches.has(id));
 
   const expectedDayCount = countCalendarDaysInRange(startDate, endDate);
   const dayCount = dates.length;
@@ -408,6 +474,8 @@ export function aggregateCashUpFactsOverRange({
     sourceLagDayCount: coverage.sourceLagDates.length,
     requestedStartDate: startDate || null,
     requestedEndDate: endDate || null,
+    branchesIncluded,
+    branchCoverageLabel: branchCoverageLabel(branchesIncluded),
     dailyBreakdown,
     salesCoverageStart: salesDates[0] || null,
     salesCoverageEnd: salesDates[salesDates.length - 1] || null,

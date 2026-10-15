@@ -105,6 +105,7 @@ export const ASK_NAC_INTENTS = {
   DELIVERY_SALES: "delivery_sales",
   GOOGLE_REVIEWS: "google_reviews",
   FOODICS_QUERY: "foodics_query",
+  THEORETICAL_CONSUMPTION: "theoretical_consumption",
   ...VAULT_INTENTS,
   UNKNOWN: "unknown",
 } as const;
@@ -124,13 +125,72 @@ function isVaultQueryIntent(intent: string): boolean {
 const CASH_UP_PERIOD_SALES_SIGNAL =
   /\b(sales|revenue|guests?|delivery|orders?|spend|average|compare)\b/;
 
+import { SALES_SOURCE, selectSalesSource, isComparisonSalesSource } from "./salesSourcePolicy.js";
+import { executeMixedTodayYesterdaySales, lockMixedSalesRoute } from "./mixedSalesExecution.ts";
+
 const BRANCH_ALIASES: Record<string, string[]> = {
   khobar: ["khobar", "al khobar", "alkhobar"],
   riyadh: ["riyadh", "riyad"],
   jeddah: ["jeddah", "jedda"],
 };
 
+// Below the vault cash-up and sales rules (which score >= 20 when they match).
+export const THEORETICAL_CONSUMPTION_SCORE = 16;
+/**
+ * Theoretical ingredient consumption routing rule (Oracle D1.2 R1b).
+ * IDENTICAL in src/intelligence/askNac/intentRouter.js and
+ * supabase/functions/_shared/askNacOrchestrator.ts; both run the committed
+ * probe set in src/inventory/__fixtures__/oracle-d1/routingProbes.json.
+ *
+ * Routes to consumption when:
+ * - explicit wording: "should have used", "theoretical consumption/usage",
+ *   recipe coverage, incomplete/verified recipes; or
+ * - "how much <thing> ..." with a usage verb (consume*, use/used/uses/using,
+ *   usage, go/went through); or
+ * - a usage noun ("milk usage", "Milk consumption") with a branch and a period.
+ * Never when:
+ * - wastage/breakage wording;
+ * - cash-up, safe, petty cash, deposit, stock-level, par-level, ordering or
+ *   purchase-order PHRASES appear (bare "stock" is an ingredient: chicken stock);
+ * - the thing being measured (the "how much <thing>" object, or the whole
+ *   question when there is no object) is a payment, finance or utility term
+ *   (card, mada, discount, budget, cash, tips, refund, electricity, gas, ...);
+ * - sales/sold/revenue appear and there is no ingredient object.
+ */
+const CONSUMPTION_ALWAYS_EXCLUDED = /\b(wastage|waste|wasted|breakage|broken glass|spillage)\b/;
+const CONSUMPTION_CONTEXT_EXCLUDED = /\b(cash[\s-]?ups?|cashups?|cash reports?|cash variance|variance|shortages?|overages?|petty cash|in the safe|the [a-z]+ safe|safe (?:cash|balance|count)|deposited|deposit (?:made|amount|slip)|make (?:a|the) deposit|in stock|stock ?(?:levels?|counts?|take|on hand)|stocktakes?|(?:hold|keep|carry)\b[^?.!]{0,30}\bstock|stock\b[^?.!]{0,30}\b(?:hold|keep|carry)|par levels?|order from|re-?order\w*|should we order|how many orders|purchase orders?|invoices?)\b/;
+const CONSUMPTION_NON_INGREDIENT = /\b(card|cards|card payments?|payments?|mada|visa|mastercard|amex|apple ?pay|stc ?pay|discounts?|vouchers?|coupons?|promos?|promotions?|tips?|budgets?|cash|float|petty|money|sar|riyals?|refunds?|revenue|deposits?|electricity|power|gas|utilities|utility|fuel|diesel|petrol|labou?r|hours|staff)\b/;
+const CONSUMPTION_EXPLICIT = /\b(should have used|theoretical (?:consumption|usage|use)|incomplete recipes|recipe coverage|verified recipes)\b/;
+const CONSUMPTION_USAGE_VERB = /\b(consum\w*|use|used|uses|using|usage|(?:go|goes|went|gone|going) through)\b/;
+const CONSUMPTION_USAGE_NOUN = /\b(usage|consumption)\b/;
+const CONSUMPTION_SALES_WORD = /\b(sales|sold|revenue)\b/;
+const CONSUMPTION_BRANCH = /\b(khobar|al khobar|alkhobar|riyadh|riyad|jeddah|jedda)\b/;
+const CONSUMPTION_PERIOD = /\b(yesterday|today|last week|this week|past week|last \d+ days|on \d{4}-\d{2}-\d{2}|from \d{4}-\d{2}-\d{2}|between \d{4}-\d{2}-\d{2})\b/;
+const CONSUMPTION_HOW_MUCH_OBJECT = /\bhow much(?:\s+of(?:\s+(?:the|our))?)?(.*?)(?=\s+(?:should|did|does|do|was|were|is|are|has|have|had|will|would|could|can|went|go|goes|gone|got|get|in|at|for|from|on|between|during|by|per|khobar|riyadh|jeddah|yesterday|today|tomorrow|last|this|consum\w*|use|used|uses|using|usage)\b|\s*[?.!]|$)/;
+
+export function scoreTheoreticalConsumptionIntent(q: string, score = THEORETICAL_CONSUMPTION_SCORE): number {
+  const text = String(q || "").toLowerCase().replace(/\s+/g, " ").trim();
+  if (CONSUMPTION_ALWAYS_EXCLUDED.test(text)) return 0;
+  if (CONSUMPTION_CONTEXT_EXCLUDED.test(text)) return 0;
+  const howMuch = text.match(CONSUMPTION_HOW_MUCH_OBJECT);
+  const object = howMuch ? howMuch[1].trim() : "";
+  if (CONSUMPTION_NON_INGREDIENT.test(object || text)) return 0;
+  if (CONSUMPTION_EXPLICIT.test(text)) return score;
+  if (!object && CONSUMPTION_SALES_WORD.test(text)) return 0;
+  if (howMuch && CONSUMPTION_USAGE_VERB.test(text)) return score;
+  if (!howMuch && CONSUMPTION_USAGE_NOUN.test(text) && CONSUMPTION_BRANCH.test(text) && CONSUMPTION_PERIOD.test(text)) {
+    return score;
+  }
+  return 0;
+}
+
 const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext?: Record<string, unknown> | null }) => number }[] = [
+  {
+    id: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
+    score(q) {
+      return scoreTheoreticalConsumptionIntent(q);
+    },
+  },
   {
     id: ASK_NAC_INTENTS.TEACH_OPERATOR,
     score(q) {
@@ -235,6 +295,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.RECEPTION,
     score(q) {
+      if (selectSalesSource(q) === SALES_SOURCE.FOODICS_OPERATIONAL) return 0;
       if (!parseVaultPeriodFromQuestion(q)) return 0;
       if (/\b(reservations?|covers|walk[\s-]?ins?|no[\s-]?shows?|cancellations?|reception)\b/.test(q)) return 16;
       return 0;
@@ -261,7 +322,17 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
         return 0;
       }
       if (DOCUMENT_INTENT_SIGNAL.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      // Reviews, operational change, and bare commerce sales are not Cash Up.
+      if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 0;
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 36;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 36;
+      // Explicit ingredient-consumption wording with a date range is not a cash-up
+      // question (the consumption rule already excludes cash/sales/variance terms).
+      if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
       const period = parseVaultPeriodFromQuestion(q);
       const vaultCompare = parseVaultComparePeriodsFromQuestion(q);
       // Management performance overview — choose KPI bundle; do not fall through to UNKNOWN.
@@ -402,6 +473,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
     score(q) {
       if (DOCUMENT_INTENT_SIGNAL.test(q)) return 0;
       if (CASH_UP_INTENT_SIGNAL.test(q)) return 0;
+      const salesSource = selectSalesSource(q);
+      if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 0;
+      if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 14;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && CASH_UP_DAY_SALES_SIGNAL.test(q)) return 0;
       if (parseVaultPeriodFromQuestion(q)?.isSingleDay && /\b(net sales|what were net sales)\b/.test(q)) return 0;
       if (/\b(sales|revenue|net sales)\s+(today|this week|this month|yesterday)\b/.test(q)) return 0;
@@ -651,6 +725,7 @@ export function routeIntent(question: string, options: {
     whyMetricFocus,
     performanceOverview,
     queryFocus: salesQueryFocus,
+    salesSource: selectSalesSource(q),
     executiveKind:
       intent === ASK_NAC_INTENTS.EXECUTIVE_ANALYSIS ? detectExecutiveAnalysisKindEdge(question) : null,
     debug: {
@@ -964,6 +1039,96 @@ async function runQueryTool(
   }
 }
 
+export const THEORETICAL_CONSUMPTION_HANDOFF = {
+  kind: "client_local_tool",
+  intent: "theoretical_consumption",
+  tool: "queryIngredientConsumption",
+  engine: "src/inventory/truth",
+} as const;
+
+function buildTheoreticalConsumptionHandoff({
+  route,
+  question,
+  effectiveQuestion,
+  conversationContext,
+  profileHint,
+  filterBranch,
+  requestStartedAt,
+  routeIntentStartedAt,
+}: {
+  route: ReturnType<typeof routeIntent>;
+  question: string;
+  effectiveQuestion: string;
+  conversationContext: Record<string, unknown> | null;
+  profileHint: Record<string, unknown> | null;
+  filterBranch: string | null;
+  requestStartedAt: number;
+  routeIntentStartedAt: number;
+}) {
+  const authorized = resolveAuthorizedIntelligenceScope({
+    mentionedBranch: route.branchMention || null,
+    filterBranch,
+    profile: (profileHint || {}) as {
+      role?: string | null;
+      branchScope?: string | null;
+      allBranches?: boolean | null;
+      allowedBranchIds?: string[] | null;
+    },
+  });
+  const denied = authorized.unauthorizedBranch || null;
+  const reason = denied
+    ? `Your access does not include ${branchDisplayName(denied)}.`
+    : "Theoretical consumption is computed in the NAC app by the Inventory Truth recipe engine. The server does not compute a total.";
+  const tool = {
+    status: "UNAVAILABLE",
+    quantity: null,
+    unit: null,
+    postsStock: false,
+    reason,
+    engine: "inventory_truth",
+    executedBy: denied ? "none" : "client",
+  };
+  const now = Math.round(performance.now() - requestStartedAt);
+  return attachResponseMeta({
+    answerType: denied ? "feasibility_block" : "client_handoff",
+    title: "Theoretical ingredient consumption",
+    directAnswer: `${reason} No stock was posted.`,
+    keyMetrics: [],
+    insights: [],
+    recommendations: [],
+    confidence: "none",
+    periodLabel: null,
+    branchLabel: route.branchMention ? branchDisplayName(route.branchMention) : null,
+    intent: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION,
+    tool,
+    postsStock: false,
+    handoff: denied ? null : { ...THEORETICAL_CONSUMPTION_HANDOFF, question: effectiveQuestion, branchMention: route.branchMention || null },
+    warnings: denied ? [`Unauthorized branch scope: ${denied}`] : [],
+    missingData: denied ? ["unauthorized_branch"] : [],
+    routingConfidence: route.confidence,
+    nextContext: updateConversationContextEdge(
+      (conversationContext || {}) as Record<string, unknown>,
+      {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: { intent: ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION, directAnswer: reason },
+      },
+    ),
+    serverConnected: true,
+    aiConnected: false,
+    localFallback: false,
+  }, buildAskNacTimingMs({
+    total: now,
+    routeIntent: Math.round(performance.now() - routeIntentStartedAt),
+    selectedTool: 0,
+    vaultTool: 0,
+    executiveEvidenceV2: 0,
+    openAiNarration: 0,
+    datasetReuse: 0,
+    knowledgeHealth: 0,
+  }), true);
+}
+
 export async function processAskNacOnEdge(
   supabase: SupabaseClient,
   {
@@ -1098,6 +1263,27 @@ export async function processAskNacOnEdge(
       },
     };
   }
+  const referenceDate = new Date();
+  route = lockMixedSalesRoute(route, referenceDate, effectiveQuestion);
+  const mixedSalesComparison = isComparisonSalesSource(route.salesSource);
+
+  // Theoretical consumption: explicit client hand-off (D1, Oracle T1-T3).
+  // The canonical recipe engine (src/inventory/truth) is browser JavaScript and is
+  // not bundled into this Edge Function, so the server does not compute a total.
+  // It returns a structured hand-off; the NAC client runs the same read-only tool
+  // locally and labels the answer localFallback. No data is read here.
+  if (route.intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION) {
+    return buildTheoreticalConsumptionHandoff({
+      route,
+      question,
+      effectiveQuestion,
+      conversationContext: conversationContext as Record<string, unknown> | null,
+      profileHint: profileHint as Record<string, unknown> | null,
+      filterBranch: (mergedFilters.branch as string | null) || null,
+      requestStartedAt,
+      routeIntentStartedAt,
+    });
+  }
 
   // Company Intelligence Fabric spine — authoritative path for management-intelligence questions.
   let managementPlannerMeta: Record<string, unknown> | null = null;
@@ -1116,7 +1302,7 @@ export async function processAskNacOnEdge(
     referenceDate: new Date(),
   });
 
-  if (useFabricSpine) {
+  if (useFabricSpine && !mixedSalesComparison) {
     const spineStartedAt = performance.now();
 
     const profileAccess = (profileHint || {}) as {
@@ -1317,7 +1503,9 @@ export async function processAskNacOnEdge(
 
   // Legacy non-management path: keep planner enrichment for Foodics hijacks outside spine.
   const plannerStartedAt = performance.now();
-  const legacyAuthorized = resolveAuthorizedIntelligenceScope({
+  const legacyAuthorized = mixedSalesComparison
+    ? { scope: { primaryBranchId: route.branchMention || (mergedFilters.branch as string | null) || null } }
+    : resolveAuthorizedIntelligenceScope({
     mentionedBranch: route.branchMention || null,
     filterBranch: (mergedFilters.branch as string | null) || null,
     profile: (profileHint || {}) as {
@@ -1327,19 +1515,21 @@ export async function processAskNacOnEdge(
       allowedBranchIds?: string[] | null;
     },
   });
-  const plannerEnrichment = await enrichRouteWithManagementPlanner(
-    route as unknown as Record<string, unknown>,
-    effectiveQuestion,
-    {
-      branchHint: (legacyAuthorized.scope.primaryBranchId
-        || route.branchMention
-        || mergedFilters.branch
-        || null) as string | null,
-      conversationContext: conversationContext as Record<string, unknown> | null,
-      filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
-      referenceDate: new Date(),
-    },
-  );
+  const plannerEnrichment = mixedSalesComparison
+    ? { plannerUsed: false, plannerSource: null, applied: false, plan: null }
+    : await enrichRouteWithManagementPlanner(
+      route as unknown as Record<string, unknown>,
+      effectiveQuestion,
+      {
+        branchHint: (legacyAuthorized.scope.primaryBranchId
+          || route.branchMention
+          || mergedFilters.branch
+          || null) as string | null,
+        conversationContext: conversationContext as Record<string, unknown> | null,
+        filters: { branch: legacyAuthorized.scope.primaryBranchId || (mergedFilters.branch as string | null) || null },
+        referenceDate,
+      },
+    );
   managementPlannerMs = Math.round(performance.now() - plannerStartedAt);
   if (plannerEnrichment.plannerUsed) {
     route = plannerEnrichment.route as typeof route;
@@ -1380,7 +1570,20 @@ export async function processAskNacOnEdge(
 
   let tool: Record<string, unknown> | null = null;
   const selectedToolStartedAt = performance.now();
-  if (readiness.canQuery) {
+  if (readiness.canQuery && mixedSalesComparison) {
+    tool = await executeMixedTodayYesterdaySales(supabase, {
+      hours: route.period.hours,
+      period: route.period,
+      branchMention: route.branchMention,
+      filters: mergedFilters,
+      profile: profileHint,
+      branch: mergedFilters.branch,
+      question: effectiveQuestion,
+      foodicsPeriod: route.foodicsPeriod,
+      vaultPeriod: route.vaultPeriod,
+      referenceDate,
+    }) as Record<string, unknown>;
+  } else if (readiness.canQuery) {
     tool = await runQueryTool(supabase, route.intent, {
       hours: route.period.hours,
       period: route.period,
@@ -1416,7 +1619,9 @@ export async function processAskNacOnEdge(
   const vaultToolMs = isVaultQueryIntent(route.intent) ? selectedToolMs : 0;
   const knowledgeHealthMs = route.intent === VAULT_INTENTS.KNOWLEDGE_HEALTH ? selectedToolMs : 0;
 
-  const usedVaultAnswerBuilder = isVaultDataIntent(route.intent) || isVaultDocumentIntent(route.intent);
+  const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
+    || isVaultDocumentIntent(route.intent)
+    || Boolean(tool?.authorizationDenied || tool?.comparison);
   const routeWithQuestion = { ...route, question: effectiveQuestion };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
@@ -1426,15 +1631,17 @@ export async function processAskNacOnEdge(
   deterministic.readiness = readiness;
 
   const executiveEvidenceStartedAt = performance.now();
-  deterministic = await applyExecutiveIntelligenceV2({
-    supabase,
-    route: routeWithQuestion,
-    tool,
-    response: deterministic,
-    userEmail: effectiveUserEmail,
-    profile: profileHint as Record<string, unknown> | null,
-    filters: mergedFilters as Record<string, unknown>,
-  }) as typeof deterministic;
+  if (!tool?.authorizationDenied && !tool?.comparison) {
+    deterministic = await applyExecutiveIntelligenceV2({
+      supabase,
+      route: routeWithQuestion,
+      tool,
+      response: deterministic,
+      userEmail: effectiveUserEmail,
+      profile: profileHint as Record<string, unknown> | null,
+      filters: mergedFilters as Record<string, unknown>,
+    }) as typeof deterministic;
+  }
   const executiveEvidenceV2Ms = Math.round(performance.now() - executiveEvidenceStartedAt);
 
   const isCashUpQuestion = /\bcash\s*up\b/i.test(effectiveQuestion);

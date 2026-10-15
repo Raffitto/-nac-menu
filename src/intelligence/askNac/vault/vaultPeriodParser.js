@@ -81,9 +81,9 @@ function shiftLocalDate(referenceDate, dayDelta) {
 }
 
 function resolveYearForMonth(monthIndex, explicitYear, referenceDate) {
-  let year = explicitYear ? Number(explicitYear) : referenceDate.getFullYear();
-  if (!explicitYear && monthIndex > referenceDate.getMonth()) year -= 1;
-  return year;
+  if (explicitYear) return Number(explicitYear);
+  const { year, month } = calendarYmdInTz(referenceDate, PERIOD_TZ);
+  return monthIndex > month - 1 ? year - 1 : year;
 }
 
 function formatDayMonthLabel(year, monthIndex, day) {
@@ -119,6 +119,19 @@ function buildCustomRangePeriod(startDate, endDate, label, periodType = "custom_
     isSingleDay: startDate === endDate,
     isRange: startDate !== endDate,
   };
+}
+
+/** Actual-to-date end: not after today, and not after the 08:00 Asia/Riyadh completed day. */
+function capHalfToCompleted(startDate, naturalEnd, referenceDate) {
+  const today = riyadhIsoDate(referenceDate);
+  const completed = latestCompletedBusinessDate(referenceDate);
+  let end = naturalEnd;
+  if (end > today) end = today;
+  if (end > completed) end = completed;
+  if (end < startDate) {
+    return { endDate: startDate, noCompletedDays: true, expectedDayCount: 0 };
+  }
+  return { endDate: end, noCompletedDays: false };
 }
 
 function monthBounds(year, monthIndex) {
@@ -171,10 +184,11 @@ function monthToDateBounds(referenceDate) {
 
 function rollingRange(referenceDate, days, { endOffset = 0, label, periodType }) {
   const n = Math.max(1, Math.floor(Number(days) || 0));
-  const end = shiftLocalDate(referenceDate, endOffset);
-  const start = shiftLocalDate(end, -(n - 1));
-  const startDate = isoDate(start.getFullYear(), start.getMonth() + 1, start.getDate());
-  const endDate = isoDate(end.getFullYear(), end.getMonth() + 1, end.getDate());
+  const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+  const end = addCalendarDays(today.year, today.month, today.day, endOffset);
+  const start = addCalendarDays(end.year, end.month, end.day, -(n - 1));
+  const startDate = isoDate(start.year, start.month, start.day);
+  const endDate = isoDate(end.year, end.month, end.day);
   return {
     startDate,
     endDate,
@@ -219,8 +233,12 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
     const monthIndex = MONTH_MAP[firstHalfMonth[1]];
     const year = resolveYearForMonth(monthIndex, firstHalfMonth[2], referenceDate);
     const startDate = isoDate(year, monthIndex + 1, 1);
-    const endDate = isoDate(year, monthIndex + 1, 15);
-    return buildCustomRangePeriod(startDate, endDate, `first half of ${formatRangeLabel(startDate, endDate).split("–")[1]?.trim() || firstHalfMonth[1]}`, "first_half");
+    const naturalEnd = isoDate(year, monthIndex + 1, 15);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, `first half of ${firstHalfMonth[1]} ${year}`, "first_half"),
+      ...capped,
+    };
   }
 
   const secondHalfMonth = q.match(new RegExp(`\\bsecond\\s+half\\s+(?:of\\s+)?${MONTH_PATTERN}(?:\\s+(20\\d{2}))?\\b`));
@@ -228,30 +246,36 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
     const monthIndex = MONTH_MAP[secondHalfMonth[1]];
     const year = resolveYearForMonth(monthIndex, secondHalfMonth[2], referenceDate);
     const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-    let endDay = lastDay;
-    const isCurrentMonth = year === referenceDate.getFullYear() && monthIndex === referenceDate.getMonth();
-    if (isCurrentMonth) endDay = Math.min(lastDay, referenceDate.getDate());
     const startDate = isoDate(year, monthIndex + 1, 16);
-    const endDate = isoDate(year, monthIndex + 1, endDay);
-    return buildCustomRangePeriod(startDate, endDate, `second half of ${secondHalfMonth[1]} ${year}`, "second_half");
+    const naturalEnd = isoDate(year, monthIndex + 1, lastDay);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, `second half of ${secondHalfMonth[1]} ${year}`, "second_half"),
+      ...capped,
+    };
   }
 
   if (/\bfirst\s+half\s+(?:of\s+)?this\s+month\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const m = referenceDate.getMonth();
-    const startDate = isoDate(y, m + 1, 1);
-    const endDate = isoDate(y, m + 1, 15);
-    return buildCustomRangePeriod(startDate, endDate, "first half this month", "first_half");
+    const [y, m] = riyadhIsoDate(referenceDate).split("-").map(Number);
+    const startDate = isoDate(y, m, 1);
+    const naturalEnd = isoDate(y, m, 15);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, "first half this month", "first_half"),
+      ...capped,
+    };
   }
 
   if (/\bsecond\s+half\s+(?:of\s+)?this\s+month\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const m = referenceDate.getMonth();
-    const lastDay = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    const endDay = Math.min(lastDay, referenceDate.getDate());
-    const startDate = isoDate(y, m + 1, 16);
-    const endDate = isoDate(y, m + 1, endDay);
-    return buildCustomRangePeriod(startDate, endDate, "second half this month", "second_half");
+    const [y, m] = riyadhIsoDate(referenceDate).split("-").map(Number);
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const startDate = isoDate(y, m, 16);
+    const naturalEnd = isoDate(y, m, lastDay);
+    const capped = capHalfToCompleted(startDate, naturalEnd, referenceDate);
+    return {
+      ...buildCustomRangePeriod(startDate, capped.endDate, "second half this month", "second_half"),
+      ...capped,
+    };
   }
 
   return null;
@@ -523,18 +547,19 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
   }
 
   if (/\blast\s+month\b/.test(q)) {
-    const shifted = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - 1, 1);
-    return monthBounds(shifted.getFullYear(), shifted.getMonth());
+    const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+    const prev = addCalendarDays(today.year, today.month, 1, -1);
+    return monthBounds(prev.year, prev.month - 1);
   }
 
   if (/\b(this year|year to date|year-to-date|ytd)\b/.test(q)) {
-    const y = referenceDate.getFullYear();
-    const startDate = isoDate(y, 1, 1);
-    const endDate = isoDate(y, referenceDate.getMonth() + 1, referenceDate.getDate());
+    const today = calendarYmdInTz(referenceDate, PERIOD_TZ);
+    const startDate = isoDate(today.year, 1, 1);
+    const endDate = isoDate(today.year, today.month, today.day);
     return {
       startDate,
       endDate,
-      label: `${y} year-to-date`,
+      label: `${today.year} year-to-date`,
       periodType: "year_to_date",
       isSingleDay: false,
       isRange: true,
@@ -687,7 +712,15 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     const current = lastFirst ? lastWeek : thisWeek;
     const previous = lastFirst ? thisWeek : lastWeek;
     if (current && previous) {
-      return { current, previous, isComparison: true, periodType: "week_compare", likeForLike: true, comparisonMode: "like_for_like" };
+      const incomplete = Boolean(current.noCompletedDays);
+      return {
+        current,
+        previous,
+        isComparison: true,
+        periodType: "week_compare",
+        likeForLike: !incomplete,
+        comparisonMode: incomplete ? "incomplete_current_period" : "like_for_like",
+      };
     }
   }
 

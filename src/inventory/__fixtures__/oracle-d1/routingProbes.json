@@ -1,0 +1,1117 @@
+{
+ "_about": "Oracle D1.1 re-validation routing probes (/workspace/nac-audit/d11-probes: qs.json 59 + qs2.mjs 9 = 68). expect: exact intent, or '!theoretical_consumption' = must not route to consumption. main/d11 = routes Oracle recorded at ce12f58 and D1.1 (2eb592e).",
+ "probes": [
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much variance should we expect in Jeddah cash up?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "What was the cash up variance in Khobar yesterday?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much was the cash shortage in Riyadh last week?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much cash did Khobar collect yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much card payment was used in Khobar yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much discount was used in Riyadh last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much of the float was used in Khobar yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much mada was used in Jeddah last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much in tips did Khobar get yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "Show the cash up for Riyadh from 2026-10-04 to 2026-10-08",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "cashup",
+   "question": "How much was overage in the Khobar cash up on 2026-10-08?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "safe_petty",
+   "question": "How much cash should be in the Khobar safe?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "safe_petty",
+   "question": "How much petty cash should Khobar have?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "safe_petty",
+   "question": "How much petty cash was used in Riyadh last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "safe_petty",
+   "question": "How much of the petty cash did Khobar use yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "safe_petty",
+   "question": "How much is in the safe at Jeddah?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "deposits",
+   "question": "How much should Riyadh have deposited yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "deposits",
+   "question": "How much did Khobar deposit last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "deposits",
+   "question": "Was the Jeddah deposit made yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "unknown"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "orders",
+   "question": "How much should we order of milk for Khobar?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "orders",
+   "question": "How much milk should we reorder for Riyadh this week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "orders",
+   "question": "How much did we purchase of milk last week in Khobar?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "orders",
+   "question": "How much should Khobar order from the supplier tomorrow?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "orders",
+   "question": "How many orders did Khobar have yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "unknown"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "stock",
+   "question": "How much stock should we hold in Khobar?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "stock",
+   "question": "How much milk is in stock in Riyadh?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "stock",
+   "question": "What is the par level for milk in Khobar?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "unknown"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "stock",
+   "question": "How much milk do we have left in Khobar?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have consumed yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk did Khobar use yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk was used in Khobar yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much oat milk did Riyadh go through last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "What was the milk usage in Khobar last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "unknown"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "Milk consumption Khobar yesterday",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "unknown"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have used last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should we have used in Khobar yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk did Khobar consume on 2026-10-08?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have consumed from 2026-10-04 to 2026-10-08?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have consumed between 2026-10-04 and 2026-10-08?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much espresso beans did Riyadh use yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk was used for the drinks sold in Khobar yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have used based on sales yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk did Khobar use for orders yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk should Khobar have used given its stock yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk was used in Khobar till yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much milk did Khobar consume vs what we purchased last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "branch_comparison",
+    "client": "branch_comparison"
+   },
+   "d11": {
+    "edge": "branch_comparison",
+    "client": "branch_comparison"
+   },
+   "note": "consumption-led; main sent it to branch_comparison (a cross-branch tool) which cannot answer a single-branch purchase comparison"
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "Theoretical usage of milk in Khobar yesterday",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "unknown"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much ice cream was used in Khobar yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "consumption_real",
+   "question": "How much cream should Khobar have used yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much cash was used to buy milk in Khobar yesterday?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much milk should Khobar have consumed and what was the cash up variance yesterday?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much of the budget was used in Khobar last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much electricity did Khobar use last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much gas was consumed in Riyadh last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much did Khobar spend on milk last week?",
+   "expect": {
+    "edge": "!theoretical_consumption",
+    "client": "!theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much should Khobar have consumed in sales yesterday?",
+   "expect": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "main": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   },
+   "d11": {
+    "edge": "vault_cash_up_summary",
+    "client": "vault_cash_up_summary"
+   }
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much safe milk should Khobar have used yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "note": "'safe' is not a cash phrase here; safe milk is an ingredient question"
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much milk should Khobar have consumed yesterday? Also show the deposit.",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "theoretical_consumption"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "note": "leading consumption question; 'show the deposit' is a follow-up, not the measured thing"
+  },
+  {
+   "source": "qs.json",
+   "category": "adversarial",
+   "question": "How much water was used in Jeddah last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "note": "water is a recipe ingredient; the tool answers or refuses by ingredient name"
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much chicken stock should Khobar have used yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much beef stock should Riyadh have consumed last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much vanilla syrup should Khobar have consumed last week?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much cashew should Khobar have used yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much milk did Khobar use yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": {
+    "edge": "unknown",
+    "client": "sales_total"
+   },
+   "d11": {
+    "edge": "unknown",
+    "client": "sales_total"
+   }
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much milk does Khobar use per day?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much sugar was consumed in Riyadh on 2026-10-08?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much orange juice should Khobar have consumed from 2026-10-04 to 2026-10-08?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  },
+  {
+   "source": "qs2.mjs",
+   "category": "qs2",
+   "question": "How much ice should Khobar have used yesterday?",
+   "expect": {
+    "edge": "theoretical_consumption",
+    "client": "theoretical_consumption"
+   },
+   "main": null,
+   "d11": null
+  }
+ ]
+}

@@ -11,6 +11,7 @@ import {
   sourceEntry,
 } from "../askNacContract";
 import { ASK_NAC_INTENTS } from "../intentRouter";
+import { canonicalCashUpSales, describeAuthorizedSalesComparison, describeMixedSalesResult, SALES_SOURCE } from "../shared/salesSourcePolicy";
 import {
   collectVaultSources,
   extractDocumentSearchTerms,
@@ -73,6 +74,23 @@ function formatNumber(value) {
   const n = Number(value);
   if (Number.isFinite(n)) return n.toLocaleString();
   return String(value);
+}
+
+function finiteSales(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function foodicsNetSales(foodics) {
+  if (!foodics || foodics.missingBatch || foodics.missingPeriod) return null;
+  return finiteSales(foodics.totals?.netSales);
+}
+
+function cashUpNetSales(cashUp) {
+  if (!cashUp) return null;
+  if (cashUp.canonicalTotal != null) return finiteSales(cashUp.canonicalTotal);
+  return canonicalCashUpSales(cashUp.facts);
 }
 
 function vaultConfidence(tool) {
@@ -256,9 +274,78 @@ export function buildVaultCoverageListAnswer(route, tool, readiness) {
   });
 }
 
+function salesBranchName(id) {
+  if (id === "khobar") return "Khobar";
+  if (id === "riyadh") return "Riyadh";
+  if (id === "jeddah") return "Jeddah";
+  return id || "that branch";
+}
+
+function buildSalesAuthorizationOrComparisonAnswer(route, tool, readiness) {
+  if (tool?.authorizationDenied) {
+    const denied = salesBranchName(tool.deniedBranch);
+    const allowed = (tool.allowedBranches || []).map(salesBranchName).filter(Boolean).join(", ") || "your assigned branch";
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: ANSWER_TYPES.MISSING_DATA,
+      title: "Branch not authorized",
+      directAnswer: `Your access does not include ${denied}. Sales were not retrieved. You can query: ${allowed}.`,
+      keyMetrics: [],
+      warnings: [],
+    });
+  }
+  if (tool?.comparison) {
+    const directAnswer = describeAuthorizedSalesComparison(tool.comparison);
+    const incomplete = /unavailable|coverage is incomplete/i.test(directAnswer);
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: incomplete ? ANSWER_TYPES.MISSING_DATA : ANSWER_TYPES.COMPARISON,
+      title: "Sales comparison",
+      directAnswer,
+      keyMetrics: [],
+      warnings: ["Operational and accounting figures are shown separately and are not added together."],
+    });
+  }
+  return null;
+}
+
 export function buildVaultCashUpAnswer(route, tool, readiness) {
+  const gated = buildSalesAuthorizationOrComparisonAnswer(route, tool, readiness);
+  if (gated) return gated;
   const facts = tool?.facts || [];
   const aggregation = tool?.aggregation || null;
+
+  if (route?.salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY) {
+    const todayNet = foodicsNetSales(tool?.foodicsToday);
+    const yesterdayNet = cashUpNetSales(tool?.cashUpYesterday);
+    const described = describeMixedSalesResult({
+      todayDate: tool?.todayPeriod?.startDate || "today",
+      yesterdayDate: tool?.yesterdayPeriod?.startDate || "yesterday",
+      todayNetSales: todayNet,
+      yesterdayNetSales: yesterdayNet,
+    });
+    const metrics = [];
+    if (described.todayText != null) {
+      metrics.push(metricEntry(`Today ${tool?.todayPeriod?.startDate || ""}`.trim(), described.todayText, {
+        unit: "SAR",
+        source: "Foodics operational/live",
+      }));
+    }
+    if (described.yesterdayText != null) {
+      metrics.push(metricEntry(`Yesterday ${tool?.yesterdayPeriod?.startDate || ""}`.trim(), described.yesterdayText, {
+        unit: "SAR",
+        source: "Cash Up",
+      }));
+    }
+    return createAskNacResponse({
+      ...baseVaultFields(route, tool, readiness),
+      answerType: todayNet == null || yesterdayNet == null ? ANSWER_TYPES.MISSING_DATA : ANSWER_TYPES.COMPARISON,
+      title: "Sales today vs yesterday",
+      directAnswer: described.directAnswer,
+      keyMetrics: metrics,
+      warnings: ["Operational and accounting figures may not be directly comparable and are not added together."],
+    });
+  }
 
   if (aggregation) {
     if (aggregation.dayCount === 0) {
@@ -266,7 +353,7 @@ export function buildVaultCashUpAnswer(route, tool, readiness) {
         ...baseVaultFields(route, tool, readiness),
         answerType: ANSWER_TYPES.MISSING_DATA,
         title: `Cash-up · ${tool?.periodLabel || "query"}`,
-        directAnswer: `No cash-up structured facts matched ${tool?.periodLabel || route?.vaultPeriod?.label || "the requested period"}.`,
+        directAnswer: `No cash-up structured facts matched ${tool?.periodLabel || route?.vaultPeriod?.label || "the requested period"}. Official Cash Up is unavailable, so Foodics figures are not used. Ask for Foodics operational sales if you want that separate total.`,
         warnings: tool?.warnings || [],
       });
     }
@@ -997,6 +1084,10 @@ function buildVaultDriveDiscoveryAnswer(route, tool, readiness) {
 }
 
 export function buildVaultAnswer(route, tool, readiness) {
+  if (tool?.authorizationDenied || tool?.comparison) {
+    return buildVaultCashUpAnswer(route, tool, readiness);
+  }
+
   if (tool?.documentFallback?.matches?.length) {
     return buildVaultDocumentSearchAnswer(
       { ...route, intent: ASK_NAC_INTENTS.VAULT_DOCUMENT_SEARCH },

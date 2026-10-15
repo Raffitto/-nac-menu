@@ -3,13 +3,16 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { salesQueryDenied } from "./salesBranchAuthorization.ts";
 
 const MEMORY_SELECT = "id, branch_id, category, fact, priority";
 
 export async function fetchBranchMemory(
   supabase: SupabaseClient,
-  { branch }: { branch?: string | null } = {},
+  { branch, profile }: { branch?: string | null; profile?: { authenticated?: boolean | null; allBranches?: boolean | null; branchScope?: string | null; allowedBranchIds?: Array<string | null> | null } | null } = {},
 ) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) return { branch: branch || null, memories: [], sources: [], authorizationDenied: true };
   if (!branch) return { branch: null, memories: [], sources: [] };
 
   const { data, error } = await supabase

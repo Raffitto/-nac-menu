@@ -49,12 +49,78 @@ export const COMMERCE_ITEM_SELECT = [
   "status",
 ].join(",");
 
+/** The only commerce source treated as authoritative for item mix. Others are never summed with it. */
+export const CANONICAL_COMMERCE_SOURCE = "foodics";
+
+/** Stable unique sort keys for offset paging (table primary keys). */
+export const COMMERCE_ITEM_ORDER_KEYS = Object.freeze(["source", "source_order_item_id"]);
+export const COMMERCE_ORDER_ORDER_KEYS = Object.freeze(["source", "source_order_id"]);
+export const COMMERCE_ORDER_SELECT = "source,source_order_id,status";
+
+/** Allow-list. A missing or unknown status is never treated as completed. */
+export const SOLD_COMMERCE_ITEM_STATUSES = Object.freeze(["completed"]);
+export const SOLD_COMMERCE_ORDER_STATUSES = Object.freeze(["completed"]);
+export const REFUND_COMMERCE_ITEM_STATUSES = Object.freeze(["refunded", "returned", "partially_refunded"]);
+
+/** Known non-sale statuses (dropped, but not "unknown"). */
 export const EXCLUDED_COMMERCE_ITEM_STATUSES = Object.freeze([
   "void",
   "cancelled",
   "refunded",
   "open",
 ]);
+
+export const COMMERCE_ROW_KIND = Object.freeze({
+  SALE: "sale",
+  REFUND: "refund",
+  DROPPED: "dropped",
+});
+
+function normalizedStatus(value) {
+  if (value == null) return null;
+  const text = String(value).trim().toLowerCase();
+  return text || null;
+}
+
+/**
+ * Classify one canonical commerce item row.
+ * orderStatus: the parent order's status when known; `undefined` means order
+ * status was not read (caller must disclose that); `null` means the order row
+ * was not found.
+ * Returns { kind, reason, mapped }.
+ */
+export function classifyCommerceItemRow(row = {}, { orderStatus, source = CANONICAL_COMMERCE_SOURCE } = {}) {
+  const drop = (reason) => ({ kind: COMMERCE_ROW_KIND.DROPPED, reason, mapped: null });
+  if (source && row.source && row.source !== source && row.source !== SALES_SOURCE.CANONICAL_COMMERCE) {
+    return drop("other_source");
+  }
+  const status = normalizedStatus(row.status);
+  if (!status) return drop("missing_item_status");
+  const quantityRaw = row.quantity ?? row.quantity_sold ?? row.qty ?? null;
+  const quantity = Number(quantityRaw);
+  if (quantityRaw == null || quantityRaw === "" || !Number.isFinite(quantity)) return drop("invalid_quantity");
+  if (quantity === 0) return drop("zero_quantity");
+  if (orderStatus !== undefined) {
+    const order = normalizedStatus(orderStatus);
+    if (!order) return drop("order_not_found");
+    if (!SOLD_COMMERCE_ORDER_STATUSES.includes(order)) return drop(`order_${order}`);
+  }
+  const isSold = SOLD_COMMERCE_ITEM_STATUSES.includes(status);
+  const isRefundStatus = REFUND_COMMERCE_ITEM_STATUSES.includes(status);
+  if (quantity < 0 && (isSold || isRefundStatus)) {
+    return { kind: COMMERCE_ROW_KIND.REFUND, reason: "negative_quantity", mapped: mapCommerceFields(row, status) };
+  }
+  if (isRefundStatus) {
+    // A positive line marked refunded/returned: whether it is the original sale or a
+    // refund record is not known, so it can be neither counted nor netted.
+    return { kind: COMMERCE_ROW_KIND.DROPPED, reason: "unnettable_refund", mapped: null };
+  }
+  if (isSold && quantity > 0) {
+    return { kind: COMMERCE_ROW_KIND.SALE, reason: null, mapped: mapCommerceFields(row, status) };
+  }
+  if (EXCLUDED_COMMERCE_ITEM_STATUSES.includes(status)) return drop(`item_${status}`);
+  return drop("unknown_item_status");
+}
 
 export function clipSalesPeriod({
   requestedStart,
@@ -98,9 +164,7 @@ export function clipSalesPeriod({
   };
 }
 
-export function mapCommerceItemRow(row = {}) {
-  const status = String(row.status || "completed").toLowerCase();
-  if (EXCLUDED_COMMERCE_ITEM_STATUSES.includes(status)) return null;
+function mapCommerceFields(row, status) {
   const businessDate = row.business_date || row.sold_on || row.order_date || row.period_start || null;
   const displayName = row.item_name || row.menu_item_name || row.product_name || row.name || "";
   const quantity = row.quantity ?? row.quantity_sold ?? row.qty ?? null;
@@ -109,12 +173,15 @@ export function mapCommerceItemRow(row = {}) {
     matched_menu_item_name: displayName,
     raw_item_name: displayName,
     quantity_sold: quantity,
-    net_sales: row.net_amount ?? row.net_sales ?? row.net_amount ?? null,
+    net_sales: row.net_amount ?? row.net_sales ?? null,
     branch_id: row.branch_id || null,
     period_start: businessDate,
     period_end: businessDate,
     foodics_product_id: row.product_id || row.foodics_product_id || null,
     commerceStatus: status,
+    commerceSource: row.source || null,
+    sourceOrderId: row.source_order_id || null,
+    sourceOrderItemId: row.source_order_item_id || null,
     identityStrength: row.canonical_menu_item_id
       ? "canonical_menu_item_id"
       : row.product_id
@@ -124,6 +191,16 @@ export function mapCommerceItemRow(row = {}) {
           : null,
     source: SALES_SOURCE.CANONICAL_COMMERCE,
   };
+}
+
+/**
+ * Map a commerce row that counts as a positive sale. Returns null for every
+ * other row (missing/unknown status, void, refund, zero or negative quantity).
+ * Order status is not known here; use classifyCommerceItemRow with orderStatus.
+ */
+export function mapCommerceItemRow(row = {}) {
+  const classified = classifyCommerceItemRow(row, { source: null });
+  return classified.kind === COMMERCE_ROW_KIND.SALE ? classified.mapped : null;
 }
 
 export function commerceRowHasContract(row) {

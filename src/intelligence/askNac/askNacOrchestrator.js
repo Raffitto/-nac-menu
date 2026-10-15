@@ -3,6 +3,8 @@
  */
 
 import { routeAskNacIntent, isFoodicsCompareIntent, isFoodicsDataIntent, ASK_NAC_INTENTS } from "./intentRouter";
+import { isComparisonSalesSource } from "./shared/salesSourcePolicy";
+import { executeMixedTodayYesterdaySales, lockMixedSalesRoute } from "./shared/mixedSalesExecution";
 import { assessIntentReadiness, assessIntentReadinessSync } from "./readinessEngine";
 import { runAskNacQueryTool } from "./queryTools";
 import { buildDeterministicAskNacAnswer } from "./answerBuilder";
@@ -97,6 +99,8 @@ export async function processAskNacQuestion({
       },
     };
   }
+  const referenceDate = options.referenceDate instanceof Date ? options.referenceDate : new Date();
+  route = lockMixedSalesRoute(route, referenceDate, effectiveQuestion);
   route = applyReviewPeriodDefaults(route, effectiveFilters);
   const periodFallbackWarnings = [];
 
@@ -128,6 +132,7 @@ export async function processAskNacQuestion({
     foodicsPeriod: route.foodicsPeriod,
     foodicsCompare: route.foodicsCompare,
     vaultPeriod: route.vaultPeriod,
+    salesSource: route.salesSource,
     executiveKind: route.executiveKind,
     hours: route.period?.hours,
     question: effectiveQuestion,
@@ -146,7 +151,21 @@ export async function processAskNacQuestion({
   const effectiveReadiness = syncBlocked.status === "blocked" ? syncBlocked : readiness;
 
   let tool = null;
-  if (effectiveReadiness.canQuery) {
+  if (effectiveReadiness.canQuery && isComparisonSalesSource(route.salesSource)) {
+    tool = await executeMixedTodayYesterdaySales(supabase, {
+      hours: route.period.hours,
+      period: route.period,
+      branchMention: route.branchMention,
+      filters: effectiveFilters,
+      profile,
+      session,
+      userEmail,
+      question: effectiveQuestion,
+      foodicsPeriod: route.foodicsPeriod,
+      vaultPeriod: route.vaultPeriod,
+      referenceDate,
+    });
+  } else if (effectiveReadiness.canQuery) {
     tool = await runAskNacQueryTool(supabase, route.intent, {
       hours: route.period.hours,
       period: route.period,
@@ -179,15 +198,17 @@ export async function processAskNacQuestion({
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
   }
 
-  deterministic = await applyExecutiveIntelligenceV2({
-    supabase,
-    route: { ...route, question: effectiveQuestion },
-    tool,
-    response: deterministic,
-    userEmail,
-    profile,
-    filters: effectiveFilters,
-  });
+  if (!tool?.authorizationDenied && !tool?.comparison) {
+    deterministic = await applyExecutiveIntelligenceV2({
+      supabase,
+      route: { ...route, question: effectiveQuestion },
+      tool,
+      response: deterministic,
+      userEmail,
+      profile,
+      filters: effectiveFilters,
+    });
+  }
 
   const conversationResolution = {
     originalQuestion: prepareResult.originalQuestion,
@@ -212,6 +233,9 @@ export async function processAskNacQuestion({
       response: deterministic,
       route,
     }),
+    // Theoretical consumption exposes the shared tool result (same shape as the
+    // Edge hand-off: status, quantity, unit, reason, postsStock:false).
+    ...(route.intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION ? { tool, postsStock: false } : {}),
     localFallback: true,
     aiConnected: false,
   };

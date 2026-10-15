@@ -1,4 +1,4 @@
-import { addDecimal, compareDecimal, divideDecimal, multiplyDecimal } from "../inventoryIntelligence";
+import { addDecimal, compareDecimal, divideDecimal, multiplyDecimal, normalizeMeasurementUnit } from "../inventoryIntelligence";
 
 /**
  * Deterministic recipe explosion.
@@ -12,10 +12,9 @@ function normName(value) {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function normUnit(value) {
-  const key = String(value || "").trim().toLowerCase();
-  const aliases = { g: "gm", gm: "gm", gms: "gm", ml: "ml", ltr: "ltr", kg: "kg", pcs: "pcs", pc: "pcs" };
-  return aliases[key] || String(value || "").trim();
+/** Shared alias table (inventoryIntelligence.UNIT_ALIASES); unknown units such as "Batch" pass through trimmed. */
+export function normUnit(value) {
+  return normalizeMeasurementUnit(value) || String(value || "").trim();
 }
 
 function positive(value, label) {

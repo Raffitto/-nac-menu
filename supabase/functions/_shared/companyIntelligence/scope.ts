@@ -113,6 +113,7 @@ export type AccessProfileHint = {
   role?: string | null;
   branchScope?: string | null;
   allBranches?: boolean | null;
+  authenticated?: boolean | null;
   allowedBranchIds?: Array<string | null | undefined> | null;
   /** Runtime aliases observed from staff tables / older clients. */
   primary_branch_id?: string | null;

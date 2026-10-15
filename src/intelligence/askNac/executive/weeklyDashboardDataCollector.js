@@ -10,6 +10,7 @@ import { getBatchForExportPeriod, getBatchSalesItems } from "../../../lib/foodic
 import { IMPORT_TYPE } from "../../../dashboard/config/foodicsImportTypes";
 import { aggregateSalesItemsByName } from "../../../dashboard/engines/executiveExport/salesRollup";
 import { fetchBranchMemory } from "./branchMemory";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 import { fetchOperatorMemory } from "./operatorMemory";
 import { assessPeriodCoverage } from "../coverage/coverageAwareness";
 import { resolveAnalyticalConfidence } from "../confidence/analyticalConfidence";
@@ -100,6 +101,17 @@ export async function collectWeeklyDashboardData(
     profile = null,
   } = {},
 ) {
+  const denial = salesQueryDenied(profile, { mentionedBranch: branch, filterBranch: branch });
+  if (denial) {
+    return {
+      authorizationDenied: true,
+      deniedBranch: denial.deniedBranch,
+      allowedBranches: denial.allowedBranches,
+      weekAggregation: { dayCount: 0, totalSales: null },
+      ninetyAggregation: { dayCount: 0 },
+      sourceRegistry: [],
+    };
+  }
   const label = branchLabel || branchDisplayName(branch);
   const startDate = vaultPeriod.startDate;
   const endDate = vaultPeriod.endDate;
@@ -142,8 +154,8 @@ export async function collectWeeklyDashboardData(
       reportType: "daily_logbook",
     }).catch(() => ({ facts: [] })),
     getVaultCoverage(supabase, { branch, startDate, endDate, slim: true }).catch(() => ({ coverage: [] })),
-    fetchBranchMemory(supabase, { branch }),
-    fetchOperatorMemory(supabase, { branch }),
+    fetchBranchMemory(supabase, { branch, profile }),
+    fetchOperatorMemory(supabase, { branch, profile }),
     getFoodicsTopItems(supabase, {
       branch,
       profile,

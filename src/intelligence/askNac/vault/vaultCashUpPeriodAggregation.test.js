@@ -659,6 +659,7 @@ describe("runVaultQueryTool range path", () => {
       question: "show sales last 14 days",
       vaultPeriod: period,
       filters: { branch: "khobar" },
+      profile: { authenticated: true, allBranches: false, branchScope: "khobar", allowedBranchIds: ["khobar"] },
     });
 
     expect(factsQueryLog.length).toBe(1);
@@ -706,6 +707,7 @@ describe("runVaultQueryTool range path", () => {
       vaultPeriod: parseVaultPeriodFromQuestion(question, REF),
       vaultCompare: parseVaultComparePeriodsFromQuestion(question, REF),
       filters: { branch: "khobar" },
+      profile: { authenticated: true, allBranches: false, branchScope: "khobar", allowedBranchIds: ["khobar"] },
     });
 
     const compare = parseVaultComparePeriodsFromQuestion(question, REF);

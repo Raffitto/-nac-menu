@@ -64,10 +64,10 @@ describe("askNac intentRouter", () => {
     expect(parseAskNacPeriod("menu scans month to date").hours).toBe(MONTH_HOURS);
   });
 
-  test("routes Foodics sales total", () => {
+  test("routes completed month sales to Cash Up", () => {
     const route = routeAskNacIntent("What were sales in May?");
-    expect(route.intent).toBe(ASK_NAC_INTENTS.SALES_TOTAL);
-    expect(route.foodicsPeriod?.startDate).toBe("2026-05-01");
+    expect(route.intent).toBe(ASK_NAC_INTENTS.VAULT_CASH_UP_SUMMARY);
+    expect(route.vaultPeriod?.startDate).toBe("2026-05-01");
   });
 
   test("routes top items last month", () => {
@@ -150,22 +150,20 @@ describe("askNac answerBuilder", () => {
     expect(answer.keyMetrics).toHaveLength(0);
   });
 
-  test("builds Foodics sales answer with batch coverage", () => {
+  test("does not turn a missing Cash Up month into a Foodics total", () => {
     const route = routeAskNacIntent("What were sales in May?");
     const answer = buildDeterministicAskNacAnswer(
       route,
       {
-        totals: { netSales: 12000, grossSales: 13000, quantity: 400 },
+        facts: [],
+        aggregation: { dayCount: 0 },
         periodLabel: "May 2026",
-        branchLabel: "Khobar",
-        batchCoverage: "Foodics import may.xlsx · 2026-05-01 to 2026-05-31 · Khobar",
-        sources: [{ name: "foodics_sales_items", detail: "batch" }],
         warnings: [],
       },
       { status: READINESS.READY, canQuery: true },
     );
-    expect(answer.directAnswer).toMatch(/12,000/);
-    expect(answer.keyMetrics.length).toBeGreaterThan(0);
-    expect(answer.sources.length).toBeGreaterThan(0);
+    expect(answer.directAnswer).toMatch(/No cash-up structured facts matched/i);
+    expect(answer.directAnswer).toMatch(/not used/i);
+    expect(answer.directAnswer).not.toMatch(/12[,.]?000/);
   });
 });

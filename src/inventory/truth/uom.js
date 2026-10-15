@@ -1,40 +1,17 @@
 import {
   areUnitsCompatible,
   convertToCanonicalQuantity,
-  normalizeText,
+  normalizeMeasurementUnit,
 } from "../inventoryIntelligence";
 import { CONVERSION_STATUS } from "./contracts";
 
-const RECIPE_UNIT_ALIASES = Object.freeze({
-  each: "each",
-  ea: "each",
-  item: "each",
-  piece: "each",
-  pieces: "each",
-  pc: "each",
-  pcs: "each",
-  gram: "gram",
-  grams: "gram",
-  g: "gram",
-  gm: "gram",
-  kilogram: "kilogram",
-  kilograms: "kilogram",
-  kg: "kilogram",
-  millilitre: "millilitre",
-  milliliter: "millilitre",
-  millilitres: "millilitre",
-  milliliters: "millilitre",
-  ml: "millilitre",
-  litre: "litre",
-  liter: "litre",
-  litres: "litre",
-  liters: "litre",
-  l: "litre",
-});
-
+/**
+ * Recipe units use the single shared measurement alias table in
+ * inventoryIntelligence (MEASUREMENT_UNIT_ALIASES). Packaging units are refused.
+ * Do not add a second alias table here.
+ */
 export function normalizeRecipeUnit(value) {
-  if (value == null || String(value).trim() === "") return null;
-  return RECIPE_UNIT_ALIASES[normalizeText(value)] || null;
+  return normalizeMeasurementUnit(value);
 }
 
 export function resolveRecipeLineUom({

@@ -239,10 +239,17 @@ function createCashUpSupabaseMock({
   };
 }
 
+const KHOBAR_PROFILE = {
+  authenticated: true,
+  allBranches: false,
+  branchScope: "khobar",
+  allowedBranchIds: ["khobar"],
+};
+
 describe("getLatestVaultCashUpFacts", () => {
   test("stale cash_up coverage row with null period_end does not win", async () => {
     const supabase = createCashUpSupabaseMock();
-    const result = await getLatestVaultCashUpFacts(supabase, { filters: { branch: "khobar" } });
+    const result = await getLatestVaultCashUpFacts(supabase, { filters: { branch: "khobar" }, profile: KHOBAR_PROFILE });
 
     expect(result.coverage[0].fileTitle).toBe("Cash up 2026.xlsx");
     expect(result.coverage[0].sourceFileId).toBe("good-file");
@@ -250,7 +257,7 @@ describe("getLatestVaultCashUpFacts", () => {
 
   test("latest cash_up selects Cash up 2026.xlsx over Cash up 2026-2.xlsx", async () => {
     const supabase = createCashUpSupabaseMock();
-    const result = await getLatestVaultCashUpFacts(supabase, { filters: { branch: "khobar" } });
+    const result = await getLatestVaultCashUpFacts(supabase, { filters: { branch: "khobar" }, profile: KHOBAR_PROFILE });
 
     expect(result.vaultSources[0].title).toBe("Cash up 2026.xlsx");
     expect(result.periodLabel).toMatch(/17 June 2026/);
@@ -263,6 +270,7 @@ describe("getLatestVaultCashUpFacts", () => {
     const result = await getLatestVaultCashUpFacts(supabase, {
       question: "show latest cash up",
       filters: { branch: "khobar", selectedRange: "today" },
+      profile: KHOBAR_PROFILE,
     });
 
     const netSales = result.facts.find((f) => f.metricKey === "net_sales");
@@ -287,6 +295,7 @@ describe("getLatestVaultCashUpFacts", () => {
     const result = await getLatestVaultCashUpFacts(supabase, {
       question: "show latest cash up",
       filters: { branch: "khobar" },
+      profile: KHOBAR_PROFILE,
     });
 
     expect(businessDateProbeLog.length).toBe(0);
@@ -306,6 +315,7 @@ describe("getLatestVaultCashUpFacts", () => {
     });
     const result = await getLatestVaultCashUpFacts(supabase, {
       filters: { branch: "khobar" },
+      profile: KHOBAR_PROFILE,
     });
 
     expect(businessDateProbeLog.length).toBe(1);
@@ -332,6 +342,7 @@ describe("runVaultQueryTool cash_up dated queries", () => {
         selectedRange: "today",
         timeRangeHours: 24,
       },
+      profile: KHOBAR_PROFILE,
     });
 
     expect(factsQueryLog.length).toBe(1);

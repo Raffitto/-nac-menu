@@ -7,6 +7,7 @@ import { ASK_NAC_INTENTS } from "../intentRouter";
 import { CONFIDENCE_LEVELS } from "../askNacContract";
 import { getVaultFacts, getVaultCoverage, searchVaultDocuments } from "../vault/vaultQueryTools";
 import { fetchExecutiveMemory } from "./executiveMemory";
+import { salesQueryDenied } from "../shared/salesBranchAuthorization";
 import { fetchManualInputsForPeriod } from "./manualInputs";
 import { createPendingSession } from "./pendingSessions";
 import { EXECUTIVE_EVIDENCE_FIELD_DEFS } from "./manualInputParser";
@@ -85,6 +86,11 @@ export async function gatherExecutiveEvidence(supabase, context = {}) {
   if (!supabase) return emptyGathered();
 
   const branch = context.branch || context.branchMention || context.filters?.branch || null;
+  const denial = salesQueryDenied(context.profile, {
+    mentionedBranch: context.branchMention || branch,
+    filterBranch: context.filters?.branch || branch,
+  });
+  if (denial) return { ...emptyGathered(), authorizationDenied: true };
   const vaultPeriod = context.vaultPeriod || context.route?.vaultPeriod || null;
   const startDate = vaultPeriod?.startDate;
   const endDate = vaultPeriod?.endDate;
@@ -119,7 +125,7 @@ export async function gatherExecutiveEvidence(supabase, context = {}) {
         operatorMemories: tool.operatorMemory || [],
         memories: tool.executiveMemory,
       })
-      : fetchExecutiveMemory(supabase, { branch }).catch(() => ({ memories: [], branchMemories: [], operatorMemories: [] })),
+      : fetchExecutiveMemory(supabase, { branch, profile: context.profile }).catch(() => ({ memories: [], branchMemories: [], operatorMemories: [] })),
     getVaultCoverage(supabase, baseContext).catch(() => ({ coverage: [] })),
     searchVaultDocuments(supabase, {
       ...baseContext,

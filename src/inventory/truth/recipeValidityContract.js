@@ -68,13 +68,33 @@ export function recipeYield(recipe, version) {
   return { quantity, unit };
 }
 
+/**
+ * Instant used to pick a recipe version for an analytical date.
+ * A date-only value (a Foodics business_date such as "2026-10-10") is a
+ * business day in Asia/Riyadh, not UTC midnight. Rule: the version that is
+ * active at the close of that business day (23:59:59.999 +03:00) applies to
+ * the whole business day. Sales carry no time of day, so a mid-day change
+ * cannot be split; the later version wins deterministically.
+ * Full timestamps are used as given.
+ */
+export const BUSINESS_DAY_UTC_OFFSET = "+03:00";
+
+export function analyticalInstant(asOf) {
+  if (asOf == null || asOf === "") return NaN;
+  const raw = String(asOf);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return Date.parse(`${raw}T23:59:59.999${BUSINESS_DAY_UTC_OFFSET}`);
+  }
+  return Date.parse(raw);
+}
+
 export function versionCoversTimestamp(version, asOf) {
   if (asOf == null || asOf === "") return statusOf(version) === "active";
   const status = statusOf(version);
   if (status !== "active" && status !== "retired") return false;
   const from = version.effective_from || version.effectiveFrom;
   const to = version.effective_to || version.effectiveTo;
-  const time = Date.parse(asOf);
+  const time = analyticalInstant(asOf);
   if (!Number.isFinite(time)) return false;
   if (from && Date.parse(from) > time) return false;
   if (to && Date.parse(to) <= time) return false;

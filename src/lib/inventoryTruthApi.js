@@ -2,6 +2,13 @@ import { supabase } from "./supabase";
 import { applyBranchScopeToSupabaseQuery, filterRowsByRbacProfile, resolveRbacQueryBranch } from "./rbacQueryScope";
 import { runInventoryTruthEngine } from "../inventory/truth";
 import {
+  INGREDIENT_SELECT,
+  LINE_SELECT,
+  readCanonicalCommerceSales,
+  RECIPE_SELECT,
+  VERSION_SELECT,
+} from "../inventory/truth/readers";
+import {
   COMMERCE_CANDIDATE_TABLES,
   COMMERCE_ITEM_SELECT,
   SALES_SOURCE,
@@ -11,10 +18,6 @@ import {
   selectSalesSource,
 } from "../inventory/truth/salesSource";
 
-const INGREDIENT_SELECT = "id,canonical_name,active,base_inventory_unit,category,branch_id,scope";
-const RECIPE_SELECT = "id,name,normalized_name,name_en,recipe_type,menu_item_id,branch_id,output_quantity,output_unit,active";
-const VERSION_SELECT = "id,recipe_id,version_number,status,yield_percentage,effective_from,effective_to";
-const LINE_SELECT = "id,recipe_version_id,ingredient_id,sub_recipe_id,quantity,unit,canonical_quantity,canonical_unit";
 const COST_STATE_SELECT = "branch_id,ingredient_id,weighted_average_cost,last_purchase_price,last_purchase_at,current_quantity";
 const CATALOGUE_SELECT = "id,ingredient_id,supplier_sku,original_product_name,verification_state";
 const SALES_SELECT = "matched_menu_item_id,matched_menu_item_name,raw_item_name,normalized_item_name,quantity_sold,net_sales,branch_id,period_start,period_end";
@@ -74,23 +77,6 @@ function isMissingRelation(error) {
     || message.includes("does not exist")
     || message.includes("schema cache")
     || message.includes("could not find the table");
-}
-
-async function fetchPaged(buildQuery, { pageSize = 1000, maxRows = 20000, context = "Fetch rows" } = {}) {
-  const rows = [];
-  let from = 0;
-  while (from < maxRows) {
-    const to = Math.min(from + pageSize - 1, maxRows - 1);
-    const { data, error } = await buildQuery().range(from, to);
-    if (error) {
-      if (isMissingRelation(error)) throw error;
-      throw new Error(`${context}: ${error.message}`);
-    }
-    rows.push(...(data || []));
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
-  }
-  return rows;
 }
 
 export async function fetchInventoryTruthFoundation({
@@ -191,35 +177,33 @@ async function probeCommerceCoverage(client, { branchId, rbacProfile }) {
 
 async function probeCommerceItems(client, { branchId, rbacProfile, availableStart, availableEnd }) {
   if (!availableStart || !availableEnd) {
-    return { status: SALES_SOURCE_STATUS.EMPTY, rows: [], table: COMMERCE_CANDIDATE_TABLES.items };
+    return { status: SALES_SOURCE_STATUS.EMPTY, rows: [], complete: true, table: COMMERCE_CANDIDATE_TABLES.items };
   }
-  const buildQuery = () => {
-    let query = client
-      .from(COMMERCE_CANDIDATE_TABLES.items)
-      .select(COMMERCE_ITEM_SELECT)
-      .gte("business_date", availableStart)
-      .lte("business_date", availableEnd);
-    if (branchId) query = query.eq("branch_id", branchId);
-    else query = applyBranchScopeToSupabaseQuery(query, rbacProfile);
-    return query;
+  // Shared ordered pager: source-filtered, order-status gated, complete only after an empty page.
+  const read = await readCanonicalCommerceSales(client, {
+    branchId,
+    start: availableStart,
+    end: availableEnd,
+    applyScope: (query) => applyBranchScopeToSupabaseQuery(query, rbacProfile),
+  });
+  if (read.error) {
+    if (isMissingRelation(read.error)) {
+      return { status: SALES_SOURCE_STATUS.NOT_IN_SCHEMA, rows: [], complete: true, table: COMMERCE_CANDIDATE_TABLES.items };
+    }
+    throw new Error(`Fetch canonical commerce order items: ${read.error.message || read.error}`);
+  }
+  // Negative (refund) rows stay in: the truth ledger nets them per menu item, as before.
+  const rows = read.rows;
+  return {
+    status: read.rawRowCount ? SALES_SOURCE_STATUS.AVAILABLE : SALES_SOURCE_STATUS.EMPTY,
+    rows,
+    complete: read.complete,
+    droppedRows: read.droppedRows,
+    refunds: read.refunds,
+    orderStatusVerified: read.orderStatusVerified,
+    incompleteReason: read.reason || null,
+    table: COMMERCE_CANDIDATE_TABLES.items,
   };
-  try {
-    const rows = await fetchPaged(buildQuery, { context: "Fetch canonical commerce order items" });
-    return {
-      status: rows.length ? SALES_SOURCE_STATUS.AVAILABLE : SALES_SOURCE_STATUS.EMPTY,
-      rows,
-      table: COMMERCE_CANDIDATE_TABLES.items,
-    };
-  } catch (error) {
-    if (isMissingRelation(error)) {
-      return { status: SALES_SOURCE_STATUS.NOT_IN_SCHEMA, rows: [], table: COMMERCE_CANDIDATE_TABLES.items };
-    }
-    const message = String(error?.message || error);
-    if (isMissingRelation({ message })) {
-      return { status: SALES_SOURCE_STATUS.NOT_IN_SCHEMA, rows: [], table: COMMERCE_CANDIDATE_TABLES.items };
-    }
-    throw error;
-  }
 }
 
 async function fetchManualFoodicsItems(client, { branchId, rbacProfile, availableStart, availableEnd }) {
@@ -303,6 +287,11 @@ export async function fetchInventoryTruthSales({
     combined: false,
     coverage: clipped,
     commerceStatus: commerceProbe.status,
+    commerceComplete: commerceProbe.complete !== false,
+    commerceIncompleteReason: commerceProbe.incompleteReason || null,
+    commerceDroppedRows: commerceProbe.droppedRows || null,
+    commerceRefunds: commerceProbe.refunds || null,
+    commerceOrderStatusVerified: commerceProbe.orderStatusVerified ?? null,
     publishedThrough: coverageProbe.publishedThrough,
     reconciliation,
   };
