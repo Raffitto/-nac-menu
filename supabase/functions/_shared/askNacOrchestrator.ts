@@ -91,6 +91,7 @@ import {
   isGreetingOnly,
   isSameWeekdayBackQuestion,
   questionWantsDeliveryCountAndTotal,
+  shouldInvestigateWithAgent,
 } from "./askNacAgentPolicy.ts";
 import {
   completeAgentModel,
@@ -1468,13 +1469,13 @@ export async function processAskNacOnEdge(
     }, buildAskNacTimingMs({ total: Math.round(performance.now() - requestStartedAt) }), true);
   }
 
-  if (route.intent === ASK_NAC_INTENTS.UNKNOWN) {
+  if (shouldInvestigateWithAgent(effectiveQuestion, route.intent)) {
     const agent = await runAskNacAgent({
       question: effectiveQuestion,
       branchHint: branchIdFromText(workingContext?.lastBranch) || (mergedFilters.branch as string | null) || null,
       allowedBranchIds,
       allBranches,
-      executeTool: (toolName, args) => executeCashUpTool(supabase, toolName, args),
+      executeTool: (toolName, args) => executeCashUpTool(supabase, toolName, args, { profile: profileHint as Record<string, unknown> | null }),
       completeModel: completeAgentModel,
     });
     if (agent.toolCalls > 0 || agent.promptTokens > 0) {

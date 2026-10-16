@@ -90,6 +90,53 @@ Deno.test("agent calls only an authorized tool and keeps verified numbers", asyn
   assert.equal(result.promptTokens, 180);
 });
 
+Deno.test("a why question must use more than the sales total", async () => {
+  const calls: string[] = [];
+  let step = 0;
+  const result = await runAskNacAgent({
+    question: "Why did Khobar sales decrease?",
+    branchHint: "khobar",
+    allowedBranchIds: ["khobar"],
+    allBranches: false,
+    executeTool: async (tool) => {
+      calls.push(tool);
+      if (tool === "logbook_summary") {
+        return { tool, text: "No published logbook summary for that branch and period.", evidenceNumbers: [] };
+      }
+      return { tool, text: "Khobar net sales 500.", netSales: 500, evidenceNumbers: [500] };
+    },
+    completeModel: async () => {
+      step += 1;
+      if (step === 1) {
+        return {
+          content: JSON.stringify({ action: "call_tool", tool: "cash_up_summary", args: { branch: "khobar", startDate: "2026-10-01", endDate: "2026-10-15" } }),
+          promptTokens: 40,
+          completionTokens: 20,
+        };
+      }
+      if (step === 2) {
+        return {
+          content: JSON.stringify({ action: "call_tool", tool: "logbook_summary", args: { branch: "khobar", startDate: "2026-10-01", endDate: "2026-10-15" } }),
+          promptTokens: 40,
+          completionTokens: 20,
+        };
+      }
+      return {
+        content: JSON.stringify({
+          action: "final",
+          answer: "Khobar net sales were 500. I cannot explain the decrease because the logbook is not published.",
+        }),
+        promptTokens: 40,
+        completionTokens: 30,
+      };
+    },
+  });
+  assert.deepEqual(calls, ["cash_up_summary", "logbook_summary"]);
+  assert.equal(result.verified, true);
+  assert.match(result.directAnswer, /cannot explain/);
+  assert.doesNotMatch(result.directAnswer, /weather/);
+});
+
 Deno.test("agent refuses a tool for a branch the user cannot access", async () => {
   let executed = 0;
   const result = await runAskNacAgent({

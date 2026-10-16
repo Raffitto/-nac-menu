@@ -4,7 +4,20 @@
  */
 
 const BRANCH_IDS = ["khobar", "riyadh", "jeddah"];
-const TOOLS = ["delivery_summary", "cash_up_summary", "weekday_series", "coverage_status"];
+const TOOLS = [
+  "delivery_summary",
+  "cash_up_summary",
+  "weekday_series",
+  "coverage_status",
+  "branch_compare",
+  "period_compare",
+  "logbook_summary",
+  "menu_performance",
+  "google_reviews",
+  "knowledge_search",
+  "operational_day",
+  "uploaded_product_sales",
+];
 const MONTHS = {
   january: "01",
   february: "02",
@@ -205,11 +218,28 @@ export function authorizeToolCall({ tool, args = {}, allowedBranchIds = [], allB
   if (branch && !allBranches && !(allowedBranchIds || []).map((id) => String(id).toLowerCase()).includes(branch)) {
     return { ok: false, error: "branch_denied" };
   }
-  const dates = [args.startDate, args.endDate, args.anchorDate, args.untilDate, ...(args.dates || [])].filter(Boolean);
+  const dates = [args.startDate, args.endDate, args.anchorDate, args.untilDate, args.compareStart, args.compareEnd, ...(args.dates || [])].filter(Boolean);
   if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(String(date)))) {
     return { ok: false, error: "invalid_date" };
   }
-  return { ok: true, args: { ...args, branch } };
+  const branches = Array.isArray(args.branches) ? args.branches : [];
+  const branchIds = [];
+  for (const item of branches) {
+    const id = branchIdFromText(item) || String(item).toLowerCase();
+    if (!BRANCH_IDS.includes(id)) return { ok: false, error: "unknown_branch" };
+    if (!allBranches && !(allowedBranchIds || []).map((value) => String(value).toLowerCase()).includes(id)) {
+      return { ok: false, error: "branch_denied" };
+    }
+    branchIds.push(id);
+  }
+  if (args.hours != null) {
+    const hours = Number(args.hours);
+    if (!Number.isFinite(hours) || hours < 1 || hours > 744) return { ok: false, error: "invalid_hours" };
+  }
+  if (args.searchTerms != null && /[;]|--|\/\*|\*\//.test(String(args.searchTerms))) {
+    return { ok: false, error: "invalid_search" };
+  }
+  return { ok: true, args: { ...args, branch, branches: branchIds, searchTerms: args.searchTerms ? String(args.searchTerms).slice(0, 80) : args.searchTerms } };
 }
 
 function numbersInText(text) {
@@ -312,20 +342,42 @@ export function buildWeekdayComparisonText({
 }
 
 export const AGENT_TOOL_CATALOG = [
-  {
-    name: "delivery_summary",
-    description: "Delivery orders, delivery revenue, and average order value for one branch and date range. Uses the unscoped daily total, not the sum of platform rows plus the total.",
-  },
-  {
-    name: "cash_up_summary",
-    description: "Net sales, guests, and orders for one branch and date range from published Cash Up.",
-  },
-  {
-    name: "weekday_series",
-    description: "Same weekday stepped back seven days from an anchor date until a until-date, inclusive.",
-  },
-  {
-    name: "coverage_status",
-    description: "Which dates in a range have published Cash Up. Does not invent the missing days.",
-  },
+  { name: "delivery_summary", description: "Delivery orders, revenue, and average order value from published Cash Up. Daily total only." },
+  { name: "cash_up_summary", description: "Net sales, guests, and orders from published Cash Up for one branch and date range." },
+  { name: "weekday_series", description: "Same weekday stepped back seven days from an anchor date until a until-date." },
+  { name: "coverage_status", description: "Which dates in a range have published Cash Up." },
+  { name: "branch_compare", description: "Cash Up totals for two authorized branches over the same dates." },
+  { name: "period_compare", description: "Cash Up totals for one branch over two date ranges." },
+  { name: "logbook_summary", description: "Published daily logbook summary metrics for a branch and month range." },
+  { name: "menu_performance", description: "Menu QR scans and sessions from the rollup. Does not include dish rankings." },
+  { name: "google_reviews", description: "Stored Google review snapshot count and rating for one authorized branch." },
+  { name: "knowledge_search", description: "Keyword search of company knowledge documents. Not a SQL query." },
+  { name: "operational_day", description: "Cash Up and logbook for one business date." },
+  { name: "uploaded_product_sales", description: "Uploaded waiter and product sales file, if one exists. Not a live Foodics feed." },
 ];
+
+export function shouldInvestigateWithAgent(question, intent) {
+  if (isGreetingOnly(question)) return false;
+  if (questionWantsDeliveryCountAndTotal(question)) return false;
+  if (isSameWeekdayBackQuestion(question)) return false;
+  if (intent === "unknown") return true;
+  const q = String(question || "").toLowerCase();
+  if (/\bwhy\b/.test(q)) return true;
+  if (/\bwhat happened\b/.test(q)) return true;
+  if (/\b(promote|which dishes?)\b/.test(q)) return true;
+  if (/\bcompare\b/.test(q) && /\b(branch|khobar|riyadh|jeddah)\b/.test(q)) return true;
+  return false;
+}
+
+export function completenessGaps(question, answer, toolsUsed = []) {
+  const q = String(question || "").toLowerCase();
+  const text = String(answer || "").toLowerCase();
+  const gaps = [];
+  const saysMissing = /not available|not published|do not have|cannot|no uploaded|not in this/.test(text);
+  if (/\bdeliver/.test(q) && /\b(how many|orders|deliveries)\b/.test(q) && !/\border/.test(text) && !saysMissing) gaps.push("orders");
+  if (/\bdeliver/.test(q) && /\b(how much|revenue|total|sales)\b/.test(q) && !/\b(revenue|sar)\b/.test(text) && !saysMissing) gaps.push("revenue");
+  if (/\bwhy\b/.test(q) && !/\b(because|hypothesis|logbook|review|menu|not published|do not have|cannot explain)\b/.test(text)) gaps.push("cause");
+  if (/\b(promote|which dishes?)\b/.test(q) && !toolsUsed.includes("menu_performance") && !/\bmenu\b/.test(text)) gaps.push("menu");
+  if (/\bwhat happened\b/.test(q) && !toolsUsed.some((tool) => ["operational_day", "logbook_summary", "cash_up_summary"].includes(tool))) gaps.push("operations");
+  return gaps;
+}

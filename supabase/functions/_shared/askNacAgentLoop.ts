@@ -6,12 +6,18 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { fetchCashUpRangeAggregationViaRpc } from "./askNacCashUpRangeRpc.ts";
+import { fetchLogbookMonthSummaryViaRpc } from "./askNacLogbookMonthRpc.ts";
+import { fetchAskNacMenuMetrics } from "./askNacMenuMetrics.ts";
+import { queryGoogleReviewCountEdge } from "./askNacGoogleReviewTools.ts";
+import { searchVaultDocuments } from "./askNacVaultTools.ts";
+import { getFoodicsTopItems } from "./askNacFoodicsTools.ts";
 import {
   AGENT_LIMITS,
   AGENT_TOOL_CATALOG,
   authorizeToolCall,
   boundConversationContext,
   buildWeekdayComparisonText,
+  completenessGaps,
   composeDeliveryCountAndRevenue,
   deliveryAverageOrderValue,
   isSameWeekdayBackQuestion,
@@ -30,6 +36,10 @@ const SYSTEM = [
   "Return JSON only: {\"action\":\"call_tool\",\"tool\":\"name\",\"args\":{...}} or {\"action\":\"final\",\"answer\":\"...\",\"hypotheses\":[],\"unavailable\":[]}.",
   "Never invent sales, orders, covers, or dates. If evidence is missing, say it is missing.",
   "Label a hypothesis as a hypothesis. Do not call a hypothesis a fact.",
+  "If the question has more than one part, call another tool before the final answer.",
+  "Do not explain a sales change from the sales total alone. Call logbook_summary or knowledge_search, and say when those sources are empty.",
+  "menu_performance has QR scans and sessions only. It does not rank dishes.",
+  "uploaded_product_sales reads an uploaded file. If none exists, say so. It is not a live Foodics connection.",
   "Do not request SQL. Tools: " + AGENT_TOOL_CATALOG.map((tool) => `${tool.name}: ${tool.description}`).join(" "),
 ].join(" ");
 
@@ -48,11 +58,166 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
+function collectNumbers(values: unknown[]) {
+  return values.filter((value) => value != null && Number.isFinite(Number(value))).map((value) => Number(value));
+}
+
+async function readCashUp(supabase: SupabaseClient, branch: string | null, startDate: string, endDate: string) {
+  return fetchCashUpRangeAggregationViaRpc(supabase, {
+    branch,
+    startDate,
+    endDate,
+    includeDailyBreakdown: false,
+  });
+}
+
 export async function executeCashUpTool(
   supabase: SupabaseClient,
   tool: string,
   args: Record<string, unknown>,
+  scope: { profile?: Record<string, unknown> | null } = {},
 ) {
+  const branch = (args.branch as string) || null;
+  const startDate = String(args.startDate || "");
+  const endDate = String(args.endDate || "");
+
+  if (tool === "branch_compare") {
+    const branches = (args.branches as string[]) || [];
+    const sides = [];
+    for (const id of branches.slice(0, 2)) {
+      const agg = await readCashUp(supabase, id, startDate, endDate);
+      sides.push({ branch: id, netSales: agg.totalSales, guests: agg.totalGuests, orders: agg.totalOrders });
+    }
+    return {
+      tool,
+      sides,
+      text: sides.map((side) => `${side.branch}: net sales ${side.netSales ?? "not published"}, guests ${side.guests ?? "not published"}, orders ${side.orders ?? "not published"}.`).join(" "),
+      evidenceNumbers: collectNumbers(sides.flatMap((side) => [side.netSales, side.guests, side.orders])),
+    };
+  }
+
+  if (tool === "period_compare") {
+    const current = await readCashUp(supabase, branch, startDate, endDate);
+    const previous = await readCashUp(supabase, branch, String(args.compareStart || ""), String(args.compareEnd || ""));
+    return {
+      tool,
+      current: { netSales: current.totalSales, guests: current.totalGuests },
+      previous: { netSales: previous.totalSales, guests: previous.totalGuests },
+      text: `${branch || "branch"} ${startDate} to ${endDate}: net sales ${current.totalSales ?? "not published"}. ${args.compareStart} to ${args.compareEnd}: net sales ${previous.totalSales ?? "not published"}.`,
+      evidenceNumbers: collectNumbers([current.totalSales, current.totalGuests, previous.totalSales, previous.totalGuests]),
+    };
+  }
+
+  if (tool === "logbook_summary") {
+    const bundle = await fetchLogbookMonthSummaryViaRpc(supabase, { branch, startDate, endDate });
+    const facts = ((bundle as { facts?: Record<string, unknown>[] }).facts || []).slice(0, 20);
+    const evidenceNumbers = collectNumbers(facts.map((fact) => fact.metricValue));
+    const lines = facts.map((fact) => `${fact.metricKey}: ${fact.metricValue ?? "not published"}`);
+    return {
+      tool,
+      text: lines.length ? lines.join(". ") : "No published logbook summary for that branch and period.",
+      evidenceNumbers,
+      unavailable: lines.length ? [] : ["logbook"],
+    };
+  }
+
+  if (tool === "menu_performance") {
+    const hours = Number(args.hours) || 168;
+    const metrics = await fetchAskNacMenuMetrics(supabase as unknown as { rpc: (name: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }> }, { branch, hours });
+    return {
+      tool,
+      qrScans: metrics.menuQrScans,
+      sessions: metrics.menuSessions,
+      text: `Menu rollup for ${branch || "the authorized scope"} over ${hours} hours: ${metrics.menuQrScans ?? "not available"} QR scans and ${metrics.menuSessions ?? "not available"} sessions. Dish rankings are not in this rollup.`,
+      evidenceNumbers: collectNumbers([metrics.menuQrScans, metrics.menuSessions]),
+      unavailable: ["dish_rankings"],
+    };
+  }
+
+  if (tool === "google_reviews") {
+    const reviews = await queryGoogleReviewCountEdge(supabase, {
+      branchMention: branch,
+      filters: { branch },
+      question: `${startDate} ${endDate}`,
+    });
+    return {
+      tool,
+      text: reviews.warnings?.length
+        ? String(reviews.warnings[0])
+        : `${reviews.branchLabel}: rating ${reviews.currentRating ?? "not published"}, review count ${reviews.currentReviewCount ?? "not published"}, change ${reviews.reviewDelta ?? "not published"}.`,
+      evidenceNumbers: collectNumbers([reviews.currentRating, reviews.currentReviewCount, reviews.reviewDelta]),
+      unavailable: reviews.warnings?.length ? ["google_reviews"] : [],
+    };
+  }
+
+  if (tool === "knowledge_search") {
+    const found = await searchVaultDocuments(supabase, {
+      searchTerms: String(args.searchTerms || "").slice(0, 80),
+      question: String(args.searchTerms || ""),
+      branchMention: branch,
+      filters: { branch },
+      profile: scope.profile || null,
+    });
+    const matches = ((found as { matches?: Record<string, unknown>[] }).matches || []).slice(0, 5);
+    const titles = matches.map((match) => String(match.title || match.fileTitle || "Untitled")).slice(0, 5);
+    return {
+      tool,
+      titles,
+      text: titles.length ? `Company knowledge matches: ${titles.join("; ")}.` : "No company knowledge document matched that search.",
+      evidenceNumbers: [],
+    };
+  }
+
+  if (tool === "operational_day") {
+    const day = startDate || endDate;
+    const cash = await readCashUp(supabase, branch, day, day);
+    const logbook = await fetchLogbookMonthSummaryViaRpc(supabase, { branch, startDate: day, endDate: day });
+    const facts = ((logbook as { facts?: Record<string, unknown>[] }).facts || []).slice(0, 8);
+    return {
+      tool,
+      text: [
+        `${branch || "branch"} on ${day}: net sales ${cash.totalSales ?? "not published"}, guests ${cash.totalGuests ?? "not published"}, delivery orders ${cash.totalDeliveryOrders ?? "not published"}.`,
+        facts.length ? `Logbook: ${facts.map((fact) => `${fact.metricKey} ${fact.metricValue ?? "n/a"}`).join("; ")}.` : "No logbook summary is published for that date.",
+      ].join(" "),
+      evidenceNumbers: collectNumbers([
+        cash.totalSales,
+        cash.totalGuests,
+        cash.totalDeliveryOrders,
+        cash.totalDeliverySales,
+        ...facts.map((fact) => fact.metricValue),
+      ]),
+    };
+  }
+
+  if (tool === "uploaded_product_sales") {
+    const uploaded = await getFoodicsTopItems(supabase, {
+      branchMention: branch,
+      filters: { branch },
+      profile: scope.profile || null,
+      foodicsPeriod: { startDate, endDate, label: `${startDate} to ${endDate}` },
+      rankingBasis: "net_sales",
+      topLimit: 8,
+    });
+    if ((uploaded as { authorizationDenied?: boolean }).authorizationDenied) {
+      return { tool, error: "branch_denied", text: "That branch is outside your access.", evidenceNumbers: [] };
+    }
+    const items = ((uploaded as { topItems?: Record<string, unknown>[] }).topItems || []).slice(0, 8);
+    if (!items.length || (uploaded as { missingBatch?: boolean }).missingBatch) {
+      return {
+        tool,
+        text: "No uploaded waiter or product sales file covers that period. Foodics is not a live feed, so I am not estimating item or waiter sales.",
+        evidenceNumbers: [],
+        unavailable: ["product_sales", "waiter_sales"],
+      };
+    }
+    const lines = items.map((item) => `${item.name || item.product_name || "item"}: ${item.net_sales ?? item.netSales ?? "n/a"}`);
+    return {
+      tool,
+      text: lines.join(". "),
+      evidenceNumbers: collectNumbers(items.map((item) => item.net_sales ?? item.netSales)),
+    };
+  }
+
   if (tool === "weekday_series") {
     const dates = sameWeekdaySeries(String(args.anchorDate || ""), String(args.untilDate || ""));
     if (!dates.length) return { tool, error: "invalid_series", evidenceNumbers: [] };
@@ -84,8 +249,6 @@ export async function executeCashUpTool(
     };
   }
 
-  const startDate = String(args.startDate || "");
-  const endDate = String(args.endDate || "");
   const agg = await fetchCashUpRangeAggregationViaRpc(supabase, {
     branch: (args.branch as string) || null,
     startDate,
@@ -177,6 +340,10 @@ export async function runAskNacAgent({
   let toolCalls = 0;
 
   for (let round = 0; round < AGENT_LIMITS.maxModelRounds; round += 1) {
+    if (Date.now() - started > 20000) {
+      trace.push({ round, event: "time_budget_exhausted" });
+      break;
+    }
     const user = JSON.stringify({
       question,
       branchHint: branchHint || null,
@@ -206,16 +373,20 @@ export async function runAskNacAgent({
       break;
     }
     if (decision.action === "final") {
-      const answer = String(decision.answer || "");
+      const toolsUsed = packets.map((packet) => String(packet.tool || ""));
+      const gaps = completenessGaps(question, String(decision.answer || ""), toolsUsed);
+      const answer = gaps.length
+        ? `${decision.answer} I am not filling the missing part (${gaps.join(", ")}) without evidence.`
+        : String(decision.answer || "");
       const verdict = verifyAnswerAgainstEvidence(answer, evidenceNumbersFrom(packets));
-      trace.push({ round, event: verdict.ok ? "final_verified" : "final_rejected" });
+      trace.push({ round, event: verdict.ok ? "final_verified" : "final_rejected", gaps });
       return {
         used: true,
-        verified: verdict.ok,
+        verified: verdict.ok && gaps.length === 0,
         directAnswer: verdict.ok
           ? answer
           : packets.map((packet) => packet.text).filter(Boolean).join(" ")
-            || "I could not verify a figure for that question against published Cash Up, so I am not stating one.",
+            || "I could not verify a figure for that question against published evidence, so I am not stating one.",
         confidence: verdict.ok ? "medium" : "low",
         hypotheses: Array.isArray(decision.hypotheses) ? decision.hypotheses.map(String).slice(0, 4) : [],
         unavailable: Array.isArray(decision.unavailable) ? decision.unavailable.map(String).slice(0, 4) : [],

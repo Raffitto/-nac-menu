@@ -1,9 +1,11 @@
 const {
   AGENT_LIMITS,
+  AGENT_TOOL_CATALOG,
   authorizeToolCall,
   boundConversationContext,
   buildGreetingAnswer,
   buildWeekdayComparisonText,
+  completenessGaps,
   composeDeliveryCountAndRevenue,
   contextIsNotFinancialEvidence,
   deliveryAverageOrderValue,
@@ -12,6 +14,7 @@ const {
   questionWantsDeliveryCountAndTotal,
   resolveAnchorDate,
   sameWeekdaySeries,
+  shouldInvestigateWithAgent,
   untilDateFromQuestion,
   verifyAnswerAgainstEvidence,
 } = require("./agentPolicy");
@@ -140,5 +143,53 @@ describe("Ask NAC agent policy", () => {
       lastAnswerSummary: "76",
       activeState: { period: { startDate: "2026-10-15", endDate: "2026-10-15" } },
     })).toBe(true);
+  });
+
+  test("the registry covers the operational sources and rejects SQL", () => {
+    const names = AGENT_TOOL_CATALOG.map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining([
+      "cash_up_summary",
+      "delivery_summary",
+      "logbook_summary",
+      "menu_performance",
+      "google_reviews",
+      "knowledge_search",
+      "uploaded_product_sales",
+      "operational_day",
+      "branch_compare",
+    ]));
+    expect(authorizeToolCall({ tool: "select * from ask_nac_structured_facts", args: {} }).error).toBe("tool_not_allowed");
+    expect(authorizeToolCall({
+      tool: "branch_compare",
+      args: { branches: ["khobar", "riyadh"], startDate: "2026-10-01", endDate: "2026-10-15" },
+      allowedBranchIds: ["khobar"],
+    }).error).toBe("branch_denied");
+    expect(authorizeToolCall({
+      tool: "menu_performance",
+      args: { branch: "khobar", hours: 10000 },
+      allowedBranchIds: ["khobar"],
+    }).error).toBe("invalid_hours");
+  });
+
+  test("an answer is incomplete when it drops half the question or explains nothing", () => {
+    expect(completenessGaps(
+      "How many deliveries and how much revenue?",
+      "Delivery revenue was SAR 9,641.",
+      ["delivery_summary"],
+    )).toContain("orders");
+    expect(completenessGaps(
+      "Why did sales decrease?",
+      "Sales were SAR 9,641.",
+      ["cash_up_summary"],
+    )).toContain("cause");
+    expect(completenessGaps(
+      "Why did sales decrease?",
+      "Sales were SAR 9,641. I cannot explain the change because the logbook is not published.",
+      ["cash_up_summary", "logbook_summary"],
+    )).toEqual([]);
+    expect(shouldInvestigateWithAgent("Why did Khobar sales decrease?", "vault_cash_up_summary")).toBe(true);
+    expect(shouldInvestigateWithAgent("Hi", "unknown")).toBe(false);
+    expect(shouldInvestigateWithAgent("Which dishes should we promote?", "unknown")).toBe(true);
+    expect(shouldInvestigateWithAgent("What happened yesterday?", "unknown")).toBe(true);
   });
 });
