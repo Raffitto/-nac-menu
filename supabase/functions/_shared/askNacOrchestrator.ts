@@ -1484,6 +1484,7 @@ export async function processAskNacOnEdge(
       allBranches,
       executeTool: (toolName, args) => executeCashUpTool(supabase, toolName, args, { profile: profileHint as Record<string, unknown> | null }),
       completeModel: completeAgentModel,
+      priorComparison: (workingContext?.lastComparison || null) as { subjectDate?: string; otherDate?: string } | null,
     });
     if (agent.toolCalls > 0 || agent.promptTokens > 0) {
       const nextContext = updateConversationContextEdge(workingContext || {}, {

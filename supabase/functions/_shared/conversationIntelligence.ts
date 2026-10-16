@@ -11,7 +11,7 @@ import {
   isSelfContainedManagementQuestion,
 } from "./companyIntelligence/conversationFollowUp.ts";
 import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
-import { retainSingleDayAnchor } from "./askNacAgentPolicy.ts";
+import { explicitDays, retainSingleDayAnchor } from "./askNacAgentPolicy.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
 
@@ -239,6 +239,11 @@ export function updateConversationContextEdge(context: Record<string, unknown> =
     question,
     vaultPeriod,
   );
+  const namedDays = explicitDays(String(question || ""));
+  const previousComparison = (base as { lastComparison?: { subjectDate?: string; otherDate?: string } }).lastComparison;
+  (next as Record<string, unknown>).lastComparison = namedDays.length >= 2
+    ? { subjectDate: namedDays[0], otherDate: namedDays[1] }
+    : previousComparison || null;
   return next;
 }
 

@@ -365,6 +365,9 @@ export function boundConversationContext(context = {}) {
     lastPeriod: typeof context.lastPeriod === "string" ? clip(context.lastPeriod, 120) : null,
     lastMetric: context.lastMetric || null,
     singleDayAnchor,
+    lastComparison: context.lastComparison?.subjectDate
+      ? { subjectDate: String(context.lastComparison.subjectDate), otherDate: String(context.lastComparison.otherDate || "") }
+      : null,
     anchorDate,
     anchorBranch: branchIdFromText(context.anchorBranch || context.lastBranch) || context.anchorBranch || null,
     anchorMetric: context.anchorMetric || context.lastMetric || null,
@@ -450,14 +453,14 @@ export const AGENT_TOOL_CATALOG = [
 
 export function shouldInvestigateWithAgent(question, intent) {
   if (isGreetingOnly(question)) return false;
-  if (questionWantsDeliveryCountAndTotal(question)) return false;
+  if (questionWantsDeliveryCountAndTotal(question) || questionWantsDeliveryBreakdown(question)) return false;
   if (isSameWeekdayBackQuestion(question)) return false;
   if (intent === "unknown") return true;
   const q = String(question || "").toLowerCase();
-  if (/\bwhy\b/.test(q)) return true;
+  if (/^\s*why\??\s*$/.test(q)) return true;
+  if (/\b(why|what changed|strongest|weakest|complaints|repeating|improving|investigate|related to|after accounting|what should i)\b/.test(q)) return true;
   if (/\bwhat happened\b/.test(q)) return true;
   if (/\b(promote|which dishes?)\b/.test(q)) return true;
-  if (/\bcompare\b/.test(q) && /\b(branch|khobar|riyadh|jeddah)\b/.test(q)) return true;
   return false;
 }
 
