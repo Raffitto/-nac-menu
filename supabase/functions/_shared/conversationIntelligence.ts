@@ -170,7 +170,7 @@ export function captureConversationStateFromTurn({
   const branch = normalizeBranchId(branchLabel) || prev.branch;
   const metric = inferMetricFromQuestion(resolvedQuestion || question || "") || prev.metric
     || (intent === "vault_cash_up_summary" ? "net_sales" : null);
-  const branchHistory = [...prev.branchHistory];
+  const branchHistory = [...(prev.branchHistory || [])];
   const pivotBranch = extractBranchFragment(resolvedQuestion || question || "");
   if (pivotBranch && !branchHistory.includes(pivotBranch)) branchHistory.push(pivotBranch);
   if (branch && !branchHistory.includes(branch)) branchHistory.push(branch);
