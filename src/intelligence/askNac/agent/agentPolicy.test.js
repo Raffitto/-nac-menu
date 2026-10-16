@@ -60,6 +60,7 @@ describe("Ask NAC agent policy", () => {
   test("same weekday series from 15 October reaches 6 August and stops before July", () => {
     const question = "Compare that with the same day the week before, and the week before that, until the start of August.";
     expect(isSameWeekdayBackQuestion(question)).toBe(true);
+    expect(isSameWeekdayBackQuestion("Compare that with every Thursday back to the beginning of August.")).toBe(true);
     const anchor = resolveAnchorDate({
       activeState: { period: { startDate: "2026-10-15", endDate: "2026-10-15" } },
     });

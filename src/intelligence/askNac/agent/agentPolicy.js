@@ -169,7 +169,9 @@ export function addCalendarDays(isoDate, days) {
 
 export function isSameWeekdayBackQuestion(question) {
   const q = String(question || "").toLowerCase();
-  return /week before/.test(q) && /(until|through|up to|start of|beginning of)/.test(q);
+  const stepsBack = /week before|every (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|same weekday/.test(q);
+  const hasBound = /(until|through|up to|start of|beginning of|back to)/.test(q);
+  return stepsBack && hasBound;
 }
 
 export function untilDateFromQuestion(question, anchorDate) {
