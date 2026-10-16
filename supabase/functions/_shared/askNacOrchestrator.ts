@@ -90,6 +90,7 @@ import {
   composeDeliveryCountAndRevenue,
   isGreetingOnly,
   isSameWeekdayBackQuestion,
+  questionWantsDeliveryBreakdown,
   questionWantsDeliveryCountAndTotal,
   shouldInvestigateWithAgent,
 } from "./askNacAgentPolicy.ts";
@@ -1233,6 +1234,7 @@ export async function processAskNacOnEdge(
       allowedBranchIds,
       allBranches,
       branchLabel: String(workingContext?.lastBranch || baseFilters.branch || "The authorized branch"),
+      metric: String(workingContext?.anchorMetric || workingContext?.lastMetric || ""),
     });
     if (weekday) {
       const nextContext = updateConversationContextEdge(workingContext || {}, {
@@ -1379,7 +1381,12 @@ export async function processAskNacOnEdge(
   // not bundled into this Edge Function, so the server does not compute a total.
   // It returns a structured hand-off; the NAC client runs the same read-only tool
   // locally and labels the answer localFallback. No data is read here.
-  if (questionWantsDeliveryCountAndTotal(effectiveQuestion)) {
+  if (
+    questionWantsDeliveryCountAndTotal(question)
+    || questionWantsDeliveryCountAndTotal(effectiveQuestion)
+    || questionWantsDeliveryBreakdown(question)
+    || questionWantsDeliveryBreakdown(effectiveQuestion)
+  ) {
     const period = (route.vaultPeriod as { startDate?: string; endDate?: string; label?: string } | null)
       || parseVaultPeriodFromQuestion(effectiveQuestion);
     const onlyBranch = !allBranches && allowedBranchIds.length === 1 ? allowedBranchIds[0] : null;
@@ -1705,6 +1712,19 @@ export async function processAskNacOnEdge(
       coverageContract: spine.coverageContract,
       keyMetrics: spine.keyMetrics,
     });
+    const spineContext = updateConversationContextEdge(workingContext || {}, {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: {
+        intent: route.intent,
+        periodLabel: spine.coverageContract?.spokenLabel || spine.state.periods.current?.label || null,
+        branchLabel,
+        vaultPeriod: spine.state.periods.current || null,
+      },
+      route: route as Record<string, unknown>,
+    }) as Record<string, unknown>;
+    spineContext.fabricConversation = spine.nextConversation;
+    if (userId) await saveConversationMemory(supabase, userId, branchKey, spineContext);
     return attachResponseMeta({
       answerType: spine.answerType,
       title: spine.answerType === "feasibility_block" ? "Comparison not valid" : "Ask NAC",
@@ -1713,7 +1733,11 @@ export async function processAskNacOnEdge(
       keyMetrics: spine.keyMetrics,
       insights: spine.insights,
       recommendations: [],
-      confidence: spine.state.answer.verified ? "high" : "medium",
+      confidence: spine.answerType === "feasibility_block"
+        || spine.state.feasibility?.status === "NOT_ANSWERABLE_AS_REQUESTED"
+        || (spine.state.feasibility?.reasons || []).length > 0
+        ? "low"
+        : spine.state.answer.verified ? "high" : "medium",
       periodLabel: spine.coverageContract?.spokenLabel
         || spine.state.periods.current?.label
         || (spine.state.periods.current
@@ -1741,10 +1765,7 @@ export async function processAskNacOnEdge(
         coverage: spine.state.coverage,
         coverageContract: spine.coverageContract,
       },
-      nextContext: {
-        ...((conversationContext || {}) as Record<string, unknown>),
-        fabricConversation: spine.nextConversation,
-      },
+      nextContext: spineContext,
       serverConnected: true,
       aiConnected: spine.paidModelCalls > 0,
       localFallback: Boolean(spine.state.cost.cloudEscalationReason),

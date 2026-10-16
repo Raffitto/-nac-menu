@@ -11,6 +11,7 @@ import {
   isSelfContainedManagementQuestion,
 } from "./companyIntelligence/conversationFollowUp.ts";
 import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
+import { retainSingleDayAnchor } from "./askNacAgentPolicy.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
 
@@ -232,6 +233,12 @@ export function updateConversationContextEdge(context: Record<string, unknown> =
   if (isNonCommercialSourceQuestion(String(question || ""))) {
     delete (next as { fabricConversation?: unknown }).fabricConversation;
   }
+  const vaultPeriod = (activeState.vaultPeriod || null) as { startDate?: string; endDate?: string } | null;
+  (next as Record<string, unknown>).singleDayAnchor = retainSingleDayAnchor(
+    (base as { singleDayAnchor?: string }).singleDayAnchor,
+    question,
+    vaultPeriod,
+  );
   return next;
 }
 

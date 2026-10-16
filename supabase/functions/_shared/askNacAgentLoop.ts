@@ -19,7 +19,10 @@ import {
   buildWeekdayComparisonText,
   completenessGaps,
   composeDeliveryCountAndRevenue,
+  describeSalesDirection,
   deliveryAverageOrderValue,
+  explicitDays,
+  questionRequiresRetrievedEvidence,
   isSameWeekdayBackQuestion,
   resolveAnchorDate,
   sameWeekdaySeries,
@@ -228,14 +231,18 @@ export async function executeCashUpTool(
       includeDailyBreakdown: true,
     });
     const daily = Array.isArray(agg.dailyBreakdown) ? agg.dailyBreakdown as Record<string, unknown>[] : [];
-    const rowsByDate: Record<string, { orders: number | null; sales: number | null }> = {};
+    const salesMetric = /sale|revenue/.test(String(args.metric || ""));
+    const rowsByDate: Record<string, { orders?: number | null; sales?: number | null; value?: number | null }> = {};
     for (const row of daily) {
       const mapped = dayRow(row);
-      if (mapped.date) rowsByDate[mapped.date] = { orders: mapped.orders, sales: mapped.sales };
+      if (!mapped.date) continue;
+      rowsByDate[mapped.date] = salesMetric
+        ? { value: mapped.netSales }
+        : { orders: mapped.orders, sales: mapped.sales };
     }
     const comparison = buildWeekdayComparisonText({
       branchLabel: String(args.branchLabel || args.branch || "The authorized branch"),
-      metricLabel: "delivery",
+      metricLabel: salesMetric ? "net sales" : "delivery",
       dates,
       rowsByDate,
     });
@@ -372,6 +379,53 @@ export async function runAskNacAgent({
       trace.push({ round, event: "invalid_model_json" });
       break;
     }
+    if (decision.action === "final" && toolCalls === 0 && questionRequiresRetrievedEvidence(question)) {
+      const dates = explicitDays(question);
+      if (dates.length >= 2) {
+        const gate = authorizeToolCall({
+          tool: "period_compare",
+          args: {
+            branch: branchHint || null,
+            startDate: dates[0],
+            endDate: dates[0],
+            compareStart: dates[1],
+            compareEnd: dates[1],
+          },
+          allowedBranchIds,
+          allBranches,
+        });
+        if (gate.ok) {
+          try {
+            const gathered = await executeTool("period_compare", gate.args);
+            toolCalls += 1;
+            packets.push(gathered);
+            const current = (gathered.current || {}) as { netSales?: number | null };
+            const previous = (gathered.previous || {}) as { netSales?: number | null };
+            const text = describeSalesDirection(dates[0], current.netSales ?? null, dates[1], previous.netSales ?? null);
+            const gap = current.netSales != null && previous.netSales != null
+              ? Math.round(Math.abs(Number(current.netSales) - Number(previous.netSales)) * 100) / 100
+              : null;
+            const verdict = verifyAnswerAgainstEvidence(text, [current.netSales, previous.netSales, gap].filter((value) => value != null).map(Number));
+            trace.push({ round, event: "deterministic_evidence_fallback" });
+            return {
+              used: true,
+              verified: verdict.ok,
+              directAnswer: verdict.ok ? text : "I could not verify the two days against published Cash Up, so I am not stating which was lower.",
+              confidence: verdict.ok && current.netSales != null && previous.netSales != null ? "high" : "low",
+              hypotheses: [],
+              unavailable: current.netSales == null || previous.netSales == null ? ["net_sales"] : [],
+              trace,
+              promptTokens,
+              completionTokens,
+              toolCalls,
+              latencyMs: Date.now() - started,
+            };
+          } catch {
+            trace.push({ round, event: "tool_failed" });
+          }
+        }
+      }
+    }
     if (decision.action === "final") {
       const toolsUsed = packets.map((packet) => String(packet.tool || ""));
       const gaps = completenessGaps(question, String(decision.answer || ""), toolsUsed);
@@ -450,6 +504,7 @@ export async function runWeekdayFollowUp(
     allowedBranchIds,
     allBranches,
     branchLabel,
+    metric,
   }: {
     question: string;
     context: Record<string, unknown> | null;
@@ -457,6 +512,7 @@ export async function runWeekdayFollowUp(
     allowedBranchIds: string[];
     allBranches: boolean;
     branchLabel: string;
+    metric?: string | null;
   },
 ) {
   if (!isSameWeekdayBackQuestion(question)) return null;
@@ -489,6 +545,7 @@ export async function runWeekdayFollowUp(
     ...gate.args,
     branch: gate.args.branch || branch,
     branchLabel,
+    metric: metric || null,
   });
   const text = String(result.text || "");
   const evidence = Array.isArray(result.evidenceNumbers) ? result.evidenceNumbers as number[] : [];

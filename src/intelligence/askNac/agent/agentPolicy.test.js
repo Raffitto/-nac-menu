@@ -7,6 +7,8 @@ const {
   buildWeekdayComparisonText,
   completenessGaps,
   composeDeliveryCountAndRevenue,
+  describeSalesDirection,
+  platformRowsForDisplay,
   contextIsNotFinancialEvidence,
   deliveryAverageOrderValue,
   isGreetingOnly,
@@ -192,5 +194,43 @@ describe("Ask NAC agent policy", () => {
     expect(shouldInvestigateWithAgent("Hi", "unknown")).toBe(false);
     expect(shouldInvestigateWithAgent("Which dishes should we promote?", "unknown")).toBe(true);
     expect(shouldInvestigateWithAgent("What happened yesterday?", "unknown")).toBe(true);
+  });
+
+  test("a month question does not erase the last single day", () => {
+    const day = boundConversationContext({
+      lastQuestion: "How were sales on October 15?",
+      activeState: {
+        vaultPeriod: { startDate: "2026-10-15", endDate: "2026-10-15" },
+        branchHistory: ["khobar"],
+      },
+    });
+    const month = boundConversationContext({
+      ...day,
+      lastQuestion: "How did we do this month?",
+      activeState: {
+        ...day.activeState,
+        vaultPeriod: { startDate: "2026-10-01", endDate: "2026-10-15" },
+      },
+    });
+    expect(month.singleDayAnchor).toBe("2026-10-15");
+    expect(month.activeState.branchHistory).toEqual(["khobar"]);
+  });
+
+  test("the combined delivery total is not labeled as one platform", () => {
+    const hidden = composeDeliveryCountAndRevenue({
+      branchLabel: "Khobar",
+      periodLabel: "October",
+      orders: 76,
+      sales: 9641,
+      platforms: { hunger: { orders: 76, sales: 9641 } },
+    });
+    expect(hidden.text).not.toMatch(/Hunger/);
+    expect(platformRowsForDisplay({
+      jahez: { orders: 15, sales: 1922 },
+      chefz: { orders: 3, sales: 486 },
+      keeta: { orders: 10, sales: 995 },
+      hunger: { orders: 48, sales: 6238 },
+    }, 76, 9641).hunger.orders).toBe(48);
+    expect(describeSalesDirection("2026-10-15", 18213.04, "2026-10-08", 17048.70)).toMatch(/higher, not lower/);
   });
 });

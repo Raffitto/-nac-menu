@@ -137,6 +137,34 @@ Deno.test("a why question must use more than the sales total", async () => {
   assert.doesNotMatch(result.directAnswer, /weather/);
 });
 
+Deno.test("a comparison with no tool call still reads both days", async () => {
+  const calls: string[] = [];
+  const result = await runAskNacAgent({
+    question: "Why were Khobar sales lower on October 15 compared with October 8?",
+    branchHint: "khobar",
+    allowedBranchIds: ["khobar"],
+    allBranches: false,
+    executeTool: async (tool, args) => {
+      calls.push(`${tool}:${args.startDate}:${args.compareStart}`);
+      return {
+        tool,
+        current: { netSales: 18213.04 },
+        previous: { netSales: 17048.70 },
+        evidenceNumbers: [18213.04, 17048.70],
+      };
+    },
+    completeModel: async () => ({
+      content: JSON.stringify({ action: "final", answer: "Sales were lower because of the weather and totaled 100." }),
+      promptTokens: 40,
+      completionTokens: 20,
+    }),
+  });
+  assert.deepEqual(calls, ["period_compare:2026-10-15:2026-10-08"]);
+  assert.equal(result.verified, true);
+  assert.match(result.directAnswer, /higher, not lower/);
+  assert.doesNotMatch(result.directAnswer, /weather|100/);
+});
+
 Deno.test("agent refuses a tool for a branch the user cannot access", async () => {
   let executed = 0;
   const result = await runAskNacAgent({

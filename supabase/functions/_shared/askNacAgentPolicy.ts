@@ -53,6 +53,11 @@ export function buildGreetingAnswer() {
   };
 }
 
+export function questionWantsDeliveryBreakdown(question: string) {
+  const q = String(question || "").toLowerCase();
+  return /\bdeliver/.test(q) && /\bplatform/.test(q);
+}
+
 export function questionWantsDeliveryCountAndTotal(question: string) {
   const q = String(question || "").toLowerCase();
   const aboutDelivery = /\bdeliver(y|ies)\b/.test(q);
@@ -111,11 +116,12 @@ export function composeDeliveryCountAndRevenue(input: {
   const coverage = input.coverageStart && input.coverageEnd
     ? ` Published Cash Up covers ${input.coverageStart} through ${input.coverageEnd}.`
     : "";
-  const platformText = formatPlatformLines(input.platforms || null);
+  const platformText = formatPlatformLines(input.platforms || null, orders, sales);
   const text = `${branchLabel}, ${periodLabel}: ${orderText}. ${salesText}.${aovText}${coverage}${platformText}`.replace(/\s+/g, " ").trim();
   const evidenceNumbers = [orders, sales, aov].filter((value) => value != null && Number.isFinite(Number(value))).map((value) => Number(value));
+  const shownPlatforms = platformRowsForDisplay(input.platforms || null, orders, sales) || {};
   for (const key of ["jahez", "chefz", "keeta", "hunger"]) {
-    const row = input.platforms?.[key];
+    const row = shownPlatforms[key];
     if (!row) continue;
     if (row.orders != null) evidenceNumbers.push(Number(row.orders));
     if (row.sales != null) evidenceNumbers.push(Number(row.sales));
@@ -132,13 +138,40 @@ export function composeDeliveryCountAndRevenue(input: {
   };
 }
 
-function formatPlatformLines(platforms: Record<string, { orders?: number | null; sales?: number | null }> | null) {
-  if (!platforms) return "";
-  const parts = [];
+export function platformRowsForDisplay(
+  platforms: Record<string, { orders?: number | null; sales?: number | null; orderCount?: number | null; revenue?: number | null }> | null,
+  combinedOrders: number | null = null,
+  combinedSales: number | null = null,
+) {
+  if (!platforms) return null;
+  const named: Record<string, { orders: number | null; sales: number | null }> = {};
   for (const key of ["jahez", "chefz", "keeta", "hunger"]) {
     const row = platforms[key];
     if (!row) continue;
-    if (row.orders == null && row.sales == null) continue;
+    const orders = row.orders ?? row.orderCount ?? null;
+    const sales = row.sales ?? row.revenue ?? null;
+    if (orders == null && sales == null) continue;
+    named[key] = { orders, sales };
+  }
+  const keys = Object.keys(named);
+  if (keys.length === 1 && combinedOrders != null && combinedSales != null) {
+    const only = named[keys[0]];
+    if (Number(only.orders) === Number(combinedOrders) && Number(only.sales) === Number(combinedSales)) return null;
+  }
+  return keys.length ? named : null;
+}
+
+function formatPlatformLines(
+  platforms: Record<string, { orders?: number | null; sales?: number | null }> | null,
+  combinedOrders: number | null = null,
+  combinedSales: number | null = null,
+) {
+  const named = platformRowsForDisplay(platforms, combinedOrders, combinedSales);
+  if (!named) return "";
+  const parts = [];
+  for (const key of ["jahez", "chefz", "keeta", "hunger"]) {
+    const row = named[key];
+    if (!row) continue;
     const label = key[0].toUpperCase() + key.slice(1);
     parts.push(`${label} ${row.orders ?? "n/a"} orders, ${row.sales == null ? "revenue n/a" : formatSar(row.sales)}`);
   }
@@ -181,9 +214,76 @@ export function sameWeekdaySeries(anchorDate: string, untilDate: string) {
   return dates;
 }
 
+function riyadhYear(referenceDate = new Date()) {
+  return Number(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Riyadh", year: "numeric" }).format(referenceDate));
+}
+
+export function explicitDays(question: string, referenceDate = new Date()) {
+  const q = String(question || "").toLowerCase();
+  const year = Number((q.match(/\b(20\d{2})\b/) || [])[1] || riyadhYear(referenceDate));
+  const monthPattern = "january|february|march|april|may|june|july|august|september|october|november|december";
+  const re = new RegExp(`\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b|\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${monthPattern})\\b`, "g");
+  const found: string[] = [];
+  let match = re.exec(q);
+  while (match) {
+    const monthName = match[1] || match[4];
+    const day = Number(match[2] || match[3]);
+    const month = MONTHS[monthName];
+    if (month && day >= 1 && day <= 31) {
+      const iso = `${year}-${month}-${String(day).padStart(2, "0")}`;
+      if (!found.includes(iso)) found.push(iso);
+    }
+    match = re.exec(q);
+  }
+  return found;
+}
+
+export function explicitSingleDay(question: string, referenceDate = new Date()) {
+  const days = explicitDays(question, referenceDate);
+  return days.length === 1 ? days[0] : null;
+}
+
+export function retainSingleDayAnchor(
+  previous: unknown,
+  question: unknown,
+  period: { startDate?: string; endDate?: string } | null = null,
+  referenceDate = new Date(),
+) {
+  const named = explicitSingleDay(String(question || ""), referenceDate);
+  if (named) return named;
+  if (period?.startDate && period.startDate === period.endDate) return period.startDate;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(previous || ""))) return String(previous);
+  return null;
+}
+
+export function questionRequiresRetrievedEvidence(question: string) {
+  return /\b(why|sales|lower|higher|compare|revenue|orders|deliveries)\b/i.test(String(question || ""));
+}
+
+export function describeSalesDirection(
+  subjectDate: string,
+  subjectSales: number | null,
+  otherDate: string,
+  otherSales: number | null,
+) {
+  if (subjectSales == null || otherSales == null) {
+    return `${subjectDate} or ${otherDate} has no published net sales, so I am not saying which day was lower.`;
+  }
+  const subject = Number(subjectSales);
+  const other = Number(otherSales);
+  const gap = Math.round(Math.abs(subject - other) * 100) / 100;
+  const direction = subject > other
+    ? `${subjectDate} was higher, not lower, than ${otherDate}`
+    : subject < other
+      ? `${subjectDate} was lower than ${otherDate}`
+      : `${subjectDate} matched ${otherDate}`;
+  return `${subjectDate} net sales were ${formatSar(subject)}. ${otherDate} net sales were ${formatSar(other)}. ${direction} by ${formatSar(gap)}. No cause is stated because none was measured.`;
+}
+
 export function resolveAnchorDate(context: Record<string, unknown> | null | undefined) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(context?.singleDayAnchor || ""))) return String(context?.singleDayAnchor);
   const active = (context?.activeState || {}) as { period?: { startDate?: string; endDate?: string }; vaultPeriod?: { startDate?: string; endDate?: string } };
-  const period = active.period || active.vaultPeriod || null;
+  const period = active.vaultPeriod || active.period || null;
   if (period?.startDate && period?.endDate && period.startDate === period.endDate) return period.endDate;
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(context?.anchorDate || ""))) return String(context?.anchorDate);
   return null;
@@ -274,8 +374,13 @@ function clip(value: unknown, max: number) {
 }
 
 export function boundConversationContext(context: Record<string, unknown> = {}) {
-  const anchorDate = resolveAnchorDate(context);
   const active = (context.activeState || {}) as Record<string, unknown>;
+  const period = (active.vaultPeriod || active.period || null) as { startDate?: string; endDate?: string } | null;
+  const singleDayAnchor = retainSingleDayAnchor(context.singleDayAnchor, context.lastQuestion, period);
+  const anchorDate = singleDayAnchor || resolveAnchorDate({ ...context, singleDayAnchor });
+  const history = Array.isArray(active.branchHistory)
+    ? (active.branchHistory as unknown[]).map(String).filter((item) => ["khobar", "riyadh", "jeddah"].includes(item)).slice(-4)
+    : [];
   const bounded = {
     lastQuestion: clip(context.lastQuestion, 300),
     lastResolvedQuestion: clip(context.lastResolvedQuestion, 300),
@@ -283,6 +388,7 @@ export function boundConversationContext(context: Record<string, unknown> = {}) 
     lastBranch: context.lastBranch || null,
     lastPeriod: typeof context.lastPeriod === "string" ? clip(context.lastPeriod, 120) : null,
     lastMetric: context.lastMetric || null,
+    singleDayAnchor,
     anchorDate,
     anchorBranch: branchIdFromText(context.anchorBranch || context.lastBranch) || context.anchorBranch || null,
     anchorMetric: context.anchorMetric || context.lastMetric || null,
@@ -290,15 +396,18 @@ export function boundConversationContext(context: Record<string, unknown> = {}) 
       period: active.period || null,
       vaultPeriod: active.vaultPeriod || null,
       branch: active.branch || null,
+      branchHistory: history,
       metric: active.metric || null,
     },
   };
   if (JSON.stringify(bounded).length <= AGENT_LIMITS.contextMaxChars) return bounded;
   return {
     lastQuestion: bounded.lastQuestion,
+    singleDayAnchor: bounded.singleDayAnchor,
     anchorDate: bounded.anchorDate,
     anchorBranch: bounded.anchorBranch,
     anchorMetric: bounded.anchorMetric,
+    activeState: { branchHistory: history },
   };
 }
 
