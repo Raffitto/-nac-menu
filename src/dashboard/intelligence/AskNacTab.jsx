@@ -26,6 +26,11 @@ import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
 import IntelligenceMobileMoreMenu from "./mobile/IntelligenceMobileMoreMenu";
 import { useAskNacConnectionStatus } from "./useAskNacConnectionStatus";
 import { createAssistantMessage, createUserMessage, resolveAskNacSuggestions } from "./askNacChatUtils";
+import {
+  clearConversationMemory,
+  loadConversationMemory,
+  saveConversationMemory,
+} from "../../intelligence/askNac/agent/conversationMemory";
 import "../styles/ask-nac.css";
 import "../styles/ask-nac-data-vault.css";
 
@@ -110,8 +115,21 @@ export default function AskNacTab({
     setMessages([]);
     setDraft("");
     setConversationContext(resetConversationContext());
+    clearConversationMemory(supabase, session?.user?.id, platform?.branch || "");
     focusInput();
-  }, [focusInput]);
+  }, [focusInput, session?.user?.id, platform?.branch]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    let cancelled = false;
+    loadConversationMemory(supabase, userId, platform?.branch || "").then((loaded) => {
+      if (!cancelled && loaded) setConversationContext((current) => current?.lastQuestion ? current : { ...current, ...loaded });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, platform?.branch]);
 
   const submitQuestion = useCallback(
     async (q) => {
@@ -137,15 +155,17 @@ export default function AskNacTab({
             setTimeout(() => reject(new Error("Ask NAC did not respond. Try again.")), 28000);
           }),
         ]);
-        setConversationContext((prev) =>
-          result.nextContext
+        setConversationContext((prev) => {
+          const next = result.nextContext
             ? result.nextContext
             : updateConversationContext(prev, {
               question: text,
               resolvedQuestion: result.conversationResolution?.resolvedQuestion || text,
               response: result,
-            }),
-        );
+            });
+          saveConversationMemory(supabase, session?.user?.id, filters.branch || "", next);
+          return next;
+        });
         setMessages((prev) => [
           ...prev,
           createAssistantMessage({ question: text, response: result }),
