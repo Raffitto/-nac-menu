@@ -588,7 +588,7 @@ export async function runScheduledDriveIngestion(
               updated_at: now,
             })
             .eq("id", connection.id);
-          await admin.from("ask_nac_drive_sync_runs").insert({
+          const { error: runInsertError } = await admin.from("ask_nac_drive_sync_runs").insert({
             folder_id: folder.id,
             trigger_type: "scheduled",
             status: "failed",
@@ -596,6 +596,7 @@ export async function runScheduledDriveIngestion(
             error_code: "drive_reconnect_required",
             error: checkpoint,
             error_message: checkpoint,
+            started_at: now,
             finished_at: now,
             completed_at: now,
             updated_at: now,
@@ -605,6 +606,9 @@ export async function runScheduledDriveIngestion(
               publicationAdvanced: false,
             },
           });
+          if (runInsertError) {
+            folderResult.error = `${folderResult.error} Run record was not saved: ${runInsertError.message}`;
+          }
           await admin
             .from("ask_nac_drive_sync_folders")
             .update({
