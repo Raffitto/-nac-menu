@@ -52,6 +52,15 @@ export function isSelfContainedManagementQuestion(question) {
   return /\b(?:compare|vs|versus|why|lower|higher|better|worse|changed|difference|explain)\b/.test(q);
 }
 
+function questionNamesItsOwnPeriod(question) {
+  const text = String(question || "").toLowerCase();
+  if (/\b\d{1,3}\s+days?\s+ago\b/.test(text) || /\b(?:one|two|three)\s+days?\s+ago\b/.test(text)) return true;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words <= 4) return false;
+  return /\b(?:in|for|during|of)\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\b/.test(text)
+    || /\b(?:yesterday|today|last month|this month|last week|this week)\b/.test(text);
+}
+
 export function isComparisonAnalysisFollowUp(question) {
   if (
     isExplicitComparisonReset(question)
@@ -59,6 +68,7 @@ export function isComparisonAnalysisFollowUp(question) {
     || isNonCommercialSourceQuestion(question)
     || isAmbiguousManagementFollowUp(question)
     || isBranchOnlyFollowUp(question)
+    || questionNamesItsOwnPeriod(question)
   ) return false;
   const q = String(question || "").toLowerCase().replace(/[?!.]+$/g, "").trim();
   if (/\b(visuali[sz]e|chart|graph|break it down|daily breakdown)\b/.test(q)) return false;

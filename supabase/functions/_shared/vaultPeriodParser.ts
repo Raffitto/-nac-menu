@@ -526,6 +526,26 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     };
   }
 
+  const daysAgo = q.match(/\b(\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten)\s+days?\s+ago\b/);
+  if (daysAgo) {
+    const words: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const n = words[daysAgo[1]] || Number(daysAgo[1]);
+    if (n >= 1 && n <= 366) {
+      const today = calendarYmdInTz(referenceDate);
+      const day = addCalendarDays(today.year, today.month, today.day, -n);
+      const iso = isoDate(day.year, day.month, day.day);
+      const label = formatDayMonthLabel(day.year, day.month - 1, day.day);
+      return {
+        startDate: iso,
+        endDate: iso,
+        label,
+        periodType: "single_day",
+        isSingleDay: true,
+        expectedDayCount: 1,
+      };
+    }
+  }
+
   const explicitRange = parseExplicitDateRangeFromText(q, referenceDate);
   if (explicitRange) return explicitRange;
 
