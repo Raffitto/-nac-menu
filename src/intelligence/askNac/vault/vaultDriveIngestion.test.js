@@ -279,7 +279,8 @@ describe("scheduled Drive ingestion (Phase 1)", () => {
     expect(scheduledIngest).toMatch(/failedFiles/);
     expect(scheduledIngest).toMatch(/durationMs/);
     expect(scheduledIngest).toMatch(/reason/);
-    expect(driveFunction).toMatch(/ok: !authBlocked && summary\.failedFiles === 0,\s*\.\.\.summary/);
+    expect(driveFunction).toMatch(/ok: ingestOk/);
+    expect(driveFunction).toMatch(/ingestOk \? 200 : 503/);
   });
 
   test("scheduled ingest reuses unchanged-file idempotency in existing pipeline", () => {

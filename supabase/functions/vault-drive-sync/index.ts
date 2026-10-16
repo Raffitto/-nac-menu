@@ -218,9 +218,10 @@ Deno.serve(async (req) => {
       }
       const authBlocked = summary.folderResults?.some((row) => row.reason === "connection_required")
         || /invalid_grant|reconnect/i.test(String(reviewTrackingError || ""));
+      const ingestOk = !authBlocked && summary.failedFiles === 0;
       console.info("[vault-drive-sync] scheduled_ingest complete", summary);
-      return json(200, {
-        ok: !authBlocked && summary.failedFiles === 0,
+      return json(ingestOk ? 200 : 503, {
+        ok: ingestOk,
         ...summary,
         reviewTracking,
         reviewTrackingError,
@@ -399,10 +400,35 @@ Deno.serve(async (req) => {
         ["cash_up", "daily_logbook"].includes(String(folder.report_type || "")),
       );
 
+      const { data: latestRuns } = await supabase
+        .from("ask_nac_drive_sync_runs")
+        .select("id,status,runtime_stage,error_code,created_at,started_at,finished_at")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const { data: cashCoverage } = await supabase
+        .from("ask_nac_data_coverage")
+        .select("period_end")
+        .eq("report_type", "cash_up")
+        .not("period_end", "is", null)
+        .order("period_end", { ascending: false })
+        .limit(1);
+      const { data: logCoverage } = await supabase
+        .from("ask_nac_data_coverage")
+        .select("period_end")
+        .eq("report_type", "daily_logbook")
+        .not("period_end", "is", null)
+        .order("period_end", { ascending: false })
+        .limit(1);
+
       return json(200, {
         connected: Boolean(data),
         connection: safeConnection,
         folders: folders || [],
+        latestIngestRun: latestRuns?.[0] || null,
+        publication: {
+          cashUpPeriodEnd: cashCoverage?.[0]?.period_end || null,
+          logbookPeriodEnd: logCoverage?.[0]?.period_end || null,
+        },
         schedule: {
           cronUtc: "0 0 * * *",
           timezone: "Asia/Riyadh",
