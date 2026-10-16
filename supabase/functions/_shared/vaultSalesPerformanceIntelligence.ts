@@ -1694,6 +1694,19 @@ export function buildCashUpPeriodAggregateAnswer(
     return `Average spend is not available for ${branchLabel} over ${periodLabel}.`;
   }
 
+  const asked = String(question).toLowerCase();
+  const wantsDeliverySales = /\bdelivery (?:app |platform )?(?:net )?sales\b/.test(asked) || /\bdelivery sales\b/.test(asked);
+  const wantsTotalOrders = /\b(total orders|how many .{0,24}orders|orders)\b/.test(asked) && !/\bdelivery orders\b/.test(asked);
+  if (wantsDeliverySales && wantsTotalOrders && focus !== "delivery_platform") {
+    const deliveryLine = totalDeliverySales != null
+      ? `${branchLabel} delivery-app sales for ${periodLabel}: ${formatCurrency(totalDeliverySales)}.`
+      : `Delivery-app sales are not available for ${branchLabel} over ${periodLabel}.`;
+    const ordersLine = totalOrders != null
+      ? `Total orders for the same period: ${formatNumber(totalOrders)} across ${dayCount} cash-up day(s).`
+      : `Total orders are not available for ${branchLabel} over ${periodLabel}.`;
+    return `${deliveryLine} ${ordersLine}`;
+  }
+
   if (/\bdelivery orders?\b/.test(String(question).toLowerCase()) && focus !== "delivery_platform") {
     const avgOrders = formatAveragePerDay(totalDeliveryOrders ?? null, dayCount, "");
     return totalDeliveryOrders != null
