@@ -6,7 +6,7 @@ import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
 import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
-import { activeEggPreparation, eggHeroImage, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
+import { activeEggPreparation, eggHeroImage, openEggPreparation, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
 import { readGuestLanguage, writeGuestLanguage } from "./lib/guestLanguage";
 import EggPreparationPicker from "./components/EggPreparationPicker";
 import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
@@ -876,13 +876,13 @@ const isAllowed = (menuItem) => {
   );
 
   const openMenuItem = useCallback(
-    (menuItem, sectionTitleEn, categoryIdOverride) => {
+    (menuItem, sectionTitleEn, categoryIdOverride, preparationId) => {
       if (!menuItem?.en) return;
       const catId = categoryIdOverride || effectiveCategory;
       if (!catId) return;
       setItemCategoryId(catId);
       dragY.set(0);
-      setActiveItem(resetEggPreparation(menuItem));
+      setActiveItem(openEggPreparation(menuItem, preparationId));
       const sectionSlug = sectionTitleEn.toLowerCase().replaceAll(" ", "-");
       trackEvent({
         event_type: "item_open",

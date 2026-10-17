@@ -4,6 +4,7 @@ import {
   eggHeroImage,
   eggPreparationSelection,
   isTwoEggsAnyStyle,
+  openEggPreparation,
   resetEggPreparation,
   selectEggPreparation,
   withEggPreparations,
@@ -72,6 +73,17 @@ describe("2 Eggs Any Style preparation", () => {
     expect(isTwoEggsAnyStyle(wrongPrice)).toBe(false);
     expect(isTwoEggsAnyStyle(lookalike)).toBe(false);
     expect(isTwoEggsAnyStyle({ ...eggs, en: "  2 eggs any style  " })).toBe(true);
+  });
+
+  test("a collage photograph opens that preparation and the title opens scrambled", () => {
+    const fried = openEggPreparation(eggs, "fried");
+    expect(fried.selectedPreparationId).toBe("fried");
+    expect(fried.preparationSelection.optionId).toBe("fried");
+    expect(fried.price).toBe("31 SAR");
+    expect(eggHeroImage(fried)).toBe("/eggs-fried-menu.webp");
+    expect(openEggPreparation(eggs).selectedPreparationId).toBe("scrambled");
+    expect(openEggPreparation(eggs, "poached").preparationSelection.image).toBe("/eggs-poached.webp");
+    expect(openEggPreparation({ en: "Scrambled Eggs", price: "49 SAR", calories: 751 }).preparations).toBeUndefined();
   });
 
   test("reopening starts again at scrambled and does not keep another product's choice", () => {

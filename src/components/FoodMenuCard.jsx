@@ -33,6 +33,14 @@ export default function FoodMenuCard({
     onOpenItem(menuItem, sectionTitleEn, categoryId);
   };
 
+  const openPreparation = (event, optionId) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!menuItem?.en || !categoryId) return;
+    setLightboxOpen(false);
+    onOpenItem(menuItem, sectionTitleEn, categoryId, optionId);
+  };
+
   const handleExpandClick = (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -67,15 +75,24 @@ export default function FoodMenuCard({
         )}
         <div className="menu-card-media">
           {menuItem.preparations?.length ? (
-            <div className="menu-card-collage" aria-hidden="true">
+            <div className="menu-card-collage" dir="ltr">
               {menuItem.preparations.map((option) => (
-                <img key={option.id} src={option.image} alt="" decoding="async" />
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`menu-card-collage__shot menu-card-collage__shot--${option.id}`}
+                  aria-label={isArabic ? `${menuItem.ar}، ${option.ar}` : `${menuItem.en}, ${option.en}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openPreparation(event, option.id)}
+                >
+                  <img src={option.image} alt="" decoding="async" />
+                </button>
               ))}
             </div>
           ) : hasImageSrc(menuItem) ? (
             <MenuImage src={menuItem.image} alt="" priority={sectionIndex === 0 && itemIndex < 2} />
           ) : null}
-          {(menuItem.preparations?.length || hasImageSrc(menuItem)) && (
+          {!menuItem.preparations?.length && hasImageSrc(menuItem) && (
             <button
               type="button"
               className="card-image-expand"

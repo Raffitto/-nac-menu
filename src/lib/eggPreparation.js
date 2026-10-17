@@ -67,7 +67,18 @@ export function withEggPreparations(item) {
   };
 }
 
-/** Each time the product is opened, the choice starts at Scrambled. */
+/** Card title opens Scrambled. A collage photograph opens that preparation. */
+export function openEggPreparation(item, optionId) {
+  if (!isTwoEggsAnyStyle(item)) return item;
+  const prepared = withEggPreparations({
+    ...item,
+    selectedPreparationId: undefined,
+  });
+  if (eggPreparationById(optionId)) return selectEggPreparation(prepared, optionId);
+  return resetEggPreparation(prepared);
+}
+
+/** Each time the product is opened without a photograph choice, the selection starts at Scrambled. */
 export function resetEggPreparation(item) {
   if (!isTwoEggsAnyStyle(item)) return item;
   const catalogueImage = isPreparationImage(item.image)
