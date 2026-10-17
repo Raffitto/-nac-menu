@@ -563,12 +563,13 @@ const infoOpacity = useTransform(dragY, [0, 70], [1, 0]);
 const imageScale = useTransform(dragY, [0, 120], [1, 0.6]);
 
 
-const [lang, setLang] = useState(() =>
-  readGuestLanguage(typeof localStorage === "undefined" ? null : localStorage)
-);
-useEffect(() => {
-  writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, lang);
-}, [lang]);
+const [lang, setLang] = useState(() => {
+  const storage = typeof localStorage === "undefined" ? null : localStorage;
+  const languages = typeof navigator === "undefined"
+    ? []
+    : (navigator.languages?.length ? navigator.languages : [navigator.language]);
+  return readGuestLanguage(storage, languages);
+});
 useEffect(() => {
   const langStats =
     JSON.parse(localStorage.getItem("nacLanguageAnalytics")) || {
@@ -1152,6 +1153,7 @@ if (adminMode) {
     });
 
     setLang("en");
+    writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, "en");
   }}
 >
   EN
@@ -1169,6 +1171,7 @@ if (adminMode) {
     });
 
     setLang("ar");
+    writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, "ar");
   }}
 >
   AR
@@ -1368,7 +1371,7 @@ onDragEnd={(e, info) => {
 
              
 <motion.div
-  className="lux-image"
+  className={`lux-image${activeItem.preparations?.length ? " lux-image--contain" : ""}`}
   transition={{ duration: 0.18, ease: "easeOut" }}
   drag="y"
   dragDirectionLock

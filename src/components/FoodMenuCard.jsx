@@ -66,10 +66,16 @@ export default function FoodMenuCard({
           </span>
         )}
         <div className="menu-card-media">
-          {hasImageSrc(menuItem) && (
+          {menuItem.preparations?.length ? (
+            <div className="menu-card-collage" aria-hidden="true">
+              {menuItem.preparations.map((option) => (
+                <img key={option.id} src={option.image} alt="" decoding="async" />
+              ))}
+            </div>
+          ) : hasImageSrc(menuItem) ? (
             <MenuImage src={menuItem.image} alt="" priority={sectionIndex === 0 && itemIndex < 2} />
-          )}
-          {hasImageSrc(menuItem) && (
+          ) : null}
+          {(menuItem.preparations?.length || hasImageSrc(menuItem)) && (
             <button
               type="button"
               className="card-image-expand"
@@ -94,11 +100,11 @@ export default function FoodMenuCard({
         </div>
         <ChevronRight className="chevron" aria-hidden />
       </ImpressionTracked>
-      {hasImageSrc(menuItem) && (
+      {lightboxOpen && (menuItem.preparations?.length || hasImageSrc(menuItem)) && (
         <Suspense fallback={null}>
           <ImageLightbox
             open={lightboxOpen}
-            src={menuItem.image}
+            src={menuItem.preparations?.find((option) => option.id === "scrambled")?.image || menuItem.image}
             alt={menuItem.en}
             onClose={() => setLightboxOpen(false)}
           />

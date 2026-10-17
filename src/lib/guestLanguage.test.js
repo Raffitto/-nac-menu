@@ -1,4 +1,9 @@
-import { readGuestLanguage, writeGuestLanguage, GUEST_LANGUAGE_KEY } from "./guestLanguage";
+import {
+  detectGuestLanguage,
+  readGuestLanguage,
+  writeGuestLanguage,
+  GUEST_LANGUAGE_KEY,
+} from "./guestLanguage";
 
 function memoryStorage(initial = {}) {
   const data = { ...initial };
@@ -11,20 +16,30 @@ function memoryStorage(initial = {}) {
   };
 }
 
-test("a new guest starts in English even when storage is empty", () => {
-  expect(readGuestLanguage(memoryStorage())).toBe("en");
-  expect(readGuestLanguage(null)).toBe("en");
+test("Arabic device languages open the Arabic menu, including regional variants", () => {
+  expect(detectGuestLanguage(["ar-SA", "en-US"])).toBe("ar");
+  expect(detectGuestLanguage(["ar-LB"])).toBe("ar");
+  expect(detectGuestLanguage(["ar-AE"])).toBe("ar");
+  expect(detectGuestLanguage(["ar-EG"])).toBe("ar");
+  expect(detectGuestLanguage(["fr-FR", "ar-SA"])).toBe("ar");
 });
 
-test("a saved Arabic choice survives and English can be saved again", () => {
-  const storage = memoryStorage({ [GUEST_LANGUAGE_KEY]: "ar" });
-  expect(readGuestLanguage(storage)).toBe("ar");
+test("English and unsupported languages fall back to English", () => {
+  expect(detectGuestLanguage(["en-GB", "ar-SA"])).toBe("en");
+  expect(detectGuestLanguage(["de-DE"])).toBe("en");
+  expect(detectGuestLanguage([])).toBe("en");
+});
+
+test("a saved manual choice wins over the device language and is not implied by detection", () => {
+  const storage = memoryStorage();
+  expect(readGuestLanguage(storage, ["ar-SA"])).toBe("ar");
+  expect(storage.data[GUEST_LANGUAGE_KEY]).toBeUndefined();
   writeGuestLanguage(storage, "en");
-  expect(readGuestLanguage(storage)).toBe("en");
+  expect(readGuestLanguage(storage, ["ar-EG"])).toBe("en");
   writeGuestLanguage(storage, "ar");
-  expect(storage.data[GUEST_LANGUAGE_KEY]).toBe("ar");
+  expect(readGuestLanguage(storage, ["en-US"])).toBe("ar");
 });
 
-test("an unknown saved value falls back to English", () => {
-  expect(readGuestLanguage(memoryStorage({ [GUEST_LANGUAGE_KEY]: "fr" }))).toBe("en");
+test("an unknown saved value is ignored", () => {
+  expect(readGuestLanguage(memoryStorage({ [GUEST_LANGUAGE_KEY]: "fr" }), ["en-US"])).toBe("en");
 });

@@ -1,14 +1,35 @@
 export const GUEST_LANGUAGE_KEY = "nacGuestLanguage";
 
-/** New visitors start in English. A saved en/ar choice is kept across reloads. */
-export function readGuestLanguage(storage) {
+function normalizeLanguageTag(tag) {
+  return String(tag || "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+/** First supported language in preference order. Arabic variants map to ar; everything else falls through to English. */
+export function detectGuestLanguage(languages) {
+  const list = Array.isArray(languages) ? languages : [languages];
+  for (const tag of list) {
+    const value = normalizeLanguageTag(tag);
+    if (!value) continue;
+    if (value === "ar" || value.startsWith("ar-")) return "ar";
+    if (value === "en" || value.startsWith("en-")) return "en";
+  }
+  return "en";
+}
+
+/**
+ * 1. Saved manual choice
+ * 2. Browser language list
+ * 3. English
+ * An automatic detection is not written back as a saved choice.
+ */
+export function readGuestLanguage(storage, languages = []) {
   try {
     const saved = storage?.getItem(GUEST_LANGUAGE_KEY);
     if (saved === "en" || saved === "ar") return saved;
   } catch {
-    // Storage can be blocked. English remains the guest default.
+    // Storage can be blocked. Fall through to the device language.
   }
-  return "en";
+  return detectGuestLanguage(languages);
 }
 
 export function writeGuestLanguage(storage, lang) {
