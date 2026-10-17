@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
 import { filterPublicMenuData } from "./menuVisibility";
 import { mapGuestMenuHighlightFields } from "./guestMenuFeatured";
+import { withEggPreparations } from "./eggPreparation";
 import {
   buildPublishFailureMessage,
   publicationNeedsVerification,
@@ -721,8 +722,9 @@ export async function getFullMenu(options = {}) {
     const catSections = sectionsByCat[cat.id] || [];
     menuData[cat.slug] = catSections.map((sec) => ({
       title: { en: sec.name_en, ar: sec.name_ar },
-      items: (itemsBySec[sec.id] || []).map((it) => ({
+      items: (itemsBySec[sec.id] || []).map((it) => withEggPreparations({
         id: it.id,
+        slug: it.slug || "",
         en: it.name_en,
         ar: it.name_ar,
         descEn: it.desc_en || "",
@@ -847,8 +849,9 @@ export async function getMenuByCategory(categorySlug) {
 
   const result = sections.map((sec) => ({
     title: { en: sec.name_en, ar: sec.name_ar },
-    items: (itemsBySec[sec.id] || []).map((it) => ({
+    items: (itemsBySec[sec.id] || []).map((it) => withEggPreparations({
       id: it.id,
+      slug: it.slug || "",
       en: it.name_en,
       ar: it.name_ar,
       descEn: it.desc_en || "",

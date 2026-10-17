@@ -33,6 +33,14 @@ export default function FoodMenuCard({
     onOpenItem(menuItem, sectionTitleEn, categoryId);
   };
 
+  const openPreparation = (event, optionId) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!menuItem?.en || !categoryId) return;
+    setLightboxOpen(false);
+    onOpenItem(menuItem, sectionTitleEn, categoryId, optionId);
+  };
+
   const handleExpandClick = (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -66,10 +74,25 @@ export default function FoodMenuCard({
           </span>
         )}
         <div className="menu-card-media">
-          {hasImageSrc(menuItem) && (
+          {menuItem.preparations?.length ? (
+            <div className="menu-card-collage" dir="ltr">
+              {menuItem.preparations.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`menu-card-collage__shot menu-card-collage__shot--${option.id}`}
+                  aria-label={isArabic ? `${menuItem.ar}، ${option.ar}` : `${menuItem.en}, ${option.en}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => openPreparation(event, option.id)}
+                >
+                  <img src={option.image} alt="" decoding="async" />
+                </button>
+              ))}
+            </div>
+          ) : hasImageSrc(menuItem) ? (
             <MenuImage src={menuItem.image} alt="" priority={sectionIndex === 0 && itemIndex < 2} />
-          )}
-          {hasImageSrc(menuItem) && (
+          ) : null}
+          {!menuItem.preparations?.length && hasImageSrc(menuItem) && (
             <button
               type="button"
               className="card-image-expand"
@@ -94,11 +117,11 @@ export default function FoodMenuCard({
         </div>
         <ChevronRight className="chevron" aria-hidden />
       </ImpressionTracked>
-      {hasImageSrc(menuItem) && (
+      {lightboxOpen && (menuItem.preparations?.length || hasImageSrc(menuItem)) && (
         <Suspense fallback={null}>
           <ImageLightbox
             open={lightboxOpen}
-            src={menuItem.image}
+            src={menuItem.preparations?.find((option) => option.id === "scrambled")?.image || menuItem.image}
             alt={menuItem.en}
             onClose={() => setLightboxOpen(false)}
           />
