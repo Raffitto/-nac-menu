@@ -6,6 +6,8 @@ import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
 import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
+import { activeEggPreparation, eggHeroImage, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
+import EggPreparationPicker from "./components/EggPreparationPicker";
 import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
@@ -158,7 +160,7 @@ const item = (
   recommended = [],
   allergens = [],
   tags = []
-) => ({
+) => withEggPreparations({
   en,
   ar,
   descEn,
@@ -877,7 +879,7 @@ const isAllowed = (menuItem) => {
       if (!catId) return;
       setItemCategoryId(catId);
       dragY.set(0);
-      setActiveItem(menuItem);
+      setActiveItem(resetEggPreparation(menuItem));
       const sectionSlug = sectionTitleEn.toLowerCase().replaceAll(" ", "-");
       trackEvent({
         event_type: "item_open",
@@ -938,7 +940,7 @@ const goToNextItem = () => {
     },
   });
 
-  setActiveItem(nextItem);
+  setActiveItem(resetEggPreparation(nextItem));
 };
 
 const goToPrevItem = () => {
@@ -967,7 +969,7 @@ const goToPrevItem = () => {
     },
   });
 
-  setActiveItem(prevItem);
+  setActiveItem(resetEggPreparation(prevItem));
 };
 
 useEffect(() => {
@@ -1398,16 +1400,23 @@ onDragEnd={(e, info) => {
     }
   }}
 >
-  {activeItem.image?.trim() ? (
+  {(eggHeroImage(activeItem) || activeItem.image)?.trim() ? (
     <AnimatePresence mode="wait">
       <motion.img
-        key={activeItem.image}
-        src={activeItem.image}
-        alt={activeItem.en}
-        initial={{ opacity: 0.15, scale: 1.02 }}
-        animate={{ opacity: 1, scale: 1 }}
+        key={eggHeroImage(activeItem) || activeItem.image}
+        src={eggHeroImage(activeItem) || activeItem.image}
+        alt={
+          activeEggPreparation(activeItem)
+            ? `${isArabic ? activeItem.ar : activeItem.en}, ${isArabic ? activeEggPreparation(activeItem).ar : activeEggPreparation(activeItem).en}`
+            : (isArabic ? activeItem.ar : activeItem.en)
+        }
+        width="764"
+        height="508"
+        decoding="async"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.22 }}
+        transition={{ duration: 0.18 }}
       />
     </AnimatePresence>
   ) : (
@@ -1419,6 +1428,14 @@ onDragEnd={(e, info) => {
                 <p className="lux-label">{publicBrandEn.toUpperCase()}</p>
                 <h1>{isArabic ? activeItem.ar : activeItem.en}</h1>
                 <p>{isArabic ? activeItem.descAr : activeItem.descEn}</p>
+
+                {activeItem.preparations?.length > 0 && (
+                  <EggPreparationPicker
+                    selectedId={activeItem.selectedPreparationId}
+                    isArabic={isArabic}
+                    onSelect={(optionId) => setActiveItem(selectEggPreparation(activeItem, optionId))}
+                  />
+                )}
 
                 <div className="meta">
                   {activeItem.soldOut && (
