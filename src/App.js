@@ -7,6 +7,7 @@ import ContextualMenuView from "./components/ContextualMenuView";
 import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
 import { activeEggPreparation, eggHeroImage, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
+import { readGuestLanguage, writeGuestLanguage } from "./lib/guestLanguage";
 import EggPreparationPicker from "./components/EggPreparationPicker";
 import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
@@ -562,11 +563,12 @@ const infoOpacity = useTransform(dragY, [0, 70], [1, 0]);
 const imageScale = useTransform(dragY, [0, 120], [1, 0.6]);
 
 
-const [lang, setLang] = useState(() => {
-  if (typeof navigator === "undefined") return "en";
-  const phoneLang = navigator.language || navigator.userLanguage;
-  return phoneLang?.toLowerCase().startsWith("ar") ? "ar" : "en";
-});
+const [lang, setLang] = useState(() =>
+  readGuestLanguage(typeof localStorage === "undefined" ? null : localStorage)
+);
+useEffect(() => {
+  writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, lang);
+}, [lang]);
 useEffect(() => {
   const langStats =
     JSON.parse(localStorage.getItem("nacLanguageAnalytics")) || {
@@ -977,6 +979,12 @@ useEffect(() => {
     dragY.set(0);
   }
 }, [activeItem, dragY]);
+
+useEffect(() => {
+  if (!activeItem) return undefined;
+  document.documentElement.classList.add("guest-modal-open");
+  return () => document.documentElement.classList.remove("guest-modal-open");
+}, [activeItem]);
 
 // Heatmap prep: track max scroll depth per category visit
 const maxScrollDepth = useRef(0);
@@ -1401,8 +1409,7 @@ onDragEnd={(e, info) => {
   }}
 >
   {(eggHeroImage(activeItem) || activeItem.image)?.trim() ? (
-    <AnimatePresence mode="wait">
-      <motion.img
+      <img
         key={eggHeroImage(activeItem) || activeItem.image}
         src={eggHeroImage(activeItem) || activeItem.image}
         alt={
@@ -1413,12 +1420,7 @@ onDragEnd={(e, info) => {
         width="764"
         height="508"
         decoding="async"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
       />
-    </AnimatePresence>
   ) : (
     <div className="lux-image-placeholder" aria-hidden />
   )}

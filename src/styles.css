@@ -2561,3 +2561,219 @@ text-transform: uppercase;
     font-size: 12px;
   }
 }
+
+/* Guest menu: compact responsive scale for every category and modal. */
+html.guest-modal-open,
+html.guest-modal-open body {
+  overflow: hidden !important;
+}
+
+.home {
+  padding: 56px 4vw 40px;
+}
+
+.home .logo {
+  width: min(132px, 36vw);
+  margin-bottom: 12px;
+}
+
+.home .branch-title,
+.contextual-page .branch-title {
+  font-size: clamp(22px, 3.2vw, 36px);
+  letter-spacing: 0.04em;
+  margin: 6px 0 18px;
+}
+
+.category-card {
+  min-height: 132px;
+  gap: 10px;
+  padding: 16px 12px;
+}
+
+.hand {
+  font-size: clamp(18px, 1.7vw, 26px);
+}
+
+.contextual-page .home-hero {
+  padding: 46px 16px 4px;
+}
+
+.logo-compact {
+  width: 58px;
+  margin-bottom: 4px;
+}
+
+.contextual-greeting {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.menu-search {
+  height: 46px;
+  max-width: 720px;
+  margin-bottom: 12px;
+  font-size: 15px;
+}
+
+.menu-header h1 {
+  font-size: clamp(32px, 5vw, 64px);
+}
+
+.menu-grid-compact,
+.drink-card-grid {
+  gap: 10px;
+}
+
+@media (min-width: 1180px) {
+  .menu-grid-compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.menu-card-name,
+.drink-card-name {
+  font-size: 15px;
+  line-height: 1.28;
+}
+
+.rtl .menu-card.menu-card-compact,
+.rtl .drink-card {
+  padding-right: 12px;
+  padding-left: 28px;
+}
+
+.rtl .menu-card.menu-card-compact .menu-card-media,
+.rtl .drink-card .drink-card-media {
+  border-radius: 0 20px 20px 0;
+}
+
+.rtl .menu-card-compact .chevron,
+.rtl .drink-card .chevron {
+  right: auto;
+  left: 8px;
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.lux-overlay {
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  overflow: hidden;
+  align-items: center;
+}
+
+.lux-panel {
+  width: min(880px, calc(100vw - 24px)) !important;
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  grid-template-columns: minmax(0, 1.05fr) minmax(260px, 0.95fr);
+  overflow: hidden;
+}
+
+.lux-image {
+  min-height: 0 !important;
+  height: min(62vh, 460px);
+  max-height: min(62vh, 460px);
+  align-self: stretch;
+}
+
+.lux-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  animation: lux-hero-fade 0.18s ease;
+}
+
+@keyframes lux-hero-fade {
+  from { opacity: 0.45; }
+  to { opacity: 1; }
+}
+
+.lux-info {
+  padding: 22px 24px 20px !important;
+  min-height: 0;
+  max-height: min(62vh, 460px);
+  overflow-y: auto;
+  justify-content: flex-start;
+}
+
+.lux-info h1 {
+  font-size: clamp(28px, 3vw, 40px);
+  margin-bottom: 8px;
+}
+
+.lux-info p {
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.meta {
+  margin: 14px 0;
+}
+
+.close-icon {
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  width: 40px;
+  height: 40px;
+}
+
+.rtl .close-icon {
+  right: auto;
+  left: max(12px, env(safe-area-inset-left));
+}
+
+.egg-prep {
+  margin: 12px 0 0;
+  gap: 8px;
+}
+
+.lux-info .egg-prep button.egg-prep__option img {
+  height: 48px;
+  border-radius: 10px;
+}
+
+@media (max-width: 860px) {
+  .lux-panel {
+    grid-template-columns: 1fr;
+    width: min(480px, calc(100vw - 16px)) !important;
+    overflow-y: auto;
+  }
+
+  .lux-image {
+    height: clamp(160px, 28vh, 220px);
+    min-height: 160px !important;
+    max-height: 220px;
+  }
+
+  .lux-info {
+    max-height: none;
+    padding: 16px 16px 18px !important;
+    overflow-y: visible;
+  }
+
+  .lux-info h1 {
+    font-size: clamp(26px, 7vw, 34px);
+  }
+}
+
+@media (max-width: 420px) {
+  .menu-card.menu-card-compact,
+  .drink-card {
+    height: 112px;
+    min-height: 112px;
+    max-height: 112px;
+  }
+
+  .menu-card-media,
+  .drink-card-media {
+    min-height: 112px;
+  }
+
+  .menu-card-name,
+  .drink-card-name {
+    font-size: 14px;
+  }
+}
