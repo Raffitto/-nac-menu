@@ -1,4 +1,4 @@
-/** Guest-menu visibility — single source of truth with Menu Manager / Supabase. */
+import { isRetiredBigNac, presentGuestMenuItem } from "./canonicalGuestCatalogue";
 
 export function parseHiddenUntil(item) {
   const raw = item?.hidden_until ?? item?.hiddenUntil;
@@ -99,9 +99,14 @@ export function filterPublicMenuData(menuData, nowMs = Date.now()) {
     next[catId] = (sections || [])
       .map((sec) => ({
         ...sec,
-        items: (sec.items || []).filter(
-          (it) => isPublicMenuItem(it, nowMs) && !isGuestCatalogueDuplicate(it),
-        ),
+        items: (sec.items || [])
+          .filter(
+            (it) =>
+              isPublicMenuItem(it, nowMs)
+              && !isGuestCatalogueDuplicate(it)
+              && !isRetiredBigNac(it),
+          )
+          .map(presentGuestMenuItem),
       }))
       .filter((sec) => sec.items.length > 0);
   }
