@@ -391,7 +391,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
       ["QR Sessions", qrSessionStarts],
       ["Bounce Rate", `${bouncePct}%`],
       ["Deep Engagement", `${deepPct}%`],
-      ["Avg Time Spent", formatDuration(avgTimeSpent)],
+      ["Avg recorded duration", formatDuration(avgTimeSpent)],
       ["Add-on Conversion", `${addOnRate}%`],
       ["Arabic Usage", `${arabicPct}%`],
       ["Returning Sessions", `${returningPct}%`],

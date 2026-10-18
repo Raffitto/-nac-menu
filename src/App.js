@@ -13,7 +13,6 @@ import {
   trackCategoryOpen,
   trackMenuTabOpen,
   trackSectionOpen,
-  trackAddOnOpen,
   makeMenuItemId,
   isNewSession,
   markSessionLogged,
@@ -32,6 +31,7 @@ import {
   hasMenuLevelTabs,
   orderCategoriesForSelector,
 } from "./lib/menuPresentation";
+import { customizationDisplaySrc } from "./lib/menuImageSources";
 import { resolvePublicBranchFromLocation, branchPublicName } from "./dashboard/config/branchDisplayConfig";
 import { isPublicPlatformMode } from "./lib/platformMode";
 
@@ -669,7 +669,7 @@ useEffect(() => {
 
     const img = new Image();
 
-    img.src = src;
+    img.src = customizationDisplaySrc(src).display;
 
   });
 
@@ -1402,12 +1402,18 @@ onDragEnd={(e, info) => {
     <AnimatePresence mode="wait">
       <motion.img
         key={activeItem.image}
-        src={activeItem.image}
+        src={customizationDisplaySrc(activeItem.image).display}
         alt={activeItem.en}
         initial={{ opacity: 0.15, scale: 1.02 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.22 }}
+        onError={(event) => {
+          const image = customizationDisplaySrc(activeItem.image);
+          if (!image.usesVariant || event.currentTarget.dataset.nacFallback === "1") return;
+          event.currentTarget.dataset.nacFallback = "1";
+          event.currentTarget.src = image.fallback;
+        }}
       />
     </AnimatePresence>
   ) : (
@@ -1463,13 +1469,6 @@ onClick={(e) => {
   );
 
   const sectionEn = findSectionTitleEnForItem(modalCategoryId, activeItem, menuData);
-  trackAddOnOpen({
-    language: lang,
-    categoryId: modalCategoryId,
-    sectionTitleEn: sectionEn,
-    menuItem: activeItem,
-    addOn: rec,
-  });
   trackEvent({
     event_type: "add_on_click",
     language: lang,

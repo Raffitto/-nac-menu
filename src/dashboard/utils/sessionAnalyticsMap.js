@@ -89,5 +89,6 @@ export function mapBiToSessionAggregates(bi, options = {}) {
     session_quality: bi.session_quality || {},
     session_operational: bi.session_operational || {},
     session_diagnostics: bi.session_diagnostics || null,
+    lang_behavior: bi.lang_behavior && typeof bi.lang_behavior === "object" ? bi.lang_behavior : {},
   };
 }

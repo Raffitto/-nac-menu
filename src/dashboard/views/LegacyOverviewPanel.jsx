@@ -194,7 +194,7 @@ export default function LegacyOverviewPanel(props) {
                   </motion.div>
 
                   <motion.div className="nac-bi-exec-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-                    <p className="nac-bi-exec-label"><Timer size={13} /> Avg Session</p>
+                    <p className="nac-bi-exec-label"><Timer size={13} /> Avg recorded duration</p>
                     <p className="nac-bi-exec-value">
                       {avgTimeSpent > 0 ? formatDuration(avgTimeSpent) : "—"}
                     </p>
@@ -241,7 +241,7 @@ export default function LegacyOverviewPanel(props) {
                   <div>
                     <div className="bi-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
                       <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
-                        <p className="bi-card-label"><Timer size={13} /> Avg Duration</p>
+                        <p className="bi-card-label"><Timer size={13} /> Recorded duration</p>
                         <p className="bi-card-value">{formatDuration(avgTimeSpent)}</p>
                       </motion.div>
                       <motion.div className="bi-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -4 }}>
