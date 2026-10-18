@@ -7,6 +7,18 @@ export function parseHiddenUntil(item) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/**
+ * Editor duplicate of the canonical 2 Eggs Any Style row.
+ * Hidden from guests only. The database row is kept for history.
+ */
+export function isGuestCatalogueDuplicate(item) {
+  const name = String(item?.en || item?.name_en || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return name === "2 eggs any style (copy)";
+}
+
 /** True when the item must not appear on the public menu. */
 export function isHiddenFromPublicMenu(item, nowMs = Date.now()) {
   if (!item) return true;
@@ -87,7 +99,9 @@ export function filterPublicMenuData(menuData, nowMs = Date.now()) {
     next[catId] = (sections || [])
       .map((sec) => ({
         ...sec,
-        items: (sec.items || []).filter((it) => isPublicMenuItem(it, nowMs)),
+        items: (sec.items || []).filter(
+          (it) => isPublicMenuItem(it, nowMs) && !isGuestCatalogueDuplicate(it),
+        ),
       }))
       .filter((sec) => sec.items.length > 0);
   }
