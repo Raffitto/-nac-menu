@@ -46,19 +46,26 @@ export function isActiveBigNac(item) {
   return amount(item?.calories) === 1115 && amount(item?.price) === 69;
 }
 
-/** Previous Big Nac (sk-1955): 1100 cal / 68 SAR. Not served. Row is not deleted. */
+/** Previous Big Nac (sk-1955) is stored as 1100 cal / 68 SAR. Guests see sk-2457 instead. */
 export function isRetiredBigNac(item) {
   const name = itemName(item);
   if (name !== "big nac" && name !== "big nac new") return false;
   return !isActiveBigNac(item);
 }
 
+/** Khobar is the reference guest presentation. Branch ids on the row stay unchanged. */
 export function presentGuestMenuItem(item) {
-  if (!isActiveBigNac(item)) return item;
-  if (item.en === "Big NAC" && (!item.name_en || item.name_en === "Big NAC")) return item;
+  const name = itemName(item);
+  if (name !== "big nac" && name !== "big nac new") return item;
+  const alreadyNamed = (item.en === "Big NAC" || item.name_en === "Big NAC");
+  if (isActiveBigNac(item) && alreadyNamed && (!item.name_en || item.name_en === "Big NAC") && item.en === "Big NAC") {
+    return item;
+  }
   return {
     ...item,
     en: "Big NAC",
     ...(item.name_en ? { name_en: "Big NAC" } : {}),
+    price: "69 SAR",
+    calories: 1115,
   };
 }

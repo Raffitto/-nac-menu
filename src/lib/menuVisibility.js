@@ -1,4 +1,4 @@
-import { isRetiredBigNac, presentGuestMenuItem } from "./canonicalGuestCatalogue";
+import { presentGuestMenuItem } from "./canonicalGuestCatalogue";
 
 export function parseHiddenUntil(item) {
   const raw = item?.hidden_until ?? item?.hiddenUntil;
@@ -103,8 +103,7 @@ export function filterPublicMenuData(menuData, nowMs = Date.now()) {
           .filter(
             (it) =>
               isPublicMenuItem(it, nowMs)
-              && !isGuestCatalogueDuplicate(it)
-              && !isRetiredBigNac(it),
+              && !isGuestCatalogueDuplicate(it),
           )
           .map(presentGuestMenuItem),
       }))
