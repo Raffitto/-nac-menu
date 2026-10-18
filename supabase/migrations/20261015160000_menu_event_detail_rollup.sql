@@ -193,6 +193,33 @@ revoke all on function public.refresh_menu_events_detail_daily(date, date) from 
 revoke all on function public.refresh_menu_events_detail_daily(date, date) from authenticated;
 grant execute on function public.refresh_menu_events_detail_daily(date, date) to service_role;
 
+create or replace function public.menu_event_branch_visible(
+  p_requested text,
+  p_row_branch text
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $branch$
+  select auth.uid() is not null
+    and case
+      when public.ask_nac_vault_has_all_branches() then
+        p_requested is null
+        or btrim(p_requested) = ''
+        or lower(btrim(p_row_branch)) = lower(btrim(p_requested))
+      else
+        btrim(coalesce(p_requested, '')) <> ''
+        and lower(btrim(p_row_branch)) = lower(btrim(p_requested))
+        and public.ask_nac_vault_branch_allowed(p_requested)
+    end;
+$branch$;
+
+revoke all on function public.menu_event_branch_visible(text, text) from public;
+revoke all on function public.menu_event_branch_visible(text, text) from anon;
+revoke all on function public.menu_event_branch_visible(text, text) from authenticated;
+
 create or replace function public.menu_event_detail_summary(
   p_branch text,
   p_since date,
@@ -208,11 +235,7 @@ as $detail$
     select *
     from public.menu_events_detail_daily d
     where (p_since is null or d.day_key >= p_since)
-      and (
-        p_branch is null
-        or btrim(p_branch) = ''
-        or d.branch_id = lower(btrim(p_branch))
-      )
+      and public.menu_event_branch_visible(p_branch, d.branch_id)
       and (
         coalesce(p_language, 'all') = 'all'
         or d.language = lower(btrim(p_language))
@@ -337,7 +360,7 @@ as $$
     select r.*
     from public.menu_events_daily_rollup r, bounds b
     where r.day_key >= (b.since_ts at time zone 'Asia/Riyadh')::date
-      and (p_branch is null or r.branch_id = lower(trim(p_branch)))
+      and public.menu_event_branch_visible(p_branch, r.branch_id)
   ),
   biz_today as (
     select
@@ -483,7 +506,7 @@ as $$
     select r.*
     from public.menu_events_daily_rollup r, bounds b
     where r.day_key >= (b.since_ts at time zone 'Asia/Riyadh')::date
-      and (p_branch is null or r.branch_id = lower(trim(p_branch)))
+      and public.menu_event_branch_visible(p_branch, r.branch_id)
       and (coalesce(p_language, 'all') = 'all' or r.language = lower(trim(p_language)))
       and (coalesce(p_event_type, 'all') = 'all' or r.event_type = p_event_type)
       and (coalesce(p_shift, 'all') = 'all' or r.shift_bucket = lower(trim(p_shift)))
