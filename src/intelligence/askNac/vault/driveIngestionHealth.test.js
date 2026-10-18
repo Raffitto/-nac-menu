@@ -5,6 +5,7 @@ const {
   assessDriveIngestionHealth,
   buildCatchUpPlan,
   classifyCatchUpDate,
+  summarizeMonthlyLogbookRun,
   folderSyncLabel,
   riyadhDateISO,
 } = require("./driveIngestionHealth");
@@ -242,5 +243,14 @@ describe("October Cash Up catch-up classification", () => {
     );
     expect(driveFunction).toMatch(/await supabase\s*\n\s*\.from\("ask_nac_data_coverage"\)/);
     expect(driveFunction).toMatch(/ingestOk \? 200 : 503/);
+  });
+
+  test("an unfinished logbook worksheet keeps the run partial", () => {
+    const summary = summarizeMonthlyLogbookRun([
+      { businessDate: "2026-10-15", publish: true, status: "publish" },
+      { businessDate: "2026-10-18", publish: false, status: "awaiting_completion" },
+    ]);
+    expect(summary.state).toBe("partial");
+    expect(summary.unpublishedDates).toEqual(["2026-10-18"]);
   });
 });

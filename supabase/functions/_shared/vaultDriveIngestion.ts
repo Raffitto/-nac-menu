@@ -1,6 +1,12 @@
 import { sanitizeErrorMessage } from "./vaultDriveSecrets.ts";
 import { canonicalFactsBehindSource, isUnchangedDriveFile } from "./driveFileChangeDetection.ts";
 import {
+  mergeMonthlyLogbookFacts,
+  parseMonthlyLogbookSheets,
+  parseWorksheetBusinessDate,
+  summarizeMonthlyLogbookRun,
+} from "./vaultMonthlyLogbookWorkbook.js";
+import {
   attachCashUpWorkbookFactContext,
   parseCashUpWorkbookFromXlsxBuffer,
   validateCashUpWorkbookParse,
@@ -61,6 +67,7 @@ const SUPPORTED_BINARY_MIME: Record<string, string> = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.ms-excel.sheet.macroenabled.12": "xlsm",
   "application/vnd.ms-excel": "xls",
   "text/csv": "csv",
   "text/plain": "txt",
@@ -262,7 +269,7 @@ function resolveDriveExport(file: DriveFile) {
     };
   }
   if (file.mimeType === GOOGLE_SHEET_MIME) {
-    if (isReviewTrackingWorkbookName(file.name)) {
+    if (isReviewTrackingWorkbookName(file.name) || /\blog\s?book\b/i.test(file.name || "")) {
       return {
         exportMime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename: file.name.toLowerCase().endsWith(".xlsx") ? file.name : `${file.name}.xlsx`,
@@ -281,8 +288,8 @@ function resolveDriveExport(file: DriveFile) {
     return { unsupported: "Google Slides ingestion is not supported yet." };
   }
 
-  const extension = SUPPORTED_BINARY_MIME[file.mimeType] || extensionFromName(file.name);
-  if (!["pdf", "docx", "xlsx", "xls", "csv", "txt"].includes(extension)) {
+  const extension = SUPPORTED_BINARY_MIME[String(file.mimeType || "").toLowerCase()] || extensionFromName(file.name);
+  if (!["pdf", "docx", "xlsx", "xlsm", "xls", "csv", "txt"].includes(extension)) {
     return { unsupported: `Unsupported Drive file type: ${file.mimeType || extension || "unknown"}.` };
   }
   return {
@@ -694,10 +701,10 @@ async function extractText(download: { buffer: ArrayBuffer; extension: string; f
     return { text, sections: [{ label: extension.toUpperCase(), text }], warnings: [] as string[] };
   }
 
-  if (extension === "xlsx" || extension === "xls") {
+  if (extension === "xlsx" || extension === "xls" || extension === "xlsm") {
     const XLSX = await import("npm:xlsx@0.18.5");
     const workbook = XLSX.read(download.buffer, { type: "array" });
-    const sections = workbook.SheetNames.map((sheetName: string) => {
+    const sections = workbook.SheetNames.filter((sheetName: string) => !/^template$/i.test(sheetName)).map((sheetName: string) => {
       const sheet = workbook.Sheets[sheetName];
       const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as unknown[][];
       const text = matrix
@@ -1012,6 +1019,116 @@ async function persistParsedFacts(
   });
 }
 
+async function insertMonthlyLogbookWorkbook(
+  admin: SupabaseLike,
+  {
+    fileRow,
+    versionRowId,
+    email,
+    download,
+  }: {
+    fileRow: Record<string, any>;
+    versionRowId: string | null;
+    email: string;
+    download?: { buffer: ArrayBuffer; extension: string; filename: string };
+  },
+): Promise<StructuredFactsResult> {
+  if (!download?.buffer) {
+    throw new Error("Monthly Logbook workbook parse failed — workbook buffer missing. Existing facts preserved.");
+  }
+  const XLSX = await import("npm:xlsx@0.18.5");
+  const workbook = XLSX.read(new Uint8Array(download.buffer), {
+    type: "array",
+    cellFormula: true,
+    bookVBA: false,
+  });
+  const dates = (workbook.SheetNames || [])
+    .map((name: string) => parseWorksheetBusinessDate(name))
+    .filter(Boolean);
+  const { data: existing, error: existingError } = await admin
+    .from("ask_nac_structured_facts")
+    .select("file_version_id,branch_id,brand_wide,department,report_type,sensitivity_level,metric_key,metric_value,metric_unit,dimensions,period_start,period_end,grain,source_row_ref,confidence,created_by")
+    .eq("file_id", fileRow.id)
+    .eq("report_type", "daily_logbook");
+  if (existingError) throw new Error(existingError.message);
+  const previousFingerprints: Record<string, string> = {};
+  for (const row of existing || []) {
+    const date = String(row.period_end || "").slice(0, 10);
+    const fingerprint = row.dimensions?.sheet_fingerprint;
+    if (date && fingerprint) previousFingerprints[date] = String(fingerprint);
+  }
+  let occupiedDates: string[] = [];
+  if (dates.length && fileRow.primary_branch_id) {
+    const { data: other, error: otherError } = await admin
+      .from("ask_nac_structured_facts")
+      .select("period_end,file_id")
+      .eq("report_type", "daily_logbook")
+      .eq("branch_id", fileRow.primary_branch_id)
+      .in("period_end", dates);
+    if (otherError) throw new Error(otherError.message);
+    occupiedDates = (other || [])
+      .filter((row: { file_id?: string }) => row.file_id && row.file_id !== fileRow.id)
+      .map((row: { period_end?: string }) => String(row.period_end || "").slice(0, 10));
+  }
+  const parsed = parseMonthlyLogbookSheets(workbook, {
+    branchId: fileRow.primary_branch_id,
+    fileId: fileRow.id,
+    workbookId: fileRow.external_source_id || null,
+    filename: download.filename || fileRow.original_filename || "",
+    department: fileRow.department,
+    sensitivityLevel: fileRow.sensitivity_level,
+    createdBy: email,
+    occupiedDates,
+    previousFingerprints,
+  });
+  if (!parsed.ok) {
+    throw new Error(parsed.error || "Monthly Logbook workbook rejected. Existing facts preserved.");
+  }
+  const merged = mergeMonthlyLogbookFacts(existing || [], parsed);
+  const summary = summarizeMonthlyLogbookRun(parsed.sheets);
+  const warnings = (parsed.sheets || []).flatMap((sheet: { businessDate?: string; status?: string; warnings?: string[]; dependencies?: Array<{ formula?: string }> }) => [
+    ...(sheet.businessDate && sheet.status && !sheet.status.match(/publish|unchanged|ignored/) ? [`${sheet.businessDate}: ${sheet.status}`] : []),
+    ...((sheet.warnings || []).map((warning) => `${sheet.businessDate}: ${warning}`)),
+    ...((sheet.dependencies || []).map((item) => `${sheet.businessDate}: unresolved formula ${item.formula || ""}`)),
+  ]);
+  if (!merged.length) {
+    return {
+      factCount: 0,
+      stage: summary.state,
+      confidence: null,
+      confidenceLevel: null,
+      publish: false,
+      parser: "monthly_logbook_workbook",
+      periodStart: null,
+      periodEnd: null,
+      warnings,
+    };
+  }
+  const periodStart = merged.map((row: { period_start?: string }) => String(row.period_start || "").slice(0, 10)).filter(Boolean).sort()[0] || null;
+  const periodValues = merged.map((row: { period_end?: string }) => String(row.period_end || "").slice(0, 10)).filter(Boolean).sort();
+  const periodEnd = periodValues[periodValues.length - 1] || periodStart;
+  await persistParsedFacts(admin, {
+    fileRow,
+    versionRowId,
+    email,
+    rows: merged,
+    periodStart,
+    periodEnd,
+    minInserted: merged.length,
+  });
+  return {
+    factCount: merged.length,
+    stage: summary.state === "complete" ? "monthly_logbook_published" : summary.state,
+    confidence: 0.8,
+    confidenceLevel: "medium",
+    publish: summary.state === "complete",
+    parser: "monthly_logbook_workbook",
+    periodStart,
+    periodEnd,
+    warnings,
+  };
+}
+
 async function insertStructuredFacts(
   admin: SupabaseLike,
   {
@@ -1057,6 +1174,13 @@ async function insertStructuredFacts(
       periodEnd: parsed.periodEnd,
       warnings: [],
     };
+  }
+
+  if (
+    fileRow.report_type === "daily_logbook"
+    && ["xlsx", "xlsm", "xls"].includes(String(download?.extension || "").toLowerCase())
+  ) {
+    return insertMonthlyLogbookWorkbook(admin, { fileRow, versionRowId, email, download });
   }
 
   if (!PARSEABLE_REPORT_TYPES.has(fileRow.report_type)) {

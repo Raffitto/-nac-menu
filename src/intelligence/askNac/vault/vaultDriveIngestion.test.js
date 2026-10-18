@@ -454,6 +454,14 @@ describe("scheduled Drive ingestion (Phase 2b timeout-safe)", () => {
     expect(driveHelper).not.toMatch(/isSearchableIndexed\(existing\)/);
   });
 
+  test("monthly logbook workbooks are accepted without executing macros", () => {
+    expect(driveHelper).toMatch(/application\/vnd\.ms-excel\.sheet\.macroenabled\.12/);
+    expect(driveHelper).toMatch(/bookVBA: false/);
+    expect(driveHelper).toMatch(/parseMonthlyLogbookSheets/);
+    expect(driveHelper).toMatch(/mergeMonthlyLogbookFacts/);
+    expect(driveHelper).toMatch(/log\\s\?book/);
+  });
+
   test("cash-up workbooks parse structured facts without full text chunking", () => {
     expect(driveHelper).toMatch(/skipTextIndex = isCashUpSpreadsheet/);
     expect(driveHelper).toMatch(/skipped: "structured_workbook_parse"/);

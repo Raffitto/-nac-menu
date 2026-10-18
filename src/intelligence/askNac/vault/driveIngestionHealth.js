@@ -9,6 +9,8 @@ const SCHEDULER_STALE_MS = 26 * 60 * 60 * 1000;
 const SOURCE_STALE_MS = 36 * 60 * 60 * 1000;
 const PRIORITY_REPORTS = new Set(["cash_up", "daily_logbook"]);
 
+export { summarizeMonthlyLogbookRun } from "./parsers/parseMonthlyLogbookWorkbook";
+
 export function riyadhDateISO(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: RIYADH,
