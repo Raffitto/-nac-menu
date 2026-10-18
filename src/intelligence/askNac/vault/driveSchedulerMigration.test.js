@@ -15,11 +15,15 @@ describe("Drive scheduler migration", () => {
     expect(invoke).toMatch(/'submitted'/);
   });
 
-  test("reconciles completion later, with a bounded retry that skips revoked tokens", () => {
+  test("reconciles completion later and does not retry authentication failures", () => {
     expect(migration).toMatch(/reconcile_nac_drive_scheduler_submissions/);
     expect(migration).toMatch(/attempt < 3/);
-    expect(migration).toMatch(/invalid_grant\|revoked\|reconnect/);
+    expect(migration).toMatch(/invalid_grant\|revoked\|reconnect\|connection_required\|invalid scheduled ingest secret/);
+    expect(migration).toMatch(/v_status is distinct from 401/);
+    expect(migration).toMatch(/v_status is distinct from 403/);
+    expect(migration).toMatch(/no pg_net response after 15 minutes/);
     expect(migration).toMatch(/interval '10 minutes'/);
+    expect(migration).toMatch(/Bearer \[redacted\]/);
     expect(migration).toMatch(/revoke all on function public.reconcile_nac_drive_scheduler_submissions\(\) from anon/);
     expect(migration).toMatch(/grant execute on function public.invoke_nac_scheduled_drive_ingest\(\) to postgres/);
     expect(migration).not.toMatch(/grant execute on function public.invoke_nac_scheduled_drive_ingest\(\) to anon/);

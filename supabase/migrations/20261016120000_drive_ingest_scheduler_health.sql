@@ -109,21 +109,31 @@ begin
     where id = v_row.request_id;
 
     if v_status is null and coalesce(v_error, '') = '' and not coalesce(v_timed_out, false) then
-      if v_row.created_at < now() - interval '15 minutes' then
-        update public.ask_nac_drive_scheduler_submissions
-        set status = 'failed',
-            detail = 'no pg_net response after 15 minutes',
-            reconciled_at = now()
-        where id = v_row.id;
+      if v_row.created_at >= now() - interval '15 minutes' then
+        continue;
       end if;
-      continue;
+      v_failed := true;
+      v_detail := 'no pg_net response after 15 minutes';
+    else
+      v_detail := left(coalesce(
+        v_body->>'reason',
+        v_body->>'error',
+        v_body->'folderResults'->0->>'reason',
+        v_body->'folderResults'->0->>'error',
+        v_error,
+        ''
+      ), 240);
+      v_detail := left(regexp_replace(
+        regexp_replace(v_detail, 'Bearer[[:space:]]+\S+', 'Bearer [redacted]', 'gi'),
+        '(secret|token|authorization)[=:][[:space:]]*\S+',
+        '\1=[redacted]',
+        'gi'
+      ), 240);
+      v_failed := coalesce(v_timed_out, false)
+        or v_status is null
+        or v_status >= 400
+        or coalesce(v_body->>'ok', 'false') <> 'true';
     end if;
-
-    v_detail := left(coalesce(v_body->>'reason', v_body->'folderResults'->0->>'reason', v_error, ''), 240);
-    v_failed := coalesce(v_timed_out, false)
-      or v_status is null
-      or v_status >= 400
-      or coalesce(v_body->>'ok', 'false') <> 'true';
 
     update public.ask_nac_drive_scheduler_submissions
     set status = case when v_failed then 'failed' else 'accepted' end,
@@ -132,9 +142,13 @@ begin
         reconciled_at = now()
     where id = v_row.id;
 
+    -- 401/403 and Drive reconnect states must not be retried. A lost pg_net
+    -- response is transient and may be retried until attempt 3.
     if v_failed
        and v_row.attempt < 3
-       and v_detail !~* 'invalid_grant|revoked|reconnect' then
+       and v_status is distinct from 401
+       and v_status is distinct from 403
+       and v_detail !~* 'invalid_grant|revoked|reconnect|connection_required|invalid scheduled ingest secret|authorization expired|scheduled ingest not configured' then
       select decrypted_secret
         into v_secret
       from vault.decrypted_secrets
@@ -165,7 +179,7 @@ end;
 $func$;
 
 comment on function public.reconcile_nac_drive_scheduler_submissions() is
-  'Records pg_net results for Drive ingest submissions. Does not publish facts. Retries at most twice, with 10-minute backoff, and never retries an invalid_grant.';
+  'Records pg_net results for Drive ingest submissions. Does not publish facts. Retries transient failures at most twice, with 10-minute backoff. Never retries 401, 403, connection_required, invalid_grant, or a bad ingest secret.';
 
 revoke all on function public.invoke_nac_scheduled_drive_ingest() from public;
 revoke all on function public.invoke_nac_scheduled_drive_ingest() from authenticated;
