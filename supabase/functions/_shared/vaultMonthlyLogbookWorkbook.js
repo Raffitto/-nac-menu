@@ -340,7 +340,11 @@ function findInternalDate(matrix) {
     for (let index = 0; index < row.length; index += 1) {
       if (!/^(?:business\s+)?date$/i.test(labelText(row[index]))) continue;
       for (let next = index + 1; next < row.length; next += 1) {
-        const parsed = parseDisplayDate(labelText(row[next]));
+        const cell = row[next];
+        const parsed = parseDisplayDate(labelText(cell)) ||
+          (typeof cell?.value === "number" && cell.value > 40000 && cell.value < 80000
+            ? new Date(Date.UTC(1899, 11, 30) + Math.floor(cell.value) * 86400000).toISOString().slice(0, 10)
+            : null);
         if (parsed) return parsed;
       }
     }
