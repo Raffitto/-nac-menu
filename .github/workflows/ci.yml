@@ -68,6 +68,9 @@ jobs:
       - name: Install (lockfile only)
         run: npm ci
 
+      - name: October monthly Logbook parser regression
+        run: node --test supabase/functions/_shared/vaultMonthlyLogbookWorkbook.test.js
+
       - name: Oracle D1 Jest tests
         run: npx react-scripts test --watchAll=false src/inventory/oracle-d1
 
