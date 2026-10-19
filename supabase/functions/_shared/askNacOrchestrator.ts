@@ -54,6 +54,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
+import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery } from "./vaultMonthlyOperationalSummaryRouting.ts";
 import {
   scoreSalesPerformanceQueryFocus,
   isDeliveryPlatformPeriodQuery,
@@ -1171,12 +1172,22 @@ export async function processAskNacOnEdge(
   );
   // An operational/logbook follow-up must not reuse the previous Cash Up dataset.
   // Otherwise a sales completeness check can incorrectly claim no food issues.
-  const explicitLogbookFollowUp = /\b(logbooks?|in the logbook|what about logbook|food,? drinks? or service|problems? with (?:the )?(?:food|drinks?|service)|issues? reported|complaints?)\b/i.test(question)
-    && !/\b(cash[\s-]?up|sales records?|missing sales days?|revenue)\b/i.test(question);
+  const explicitLogbookFollowUp = /\b(logbooks?|issues?|problems?|complaints?|food,?\s*drinks?\s*(?:or|and)\s*service|food,?\s*drinks?,?\s*service|food|drinks?|service related|operationally)\b/i.test(question)
+    && !/\b(cash[\s-]?up|sales records?|missing sales days?|sales|revenue)\b/i.test(question);
+  const priorLogbookIntent = /vault_(?:logbook_summary|operational_review)/.test(
+    String((conversationContext as Record<string, unknown> | null)?.lastIntent || ""),
+  );
+  const logbookDateCorrection = priorLogbookIntent
+    && /\\b(sorry|i meant|day before|day after|17 of the month|instead)\\b/i.test(question);
+  const wantsLogbook = explicitLogbookFollowUp || logbookDateCorrection;
+  const parsedRequestedPeriod = parseVaultPeriodFromQuestion(question, new Date());
+  const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question)
+    || (wantsLogbook && Boolean(parsedRequestedPeriod?.isMonth));
+
   const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
     && conversationState?.dataset
     && prepareResult.conversationTurn?.followUpCategory;
-  if (datasetReuse && !explicitLogbookFollowUp) {
+  if (datasetReuse && !wantsLogbook) {
     const dataset = conversationState.dataset as Record<string, unknown>;
     const dailyBreakdown = (dataset.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
     const aggregation = dataset.aggregation as Record<string, unknown> | undefined;
@@ -1259,13 +1270,14 @@ export async function processAskNacOnEdge(
   // Respect the user's explicit change of subject, while retaining the resolved
   // date/branch from the previous turn. Do not allow Cash Up follow-up context
   // to turn operational complaints into a sales-completeness assertion.
-  if (explicitLogbookFollowUp) {
-    const period = parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
-      || route.vaultPeriod
-      || parseVaultPeriodFromQuestion(question, new Date());
+  if (wantsLogbook) {
+    const period = parseVaultPeriodFromQuestion(question, new Date())
+      || extractOperationalMonthPeriod(question, new Date())
+      || parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
+      || route.vaultPeriod;
     route = {
       ...route,
-      intent: VAULT_INTENTS.LOGBOOK,
+      intent: monthlyLogbookQuestion ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
       vaultPeriod: period,
       vaultCompare: null,
       queryFocus: null,
@@ -1315,7 +1327,7 @@ export async function processAskNacOnEdge(
     fabricConversation?: StructuredConversationState;
   } | null)?.fabricConversation || null;
 
-  const useFabricSpine = !explicitLogbookFollowUp && isManagementIntelligenceQuestion(effectiveQuestion, {
+  const useFabricSpine = !wantsLogbook && isManagementIntelligenceQuestion(effectiveQuestion, {
     intent: route.intent,
     confidence: route.confidence,
     branchMention: route.branchMention,
@@ -1537,7 +1549,7 @@ export async function processAskNacOnEdge(
       allowedBranchIds?: string[] | null;
     },
   });
-  const plannerEnrichment = (mixedSalesComparison || explicitLogbookFollowUp)
+  const plannerEnrichment = (mixedSalesComparison || wantsLogbook)
     ? { plannerUsed: false, plannerSource: null, applied: false, plan: null }
     : await enrichRouteWithManagementPlanner(
       route as unknown as Record<string, unknown>,
@@ -1570,7 +1582,7 @@ export async function processAskNacOnEdge(
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
-    question: effectiveQuestion,
+    question: wantsLogbook ? question : effectiveQuestion,
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
   });
 
@@ -1613,7 +1625,7 @@ export async function processAskNacOnEdge(
       filters: mergedFilters,
       profile: profileHint,
       branch: mergedFilters.branch,
-      question: effectiveQuestion,
+      question: wantsLogbook ? question : effectiveQuestion,
       searchTerms: (readiness as Record<string, unknown>).searchTerms,
       documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
       foodicsPeriod,
@@ -1644,7 +1656,7 @@ export async function processAskNacOnEdge(
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
     || isVaultDocumentIntent(route.intent)
     || Boolean(tool?.authorizationDenied || tool?.comparison);
-  const routeWithQuestion = { ...route, question: effectiveQuestion };
+  const routeWithQuestion = { ...route, question: wantsLogbook ? question : effectiveQuestion };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
     : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);

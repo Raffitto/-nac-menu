@@ -9,6 +9,8 @@ const TEXT_KEYS = [
   "complaints",
   "operational_issues",
   "operational_highlights",
+  "breakfast_notes",
+  "lunch_notes",
   "dinner_notes",
   "training_notes",
   "staff_performance_notes",
@@ -40,7 +42,7 @@ const GOOGLE_KEYS = [
 const THEME_RULES = [
   { id: "traffic_quiet", label: "Quiet / low demand", re: /\b(quiet|slow|empty mall|mall empty|few reservations|low covers|mostly coffee|coffee and dessert)\b/i },
   { id: "traffic_busy", label: "Busy / strong demand", re: /\b(busy|full house|high covers|strong dinner|packed)\b/i },
-  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|charge|remove from bill|insect|fly|halloumi|cappuccino|spanish|upset)\b/i },
+  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|overcooked|oily|smell|smelled|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove from bill|insect|fly|upset|86)\b/i },
   { id: "maintenance", label: "Maintenance / facilities", re: /\b(drainage|electrician|pest|gel|powder|trap|battery|ccm|router|repair|leak)\b/i },
   { id: "staffing_system", label: "Staffing / systems", re: /\b(jisr|punch|inventory|upselling|training|staff)\b/i },
   { id: "service_win", label: "Service recovery / wins", re: /\b(satisfied|smooth|well|recovered|apologize|new one|resolved)\b/i },
@@ -218,14 +220,14 @@ export function buildMonthlyLogbookExecutiveSummary({
 
   const sections = [
     buildSection("Executive Summary", [executiveLead]),
+    buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
+    buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
+    buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Traffic / demand pattern", [
       trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
       trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
       !trafficQuiet && !trafficBusy ? "Traffic pattern mixed; review shift notes for day-by-day demand." : null,
     ]),
-    buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Google review trend", [
       google.totalReviews
         ? `${google.totalReviews} review events logged across ${google.daysWith} day(s): 5★ ${google.totals.google_review_5}, 4★ ${google.totals.google_review_4}, 3★ ${google.totals.google_review_3}, 2★ ${google.totals.google_review_2}, 1★ ${google.totals.google_review_1}.`

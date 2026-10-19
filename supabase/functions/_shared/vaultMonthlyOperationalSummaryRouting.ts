@@ -19,6 +19,12 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
   const text = String(question || "").trim().toLowerCase();
   if (!text) return false;
 
+  // A month-wide Logbook request is an operational review even when phrased
+  // tersely ("logbooks october") or as an issue question.
+  if (new RegExp("\\b" + MONTH_TOKEN + "\\b", "i").test(text)
+    && /\b(logbooks?|issues?|complaints?|food|drinks?|service|operationally|operations?)\b/i.test(text)
+    && !NON_OPERATIONAL_BLOCK.test(text)) return true;
+
   const period = parseVaultPeriodFromQuestion(question);
   if (period?.isSingleDay) return false;
 
@@ -64,7 +70,7 @@ export function detectMonthlyOperationalMode(question = "") {
   const text = String(question || "").trim().toLowerCase();
   if (/\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text)) return "compare";
   if (/\brecurring\b/.test(text)) return "recurring";
-  if (/\b(main|biggest|top)\b.*\b(issues?|problems?|complaints?)\b/.test(text)) return "issues";
+  if (/\b(issues?|problems?|complaints?|food|drinks?|service)\b/.test(text)) return "issues";
   if (/\bhighlights?\b/.test(text)) return "highlights";
   if (/\bexecutive operational summary\b/.test(text)) return "executive";
   if (/\bwhat happened\b/.test(text)) return "narrative";
@@ -79,6 +85,7 @@ export function extractOperationalMonthPeriod(question = "", referenceDate = new
   if (!text) return null;
 
   const patterns = [
+    new RegExp("\\b(?:logbooks?|operational issues?|complaints?)\\s+(?:in\\s+|for\\s+)?(" + MONTH_TOKEN + ")\\b(?:\\s+(20\\d{2}))?", "i"),
     new RegExp(`\\b(?:summarize|summary|give me|review)\\b[^?]*?\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`, "i"),
     new RegExp(`\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+operations?\\b`, "i"),
     new RegExp(`\\boperations?\\s+(?:in|for|during)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`, "i"),
