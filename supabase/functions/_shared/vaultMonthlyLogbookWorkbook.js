@@ -371,6 +371,12 @@ export function parseMonthlyLogbookSheets(workbook, context = {}) {
       sheets.push({ name, businessDate: null, status: "unrecognized", publish: false, fingerprint });
       continue;
     }
+    // Temporary production recovery freeze: do not publish October 19 or later
+    // from monthly workbooks until an operator explicitly lifts this cutoff.
+    if (context.publishThrough && businessDate > context.publishThrough) {
+      sheets.push({ name, businessDate, status: "publication_cutoff", publish: false, fingerprint });
+      continue;
+    }
     if (occupied.has(businessDate)) {
       sheets.push({ name, businessDate, status: "skipped_historical", publish: false, fingerprint });
       continue;
