@@ -128,20 +128,28 @@ function aggregateGoogle(days) {
   return { totals, totalReviews, daysWith };
 }
 
+function incidentSentences(day) {
+  const parts = TEXT_KEYS.flatMap((key) => String(day.texts[key] || "")
+    .split(/\s*[•\n\r]+\s*|(?<=[.!?])\s+(?=[A-Z])/g)
+    .map((value) => value.trim()).filter(Boolean));
+  const incident = /\b(complain(?:ed|ing|t|ts)?|undercook(?:ed)?|overcook(?:ed)?|oily|smell(?:ed)?|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove(?:d)? from (?:the )?(?:bill|check)|insect|fly|upset|delay(?:ed)?|returned|refused|replaced|issue|problem|broken|repair|maintenance|shortage)\b/i;
+  const routine = /\b(no (?:major )?(?:issues?|problems?|complaints?|86)|nothing to report|all tables (?:were )?happy|smooth operations?|overall slow business)\b/gi;
+  return [...new Set(parts.filter((piece) => incident.test(piece.replace(routine, ""))))];
+}
+
 function extractThemes(days) {
   const themes = new Map();
   for (const day of days) {
-    const blob = collectDayTexts(day);
-    if (!blob) continue;
+    const incidents = incidentSentences(day);
     for (const rule of THEME_RULES) {
-      if (!rule.re.test(blob)) continue;
-      if (!themes.has(rule.id)) {
-        themes.set(rule.id, { id: rule.id, label: rule.label, count: 0, examples: [] });
-      }
+      if (rule.id.startsWith("traffic_")) continue;
+      const matching = incidents.filter((line) => rule.re.test(line));
+      if (!matching.length) continue;
+      if (!themes.has(rule.id)) themes.set(rule.id, { id: rule.id, label: rule.label, count: 0, examples: [] });
       const entry = themes.get(rule.id);
       entry.count += 1;
-      if (entry.examples.length < 4) {
-        entry.examples.push(`${formatDayLabel(day)}: ${snippet(blob)}`);
+      for (const line of matching) {
+        if (entry.examples.length < 4) entry.examples.push(formatDayLabel(day) + ": " + snippet(line, 240));
       }
     }
   }
@@ -223,21 +231,21 @@ export function buildMonthlyLogbookExecutiveSummary({
     buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Traffic / demand pattern", [
+    mode === "summary" ? buildSection("Traffic / demand pattern", [
       trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
       trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
       !trafficQuiet && !trafficBusy ? "Traffic pattern mixed; review shift notes for day-by-day demand." : null,
-    ]),
-    buildSection("Google review trend", [
+    ]) : null,
+    mode === "summary" ? buildSection("Google review trend", [
       google.totalReviews
         ? `${google.totalReviews} review events logged across ${google.daysWith} day(s): 5★ ${google.totals.google_review_5}, 4★ ${google.totals.google_review_4}, 3★ ${google.totals.google_review_3}, 2★ ${google.totals.google_review_2}, 1★ ${google.totals.google_review_1}.`
         : "No structured Google review totals in recovered logbooks for this month.",
-    ]),
-    buildSection("Reception totals", [
+    ]) : null,
+    mode === "summary" ? buildSection("Reception totals", [
       reception.daysWith
         ? `Month aggregate from ${reception.daysWith} logbook reception table(s): ${reception.totals.covers.toLocaleString()} covers, ${reception.totals.reservations.toLocaleString()} reservations, ${reception.totals.walkins.toLocaleString()} walk-ins, ${reception.totals.no_shows.toLocaleString()} no-shows, ${reception.totals.cancellations.toLocaleString()} cancellations.`
         : "No structured reception totals in recovered logbooks for this month.",
-    ]),
+    ]) : null,
     buildSection("Recurring themes", recurring.length
       ? recurring.map((t) => `${t.label} (${t.count} day(s)) — ${t.examples[0]}`)
       : ["No recurring themes reached the 2+ day threshold this month."]),
@@ -261,7 +269,7 @@ export function buildMonthlyLogbookExecutiveSummary({
   const directAnswer = sections.join("\n\n");
 
   const groupedFindings = days.flatMap((day) => {
-    const blob = collectDayTexts(day);
+    const blob = incidentSentences(day).join(" • ");
     if (!blob) return [];
     return [{
       date: day.date || extractDateFromFileTitle(day.fileTitle),
