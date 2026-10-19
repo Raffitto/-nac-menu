@@ -3028,7 +3028,7 @@ function buildVaultLogbookAnswer(route: Record<string, unknown>, tool: Record<st
   const asksForNumbers = /\b(how many|covers?|guests?|reservations?|walk[ -]?ins?|no[ -]?shows?|cancellations?|numbers?|totals?)\b/i.test(question);
   const metrics = asksForNumbers ? receptionMetrics(facts) : [];
   const notes = logbookNotes(facts);
-  const exceptionSignal = /\b(complain|complaint|issue|problem|incident|wrong|undercook|overcook|oily|smell|bad|delay|86|unavailable|cancel|broken|repair|maintenance|staff shortage|absen|mistake|dirty|temperature|ac stopped|equipment|machine stopped|burnt|cold food|tenderness|saltiness|replac)\b/i;
+  const exceptionSignal = /\b(complain(?:ed|s|ing|t)?|complaints?|issues?|problems?|incidents?|wrong|undercook(?:ed)?|overcook(?:ed)?|oily|smell(?:ed)?|bad|delays?|86|unavailable|cancel(?:led|ed)?|broken|repair|maintenance|staff shortage|absen(?:t|ce)?|mistake|dirty|temperature|ac stopped|equipment|machine stopped|burnt|cold food|tenderness|saltiness|replac(?:ed|ement)?)\b/i;
   const routineSignal = /\b(very slow|quiet|smooth|no major issues|all walk.ins|no reservations|normal operation)\b/i;
   const exceptionalNotes = notes.filter((note) => exceptionSignal.test(note) && !/^((Lunch|Dinner) restaurant MOD|Chef on duty|Bar MOD)/i.test(note));
   const operationalNotes = exceptionalNotes.length ? exceptionalNotes : notes.filter((note) => !routineSignal.test(note) && !/\b(MOD|Chef on duty)\b/i.test(note));
