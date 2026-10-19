@@ -3030,7 +3030,12 @@ function buildVaultLogbookAnswer(route: Record<string, unknown>, tool: Record<st
   const notes = logbookNotes(facts);
   const exceptionSignal = /\b(complain(?:ed|s|ing|t)?|complaints?|issues?|problems?|incidents?|wrong|undercook(?:ed)?|overcook(?:ed)?|oily|smell(?:ed)?|bad|delays?|86|unavailable|cancel(?:led|ed)?|broken|repair|maintenance|staff shortage|absen(?:t|ce)?|mistake|dirty|temperature|ac stopped|equipment|machine stopped|burnt|cold food|tenderness|saltiness|replac(?:ed|ement)?)\b/i;
   const routineSignal = /\b(very slow|quiet|smooth|no major issues|all walk.ins|no reservations|normal operation)\b/i;
-  const exceptionalNotes = notes.filter((note) => exceptionSignal.test(note) && !/^((Lunch|Dinner) restaurant MOD|Chef on duty|Bar MOD)/i.test(note));
+  const exceptionalNotes = notes.filter((note) => {
+    // Routine statements like "no 86" or "no major issues" are not incidents.
+    const withoutNegations = note.replace(/\\b(no major issues?|no issues?|no 86|no complaints?|no problems?)\\b/gi, "");
+    return exceptionSignal.test(withoutNegations)
+      && !/^((Lunch|Dinner) restaurant MOD|Chef on duty|Bar MOD)/i.test(note);
+  });
   const operationalNotes = exceptionalNotes.length ? exceptionalNotes : notes.filter((note) => !routineSignal.test(note) && !/\b(MOD|Chef on duty)\b/i.test(note));
   const displayNotes = asksForNumbers ? notes : operationalNotes;
   const period = String(tool.periodLabel || (route.vaultPeriod as { label?: string; startDate?: string } | undefined)?.label || (route.vaultPeriod as { startDate?: string } | undefined)?.startDate || "requested period");
