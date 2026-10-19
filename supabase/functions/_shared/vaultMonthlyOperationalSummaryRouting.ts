@@ -85,6 +85,7 @@ export function extractOperationalMonthPeriod(question = "", referenceDate = new
   if (!text) return null;
 
   const patterns = [
+    new RegExp("\\b(?:logbooks?|operational issues?|complaints?)\\s+(?:in\\s+|for\\s+)?(" + MONTH_TOKEN + ")\\b(?:\\s+(20\\d{2}))?", "i"),
     new RegExp(`\\b(?:summarize|summary|give me|review)\\b[^?]*?\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`, "i"),
     new RegExp(`\\b(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+operations?\\b`, "i"),
     new RegExp(`\\boperations?\\s+(?:in|for|during)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`, "i"),
