@@ -1169,7 +1169,10 @@ export async function processAskNacOnEdge(
   // Calendar follow-ups inherit the last successfully resolved day, not the
   // current wall clock. This avoids "day before" failing to parse.
   const lastPeriodText = String((conversationContext as Record<string, unknown> | null)?.lastPeriod || "");
-  const lastDay = parseVaultPeriodFromQuestion(lastPeriodText, new Date());
+  const lastDay = parseVaultPeriodFromQuestion(lastPeriodText, new Date())
+    || (conversationContext?.lastResolvedQuestion
+      ? parseVaultPeriodFromQuestion(String(conversationContext.lastResolvedQuestion), new Date())
+      : null);
   const relativeDay = /\b(?:the\s+)?day\s+(before|after)\b/i.exec(question);
   const relativeDate = relativeDay && lastDay?.isSingleDay
     ? new Date(lastDay.startDate + "T12:00:00Z")
@@ -1598,7 +1601,7 @@ export async function processAskNacOnEdge(
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
-    question: wantsLogbook ? question : effectiveQuestion,
+    question: wantsLogbook ? contextualQuestion : (sourceSwitchToSales ? contextualQuestion : effectiveQuestion),
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
   });
 
@@ -1672,7 +1675,7 @@ export async function processAskNacOnEdge(
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
     || isVaultDocumentIntent(route.intent)
     || Boolean(tool?.authorizationDenied || tool?.comparison);
-  const routeWithQuestion = { ...route, question: wantsLogbook ? question : effectiveQuestion };
+  const routeWithQuestion = { ...route, question: wantsLogbook ? contextualQuestion : (sourceSwitchToSales ? contextualQuestion : effectiveQuestion) };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
     : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);
