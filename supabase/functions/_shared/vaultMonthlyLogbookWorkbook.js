@@ -180,8 +180,8 @@ function findNarratives(matrix) {
   for (const row of matrix) {
     const first = labelText(row[0]);
     if (/^google reviews$/i.test(first)) { afterReviews = true; reviewValuesSeen = false; active = null; continue; }
-    if (afterReviews && /^5\\s*star$/i.test(first)) continue;
-    if (afterReviews && !reviewValuesSeen && /^\\d+(?:\\.\\d+)?$/.test(first)) { reviewValuesSeen = true; continue; }
+    if (afterReviews && /^5\s*star$/i.test(first)) continue;
+    if (afterReviews && !reviewValuesSeen && /^\d+(?:\.\d+)?$/.test(first)) { reviewValuesSeen = true; continue; }
     const heading = headings.find((item) => item.label.test(first));
     if (heading) {
       active = heading.key;
@@ -192,7 +192,7 @@ function findNarratives(matrix) {
       active = null;
       continue;
     }
-    if (!active && afterReviews && reviewValuesSeen && /^•\\s*\\S/.test(first)) {
+    if (!active && afterReviews && reviewValuesSeen && /^•\s*\S/.test(first)) {
       active = "training_notes";
       if (!sections.has(active)) sections.set(active, []);
     }
