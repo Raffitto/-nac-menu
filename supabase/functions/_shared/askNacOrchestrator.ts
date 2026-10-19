@@ -1315,7 +1315,7 @@ export async function processAskNacOnEdge(
     fabricConversation?: StructuredConversationState;
   } | null)?.fabricConversation || null;
 
-  const useFabricSpine = isManagementIntelligenceQuestion(effectiveQuestion, {
+  const useFabricSpine = !explicitLogbookFollowUp && isManagementIntelligenceQuestion(effectiveQuestion, {
     intent: route.intent,
     confidence: route.confidence,
     branchMention: route.branchMention,
@@ -1537,7 +1537,7 @@ export async function processAskNacOnEdge(
       allowedBranchIds?: string[] | null;
     },
   });
-  const plannerEnrichment = mixedSalesComparison
+  const plannerEnrichment = (mixedSalesComparison || explicitLogbookFollowUp)
     ? { plannerUsed: false, plannerSource: null, applied: false, plan: null }
     : await enrichRouteWithManagementPlanner(
       route as unknown as Record<string, unknown>,
