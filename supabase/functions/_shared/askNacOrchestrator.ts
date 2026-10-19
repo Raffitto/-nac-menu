@@ -1200,6 +1200,11 @@ export async function processAskNacOnEdge(
   const operationalFollowUp = priorLogbookIntent && /\b(those|them|confirmed|which ones?|compare|recurr(?:ed|ing)?|again|food.related|service.related|staff.related|day before|day after|what about)\b/i.test(question) && !/\b(sales|revenue|cash[ -]?up)\b/i.test(question);
   const wantsLogbook = !sourceSwitchToSales && (sourceSwitchToLogbook || explicitLogbookFollowUp || logbookDateCorrection || operationalFollowUp);
   const parsedRequestedPeriod = parseVaultPeriodFromQuestion(contextualQuestion, new Date());
+  const explicitDailyOperationalIssues = /\b(operational issues?|operational problems?|incidents?|complaints?|logbooks?)\b/i.test(question)
+    && !sourceSwitchToSales;
+  const dailyOperationalPeriod = parsedRequestedPeriod?.isSingleDay
+    ? parsedRequestedPeriod
+    : parseVaultPeriodFromQuestion(effectiveQuestion, new Date());
   const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question)
     || (wantsLogbook && Boolean(parsedRequestedPeriod?.isMonth));
 
@@ -1289,14 +1294,14 @@ export async function processAskNacOnEdge(
   // Respect the user's explicit change of subject, while retaining the resolved
   // date/branch from the previous turn. Do not allow Cash Up follow-up context
   // to turn operational complaints into a sales-completeness assertion.
-  if (wantsLogbook) {
+  if (wantsLogbook || (explicitDailyOperationalIssues && dailyOperationalPeriod?.isSingleDay)) {
     const period = parseVaultPeriodFromQuestion(contextualQuestion, new Date())
       || extractOperationalMonthPeriod(question, new Date())
       || parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
       || route.vaultPeriod;
     route = {
       ...route,
-      intent: monthlyLogbookQuestion ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
+      intent: monthlyLogbookQuestion && !period?.isSingleDay ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
       vaultPeriod: period,
       vaultCompare: null,
       queryFocus: null,
