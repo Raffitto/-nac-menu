@@ -1090,9 +1090,10 @@ async function insertMonthlyLogbookWorkbook(
     occupiedDates,
     previousFingerprints,
     forceReparseDates,
-    // Recovery safety: intentionally frozen at 18 Oct until manually reviewed.
-    // Override through a future reviewed code change, not an unattended job.
-    publishThrough: "2026-10-18",
+    // Publish only completed Saudi business dates. Never publish the current
+    // (potentially still-edited) sheet, even when its reception formulas resolve.
+    // Unlike the October recovery cutoff, this advances automatically every day.
+    publishThrough: new Date(Date.now() + 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   });
   if (!parsed.ok) {
     throw new Error(parsed.error || "Monthly Logbook workbook rejected. Existing facts preserved.");
