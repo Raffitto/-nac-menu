@@ -2428,18 +2428,34 @@ function googleStarMetrics(facts: Record<string, unknown>[]) {
 }
 
 function logbookNotes(facts: Record<string, unknown>[]) {
+  // A daily logbook stores shift-specific notes and personnel as separate facts.
+  // Do not collapse duplicate metric keys (e.g. lunch/dinner chefs) to the first hit.
+  const labels: Record<string, string> = {
+    breakfast_notes: "Breakfast notes",
+    lunch_notes: "Lunch notes",
+    dinner_notes: "Dinner notes",
+    complaints: "Complaints",
+    operational_issues: "Operational issues",
+    training_notes: "Training notes",
+    lunch_mod: "Lunch restaurant MOD",
+    dinner_mod: "Dinner restaurant MOD",
+    mod_on_duty: "MOD on duty",
+    chef_on_duty: "Chef on duty",
+    bar_mod: "Bar MOD",
+  };
   const notes: string[] = [];
-  const textKeys: [string, string][] = [
-    ["mod_on_duty", "MOD on duty"],
-    ["chef_on_duty", "Chef on duty"],
-    ["complaints", "Complaints"],
-    ["training_notes", "Training notes"],
-    ["operational_issues", "Operational issues"],
-    ["dinner_notes", "Dinner notes"],
-  ];
-  for (const [key, label] of textKeys) {
-    const text = pickTextFact(facts, key);
-    if (text) notes.push(`${label}: ${text}`);
+  const seen = new Set<string>();
+  for (const fact of facts) {
+    const key = String(fact.metricKey || "");
+    const label = labels[key];
+    const dims = (fact.dimensions || {}) as Record<string, unknown>;
+    const value = String(dims.text_value || "").trim();
+    if (!label || !value) continue;
+    const shift = String(dims.shift || "").trim().toLowerCase();
+    const date = String(fact.periodEnd || fact.period_end || fact.businessDate || "").trim();
+    const prefix = [date, shift].filter(Boolean).join(" · ");
+    const note = `${label}${prefix ? ` (${prefix})` : ""}: ${value}`;
+    if (!seen.has(note)) { seen.add(note); notes.push(note); }
   }
   return notes;
 }
