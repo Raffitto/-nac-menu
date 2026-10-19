@@ -1171,8 +1171,8 @@ export async function processAskNacOnEdge(
   );
   // An operational/logbook follow-up must not reuse the previous Cash Up dataset.
   // Otherwise a sales completeness check can incorrectly claim no food issues.
-  const explicitLogbookFollowUp = /\\b(logbooks?|in the logbook|what about logbook|food,? drinks? or service|problems? with (?:the )?(?:food|drinks?|service)|issues? reported|complaints?)\\b/i.test(question)
-    && !/\\b(cash[\\s-]?up|sales records?|missing sales days?|revenue)\\b/i.test(question);
+  const explicitLogbookFollowUp = /\b(logbooks?|in the logbook|what about logbook|food,? drinks? or service|problems? with (?:the )?(?:food|drinks?|service)|issues? reported|complaints?)\b/i.test(question)
+    && !/\b(cash[\s-]?up|sales records?|missing sales days?|revenue)\b/i.test(question);
   const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
     && conversationState?.dataset
     && prepareResult.conversationTurn?.followUpCategory;
