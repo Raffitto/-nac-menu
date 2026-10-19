@@ -1174,12 +1174,20 @@ export async function processAskNacOnEdge(
   // Otherwise a sales completeness check can incorrectly claim no food issues.
   const explicitLogbookFollowUp = /\b(logbooks?|issues? (?:reported|in each shift)|complaints?|food,?\s*drinks?\s*(?:or|and)\s*service|food,?\s*drinks?,?\s*service|food|drinks?|service related|operationally)\b/i.test(question)
     && !/\b(cash[\s-]?up|sales records?|missing sales days?|revenue)\b/i.test(question);
-  const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question);
+  const priorLogbookIntent = /vault_(?:logbook_summary|operational_review)/.test(
+    String((conversationContext as Record<string, unknown> | null)?.lastIntent || ""),
+  );
+  const logbookDateCorrection = priorLogbookIntent
+    && /\\b(sorry|i meant|day before|day after|17 of the month|instead)\\b/i.test(question);
+  const wantsLogbook = explicitLogbookFollowUp || logbookDateCorrection;
+  const parsedRequestedPeriod = parseVaultPeriodFromQuestion(question, new Date());
+  const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question)
+    || (wantsLogbook && Boolean(parsedRequestedPeriod?.isMonth));
 
   const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
     && conversationState?.dataset
     && prepareResult.conversationTurn?.followUpCategory;
-  if (datasetReuse && !explicitLogbookFollowUp) {
+  if (datasetReuse && !wantsLogbook) {
     const dataset = conversationState.dataset as Record<string, unknown>;
     const dailyBreakdown = (dataset.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
     const aggregation = dataset.aggregation as Record<string, unknown> | undefined;
@@ -1262,7 +1270,7 @@ export async function processAskNacOnEdge(
   // Respect the user's explicit change of subject, while retaining the resolved
   // date/branch from the previous turn. Do not allow Cash Up follow-up context
   // to turn operational complaints into a sales-completeness assertion.
-  if (explicitLogbookFollowUp) {
+  if (wantsLogbook) {
     const period = parseVaultPeriodFromQuestion(question, new Date())
       || extractOperationalMonthPeriod(question, new Date())
       || parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
@@ -1319,7 +1327,7 @@ export async function processAskNacOnEdge(
     fabricConversation?: StructuredConversationState;
   } | null)?.fabricConversation || null;
 
-  const useFabricSpine = !explicitLogbookFollowUp && isManagementIntelligenceQuestion(effectiveQuestion, {
+  const useFabricSpine = !wantsLogbook && isManagementIntelligenceQuestion(effectiveQuestion, {
     intent: route.intent,
     confidence: route.confidence,
     branchMention: route.branchMention,
@@ -1541,7 +1549,7 @@ export async function processAskNacOnEdge(
       allowedBranchIds?: string[] | null;
     },
   });
-  const plannerEnrichment = (mixedSalesComparison || explicitLogbookFollowUp)
+  const plannerEnrichment = (mixedSalesComparison || wantsLogbook)
     ? { plannerUsed: false, plannerSource: null, applied: false, plan: null }
     : await enrichRouteWithManagementPlanner(
       route as unknown as Record<string, unknown>,
