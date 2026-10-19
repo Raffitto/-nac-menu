@@ -1080,6 +1080,9 @@ async function insertMonthlyLogbookWorkbook(
     createdBy: email,
     occupiedDates,
     previousFingerprints,
+    // Recovery safety: intentionally frozen at 18 Oct until manually reviewed.
+    // Override through a future reviewed code change, not an unattended job.
+    publishThrough: "2026-10-18",
   });
   if (!parsed.ok) {
     throw new Error(parsed.error || "Monthly Logbook workbook rejected. Existing facts preserved.");
