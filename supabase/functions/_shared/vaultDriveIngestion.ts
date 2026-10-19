@@ -1803,7 +1803,15 @@ async function processOneDriveFile(
   const existing = await findExistingDriveFile(admin, driveFile, email);
   const coverage = existing?.id ? await loadCoverageFreshness(admin, String(existing.id)) : null;
   const action = existing ? "changed" : "new";
-  if (!force && isUnchanged(existing, driveFile, coverage)) {
+  // A monthly workbook can be unchanged in Drive after yesterday's sheet
+  // became eligible for publication. Recheck it until the coverage watermark
+  // reaches the latest completed KSA business date.
+  const completedKsaDate = new Date(Date.now() + 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const rollingLogbookCatchup = /logbook.*\\.(xlsm|xlsx)$/i.test(String(driveFile.name || ""))
+    && Boolean(existing?.id)
+    && String(coverage?.period_end || "").slice(0, 10) < completedKsaDate;
+  if (!force && !rollingLogbookCatchup && isUnchanged(existing, driveFile, coverage)) {
     counters.skipped_count += 1;
     const itemId = await createRunFile(admin, { runId, folderId: folder.id, driveFile, action: "skipped" });
     await markRunFile(admin, itemId, {
@@ -1836,6 +1844,7 @@ async function processOneDriveFile(
       && existing?.content_hash
       && existing.content_hash === contentHash
       && !canonicalFactsBehindSource(existing, coverage, driveFile)
+      && !rollingLogbookCatchup
     ) {
       counters.skipped_count += 1;
       await markRunFile(admin, itemId, {
