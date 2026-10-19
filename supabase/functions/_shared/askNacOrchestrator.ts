@@ -54,6 +54,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
+import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery } from "./vaultMonthlyOperationalSummaryRouting.ts";
 import {
   scoreSalesPerformanceQueryFocus,
   isDeliveryPlatformPeriodQuery,
@@ -1171,8 +1172,10 @@ export async function processAskNacOnEdge(
   );
   // An operational/logbook follow-up must not reuse the previous Cash Up dataset.
   // Otherwise a sales completeness check can incorrectly claim no food issues.
-  const explicitLogbookFollowUp = /\b(logbooks?|in the logbook|what about logbook|food,? drinks? or service|problems? with (?:the )?(?:food|drinks?|service)|issues? reported|complaints?)\b/i.test(question)
+  const explicitLogbookFollowUp = /\b(logbooks?|issues? (?:reported|in each shift)|complaints?|food,?\s*drinks?\s*(?:or|and)\s*service|food,?\s*drinks?,?\s*service|food|drinks?|service related|operationally)\b/i.test(question)
     && !/\b(cash[\s-]?up|sales records?|missing sales days?|revenue)\b/i.test(question);
+  const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question);
+
   const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
     && conversationState?.dataset
     && prepareResult.conversationTurn?.followUpCategory;
@@ -1260,12 +1263,13 @@ export async function processAskNacOnEdge(
   // date/branch from the previous turn. Do not allow Cash Up follow-up context
   // to turn operational complaints into a sales-completeness assertion.
   if (explicitLogbookFollowUp) {
-    const period = parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
-      || route.vaultPeriod
-      || parseVaultPeriodFromQuestion(question, new Date());
+    const period = parseVaultPeriodFromQuestion(question, new Date())
+      || extractOperationalMonthPeriod(question, new Date())
+      || parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
+      || route.vaultPeriod;
     route = {
       ...route,
-      intent: VAULT_INTENTS.LOGBOOK,
+      intent: monthlyLogbookQuestion ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
       vaultPeriod: period,
       vaultCompare: null,
       queryFocus: null,
