@@ -1169,10 +1169,14 @@ export async function processAskNacOnEdge(
   const conversationState = conversationStateFromLegacyContext(
     (conversationContext || {}) as Record<string, unknown>,
   );
+  // An operational/logbook follow-up must not reuse the previous Cash Up dataset.
+  // Otherwise a sales completeness check can incorrectly claim no food issues.
+  const explicitLogbookFollowUp = /\\b(logbooks?|in the logbook|what about logbook|food,? drinks? or service|problems? with (?:the )?(?:food|drinks?|service)|issues? reported|complaints?)\\b/i.test(question)
+    && !/\\b(cash[\\s-]?up|sales records?|missing sales days?|revenue)\\b/i.test(question);
   const datasetReuse = prepareResult.conversationTurn?.preferDatasetReuse
     && conversationState?.dataset
     && prepareResult.conversationTurn?.followUpCategory;
-  if (datasetReuse) {
+  if (datasetReuse && !explicitLogbookFollowUp) {
     const dataset = conversationState.dataset as Record<string, unknown>;
     const dailyBreakdown = (dataset.dailyBreakdown as { date: string; totalSales?: number | null }[]) || [];
     const aggregation = dataset.aggregation as Record<string, unknown> | undefined;
@@ -1251,6 +1255,25 @@ export async function processAskNacOnEdge(
     fallbackHours,
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext as Record<string, unknown> | null,
   });
+
+  // Respect the user's explicit change of subject, while retaining the resolved
+  // date/branch from the previous turn. Do not allow Cash Up follow-up context
+  // to turn operational complaints into a sales-completeness assertion.
+  if (explicitLogbookFollowUp) {
+    const period = parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
+      || route.vaultPeriod
+      || parseVaultPeriodFromQuestion(question, new Date());
+    route = {
+      ...route,
+      intent: VAULT_INTENTS.LOGBOOK,
+      vaultPeriod: period,
+      vaultCompare: null,
+      queryFocus: null,
+      performanceOverview: false,
+      salesSource: null,
+      debug: { ...route.debug, explicitLogbookFollowUp: true },
+    };
+  }
 
   if (humanLoop?.overrideIntent) {
     route = {
