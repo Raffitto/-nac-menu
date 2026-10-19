@@ -6,6 +6,9 @@ import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
 import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
+import { activeEggPreparation, eggHeroImage, openEggPreparation, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
+import { readGuestLanguage, writeGuestLanguage } from "./lib/guestLanguage";
+import EggPreparationPicker from "./components/EggPreparationPicker";
 import { BRUNCH_SCHEDULE, DAYTIME_LUNCH_SCHEDULE } from "./lib/brunchSchedule";
 import { makeSectionDomId, sectionSlug } from "./lib/sectionNav";
 import {
@@ -158,7 +161,7 @@ const item = (
   recommended = [],
   allergens = [],
   tags = []
-) => ({
+) => withEggPreparations({
   en,
   ar,
   descEn,
@@ -561,9 +564,11 @@ const imageScale = useTransform(dragY, [0, 120], [1, 0.6]);
 
 
 const [lang, setLang] = useState(() => {
-  if (typeof navigator === "undefined") return "en";
-  const phoneLang = navigator.language || navigator.userLanguage;
-  return phoneLang?.toLowerCase().startsWith("ar") ? "ar" : "en";
+  const storage = typeof localStorage === "undefined" ? null : localStorage;
+  const languages = typeof navigator === "undefined"
+    ? []
+    : (navigator.languages?.length ? navigator.languages : [navigator.language]);
+  return readGuestLanguage(storage, languages);
 });
 useEffect(() => {
   const langStats =
@@ -871,13 +876,13 @@ const isAllowed = (menuItem) => {
   );
 
   const openMenuItem = useCallback(
-    (menuItem, sectionTitleEn, categoryIdOverride) => {
+    (menuItem, sectionTitleEn, categoryIdOverride, preparationId) => {
       if (!menuItem?.en) return;
       const catId = categoryIdOverride || effectiveCategory;
       if (!catId) return;
       setItemCategoryId(catId);
       dragY.set(0);
-      setActiveItem(menuItem);
+      setActiveItem(openEggPreparation(menuItem, preparationId));
       const sectionSlug = sectionTitleEn.toLowerCase().replaceAll(" ", "-");
       trackEvent({
         event_type: "item_open",
@@ -938,7 +943,7 @@ const goToNextItem = () => {
     },
   });
 
-  setActiveItem(nextItem);
+  setActiveItem(resetEggPreparation(nextItem));
 };
 
 const goToPrevItem = () => {
@@ -967,7 +972,7 @@ const goToPrevItem = () => {
     },
   });
 
-  setActiveItem(prevItem);
+  setActiveItem(resetEggPreparation(prevItem));
 };
 
 useEffect(() => {
@@ -975,6 +980,12 @@ useEffect(() => {
     dragY.set(0);
   }
 }, [activeItem, dragY]);
+
+useEffect(() => {
+  if (!activeItem) return undefined;
+  document.documentElement.classList.add("guest-modal-open");
+  return () => document.documentElement.classList.remove("guest-modal-open");
+}, [activeItem]);
 
 // Heatmap prep: track max scroll depth per category visit
 const maxScrollDepth = useRef(0);
@@ -1142,6 +1153,7 @@ if (adminMode) {
     });
 
     setLang("en");
+    writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, "en");
   }}
 >
   EN
@@ -1159,6 +1171,7 @@ if (adminMode) {
     });
 
     setLang("ar");
+    writeGuestLanguage(typeof localStorage === "undefined" ? null : localStorage, "ar");
   }}
 >
   AR
@@ -1358,7 +1371,7 @@ onDragEnd={(e, info) => {
 
              
 <motion.div
-  className="lux-image"
+  className={`lux-image${activeItem.preparations?.length ? " lux-image--contain" : ""}`}
   transition={{ duration: 0.18, ease: "easeOut" }}
   drag="y"
   dragDirectionLock
@@ -1398,18 +1411,19 @@ onDragEnd={(e, info) => {
     }
   }}
 >
-  {activeItem.image?.trim() ? (
-    <AnimatePresence mode="wait">
-      <motion.img
-        key={activeItem.image}
-        src={activeItem.image}
-        alt={activeItem.en}
-        initial={{ opacity: 0.15, scale: 1.02 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.22 }}
+  {(eggHeroImage(activeItem) || activeItem.image)?.trim() ? (
+      <img
+        key={eggHeroImage(activeItem) || activeItem.image}
+        src={eggHeroImage(activeItem) || activeItem.image}
+        alt={
+          activeEggPreparation(activeItem)
+            ? `${isArabic ? activeItem.ar : activeItem.en}, ${isArabic ? activeEggPreparation(activeItem).ar : activeEggPreparation(activeItem).en}`
+            : (isArabic ? activeItem.ar : activeItem.en)
+        }
+        width="764"
+        height="508"
+        decoding="async"
       />
-    </AnimatePresence>
   ) : (
     <div className="lux-image-placeholder" aria-hidden />
   )}
@@ -1419,6 +1433,14 @@ onDragEnd={(e, info) => {
                 <p className="lux-label">{publicBrandEn.toUpperCase()}</p>
                 <h1>{isArabic ? activeItem.ar : activeItem.en}</h1>
                 <p>{isArabic ? activeItem.descAr : activeItem.descEn}</p>
+
+                {activeItem.preparations?.length > 0 && (
+                  <EggPreparationPicker
+                    selectedId={activeItem.selectedPreparationId}
+                    isArabic={isArabic}
+                    onSelect={(optionId) => setActiveItem(selectEggPreparation(activeItem, optionId))}
+                  />
+                )}
 
                 <div className="meta">
                   {activeItem.soldOut && (

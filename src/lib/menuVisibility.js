@@ -1,10 +1,22 @@
-/** Guest-menu visibility — single source of truth with Menu Manager / Supabase. */
+import { presentGuestMenuItem } from "./canonicalGuestCatalogue";
 
 export function parseHiddenUntil(item) {
   const raw = item?.hidden_until ?? item?.hiddenUntil;
   if (!raw) return null;
   const ms = new Date(raw).getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Editor duplicate of the canonical 2 Eggs Any Style row.
+ * Hidden from guests only. The database row is kept for history.
+ */
+export function isGuestCatalogueDuplicate(item) {
+  const name = String(item?.en || item?.name_en || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return name === "2 eggs any style (copy)";
 }
 
 /** True when the item must not appear on the public menu. */
@@ -87,7 +99,13 @@ export function filterPublicMenuData(menuData, nowMs = Date.now()) {
     next[catId] = (sections || [])
       .map((sec) => ({
         ...sec,
-        items: (sec.items || []).filter((it) => isPublicMenuItem(it, nowMs)),
+        items: (sec.items || [])
+          .filter(
+            (it) =>
+              isPublicMenuItem(it, nowMs)
+              && !isGuestCatalogueDuplicate(it),
+          )
+          .map(presentGuestMenuItem),
       }))
       .filter((sec) => sec.items.length > 0);
   }
