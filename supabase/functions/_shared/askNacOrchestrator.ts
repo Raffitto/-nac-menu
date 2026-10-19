@@ -1270,7 +1270,6 @@ export async function processAskNacOnEdge(
       vaultCompare: null,
       queryFocus: null,
       performanceOverview: false,
-      salesSource: null,
       debug: { ...route.debug, explicitLogbookFollowUp: true },
     };
   }
