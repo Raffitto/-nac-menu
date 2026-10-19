@@ -220,14 +220,14 @@ export function buildMonthlyLogbookExecutiveSummary({
 
   const sections = [
     buildSection("Executive Summary", [executiveLead]),
+    buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
+    buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
+    buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Traffic / demand pattern", [
       trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
       trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
       !trafficQuiet && !trafficBusy ? "Traffic pattern mixed; review shift notes for day-by-day demand." : null,
     ]),
-    buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Google review trend", [
       google.totalReviews
         ? `${google.totalReviews} review events logged across ${google.daysWith} day(s): 5★ ${google.totals.google_review_5}, 4★ ${google.totals.google_review_4}, 3★ ${google.totals.google_review_3}, 2★ ${google.totals.google_review_2}, 1★ ${google.totals.google_review_1}.`
