@@ -170,9 +170,9 @@ function findNarratives(matrix) {
     { label: /^breakfast$/i, key: "breakfast_notes" },
     { label: /^lunch$/i, key: "lunch_notes" },
     { label: /^dinner$/i, key: "dinner_notes" },
-    { label: /^training\\s*&\\s*brainstorming$/i, key: "training_notes" },
+    { label: /^training\s*&\s*brainstorming$/i, key: "training_notes" },
   ];
-  const boundaries = /^(?:reception\\s*[–-]\\s*hostess|google reviews|handover\\s*\\/\\s*highlights|lunch shift|dinner shift)$/i;
+  const boundaries = /^(?:reception\s*[–-]\s*hostess|google reviews|handover\s*\/\s*highlights|lunch shift|dinner shift)$/i;
   let active = null;
   const sections = new Map();
   for (const row of matrix) {
@@ -191,11 +191,11 @@ function findNarratives(matrix) {
     // Only the first column holds shift narratives; ignore unrelated table cells.
     const raw = row[0]?.value == null ? "" : String(row[0].value);
     const value = raw.trim();
-    if (!value || /^[•\\s]*$/.test(value) || value.length < 3 || /^C$/i.test(value)) continue;
+    if (!value || /^[•\s]*$/.test(value) || value.length < 3 || /^C$/i.test(value)) continue;
     sections.get(active).push(value);
   }
   for (const [key, entries] of sections) {
-    if (entries.length) found.push({ key, text: entries.join("\\n"), kind: "entered" });
+    if (entries.length) found.push({ key, text: entries.join("\n"), kind: "entered" });
   }
   // Personnel labels occur twice, under lunch and dinner headers. Values are
   // located in the first populated cell to the right, not necessarily adjacent.
