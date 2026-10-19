@@ -175,14 +175,16 @@ function findNarratives(matrix) {
   const boundaries = /^(?:reception\s*[–-]\s*hostess|google reviews|handover\s*\/\s*highlights|lunch shift|dinner shift)$/i;
   let active = null;
   let afterReviews = false;
+  let afterReception = false;
   let reviewValuesSeen = false;
   const sections = new Map();
   for (const row of matrix) {
     const first = labelText(row[0]);
+    if (/^reception\s*[–-]\s*hostess$/i.test(first)) { afterReception = true; active = null; continue; }
     if (/^google reviews$/i.test(first)) { afterReviews = true; reviewValuesSeen = false; active = null; continue; }
     if (afterReviews && /^5\s*star$/i.test(first)) continue;
     if (afterReviews && !reviewValuesSeen && /^\d+(?:\.\d+)?$/.test(first)) { reviewValuesSeen = true; continue; }
-    const heading = headings.find((item) => item.label.test(first));
+    const heading = headings.find((item) => item.label.test(first) && (!afterReception || item.key === "training_notes"));
     if (heading) {
       active = heading.key;
       if (!sections.has(active)) sections.set(active, []);
