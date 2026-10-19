@@ -71,6 +71,10 @@ import {
   vaultBranchOptionsForProfile,
 } from "../../intelligence/askNac/vault/vaultConstants";
 import {
+  assessDriveIngestionHealth,
+  folderSyncLabel,
+} from "../../intelligence/askNac/vault/driveIngestionHealth";
+import {
   VAULT_KNOWLEDGE_TIER,
   computeVaultSearchIndexStats,
   computeVaultKnowledgeTier,
@@ -131,52 +135,57 @@ function formatRiyadhSchedule(value) {
   }
 }
 
-function resolveDriveHealth({ connection, ingestStats, runActive }) {
-  const status = String(connection?.status || "");
-  const lastError = String(connection?.last_error || ingestStats?.errorMessage || "");
-  const stage = String(ingestStats?.runtimeStage || "");
-  if (
-    connection?.reconnect_required
-    || status === "reconnect_required"
-    || stage === "token_refresh_failed"
-    || /reconnect|token_refresh|invalid_grant|Bad Request/i.test(lastError)
-  ) {
-    return {
-      key: "CONNECTION_REQUIRED",
-      label: "CONNECTION REQUIRED",
-      className: "is-off",
-      note: "Google Drive authorization expired. Reconnect once to restore automatic Cashup and Logbook ingestion.",
-    };
-  }
+function resolveDriveHealth({ connection, ingestStats, runActive, folders, latestRun, publication }) {
+  const health = assessDriveIngestionHealth({
+    connection,
+    folders,
+    latestRun,
+    publication,
+    cronJobConfigured: true,
+  });
   if (runActive) {
     return {
       key: "SYNCING",
       label: "SYNCING",
       className: "is-on",
       note: null,
+      health,
     };
   }
-  if (Number(ingestStats?.failed || 0) > 0 || status === "error") {
+  const stage = String(ingestStats?.runtimeStage || "");
+  if (stage === "token_refresh_failed" && health.driveConnection.state === "CONNECTED") {
+    health.driveConnection = {
+      state: "AUTHORIZATION_EXPIRED",
+      label: "Authorization expired",
+      detail: "The latest Drive run failed during token refresh.",
+    };
+    health.pipelineHealthy = false;
+    health.primaryIssue = "CONNECTION_REQUIRED";
+  }
+  if (health.primaryIssue === "CONNECTION_REQUIRED") {
     return {
-      key: "DEGRADED",
-      label: "DEGRADED",
+      key: "CONNECTION_REQUIRED",
+      label: "CONNECTION REQUIRED",
       className: "is-off",
-      note: "Some files failed during the last Drive sync. Successful files remain available.",
+      note: health.driveConnection.detail,
+      health,
     };
   }
-  if (status === "active" || connection) {
+  if (!health.pipelineHealthy || Number(ingestStats?.failed || 0) > 0) {
     return {
-      key: "HEALTHY",
-      label: "HEALTHY",
-      className: "is-on",
-      note: "Last scheduled sync completed.",
+      key: health.primaryIssue === "HEALTHY" ? "DEGRADED" : health.primaryIssue,
+      label: health.publicationFreshness.state === "STALLED" ? "PUBLICATION STALLED" : "DEGRADED",
+      className: "is-off",
+      note: health.summary,
+      health,
     };
   }
   return {
-    key: "CONNECTION_REQUIRED",
-    label: "CONNECTION REQUIRED",
-    className: "is-off",
-    note: "Connect Google Drive to enable automatic Cashup and Logbook ingestion.",
+    key: "HEALTHY",
+    label: "HEALTHY",
+    className: "is-on",
+    note: health.summary,
+    health,
   };
 }
 
@@ -1308,6 +1317,9 @@ export default function AskNacDataVaultPanel({ session }) {
     connection: driveStatus?.connection,
     ingestStats: driveIngestStats,
     runActive: driveRunActive,
+    folders: driveStatus?.folders || [],
+    latestRun: driveStatus?.latestIngestRun || driveIngestRun || null,
+    publication: driveStatus?.publication || null,
   });
   const driveNextSyncAt = driveStatus?.schedule?.nextRunAt || null;
   const drivePriorityFolders = (driveStatus?.folders || []).filter((folder) =>
@@ -1697,6 +1709,22 @@ export default function AskNacDataVaultPanel({ session }) {
                         </dd>
                       </div>
                       <div>
+                        <dt>Scheduler</dt>
+                        <dd>{driveHealth.health?.scheduler.label || "Unknown"}</dd>
+                      </div>
+                      <div>
+                        <dt>Drive connection</dt>
+                        <dd>{driveHealth.health?.driveConnection.label || "Unknown"}</dd>
+                      </div>
+                      <div>
+                        <dt>Source freshness</dt>
+                        <dd>{driveHealth.health?.sourceFreshness.label || "Unknown"}</dd>
+                      </div>
+                      <div>
+                        <dt>Cash Up publication</dt>
+                        <dd>{driveHealth.health?.publicationFreshness.label || "Unknown"}</dd>
+                      </div>
+                      <div>
                         <dt>Account email</dt>
                         <dd>{driveEmail || "Google account"}</dd>
                       </div>
@@ -1748,9 +1776,7 @@ export default function AskNacDataVaultPanel({ session }) {
                               {String(folder.report_type || "").replace(/_/g, " ")}
                             </span>
                             <span>
-                              {folder.last_ingest_at || folder.last_sync_at
-                                ? `up to date · ${formatLastSync(folder.last_ingest_at || folder.last_sync_at)}`
-                                : "awaiting first sync"}
+                              {folderSyncLabel(folder, formatLastSync)}
                             </span>
                           </li>
                         ))}
