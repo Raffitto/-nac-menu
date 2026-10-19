@@ -166,18 +166,58 @@ function neighborValue(matrix, rowIndex, columnIndex) {
 
 function findNarratives(matrix) {
   const found = [];
-  matrix.forEach((row, rowIndex) => {
-    row.forEach((cell, columnIndex) => {
-      const label = labelText(cell);
-      if (!label) return;
-      const match = NARRATIVE_LABELS.find((entry) => entry.re.test(label));
-      if (!match || found.some((item) => item.key === match.key)) return;
-      const valueCell = neighborValue(matrix, rowIndex, columnIndex);
-      const text = labelText(valueCell);
-      if (!text || NARRATIVE_LABELS.some((entry) => entry.re.test(text))) return;
-      found.push({ key: match.key, text, kind: valueCell.kind });
-    });
-  });
+  const headings = [
+    { label: /^breakfast$/i, key: "breakfast_notes" },
+    { label: /^lunch$/i, key: "lunch_notes" },
+    { label: /^dinner$/i, key: "dinner_notes" },
+    { label: /^training\\s*&\\s*brainstorming$/i, key: "training_notes" },
+  ];
+  const boundaries = /^(?:reception\\s*[–-]\\s*hostess|google reviews|handover\\s*\\/\\s*highlights|lunch shift|dinner shift)$/i;
+  let active = null;
+  const sections = new Map();
+  for (const row of matrix) {
+    const first = labelText(row[0]);
+    const heading = headings.find((item) => item.label.test(first));
+    if (heading) {
+      active = heading.key;
+      if (!sections.has(active)) sections.set(active, []);
+      continue;
+    }
+    if (boundaries.test(first) || /^shift$/i.test(first)) {
+      active = null;
+      continue;
+    }
+    if (!active) continue;
+    // Only the first column holds shift narratives; ignore unrelated table cells.
+    const raw = row[0]?.value == null ? "" : String(row[0].value);
+    const value = raw.trim();
+    if (!value || /^[•\\s]*$/.test(value) || value.length < 3 || /^C$/i.test(value)) continue;
+    sections.get(active).push(value);
+  }
+  for (const [key, entries] of sections) {
+    if (entries.length) found.push({ key, text: entries.join("\\n"), kind: "entered" });
+  }
+  // Personnel labels occur twice, under lunch and dinner headers. Values are
+  // located in the first populated cell to the right, not necessarily adjacent.
+  for (const row of matrix) {
+    for (const [labelColumn, shift] of [[0, "lunch"], [4, "dinner"]]) {
+      const label = labelText(row[labelColumn]);
+      const type = /^mod restaurant$/i.test(label) ? "mod"
+        : /^chef on duty$/i.test(label) ? "chef"
+        : /^mod bar$/i.test(label) ? "bar_mod" : null;
+      if (!type) continue;
+      const limit = shift === "lunch" ? 4 : row.length;
+      for (let col = labelColumn + 1; col < limit; col++) {
+        const cell = row[col];
+        const value = labelText(cell);
+        if (!value) continue;
+        if (/^(?:mod restaurant|chef on duty|mod bar)$/i.test(value)) break;
+        found.push({ key: type === "bar_mod" ? "bar_mod" : type === "chef" ? "chef_on_duty" : shift + "_mod",
+          shift, text: value, kind: cell.kind });
+        break;
+      }
+    }
+  }
   return found;
 }
 
@@ -328,7 +368,7 @@ function fact(context, date, key, metricValue, dimensions, grain = "daily") {
     period_start: date,
     period_end: date,
     grain,
-    source_row_ref: `sheet:${date}:${key}`,
+    source_row_ref: `sheet:${date}:${key}:${dimensions?.shift || "daily"}`,
     confidence: 0.8,
     created_by: context.createdBy || null,
   };
@@ -381,7 +421,7 @@ export function parseMonthlyLogbookSheets(workbook, context = {}) {
       sheets.push({ name, businessDate, status: "skipped_historical", publish: false, fingerprint });
       continue;
     }
-    if (previous[businessDate] && previous[businessDate] === fingerprint) {
+    if (previous[businessDate] && previous[businessDate] === fingerprint && !context.forceReparseDates?.includes(businessDate)) {
       sheets.push({ name, businessDate, status: "unchanged", publish: false, fingerprint });
       continue;
     }
@@ -408,6 +448,7 @@ export function parseMonthlyLogbookSheets(workbook, context = {}) {
         sheetFacts.push(fact({ ...context, branchId }, businessDate, narrative.key, null, {
           ...baseDimensions,
           text_value: narrative.text,
+          ...(narrative.shift ? { shift: narrative.shift } : {}),
           provenance: provenance(narrative.kind),
         }, "snapshot"));
       }
