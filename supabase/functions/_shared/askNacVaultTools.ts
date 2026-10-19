@@ -3024,21 +3024,32 @@ function briefingNotes(facts: Record<string, unknown>[] = []) {
 
 function buildVaultLogbookAnswer(route: Record<string, unknown>, tool: Record<string, unknown>, readiness: Record<string, unknown> | null): AskNacAnswer {
   const facts = (tool?.facts as Record<string, unknown>[]) || [];
-  const metrics = receptionMetrics(facts);
+  const question = String(route.question || route.resolvedQuestion || "");
+  const asksForNumbers = /\b(how many|covers?|guests?|reservations?|walk[ -]?ins?|no[ -]?shows?|cancellations?|numbers?|totals?)\b/i.test(question);
+  const metrics = asksForNumbers ? receptionMetrics(facts) : [];
   const notes = logbookNotes(facts);
-  const directAnswer = notes.length
-    ? `Logbook notes for ${tool.branchLabel} on ${tool.periodLabel}: ${notes[0]}`
-    : metrics.length
-      ? `Logbook operational metrics for ${tool.branchLabel} on ${tool.periodLabel} are listed below.`
-      : `No logbook structured facts found for ${tool.branchLabel} on ${tool.periodLabel}.`;
+  const exceptionSignal = /\b(complain|complaint|issue|problem|incident|wrong|undercook|overcook|oily|smell|bad|delay|86|unavailable|cancel|broken|repair|maintenance|staff shortage|absen|mistake|dirty|temperature|ac stopped|equipment|machine stopped|burnt|cold food|tenderness|saltiness|replac)\b/i;
+  const routineSignal = /\b(very slow|quiet|smooth|no major issues|all walk.ins|no reservations|normal operation)\b/i;
+  const exceptionalNotes = notes.filter((note) => exceptionSignal.test(note) && !/^((Lunch|Dinner) restaurant MOD|Chef on duty|Bar MOD)/i.test(note));
+  const operationalNotes = exceptionalNotes.length ? exceptionalNotes : notes.filter((note) => !routineSignal.test(note) && !/\b(MOD|Chef on duty)\b/i.test(note));
+  const displayNotes = asksForNumbers ? notes : operationalNotes;
+  const period = String(tool.periodLabel || (route.vaultPeriod as { label?: string; startDate?: string } | undefined)?.label || (route.vaultPeriod as { startDate?: string } | undefined)?.startDate || "requested period");
+  const branch = String(tool.branchLabel && tool.branchLabel !== "Network" ? tool.branchLabel : route.branchMention ? branchDisplayName(String(route.branchMention)) : "your branch");
+  const directAnswer = exceptionalNotes.length && !asksForNumbers
+    ? `Operational issues in ${branch} on ${period}: ${exceptionalNotes[0]}`
+    : notes.length
+      ? `Logbook for ${branch} on ${period}: ${asksForNumbers ? "reception figures are listed below." : "No clearly identified operational exception in the available notes."}`
+      : metrics.length
+        ? `Logbook reception metrics for ${branch} on ${period}.`
+        : `No logbook structured facts found for ${branch} on ${period}.`;
 
   return {
     ...baseVaultFields(route, tool, readiness),
     answerType: metrics.length || notes.length ? "metric" : "missing_data",
-    title: `Logbook · ${tool.periodLabel}`,
+    title: `Logbook · ${period}`,
     directAnswer,
     keyMetrics: metrics,
-    insights: notes,
+    insights: displayNotes,
     recommendations: [],
     missingData: [],
     exportOptions: [],
