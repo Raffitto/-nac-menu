@@ -103,7 +103,6 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     compareSummary,
   });
 
-  if (!monthlyLogbookSummary.logbookDays) return null;
 
   const retrievalMethod = bundles.every((bundle) => bundle.retrievalMethod === "rpc")
     ? "structured_logbook_monthly_summary_rpc"
