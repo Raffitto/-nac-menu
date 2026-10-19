@@ -910,6 +910,8 @@ Deno.serve(async (req) => {
             initialStats: {
               runtimeStage: "queued",
               action,
+              // Keep single-file retry scoped to the requested Drive file when process_run is called.
+              ...(action === "retry_file" ? { targetDriveFileId: retryDriveFileId } : {}),
               sourceTable: "ask_nac_drive_sync_folders",
               selectedFolderCount: selectedFolderDebug.length,
               selectedFoldersCount: selectedFolderDebug.length,
