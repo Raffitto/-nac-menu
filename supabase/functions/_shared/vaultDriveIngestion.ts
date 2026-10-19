@@ -1057,6 +1057,15 @@ async function insertMonthlyLogbookWorkbook(
     const fingerprint = row.dimensions?.sheet_fingerprint;
     if (date && fingerprint) previousFingerprints[date] = String(fingerprint);
   }
+  // Reparse only the four previously published October dates if their narrative
+  // sections are missing, even when the workbook fingerprint is unchanged.
+  // All earlier historical dates remain protected by their existing fingerprints.
+  const recoveryDates = new Set(["2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18"]);
+  const requiredNarratives = ["breakfast_notes", "lunch_notes", "dinner_notes"];
+  const forceReparseDates = [...recoveryDates].filter((date) => {
+    const rows = (existing || []).filter((row: { period_end?: string }) => String(row.period_end || "").slice(0, 10) === date);
+    return rows.length > 0 && requiredNarratives.some((key) => !rows.some((row: { metric_key?: string }) => row.metric_key === key));
+  });
   let occupiedDates: string[] = [];
   if (dates.length && fileRow.primary_branch_id) {
     const { data: other, error: otherError } = await admin
@@ -1080,6 +1089,7 @@ async function insertMonthlyLogbookWorkbook(
     createdBy: email,
     occupiedDates,
     previousFingerprints,
+    forceReparseDates,
     // Recovery safety: intentionally frozen at 18 Oct until manually reviewed.
     // Override through a future reviewed code change, not an unattended job.
     publishThrough: "2026-10-18",
