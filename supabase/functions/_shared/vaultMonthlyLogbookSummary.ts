@@ -42,7 +42,7 @@ const GOOGLE_KEYS = [
 const THEME_RULES = [
   { id: "traffic_quiet", label: "Quiet / low demand", re: /\b(quiet|slow|empty mall|mall empty|few reservations|low covers|mostly coffee|coffee and dessert)\b/i },
   { id: "traffic_busy", label: "Busy / strong demand", re: /\b(busy|full house|high covers|strong dinner|packed)\b/i },
-  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|overcooked|oily|smell|smelled|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove from bill|insect|fly|upset|86)\b/i },
+  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|overcooked|oily|smell|smelled|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove from bill|insect|fly|upset)\b/i },
   { id: "maintenance", label: "Maintenance / facilities", re: /\b(drainage|electrician|pest|gel|powder|trap|battery|ccm|router|repair|leak)\b/i },
   { id: "staffing_system", label: "Staffing / systems", re: /\b(jisr|punch|inventory|upselling|training|staff)\b/i },
   { id: "service_win", label: "Service recovery / wins", re: /\b(satisfied|smooth|well|recovered|apologize|new one|resolved)\b/i },
@@ -213,8 +213,8 @@ export function buildMonthlyLogbookExecutiveSummary({
   const reception = aggregateReception(days);
   const google = aggregateGoogle(days);
 
-  const trafficQuiet = themes.find((t) => t.id === "traffic_quiet");
-  const trafficBusy = themes.find((t) => t.id === "traffic_busy");
+  const trafficQuiet = null;
+  const trafficBusy = null;
   const complaints = themes.filter((t) => t.id === "complaint");
   const maintenance = themes.filter((t) => t.id === "maintenance");
   const staffing = themes.filter((t) => t.id === "staffing_system");
@@ -234,7 +234,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     mode === "summary" ? buildSection("Traffic / demand pattern", [
       trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
       trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
-      !trafficQuiet && !trafficBusy ? "Traffic pattern mixed; review shift notes for day-by-day demand." : null,
+      !trafficQuiet && !trafficBusy ? "Demand is not assessed in the incident-only view." : null,
     ]) : null,
     mode === "summary" ? buildSection("Google review trend", [
       google.totalReviews
