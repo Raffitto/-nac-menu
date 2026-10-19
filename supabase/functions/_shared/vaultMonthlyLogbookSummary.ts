@@ -312,6 +312,8 @@ export function buildMonthlyLogbookExecutiveSummary({
       readyDays < logbookDays ? "Some days remain partial — recovery will improve month completeness." : null,
     ].filter(Boolean),
     confidence: confidenceLevelToEnum(confidence),
+    periodLabel,
+    issueCounts: Object.fromEntries(themes.map((theme) => [theme.id, theme.count])),
     logbookDays,
     readyDays,
     groupedFindings,
@@ -321,13 +323,24 @@ export function buildMonthlyLogbookExecutiveSummary({
 
 export function buildMonthlyLogbookCompareSummary(currentSummary, previousSummary) {
   if (!currentSummary?.logbookDays || !previousSummary?.logbookDays) {
-    return ["Insufficient structured logbook coverage in one or both months for theme comparison."];
+    return ["Insufficient structured logbook coverage in one or both months; no improvement or deterioration can be inferred."];
   }
-  return [
-    `${currentSummary.periodLabel || "Current month"}: ${currentSummary.logbookDays} logbook day(s), confidence ${currentSummary.confidence}.`,
-    `${previousSummary.periodLabel || "Previous month"}: ${previousSummary.logbookDays} logbook day(s), confidence ${previousSummary.confidence}.`,
-    "Compare guest complaints, maintenance notes, and traffic language between months in the sections above.",
+  const keys = [
+    ["complaint", "Guest-complaint days"],
+    ["maintenance", "Maintenance-issue days"],
+    ["staffing_system", "Staff/system-issue days"],
   ];
+  const lines = [
+    currentSummary.periodLabel + ": " + currentSummary.logbookDays + " logbook day(s), confidence " + currentSummary.confidence + ".",
+    previousSummary.periodLabel + ": " + previousSummary.logbookDays + " logbook day(s), confidence " + previousSummary.confidence + ".",
+  ];
+  for (const [key, label] of keys) {
+    const current = Number(currentSummary.issueCounts?.[key] || 0);
+    const previous = Number(previousSummary.issueCounts?.[key] || 0);
+    lines.push(label + ": " + current + "/" + currentSummary.logbookDays + " days vs " + previous + "/" + previousSummary.logbookDays + " days.");
+  }
+  lines.push("Counts are documented issue-day occurrences, not verified incident totals; differing coverage prevents definitive improvement claims.");
+  return lines;
 }
 
 export { groupFactsByDay };
