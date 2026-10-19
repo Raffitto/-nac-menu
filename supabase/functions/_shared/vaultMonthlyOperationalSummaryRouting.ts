@@ -106,23 +106,16 @@ export function extractOperationalMonthPeriod(question = "", referenceDate = new
 
 export function parseMonthlyOperationalComparePeriods(question = "", referenceDate = new Date()) {
   const text = String(question || "").trim().toLowerCase();
-  if (!text || !/\bcompare\b/.test(text) || !/\b(vs|versus)\b/.test(text)) return null;
-
-  const match = text.match(
-    new RegExp(`\\b(?:compare\\s+)?(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?\\s+(?:vs|versus)\\s+(${MONTH_TOKEN})\\b(?:\\s+(20\\d{2}))?`, "i"),
-  );
+  if (!/\b(compare|versus|vs|between)\b/.test(text)) return null;
+  const match = text.match(new RegExp(
+    "\\b(" + MONTH_TOKEN + ")\\b(?:\\s+(20\\d{2}))?\\s+(?:(?:and|vs|versus|to)\\s+)(" + MONTH_TOKEN + ")\\b(?:\\s+(20\\d{2}))?",
+    "i",
+  ));
   if (!match) return null;
-
   const current = monthBoundsFromToken(match[1], match[2], referenceDate);
   const previous = monthBoundsFromToken(match[3], match[4] || match[2], referenceDate);
   if (!current || !previous) return null;
-
-  return {
-    current,
-    previous,
-    periodType: "month_compare",
-    isComparison: true,
-  };
+  return { current, previous, periodType: "month_compare", isComparison: true };
 }
 
 export function scoreVaultMonthlyOperationalSummaryIntent(question = "") {

@@ -7,7 +7,7 @@ import {
   detectMonthlyOperationalMode,
   parseMonthlyOperationalComparePeriods,
 } from "./vaultMonthlyOperationalSummaryRouting.ts";
-import { buildMonthlyLogbookExecutiveSummary } from "./vaultMonthlyLogbookSummary.ts";
+import { buildMonthlyLogbookExecutiveSummary, buildMonthlyLogbookCompareSummary } from "./vaultMonthlyLogbookSummary.ts";
 import { attachLogbookFileTitles } from "./askNacVaultTools.ts";
 import { fetchLogbookMonthBundle } from "./askNacLogbookMonthRpc.ts";
 
@@ -75,7 +75,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     );
     const currentSummary = buildMonthlyLogbookExecutiveSummary({
       facts: currentFactsEnriched,
-      coverage: coverageResult.coverage,
+      coverage: currentBundle.coverage,
       branchLabel: factsResult.branchLabel,
       periodLabel: monthCompare.current.label,
       mode: "summary",
@@ -87,11 +87,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
       periodLabel: monthCompare.previous.label,
       mode: "summary",
     });
-    compareSummary = [
-      `${monthCompare.current.label}: ${currentSummary.logbookDays} logbook day(s), confidence ${currentSummary.confidence}.`,
-      `${monthCompare.previous.label}: ${previousSummary.logbookDays} logbook day(s), confidence ${previousSummary.confidence}.`,
-      "Compare guest complaints, maintenance notes, staffing/system issues, and traffic language between the two months.",
-    ];
+    compareSummary = buildMonthlyLogbookCompareSummary(currentSummary, previousSummary);
   }
 
   const monthlyLogbookSummary = buildMonthlyLogbookExecutiveSummary({
