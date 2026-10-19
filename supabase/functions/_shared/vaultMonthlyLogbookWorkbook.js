@@ -61,7 +61,16 @@ export function parseWorksheetBusinessDate(name) {
 }
 
 export function isTemplateSheet(name) {
-  return /^template$/i.test(cleanLabel(name));
+  return /^(?:copy of\s+)?template$/i.test(cleanLabel(name));
+}
+
+export function parseDisplayDate(value) {
+  const text = cleanLabel(value);
+  const named = text.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (named) return parseWorksheetBusinessDate(`${named[1]} ${named[2].slice(0, 3)} ${named[3]}`);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  return null;
 }
 
 export function branchFromLogbookFilename(filename) {
@@ -72,12 +81,13 @@ export function branchFromLogbookFilename(filename) {
 function cellAt(sheet, row, column) {
   const address = XLSXEncode(row, column);
   const cell = sheet?.[address];
-  if (!cell || (cell.v == null && !cell.f)) return { kind: "empty", value: null, formula: null };
+  if (!cell || (cell.v == null && cell.w == null && !cell.f)) return { kind: "empty", value: null, formula: null, display: "" };
   const formula = cell.f ? String(cell.f) : null;
+  const display = cleanLabel(cell.w != null ? cell.w : cell.v);
   const hasValue = cell.v !== undefined && cell.v !== null && cell.v !== "";
-  if (formula && !hasValue) return { kind: "unresolved", value: null, formula };
-  if (formula) return { kind: "formula", value: cell.v, formula };
-  return { kind: "entered", value: cell.v, formula: null };
+  if (formula && !hasValue) return { kind: "unresolved", value: null, formula, display: "" };
+  if (formula) return { kind: "formula", value: cell.v, formula, display };
+  return { kind: "entered", value: cell.v, formula: null, display };
 }
 
 function XLSXEncode(row, column) {
@@ -132,7 +142,9 @@ function fingerprintMatrix(rows) {
 }
 
 function labelText(cell) {
-  if (!cell || cell.kind === "unresolved" || cell.value == null) return "";
+  if (!cell || cell.kind === "unresolved") return "";
+  if (cell.display) return cleanLabel(cell.display);
+  if (cell.value == null) return "";
   return cleanLabel(cell.value);
 }
 
@@ -212,8 +224,15 @@ function findReception(matrix) {
     const totalReading = total?.values?.[column.key];
     const shiftReadings = shifts.map((row) => row.values?.[column.key]).filter(Boolean);
     const resolvedShifts = shiftReadings.filter((reading) => reading.state === "resolved");
+    const missingShifts = shiftReadings.filter((reading) => reading.state === "missing");
     const shiftSum = resolvedShifts.reduce((sum, reading) => sum + reading.value, 0);
     const allShiftsResolved = shiftReadings.length > 0 && resolvedShifts.length === shiftReadings.length;
+    if (missingShifts.length === shiftReadings.length && shiftReadings.length > 0) {
+      daily[column.key] = totalReading?.state === "unresolved"
+        ? { state: "unresolved", formula: totalReading.formula || null }
+        : { state: "unfinished" };
+      continue;
+    }
     if (totalReading?.state === "resolved" && allShiftsResolved && shiftSum !== totalReading.value) {
       warnings.push(`${column.key} daily total ${totalReading.value} does not equal shift sum ${shiftSum}`);
       daily[column.key] = { state: "mismatch", shifts: Object.fromEntries(shifts.map((row) => [row.shift, row.values[column.key]])) };
@@ -240,6 +259,21 @@ function findReviews(matrix) {
   const counts = {};
   const unresolved = [];
   matrix.forEach((row, rowIndex) => {
+    const starColumns = [];
+    row.forEach((cell, columnIndex) => {
+      const label = labelText(cell);
+      const match = REVIEW_LABELS.find((entry) => entry.re.test(label));
+      if (match) starColumns.push({ star: match.star, columnIndex });
+    });
+    if (starColumns.length >= 3) {
+      starColumns.forEach(({ star, columnIndex }) => {
+        if (counts[star]) return;
+        const reading = numberFrom(matrix[rowIndex + 1]?.[columnIndex]);
+        if (reading.state === "resolved") counts[star] = reading;
+        else if (reading.state === "unresolved") unresolved.push({ star, formula: reading.formula });
+      });
+      return;
+    }
     row.forEach((cell, columnIndex) => {
       const label = labelText(cell);
       const match = REVIEW_LABELS.find((entry) => entry.re.test(label));
@@ -250,6 +284,33 @@ function findReviews(matrix) {
     });
   });
   return { counts, unresolved };
+}
+
+function findInternalDate(matrix) {
+  for (const row of matrix) {
+    for (let index = 0; index < row.length; index += 1) {
+      if (!/^(?:business\s+)?date$/i.test(labelText(row[index]))) continue;
+      for (let next = index + 1; next < row.length; next += 1) {
+        const parsed = parseDisplayDate(labelText(row[next]));
+        if (parsed) return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+const RECEPTION_KEYS = ["reservations", "covers", "walkins", "no_shows", "cancellations"];
+
+function sheetIsComplete(narratives, reception) {
+  const narrative = narratives.some((item) => cleanLabel(item.text).replace(/^•\s*/, "").length > 2);
+  const shifts = ["breakfast", "lunch", "dinner"].every((shift) => (
+    reception.metrics || []
+  ).some((row) => row.shift === shift && Object.values(row.values || {}).some((reading) => reading.state === "resolved")));
+  const totals = RECEPTION_KEYS.map((key) => reception.daily?.[key]?.state);
+  if (!narrative || !shifts) return "awaiting_completion";
+  if (totals.some((state) => state === "unresolved")) return "formula_unresolved";
+  if (totals.some((state) => state === "unfinished" || state === "mismatch" || state !== "resolved")) return "awaiting_completion";
+  return "publish";
 }
 
 function fact(context, date, key, metricValue, dimensions, grain = "daily") {
@@ -323,11 +384,11 @@ export function parseMonthlyLogbookSheets(workbook, context = {}) {
     const reception = findReception(matrix);
     const reviews = findReviews(matrix);
     const unresolved = reception.unresolved + reviews.unresolved.length;
-    const hasNarrative = narratives.length > 0;
-    const resolvedDaily = Object.values(reception.daily || {}).filter((item) => item.state === "resolved");
+    const internalDate = findInternalDate(matrix);
     let status = "publish";
-    if (!hasNarrative && resolvedDaily.length === 0 && unresolved > 0) status = "formula_unresolved";
-    else if (!hasNarrative && resolvedDaily.length === 0) status = "awaiting_completion";
+    if (internalDate && internalDate !== businessDate) status = "date_mismatch";
+    else if (!internalDate) status = "awaiting_completion";
+    else status = sheetIsComplete(narratives, reception);
 
     const sheetFacts = [];
     if (status === "publish") {
@@ -393,10 +454,9 @@ export function parseMonthlyLogbookSheets(workbook, context = {}) {
 export function mergeMonthlyLogbookFacts(existingFacts, parsed) {
   const dateOnly = (value) => String(value || "").slice(0, 10);
   const replaceDates = new Set((parsed.sheets || []).filter((sheet) => sheet.publish).map((sheet) => sheet.businessDate));
-  const dropDates = new Set((parsed.sheets || []).filter((sheet) => sheet.status === "skipped_historical").map((sheet) => sheet.businessDate));
   const kept = (existingFacts || []).filter((item) => {
     const date = dateOnly(item.period_end);
-    if (dropDates.has(date) || replaceDates.has(date)) return false;
+    if (replaceDates.has(date)) return false;
     return true;
   });
   return [...kept, ...(parsed.facts || [])];
@@ -404,7 +464,7 @@ export function mergeMonthlyLogbookFacts(existingFacts, parsed) {
 
 export function summarizeMonthlyLogbookRun(sheets) {
   const dated = (sheets || []).filter((sheet) => sheet.businessDate);
-  const blocking = dated.filter((sheet) => ["awaiting_completion", "formula_unresolved"].includes(sheet.status));
+  const blocking = dated.filter((sheet) => ["awaiting_completion", "formula_unresolved", "date_mismatch"].includes(sheet.status));
   let state = "complete";
   if (!dated.length) state = "source_unavailable";
   else if (blocking.length && dated.some((sheet) => sheet.publish || sheet.status === "unchanged" || sheet.status === "skipped_historical")) state = "partial";

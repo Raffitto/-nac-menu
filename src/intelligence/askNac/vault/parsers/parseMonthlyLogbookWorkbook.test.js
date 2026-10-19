@@ -18,9 +18,9 @@ function workbook(sheets) {
   return book;
 }
 
-function daySheet({ notes = "Lunch was steady.", reviews = 2, unresolvedTotal = false, mismatch = false } = {}) {
+function daySheet({ date = "15 Oct 2026", notes = "Lunch was steady.", reviews = 2, unresolvedTotal = false, mismatch = false } = {}) {
   const rows = [
-    ["Business date", "15 Oct 2026"],
+    ["Business date", date],
     ["Day of week", "Thursday"],
     ["Lunch restaurant manager", "Rana"],
     ["Dinner restaurant manager", "Fady"],
@@ -71,8 +71,8 @@ describe("monthly logbook workbook", () => {
       TEMPLATE: sheet([["Template", "do not publish"]]),
       "14 Oct 2026": daySheet(),
       "15 Oct 2026": daySheet(),
-      "16 Oct 2026": daySheet({ notes: "Breakfast quiet." }),
-      "17 Oct 2026": daySheet({ notes: "Lunch event." }),
+      "16 Oct 2026": daySheet({ date: "16 Oct 2026", notes: "Breakfast quiet." }),
+      "17 Oct 2026": daySheet({ date: "17 Oct 2026", notes: "Lunch event." }),
       "18 Oct 2026": sheet([["Business date", "18 Oct 2026"], ["Breakfast notes", ""]]),
     });
     const parsed = parseMonthlyLogbookSheets(book, {
@@ -101,23 +101,23 @@ describe("monthly logbook workbook", () => {
     const book = workbook({ "15 Oct 2026": daySheet({ notes: "", unresolvedTotal: true }) });
     const parsed = parseMonthlyLogbookSheets(book, context);
     const sheetResult = parsed.sheets[0];
+    expect(sheetResult.status).toBe("formula_unresolved");
     expect(sheetResult.dependencies[0].formula).toMatch(/Reception.xlsx/);
-    expect(parsed.facts.find((fact) => fact.metric_key === "reservations")).toBeUndefined();
-    expect(parsed.facts.find((fact) => fact.metric_key === "covers").metric_value).toBe(42);
+    expect(parsed.facts).toHaveLength(0);
   });
 
   test("does not publish a daily total that disagrees with the shifts", () => {
     const book = workbook({ "15 Oct 2026": daySheet({ mismatch: true }) });
     const parsed = parseMonthlyLogbookSheets(book, context);
+    expect(parsed.sheets[0].status).not.toBe("publish");
     expect(parsed.sheets[0].warnings[0]).toMatch(/reservations/);
-    expect(parsed.facts.find((fact) => fact.metric_key === "reservations")).toBeUndefined();
-    expect(parsed.facts.find((fact) => fact.metric_key === "covers").metric_value).toBe(42);
+    expect(parsed.facts).toHaveLength(0);
   });
 
   test("detects a changed worksheet and leaves an unchanged day in place", () => {
     const book = workbook({
       "15 Oct 2026": daySheet(),
-      "16 Oct 2026": daySheet({ notes: "Changed handover." }),
+      "16 Oct 2026": daySheet({ date: "16 Oct 2026", notes: "Changed handover." }),
     });
     const first = parseMonthlyLogbookSheets(book, context);
     const fingerprints = Object.fromEntries(first.sheets.map((item) => [item.businessDate, item.fingerprint]));
@@ -127,7 +127,7 @@ describe("monthly logbook workbook", () => {
 
     const changed = workbook({
       "15 Oct 2026": daySheet(),
-      "16 Oct 2026": daySheet({ notes: "Corrected complaint." }),
+      "16 Oct 2026": daySheet({ date: "16 Oct 2026", notes: "Corrected complaint." }),
     });
     const third = parseMonthlyLogbookSheets(changed, { ...context, previousFingerprints: fingerprints });
     expect(third.sheets.find((item) => item.businessDate === "2026-10-15").status).toBe("unchanged");
@@ -155,7 +155,7 @@ describe("monthly logbook workbook", () => {
   test("reads an xlsx workbook with the same worksheet rules", () => {
     const book = workbook({
       TEMPLATE: sheet([["blank"]]),
-      "01 Nov 2026": daySheet({ notes: "November opened." }),
+      "01 Nov 2026": daySheet({ date: "1 Nov 2026", notes: "November opened." }),
     });
     const parsed = parseMonthlyLogbookSheets(book, {
       ...context,
@@ -163,5 +163,67 @@ describe("monthly logbook workbook", () => {
     });
     expect(parsed.facts.some((fact) => fact.period_end === "2026-11-01")).toBe(true);
     expect(parsed.macrosExecuted).toBe(false);
+  });
+
+  test("preserves October 1-14 when the workbook contains those dates", () => {
+    const existing = Array.from({ length: 14 }, (_, index) => ({
+      period_end: `2026-10-${String(index + 1).padStart(2, "0")}`,
+      metric_key: "covers",
+      metric_value: 100 + index,
+      file_id: "docx-logbook",
+    }));
+    const book = workbook({
+      "14 Oct 2026": daySheet({ date: "14 Oct 2026" }),
+      "15 Oct 2026": daySheet({ date: "15 Oct 2026" }),
+    });
+    const parsed = parseMonthlyLogbookSheets(book, {
+      ...context,
+      occupiedDates: existing.map((fact) => fact.period_end),
+    });
+    const merged = mergeMonthlyLogbookFacts(existing, parsed);
+    for (const fact of existing) {
+      const kept = merged.find((item) => item.period_end === fact.period_end && item.file_id === "docx-logbook");
+      expect(kept.metric_value).toBe(fact.metric_value);
+    }
+    expect(merged.some((item) => item.period_end === "2026-10-15" && item.metric_key === "covers")).toBe(true);
+  });
+
+  test("does not publish a copied worksheet from an internal date", () => {
+    const book = workbook({
+      "Copy of 18 Oct 2026": daySheet({ date: "19 Oct 2026" }),
+    });
+    const parsed = parseMonthlyLogbookSheets(book, context);
+    expect(parsed.sheets[0].status).toBe("unrecognized");
+    expect(parsed.facts).toHaveLength(0);
+  });
+
+  test("rejects a sheet whose date cell disagrees with its name", () => {
+    const book = workbook({
+      "18 Oct 2026": daySheet({ date: "19 Oct 2026" }),
+    });
+    const parsed = parseMonthlyLogbookSheets(book, context);
+    expect(parsed.sheets[0].status).toBe("date_mismatch");
+    expect(parsed.facts).toHaveLength(0);
+  });
+
+  test("does not treat formula zeros over blank shifts as a completed day", () => {
+    const unfinished = sheet([
+      ["DATE", "19 Oct 2026"],
+      ["Breakfast notes", "Breakfast was quiet."],
+      ["", "Reservations", "Covers", "Walk-ins", "No-shows", "Cancellations"],
+      ["Breakfast"],
+      ["Lunch"],
+      ["Dinner"],
+      ["Total"],
+    ], {
+      B7: { t: "n", f: "SUM(B4:B6)", v: 0 },
+      C7: { t: "n", f: "SUM(C4:C6)", v: 0 },
+      D7: { t: "n", f: "SUM(D4:D6)", v: 0 },
+      E7: { t: "n", f: "SUM(E4:E6)", v: 0 },
+      F7: { t: "n", f: "SUM(F4:F6)", v: 0 },
+    });
+    const parsed = parseMonthlyLogbookSheets(workbook({ "19 Oct 2026": unfinished }), context);
+    expect(parsed.sheets[0].status).toBe("awaiting_completion");
+    expect(parsed.facts).toHaveLength(0);
   });
 });
