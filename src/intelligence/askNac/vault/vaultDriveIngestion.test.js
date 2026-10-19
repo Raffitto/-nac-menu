@@ -479,3 +479,12 @@ describe("October 2026 monthly Logbook recovery freeze", () => {
     expect(driveHelper).toContain('publishThrough: "2026-10-18"');
   });
 });
+
+describe("targeted Drive retry safety", () => {
+  test("retry_file persists the requested file ID for process_run", () => {
+    const source = fs.readFileSync(path.join(root, "supabase/functions/vault-drive-sync/index.ts"), "utf8");
+    expect(source).toContain('...(action === "retry_file" ? { targetDriveFileId: retryDriveFileId } : {})');
+    expect(source).toContain('status.run?.stats?.targetDriveFileId');
+    expect(driveHelper).toContain('if (onlyDriveFileId)');
+  });
+});
