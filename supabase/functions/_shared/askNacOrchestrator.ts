@@ -1178,8 +1178,9 @@ export async function processAskNacOnEdge(
     String((conversationContext as Record<string, unknown> | null)?.lastIntent || ""),
   );
   const logbookDateCorrection = priorLogbookIntent
-    && /\\b(sorry|i meant|day before|day after|17 of the month|instead)\\b/i.test(question);
-  const wantsLogbook = explicitLogbookFollowUp || logbookDateCorrection;
+    && /\b(sorry|i meant|day before|day after|instead|what about|and the day before|on the \d{1,2}(?:st|nd|rd|th)?|of the month)\b/i.test(question);
+  const operationalFollowUp = priorLogbookIntent && /\b(those|them|confirmed|which ones?|compare|recurr(?:ed|ing)?|again|food.related|service.related|staff.related|day before|day after|what about)\b/i.test(question) && !/\b(sales|revenue|cash[ -]?up)\b/i.test(question);
+  const wantsLogbook = explicitLogbookFollowUp || logbookDateCorrection || operationalFollowUp;
   const parsedRequestedPeriod = parseVaultPeriodFromQuestion(question, new Date());
   const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question)
     || (wantsLogbook && Boolean(parsedRequestedPeriod?.isMonth));
