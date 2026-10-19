@@ -85,3 +85,27 @@ test("date-scoped replacement retains historical dates and excludes unpublished 
     ["2026-10-01", "2026-10-14", "2026-10-15", "2026-10-19"]);
   assert.equal(merged.find((row) => row.period_end === "2026-10-15").metric_key, "breakfast_notes");
 });
+
+test("completed October 19 publishes on October 20 without republishing unchanged history", () => {
+  const workbook = { SheetNames: ["19 Oct 2026", "20 Oct 2026"], Sheets: {} };
+  workbook.Sheets["19 Oct 2026"] = buildSheet(19);
+  workbook.Sheets["20 Oct 2026"] = buildSheet(20);
+  const parsed = parseMonthlyLogbookSheets(workbook, {
+    branchId: "khobar", filename: "Logbook October Nac Khobar.xlsm",
+    publishThrough: "2026-10-19",
+  });
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.sheets[0].status, "publish");
+  assert.equal(parsed.sheets[1].status, "publication_cutoff");
+  assert.equal(parsed.facts.filter((f) => f.period_end === "2026-10-19").length, 20);
+  assert.ok(!parsed.facts.some((f) => f.period_end === "2026-10-20"));
+  const fingerprints = Object.fromEntries(parsed.facts
+    .filter((f) => f.metric_key === "breakfast_notes")
+    .map((f) => [f.period_end, f.dimensions.sheet_fingerprint]));
+  const retry = parseMonthlyLogbookSheets(workbook, {
+    branchId: "khobar", filename: "Logbook October Nac Khobar.xlsm",
+    publishThrough: "2026-10-19", previousFingerprints: fingerprints,
+  });
+  assert.equal(retry.sheets[0].status, "unchanged");
+  assert.equal(retry.facts.length, 0);
+});
