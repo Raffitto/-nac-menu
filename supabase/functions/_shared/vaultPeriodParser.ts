@@ -263,7 +263,7 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
   }
   const ordinalWords = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, "twenty.first": 21, "twenty.second": 22, "twenty.third": 23, "twenty.fourth": 24, "twenty.fifth": 25, "twenty.sixth": 26, "twenty.seventh": 27, "twenty.eighth": 28, "twenty.ninth": 29, thirtieth: 30, "thirty.first": 31 };
   const ordinal = q.match(/\b(?:on\s+)?(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty[\s-](?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|thirtieth|thirty[\s-]first|\d{1,2}(?:st|nd|rd|th))\b/);
-  if (ordinal && !/\b(?:last|past|next)\s+\d+\s+days?\b/.test(q)) {
+  if (ordinal && !/\b(?:first|last|past|next)\s+\d+\s+days?\b/.test(q)) {
     const day = /^\d/.test(ordinal[1]) ? Number(ordinal[1].match(/^\d+/)?.[0]) : ordinalWords[ordinal[1].replace(/[\s-]/g, ".")];
     const explicitMonth = q.match(new RegExp("\\b" + MONTH_PATTERN + "\\b"));
     const monthIndex = explicitMonth ? MONTH_MAP[explicitMonth[1]] : localToday.month - 1;
