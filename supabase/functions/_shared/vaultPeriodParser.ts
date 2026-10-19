@@ -247,33 +247,6 @@ export function parseHalfMonthPhrase(text = "", referenceDate = new Date()) {
   const q = String(text || "").toLowerCase().trim();
   if (!q) return null;
 
-  // Resolve conversational calendar shorthand against Saudi local dates.
-  const localToday = calendarYmdInTz(referenceDate);
-  const localNoon = new Date(Date.UTC(localToday.year, localToday.month - 1, localToday.day, 12));
-  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  const weekday = q.match(/\b(?:(last|previous|this)\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
-  if (weekday) {
-    const target = weekdays.indexOf(weekday[2]);
-    let delta = (localNoon.getUTCDay() - target + 7) % 7;
-    if (weekday[1] === "last" || weekday[1] === "previous") delta = delta === 0 ? 7 : delta;
-    else if (delta === 0 && weekday[1] !== "this") delta = 7;
-    const d = addCalendarDays(localToday.year, localToday.month, localToday.day, -delta);
-    const date = isoDate(d.year, d.month, d.day);
-    return { startDate: date, endDate: date, label: formatDayMonthLabel(d.year, d.month - 1, d.day), periodType: "single_day", isSingleDay: true, expectedDayCount: 1 };
-  }
-  const ordinalWords = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, "twenty.first": 21, "twenty.second": 22, "twenty.third": 23, "twenty.fourth": 24, "twenty.fifth": 25, "twenty.sixth": 26, "twenty.seventh": 27, "twenty.eighth": 28, "twenty.ninth": 29, thirtieth: 30, "thirty.first": 31 };
-  const ordinal = q.match(/\b(?:on\s+)?(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty[\s-](?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|thirtieth|thirty[\s-]first|\d{1,2}(?:st|nd|rd|th))\b/);
-  if (ordinal && !/\b(?:first|last|past|next)\s+\d+\s+days?\b/.test(q)) {
-    const day = /^\d/.test(ordinal[1]) ? Number(ordinal[1].match(/^\d+/)?.[0]) : ordinalWords[ordinal[1].replace(/[\s-]/g, ".")];
-    const explicitMonth = q.match(new RegExp("\\b" + MONTH_PATTERN + "\\b"));
-    const monthIndex = explicitMonth ? MONTH_MAP[explicitMonth[1]] : localToday.month - 1;
-    const year = explicitMonth ? resolveYearForMonth(monthIndex, null, referenceDate) : localToday.year;
-    const date = isoDate(year, monthIndex + 1, day);
-    if (new Date(date + "T12:00:00Z").getUTCDate() === day) {
-      return { startDate: date, endDate: date, label: formatDayMonthLabel(year, monthIndex, day), periodType: "single_day", isSingleDay: true, expectedDayCount: 1 };
-    }
-  }
-
   const firstHalfMonth = q.match(new RegExp(`\\bfirst\\s+half\\s+(?:of\\s+)?${MONTH_PATTERN}(?:\\s+(20\\d{2}))?\\b`));
   if (firstHalfMonth) {
     const monthIndex = MONTH_MAP[firstHalfMonth[1]];
@@ -473,6 +446,34 @@ function hasRangeConnector(q) {
 export function parseVaultPeriodFromQuestion(question = "", referenceDate = new Date()) {
   const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
+  // Resolve conversational calendar shorthand against Saudi local dates.
+  const localToday = calendarYmdInTz(referenceDate);
+  const localNoon = new Date(Date.UTC(localToday.year, localToday.month - 1, localToday.day, 12));
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const weekday = q.match(/\b(?:(last|previous|this)\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/);
+  if (weekday) {
+    const target = weekdays.indexOf(weekday[2]);
+    let delta = (localNoon.getUTCDay() - target + 7) % 7;
+    if (weekday[1] === "last" || weekday[1] === "previous") delta = delta === 0 ? 7 : delta;
+    else if (delta === 0 && weekday[1] !== "this") delta = 7;
+    const d = addCalendarDays(localToday.year, localToday.month, localToday.day, -delta);
+    const date = isoDate(d.year, d.month, d.day);
+    return { startDate: date, endDate: date, label: formatDayMonthLabel(d.year, d.month - 1, d.day), periodType: "single_day", isSingleDay: true, expectedDayCount: 1 };
+  }
+  const ordinalWords = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13, fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19, twentieth: 20, "twenty.first": 21, "twenty.second": 22, "twenty.third": 23, "twenty.fourth": 24, "twenty.fifth": 25, "twenty.sixth": 26, "twenty.seventh": 27, "twenty.eighth": 28, "twenty.ninth": 29, thirtieth: 30, "thirty.first": 31 };
+  const ordinal = q.match(/\b(?:on\s+)?(?:the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty[\s-](?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|thirtieth|thirty[\s-]first|\d{1,2}(?:st|nd|rd|th))\b/);
+  if (ordinal && !/\b(?:first|last|past|next)\s+\d+\s+days?\b/.test(q)) {
+    const day = /^\d/.test(ordinal[1]) ? Number(ordinal[1].match(/^\d+/)?.[0]) : ordinalWords[ordinal[1].replace(/[\s-]/g, ".")];
+    const explicitMonth = q.match(new RegExp("\\b" + MONTH_PATTERN + "\\b"));
+    const monthIndex = explicitMonth ? MONTH_MAP[explicitMonth[1]] : localToday.month - 1;
+    const year = explicitMonth ? resolveYearForMonth(monthIndex, null, referenceDate) : localToday.year;
+    const date = isoDate(year, monthIndex + 1, day);
+    if (new Date(date + "T12:00:00Z").getUTCDate() === day) {
+      return { startDate: date, endDate: date, label: formatDayMonthLabel(year, monthIndex, day), periodType: "single_day", isSingleDay: true, expectedDayCount: 1 };
+    }
+  }
+
+
 
   if (/\bcompare\b/.test(q) && /\b(vs|versus|against|with|compared to|\bto\b)\b/.test(q)) {
     const compare = parseVaultComparePeriodsFromQuestion(question, referenceDate);
