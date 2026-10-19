@@ -1582,7 +1582,7 @@ export async function processAskNacOnEdge(
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
-    question: effectiveQuestion,
+    question: wantsLogbook ? question : effectiveQuestion,
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
   });
 
@@ -1625,7 +1625,7 @@ export async function processAskNacOnEdge(
       filters: mergedFilters,
       profile: profileHint,
       branch: mergedFilters.branch,
-      question: effectiveQuestion,
+      question: wantsLogbook ? question : effectiveQuestion,
       searchTerms: (readiness as Record<string, unknown>).searchTerms,
       documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
       foodicsPeriod,
@@ -1656,7 +1656,7 @@ export async function processAskNacOnEdge(
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
     || isVaultDocumentIntent(route.intent)
     || Boolean(tool?.authorizationDenied || tool?.comparison);
-  const routeWithQuestion = { ...route, question: effectiveQuestion };
+  const routeWithQuestion = { ...route, question: wantsLogbook ? question : effectiveQuestion };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
     : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);
