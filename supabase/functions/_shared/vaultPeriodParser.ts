@@ -446,6 +446,16 @@ function hasRangeConnector(q) {
 export function parseVaultPeriodFromQuestion(question = "", referenceDate = new Date()) {
   const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
+
+  // ISO dates are produced by conversational "day before/after" resolution.
+  const isoDay = q.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (isoDay && !/\b(?:to|until|through|between|from)\b/.test(q)) {
+    const year = Number(isoDay[1]), month = Number(isoDay[2]), day = Number(isoDay[3]);
+    const date = isoDate(year, month, day);
+    if (new Date(date + "T12:00:00Z").toISOString().slice(0, 10) === date) {
+      return { startDate: date, endDate: date, label: formatDayMonthLabel(year, month - 1, day), periodType: "single_day", isSingleDay: true, expectedDayCount: 1 };
+    }
+  }
   // Resolve conversational calendar shorthand against Saudi local dates.
   const localToday = calendarYmdInTz(referenceDate);
   const localNoon = new Date(Date.UTC(localToday.year, localToday.month - 1, localToday.day, 12));
