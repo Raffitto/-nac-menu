@@ -1,6 +1,12 @@
-import { strict as assert } from "node:assert";
-import { test } from "node:test";
-import { parseMonthlyLogbookSheets, mergeMonthlyLogbookFacts } from "./vaultMonthlyLogbookWorkbook.js";
+const { strict: assert } = require("node:assert");
+const { test } = require("node:test");
+const fs = require("node:fs");
+const path = require("node:path");
+const parserSource = fs.readFileSync(path.join(__dirname, "vaultMonthlyLogbookWorkbook.js"), "utf8")
+  .replaceAll("export function ", "function ");
+const { parseMonthlyLogbookSheets, mergeMonthlyLogbookFacts } = new Function(
+  parserSource + "; return { parseMonthlyLogbookSheets, mergeMonthlyLogbookFacts };",
+)();
 
 function buildSheet(day) {
   const sheet = { "!ref": "A1:G36" };
