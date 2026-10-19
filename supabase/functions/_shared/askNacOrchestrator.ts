@@ -1166,6 +1166,24 @@ export async function processAskNacOnEdge(
     filters: baseFilters,
   });
   const effectiveQuestion = prepareResult.effectiveQuestion;
+  // Calendar follow-ups inherit the last successfully resolved day, not the
+  // current wall clock. This avoids "day before" failing to parse.
+  const lastPeriodText = String((conversationContext as Record<string, unknown> | null)?.lastPeriod || "");
+  const lastDay = parseVaultPeriodFromQuestion(lastPeriodText, new Date())
+    || (conversationContext?.lastResolvedQuestion
+      ? parseVaultPeriodFromQuestion(String(conversationContext.lastResolvedQuestion), new Date())
+      : null);
+  const relativeDay = /\b(?:the\s+)?day\s+(before|after)\b/i.exec(question);
+  const relativeDate = relativeDay && lastDay?.isSingleDay
+    ? new Date(lastDay.startDate + "T12:00:00Z")
+    : null;
+  if (relativeDate) relativeDate.setUTCDate(relativeDate.getUTCDate() + (relativeDay![1] === "before" ? -1 : 1));
+  const relativeDateIso = relativeDate?.toISOString().slice(0, 10) || null;
+  const sourceSwitchToSales = /\b(sales|revenue|cash[\s-]?up)\b/i.test(question);
+  const sourceSwitchToLogbook = /\b(logbooks?|operational issues?|complaints?)\b/i.test(question);
+  const contextualQuestion = relativeDateIso
+    ? question.replace(/\b(?:the\s+)?day\s+(?:before|after)\b/i, relativeDateIso)
+    : question;
 
   const conversationState = conversationStateFromLegacyContext(
     (conversationContext || {}) as Record<string, unknown>,
@@ -1180,8 +1198,8 @@ export async function processAskNacOnEdge(
   const logbookDateCorrection = priorLogbookIntent
     && /\b(sorry|i meant|day before|day after|instead|what about|and the day before|on the \d{1,2}(?:st|nd|rd|th)?|of the month)\b/i.test(question);
   const operationalFollowUp = priorLogbookIntent && /\b(those|them|confirmed|which ones?|compare|recurr(?:ed|ing)?|again|food.related|service.related|staff.related|day before|day after|what about)\b/i.test(question) && !/\b(sales|revenue|cash[ -]?up)\b/i.test(question);
-  const wantsLogbook = explicitLogbookFollowUp || logbookDateCorrection || operationalFollowUp;
-  const parsedRequestedPeriod = parseVaultPeriodFromQuestion(question, new Date());
+  const wantsLogbook = !sourceSwitchToSales && (sourceSwitchToLogbook || explicitLogbookFollowUp || logbookDateCorrection || operationalFollowUp);
+  const parsedRequestedPeriod = parseVaultPeriodFromQuestion(contextualQuestion, new Date());
   const monthlyLogbookQuestion = isVaultMonthlyOperationalSummaryQuery(question)
     || (wantsLogbook && Boolean(parsedRequestedPeriod?.isMonth));
 
@@ -1263,7 +1281,7 @@ export async function processAskNacOnEdge(
     userEmail: effectiveUserEmail,
   });
 
-  let route = routeIntent(effectiveQuestion, {
+  let route = routeIntent(sourceSwitchToSales ? contextualQuestion : effectiveQuestion, {
     fallbackHours,
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext as Record<string, unknown> | null,
   });
@@ -1272,7 +1290,7 @@ export async function processAskNacOnEdge(
   // date/branch from the previous turn. Do not allow Cash Up follow-up context
   // to turn operational complaints into a sales-completeness assertion.
   if (wantsLogbook) {
-    const period = parseVaultPeriodFromQuestion(question, new Date())
+    const period = parseVaultPeriodFromQuestion(contextualQuestion, new Date())
       || extractOperationalMonthPeriod(question, new Date())
       || parseVaultPeriodFromQuestion(effectiveQuestion, new Date())
       || route.vaultPeriod;
@@ -1583,7 +1601,7 @@ export async function processAskNacOnEdge(
     profile: profileHint,
     executiveKind: route.executiveKind,
     hours: route.period.hours,
-    question: wantsLogbook ? question : effectiveQuestion,
+    question: wantsLogbook ? contextualQuestion : (sourceSwitchToSales ? contextualQuestion : effectiveQuestion),
     documentContext: (conversationContext as Record<string, unknown> | null)?.lastDocumentContext || null,
   });
 
@@ -1657,7 +1675,7 @@ export async function processAskNacOnEdge(
   const usedVaultAnswerBuilder = isVaultDataIntent(route.intent)
     || isVaultDocumentIntent(route.intent)
     || Boolean(tool?.authorizationDenied || tool?.comparison);
-  const routeWithQuestion = { ...route, question: wantsLogbook ? question : effectiveQuestion };
+  const routeWithQuestion = { ...route, question: wantsLogbook ? contextualQuestion : (sourceSwitchToSales ? contextualQuestion : effectiveQuestion) };
   let deterministic = usedVaultAnswerBuilder
     ? buildVaultAnswer(routeWithQuestion, tool, readiness)
     : buildDeterministicAskNacAnswer(routeWithQuestion, tool, readiness);

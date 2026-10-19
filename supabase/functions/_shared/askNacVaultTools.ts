@@ -3032,12 +3032,12 @@ function buildVaultLogbookAnswer(route: Record<string, unknown>, tool: Record<st
   const routineSignal = /\b(very slow|quiet|smooth|no major issues|all walk.ins|no reservations|normal operation)\b/i;
   const exceptionalNotes = notes.filter((note) => {
     // Routine statements like "no 86" or "no major issues" are not incidents.
-    const withoutNegations = note.replace(/\\b(no major issues?|no issues?|no 86|no complaints?|no problems?)\\b/gi, "");
+    const withoutNegations = note.replace(/\b(no major issues?|no issues?|no 86|no complaints?|no problems?)\b/gi, "");
     return exceptionSignal.test(withoutNegations)
       && !/^((Lunch|Dinner) restaurant MOD|Chef on duty|Bar MOD)/i.test(note);
   });
-  const operationalNotes = exceptionalNotes.length ? exceptionalNotes : notes.filter((note) => !routineSignal.test(note) && !/\b(MOD|Chef on duty)\b/i.test(note));
-  const displayNotes = asksForNumbers ? notes : operationalNotes;
+  const operationalNotes = exceptionalNotes; // Do not present routine notes as operational exceptions.
+  const displayNotes = asksForNumbers ? [] : operationalNotes;
   const period = String(tool.periodLabel || (route.vaultPeriod as { label?: string; startDate?: string } | undefined)?.label || (route.vaultPeriod as { startDate?: string } | undefined)?.startDate || "requested period");
   const branch = String(tool.branchLabel && tool.branchLabel !== "Network" ? tool.branchLabel : route.branchMention ? branchDisplayName(String(route.branchMention)) : "your branch");
   const directAnswer = exceptionalNotes.length && !asksForNumbers
