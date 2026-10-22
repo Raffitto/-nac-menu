@@ -320,21 +320,6 @@ export function buildMonthlyLogbookExecutiveSummary({
     themes: entry.themes,
   }));
 
-  /* Legacy daily aggregation retained for reference:
-  const unusedGroupedFindings = days.flatMap((day) => {
-    const blob = collectDayTexts(day);
-    if (!blob) return [];
-    return [{
-      date: day.date || extractDateFromFileTitle(day.fileTitle),
-      issueType: classifyOperationalIssue(blob),
-      severity: "medium",
-      excerpt: snippet(blob, 180),
-      source: day.fileTitle || day.date,
-      fileTitle: day.fileTitle,
-    }];
-  }).slice(0, 12);
-  */
-
   const vaultSources = [...new Map(
     days.filter((d) => d.fileId && d.fileTitle).map((d) => [d.fileId, {
       fileId: d.fileId,
