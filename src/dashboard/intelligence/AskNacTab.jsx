@@ -88,6 +88,7 @@ export default function AskNacTab({
   const [moreOpen, setMoreOpen] = useState(false);
   const inputRef = useRef(null);
   const scrollAnchorRef = useRef(null);
+  const chatGenerationRef = useRef(0);
 
   const session = rbac?.session;
   const statusBadge = useAskNacConnectionStatus({ messages, session });
@@ -113,6 +114,7 @@ export default function AskNacTab({
   }, []);
 
   const clearChat = useCallback(() => {
+    chatGenerationRef.current += 1;
     setMessages([]);
     setDraft("");
     setConversationContext(resetConversationContext());
@@ -129,20 +131,23 @@ export default function AskNacTab({
       setDraft("");
       setLoading(true);
 
+      const generation = chatGenerationRef.current;
+      let timeoutId;
       try {
         const result = await Promise.race([
           askNac({
-          question: text,
-          supabase,
-          session,
-          profile: rbac?.profile ?? null,
-          filters,
-          conversationContext,
-        }),
+            question: text,
+            supabase,
+            session,
+            profile: rbac?.profile ?? null,
+            filters,
+            conversationContext,
+          }),
           new Promise((_, reject) => {
-            setTimeout(() => reject(new Error("Ask NAC did not respond. Try again.")), 28000);
+            timeoutId = setTimeout(() => reject(new Error("Ask NAC did not respond. Try again.")), 28000);
           }),
         ]);
+        if (generation !== chatGenerationRef.current) return;
         setConversationContext((prev) =>
           result.nextContext
             ? result.nextContext
@@ -157,6 +162,7 @@ export default function AskNacTab({
           createAssistantMessage({ question: text, response: result }),
         ]);
       } catch (err) {
+        if (generation !== chatGenerationRef.current) return;
         setMessages((prev) => [
           ...prev,
           createAssistantMessage({
@@ -165,8 +171,11 @@ export default function AskNacTab({
           }),
         ]);
       } finally {
-        setLoading(false);
-        focusInput();
+        clearTimeout(timeoutId);
+        if (generation === chatGenerationRef.current) {
+          setLoading(false);
+          focusInput();
+        }
       }
     },
     [draft, loading, session, rbac?.profile, filters, conversationContext, focusInput],
