@@ -76,80 +76,58 @@ describe("NAC OS RBAC", () => {
     });
   });
 
-  describe("Khobar GM (Fady)", () => {
+  describe("Network GM (Fady)", () => {
     const profile = resolveRbacProfile(mockSession("fady@nac.com"));
 
-    test("maps the verified production account", () => {
+    test("maps production account to network GM", () => {
       const production = resolveRbacProfile(mockSession("fady.aly@nacriyadh.com"));
-      expect(production.role).toBe(RBAC_ROLES.BRANCH_GM);
-      expect(production.branchScope).toBe("khobar");
+      expect(production.role).toBe(RBAC_ROLES.NETWORK_GM);
+      expect(production.branchScope).toBe(null);
+      expect(production.allBranches).toBe(true);
     });
 
-    test("preserves built-in review capabilities when production env overrides identity", () => {
+    test("old production environment overrides cannot downgrade the approved exception", () => {
       const previous = process.env.REACT_APP_RBAC_USERS;
-      process.env.REACT_APP_RBAC_USERS = JSON.stringify([
-        {
-          emails: ["fady.aly@nacriyadh.com"],
-          role: "branch_gm",
-          branchScope: "khobar",
-          name: "Fady",
-        },
-      ]);
+      process.env.REACT_APP_RBAC_USERS = JSON.stringify([{
+        emails: ["fady.aly@nacriyadh.com"],
+        role: "branch_gm",
+        branchScope: "khobar",
+        name: "Fady",
+      }]);
       try {
         const production = resolveRbacProfile(mockSession("fady.aly@nacriyadh.com"));
+        expect(production.role).toBe(RBAC_ROLES.NETWORK_GM);
+        expect(production.allBranches).toBe(true);
         expect(production.permissions).toContain(PERMISSIONS.VIEW_NETWORK_REVIEWS);
-        expect(reviewAllowedBranchIds(production)).toEqual(["khobar", "riyadh", "jeddah"]);
       } finally {
         if (previous === undefined) delete process.env.REACT_APP_RBAC_USERS;
         else process.env.REACT_APP_RBAC_USERS = previous;
       }
     });
 
-    test("is scoped to khobar only", () => {
-      expect(profile.role).toBe(RBAC_ROLES.BRANCH_GM);
-      expect(profile.branchScope).toBe("khobar");
-      expect(allowedBranchIds(profile)).toEqual(["khobar"]);
-      expect(resolveEffectiveBranch(profile, "riyadh")).toBe("khobar");
-      expect(resolveEffectiveBranch(profile, null)).toBe("khobar");
-    });
-
-    test("keeps operational data branch-scoped while allowing network reviews", () => {
-      expect(canAccessNav(profile, "branches")).toBe(false);
-      expect(canAccessIntelligenceTab(profile, "competitive")).toBe(false);
+    test("has all branch operational visibility but no system ownership", () => {
+      expect(profile.role).toBe(RBAC_ROLES.NETWORK_GM);
+      expect(profile.allBranches).toBe(true);
+      expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
+      expect(resolveEffectiveBranch(profile, "riyadh")).toBe("riyadh");
+      expect(canAccessNav(profile, "branches")).toBe(true);
+      expect(canAccessIntelligenceTab(profile, "competitive")).toBe(true);
       expect(canAccessReviewsTab(profile, "branches")).toBe(true);
-      expect(canFetchCrossBranchComparison(profile)).toBe(false);
-      expect(reviewAllowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
-      expect(buildReviewBranchFilterOptions(profile)[0]).toEqual({
-        value: "all",
-        label: "All branches",
-      });
-    });
-
-    test("can access branch operational surfaces", () => {
-      expect(canAccessNav(profile, "intelligence")).toBe(true);
-      expect(canAccessNav(profile, "reviews")).toBe(true);
-      expect(canAccessNav(profile, "reports")).toBe(true);
-      expect(canAccessNav(profile, "food-bible")).toBe(true);
-      expect(canAccessNav(profile, "inventory")).toBe(true);
-      expect(canAccessIntelligenceTab(profile, "sales")).toBe(true);
-      expect(canAccessIntelligenceTab(profile, "executive")).toBe(true);
+      expect(canFetchCrossBranchComparison(profile)).toBe(true);
+      expect(hasPerm(profile, PERMISSIONS.MANAGE_SYSTEM)).toBe(false);
+      expect(hasPerm(profile, PERMISSIONS.MANAGE_MENU)).toBe(true);
       expect(hasPerm(profile, PERMISSIONS.MANAGE_IMPORTS)).toBe(true);
     });
 
-    test("filters hidden branch rows from payloads", () => {
+    test("cross-branch operational payloads and branch filter are available", () => {
       const rows = [
         { branch_id: "khobar", net_sales: 100 },
         { branch_id: "riyadh", net_sales: 200 },
         { branch_id: "jeddah", net_sales: 50 },
       ];
-      const filtered = filterRowsByRbacProfile(profile, rows);
-      expect(filtered).toHaveLength(1);
-      expect(filtered[0].branch_id).toBe("khobar");
-    });
-
-    test("branch filter UI excludes other branches", () => {
-      const options = buildBranchFilterOptions(profile);
-      expect(options).toEqual([{ value: "khobar", label: "NAC" }]);
+      expect(filterRowsByRbacProfile(profile, rows)).toHaveLength(3);
+      expect(buildBranchFilterOptions(profile)[0].value).toBe("all");
+      expect(reviewAllowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
     });
   });
 
