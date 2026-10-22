@@ -47,9 +47,9 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
     return true;
   }
 
-  if (/\b${MONTH_TOKEN}\s+operations?\b/i.test(text)) return true;
-  if (/\boperations?\s+(?:in|for|during)\s+${MONTH_TOKEN}\b/i.test(text)) return true;
-  if (/\boperationally\s+(?:in|for|during)\s+${MONTH_TOKEN}\b/i.test(text)) return true;
+  if (new RegExp(`\\b${MONTH_TOKEN}\\s+operations?\\b`, "i").test(text)) return true;
+  if (new RegExp(`\\boperations?\\s+(?:in|for|during)\\s+${MONTH_TOKEN}\\b`, "i").test(text)) return true;
+  if (new RegExp(`\\boperationally\\s+(?:in|for|during)\\s+${MONTH_TOKEN}\\b`, "i").test(text)) return true;
 
   if (/\b(daily logbook|logbook)\b/.test(text)
     && /\b(highlights?|summarize|summary)\b/.test(text)
