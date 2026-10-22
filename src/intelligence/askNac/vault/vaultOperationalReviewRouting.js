@@ -17,6 +17,13 @@ export function scoreVaultOperationalReviewIntent(q = "") {
   const text = String(q || "").trim();
   if (!text) return 0;
 
+  // Explicit operational comparisons must outrank generic date-range sales routing.
+  // Do not intercept mixed operational + financial comparisons.
+  const operationalCompare = /\\b(compare|comparison|versus|vs|changes? between)\\b/i.test(text)
+    && /\\b(operational|operations|logbook|guest complaints?|service issues?|staff performance|recurring problems?)\\b/i.test(text)
+    && !/\\b(sales|revenue|foodics|cash[\\s-]?up|top items?|average spend)\\b/i.test(text);
+  if (operationalCompare && parseVaultPeriodFromQuestion(text)) return 45;
+
   const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
   if (monthlyScore && preferredMonthlyOperationalIntent(text) === "vault_operational_review") {
     return monthlyScore;
