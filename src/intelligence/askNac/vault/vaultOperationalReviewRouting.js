@@ -22,6 +22,7 @@ export function scoreVaultOperationalReviewIntent(q = "") {
   const operationalCompare = /\\b(compare|comparison|versus|vs|changes? between)\\b/i.test(text)
     && /\\b(operational|operations|logbook|guest complaints?|service issues?|staff performance|recurring problems?)\\b/i.test(text)
     && !/\\b(sales|revenue|foodics|cash[\\s-]?up|top items?|average spend)\\b/i.test(text);
+  if (operationalCompare && /\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\s+\\d{1,2}\\s*[-–]\\s*\\d{1,2}\\b/i.test(text)) return 45;
   if (operationalCompare && parseVaultPeriodFromQuestion(text)) return 45;
 
   const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
