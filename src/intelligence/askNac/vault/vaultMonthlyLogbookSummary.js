@@ -9,6 +9,8 @@ const TEXT_KEYS = [
   "complaints",
   "operational_issues",
   "operational_highlights",
+  "breakfast_notes",
+  "lunch_notes",
   "dinner_notes",
   "training_notes",
   "staff_performance_notes",
@@ -147,7 +149,7 @@ function extractThemes(days) {
 }
 
 function recurringThemes(themes) {
-  return themes.filter((theme) => theme.count >= 2 || /complaint|maintenance|staffing_system/.test(theme.id));
+  return themes.filter((theme) => theme.count >= 2);
 }
 
 function confidenceFromCoverage(logbookDays, readyDays) {
@@ -189,7 +191,7 @@ export function buildMonthlyLogbookExecutiveSummary({
       directAnswer: `No recovered daily logbook structured facts were found for ${branchLabel} in ${periodLabel}.`,
       keyMetrics: [],
       insights: [],
-      recommendations: ["Upload or re-index daily logbooks for this month, then retry."],
+      recommendations: ["No structured facts were returned for this scope. Verify the date range, access, ingestion coverage, and query status before assuming the logbooks are missing."],
       confidence: "none",
       logbookDays: 0,
       readyDays,
