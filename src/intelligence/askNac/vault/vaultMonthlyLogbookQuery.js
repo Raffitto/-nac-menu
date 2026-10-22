@@ -64,7 +64,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     const previousBundle = bundles[2];
     const currentFactsEnriched = attachLogbookFileTitles(
       currentBundle.facts,
-      coverageResult.coverage,
+      currentBundle.coverage,
     );
     const previousFactsEnriched = attachLogbookFileTitles(
       previousBundle.facts,
@@ -72,7 +72,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
     );
     const currentSummary = buildMonthlyLogbookExecutiveSummary({
       facts: currentFactsEnriched,
-      coverage: coverageResult.coverage,
+      coverage: currentBundle.coverage,
       branchLabel: factsResult.branchLabel,
       periodLabel: monthCompare.current.label,
       mode: "summary",
