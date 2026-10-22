@@ -42,7 +42,7 @@ const GOOGLE_KEYS = [
 const THEME_RULES = [
   { id: "traffic_quiet", label: "Quiet / low demand", re: /\b(quiet|slow|empty mall|mall empty|few reservations|low covers|mostly coffee|coffee and dessert)\b/i },
   { id: "traffic_busy", label: "Busy / strong demand", re: /\b(busy|full house|high covers|strong dinner|packed)\b/i },
-  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|charge|remove from bill|insect|fly|halloumi|cappuccino|spanish|upset)\b/i },
+  { id: "complaint", label: "Guest complaints", re: /\b(complain(?:ed|ing|s)?|complaint|refused|undercooked|charge|remove from bill|insect|fly|halloumi|cappuccino|spanish|upset)\b/i },
   { id: "maintenance", label: "Maintenance / facilities", re: /\b(drainage|electrician|pest|gel|powder|trap|battery|ccm|router|repair|leak)\b/i },
   { id: "staffing_system", label: "Staffing / systems", re: /\b(jisr|punch|inventory|upselling|training|staff)\b/i },
   { id: "service_win", label: "Service recovery / wins", re: /\b(satisfied|smooth|well|recovered|apologize|new one|resolved)\b/i },
