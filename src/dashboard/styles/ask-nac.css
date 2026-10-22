@@ -1288,3 +1288,60 @@
 .nac-ask-nac-mobile .nac-ask-nac-user-bubble {
   max-width: 88%;
 }
+
+
+/* Ask NAC 2.0 — calm, brand-led conversation workspace. */
+.nac-ask-nac-workspace {
+  --nac-chat-surface: #10292d;
+  --nac-chat-elevated: #18363a;
+  --nac-chat-ink: #f4f1e9;
+  --nac-chat-muted: #b9c5c2;
+  --nac-chat-accent: #d7b77c;
+  width: 100%;
+  min-width: 0;
+  color: var(--nac-chat-ink);
+}
+.nac-ask-nac-workspace__column {
+  width: min(100%, 1080px);
+  margin-inline: auto;
+}
+.nac-ask-nac-workspace .nac-ask-nac-hero {
+  border-radius: 22px;
+  background: linear-gradient(130deg, #143337, #0f252a);
+  border: 1px solid rgba(215, 183, 124, .16);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .12);
+}
+.nac-ask-nac-workspace .nac-ask-nac-eyebrow {
+  color: var(--nac-chat-accent);
+  letter-spacing: .14em;
+}
+.nac-ask-nac-workspace .nac-ask-nac-subtitle {
+  max-width: 56ch;
+  color: var(--nac-chat-muted);
+  line-height: 1.65;
+}
+.nac-ask-nac-workspace .nac-ask-nac-chat--page {
+  border-radius: 22px;
+  min-height: min(58vh, 620px);
+}
+.nac-ask-nac-workspace .nac-ask-nac-message--assistant {
+  max-width: min(100%, 860px);
+}
+.nac-ask-nac-workspace .nac-ask-nac-user-bubble {
+  border-radius: 18px 18px 5px 18px;
+}
+.nac-ask-nac-workspace .nac-ask-nac-new-chat:focus-visible,
+.nac-ask-nac-workspace .nac-ask-nac-submit:focus-visible {
+  outline: 2px solid var(--nac-chat-accent);
+  outline-offset: 3px;
+}
+@media (max-width: 720px) {
+  .nac-ask-nac-workspace .nac-ask-nac-hero { border-radius: 15px; }
+  .nac-ask-nac-workspace .nac-ask-nac-chat--page { min-height: 45vh; border-radius: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nac-ask-nac-workspace *, .nac-ask-nac-workspace *::before, .nac-ask-nac-workspace *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
