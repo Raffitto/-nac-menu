@@ -77,14 +77,14 @@ describe("rbacIntelligenceScope", () => {
     expect(rows[0].branch_id).toBe("riyadh");
   });
 
-  test("reviews-only capability retains network review rows without widening operations", () => {
+  test("branch manager review visibility remains branch restricted", () => {
     const rows = [
       { branch_id: "riyadh", qr_scans: 40 },
       { branch_id: "khobar", qr_scans: 2 },
       { branch_id: "jeddah", qr_scans: 21 },
     ];
     expect(buildBranchComparisonForProfile(branchGm, rows)).toHaveLength(1);
-    expect(buildReviewBranchComparisonForProfile(branchGm, rows)).toHaveLength(3);
+    expect(buildReviewBranchComparisonForProfile(branchGm, rows)).toHaveLength(1);
 
     const reviewInput = filterReviewIntelligenceInput(
       {
@@ -93,12 +93,8 @@ describe("rbacIntelligenceScope", () => {
       },
       branchGm,
     );
-    expect(reviewInput.networkWide).toBe(true);
-    expect(Object.keys(reviewInput.staffByBranch)).toEqual([
-      "khobar",
-      "riyadh",
-      "jeddah",
-    ]);
+    expect(reviewInput.networkWide).toBe(false);
+    expect(Object.keys(reviewInput.staffByBranch)).toEqual(["riyadh"]);
   });
 
   test("filterCommandCenterPackage removes network alerts and timeline for GM", () => {
