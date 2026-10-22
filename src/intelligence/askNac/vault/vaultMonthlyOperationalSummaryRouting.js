@@ -32,7 +32,7 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
 
   if (NON_OPERATIONAL_BLOCK.test(text) && !OPERATIONAL_SUMMARY_SIGNAL.test(text)) return false;
 
-  if (/\bwhat were\b.*\b(operational|problems?|complaints?|issues?)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) return true;
+  if (/\b(?:what were|summarize|list|identify)\b.*\b(?:operational|problems?|complaints?|issues?)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) return true;
 
   if (/\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) {
     return OPERATIONAL_SUMMARY_SIGNAL.test(text) || /\boperational\b/.test(text);
