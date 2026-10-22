@@ -32,10 +32,12 @@ function loadLogbookBundle(cache, supabase, context, period) {
 export async function fetchMonthlyLogbookOperationalReview(supabase, context = {}) {
   const question = String(context.question || "");
   const vaultPeriod = context.vaultPeriod || extractOperationalMonthPeriod(question);
-  if (!vaultPeriod?.isMonth) return null;
+  if (!vaultPeriod?.startDate || !vaultPeriod?.endDate || vaultPeriod?.isSingleDay) return null;
 
   const mode = detectMonthlyOperationalMode(question);
-  const monthCompare = context.monthlyCompare || parseMonthlyOperationalComparePeriods(question);
+  const monthCompare = context.monthlyCompare || parseMonthlyOperationalComparePeriods(question)
+    || (context.vaultCompare?.current?.startDate && context.vaultCompare?.previous?.startDate
+      ? context.vaultCompare : null);
 
   const bundleCache = new Map();
   const bundlePromises = [loadLogbookBundle(bundleCache, supabase, context, vaultPeriod)];
