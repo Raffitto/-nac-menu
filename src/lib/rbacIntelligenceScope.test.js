@@ -11,11 +11,11 @@ import {
 } from "./rbacIntelligenceScope";
 
 describe("rbacIntelligenceScope", () => {
-  const fady = resolveRbacProfile({ user: { email: "armel@nac.com" } });
+  const branchGm = resolveRbacProfile({ user: { email: "armel@nac.com" } });
   const ceo = resolveRbacProfile({ user: { email: "ahmad@nac.com" } });
 
   test("branch GM only sees assigned branch in command center package", () => {
-    expect(fady.role).toBe(RBAC_ROLES.BRANCH_GM);
+    expect(branchGm.role).toBe(RBAC_ROLES.BRANCH_GM);
     const pkg = filterCommandCenterPackage(
       {
         branchStatus: [
@@ -32,12 +32,12 @@ describe("rbacIntelligenceScope", () => {
         ],
         heatmap: { rows: [{ branch_id: "jeddah" }, { branch_id: "riyadh" }] },
       },
-      fady,
+      branchGm,
     );
     expect(pkg.branchStatus).toHaveLength(1);
     expect(pkg.branchStatus[0].branch_id).toBe("riyadh");
     expect(pkg.alerts).toHaveLength(1);
-    expect(pkg.alerts[0].branch_id).toBe("riyadh";
+    expect(pkg.alerts[0].branch_id).toBe("riyadh");
     expect(pkg.rankings).toHaveLength(1);
     expect(pkg.heatmap.rows).toHaveLength(1);
   });
@@ -56,25 +56,25 @@ describe("rbacIntelligenceScope", () => {
         ],
         staffByBranch: { riyadh: [], jeddah: [] },
       },
-      fady,
+      branchGm,
     );
     expect(input.branchComparison).toHaveLength(1);
-    expect(input.branchComparison[0].branch_id).toBe("khobar");
+    expect(input.branchComparison[0].branch_id).toBe("riyadh");
     expect(Object.keys(input.staffByBranch)).toEqual(["riyadh"]);
   });
 
   test("commandCenterPulseTitle is branch-scoped for GM", () => {
-    expect(commandCenterPulseTitle(fady)).toMatch(/operational pulse/i);
+    expect(commandCenterPulseTitle(branchGm)).toMatch(/operational pulse/i);
     expect(commandCenterPulseTitle(ceo)).toBe("Network operational pulse");
   });
 
   test("buildBranchComparisonForProfile omits hidden zero branches for GM", () => {
-    const rows = buildBranchComparisonForProfile(fady, [
+    const rows = buildBranchComparisonForProfile(branchGm, [
       { branch_id: "riyadh", qr_scans: 40, google_redirects: 10 },
       { branch_id: "jeddah", qr_scans: 0, google_redirects: 0 },
     ]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].branch_id).toBe("khobar");
+    expect(rows[0].branch_id).toBe("riyadh");
   });
 
   test("reviews-only capability retains network review rows without widening operations", () => {
@@ -83,15 +83,15 @@ describe("rbacIntelligenceScope", () => {
       { branch_id: "khobar", qr_scans: 2 },
       { branch_id: "jeddah", qr_scans: 21 },
     ];
-    expect(buildBranchComparisonForProfile(fady, rows)).toHaveLength(1);
-    expect(buildReviewBranchComparisonForProfile(fady, rows)).toHaveLength(3);
+    expect(buildBranchComparisonForProfile(branchGm, rows)).toHaveLength(1);
+    expect(buildReviewBranchComparisonForProfile(branchGm, rows)).toHaveLength(3);
 
     const reviewInput = filterReviewIntelligenceInput(
       {
         branchComparison: rows,
         staffByBranch: { khobar: [], riyadh: [], jeddah: [] },
       },
-      fady,
+      branchGm,
     );
     expect(reviewInput.networkWide).toBe(true);
     expect(Object.keys(reviewInput.staffByBranch)).toEqual([
@@ -118,12 +118,12 @@ describe("rbacIntelligenceScope", () => {
         ],
         heatmap: { rows: [{ branch_id: "riyadh" }, { branch_id: "jeddah" }] },
       },
-      fady,
+      branchGm,
     );
     expect(pkg.alerts.every((a) => a.branch_id === "khobar")).toBe(true);
     expect(pkg.timeline.every((t) => t.kind !== "network")).toBe(true);
     expect(pkg.heatmap.mode).toBe("single");
-    expect(rbacScopeCacheKey(fady)).toBe("riyadh");
+    expect(rbacScopeCacheKey(branchGm)).toBe("riyadh");
     expect(rbacScopeCacheKey(ceo)).toBe("network");
   });
 });
