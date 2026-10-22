@@ -13,6 +13,8 @@ import {
   ShieldCheck,
   BookOpen,
   ClipboardList,
+  Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -24,6 +26,7 @@ import {
   updateConversationContext,
 } from "../../intelligence/askNac/conversation/conversationContext";
 import AskNacComposer from "./AskNacComposer";
+import { conversationStorageKey, loadAskNacThreads, saveAskNacThreads } from "./askNacThreadStore";
 import AskNacMessageList from "./AskNacMessageList";
 import AskNacDataVaultPanel from "./AskNacDataVaultPanel";
 import IntelligenceMobileMoreMenu from "./mobile/IntelligenceMobileMoreMenu";
@@ -86,11 +89,31 @@ export default function AskNacTab({
   const [conversationContext, setConversationContext] = useState(() => createEmptyConversationContext());
   const [loading, setLoading] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [threads, setThreads] = useState([]);
+  const [activeThreadId, setActiveThreadId] = useState(null);
+  const [historyReady, setHistoryReady] = useState(false);
   const inputRef = useRef(null);
   const scrollAnchorRef = useRef(null);
   const chatGenerationRef = useRef(0);
 
   const session = rbac?.session;
+  const historyKey = conversationStorageKey(session?.user?.id, platform?.branch);
+  const newThreadId = () => `thread-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+  useEffect(() => {
+    setHistoryReady(false);
+    const saved = loadAskNacThreads(typeof localStorage === "undefined" ? null : localStorage, historyKey);
+    setThreads(saved);
+    setActiveThreadId(saved[0]?.id || null);
+    setMessages(saved[0]?.messages || []);
+    setConversationContext(saved[0]?.context || createEmptyConversationContext());
+    setHistoryReady(true);
+  }, [historyKey]);
+
+  useEffect(() => {
+    if (!historyReady || !historyKey) return;
+    saveAskNacThreads(typeof localStorage === "undefined" ? null : localStorage, historyKey, threads);
+  }, [threads, historyKey, historyReady]);
   const statusBadge = useAskNacConnectionStatus({ messages, session });
 
   const filters = useMemo(
@@ -115,6 +138,7 @@ export default function AskNacTab({
 
   const clearChat = useCallback(() => {
     chatGenerationRef.current += 1;
+    setActiveThreadId(null);
     setMessages([]);
     setDraft("");
     setConversationContext(resetConversationContext());
@@ -126,8 +150,15 @@ export default function AskNacTab({
       const text = String(q ?? draft).trim();
       if (!text || loading) return;
 
+      const threadId = activeThreadId || newThreadId();
+      if (!activeThreadId) setActiveThreadId(threadId);
       const userMessage = createUserMessage(text);
       setMessages((prev) => [...prev, userMessage]);
+      setThreads((prev) => {
+        const existing = prev.find((item) => item.id === threadId);
+        const thread = { id: threadId, title: existing?.title || text.slice(0, 80), updatedAt: Date.now(), messages: [...(existing?.messages || []), userMessage], context: existing?.context || conversationContext };
+        return [thread, ...prev.filter((item) => item.id !== threadId)];
+      });
       setDraft("");
       setLoading(true);
 
@@ -148,6 +179,15 @@ export default function AskNacTab({
           }),
         ]);
         if (generation !== chatGenerationRef.current) return;
+        const nextContext = result.nextContext || updateConversationContext(conversationContext, {
+          question: text,
+          resolvedQuestion: result.conversationResolution?.resolvedQuestion || text,
+          response: result,
+        });
+        setThreads((prev) => prev.map((thread) => thread.id === threadId ? {
+          ...thread, updatedAt: Date.now(), context: nextContext,
+          messages: [...thread.messages, createAssistantMessage({ question: text, response: result })],
+        } : thread));
         setConversationContext((prev) =>
           result.nextContext
             ? result.nextContext
@@ -163,6 +203,10 @@ export default function AskNacTab({
         ]);
       } catch (err) {
         if (generation !== chatGenerationRef.current) return;
+        setThreads((prev) => prev.map((thread) => thread.id === threadId ? {
+          ...thread, updatedAt: Date.now(),
+          messages: [...thread.messages, createAssistantMessage({ question: text, error: err?.message || "Ask NAC failed." })],
+        } : thread));
         setMessages((prev) => [
           ...prev,
           createAssistantMessage({
@@ -178,7 +222,7 @@ export default function AskNacTab({
         }
       }
     },
-    [draft, loading, session, rbac?.profile, filters, conversationContext, focusInput],
+    [draft, loading, session, rbac?.profile, filters, conversationContext, focusInput, activeThreadId],
   );
 
   useEffect(() => {
@@ -187,6 +231,21 @@ export default function AskNacTab({
     submitQuestion(prefill);
     onInitialQuestionConsumed?.();
   }, [initialQuestion, prefillSeed, onInitialQuestionConsumed, submitQuestion]);
+
+  const openThread = useCallback((thread) => {
+    if (loading) return;
+    chatGenerationRef.current += 1;
+    setActiveThreadId(thread.id);
+    setMessages(thread.messages || []);
+    setConversationContext(thread.context || createEmptyConversationContext());
+    setDraft("");
+  }, [loading]);
+
+  const deleteThread = useCallback((id) => {
+    if (loading) return;
+    setThreads((prev) => prev.filter((thread) => thread.id !== id));
+    if (activeThreadId === id) clearChat();
+  }, [loading, activeThreadId, clearChat]);
 
   const suggestions = useMemo(
     () =>
@@ -283,6 +342,24 @@ export default function AskNacTab({
 
   return (
     <div className="nac-ask-nac-tab nac-ask-nac-workspace" data-testid="ask-nac-workspace">
+      <aside className="nac-ask-nac-threads" aria-label="Conversation history">
+        <div className="nac-ask-nac-threads__header">
+          <strong>Conversations</strong>
+          <button type="button" onClick={clearChat} disabled={loading} aria-label="New conversation"><MessageSquarePlus size={18} /></button>
+        </div>
+        <div className="nac-ask-nac-threads__list">
+          {threads.length === 0 ? <p className="nac-ask-nac-threads__empty">Your conversations will appear here.</p> : null}
+          {threads.map((thread) => (
+            <div key={thread.id} className={`nac-ask-nac-threads__item${activeThreadId === thread.id ? " is-active" : ""}`}>
+              <button type="button" className="nac-ask-nac-threads__open" onClick={() => openThread(thread)} disabled={loading} title={thread.title}>
+                <MessageSquare size={15} aria-hidden /><span>{thread.title}</span>
+              </button>
+              <button type="button" className="nac-ask-nac-threads__delete" onClick={() => deleteThread(thread.id)} disabled={loading} aria-label={`Delete ${thread.title}`}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+        <p className="nac-ask-nac-threads__privacy">Stored on this browser for up to 7 days. Not synced across devices.</p>
+      </aside>
       <div className="nac-ask-nac-workspace__column">
         <header
           className={`nac-glass-panel nac-ask-nac-hero${inConversation ? " nac-ask-nac-hero--compact" : ""}`.trim()}
