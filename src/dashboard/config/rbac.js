@@ -10,6 +10,7 @@ export const RBAC_ROLES = {
   DEVELOPER: "developer",
   CEO: "ceo",
   BRANCH_GM: "branch_gm",
+  NETWORK_GM: "network_gm",
   RESTRICTED: "restricted",
 };
 
@@ -62,6 +63,7 @@ export const ROLE_PERMISSIONS = {
   [RBAC_ROLES.DEVELOPER]: ALL_PERMISSIONS,
   [RBAC_ROLES.CEO]: CEO_PERMISSIONS,
   [RBAC_ROLES.BRANCH_GM]: BRANCH_GM_PERMISSIONS,
+  [RBAC_ROLES.NETWORK_GM]: [...new Set([...CEO_PERMISSIONS, ...BRANCH_GM_PERMISSIONS])],
   [RBAC_ROLES.RESTRICTED]: RESTRICTED_PERMISSIONS,
 };
 
@@ -128,7 +130,7 @@ export const RBAC_USER_DIRECTORY = [
   {
     id: "fady",
     name: "Fady",
-    role: RBAC_ROLES.BRANCH_GM,
+    role: RBAC_ROLES.NETWORK_GM,
     emails: ["fady@nac.com", "fady@nac-khobar.com", "fady.aly@nacriyadh.com"],
     branchScope: "khobar",
     permissions: [PERMISSIONS.VIEW_NETWORK_REVIEWS],
@@ -399,7 +401,7 @@ export function resolveRbacProfile(session) {
 
   const branchScope = normalizeBranchId(entry.branchScope);
   const role = entry.role || RBAC_ROLES.RESTRICTED;
-  const allBranches = role === RBAC_ROLES.DEVELOPER || role === RBAC_ROLES.CEO;
+  const allBranches = role === RBAC_ROLES.DEVELOPER || role === RBAC_ROLES.CEO || role === RBAC_ROLES.NETWORK_GM;
   const permissions = [
     ...new Set([
       ...permissionsForRole(role),
@@ -422,7 +424,7 @@ export function resolveRbacProfile(session) {
 
 function buildProfileFromRole(role, branchScope, email) {
   const normalizedRole = Object.values(RBAC_ROLES).includes(role) ? role : RBAC_ROLES.RESTRICTED;
-  const allBranches = normalizedRole === RBAC_ROLES.DEVELOPER || normalizedRole === RBAC_ROLES.CEO;
+  const allBranches = normalizedRole === RBAC_ROLES.DEVELOPER || normalizedRole === RBAC_ROLES.CEO || normalizedRole === RBAC_ROLES.NETWORK_GM;
   const scope = allBranches ? null : branchScope;
 
   return {
