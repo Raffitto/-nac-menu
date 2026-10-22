@@ -10,6 +10,9 @@ import {
   TrendingUp,
   MessageSquarePlus,
   Menu,
+  ShieldCheck,
+  BookOpen,
+  ClipboardList,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
@@ -30,6 +33,9 @@ import "../styles/ask-nac.css";
 import "../styles/ask-nac-data-vault.css";
 
 const SUGGESTED_PROMPTS = [
+  { text: "Summarize guest complaints in Khobar this month, with dates and resolutions.", icon: ClipboardList },
+  { text: "What operational problems happened in Khobar this week?", icon: BookOpen },
+  { text: "Compare operational incidents in Khobar over the last two weeks.", icon: ShieldCheck },
   { text: "How many menu QR scans today?", icon: BarChart3 },
   { text: "Google redirects in the last 7 days", icon: Sparkles },
   { text: "Which staff drove the most Google redirects?", icon: Users },
@@ -274,11 +280,11 @@ export default function AskNacTab({
         >
           <div className="nac-ask-nac-hero__top">
             <div>
-              <p className="nac-ask-nac-eyebrow">Business intelligence copilot</p>
+              <p className="nac-ask-nac-eyebrow">NAC / INTELLIGENCE WORKSPACE</p>
               <h2>Ask NAC</h2>
               {!inConversation ? (
                 <p className="nac-ask-nac-subtitle">
-                  Answers come from verified Supabase metrics and Company Knowledge — never guessed.
+                  Explore operations, guest feedback, staff performance and commercial results with source-backed answers.
                 </p>
               ) : null}
             </div>
@@ -315,8 +321,7 @@ export default function AskNacTab({
             <div className="nac-ask-nac-empty nac-ask-nac-empty--chat">
               <Sparkles size={20} aria-hidden />
               <p>
-                Ask about menu QR scans, sessions, Google redirects, review QR, staff leaderboard, branch
-                comparison, Foodics sales, and uploaded operational reports. Press Enter to send.
+                Ask a question about your restaurant. Explore incidents, guest complaints, staff, sales, or uploaded reports.
               </p>
             </div>
           ) : null}
