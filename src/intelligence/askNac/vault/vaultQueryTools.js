@@ -936,7 +936,7 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
 
 export async function searchOperationalReviewDocuments(supabase, context = {}) {
   const question = String(context.question || "");
-  if (isVaultMonthlyOperationalSummaryQuery(question)) {
+  if (isVaultMonthlyOperationalSummaryQuery(question) || (context.vaultPeriod?.startDate && context.vaultPeriod?.endDate && !context.vaultPeriod?.isSingleDay && /\\b(operational|operations|complaints?|incidents?|logbooks?|recurring|staff performance)\\b/i.test(question))) {
     const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
     const structured = await fetchReview(supabase, context);
     if (structured?.structuredLogbookReview) return structured;
