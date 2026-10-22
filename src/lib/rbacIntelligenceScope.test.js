@@ -120,7 +120,7 @@ describe("rbacIntelligenceScope", () => {
       },
       branchGm,
     );
-    expect(pkg.alerts.every((a) => a.branch_id === "khobar")).toBe(true);
+    expect(pkg.alerts.every((a) => a.branch_id === "riyadh")).toBe(true);
     expect(pkg.timeline.every((t) => t.kind !== "network")).toBe(true);
     expect(pkg.heatmap.mode).toBe("single");
     expect(rbacScopeCacheKey(branchGm)).toBe("riyadh");
