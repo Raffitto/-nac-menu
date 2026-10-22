@@ -194,7 +194,7 @@ export function buildManagementNote(searchTerms = "", evidenceText = "", issueTy
 
   if (issueType === "complaint" || issueType === "food_quality") {
     if (/\b(remade|removed from bill|guest satisfied)\b/.test(text)) {
-      return "Guest issue was handled in-service; monitor for repeat feedback on the same item.";
+      return "The logbook records an in-service action; verify the outcome and monitor for repeat feedback on the same item.";
     }
     return "Follow up with kitchen/service to prevent repeat guest complaints.";
   }
@@ -237,7 +237,7 @@ export function buildCrossDocumentOperationalSummary(groupedFindings = [], theme
   if (!groupedFindings.length) {
     return {
       answer: "No operational findings matched this review under your access scope.",
-      managementNote: "Upload or re-index daily logbooks for the period, then retry.",
+      managementNote: "No matching evidence was returned for this question. This does not prove there were no incidents; check the selected branch, dates, source coverage, and retrieval status before concluding.",
       relatedFindings: [],
     };
   }
