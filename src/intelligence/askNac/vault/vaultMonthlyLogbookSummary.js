@@ -157,7 +157,7 @@ export function buildOperationalEvidenceLedger(facts = []) {
   const seen = new Set();
   for (const fact of facts) {
     if (!TEXT_KEYS.includes(fact.metricKey)) continue;
-    const text = String(fact.dimensions?.text_value || "").replace(/\\s+/g, " ").trim();
+    const text = String(fact.dimensions?.text_value || "").replace(/\s+/g, " ").trim();
     if (!text) continue;
     const date = fact.periodStart || null;
     const dedupeKey = `${date}|${fact.metricKey}|${text.toLowerCase()}`;
@@ -309,7 +309,19 @@ export function buildMonthlyLogbookExecutiveSummary({
 
   const directAnswer = sections.join("\n\n");
 
-  const groupedFindings = days.flatMap((day) => {
+  const groupedFindings = evidenceLedger.map((entry) => ({
+    date: entry.date,
+    issueType: entry.issueType,
+    severity: "medium",
+    excerpt: snippet(entry.text, 180),
+    source: entry.fileTitle || entry.date,
+    fileTitle: entry.fileTitle,
+    section: entry.section,
+    themes: entry.themes,
+  }));
+
+  /* Legacy daily aggregation retained for reference:
+  const unusedGroupedFindings = days.flatMap((day) => {
     const blob = collectDayTexts(day);
     if (!blob) return [];
     return [{
@@ -321,6 +333,7 @@ export function buildMonthlyLogbookExecutiveSummary({
       fileTitle: day.fileTitle,
     }];
   }).slice(0, 12);
+  */
 
   const vaultSources = [...new Map(
     days.filter((d) => d.fileId && d.fileTitle).map((d) => [d.fileId, {
