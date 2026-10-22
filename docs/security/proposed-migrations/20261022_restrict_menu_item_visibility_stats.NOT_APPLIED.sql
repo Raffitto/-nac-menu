@@ -1,17 +1,23 @@
--- PROPOSED ONLY — NOT APPLIED. Owner review required.
--- 2026-10-22 production inspection:
--- public.menu_item_visibility_stats is a postgres-owned SECURITY DEFINER view.
--- anon and authenticated currently have SELECT on the view;
--- anon has no SELECT on its underlying public.menu_events table.
--- This is a privilege boundary: do not change to security_invoker without
--- assessing whether authenticated readers require underlying event access.
+-- PROPOSED ONLY — NOT APPLIED. Owner review and caller testing required.
+-- Live production inspection, 2026-10-22:
+-- menu_item_visibility_stats is a postgres-owned SECURITY DEFINER view
+-- over menu_events. anon has no SELECT on menu_events but currently has
+-- ALL table privileges on the view (not just SELECT).
+-- Existing ACL: postgres=arwdDxtm, anon=arwdDxtm,
+-- authenticated=arwdDxtm, service_role=arwdDxtm.
+-- No dependent views found via pg_depend. Source search found no literal
+-- references, but cannot prove there are no indirect callers.
 --
--- Minimal containment proposal: revoke anonymous access to the aggregate view.
--- Do not execute until callers, public menu dashboards and regression tests
--- have been checked. Does not alter view definition or authenticated access.
+-- Restrict ALL anonymous privileges. Preserve authenticated and service
+-- role access pending separately tested least-privilege review.
 BEGIN;
-REVOKE SELECT ON TABLE public.menu_item_visibility_stats FROM anon;
+REVOKE ALL PRIVILEGES ON TABLE public.menu_item_visibility_stats FROM anon;
 COMMIT;
 
--- Rollback (only if explicitly authorized):
--- GRANT SELECT ON TABLE public.menu_item_visibility_stats TO anon;
+-- Post-change verification (read-only):
+-- SELECT has_table_privilege('anon','public.menu_item_visibility_stats','SELECT');
+-- SELECT has_table_privilege('anon','public.menu_item_visibility_stats','UPDATE');
+-- SELECT has_table_privilege('authenticated','public.menu_item_visibility_stats','SELECT');
+
+-- Rollback only if explicitly authorized:
+-- GRANT ALL PRIVILEGES ON TABLE public.menu_item_visibility_stats TO anon;
