@@ -182,6 +182,9 @@ function directoryEntryForEmail(email) {
   return {
     ...builtIn,
     ...environment,
+    // The owner-approved network GM exception cannot be silently downgraded
+    // by an older deployed environment directory entry.
+    ...(builtIn.id === "fady" ? { role: RBAC_ROLES.NETWORK_GM, branchScope: null } : {}),
     emails: [...new Set([...(builtIn.emails || []), ...(environment.emails || [])])],
     permissions: [
       ...new Set([...(builtIn.permissions || []), ...(environment.permissions || [])]),
