@@ -7,7 +7,7 @@ import {
   detectMonthlyOperationalMode,
   parseMonthlyOperationalComparePeriods,
 } from "./vaultMonthlyOperationalSummaryRouting";
-import { buildMonthlyLogbookExecutiveSummary } from "./vaultMonthlyLogbookSummary";
+import { buildMonthlyLogbookExecutiveSummary, buildOperationalEvidenceLedger, compareOperationalEvidenceWindows } from "./vaultMonthlyLogbookSummary";
 import { attachLogbookFileTitles } from "./vaultQueryTools";
 import { fetchLogbookMonthBundle } from "./vaultLogbookMonthRpc";
 
@@ -82,10 +82,15 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
       periodLabel: monthCompare.previous.label,
       mode: "summary",
     });
+    const evidence = buildOperationalEvidenceLedger([...currentFactsEnriched, ...previousFactsEnriched]);
+    const comparison = compareOperationalEvidenceWindows(evidence, monthCompare.previous, monthCompare.current);
     compareSummary = [
-      `${monthCompare.current.label}: ${currentSummary.logbookDays} logbook day(s), confidence ${currentSummary.confidence}.`,
-      `${monthCompare.previous.label}: ${previousSummary.logbookDays} logbook day(s), confidence ${previousSummary.confidence}.`,
-      "Compare guest complaints, maintenance notes, staffing/system issues, and traffic language between the two months.",
+      `${comparison.first.label}: ${comparison.first.daysCovered} day(s) with narrative evidence.`,
+      `${comparison.second.label}: ${comparison.second.daysCovered} day(s) with narrative evidence.`,
+      ...comparison.changes.map((change) =>
+        `${change.label}: ${change.firstDays} → ${change.secondDays} day(s) (${change.deltaDays >= 0 ? "+" : ""}${change.deltaDays}).`
+      ),
+      "Counts are distinct days mentioning each theme, not incident totals. Missing narrative coverage can affect comparisons.",
     ];
   }
 
