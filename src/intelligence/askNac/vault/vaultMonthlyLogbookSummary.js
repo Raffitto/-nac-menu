@@ -148,6 +148,54 @@ function extractThemes(days) {
   return [...themes.values()].sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Preserve source sections rather than classifying a concatenated daily blob.
+ * Each record remains traceable to its date, source and shift/section.
+ */
+export function buildOperationalEvidenceLedger(facts = []) {
+  const entries = [];
+  const seen = new Set();
+  for (const fact of facts) {
+    if (!TEXT_KEYS.includes(fact.metricKey)) continue;
+    const text = String(fact.dimensions?.text_value || "").replace(/\\s+/g, " ").trim();
+    if (!text) continue;
+    const date = fact.periodStart || null;
+    const dedupeKey = `${date}|${fact.metricKey}|${text.toLowerCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    const themes = THEME_RULES.filter((rule) => rule.re.test(text)).map((rule) => rule.id);
+    entries.push({
+      date, section: fact.metricKey, text,
+      themes, issueType: classifyOperationalIssue(text),
+      fileId: fact.fileId, fileTitle: fact.fileTitle,
+    });
+  }
+  return entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+export function compareOperationalEvidenceWindows(ledger, first, second) {
+  const within = (entry, period) => entry.date && entry.date >= period.startDate && entry.date <= period.endDate;
+  const summarize = (period) => {
+    const entries = ledger.filter((entry) => within(entry, period));
+    const days = new Set(entries.map((entry) => entry.date));
+    const themeDays = {};
+    for (const rule of THEME_RULES) {
+      themeDays[rule.id] = new Set(entries.filter((entry) => entry.themes.includes(rule.id)).map((entry) => entry.date)).size;
+    }
+    return { label: period.label, daysCovered: days.size, themeDays, entries };
+  };
+  const a = summarize(first);
+  const b = summarize(second);
+  return {
+    first: a, second: b,
+    changes: THEME_RULES.map((rule) => ({
+      id: rule.id, label: rule.label,
+      firstDays: a.themeDays[rule.id], secondDays: b.themeDays[rule.id],
+      deltaDays: b.themeDays[rule.id] - a.themeDays[rule.id],
+    })),
+  };
+}
+
 function recurringThemes(themes) {
   return themes.filter((theme) => theme.count >= 2);
 }
@@ -200,6 +248,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     };
   }
 
+  const evidenceLedger = buildOperationalEvidenceLedger(facts);
   const themes = extractThemes(days);
   const recurring = recurringThemes(themes);
   const reception = aggregateReception(days);
@@ -307,6 +356,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     logbookDays,
     readyDays,
     groupedFindings,
+    evidenceLedger,
     vaultSources,
   };
 }
