@@ -15,6 +15,12 @@ import { resolveHumanInTheLoopTurn } from "./executive/humanInLoopResolver";
 import { applyExecutiveIntelligenceV2 } from "./executive/executiveEvidenceV2";
 import { buildAnswerFromConversationDataset } from "./conversation/conversationDatasetAnswer";
 import { conversationStateFromLegacyContext } from "./conversation/conversationState";
+import {
+  buildGreetingAnswer,
+  composeDeliveryCountAndRevenue,
+  isGreetingOnly,
+  questionWantsDeliveryCountAndTotal,
+} from "./agent/agentPolicy";
 
 /**
  * Process an Ask NAC question end-to-end (deterministic; optional AI wrap via options).
@@ -37,6 +43,27 @@ export async function processAskNacQuestion({
 }) {
   const prepareResult = prepareAskNacQuestion({ question, conversationContext, filters });
   const effectiveQuestion = prepareResult.effectiveQuestion;
+  if (isGreetingOnly(effectiveQuestion)) {
+    const greeting = buildGreetingAnswer();
+    return {
+      ...greeting,
+      routingConfidence: "high",
+      conversationResolution: {
+        originalQuestion: question,
+        resolvedQuestion: effectiveQuestion,
+        usedContext: false,
+        resolutionNotes: ["Greeting. No data tool was called."],
+      },
+      nextContext: updateConversationContext(conversationContext || {}, {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: greeting,
+      }),
+      serverConnected: false,
+      aiConnected: false,
+      localFallback: true,
+    };
+  }
   const effectiveFilters = prepareResult.filters;
   const branch = effectiveFilters.branch || null;
   const userEmail = String(session?.user?.email || profile?.email || "").trim().toLowerCase() || null;
@@ -208,6 +235,21 @@ export async function processAskNacQuestion({
       profile,
       filters: effectiveFilters,
     });
+  }
+
+  if (questionWantsDeliveryCountAndTotal(effectiveQuestion) && tool?.aggregation) {
+    const composed = composeDeliveryCountAndRevenue({
+      branchLabel: deterministic.branchLabel || "The branch",
+      periodLabel: deterministic.periodLabel || "the period",
+      orders: tool.aggregation.totalDeliveryOrders ?? null,
+      sales: tool.aggregation.totalDeliverySales ?? null,
+      coverageStart: tool.aggregation.deliveryOrderCoverageStart || tool.aggregation.salesCoverageStart || null,
+      coverageEnd: tool.aggregation.salesCoverageEnd || null,
+      platforms: tool.aggregation.deliveryPlatformBreakdown || null,
+    });
+    deterministic.directAnswer = composed.text;
+    deterministic.keyMetrics = composed.metrics;
+    if (!composed.complete) deterministic.confidence = "low";
   }
 
   const conversationResolution = {

@@ -84,6 +84,25 @@ import { resolveHumanInTheLoopTurn } from "./askNacHumanInLoop.ts";
 import { applyExecutiveIntelligenceV2 } from "./askNacExecutiveEvidenceV2.ts";
 import { scoreDriveDiscoveryIntent } from "./askNacDriveDiscovery.ts";
 import { shouldSkipAiNarration } from "./askNacNarrationSkip.ts";
+import {
+  authorizeToolCall,
+  branchIdFromText,
+  buildGreetingAnswer,
+  composeDeliveryCountAndRevenue,
+  isGreetingOnly,
+  isSameWeekdayBackQuestion,
+  questionWantsDeliveryBreakdown,
+  questionWantsDeliveryCountAndTotal,
+  shouldInvestigateWithAgent,
+} from "./askNacAgentPolicy.ts";
+import {
+  completeAgentModel,
+  executeCashUpTool,
+  loadConversationMemory,
+  runAskNacAgent,
+  runWeekdayFollowUp,
+  saveConversationMemory,
+} from "./askNacAgentLoop.ts";
 import { attachResponseMeta, buildAskNacTimingMs } from "./askNacTiming.ts";
 import { applyPeriodSafetyNet } from "./askNacCoverageContract.ts";
 
@@ -1141,6 +1160,7 @@ export async function processAskNacOnEdge(
     filters = {},
     conversationContext = null,
     userEmail = null,
+    userId = null,
   }: {
     question: string;
     branch?: string | null;
@@ -1150,6 +1170,7 @@ export async function processAskNacOnEdge(
     filters?: Record<string, unknown>;
     conversationContext?: Record<string, unknown> | null;
     userEmail?: string | null;
+    userId?: string | null;
   },
 ) {
   const requestStartedAt = performance.now();
@@ -1160,9 +1181,22 @@ export async function processAskNacOnEdge(
     selectedRange: range ?? filters.selectedRange,
   };
 
+  const branchKey = String(baseFilters.branch || "");
+  const profileAccessEarly = (profileHint || {}) as {
+    allBranches?: boolean | null;
+    allowedBranchIds?: string[] | null;
+  };
+  const allowedBranchIds = (profileAccessEarly.allowedBranchIds || []).map(String);
+  const allBranches = Boolean(profileAccessEarly.allBranches);
+  let workingContext = (conversationContext || null) as Record<string, unknown> | null;
+  if (userId && !workingContext?.lastQuestion && !workingContext?.anchorDate) {
+    const loaded = await loadConversationMemory(supabase, userId, branchKey);
+    if (loaded) workingContext = loaded as Record<string, unknown>;
+  }
+
   const prepareResult = prepareAskNacQuestionEdge({
     question,
-    conversationContext,
+    conversationContext: workingContext,
     filters: baseFilters,
   });
   const effectiveQuestion = prepareResult.effectiveQuestion;
@@ -1185,8 +1219,83 @@ export async function processAskNacOnEdge(
     ? question.replace(/\b(?:the\s+)?day\s+(?:before|after)\b/i, relativeDateIso)
     : question;
 
+  if (isGreetingOnly(effectiveQuestion)) {
+    const greeting = buildGreetingAnswer();
+    const nextContext = updateConversationContextEdge(workingContext || {}, {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: greeting,
+    });
+    if (userId) await saveConversationMemory(supabase, userId, branchKey, nextContext as Record<string, unknown>);
+    return attachResponseMeta({
+      ...greeting,
+      conversationResolution: {
+        originalQuestion: question,
+        resolvedQuestion: effectiveQuestion,
+        usedContext: false,
+        resolutionNotes: ["Greeting. No data tool was called."],
+      },
+      nextContext,
+      serverConnected: true,
+      aiConnected: false,
+      localFallback: false,
+      agent: { used: false, modelCalls: 0, toolCalls: 0 },
+    }, buildAskNacTimingMs({
+      total: Math.round(performance.now() - requestStartedAt),
+    }), true);
+  }
+
+  if (isSameWeekdayBackQuestion(question) || isSameWeekdayBackQuestion(effectiveQuestion)) {
+    const weekday = await runWeekdayFollowUp(supabase, {
+      question: isSameWeekdayBackQuestion(question) ? question : effectiveQuestion,
+      context: workingContext,
+      branch: branchIdFromText(workingContext?.lastBranch) || branchIdFromText(workingContext?.anchorBranch) || (baseFilters.branch as string | null) || null,
+      allowedBranchIds,
+      allBranches,
+      branchLabel: String(workingContext?.lastBranch || baseFilters.branch || "The authorized branch"),
+      metric: String(workingContext?.anchorMetric || workingContext?.lastMetric || ""),
+    });
+    if (weekday) {
+      const nextContext = updateConversationContextEdge(workingContext || {}, {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: weekday,
+      });
+      if (weekday.anchorDate) (nextContext as Record<string, unknown>).anchorDate = weekday.anchorDate;
+      if (userId) await saveConversationMemory(supabase, userId, branchKey, nextContext as Record<string, unknown>);
+      return attachResponseMeta({
+        answerType: "metric",
+        title: "Weekday comparison",
+        directAnswer: weekday.directAnswer,
+        keyMetrics: [],
+        insights: [],
+        recommendations: [],
+        confidence: weekday.confidence,
+        warnings: weekday.warnings || [],
+        missingData: weekday.confidence === "low" ? ["incomplete_weekday_series"] : [],
+        intent: weekday.intent,
+        branchLabel: weekday.branchLabel,
+        periodLabel: null,
+        isAiGenerated: false,
+        conversationResolution: {
+          originalQuestion: question,
+          resolvedQuestion: effectiveQuestion,
+          usedContext: true,
+          resolutionNotes: ["Same-weekday comparison re-read published Cash Up. Prior figures were not reused."],
+        },
+        nextContext,
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+        agent: { used: false, modelCalls: 0, toolCalls: 1, verified: weekday.verified },
+      }, buildAskNacTimingMs({
+        total: Math.round(performance.now() - requestStartedAt),
+      }), true);
+    }
+  }
+
   const conversationState = conversationStateFromLegacyContext(
-    (conversationContext || {}) as Record<string, unknown>,
+    (workingContext || {}) as Record<string, unknown>,
   );
   // An operational/logbook follow-up must not reuse the previous Cash Up dataset.
   // Otherwise a sales completeness check can incorrectly claim no food issues.
@@ -1330,6 +1439,164 @@ export async function processAskNacOnEdge(
   // not bundled into this Edge Function, so the server does not compute a total.
   // It returns a structured hand-off; the NAC client runs the same read-only tool
   // locally and labels the answer localFallback. No data is read here.
+  if (
+    questionWantsDeliveryCountAndTotal(question)
+    || questionWantsDeliveryCountAndTotal(effectiveQuestion)
+    || questionWantsDeliveryBreakdown(question)
+    || questionWantsDeliveryBreakdown(effectiveQuestion)
+  ) {
+    const period = (route.vaultPeriod as { startDate?: string; endDate?: string; label?: string } | null)
+      || parseVaultPeriodFromQuestion(effectiveQuestion);
+    const onlyBranch = !allBranches && allowedBranchIds.length === 1 ? allowedBranchIds[0] : null;
+    const deliveryBranch = branchIdFromText(effectiveQuestion)
+      || branchIdFromText(String(mergedFilters.branch || ""))
+      || branchIdFromText(workingContext?.lastBranch)
+      || onlyBranch;
+    if (!deliveryBranch || !period?.startDate || !period?.endDate) {
+      return attachResponseMeta({
+        answerType: "conversation",
+        title: "Delivery totals",
+        directAnswer: "Tell me the branch and the dates. I will read published Cash Up for delivery orders and delivery revenue, and I will not estimate them.",
+        keyMetrics: [],
+        insights: [],
+        recommendations: [],
+        confidence: "low",
+        warnings: [],
+        missingData: ["branch_or_period"],
+        intent: "conversation",
+        isAiGenerated: false,
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+      }, buildAskNacTimingMs({ total: Math.round(performance.now() - requestStartedAt) }), true);
+    }
+    const gate = authorizeToolCall({
+      tool: "delivery_summary",
+      args: { branch: deliveryBranch, startDate: period.startDate, endDate: period.endDate },
+      allowedBranchIds,
+      allBranches,
+    });
+    if (!gate.ok) {
+      return attachResponseMeta({
+        answerType: "conversation",
+        title: "Branch not authorized",
+        directAnswer: "That branch is outside your access, so I did not read delivery totals.",
+        keyMetrics: [],
+        insights: [],
+        recommendations: [],
+        confidence: "high",
+        warnings: ["unauthorized_branch"],
+        missingData: [],
+        intent: "conversation",
+        isAiGenerated: false,
+        serverConnected: true,
+        aiConnected: false,
+        localFallback: false,
+      }, buildAskNacTimingMs({ total: Math.round(performance.now() - requestStartedAt) }), true);
+    }
+    const delivery = await executeCashUpTool(supabase, "delivery_summary", gate.args);
+    const deliveryContext = updateConversationContextEdge(workingContext || {}, {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: {
+        intent: "vault_cash_up_summary",
+        directAnswer: delivery.text,
+        branchLabel: deliveryBranch,
+        vaultPeriod: period,
+      },
+    }) as Record<string, unknown>;
+    if (userId) await saveConversationMemory(supabase, userId, branchKey, deliveryContext);
+    return attachResponseMeta({
+      answerType: "metric",
+      title: "Delivery orders and revenue",
+      directAnswer: String(delivery.text || "Delivery totals are not available in published Cash Up."),
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      confidence: delivery.orders == null || delivery.sales == null ? "low" : "high",
+      warnings: delivery.orders == null || delivery.sales == null ? ["Delivery orders or revenue is missing from published Cash Up."] : [],
+      missingData: [],
+      intent: "vault_cash_up_summary",
+      branchLabel: deliveryBranch,
+      periodLabel: period.label || `${period.startDate} to ${period.endDate}`,
+      isAiGenerated: false,
+      conversationResolution: {
+        originalQuestion: question,
+        resolvedQuestion: effectiveQuestion,
+        usedContext: false,
+        resolutionNotes: ["Delivery orders and revenue were read from published Cash Up. Platform rows were not added on top of the daily total."],
+      },
+      nextContext: deliveryContext,
+      serverConnected: true,
+      aiConnected: false,
+      localFallback: false,
+      agent: { used: false, modelCalls: 0, toolCalls: 1 },
+    }, buildAskNacTimingMs({ total: Math.round(performance.now() - requestStartedAt) }), true);
+  }
+
+  if (shouldInvestigateWithAgent(effectiveQuestion, route.intent)) {
+    const agent = await runAskNacAgent({
+      question: effectiveQuestion,
+      branchHint: branchIdFromText(workingContext?.lastBranch) || (mergedFilters.branch as string | null) || null,
+      allowedBranchIds,
+      allBranches,
+      executeTool: (toolName, args) => executeCashUpTool(supabase, toolName, args, { profile: profileHint as Record<string, unknown> | null }),
+      completeModel: completeAgentModel,
+      priorComparison: (workingContext?.lastComparison || null) as { subjectDate?: string; otherDate?: string } | null,
+    });
+    if (agent.toolCalls > 0 || agent.promptTokens > 0) {
+      const nextContext = updateConversationContextEdge(workingContext || {}, {
+        question,
+        resolvedQuestion: effectiveQuestion,
+        response: { intent: "agent_investigation", directAnswer: agent.directAnswer },
+      });
+      if (userId) await saveConversationMemory(supabase, userId, branchKey, nextContext as Record<string, unknown>);
+      console.info(JSON.stringify({
+        fn: "ask-nac-agent",
+        rounds: agent.trace.length,
+        toolCalls: agent.toolCalls,
+        promptTokens: agent.promptTokens,
+        completionTokens: agent.completionTokens,
+        verified: agent.verified,
+        latencyMs: agent.latencyMs,
+      }));
+      return attachResponseMeta({
+        answerType: "metric",
+        title: "Investigation",
+        directAnswer: agent.directAnswer,
+        keyMetrics: [],
+        insights: agent.hypotheses.length ? agent.hypotheses.map((item) => `Hypothesis: ${item}`) : [],
+        recommendations: [],
+        confidence: agent.confidence,
+        warnings: agent.verified ? [] : ["The model answer was not verified against tool evidence, so unverified figures were withheld."],
+        missingData: agent.unavailable,
+        intent: "agent_investigation",
+        isAiGenerated: true,
+        conversationResolution: {
+          originalQuestion: question,
+          resolvedQuestion: effectiveQuestion,
+          usedContext: Boolean(workingContext?.anchorDate || workingContext?.lastQuestion),
+          resolutionNotes: ["Bounded tool investigation. No unrestricted SQL."],
+        },
+        nextContext,
+        serverConnected: true,
+        aiConnected: true,
+        localFallback: false,
+        agent: {
+          used: true,
+          verified: agent.verified,
+          modelCalls: agent.trace.length,
+          toolCalls: agent.toolCalls,
+          promptTokens: agent.promptTokens,
+          completionTokens: agent.completionTokens,
+          latencyMs: agent.latencyMs,
+        },
+      }, buildAskNacTimingMs({
+        total: Math.round(performance.now() - requestStartedAt),
+      }), false);
+    }
+  }
+
   if (route.intent === ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION) {
     return buildTheoreticalConsumptionHandoff({
       route,
@@ -1504,6 +1771,19 @@ export async function processAskNacOnEdge(
       coverageContract: spine.coverageContract,
       keyMetrics: spine.keyMetrics,
     });
+    const spineContext = updateConversationContextEdge(workingContext || {}, {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: {
+        intent: route.intent,
+        periodLabel: spine.coverageContract?.spokenLabel || spine.state.periods.current?.label || null,
+        branchLabel,
+        vaultPeriod: spine.state.periods.current || null,
+      },
+      route: route as Record<string, unknown>,
+    }) as Record<string, unknown>;
+    spineContext.fabricConversation = spine.nextConversation;
+    if (userId) await saveConversationMemory(supabase, userId, branchKey, spineContext);
     return attachResponseMeta({
       answerType: spine.answerType,
       title: spine.answerType === "feasibility_block" ? "Comparison not valid" : "Ask NAC",
@@ -1512,7 +1792,11 @@ export async function processAskNacOnEdge(
       keyMetrics: spine.keyMetrics,
       insights: spine.insights,
       recommendations: [],
-      confidence: spine.state.answer.verified ? "high" : "medium",
+      confidence: spine.answerType === "feasibility_block"
+        || spine.state.feasibility?.status === "NOT_ANSWERABLE_AS_REQUESTED"
+        || (spine.state.feasibility?.reasons || []).length > 0
+        ? "low"
+        : spine.state.answer.verified ? "high" : "medium",
       periodLabel: spine.coverageContract?.spokenLabel
         || spine.state.periods.current?.label
         || (spine.state.periods.current
@@ -1540,10 +1824,7 @@ export async function processAskNacOnEdge(
         coverage: spine.state.coverage,
         coverageContract: spine.coverageContract,
       },
-      nextContext: {
-        ...((conversationContext || {}) as Record<string, unknown>),
-        fabricConversation: spine.nextConversation,
-      },
+      nextContext: spineContext,
       serverConnected: true,
       aiConnected: spine.paidModelCalls > 0,
       localFallback: Boolean(spine.state.cost.cloudEscalationReason),
@@ -1687,6 +1968,27 @@ export async function processAskNacOnEdge(
 
   deterministic.intent = route.intent;
   deterministic.readiness = readiness;
+  if (questionWantsDeliveryCountAndTotal(effectiveQuestion) && tool?.aggregation) {
+    const agg = tool.aggregation as Record<string, unknown>;
+    const composed = composeDeliveryCountAndRevenue({
+      branchLabel: String(deterministic.branchLabel || "The branch"),
+      periodLabel: String(deterministic.periodLabel || "the period"),
+      orders: agg.totalDeliveryOrders == null ? null : Number(agg.totalDeliveryOrders),
+      sales: agg.totalDeliverySales == null ? null : Number(agg.totalDeliverySales),
+      coverageStart: (agg.deliveryOrderCoverageStart as string) || (agg.salesCoverageStart as string) || null,
+      coverageEnd: (agg.salesCoverageEnd as string) || null,
+      platforms: (agg.deliveryPlatformBreakdown || null) as Record<string, { orders?: number | null; sales?: number | null }> | null,
+    });
+    deterministic.directAnswer = composed.text;
+    deterministic.keyMetrics = composed.metrics;
+    if (!composed.complete) {
+      deterministic.confidence = "low";
+      deterministic.warnings = [
+        ...((deterministic.warnings as string[]) || []),
+        "Delivery orders and delivery revenue were not both present in published Cash Up.",
+      ];
+    }
+  }
 
   const executiveEvidenceStartedAt = performance.now();
   if (!tool?.authorizationDenied && !tool?.comparison) {
@@ -1788,6 +2090,18 @@ export async function processAskNacOnEdge(
     (answer as Record<string, unknown>).directAnswer = safety.text;
   }
   const verificationMs = Math.round(performance.now() - verifyStartedAt);
+  const nextContext = updateConversationContextEdge(
+    (workingContext || {}) as Record<string, unknown>,
+    {
+      question,
+      resolvedQuestion: effectiveQuestion,
+      response: { ...answer, intent: route.intent, periodLabel: answer.periodLabel, branchLabel: answer.branchLabel, vaultPeriod: route.vaultPeriod },
+      route: route as Record<string, unknown>,
+    },
+  ) as Record<string, unknown>;
+  const period = (route.vaultPeriod || {}) as { startDate?: string; endDate?: string };
+  if (period.startDate && period.startDate === period.endDate) nextContext.anchorDate = period.endDate;
+  if (userId) await saveConversationMemory(supabase, userId, branchKey, nextContext);
 
   return attachResponseMeta({
     ...answer,
@@ -1818,15 +2132,7 @@ export async function processAskNacOnEdge(
       ],
       followUpCategory: prepareResult.conversationTurn?.followUpCategory || null,
     },
-    nextContext: updateConversationContextEdge(
-      (conversationContext || {}) as Record<string, unknown>,
-      {
-        question,
-        resolvedQuestion: effectiveQuestion,
-        response: { ...answer, intent: route.intent, periodLabel: answer.periodLabel, branchLabel: answer.branchLabel },
-        route: route as Record<string, unknown>,
-      },
-    ),
+    nextContext,
     serverConnected: true,
     aiConnected,
     localFallback: false,

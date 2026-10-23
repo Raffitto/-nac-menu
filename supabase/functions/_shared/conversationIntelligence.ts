@@ -11,6 +11,7 @@ import {
   isSelfContainedManagementQuestion,
 } from "./companyIntelligence/conversationFollowUp.ts";
 import { defaultTemporalService } from "./companyIntelligence/temporalService.ts";
+import { explicitDays, retainSingleDayAnchor } from "./askNacAgentPolicy.ts";
 
 export const CONVERSATION_STATE_VERSION = 1;
 
@@ -170,7 +171,7 @@ export function captureConversationStateFromTurn({
   const branch = normalizeBranchId(branchLabel) || prev.branch;
   const metric = inferMetricFromQuestion(resolvedQuestion || question || "") || prev.metric
     || (intent === "vault_cash_up_summary" ? "net_sales" : null);
-  const branchHistory = [...prev.branchHistory];
+  const branchHistory = [...(prev.branchHistory || [])];
   const pivotBranch = extractBranchFragment(resolvedQuestion || question || "");
   if (pivotBranch && !branchHistory.includes(pivotBranch)) branchHistory.push(pivotBranch);
   if (branch && !branchHistory.includes(branch)) branchHistory.push(branch);
@@ -232,6 +233,17 @@ export function updateConversationContextEdge(context: Record<string, unknown> =
   if (isNonCommercialSourceQuestion(String(question || ""))) {
     delete (next as { fabricConversation?: unknown }).fabricConversation;
   }
+  const vaultPeriod = (activeState.vaultPeriod || null) as { startDate?: string; endDate?: string } | null;
+  (next as Record<string, unknown>).singleDayAnchor = retainSingleDayAnchor(
+    (base as { singleDayAnchor?: string }).singleDayAnchor,
+    question,
+    vaultPeriod,
+  );
+  const namedDays = explicitDays(String(question || ""));
+  const previousComparison = (base as { lastComparison?: { subjectDate?: string; otherDate?: string } }).lastComparison;
+  (next as Record<string, unknown>).lastComparison = namedDays.length >= 2
+    ? { subjectDate: namedDays[0], otherDate: namedDays[1] }
+    : previousComparison || null;
   return next;
 }
 
