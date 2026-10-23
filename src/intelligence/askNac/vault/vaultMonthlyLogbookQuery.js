@@ -70,20 +70,6 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
       previousBundle.facts,
       previousBundle.coverage,
     );
-    const currentSummary = buildMonthlyLogbookExecutiveSummary({
-      facts: currentFactsEnriched,
-      coverage: currentBundle.coverage,
-      branchLabel: factsResult.branchLabel,
-      periodLabel: monthCompare.current.label,
-      mode: "summary",
-    });
-    const previousSummary = buildMonthlyLogbookExecutiveSummary({
-      facts: previousFactsEnriched,
-      coverage: previousBundle.coverage,
-      branchLabel: factsResult.branchLabel,
-      periodLabel: monthCompare.previous.label,
-      mode: "summary",
-    });
     const evidence = buildOperationalEvidenceLedger([...currentFactsEnriched, ...previousFactsEnriched]);
     const comparison = compareOperationalEvidenceWindows(evidence, monthCompare.previous, monthCompare.current);
     compareSummary = [
