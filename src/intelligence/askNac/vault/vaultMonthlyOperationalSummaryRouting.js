@@ -35,7 +35,6 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
   if (period?.startDate && period?.endDate && !period.isSingleDay
     && /\b(complaints?|incidents?|operational|operations?|logbooks?|recurring|staff performance)\b/i.test(text)
     && !/\b(sales|revenue|foodics|cash[\s-]?up|menu qr)\b/i.test(text)) return true;
-
   if (NON_OPERATIONAL_BLOCK.test(text) && !OPERATIONAL_SUMMARY_SIGNAL.test(text)) return false;
 
   if (/\b(?:what were|summarize|list|identify)\b.*\b(?:operational|problems?|complaints?|issues?)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) return true;
