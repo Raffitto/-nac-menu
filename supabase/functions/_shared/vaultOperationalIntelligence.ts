@@ -314,6 +314,7 @@ export function buildOperationalManagerAnswer(searchTerms: string, matches: Reco
 export function scoreVaultOperationalReviewIntent(q = "") {
   const text = String(q || "").trim();
   if (!text) return 0;
+  if (/\bcomplaints?\b/i.test(text) && /\b(best[\s-]?selling|best sellers?|top selling|top items?|menu items|by quantity)\b/i.test(text)) return 50;
   if (/\bexecutive summary\b/i.test(text)) return 0;
   if (/\bsearch company knowledge\b/i.test(text)) return 0;
 

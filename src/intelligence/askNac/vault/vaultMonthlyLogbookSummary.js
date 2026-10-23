@@ -316,7 +316,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     };
   }
 
-  if (FOCUS_LABELS[mode]) {
+  if (FOCUS_LABELS[mode] || mode === "executive_operational" || mode === "resolution") {
     return buildFocusedNarrativeSummary({
       facts,
       coverage,

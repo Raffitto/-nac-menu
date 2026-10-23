@@ -90,7 +90,18 @@ export function requiresStructuredOperationalRetrieval(question = "", vaultPerio
 export function detectMonthlyOperationalMode(question = "") {
   const text = String(question || "").trim().toLowerCase();
   const compare = /\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text);
-  if (/\bmaintenance\b/.test(text) && !/\bcomplaints?\b/.test(text)) return "maintenance";
+  const topicHits = [
+    /\bcomplaints?\b/.test(text),
+    /\bmaintenance|pest|equipment\b/.test(text),
+    /\bservice (?:problems?|issues?|complaints?)\b/.test(text),
+    /\bstaff performance\b/.test(text),
+  ].filter(Boolean).length;
+  if (/\bcompare\b/.test(text) && /\b(operational issues?|what happened on each)\b/.test(text)) return "executive_operational";
+  if (topicHits > 1 || /\b(executive operational summary|operational improvements|most important|prioriti[sz]e)\b/.test(text)) {
+    return "executive_operational";
+  }
+  if (/\b(resolved|resolution|follow-up|follow up)\b/.test(text) && /\bcomplaints?\b/.test(text)) return "resolution";
+  if (/\bmaintenance|pest-control|pest control|equipment issues?\b/.test(text) && !/\bcomplaints?\b/.test(text)) return "maintenance";
   if (/\bstaff performance\b|\bhow did staff\b|\bstaff\b.*\b(perform|absence|absent|late)\b/.test(text)) return "staff";
   if (/\bfood quality\b/.test(text)) return "food_quality";
   if (/\b(?:beverage|drink) quality\b/.test(text) || (/\bbeverages?\b/.test(text) && /\b(quality|complain|wrong|cold)\b/.test(text))) {

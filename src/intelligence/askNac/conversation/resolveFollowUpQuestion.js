@@ -201,14 +201,25 @@ export function resolveFollowUpQuestion(question, context = {}) {
 
   // Keep the precise logbook date range for references to previously listed complaints.
   // This must precede generic source-question routing, which otherwise discards context.
-  if (/\b(those|these|the above|previously listed)\s+(?:guest\s+)?complaints\b/i.test(original)) {
+  const priorQuestion = String(context.lastResolvedQuestion || context.lastQuestion || "");
+  const operationalMemory = /vault_operational_review|operational/i.test(String(context.lastIntent || ""))
+    || /\b(complaints?|maintenance|logbooks?)\b/i.test(priorQuestion);
+  const asksAboutPriorFindings = /\b(those|these|them|which were|which of them|resolved|follow-up|follow up|food quality|rather than service)\b/i.test(original);
+  if ((/\b(those|these|the above|previously listed)\s+(?:guest\s+)?complaints\b/i.test(original) || (operationalMemory && asksAboutPriorFindings)) && !/\b(between|from)\s+\w+\s+\d/i.test(original)) {
     const prior = String(context.lastResolvedQuestion || context.lastQuestion || "");
     const range = prior.match(/\b(?:from|between)\s+((?:\w+\s+)?\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*20\d{2})?)\s+(?:to|and|through|until|-)\s+((?:\w+\s+)?\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*20\d{2})?)/i);
     const month = prior.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i)?.[0];
     const year = prior.match(/\b20\d{2}\b/)?.[0];
     const branch = extractBranchFragment(prior);
-    if (range || month) {
-      const scope = range ? `between ${range[1]} and ${range[2]}` : `during ${month} ${year || ""}`;
+    const savedPeriod = context.lastVaultPeriod?.startDate && context.lastVaultPeriod?.endDate
+      ? context.lastVaultPeriod
+      : null;
+    if (range || savedPeriod || month) {
+      const scope = range
+        ? `between ${range[1]} and ${range[2]}`
+        : savedPeriod
+          ? `between ${savedPeriod.startDate} and ${savedPeriod.endDate}`
+          : `during ${month} ${year || ""}`;
       const stem = original
         .replace(/\?+$/, "")
         .replace(/\b(those|these|the above|previously listed)\s+(?:guest\s+)?complaints\b/i, "guest complaints");

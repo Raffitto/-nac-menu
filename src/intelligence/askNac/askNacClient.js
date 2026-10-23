@@ -9,6 +9,7 @@ import { processAskNacQuestion } from "./askNacOrchestrator";
 import { createAskNacResponse, ANSWER_TYPES, CONFIDENCE_LEVELS } from "./askNacContract";
 import { ASK_NAC_INTENTS, routeAskNacIntent } from "./intentRouter";
 import { requiresStructuredOperationalRetrieval } from "./vault/vaultMonthlyOperationalSummaryRouting";
+import { prepareAskNacQuestion } from "./conversation/prepareAskNacQuestion";
 
 /**
  * Intents the server hands to the client (explicit hand-off), or that an older
@@ -16,6 +17,20 @@ import { requiresStructuredOperationalRetrieval } from "./vault/vaultMonthlyOper
  * its own read-only tool and labels the answer localFallback (Oracle T3).
  */
 export const CLIENT_EXECUTED_INTENTS = Object.freeze([ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION]);
+
+export function serverAnswerShouldYieldToLocal(question, payload, conversationContext) {
+  const prepared = prepareAskNacQuestion({ question, conversationContext, filters: {} });
+  const local = routeAskNacIntent(prepared.effectiveQuestion);
+  const serverIntent = String(payload?.intent || "");
+  const text = String(payload?.directAnswer || "");
+  if (/could not parse a calendar|vault period missing|no vault period/i.test(text)) return true;
+  if (serverOperationalAnswerNeedsStructuredRetry(prepared.effectiveQuestion, payload)) return true;
+  const localPreferred = local.intent === "vault_operational_review" || local.intent === "top_items" || local.intent === "top_items_compare";
+  if (localPreferred && serverIntent && serverIntent !== local.intent) return true;
+  if (local.intent === "top_items" && /highest sales day|best sales day|sales day/i.test(text)) return true;
+  if (local.intent === "vault_operational_review" && /\bSAR\b/.test(text) && !/\b(complaint|maintenance|staff|incident)\b/i.test(text)) return true;
+  return false;
+}
 
 export function serverOperationalAnswerNeedsStructuredRetry(question, payload) {
   if (!requiresStructuredOperationalRetrieval(question)) return false;
@@ -114,7 +129,7 @@ export async function askNac({
 
       if (res.ok) {
         const payload = await res.json();
-        if (serverOperationalAnswerNeedsStructuredRetry(question, payload) && supabase) {
+        if (serverAnswerShouldYieldToLocal(question, payload, conversationContext) && supabase) {
           const local = await processAskNacQuestion({
             question,
             supabase,

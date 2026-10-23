@@ -10,7 +10,7 @@ const COMPLAINT_TRIGGER =
   /\b(complain(?:ed|ing|ts?)|became\s+upset|was\s+upset|guest\s+(?:was\s+)?upset|unhappy|dissatisfied)\b/i;
 
 const MAINTENANCE_TRIGGER =
-  /\b(pest\s+control|repair(?:ed|ing)?|electrician|drainage|leak(?:ing)?|hvac|fly\s+trap|maintenance|equipment\s+(?:down|failed|stopped))\b/i;
+  /\b(pest\s+control|repair(?:ed|ing)?|replaced|electrician|drainage|leak(?:ing)?|hvac|fly\s+trap|maintenance|equipment\s+(?:down|failed|stopped)|ice cream machine)\b/i;
 
 const STAFF_TRIGGER =
   /\b(server\s+was\s+late|late\s+arrival|understaffed|short[- ]staffed|sick\s+leave|staff\s+performance|absent)\b/i;
@@ -24,8 +24,11 @@ export function splitNarrativeClauses(text = "") {
   const marked = normalized
     .replace(/\s+(?=Table\s+\d+\b)/gi, "\n")
     .replace(/\s+(?=No\s+(?:guest\s+)?complain)/gi, "\n")
+    .replace(/\s+(?=No\s+complaints?\b)/gi, "\n")
+    .replace(/\s+(?=No\s+issues?\s+reported\b)/gi, "\n")
     .replace(/\s+(?=Nobody\s+complained\b)/gi, "\n")
-    .replace(/\s+(?=Pest\s+control\b)/gi, "\n");
+    .replace(/\s+(?=Pest\s+control\b)/gi, "\n")
+    .replace(/\s*[•;]\s*/g, "\n");
   return marked
     .split(/(?<=[.!?])\s+|\n+/)
     .map((clause) => clause.trim())
@@ -33,6 +36,10 @@ export function splitNarrativeClauses(text = "") {
 }
 
 export function isNegatedComplaint(clause = "") {
+  if (!clause) return false;
+  if (/\btable\s+\d+\s+complain/i.test(clause)) return false;
+  if (/\bno\b[^.]{0,40}\bcomplain/i.test(clause)) return true;
+  if (COMPLAINT_TRIGGER.test(clause) && !/\bno\s+(?:guest\s+)?complain/i.test(clause)) return false;
   return NEGATED_COMPLAINT.test(clause);
 }
 
@@ -213,7 +220,14 @@ function buildComplaintIncident(clauses, context) {
   };
 }
 
+function equipmentName(text = "") {
+  const named = String(text).match(/\b(ice cream machine|pest control|fly trap|fryer|oven|dishwasher|fridge|freezer|hvac|air conditioner|ac unit)\b/i);
+  return named ? named[1] : null;
+}
+
 function buildObservationIncident(kind, clause, context) {
+  const equipment = equipmentName(clause);
+  const completed = /\b(repaired|replaced|completed|fixed|checked)\b/i.test(clause);
   return {
     kind,
     date: context.date || null,
@@ -223,10 +237,12 @@ function buildObservationIncident(kind, clause, context) {
     tableNumber: null,
     category: kind,
     categoryLabel: categoryLabel(kind),
-    product: kind === "maintenance" ? "Facilities" : "Staff",
-    issue: clause.replace(/\.$/, "") + (clause.endsWith(".") ? "" : "."),
-    action: null,
-    resolution: "Final satisfaction not documented.",
+    product: equipment ? titleCase(equipment) : (kind === "maintenance" ? "Facilities" : "Staff"),
+    issue: clause.replace(/\.$/, "") + (/\.$/.test(clause) ? "" : "."),
+    action: completed ? "Work recorded in the logbook." : null,
+    resolution: kind === "maintenance"
+      ? (completed ? "Logged as carried out. This is not a guest outcome." : "Completion was not documented.")
+      : "This is a staff observation, not a guest-satisfaction result.",
     satisfactionKnown: false,
     sourceDocument: context.sourceDocument || "daily logbook",
     sourceSection: context.servicePeriod || context.section || null,
@@ -267,23 +283,15 @@ export function extractIncidentsFromNarrative(text = "", context = {}) {
   return incidents.map((incident) => ({ ...incident, confidence: incidentConfidence(incident) }));
 }
 
-function wantedKind(mode) {
-  if (mode === "maintenance") return "maintenance";
-  if (mode === "staff") return "staff";
-  if (mode === "food_quality") return "food_quality";
-  if (mode === "service") return "service";
-  if (mode === "beverage") return "beverage";
-  return "complaint";
-}
-
 function matchesMode(incident, mode) {
-  const wanted = wantedKind(mode);
-  if (wanted === "complaint") return incident.kind === "complaint";
-  if (wanted === "maintenance") return incident.kind === "maintenance";
-  if (wanted === "staff") return incident.kind === "staff";
-  if (wanted === "food_quality") return incident.kind === "complaint" && incident.category === "food_quality";
-  if (wanted === "service") return incident.kind === "complaint" && incident.category === "service";
-  if (wanted === "beverage") return incident.kind === "complaint" && incident.category === "beverage";
+  if (mode === "executive_operational" || mode === "resolution") {
+    return incident.kind === "complaint" || incident.kind === "maintenance" || incident.kind === "staff";
+  }
+  if (mode === "maintenance") return incident.kind === "maintenance";
+  if (mode === "staff") return incident.kind === "staff";
+  if (mode === "food_quality") return incident.kind === "complaint" && incident.category === "food_quality";
+  if (mode === "service") return incident.kind === "complaint" && incident.category === "service";
+  if (mode === "beverage") return incident.kind === "complaint" && incident.category === "beverage";
   return incident.kind === "complaint";
 }
 
@@ -333,10 +341,13 @@ function analyze(incidents) {
   }
   const themeDays = new Map();
   for (const incident of incidents) {
-    const theme = incident.issue === "inconsistent taste" || /inconsistent taste|taste/i.test(incident.issue)
-      ? incident.category === "food_quality" ? "taste" : null
-      : null;
-    const key = theme || String(incident.product || "").toLowerCase();
+    const specific = incident.kind === "maintenance"
+      ? (equipmentName(incident.evidenceExcerpt || "") || "").toLowerCase()
+      : "";
+    const taste = incident.category === "food_quality" && /inconsistent taste|taste/i.test(incident.issue) ? "inconsistent taste" : "";
+    const key = specific || taste || (incident.product && !["Facilities", "Staff", "Guest complaint", "Service"].includes(incident.product)
+      ? incident.product.toLowerCase()
+      : "");
     if (!key) continue;
     if (!themeDays.has(key)) themeDays.set(key, new Set());
     if (incident.date) themeDays.get(key).add(incident.date);
@@ -351,13 +362,35 @@ function analyze(incidents) {
   if (products.length >= 2 && incidents.some((item) => item.category === "food_quality")) {
     recommendations.push(`Compare the recorded food notes (${products.join(", ")}) with the kitchen lead before the next service.`);
   }
-  if (removed.length && unknown.length) {
+  if (removed.length && unknown.length && incidents.some((item) => item.kind === "complaint")) {
     recommendations.push("After a bill removal or recovery offer, record whether the guest accepted the outcome. Do not treat the action itself as satisfaction.");
   }
   if (!recommendations.length && incidents.length) {
     recommendations.push("Review the incident register with the duty manager and record any outcome that is still missing.");
   }
   return { insights, recommendations, recurring };
+}
+
+function buildPriorities(incidents) {
+  const lines = [];
+  const food = incidents.filter((item) => item.category === "food_quality");
+  const service = incidents.filter((item) => item.category === "service");
+  const maintenance = incidents.filter((item) => item.kind === "maintenance");
+  const unresolved = incidents.filter((item) => item.kind === "complaint" && !item.satisfactionKnown);
+  if (food.length) {
+    lines.push(`Food-quality notes on ${[...new Set(food.map((item) => item.dateLabel))].join(", ")} (${[...new Set(food.map((item) => item.product))].join(", ")}). Check the prep spec with the kitchen lead.`);
+  }
+  if (unresolved.length) {
+    lines.push(`${unresolved.length} guest incident(s) do not record whether the guest accepted the outcome. A bill removal is not satisfaction.`);
+  }
+  if (service.length) {
+    lines.push(`Service incidents on ${[...new Set(service.map((item) => item.dateLabel))].join(", ")}. Review the sequence with the floor lead.`);
+  }
+  if (maintenance.length && lines.length < 3) {
+    lines.push(`Facilities notes on ${maintenance.map((item) => `${item.dateLabel} ${item.product}`).join("; ")}. Confirm which jobs are closed.`);
+  }
+  if (!lines.length) lines.push("The recovered narratives do not support an additional priority beyond the incident register.");
+  return lines.slice(0, 3);
 }
 
 export function buildIncidentRegister({
@@ -402,13 +435,34 @@ export function buildIncidentRegister({
         ? "food-quality complaints"
         : mode === "service"
           ? "service complaints"
-          : "guest complaints";
+          : mode === "executive_operational"
+            ? "operational findings"
+            : mode === "resolution"
+              ? "complaint follow-up"
+              : "guest complaints";
   const heading = `${String(branchLabel || "Branch").toUpperCase()} ${label.toUpperCase()}`;
-  const analysis = analyze(collected.filter((item) => item.kind === "complaint" || mode !== "complaints"));
-  const body = collected.map(renderIncident).join("\n\n");
+  const analysis = analyze(collected.filter((item) => item.kind === "complaint" || mode === "maintenance" || mode === "staff" || mode === "executive_operational"));
+  const narrativeDays = new Set(facts.filter((fact) => String(fact.dimensions?.text_value || "").trim()).map((fact) => fact.periodStart)).size;
+  const complaints = collected.filter((item) => item.kind === "complaint");
+  const satisfied = complaints.filter((item) => item.satisfactionKnown);
+  const followUp = complaints.filter((item) => !item.satisfactionKnown);
+  let body = collected.map(renderIncident).join("\n\n");
+  if (mode === "resolution") {
+    body = [
+      `Documented guest satisfaction: ${satisfied.length}.`,
+      satisfied.map(renderIncident).join("\n\n"),
+      `Still requiring follow-up because satisfaction was not recorded: ${followUp.length}.`,
+      "A management action such as removing an item from the bill is not confirmation that the guest was satisfied.",
+      followUp.map(renderIncident).join("\n\n"),
+    ].filter(Boolean).join("\n\n");
+  }
+  if (mode === "executive_operational") {
+    const priorities = buildPriorities(collected);
+    body = `${body}\n\nPriorities supported by these records\n${priorities.map((line, index) => `${index + 1}. ${line}`).join("\n")}`;
+  }
   const countLine = collected.length
-    ? `${collected.length} documented ${collected.length === 1 ? "item" : "items"} identified.`
-    : `No ${label} were identified in the recovered narratives. Retrieved text was reviewed. This does not prove that no incident occurred.`;
+    ? `Reviewed ${narrativeDays} narrative day(s). ${collected.length} documented ${collected.length === 1 ? "item" : "items"} identified.`
+    : `Reviewed ${narrativeDays} narrative day(s). No ${label} were identified in the recovered narratives. This does not prove that no incident occurred.`;
   const directAnswer = [
     heading,
     periodLabel,
@@ -435,7 +489,7 @@ export function buildIncidentRegister({
     ],
     insights: analysis.insights,
     recommendations: analysis.recommendations,
-    confidence: collected.some((item) => item.confidence === "high") ? "high" : collected.length ? "medium" : "none",
+    confidence: collected.length && narrativeDays > 0 ? "medium" : "none",
     logbookDays: new Set(collected.map((item) => item.date).filter(Boolean)).size,
     operationalFindings: collected,
     groupedFindings: collected.map((item) => ({

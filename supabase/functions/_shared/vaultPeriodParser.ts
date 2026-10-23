@@ -752,9 +752,42 @@ function firstNDaysOfMonth(token, dayCount, referenceDate) {
   return clipOpenPeriod(bounded, referenceDate);
 }
 
+function explicitDayPeriod(monthToken, dayToken, yearToken, referenceDate) {
+  const monthIndex = MONTH_MAP[String(monthToken || "").toLowerCase()];
+  const day = Number(dayToken);
+  if (monthIndex == null || !day) return null;
+  const year = resolveYearForMonth(monthIndex, yearToken, referenceDate);
+  const iso = isoDate(year, monthIndex + 1, day);
+  return {
+    startDate: iso,
+    endDate: iso,
+    label: formatDayMonthLabel(year, monthIndex, day),
+    periodType: "single_day",
+    isSingleDay: true,
+  };
+}
+
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
   const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
+
+  if (!/\bbetween\b/.test(q)) {
+    const dayHits = [...q.matchAll(new RegExp(`\\b(${MONTH_TOKEN})\\s+(\\d{1,2})(?!\\s*[-–]\\s*\\d)`, "g"))];
+    if (dayHits.length >= 2 && /\b(compare|and|versus|vs)\b/.test(q)) {
+      const year = (q.match(/\b(20\d{2})\b/) || [])[1] || null;
+      const current = explicitDayPeriod(dayHits[0][1], dayHits[0][2], year, referenceDate);
+      const previous = explicitDayPeriod(dayHits[1][1], dayHits[1][2], year, referenceDate);
+      if (current?.startDate && previous?.startDate && current.startDate !== previous.startDate) {
+        return {
+          current,
+          previous,
+          isComparison: true,
+          periodType: "two_day_compare",
+          likeForLike: true,
+        };
+      }
+    }
+  }
 
   if (
     /\b(week over week|wow|w\/w)\b/.test(q)

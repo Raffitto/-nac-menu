@@ -55,6 +55,14 @@ describe("operational incident extraction", () => {
     expect(incidents[1].action).toMatch(/offered as recovery/i);
   });
 
+  test("keeps an earlier complaint when the same note later says no guest complained", () => {
+    const incidents = extractIncidentsFromNarrative(
+      "Table 21 complained about quinoa salad tasting different. Management removed it from the bill. No guest complained about the drinks. Table 10 became upset about the popcorn chicken service sequence.",
+      { date: "2026-10-01", servicePeriod: "Dinner" },
+    ).filter((item) => item.kind === "complaint");
+    expect(incidents.map((item) => item.tableNumber)).toEqual(["21", "10"]);
+  });
+
   test("does not turn a negated sentence or pest control into a guest complaint", () => {
     const incidents = extractIncidentsFromNarrative(OCTOBER_FACTS[2].dimensions.text_value, {
       date: "2026-10-12",

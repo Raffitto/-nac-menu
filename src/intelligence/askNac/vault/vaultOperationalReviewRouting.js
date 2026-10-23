@@ -20,6 +20,7 @@ export { isVaultOperationalReviewQuery };
 export function scoreVaultOperationalReviewIntent(q = "") {
   const text = String(q || "").trim();
   if (!text) return 0;
+  if (/\bcomplaints?\b/i.test(text) && /\b(best[\s-]?selling|best sellers?|top selling|top items?|menu items|by quantity)\b/i.test(text)) return 50;
 
   // Explicit operational comparisons must outrank generic date-range sales routing.
   // Do not intercept mixed operational + financial comparisons.

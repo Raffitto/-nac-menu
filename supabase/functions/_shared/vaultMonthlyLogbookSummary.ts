@@ -331,7 +331,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     };
   }
 
-  if (mode === "complaints" || mode === "maintenance" || mode === "staff" || mode === "food_quality" || mode === "beverage" || mode === "service") {
+  if (mode === "complaints" || mode === "maintenance" || mode === "staff" || mode === "food_quality" || mode === "beverage" || mode === "service" || mode === "executive_operational" || mode === "resolution") {
     const focused = buildFocusedNarrativeSummary({ facts, coverage, branchLabel, periodLabel, mode, compareSummary });
     return focused;
   }
