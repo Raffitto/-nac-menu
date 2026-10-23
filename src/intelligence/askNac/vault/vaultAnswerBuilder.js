@@ -24,6 +24,8 @@ import {
   assessSearchMatchConfidence,
   buildOperationalSearchDirectAnswer,
 } from "./vaultDocumentSearchRanking";
+import { buildMonthlyLogbookExecutiveSummary } from "./vaultMonthlyLogbookSummary";
+import { detectMonthlyOperationalMode } from "./vaultMonthlyOperationalSummaryRouting";
 import {
   buildCrossDocumentOperationalSummary,
   buildOperationalManagerAnswer,
@@ -911,6 +913,23 @@ export function buildVaultDocumentSearchAnswer(route, tool, readiness) {
 }
 
 export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
+  if (!tool?.monthlyLogbookSummary && (tool?.facts || []).some((fact) => fact?.dimensions?.text_value)) {
+    const summary = buildMonthlyLogbookExecutiveSummary({
+      facts: tool.facts,
+      coverage: tool.coverage || [],
+      branchLabel: tool.branchLabel || "Branch",
+      periodLabel: tool.periodLabel || route?.vaultPeriod?.label || "period",
+      mode: detectMonthlyOperationalMode(`${route?.question || ""} ${route?.resolvedQuestion || ""}`),
+    });
+    tool = {
+      ...tool,
+      monthlyLogbookSummary: summary,
+      sources: tool.sources?.length
+        ? tool.sources
+        : [{ name: "ask_nac_structured_facts", detail: "Recovered daily_logbook narratives" }],
+    };
+  }
+
   if (tool?.monthlyLogbookSummary) {
     const summary = tool.monthlyLogbookSummary;
     return createAskNacResponse({
@@ -923,6 +942,7 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
       ),
       insights: summary.insights || [],
       recommendations: summary.recommendations || [],
+      operationalFindings: summary.operationalFindings || [],
       confidence:
         summary.confidence === "high"
           ? CONFIDENCE_LEVELS.HIGH
@@ -935,7 +955,11 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
       intent: route.intent,
       branchLabel: tool?.branchLabel,
       vaultSources: tool?.vaultSources || summary.vaultSources || [],
-      warnings: summary.logbookDays < 10 ? [`Only ${summary.logbookDays} logbook day(s) covered for this month.`] : [],
+      warnings: summary.operationalFindings?.length
+        ? []
+        : summary.logbookDays > 0 && summary.logbookDays < 10
+          ? [`Structured logbook coverage for this period is ${summary.logbookDays} day(s).`]
+          : [],
     });
   }
 

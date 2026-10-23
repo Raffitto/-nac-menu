@@ -4,6 +4,7 @@
 
 import { classifyOperationalIssue } from "./vaultDocumentSearchRanking.ts";
 import { extractDateFromFileTitle } from "./vaultOperationalIntelligence.ts";
+import { buildIncidentRegister } from "./operationalIncidentExtractor.ts";
 
 const TEXT_KEYS = [
   "complaints",
@@ -180,6 +181,128 @@ function buildSection(title, lines) {
   return `**${title}**\n${body.map((line) => `- ${line}`).join("\n")}`;
 }
 
+const SECTION_LABELS: Record<string, string> = {
+  breakfast_notes: "Breakfast",
+  lunch_notes: "Lunch",
+  dinner_notes: "Dinner",
+  complaints: "Complaints",
+  operational_issues: "Operational issues",
+  operational_highlights: "Highlights",
+  training_notes: "Training",
+  staff_performance_notes: "Staff performance",
+};
+
+const FOCUS_LABELS: Record<string, string> = {
+  complaints: "guest complaints",
+  maintenance: "maintenance incidents",
+  staff: "staff performance notes",
+  food_quality: "food-quality issues",
+  beverage: "beverage-quality issues",
+  service: "service problems",
+};
+
+function narrativeText(fact: Record<string, any>) {
+  const dims = fact?.dimensions || {};
+  return String(dims.text_value || "").replace(/\s+/g, " ").trim();
+}
+
+function withoutNegatedAbsences(text: string) {
+  return String(text || "").replace(/\bno\s+(?:major\s+)?(?:issues?|problems?|complaints?|86)\b/gi, " ");
+}
+
+function matchesFocus(mode: string, text: string, fact: Record<string, any>) {
+  const cleaned = withoutNegatedAbsences(text);
+  if (mode === "complaints") {
+    return /\b(complain(?:ed|ing|t|ts)?|guest (?:was |were )?(?:unhappy|upset|disappointed)|dissatisfied|not satisfied|removed from (?:the )?bill|refund(?:ed)?|comped)\b/i.test(cleaned)
+      || /\b(undercooked|overcooked|cold food|cold eggs|hair in|insect in|fly in|wrong order|long wait|slow service|rude (?:staff|server)|service was slow)\b/i.test(cleaned);
+  }
+  if (mode === "maintenance") {
+    return /\b(maintenance|repair(?:ed|ing)?|leak(?:ing|ed)?|electrician|drainage|pest control|broken|hvac|equipment (?:down|failed|stopped)|ac (?:down|stopped|not working))\b/i.test(text);
+  }
+  if (mode === "staff") {
+    return fact?.metricKey === "staff_performance_notes"
+      || /\b(staff performance|understaffed|short[- ]staffed|sick leave|late arrival|server was late|training (?:gap|missed))\b/i.test(text);
+  }
+  if (mode === "food_quality") {
+    return /\b(food quality|undercooked|overcooked|cold (?:food|eggs|fries|pasta)|raw|burnt|bland|hair in|insect)\b/i.test(cleaned)
+      || (/\bfood\b/i.test(cleaned) && /\b(complain|late|wrong|bad|cold|quality)\b/i.test(cleaned));
+  }
+  if (mode === "beverage") {
+    return /\b(beverage|drink|coffee|cocktail|juice|tea|mocktail)\b/i.test(text)
+      && /\b(wrong|cold|bitter|watered|weak|spilled|complain|bad|off)\b/i.test(cleaned);
+  }
+  if (mode === "service") {
+    return /\b(slow service|service was slow|long wait|kept waiting|rude|ignored|poor service|service (?:issue|problem|complaint|delay))\b/i.test(cleaned);
+  }
+  return false;
+}
+
+function recordedAction(text: string) {
+  const match = String(text || "").match(/\b(?:kitchen |service )?(?:remade|replaced|removed from (?:the )?bill|comped|refunded|apolog(?:ized|ised)|resolved|guest (?:was )?satisfied)[^.]*/i);
+  return match ? match[0].trim() : null;
+}
+
+function formatIncidentDate(iso: string | null) {
+  if (!iso) return "Undated";
+  const [y, m, d] = String(iso).split("-").map(Number);
+  if (!y || !m || !d) return String(iso);
+  const label = new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `${label} (${iso})`;
+}
+
+function narrativeCoverage(facts: Record<string, any>[] = []) {
+  const breakfast = new Set<string>();
+  const lunch = new Set<string>();
+  const dinner = new Set<string>();
+  const any = new Set<string>();
+  for (const fact of facts) {
+    if (!TEXT_KEYS.includes(fact.metricKey) || !narrativeText(fact)) continue;
+    const date = fact.periodStart || "undated";
+    any.add(date);
+    if (fact.metricKey === "breakfast_notes") breakfast.add(date);
+    if (fact.metricKey === "lunch_notes") lunch.add(date);
+    if (fact.metricKey === "dinner_notes") dinner.add(date);
+  }
+  return { days: any.size, breakfast: breakfast.size, lunch: lunch.size, dinner: dinner.size };
+}
+
+export function buildFocusedNarrativeSummary({
+  facts = [],
+  coverage = [],
+  branchLabel = "Branch",
+  periodLabel = "Period",
+  mode = "complaints",
+  compareSummary = null,
+}: {
+  facts?: Record<string, any>[];
+  coverage?: Record<string, any>[];
+  branchLabel?: string;
+  periodLabel?: string;
+  mode?: string;
+  compareSummary?: string[] | null;
+} = {}) {
+  const register = buildIncidentRegister({
+    facts,
+    branchLabel,
+    periodLabel,
+    mode,
+    textKeys: TEXT_KEYS,
+    sectionLabels: SECTION_LABELS,
+    compareSummary,
+  });
+  const readyDays = (coverage || []).filter((row) => row.readinessStatus === "ready").length;
+  return {
+    ...register,
+    readyDays,
+    logbookDays: register.logbookDays || narrativeCoverage(facts).days,
+  };
+}
+
 export function buildMonthlyLogbookExecutiveSummary({
   facts = [],
   coverage = [],
@@ -196,16 +319,21 @@ export function buildMonthlyLogbookExecutiveSummary({
   if (!logbookDays) {
     return {
       title: `Operational summary · ${periodLabel}`,
-      directAnswer: `No recovered daily logbook structured facts were found for ${branchLabel} in ${periodLabel}.`,
+      directAnswer: `No recovered daily logbook narratives were returned for ${branchLabel} in ${periodLabel} from ask_nac_structured_facts. This does not establish that no incidents occurred. Check branch access, the date window, and structured-fact coverage before treating the result as a verified zero.`,
       keyMetrics: [],
       insights: [],
-      recommendations: ["Upload or re-index daily logbooks for this month, then retry."],
+      recommendations: [],
       confidence: "none",
       logbookDays: 0,
       readyDays,
       groupedFindings: [],
       vaultSources: [],
     };
+  }
+
+  if (mode === "complaints" || mode === "maintenance" || mode === "staff" || mode === "food_quality" || mode === "beverage" || mode === "service" || mode === "executive_operational" || mode === "resolution") {
+    const focused = buildFocusedNarrativeSummary({ facts, coverage, branchLabel, periodLabel, mode, compareSummary });
+    return focused;
   }
 
   const themes = extractThemes(days);

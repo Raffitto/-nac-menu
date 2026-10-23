@@ -22,7 +22,7 @@ const PHRASE_REPLACEMENTS = [
   [/what sells most\b/gi, "top items by quantity"],
   [/top seller\b/gi, "top item"],
   [/waiter performance\b/gi, "waiter google redirect leaderboard"],
-  [/staff performance\b/gi, "staff google redirect leaderboard"],
+  [/staff performance\b(?!\s+issues?\b)/gi, "staff google redirect leaderboard"],
   [/which waiter performs best\b/gi, "which waiter drove most google redirects"],
   [/which staff performs best\b/gi, "which staff drove most google redirects"],
   [/best waiter\b/gi, "top waiter google redirects"],

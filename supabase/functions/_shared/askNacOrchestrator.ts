@@ -54,7 +54,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
-import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery } from "./vaultMonthlyOperationalSummaryRouting.ts";
+import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery, requiresStructuredOperationalRetrieval } from "./vaultMonthlyOperationalSummaryRouting.ts";
 import {
   scoreSalesPerformanceQueryFocus,
   isDeliveryPlatformPeriodQuery,
@@ -327,6 +327,9 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
       if (/\bgoogle reviews?\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (/\bwhat changed between\b/.test(q) && !CASH_UP_INTENT_SIGNAL.test(q)) return 0;
       if (scoreTheoreticalConsumptionIntent(q) > 0) return 0;
+      if (/\b(menu items?|by quantity|best[\s-]?selling|top selling items|top items?)\b/.test(q)) return 0;
+      if (/\bstaff performance issues?\b/.test(q) || /\bstaff\b.{0,24}\b(issues?|documented)\b/.test(q)) return 0;
+      if (/\b(guest complaints?|maintenance|pest control|logbooks?)\b/.test(q) && !/\b(total sales|net sales|revenue)\b/.test(q)) return 0;
       const salesSource = selectSalesSource(q);
       if (salesSource === SALES_SOURCE.FOODICS_LIVE || salesSource === SALES_SOURCE.FOODICS_OPERATIONAL || salesSource === SALES_SOURCE.FOODICS_COMPARISON) return 0;
       if (salesSource === SALES_SOURCE.CASH_UP || salesSource === SALES_SOURCE.MIXED_TODAY_YESTERDAY || salesSource === SALES_SOURCE.MIXED_OPEN_VS_COMPLETED) return 36;
@@ -448,6 +451,7 @@ const INTENT_RULES: { id: string; score: (q: string, options?: { documentContext
   {
     id: ASK_NAC_INTENTS.TOP_ITEMS,
     score(q) {
+      if (/\b(by quantity|menu items?|best[\s-]?selling|top selling items)\b/.test(q)) return 44;
       if (/\b(top \d+|top ten|best sellers?|top items?|highest selling|most sold|top selling items?)\b/.test(q)) return 14;
       if (/\b(best sell|sells most|most popular|top item)\b/.test(q)) return 15;
       return 0;
@@ -1301,7 +1305,9 @@ export async function processAskNacOnEdge(
       || route.vaultPeriod;
     route = {
       ...route,
-      intent: monthlyLogbookQuestion && !period?.isSingleDay ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
+      intent: (requiresStructuredOperationalRetrieval(question, period) || (monthlyLogbookQuestion && !period?.isSingleDay))
+        ? VAULT_INTENTS.OPERATIONAL_REVIEW
+        : VAULT_INTENTS.LOGBOOK,
       vaultPeriod: period,
       vaultCompare: null,
       queryFocus: null,
