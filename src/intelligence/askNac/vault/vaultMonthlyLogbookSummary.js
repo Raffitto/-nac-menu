@@ -3,7 +3,6 @@
  */
 
 import { classifyOperationalIssue } from "./vaultDocumentSearchRanking";
-import { extractDateFromFileTitle } from "./vaultOperationalIntelligence";
 
 const TEXT_KEYS = [
   "complaints",
