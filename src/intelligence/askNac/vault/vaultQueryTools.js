@@ -936,10 +936,30 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
 
 export async function searchOperationalReviewDocuments(supabase, context = {}) {
   const question = String(context.question || "");
-  if (isVaultMonthlyOperationalSummaryQuery(question) || (context.vaultPeriod?.startDate && context.vaultPeriod?.endDate && !context.vaultPeriod?.isSingleDay && /\\b(operational|operations|complaints?|incidents?|logbooks?|recurring|staff performance)\\b/i.test(question))) {
+  const operationalRange = context.vaultPeriod?.startDate && context.vaultPeriod?.endDate
+    && !context.vaultPeriod?.isSingleDay;
+  const needsStructured = isVaultMonthlyOperationalSummaryQuery(question)
+    || (operationalRange && /\\b(operational|operations|complaints?|incidents?|logbooks?|recurring|staff performance)\\b/i.test(question));
+  if (needsStructured) {
     const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
     const structured = await fetchReview(supabase, context);
     if (structured?.structuredLogbookReview) return structured;
+    // An empty structured lookup is NOT evidence that no incidents occurred.
+    // Do not silently substitute chunk search, which excludes recovered DOCX narratives.
+    return {
+      structuredLogbookReview: true,
+      queryStatus: "insufficient_evidence",
+      branch: resolveBranch(context),
+      periodLabel: context.vaultPeriod?.label || null,
+      groupedFindings: [],
+      vaultSources: [],
+      sources: [{ name: "ask_nac_structured_facts", detail: "Structured logbook lookup returned no usable evidence" }],
+      monthlyLogbookSummary: {
+        title: "Operational review — evidence unavailable",
+        directAnswer: "I could not retrieve usable structured logbook evidence for this period. This does not establish that no guest complaints occurred. Check query access and structured retrieval health; do not re-upload records without confirming ingestion is missing.",
+        keyMetrics: [], insights: [], recommendations: [], confidence: "none", logbookDays: 0, groupedFindings: [], vaultSources: [],
+      },
+    };
   }
 
   const theme = context.reviewTheme || extractOperationalReviewTheme(question);
