@@ -1364,3 +1364,30 @@
 .nac-ask-nac-threads__privacy { border-top: 1px solid rgba(205,178,117,.15); margin: 10px 0 0; }
 .nac-ask-nac-threads button:focus-visible { outline: 2px solid #d7c7a1; outline-offset: 2px; }
 @media (max-width: 920px) { .nac-ask-nac-workspace { grid-template-columns: minmax(0, 1fr); } .nac-ask-nac-threads { min-height: auto; max-height: 190px; } .nac-ask-nac-threads__privacy { display: none; } }
+
+/* Keep the chat input visible on desktop: only the conversation scrolls. */
+@media (min-width: 921px) {
+  .nac-ask-nac-workspace {
+    height: min(720px, calc(100dvh - 290px));
+    min-height: 430px;
+    align-items: stretch;
+  }
+  .nac-ask-nac-workspace__column {
+    min-height: 0;
+    height: 100%;
+    padding-bottom: 0;
+    overflow: hidden;
+  }
+  .nac-ask-nac-workspace .nac-ask-nac-chat--page {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .nac-ask-nac-workspace .nac-ask-nac-composer {
+    position: relative;
+    bottom: auto;
+    margin-top: 0;
+  }
+  .nac-ask-nac-threads { min-height: 0; }
+}
