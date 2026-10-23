@@ -41,6 +41,21 @@ export function resolveAnalyticalConfidence({
     level = CONFIDENCE_LEVELS.MEDIUM;
   }
 
+  const requested = route?.vaultPeriod as { periodType?: string; startDate?: string; endDate?: string; label?: string } | undefined;
+  const evidenceStart = (tool?.startDate as string | undefined) || ((tool?.aggregation as { salesCoverageStart?: string } | undefined)?.salesCoverageStart) || null;
+  const evidenceEnd = (tool?.endDate as string | undefined) || ((tool?.aggregation as { salesCoverageEnd?: string } | undefined)?.salesCoverageEnd) || null;
+  if (
+    requested?.periodType !== "latest_available_sale"
+    && requested?.startDate
+    && requested?.endDate
+    && evidenceStart
+    && evidenceEnd
+    && (requested.startDate !== evidenceStart || requested.endDate !== evidenceEnd)
+  ) {
+    level = CONFIDENCE_LEVELS.LOW;
+    explanation = `Evidence covers ${evidenceStart} to ${evidenceEnd}, not the requested period ${requested.label || `${requested.startDate} to ${requested.endDate}`}.`;
+  }
+
   return {
     level,
     explanation,

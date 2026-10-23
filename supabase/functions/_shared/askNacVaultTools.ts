@@ -1645,6 +1645,16 @@ async function fetchCashUpRangeBundle(
     warnings.push(`Only ${aggregation.dayCount} cash-up day(s) found in the requested range.`);
   }
 
+  const calendarTarget = (vaultPeriod as { requestedStartDate?: string } | undefined)?.requestedStartDate || null;
+  if (
+    vaultPeriod?.periodType === "latest_available_sale"
+    && calendarTarget
+    && resolvedEnd
+    && resolvedEnd < calendarTarget
+  ) {
+    warnings.push(`No completed Cash Up is published after ${resolvedEnd}.`);
+  }
+
   const coveredBranchLabel = !scopedBranch && (aggregation as { branchCoverageLabel?: string | null })?.branchCoverageLabel
     ? (aggregation as { branchCoverageLabel?: string | null }).branchCoverageLabel
     : factsResult.branchLabel;
