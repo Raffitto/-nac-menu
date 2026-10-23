@@ -3,6 +3,7 @@
  */
 
 import { classifyOperationalIssue } from "./vaultDocumentSearchRanking";
+import { buildIncidentRegister } from "./operationalIncidentExtractor";
 
 const TEXT_KEYS = [
   "complaints",
@@ -244,54 +245,6 @@ function narrativeText(fact) {
   return String(dims.text_value || "").replace(/\s+/g, " ").trim();
 }
 
-function withoutNegatedAbsences(text) {
-  return String(text || "").replace(/\bno\s+(?:major\s+)?(?:issues?|problems?|complaints?|86)\b/gi, " ");
-}
-
-function matchesFocus(mode, text, fact) {
-  const cleaned = withoutNegatedAbsences(text);
-  if (mode === "complaints") {
-    return /\b(complain(?:ed|ing|t|ts)?|guest (?:was |were )?(?:unhappy|upset|disappointed)|dissatisfied|not satisfied|removed from (?:the )?bill|refund(?:ed)?|comped)\b/i.test(cleaned)
-      || /\b(undercooked|overcooked|cold food|cold eggs|hair in|insect in|fly in|wrong order|long wait|slow service|rude (?:staff|server)|service was slow)\b/i.test(cleaned);
-  }
-  if (mode === "maintenance") {
-    return /\b(maintenance|repair(?:ed|ing)?|leak(?:ing|ed)?|electrician|drainage|pest control|broken|hvac|equipment (?:down|failed|stopped)|ac (?:down|stopped|not working))\b/i.test(text);
-  }
-  if (mode === "staff") {
-    return fact?.metricKey === "staff_performance_notes"
-      || /\b(staff performance|understaffed|short[- ]staffed|sick leave|late arrival|server was late|training (?:gap|missed))\b/i.test(text);
-  }
-  if (mode === "food_quality") {
-    return /\b(food quality|undercooked|overcooked|cold (?:food|eggs|fries|pasta)|raw|burnt|bland|hair in|insect)\b/i.test(cleaned)
-      || (/\bfood\b/i.test(cleaned) && /\b(complain|late|wrong|bad|cold|quality)\b/i.test(cleaned));
-  }
-  if (mode === "beverage") {
-    return /\b(beverage|drink|coffee|cocktail|juice|tea|mocktail)\b/i.test(text)
-      && /\b(wrong|cold|bitter|watered|weak|spilled|complain|bad|off)\b/i.test(cleaned);
-  }
-  if (mode === "service") {
-    return /\b(slow service|service was slow|long wait|kept waiting|rude|ignored|poor service|service (?:issue|problem|complaint|delay))\b/i.test(cleaned);
-  }
-  return false;
-}
-
-function recordedAction(text) {
-  const match = String(text || "").match(/\b(?:kitchen |service )?(?:remade|replaced|removed from (?:the )?bill|comped|refunded|apolog(?:ized|ised)|resolved|guest (?:was )?satisfied)[^.]*/i);
-  return match ? match[0].trim() : null;
-}
-
-function formatIncidentDate(iso) {
-  if (!iso) return "Undated";
-  const [y, m, d] = String(iso).split("-").map(Number);
-  if (!y || !m || !d) return String(iso);
-  const label = new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  return `${label} (${iso})`;
-}
 
 function narrativeCoverage(facts = []) {
   const breakfast = new Set();
@@ -317,111 +270,23 @@ export function buildFocusedNarrativeSummary({
   mode = "complaints",
   compareSummary = null,
 }) {
-  const label = FOCUS_LABELS[mode] || "operational incidents";
-  const readyDays = (coverage || []).filter((row) => row.readinessStatus === "ready").length;
-  const coverageCounts = narrativeCoverage(facts);
-  const incidents = [];
-  const seen = new Set();
-  for (const fact of facts) {
-    if (!TEXT_KEYS.includes(fact.metricKey)) continue;
-    const text = narrativeText(fact);
-    if (!text || !matchesFocus(mode, text, fact)) continue;
-    const key = `${fact.periodStart}|${fact.metricKey}|${text.toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    incidents.push({
-      date: fact.periodStart || null,
-      section: SECTION_LABELS[fact.metricKey] || fact.metricKey,
-      text,
-      source: fact.fileTitle || fact.fileId || "daily logbook",
-      provenance: fact.dimensions?.provenance || null,
-      action: recordedAction(text),
-    });
-  }
-  incidents.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
-
-  const coverageLine = `${branchLabel}, ${periodLabel}: recovered logbook narratives cover ${coverageCounts.days} day(s)`
-    + ` (${coverageCounts.breakfast} breakfast, ${coverageCounts.lunch} lunch, ${coverageCounts.dinner} dinner).`;
-
-  const lines = incidents.slice(0, 24).map((item) => {
-    const provenance = item.provenance ? `, ${item.provenance}` : "";
-    const action = item.action ? ` Recorded action: ${item.action}.` : "";
-    return `${formatIncidentDate(item.date)} · ${item.section} · ${item.text}${action} Source: ${item.source} (ask_nac_structured_facts, ${item.section}${provenance}).`;
+  const register = buildIncidentRegister({
+    facts,
+    branchLabel,
+    periodLabel,
+    mode,
+    textKeys: TEXT_KEYS,
+    sectionLabels: SECTION_LABELS,
+    compareSummary,
   });
-  if (incidents.length > 24) {
-    lines.push(`${incidents.length - 24} additional matching narrative(s) were retrieved and are not listed here.`);
-  }
-
-  const repeated = new Map();
-  for (const item of incidents) {
-    const key = String(item.text || "").split(/[.!?]/)[0].toLowerCase().replace(/\s+/g, " ").trim();
-    if (!repeated.has(key)) repeated.set(key, new Set());
-    if (item.date) repeated.get(key).add(item.date);
-  }
-  const recurring = [...repeated.entries()].filter(([, dates]) => dates.size >= 2);
-
-  let directAnswer;
-  if (!incidents.length) {
-    directAnswer = [
-      coverageLine,
-      `No ${label} language was identified in those narratives.`,
-      "This is a review of retrieved logbook text. It does not prove that no incident occurred, and it is not a reason to re-upload logbooks.",
-    ].join(" ");
-  } else {
-    directAnswer = [
-      coverageLine,
-      `${incidents.length} ${label} narrative(s) identified. Actions are quoted only when the logbook states them.`,
-      recurring.length
-        ? `Recurring wording on 2 or more days: ${recurring.slice(0, 4).map(([text, dates]) => `${dates.size} day(s) — ${snippet(text, 80)}`).join("; ")}.`
-        : null,
-      lines.map((line) => `- ${line}`).join("\n"),
-    ].filter(Boolean).join("\n\n");
-  }
-
-  if (compareSummary?.length) {
-    directAnswer += `\n\n**Comparison**\n${compareSummary.map((line) => `- ${line}`).join("\n")}`;
-  }
-
-  const vaultSources = [...new Map(
-    incidents.filter((item) => item.source).map((item) => [item.source, {
-      fileId: item.source,
-      title: item.source,
-      reportType: "daily_logbook",
-      periodStart: item.date,
-      periodEnd: item.date,
-    }]),
-  ).values()];
-
+  const readyDays = (coverage || []).filter((row) => row.readinessStatus === "ready").length;
   return {
-    title: `${label[0].toUpperCase()}${label.slice(1)} · ${branchLabel} · ${periodLabel}`,
-    directAnswer,
-    keyMetrics: [
-      { label: "Narrative days", value: String(coverageCounts.days) },
-      { label: "Matching narratives", value: String(incidents.length) },
-      { label: "Breakfast days", value: String(coverageCounts.breakfast) },
-      { label: "Lunch days", value: String(coverageCounts.lunch) },
-      { label: "Dinner days", value: String(coverageCounts.dinner) },
-    ],
-    insights: lines.slice(0, 12),
-    recommendations: [
-      `Evidence table: ask_nac_structured_facts for ${periodLabel}.`,
-      readyDays ? `${readyDays} ready coverage row(s) in this window.` : null,
-    ].filter(Boolean),
-    confidence: incidents.length >= 3 ? "medium" : incidents.length ? "low" : "none",
-    logbookDays: coverageCounts.days,
+    ...register,
     readyDays,
-    groupedFindings: incidents.map((item) => ({
-      date: item.date,
-      issueType: mode,
-      severity: "medium",
-      excerpt: snippet(item.text, 180),
-      source: item.source,
-      fileTitle: item.source,
-      section: item.section,
-    })),
-    vaultSources,
+    logbookDays: register.logbookDays || narrativeCoverage(facts).days,
   };
 }
+
 
 export function buildMonthlyLogbookExecutiveSummary({
   facts = [],

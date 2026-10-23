@@ -211,6 +211,25 @@ export function buildAskNacExportPayload({ question = "", response = {}, filters
     })),
     insights: [...(response.insights || [])],
     recommendations: [...(response.recommendations || [])],
+    operationalFindings: (response.operationalFindings || []).map((finding) => ({
+      date: finding.date || null,
+      dateLabel: finding.dateLabel || finding.date || "",
+      branch: finding.branch || branchLabel,
+      servicePeriod: finding.servicePeriod || finding.sourceSection || "",
+      tableNumber: finding.tableNumber || "",
+      category: finding.category || "",
+      categoryLabel: finding.categoryLabel || "",
+      product: finding.product || "",
+      issue: finding.issue || "",
+      action: finding.action || "",
+      resolution: finding.resolution || "",
+      sourceDocument: finding.sourceDocument || "",
+      sourceSection: finding.sourceSection || "",
+      provenance: finding.provenance || "",
+      evidenceExcerpt: finding.evidenceExcerpt || "",
+      confidence: finding.confidence || "",
+      kind: finding.kind || "",
+    })),
     sources: (response.sources || []).map((s) => ({
       name: s.name,
       detail: s.detail || "",
@@ -274,4 +293,14 @@ function buildDataCompleteness(response = {}, provenance = {}) {
 
 export function hasTabularKeyMetrics(payload) {
   return Array.isArray(payload?.keyMetrics) && payload.keyMetrics.length > 0;
+}
+
+export function hasOperationalFindings(payload) {
+  return Array.isArray(payload?.operationalFindings) && payload.operationalFindings.length > 0;
+}
+
+const INTERNAL_EXPORT_WARNING = /read in the browser|did not return recovered narrative|local fallback|retrieval health/i;
+
+export function executiveReportWarnings(warnings = []) {
+  return (warnings || []).filter((warning) => !INTERNAL_EXPORT_WARNING.test(String(warning || "")));
 }

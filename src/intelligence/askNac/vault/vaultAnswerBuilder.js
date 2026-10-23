@@ -942,6 +942,7 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
       ),
       insights: summary.insights || [],
       recommendations: summary.recommendations || [],
+      operationalFindings: summary.operationalFindings || [],
       confidence:
         summary.confidence === "high"
           ? CONFIDENCE_LEVELS.HIGH
@@ -954,9 +955,11 @@ export function buildVaultOperationalReviewAnswer(route, tool, readiness) {
       intent: route.intent,
       branchLabel: tool?.branchLabel,
       vaultSources: tool?.vaultSources || summary.vaultSources || [],
-      warnings: summary.logbookDays > 0 && summary.logbookDays < 10
-        ? [`Structured logbook coverage for this period is ${summary.logbookDays} day(s).`]
-        : [],
+      warnings: summary.operationalFindings?.length
+        ? []
+        : summary.logbookDays > 0 && summary.logbookDays < 10
+          ? [`Structured logbook coverage for this period is ${summary.logbookDays} day(s).`]
+          : [],
     });
   }
 

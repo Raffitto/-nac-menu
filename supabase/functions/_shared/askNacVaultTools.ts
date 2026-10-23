@@ -2967,6 +2967,7 @@ function buildVaultOperationalReviewAnswer(
       ),
       insights: (monthlySummary.insights as string[]) || [],
       recommendations: (monthlySummary.recommendations as string[]) || [],
+      operationalFindings: monthlySummary.operationalFindings || [],
       confidence: String(monthlySummary.confidence || "low"),
       isAiGenerated: false,
       intent: route.intent,
@@ -2974,9 +2975,11 @@ function buildVaultOperationalReviewAnswer(
       vaultSources: (tool?.vaultSources as unknown[]) || monthlySummary.vaultSources || [],
       missingData: [],
       exportOptions: [],
-      warnings: Number(monthlySummary.logbookDays || 0) > 0 && Number(monthlySummary.logbookDays || 0) < 10
-        ? [`Structured logbook coverage for this period is ${monthlySummary.logbookDays} day(s).`]
-        : [],
+      warnings: Array.isArray(monthlySummary.operationalFindings) && monthlySummary.operationalFindings.length
+        ? []
+        : Number(monthlySummary.logbookDays || 0) > 0 && Number(monthlySummary.logbookDays || 0) < 10
+          ? [`Structured logbook coverage for this period is ${monthlySummary.logbookDays} day(s).`]
+          : [],
     };
   }
 
