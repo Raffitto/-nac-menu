@@ -31,7 +31,9 @@ function loadLogbookBundle(cache, supabase, context, period) {
 
 export async function fetchMonthlyLogbookOperationalReview(supabase, context = {}) {
   const question = String(context.question || "");
-  const vaultPeriod = context.vaultPeriod || extractOperationalMonthPeriod(question);
+  const vaultPeriod = context.vaultPeriod?.startDate && context.vaultPeriod?.endDate
+    ? context.vaultPeriod
+    : extractOperationalMonthPeriod(question);
   if (!vaultPeriod?.startDate || !vaultPeriod?.endDate || vaultPeriod?.isSingleDay) return null;
 
   const mode = detectMonthlyOperationalMode(question);
