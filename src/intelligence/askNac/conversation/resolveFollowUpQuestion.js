@@ -209,7 +209,10 @@ export function resolveFollowUpQuestion(question, context = {}) {
     const branch = extractBranchFragment(prior);
     if (range || month) {
       const scope = range ? `between ${range[1]} and ${range[2]}` : `during ${month} ${year || ""}`;
-      const resolvedQuestion = `${original.replace(/\b(those|these|the above|previously listed)\s+(?:guest\s+)?complaints\b/i, "guest complaints")} recorded ${scope}${branch ? ` at NAC ${branch}` : ""}?`;
+      const stem = original
+        .replace(/\?+$/, "")
+        .replace(/\b(those|these|the above|previously listed)\s+(?:guest\s+)?complaints\b/i, "guest complaints");
+      const resolvedQuestion = `${stem} recorded ${scope}${branch ? ` at NAC ${branch}` : ""}?`;
       return { resolvedQuestion, usedContext: true, resolutionNotes: ["Retained the prior guest-complaint period and branch."] };
     }
   }

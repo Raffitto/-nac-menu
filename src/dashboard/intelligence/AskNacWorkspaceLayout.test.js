@@ -107,10 +107,11 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(css).not.toMatch(/min-height:\s*min\(calc\(100dvh/);
     expect(css).toMatch(/overflow-x:\s*hidden/);
     expect(css).toMatch(/nac-ask-nac-suggestions__track[\s\S]*overflow-x:\s*auto/);
-    // Mobile fullscreen chat body must not keep an internal overflow scroller
-    expect(css).toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow:\s*visible/s);
-    expect(css).not.toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow-y:\s*auto/s);
-    expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*position:\s*sticky/s);
+    // Mobile messages scroll independently; the composer stays in the footer.
+    expect(css).toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*flex-shrink:\s*0/s);
+    expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-chat--page\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-composer\s*\{[^}]*position:\s*relative/s);
     expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*visible/);
 
     const { container } = render(<AskNacTab showVaultPanel={false} />);

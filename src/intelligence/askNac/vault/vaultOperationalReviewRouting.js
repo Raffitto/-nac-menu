@@ -7,9 +7,13 @@ import { isVaultDocumentSearchQuery } from "./vaultDocumentSearchRouting";
 import { isVaultDocumentSummaryQuery } from "./vaultDocumentSummaryRouting";
 import { isVaultOperationalReviewQuery } from "./vaultOperationalIntelligence";
 import {
+  isVaultMonthlyOperationalSummaryQuery,
   scoreVaultMonthlyOperationalSummaryIntent,
   preferredMonthlyOperationalIntent,
+  requiresStructuredOperationalRetrieval,
 } from "./vaultMonthlyOperationalSummaryRouting";
+
+export { requiresStructuredOperationalRetrieval };
 
 export { isVaultOperationalReviewQuery };
 
@@ -24,6 +28,15 @@ export function scoreVaultOperationalReviewIntent(q = "") {
     && !/\b(sales|revenue|foodics|cash[\s-]?up|top items?|average spend)\b/i.test(text);
   if (operationalCompare && /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\s*[-–]\s*\d{1,2}\b/i.test(text)) return 45;
   if (operationalCompare && parseVaultPeriodFromQuestion(text)) return 45;
+
+  if (
+    isVaultMonthlyOperationalSummaryQuery(text)
+    && preferredMonthlyOperationalIntent(text) === "vault_document_summary"
+  ) {
+    return 0;
+  }
+
+  if (requiresStructuredOperationalRetrieval(text)) return 42;
 
   const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
   if (monthlyScore && preferredMonthlyOperationalIntent(text) === "vault_operational_review") {

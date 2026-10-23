@@ -54,7 +54,7 @@ import {
   VAULT_INTENTS,
 } from "./askNacVaultTools.ts";
 import { scoreVaultOperationalReviewIntent } from "./vaultOperationalIntelligence.ts";
-import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery } from "./vaultMonthlyOperationalSummaryRouting.ts";
+import { extractOperationalMonthPeriod, isVaultMonthlyOperationalSummaryQuery, requiresStructuredOperationalRetrieval } from "./vaultMonthlyOperationalSummaryRouting.ts";
 import {
   scoreSalesPerformanceQueryFocus,
   isDeliveryPlatformPeriodQuery,
@@ -1301,7 +1301,9 @@ export async function processAskNacOnEdge(
       || route.vaultPeriod;
     route = {
       ...route,
-      intent: monthlyLogbookQuestion && !period?.isSingleDay ? VAULT_INTENTS.OPERATIONAL_REVIEW : VAULT_INTENTS.LOGBOOK,
+      intent: (requiresStructuredOperationalRetrieval(question, period) || (monthlyLogbookQuestion && !period?.isSingleDay))
+        ? VAULT_INTENTS.OPERATIONAL_REVIEW
+        : VAULT_INTENTS.LOGBOOK,
       vaultPeriod: period,
       vaultCompare: null,
       queryFocus: null,

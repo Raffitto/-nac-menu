@@ -77,7 +77,10 @@ import {
   isVaultMonthlyOperationalSummaryQuery,
   scoreVaultMonthlyOperationalSummaryIntent,
   preferredMonthlyOperationalIntent,
+  requiresStructuredOperationalRetrieval,
+  detectMonthlyOperationalMode,
 } from "./vaultMonthlyOperationalSummaryRouting.ts";
+import { buildMonthlyLogbookExecutiveSummary, MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS } from "./vaultMonthlyLogbookSummary.ts";
 import {
   aggregateCashUpFactsOverRange,
   buildCashUpRangeQueryLimit,
@@ -96,8 +99,6 @@ import {
   shouldUseCashUpRangeRpc,
 } from "./askNacCashUpRangeRpc.ts";
 import { runKnowledgeHealthQuery, buildKnowledgeHealthAnswer } from "./askNacKnowledgeHealth.ts";
-import { MONTHLY_LOGBOOK_SUMMARY_METRIC_KEYS } from "./vaultMonthlyLogbookSummary.ts";
-
 const LOGBOOK_SUMMARY_FACT_SELECT =
   "file_id,period_start,period_end,metric_key,metric_value,dimensions";
 
@@ -1986,20 +1987,63 @@ export async function getLatestVaultCashUpFacts(supabase: SupabaseClient, contex
   };
 }
 
+function structuredLogbookMiss(context: Record<string, unknown>, error: Error | null) {
+  const vaultPeriod = context.vaultPeriod as { label?: string } | null;
+  const periodLabel = vaultPeriod?.label || "the requested period";
+  const branch = resolveBranch(context);
+  const branchLabel = branch ? branchDisplayName(branch) : "the requested branch";
+  const failed = Boolean(error);
+  return {
+    structuredLogbookReview: true,
+    queryStatus: failed ? "connection_error" : "insufficient_evidence",
+    searchError: error?.message || null,
+    branch,
+    branchLabel,
+    periodLabel,
+    groupedFindings: [],
+    vaultSources: [],
+    sources: [{
+      name: "ask_nac_structured_facts",
+      detail: failed ? "Structured logbook query failed" : "Structured logbook lookup returned no narrative rows",
+    }],
+    monthlyLogbookSummary: {
+      title: failed ? "Operational review — retrieval failed" : "Operational review — no structured narratives",
+      directAnswer: failed
+        ? `Structured logbook retrieval failed for ${branchLabel}, ${periodLabel}. This does not establish that no incidents occurred. Database error: ${error?.message}`
+        : `No recovered daily logbook narratives were returned for ${branchLabel}, ${periodLabel} from ask_nac_structured_facts. This does not establish that no guest complaints or incidents occurred.`,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      confidence: "none",
+      logbookDays: 0,
+      groupedFindings: [],
+      vaultSources: [],
+    },
+  };
+}
+
 export async function searchOperationalReviewDocuments(supabase: SupabaseClient, context: Record<string, unknown> = {}) {
   const question = String(context.question || "");
-  if (isVaultMonthlyOperationalSummaryQuery(question)) {
-    const { fetchMonthlyLogbookOperationalReview } = await import("./vaultMonthlyLogbookQuery.ts");
-    const structured = await fetchMonthlyLogbookOperationalReview(supabase, context);
-    if (structured?.structuredLogbookReview) return structured;
+  const suppliedPeriod = context.vaultPeriod as { startDate?: string; endDate?: string; label?: string } | null;
+  const vaultPeriod = suppliedPeriod?.startDate ? suppliedPeriod : parseVaultPeriodFromQuestion(question);
+  const enriched = { ...context, vaultPeriod: vaultPeriod || suppliedPeriod || null };
+  if (requiresStructuredOperationalRetrieval(question, enriched.vaultPeriod as { startDate?: string; endDate?: string } | null)) {
+    try {
+      const { fetchMonthlyLogbookOperationalReview } = await import("./vaultMonthlyLogbookQuery.ts");
+      const structured = await fetchMonthlyLogbookOperationalReview(supabase, enriched);
+      if (structured?.structuredLogbookReview) return structured;
+      return structuredLogbookMiss(enriched, null);
+    } catch (error) {
+      return structuredLogbookMiss(enriched, error as Error);
+    }
   }
 
   const theme = (context.reviewTheme as string) || extractOperationalReviewTheme(question);
   const searchTerms = (context.searchTerms as string) || searchTermsForOperationalTheme(theme);
   const scopedBranch = resolveBranch(context);
   const reportTypes = ["daily_logbook", "reception_daily_report"];
-  const vaultPeriod = (context.vaultPeriod as VaultPeriod | null) || null;
-  const hasRequestedPeriod = Boolean(vaultPeriod?.startDate && vaultPeriod?.endDate);
+  const periodForChunks = (vaultPeriod as VaultPeriod | null) || null;
+  const hasRequestedPeriod = Boolean(periodForChunks?.startDate && periodForChunks?.endDate);
 
   const result = await searchVaultDocumentChunks(supabase, {
     select: CHUNK_SELECT,
@@ -2894,6 +2938,23 @@ function buildVaultOperationalReviewAnswer(
   tool: Record<string, unknown>,
   readiness: Record<string, unknown> | null,
 ): AskNacAnswer {
+  const narrativeFacts = ((tool?.facts as Record<string, any>[]) || []).filter((fact) => fact?.dimensions?.text_value);
+  if (!tool?.monthlyLogbookSummary && narrativeFacts.length) {
+    const summary = buildMonthlyLogbookExecutiveSummary({
+      facts: narrativeFacts,
+      coverage: (tool.coverage as Record<string, any>[]) || [],
+      branchLabel: String(tool.branchLabel || "Branch"),
+      periodLabel: String(tool.periodLabel || (route.vaultPeriod as { label?: string } | undefined)?.label || "period"),
+      mode: detectMonthlyOperationalMode(`${route.question || ""} ${route.resolvedQuestion || ""}`),
+    });
+    tool = {
+      ...tool,
+      monthlyLogbookSummary: summary,
+      sources: (tool.sources as unknown[])?.length
+        ? tool.sources
+        : [{ name: "ask_nac_structured_facts", detail: "Recovered daily_logbook narratives" }],
+    };
+  }
   const monthlySummary = tool?.monthlyLogbookSummary as Record<string, unknown> | undefined;
   if (monthlySummary) {
     return {
@@ -2913,8 +2974,8 @@ function buildVaultOperationalReviewAnswer(
       vaultSources: (tool?.vaultSources as unknown[]) || monthlySummary.vaultSources || [],
       missingData: [],
       exportOptions: [],
-      warnings: Number(monthlySummary.logbookDays || 0) < 10
-        ? [`Only ${monthlySummary.logbookDays} logbook day(s) covered for this month.`]
+      warnings: Number(monthlySummary.logbookDays || 0) > 0 && Number(monthlySummary.logbookDays || 0) < 10
+        ? [`Structured logbook coverage for this period is ${monthlySummary.logbookDays} day(s).`]
         : [],
     };
   }

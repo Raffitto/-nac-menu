@@ -66,11 +66,41 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
   return false;
 }
 
+const OPERATIONAL_TOPIC =
+  /\b(complaints?|incidents?|operational|operations|logbooks?|recurring|staff performance|how did staff|staff\b.{0,24}\bperform|maintenance|food quality|beverage quality|drink quality|service (?:problems?|issues?|complaints?)|guest feedback)\b/i;
+
+export function requiresStructuredOperationalRetrieval(question = "", vaultPeriod: { startDate?: string; endDate?: string } | null = null) {
+  const text = String(question || "").trim();
+  if (!text) return false;
+  if (/\b(sales|revenue|foodics|cash[\s-]?up|menu qr|top items?)\b/i.test(text)) return false;
+  if (
+    /\bsummarize\b/i.test(text)
+    && /\blogbooks?\b/i.test(text)
+    && !/\b(complaints?|incidents?|maintenance|staff|issues?|operations?|what happened)\b/i.test(text)
+  ) {
+    return false;
+  }
+  const period = vaultPeriod?.startDate && vaultPeriod?.endDate
+    ? vaultPeriod
+    : parseVaultPeriodFromQuestion(text);
+  if (period?.startDate && period?.endDate && OPERATIONAL_TOPIC.test(text)) return true;
+  return isVaultMonthlyOperationalSummaryQuery(text);
+}
+
 export function detectMonthlyOperationalMode(question = "") {
   const text = String(question || "").trim().toLowerCase();
-  if (/\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text)) return "compare";
+  const compare = /\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text);
+  if (/\bmaintenance\b/.test(text) && !/\bcomplaints?\b/.test(text)) return "maintenance";
+  if (/\bstaff performance\b|\bhow did staff\b|\bstaff\b.*\b(perform|absence|absent|late)\b/.test(text)) return "staff";
+  if (/\bfood quality\b/.test(text)) return "food_quality";
+  if (/\b(?:beverage|drink) quality\b/.test(text) || (/\bbeverages?\b/.test(text) && /\b(quality|complain|wrong|cold)\b/.test(text))) {
+    return "beverage";
+  }
+  if (/\bservice (?:problems?|issues?|complaints?)\b/.test(text)) return "service";
+  if (/\b(guest complaints?|complaints?)\b/.test(text)) return "complaints";
+  if (compare) return "compare";
   if (/\brecurring\b/.test(text)) return "recurring";
-  if (/\b(issues?|problems?|complaints?|food|drinks?|service)\b/.test(text)) return "issues";
+  if (/\b(issues?|problems?|food|drinks?|service)\b/.test(text)) return "issues";
   if (/\bhighlights?\b/.test(text)) return "highlights";
   if (/\bexecutive operational summary\b/.test(text)) return "executive";
   if (/\bwhat happened\b/.test(text)) return "narrative";
