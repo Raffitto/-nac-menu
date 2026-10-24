@@ -1,21 +1,11 @@
+import { resolveConfirmedMenuIdentity, isConfirmedHistoricalBigNac } from "./menuIdentity";
+
 /**
  * Confirmed guest-catalogue identities.
  * menu_items has no SKU column. Foodics SKUs stay on sales rows
  * (foodics_sales_items.product_sku) and in the Foodics catalogue.
  * These rules only decide what guests see. They do not write the database.
  */
-
-function itemName(item) {
-  return String(item?.en || item?.name_en || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function amount(value) {
-  const match = String(value ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
-  return match ? Number(match[1]) : null;
-}
 
 export const CONFIRMED_MENU_IDENTITIES = Object.freeze([
   {
@@ -41,31 +31,22 @@ export const CONFIRMED_MENU_IDENTITIES = Object.freeze([
 ]);
 
 export function isActiveBigNac(item) {
-  const name = itemName(item);
-  if (name !== "big nac" && name !== "big nac new") return false;
-  return amount(item?.calories) === 1115 && amount(item?.price) === 69;
+  return resolveConfirmedMenuIdentity(item)?.foodicsSku === "sk-2457";
 }
 
-/** Previous Big Nac (sk-1955) is stored as 1100 cal / 68 SAR. Guests see sk-2457 instead. */
+/** Historical status needs an explicit external identity, not a name/price guess. */
 export function isRetiredBigNac(item) {
-  const name = itemName(item);
-  if (name !== "big nac" && name !== "big nac new") return false;
-  return !isActiveBigNac(item);
+  return isConfirmedHistoricalBigNac(item);
 }
 
-/** Khobar is the reference guest presentation. Branch ids on the row stay unchanged. */
+/** Presentation may normalize a confirmed brand label, never fabricate price or nutrition. */
 export function presentGuestMenuItem(item) {
-  const name = itemName(item);
-  if (name !== "big nac" && name !== "big nac new") return item;
-  const alreadyNamed = (item.en === "Big NAC" || item.name_en === "Big NAC");
-  if (isActiveBigNac(item) && alreadyNamed && (!item.name_en || item.name_en === "Big NAC") && item.en === "Big NAC") {
-    return item;
-  }
+  const identity = resolveConfirmedMenuIdentity(item);
+  if (identity?.foodicsSku !== "sk-2457") return item;
+  if (item.en === identity.guestNameEn && (!item.name_en || item.name_en === identity.guestNameEn)) return item;
   return {
     ...item,
-    en: "Big NAC",
-    ...(item.name_en ? { name_en: "Big NAC" } : {}),
-    price: "69 SAR",
-    calories: 1115,
+    en: identity.guestNameEn,
+    ...(item.name_en ? { name_en: identity.guestNameEn } : {}),
   };
 }
