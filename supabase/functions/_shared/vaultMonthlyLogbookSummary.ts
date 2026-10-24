@@ -9,6 +9,8 @@ const TEXT_KEYS = [
   "complaints",
   "operational_issues",
   "operational_highlights",
+  "breakfast_notes",
+  "lunch_notes",
   "dinner_notes",
   "training_notes",
   "staff_performance_notes",
@@ -40,7 +42,7 @@ const GOOGLE_KEYS = [
 const THEME_RULES = [
   { id: "traffic_quiet", label: "Quiet / low demand", re: /\b(quiet|slow|empty mall|mall empty|few reservations|low covers|mostly coffee|coffee and dessert)\b/i },
   { id: "traffic_busy", label: "Busy / strong demand", re: /\b(busy|full house|high covers|strong dinner|packed)\b/i },
-  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|charge|remove from bill|insect|fly|halloumi|cappuccino|spanish|upset)\b/i },
+  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|overcooked|oily|smell|smelled|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove from bill|insect|fly|upset)\b/i },
   { id: "maintenance", label: "Maintenance / facilities", re: /\b(drainage|electrician|pest|gel|powder|trap|battery|ccm|router|repair|leak)\b/i },
   { id: "staffing_system", label: "Staffing / systems", re: /\b(jisr|punch|inventory|upselling|training|staff)\b/i },
   { id: "service_win", label: "Service recovery / wins", re: /\b(satisfied|smooth|well|recovered|apologize|new one|resolved)\b/i },
@@ -126,20 +128,28 @@ function aggregateGoogle(days) {
   return { totals, totalReviews, daysWith };
 }
 
+function incidentSentences(day) {
+  const parts = TEXT_KEYS.flatMap((key) => String(day.texts[key] || "")
+    .split(/\s*[•\n\r]+\s*|(?<=[.!?])\s+(?=[A-Z])/g)
+    .map((value) => value.trim()).filter(Boolean));
+  const incident = /\b(complain(?:ed|ing|t|ts)?|undercook(?:ed)?|overcook(?:ed)?|oily|smell(?:ed)?|bad smell|raw|wrong|burnt|cold food|tenderness|saltiness|remove(?:d)? from (?:the )?(?:bill|check)|insect|fly|upset|delay(?:ed)?|returned|refused|replaced|issue|problem|broken|repair|maintenance|shortage)\b/i;
+  const routine = /\b(no (?:major )?(?:issues?|problems?|complaints?|86)|nothing to report|all tables (?:were )?happy|smooth operations?|overall slow business)\b/gi;
+  return [...new Set(parts.filter((piece) => incident.test(piece.replace(routine, ""))))];
+}
+
 function extractThemes(days) {
   const themes = new Map();
   for (const day of days) {
-    const blob = collectDayTexts(day);
-    if (!blob) continue;
+    const incidents = incidentSentences(day);
     for (const rule of THEME_RULES) {
-      if (!rule.re.test(blob)) continue;
-      if (!themes.has(rule.id)) {
-        themes.set(rule.id, { id: rule.id, label: rule.label, count: 0, examples: [] });
-      }
+      if (rule.id.startsWith("traffic_")) continue;
+      const matching = incidents.filter((line) => rule.re.test(line));
+      if (!matching.length) continue;
+      if (!themes.has(rule.id)) themes.set(rule.id, { id: rule.id, label: rule.label, count: 0, examples: [] });
       const entry = themes.get(rule.id);
       entry.count += 1;
-      if (entry.examples.length < 4) {
-        entry.examples.push(`${formatDayLabel(day)}: ${snippet(blob)}`);
+      for (const line of matching) {
+        if (entry.examples.length < 4) entry.examples.push(formatDayLabel(day) + ": " + snippet(line, 240));
       }
     }
   }
@@ -203,8 +213,8 @@ export function buildMonthlyLogbookExecutiveSummary({
   const reception = aggregateReception(days);
   const google = aggregateGoogle(days);
 
-  const trafficQuiet = themes.find((t) => t.id === "traffic_quiet");
-  const trafficBusy = themes.find((t) => t.id === "traffic_busy");
+  const trafficQuiet = null;
+  const trafficBusy = null;
   const complaints = themes.filter((t) => t.id === "complaint");
   const maintenance = themes.filter((t) => t.id === "maintenance");
   const staffing = themes.filter((t) => t.id === "staffing_system");
@@ -218,24 +228,24 @@ export function buildMonthlyLogbookExecutiveSummary({
 
   const sections = [
     buildSection("Executive Summary", [executiveLead]),
-    buildSection("Traffic / demand pattern", [
-      trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
-      trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
-      !trafficQuiet && !trafficBusy ? "Traffic pattern mixed; review shift notes for day-by-day demand." : null,
-    ]),
     buildSection("Guest complaints", complaints.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Maintenance / facility issues", maintenance.flatMap((t) => t.examples.slice(0, 3))),
     buildSection("Staffing / system issues", staffing.flatMap((t) => t.examples.slice(0, 3))),
-    buildSection("Google review trend", [
+    mode === "summary" ? buildSection("Traffic / demand pattern", [
+      trafficQuiet ? `Quiet/low-demand days noted on ${trafficQuiet.count} logbook(s). Example: ${trafficQuiet.examples[0]}` : null,
+      trafficBusy ? `Busy periods noted on ${trafficBusy.count} logbook(s). Example: ${trafficBusy.examples[0]}` : null,
+      !trafficQuiet && !trafficBusy ? "Demand is not assessed in the incident-only view." : null,
+    ]) : null,
+    mode === "summary" ? buildSection("Google review trend", [
       google.totalReviews
         ? `${google.totalReviews} review events logged across ${google.daysWith} day(s): 5★ ${google.totals.google_review_5}, 4★ ${google.totals.google_review_4}, 3★ ${google.totals.google_review_3}, 2★ ${google.totals.google_review_2}, 1★ ${google.totals.google_review_1}.`
         : "No structured Google review totals in recovered logbooks for this month.",
-    ]),
-    buildSection("Reception totals", [
+    ]) : null,
+    mode === "summary" ? buildSection("Reception totals", [
       reception.daysWith
         ? `Month aggregate from ${reception.daysWith} logbook reception table(s): ${reception.totals.covers.toLocaleString()} covers, ${reception.totals.reservations.toLocaleString()} reservations, ${reception.totals.walkins.toLocaleString()} walk-ins, ${reception.totals.no_shows.toLocaleString()} no-shows, ${reception.totals.cancellations.toLocaleString()} cancellations.`
         : "No structured reception totals in recovered logbooks for this month.",
-    ]),
+    ]) : null,
     buildSection("Recurring themes", recurring.length
       ? recurring.map((t) => `${t.label} (${t.count} day(s)) — ${t.examples[0]}`)
       : ["No recurring themes reached the 2+ day threshold this month."]),
@@ -259,7 +269,7 @@ export function buildMonthlyLogbookExecutiveSummary({
   const directAnswer = sections.join("\n\n");
 
   const groupedFindings = days.flatMap((day) => {
-    const blob = collectDayTexts(day);
+    const blob = incidentSentences(day).join(" • ");
     if (!blob) return [];
     return [{
       date: day.date || extractDateFromFileTitle(day.fileTitle),
@@ -302,6 +312,8 @@ export function buildMonthlyLogbookExecutiveSummary({
       readyDays < logbookDays ? "Some days remain partial — recovery will improve month completeness." : null,
     ].filter(Boolean),
     confidence: confidenceLevelToEnum(confidence),
+    periodLabel,
+    issueCounts: Object.fromEntries(themes.map((theme) => [theme.id, theme.count])),
     logbookDays,
     readyDays,
     groupedFindings,
@@ -311,13 +323,24 @@ export function buildMonthlyLogbookExecutiveSummary({
 
 export function buildMonthlyLogbookCompareSummary(currentSummary, previousSummary) {
   if (!currentSummary?.logbookDays || !previousSummary?.logbookDays) {
-    return ["Insufficient structured logbook coverage in one or both months for theme comparison."];
+    return ["Insufficient structured logbook coverage in one or both months; no improvement or deterioration can be inferred."];
   }
-  return [
-    `${currentSummary.periodLabel || "Current month"}: ${currentSummary.logbookDays} logbook day(s), confidence ${currentSummary.confidence}.`,
-    `${previousSummary.periodLabel || "Previous month"}: ${previousSummary.logbookDays} logbook day(s), confidence ${previousSummary.confidence}.`,
-    "Compare guest complaints, maintenance notes, and traffic language between months in the sections above.",
+  const keys = [
+    ["complaint", "Guest-complaint days"],
+    ["maintenance", "Maintenance-issue days"],
+    ["staffing_system", "Staff/system-issue days"],
   ];
+  const lines = [
+    currentSummary.periodLabel + ": " + currentSummary.logbookDays + " logbook day(s), confidence " + currentSummary.confidence + ".",
+    previousSummary.periodLabel + ": " + previousSummary.logbookDays + " logbook day(s), confidence " + previousSummary.confidence + ".",
+  ];
+  for (const [key, label] of keys) {
+    const current = Number(currentSummary.issueCounts?.[key] || 0);
+    const previous = Number(previousSummary.issueCounts?.[key] || 0);
+    lines.push(label + ": " + current + "/" + currentSummary.logbookDays + " days vs " + previous + "/" + previousSummary.logbookDays + " days.");
+  }
+  lines.push("Counts are documented issue-day occurrences, not verified incident totals; differing coverage prevents definitive improvement claims.");
+  return lines;
 }
 
 export { groupFactsByDay };

@@ -226,10 +226,10 @@ describe("August staff performance oracle", () => {
 describe("Fady reports RBAC", () => {
   const fady = resolveRbacProfile({ user: { email: "fady@nac.com" } });
 
-  test("can open Reports and is clamped to Khobar", () => {
+  test("can open Reports across all branches", () => {
     expect(canAccessNav(fady, "reports")).toBe(true);
-    expect(allowedBranchIds(fady)).toEqual(["khobar"]);
-    expect(resolveEffectiveBranch(fady, "riyadh")).toBe("khobar");
+    expect(allowedBranchIds(fady)).toEqual(["khobar", "riyadh", "jeddah"]);
+    expect(resolveEffectiveBranch(fady, "riyadh")).toBe("riyadh");
   });
 });
 

@@ -476,7 +476,8 @@ describe("October 2026 monthly Logbook recovery freeze", () => {
     const parser = fs.readFileSync(path.join(root, "supabase/functions/_shared/vaultMonthlyLogbookWorkbook.js"), "utf8");
     expect(parser).toContain('businessDate > context.publishThrough');
     expect(parser).toContain('status: "publication_cutoff", publish: false');
-    expect(driveHelper).toContain('publishThrough: "2026-10-18"');
+    expect(driveHelper).toContain('publishThrough: new Date(Date.now() + 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)');
+    expect(driveHelper).toContain('rollingLogbookCatchup');
   });
 });
 
