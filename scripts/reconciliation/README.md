@@ -56,3 +56,9 @@ SHA256 hashes against the external evidence package, with125/188/788 count check
   stock activation remain gated by explicit evidence/policy. No historical sales rewriting.
 
 No merge, production database mutation or deployment is included in this branch.
+
+## Integration continuation
+
+See `docs/menu/NAC_MENU_REVIEW_2026-10-24.md` for complete integration scope, branch mode,
+scheduled restoration, branch cache invalidation, linked-group isolation, staging gates,
+no-deploy guard and rollback. The full repository Jest suite is run for the draft PR.

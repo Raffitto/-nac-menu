@@ -21,6 +21,10 @@ const RUNTIME_EXACT = new Set([
   "netlify.toml",
 ]);
 
+export function isReviewOnlyBranch(branch) {
+  return branch === "codex/nac-master-menu-reconciliation";
+}
+
 export function shouldBuild(files) {
   if (!files.length) return false;
   return files.some((file) => {
@@ -46,6 +50,10 @@ function changedFiles() {
 
 const isDirect = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isDirect) {
+  if (isReviewOnlyBranch(process.env.BRANCH)) {
+    console.log("netlify-ignore: owner requested review-only branch — skip build");
+    process.exit(0);
+  }
   let files = [];
   try {
     files = changedFiles();
