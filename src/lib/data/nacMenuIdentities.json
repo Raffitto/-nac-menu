@@ -1,0 +1,196 @@
+{
+  "asOf": "2026-10-24",
+  "scope": "Confirmed identity decisions only. Not affirmative Foodics branch eligibility. Code keys are not new database UUIDs.",
+  "variants": [
+    {
+      "productKey": "nac:two-eggs-any-style",
+      "variantKey": "nac:two-eggs-any-style:sk-1320",
+      "guestNameEn": "2 Eggs Any Style",
+      "foodicsProductId": "97c447cd-37e3-4f28-8942-dfd811fa5a4f",
+      "foodicsSku": "sk-1320",
+      "foodicsName": "2 Eggs any style",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "c7de41e9-3b33-4a23-b47f-63c76436587a",
+        "99cd7036-86ac-46c2-b89e-eaf872f6a36d",
+        "7b879a69-8d4d-4853-8bea-544266c9cf61"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:sk-1321",
+      "variantKey": "nac:sk-1321:sk-1321",
+      "guestNameEn": "Scrambled Eggs",
+      "foodicsProductId": "97c44866-bb59-447d-8b51-fe705f43d778",
+      "foodicsSku": "sk-1321",
+      "foodicsName": "Egg Bun",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "44ab7116-7266-4dfa-b12f-c65f7f78f703",
+        "93fcdeaa-cd8e-4ec5-b438-31dca47a9087",
+        "69486f24-be6b-4cc7-a871-930d34a1cea0"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:quinoa",
+      "variantKey": "nac:quinoa:sk-0621",
+      "guestNameEn": "Quinoa",
+      "foodicsProductId": "973531dc-49cd-4a0a-95e8-f114386f380d",
+      "foodicsSku": "sk-0621",
+      "foodicsName": "Quinoa B.",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "aaf20a8e-f095-401e-a7a2-3d8a76c7fb5e",
+        "a8b27a1a-4f3f-461b-b924-a2a6c223f1f5"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "large"
+    },
+    {
+      "productKey": "nac:kale-cabbage",
+      "variantKey": "nac:kale-cabbage:sk-0622",
+      "guestNameEn": "Kale & Cabbage",
+      "foodicsProductId": "973533a7-fdd5-4a67-b26e-ddeca5fef90f",
+      "foodicsSku": "sk-0622",
+      "foodicsName": "Kale B.",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "ccc1d57b-f45f-43cb-9adb-b36c129c63d7",
+        "f50de2c9-99cb-468a-ade6-c46504941b7a",
+        "040bd690-2840-430e-8546-8527a0e21fb9"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "large"
+    },
+    {
+      "productKey": "nac:big-nac",
+      "variantKey": "nac:big-nac:sk-2457",
+      "guestNameEn": "Big NAC",
+      "foodicsProductId": "a1dd13cd-5c4e-48f3-a40e-8c8d2fa2f3d3",
+      "foodicsSku": "sk-2457",
+      "foodicsName": "Big NAC New",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "1d320970-7108-4cae-b56c-3c630028b9c7",
+        "09553dff-7c0e-4255-ae8a-9c5e5bd57301",
+        "9f4fbb11-13ab-4f24-a917-8d1fcdeeb5e5"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single",
+      "historicalPredecessor": {
+        "productId": "99d6f9bd-434f-4289-8972-62b9781ee8cc",
+        "sku": "sk-1955"
+      }
+    },
+    {
+      "productKey": "nac:sk-2453",
+      "variantKey": "nac:sk-2453:sk-2453",
+      "guestNameEn": "Conchiglie",
+      "foodicsProductId": "a1dcafc3-b612-40f3-9e25-2e86adcd4cc4",
+      "foodicsSku": "sk-2453",
+      "foodicsName": "Morel Pasta,Parmesan",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "2ba1e0c2-0416-48b1-972c-a20881649c15",
+        "7850b3e8-b2d0-4e9f-83a9-4abbecedf36a",
+        "a6070000-0000-4000-8000-000000000003"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:sk-2456",
+      "variantKey": "nac:sk-2456:sk-2456",
+      "guestNameEn": "Pan Seared Seabass",
+      "foodicsProductId": "a1dd0d26-66b0-4b83-ab6e-5795289c71c2",
+      "foodicsSku": "sk-2456",
+      "foodicsName": "Sea Bass Creaole",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "96c434ce-dec1-465c-9fbd-214791434543",
+        "dfe3dc84-4ba5-4fe4-bfcb-89d12e9e6365",
+        "a6070000-0000-4000-8000-000000000005"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:sk-0647",
+      "variantKey": "nac:sk-0647:sk-0647",
+      "guestNameEn": "Speculoos French Toast",
+      "foodicsProductId": "97355136-ee5a-4553-9cc6-d460a294bc88",
+      "foodicsSku": "sk-0647",
+      "foodicsName": "French Toast",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "9e9240dd-4889-4e69-9380-9072217237b7",
+        "b4f85741-7a5c-44eb-8296-39833029f6aa",
+        "d666b82f-30fb-4453-8fdf-3d83871641d5"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:sk-0648",
+      "variantKey": "nac:sk-0648:sk-0648",
+      "guestNameEn": "Ricotta Pancakes",
+      "foodicsProductId": "97355424-3292-41af-b92a-9948b9aa9359",
+      "foodicsSku": "sk-0648",
+      "foodicsName": "Pancakes",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "18495d79-5a40-4bf2-b73b-6a9d9d149a51",
+        "1b4fa352-a850-42fb-84fe-0e59a0c36926",
+        "eeb82006-b6b9-4e5c-abb8-f78b9b9da421"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:sk-1319",
+      "variantKey": "nac:sk-1319:sk-1319",
+      "guestNameEn": "Greek Yogurt",
+      "foodicsProductId": "97c44528-48eb-4e2c-9210-dd0cf12af895",
+      "foodicsSku": "sk-1319",
+      "foodicsName": "Granola Yoghurt",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "4faccc06-5d02-4312-b7ce-e9c67a4a8b64",
+        "fe426c42-0276-4f26-8f88-c82c40858a90"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "single"
+    },
+    {
+      "productKey": "nac:kale-cabbage",
+      "variantKey": "nac:kale-cabbage:sk-0620",
+      "guestNameEn": "Kale & Cabbage",
+      "foodicsProductId": "97353169-07cf-4589-a4eb-f58b7df6c251",
+      "foodicsSku": "sk-0620",
+      "foodicsName": "Kale S.",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "69f53938-7a6d-4af1-ae9e-ffed0e6e0648"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "small"
+    },
+    {
+      "productKey": "nac:quinoa",
+      "variantKey": "nac:quinoa:sk-0599",
+      "guestNameEn": "Quinoa",
+      "foodicsProductId": "97131f89-fcd6-4c6d-9728-2c519da83040",
+      "foodicsSku": "sk-0599",
+      "foodicsName": "Quinoa S.",
+      "sourceBranchId": "khobar",
+      "placementIds": [
+        "dcbd515d-a7d2-4778-ab5a-947a6ca76088"
+      ],
+      "evidence": "2026-10-24 source-authority confirmed decisions; expanded Foodics capture; saved menu row UUID",
+      "portion": "small"
+    }
+  ]
+}

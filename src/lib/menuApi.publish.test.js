@@ -12,6 +12,7 @@ jest.mock("./supabase", () => ({
 }));
 
 jest.mock("./menuVisibility", () => ({
+  ...jest.requireActual("./menuVisibility"),
   filterPublicMenuData: (data) => data,
 }));
 
