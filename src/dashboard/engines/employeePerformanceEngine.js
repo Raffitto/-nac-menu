@@ -51,6 +51,7 @@ export function buildEmployeePerformance(employees = [], menuContext = {}) {
     return {
       name: emp.name,
       role: emp.role || "",
+      branch: emp.branch || null,
       metrics,
       classification,
     };

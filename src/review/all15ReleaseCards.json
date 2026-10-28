@@ -1,0 +1,107 @@
+[
+  {
+    "name": "Hamza",
+    "role": "rm",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Hamza&role=rm",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Farrukh",
+    "role": "arm",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Farrukh&role=arm",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Omar",
+    "role": "supervisor",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Omar&role=supervisor",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Waleed",
+    "role": "supervisor",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Waleed&role=supervisor",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Redwan",
+    "role": "waiter",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Redwan&role=waiter",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Nazareth",
+    "role": "waiter",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Nazareth&role=waiter",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Yusouf",
+    "role": "waiter",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Yusouf&role=waiter",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Khaled",
+    "role": "waiter",
+    "branch_id": "hettin",
+    "url": "https://nacmenu.netlify.app/?store=NAC%20Hettin&s=Khaled&role=waiter",
+    "expected_place_id": "ChIJ0QpbRgDhLj4ROUIXHjFIVIo"
+  },
+  {
+    "name": "Sopon",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=sopon&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Ali",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=ali&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Saud",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=saud&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Arif",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=arif&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Joanitah",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=joanitah&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Patrick",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=patrick&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  },
+  {
+    "name": "Suraj",
+    "role": "waiter",
+    "branch_id": "riyadh",
+    "url": "https://nacriyadh.netlify.app?store=riyadh&s=suraj&role=waiter",
+    "expected_place_id": "ChIJWVLeDGEdLz4RNTDq3dMM4nM"
+  }
+]

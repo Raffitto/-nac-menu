@@ -1,7 +1,8 @@
 /** KPIs and aggregates from review_events only — never menu_events. */
 
 import { filterAnalyticsReviewEvents } from "./isProductionStaff";
-import { normalizeBranchId, buildCanonicalBranchComparison } from "./branchIdentity";
+import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
+import { buildReviewBranchComparison as buildCanonicalBranchComparison } from "../../review/reviewBranchIdentity";
 import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 import {
   REVIEW_GENERATED_TYPES as GENERATED_TYPES,

@@ -9,7 +9,7 @@ import {
 } from "./rbacQueryScope";
 import { canAccessNetworkReviews } from "../dashboard/config/rbac";
 import { buildReviewBranchComparisonForProfile } from "./rbacIntelligenceScope";
-import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
+import { normalizeReviewBranchId as normalizeBranchId } from "../review/reviewBranchIdentity";
 import { fetchStaffMergedByBranch } from "../dashboard/utils/reviewStaffByBranch";
 import {
   kpisFromReviewSummary,
@@ -18,6 +18,8 @@ import {
   branchScansFromComparison,
 } from "../dashboard/utils/reviewSummaryMap";
 import { mergeStaffStats } from "../dashboard/utils/staffReviewStats";
+import { REVIEW_BRANCH_IDS } from "../review/reviewBranchIdentity";
+import { withVerifiedReviewRoster } from "../review/verifiedReviewRoster";
 import { buildNetworkStaffCoachingInsights } from "../dashboard/engines/staffCoachingIntelligenceEngine";
 import { logBiIntelligenceDiagnostics } from "./intelligenceDiagnostics";
 import { isNacDebugEnabled } from "./nacDebug";
@@ -145,7 +147,10 @@ export async function fetchUnifiedReviewTruth(supabase, { hours = 24, profile = 
     branchComparisonFromReviewSummary(summary || {}),
   );
 
-  const staffMerged = mergeStaffStats([], staffRows);
+  const staffMerged = withVerifiedReviewRoster(
+    mergeStaffStats([], staffRows),
+    scope.networkWide ? REVIEW_BRANCH_IDS : scope.queryBranch ? [scope.queryBranch] : [],
+  );
   const staffByBranch = {};
   for (const row of staffMerged) {
     const id = normalizeBranchId(row.branch);

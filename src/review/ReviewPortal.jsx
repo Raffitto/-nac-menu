@@ -68,6 +68,9 @@ function formatRoleLabel(role, lang) {
 
 export default function ReviewPortal() {
   const portalParams = useMemo(() => parseReviewPortalParams(), []);
+  useEffect(() => {
+    if (portalParams.normalizedBranch === "hettin") document.title = "NAC Hettin Reviews";
+  }, [portalParams.normalizedBranch]);
   const [language, setLanguage] = useState(portalParams.lang === "ar" ? "ar" : "en");
   const [text, setText] = useState("");
   const [staffName, setStaffName] = useState(portalParams.employeeName || "");

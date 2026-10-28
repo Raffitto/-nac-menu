@@ -42,5 +42,6 @@ export function resolveRootAppKind({
   if (isReviewQr) return "review";
   if (path === "/inventory") return "inventory";
   if (normalizePlatformMode(platformMode) === PLATFORM_MODES.ADMIN) return "admin";
+  if (/^\/hettin(?:\/|$)/i.test(path)) return "branch-unavailable";
   return "public-menu";
 }

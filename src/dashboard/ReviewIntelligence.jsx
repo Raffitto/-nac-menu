@@ -30,7 +30,6 @@ import {
   RANGE_OPTIONS,
   rangeToSince,
   rangeToHours,
-  branchDisplayName,
   defaultBranchId,
   rangeExportLabel,
 } from "./utils/rangeState";
@@ -59,7 +58,8 @@ import ReviewNetworkIntegrityBanner from "./components/ReviewNetworkIntegrityBan
 import "./styles/review-intelligence.css";
 import "./styles/predictive-intelligence.css";
 
-import { BRANCH_OPTIONS } from "../platform/engines/branchIdentityEngine";
+import { REVIEW_BRANCH_IDS, REVIEW_BRANCH_OPTIONS as BRANCH_OPTIONS, reviewBranchDisplayName as branchDisplayName } from "../review/reviewBranchIdentity";
+import { withVerifiedReviewRoster } from "../review/verifiedReviewRoster";
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
 
@@ -237,7 +237,10 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
       const all = applyPlatformFilters(allEvents || [], embedded ? platform : null);
 
       setKpis(computeReviewKpis(events));
-      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
+      setStaffMerged(withVerifiedReviewRoster(
+        mergeStaffStats([], aggregateStaffReviewStats(events)),
+        reviewScope.networkWide ? REVIEW_BRANCH_IDS : scopedBranch ? [scopedBranch] : [],
+      ));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(
@@ -264,6 +267,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         staffMerged.map((s) => ({
           name: s.name,
           role: s.role,
+          branch: s.branch,
           generated: s.generated,
           google_clicks: s.google,
           opens: s.scans,
@@ -589,9 +593,9 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                 <p className="rev-intel-muted">No staff activity in this period yet.</p>
               ) : (
                 staffMerged.map((emp) => {
-                  const perf = employees.find((e) => e.name === emp.name);
+                  const perf = employees.find((e) => e.name === emp.name && e.branch === emp.branch);
                   return (
-                    <motion.div key={emp.name} className="rev-emp-card" whileHover={{ scale: 1.01 }}>
+                    <motion.div key={`${emp.branch || "unknown"}::${emp.name}`} className="rev-emp-card" whileHover={{ scale: 1.01 }}>
                       <div className="rev-emp-top">
                         <strong>{emp.name}</strong>
                         {perf && <span className="rev-badge">{perf.classification.label}</span>}

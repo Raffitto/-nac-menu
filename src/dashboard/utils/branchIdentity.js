@@ -2,9 +2,11 @@
  * Canonical branch IDs for NAC network intelligence (single source of truth).
  */
 
-export const CANONICAL_BRANCH_IDS = ["khobar", "riyadh", "jeddah"];
+export const CANONICAL_BRANCH_IDS = ["khobar", "riyadh", "jeddah", "hettin"];
 
 const ALIAS_RULES = [
+  { id: "hettin", test: (s) => /hettin|حطين/.test(s) },
+  { id: "riyadh", test: (s) => /laysen[ -]?valley|ليسن فالي/.test(s) },
   { id: "khobar", test: (s) => /khobar|alkhobar|الخبر/.test(s) },
   { id: "riyadh", test: (s) => /riyadh|رياض/.test(s) },
   { id: "jeddah", test: (s) => /jeddah|jedda|جدة|jiddah/.test(s) },

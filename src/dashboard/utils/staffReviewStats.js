@@ -6,7 +6,7 @@ import {
   filterProductionStaffList,
   isProductionStaff,
 } from "./isProductionStaff";
-import { normalizeBranchId } from "./branchIdentity";
+import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
 import {
   REVIEW_PAGE_OPEN_TYPES,
   REVIEW_GENERATED_TYPES,

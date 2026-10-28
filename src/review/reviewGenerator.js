@@ -15,6 +15,7 @@ export const GOOGLE_PLACE_IDS = {
   khobar: "ChIJp_zLEdvpST4RPD2r1GX-ASw",
   jeddah: "ChIJg_3_793bwxUR6w9WMTA96F8",
   riyadh: "ChIJWVLeDGEdLz4RNTDq3dMM4nM",
+  hettin: "ChIJ0QpbRgDhLj4ROUIXHjFIVIo",
 };
 
 /**

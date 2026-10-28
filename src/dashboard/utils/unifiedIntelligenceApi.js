@@ -1,3 +1,5 @@
+import { normalizeReviewBranchId } from "../../review/reviewBranchIdentity";
+import { canAccessNetworkReviews } from "../config/rbac";
 import { supabase } from "../../lib/supabase";
 import { fetchBranchComparisonSafe } from "../../lib/intelligenceQueryApi";
 import { getBusinessDayKey } from "./businessDay";
@@ -53,7 +55,9 @@ export async function generateDailySnapshot(branchId = DEFAULT_BRANCH, businessD
 
 export async function fetchReviewPortalStaff(branchId = DEFAULT_BRANCH, rbacProfile = null) {
   if (!supabase) return [];
-  const branch = resolveRbacQueryBranch(rbacProfile, branchId) || DEFAULT_BRANCH;
+  const hettin = normalizeReviewBranchId(branchId) === "hettin";
+  if (hettin && rbacProfile?.authenticated && !canAccessNetworkReviews(rbacProfile)) return [];
+  const branch = hettin ? "hettin" : resolveRbacQueryBranch(rbacProfile, branchId) || DEFAULT_BRANCH;
   const { data, error } = await supabase
     .from("review_portal_staff")
     .select("*")
@@ -61,5 +65,5 @@ export async function fetchReviewPortalStaff(branchId = DEFAULT_BRANCH, rbacProf
     .eq("active", true)
     .order("employee_name");
   if (error) throw error;
-  return filterRowsByRbacProfile(rbacProfile, data || []);
+  return hettin ? (data || []).filter(row => row.branch_id === "hettin") : filterRowsByRbacProfile(rbacProfile, data || []);
 }
