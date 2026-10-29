@@ -5,6 +5,7 @@ import cards from './all15ReleaseCards.json';
 import {detectReviewQrMode} from '../lib/reviewPortalParams';
 import {resolveRootAppKind} from '../lib/platformMode';
 import {fetchReviewPortalStaff} from '../dashboard/utils/unifiedIntelligenceApi';
+import {BRANCH_LABELS} from './reviewGeneratorMenus';
 import * as tracking from '../lib/reviewAnalytics';
 jest.mock('../dashboard/utils/unifiedIntelligenceApi',()=>({fetchReviewPortalStaff:jest.fn()}));
 jest.mock('../lib/reviewAnalytics',()=>({
@@ -13,6 +14,7 @@ jest.mock('../lib/reviewAnalytics',()=>({
 beforeEach(()=>{jest.clearAllMocks();jest.spyOn(console,'log').mockImplementation(()=>{});});
 afterEach(()=>{cleanup();jest.restoreAllMocks();});
 const regressions=[{name:'Existing Staff',role:'waiter',branch_id:'khobar',url:'https://nacmenu.netlify.app/?store=khobar&s=Existing%20Staff&role=waiter',expected_place_id:'ChIJp_zLEdvpST4RPD2r1GX-ASw'},{name:'Existing Staff',role:'waiter',branch_id:'jeddah',url:'https://nacmenu.netlify.app/?store=jeddah&s=Existing%20Staff&role=waiter',expected_place_id:'ChIJg_3_793bwxUR6w9WMTA96F8'}];
+const roleLabels={rm:'Restaurant Manager',arm:'Assistant Restaurant Manager',supervisor:'Supervisor',waiter:'Waiter'};
 test.each([...cards,...regressions])('prepared rendered card URL: $name / $branch_id',async card=>{
  const u=new URL(card.url);
  expect(resolveRootAppKind({pathname:u.pathname,isReviewQr:detectReviewQrMode(u.search,u.hostname)})).toBe('review');
@@ -23,12 +25,19 @@ test.each([...cards,...regressions])('prepared rendered card URL: $name / $branc
  ]);
  const view=render(<ReviewPortal/>);
  await waitFor(()=>expect(tracking.trackReviewQrScan).toHaveBeenCalled());
+ expect(document.title).toBe(`${BRANCH_LABELS[card.branch_id].en} Reviews`);
+ const chips=[...view.container.querySelectorAll('.nac-review-chip')].map(node=>node.textContent);
+ expect(chips).toEqual([BRANCH_LABELS[card.branch_id].en,roleLabels[card.role],expect.stringContaining(card.name)]);
  expect(fetchReviewPortalStaff).toHaveBeenCalledWith(card.branch_id);
  const context={branch_id:card.branch_id,employee_name:card.name,employee_role:card.role};
  expect(tracking.trackReviewQrScan).toHaveBeenCalledWith(expect.objectContaining(context));
  expect(tracking.trackReviewPageOpen).toHaveBeenCalledWith(expect.objectContaining(context));
  const google=screen.getByRole('link',{name:'Google Review'});
  expect(google).toHaveAttribute('href','https://search.google.com/local/writereview?placeid='+card.expected_place_id);
+ fireEvent.click(screen.getByRole('button',{name:'العربية'}));
+ expect(view.container.querySelector('.nac-review-chip')).toHaveTextContent(BRANCH_LABELS[card.branch_id].ar);
+ expect(screen.getByRole('link',{name:'تقييم قوقل'})).toHaveAttribute('href','https://search.google.com/local/writereview?placeid='+card.expected_place_id);
+ fireEvent.click(screen.getByRole('button',{name:'English'}));
  fireEvent.click(google);
  expect(tracking.trackReviewGoogleClick).toHaveBeenCalledWith(expect.objectContaining(context));
  fireEvent.click(screen.getByRole('button',{name:'Copy'}));
