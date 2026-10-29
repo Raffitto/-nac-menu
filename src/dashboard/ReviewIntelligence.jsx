@@ -61,7 +61,7 @@ import "./styles/predictive-intelligence.css";
 import { REVIEW_BRANCH_IDS, REVIEW_BRANCH_OPTIONS as BRANCH_OPTIONS, reviewBranchDisplayName as branchDisplayName } from "../review/reviewBranchIdentity";
 import { withVerifiedReviewRoster } from "../review/verifiedReviewRoster";
 const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
+  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
 const CHART_TOOLTIP = {
   background: "rgba(8,10,12,0.94)",
@@ -212,7 +212,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
 
       let reviewAllQ = supabase
         .from("review_events")
-        .select("event_type,branch_id,created_at,review_session_id,session_id")
+        .select("event_type,branch_id,employee_name,created_at,review_session_id,session_id,metadata")
         .order("created_at", { ascending: false })
         .limit(2000);
 

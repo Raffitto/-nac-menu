@@ -192,7 +192,7 @@ describe("vault readinessEngine", () => {
       profile: { authenticated: true, allBranches: false, branchScope: "khobar" },
     });
     expect(readiness.status).toBe(READINESS.BLOCKED);
-    expect(readiness.reasons[0]).toMatch(/scoped to Khobar/i);
+    expect(readiness.reasons[0]).toMatch(/scoped to NAC Khobar/i);
   });
 
   test("ready when vault period parsed", () => {

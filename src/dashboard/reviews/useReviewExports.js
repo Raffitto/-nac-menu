@@ -34,7 +34,7 @@ import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelli
 import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandCenterEngine";
 
 const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
+  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
 function applyEventTimeBounds(query, exportRange) {
   if (!exportRange) return query;

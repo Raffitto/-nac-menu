@@ -20,7 +20,7 @@ test('four existing branch identities and strict permissions remain intact',()=>
  // This QR-only release keeps the guest-menu route migration in PR #76.
  expect(BRANCH_ROUTE_SLUGS).toEqual(['khobar','riyadh','jeddah','hettin']);
  expect(normalizeBranchId('hettin')).toBe('hettin');
- expect(normalizeBranchId('NAC Riyadh Hittin')).toBe('riyadh');
+ expect(normalizeBranchId('NAC Riyadh Hittin')).toBe('hettin');
  expect(branchPublicName('hettin')).toBe('NAC Hettin');
  expect(canProfileReadBranch(network,'hettin')).toBe(true);
  expect(canProfileReadBranch(scoped,'riyadh')).toBe(false);
@@ -29,8 +29,8 @@ test('four existing branch identities and strict permissions remain intact',()=>
  expect(buildReviewBranchComparisonForProfile(scoped).map(r=>r.branch_id)).toEqual(['khobar']);
  expect(resolveReviewScope(network,'hettin').queryBranch).toBe('hettin');
  expect(resolveReviewScope(scoped,'hettin').queryBranch).toBe('khobar');
- expect(reviewBranchDisplayName('hettin')).toBe('Hettin');
- expect(reviewBranchDisplayName('riyadh')).toBe('Laysen Valley');
+ expect(reviewBranchDisplayName('hettin')).toBe('NAC Hettin');
+ expect(reviewBranchDisplayName('riyadh')).toBe('NAC Laysen Valley');
 });
 test('same-named staff in two branches remain separate reporting records',()=>{
  const stats=aggregateStaffReviewStats(['hettin','riyadh'].map(branch_id=>({branch_id,employee_name:'Hamza',employee_role:'rm',event_type:'qr_scan'})));

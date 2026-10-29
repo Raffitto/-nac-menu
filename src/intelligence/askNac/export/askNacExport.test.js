@@ -95,7 +95,7 @@ describe("askNac export", () => {
       selectedRange: "month",
       language: "all",
     });
-    expect(summary).toMatch(/Riyadh/);
+    expect(summary).toMatch(/NAC Laysen Valley/);
     expect(summary).toMatch(/Month-to-date/);
   });
 

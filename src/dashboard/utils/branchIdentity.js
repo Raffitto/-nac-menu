@@ -2,13 +2,17 @@
  * Canonical branch IDs for NAC network intelligence (single source of truth).
  */
 
+import { OFFICIAL_BRANCH_NAMES } from "../config/branchNames";
+
 export const CANONICAL_BRANCH_IDS = ["khobar", "riyadh", "jeddah", "hettin"];
 
 const ALIAS_RULES = [
-  { id: "hettin", test: (s) => /hettin|حطين/.test(s) },
+  { id: "hettin", test: (s) => /hettin|hittin|حطين/.test(s) },
   { id: "riyadh", test: (s) => /laysen[ -]?valley|ليسن فالي/.test(s) },
   { id: "khobar", test: (s) => /khobar|alkhobar|الخبر/.test(s) },
-  { id: "riyadh", test: (s) => /riyadh|رياض/.test(s) },
+  // A bare legacy city label means the existing Laysen Valley branch; another
+  // restaurant in Riyadh must never silently resolve to this historical ID.
+  { id: "riyadh", test: (s) => /^(?:nac\s*[-_]?\s*)?(?:riyadh|الرياض)$/.test(s) },
   { id: "jeddah", test: (s) => /jeddah|jedda|جدة|jiddah/.test(s) },
 ];
 
@@ -46,7 +50,7 @@ export function normalizeBranchForRpc(branch) {
 export function branchDisplayName(branch) {
   const id = normalizeBranchId(branch);
   if (!id) return "Unassigned";
-  return id.charAt(0).toUpperCase() + id.slice(1);
+  return OFFICIAL_BRANCH_NAMES[id];
 }
 
 /**

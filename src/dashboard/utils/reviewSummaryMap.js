@@ -3,6 +3,7 @@
 import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
 import { buildReviewBranchComparison as buildCanonicalBranchComparison } from "../../review/reviewBranchIdentity";
 import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
+import { filterProductionStaffList } from "./isProductionStaff";
 
 export function kpisFromReviewSummary(summary) {
   if (!summary) return null;
@@ -19,8 +20,7 @@ export function kpisFromReviewSummary(summary) {
 
 export function staffFromReviewSummary(summary) {
   const staff = Array.isArray(summary?.staff) ? summary.staff : [];
-  return staff
-    .filter((s) => s?.name)
+  return filterProductionStaffList(staff)
     .map((s) => {
       const branch = normalizeBranchId(s.branch_id ?? s.branch);
       return {
