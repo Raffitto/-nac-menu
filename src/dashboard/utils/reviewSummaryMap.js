@@ -1,6 +1,7 @@
 /** Map get_review_events_summary RPC → Review Intelligence UI shapes */
 
-import { normalizeBranchId, buildCanonicalBranchComparison } from "./branchIdentity";
+import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
+import { buildReviewBranchComparison as buildCanonicalBranchComparison } from "../../review/reviewBranchIdentity";
 import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 
 export function kpisFromReviewSummary(summary) {

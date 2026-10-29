@@ -9,6 +9,7 @@ import { exportCell, formatExecutiveConversion, filterExecutiveRows } from "../u
 import { buildExportCommentary } from "../utils/itemBehaviorEngine";
 import { businessDayExportNote } from "../utils/businessDay";
 import { branchDisplayName } from "../utils/rangeState";
+import { branchExportName } from "../config/branchDisplayConfig";
 import { REVIEW_METRIC } from "../config/reviewMetricLabels";
 import { exportVisibilityPDF } from "./visibilityPdfExport";
 
@@ -310,7 +311,7 @@ export function exportReviewIntelligenceReport({
         staffStats.map((s) => ({
           Staff: s.name,
           Role: s.role,
-          Branch: branch,
+          Branch: s.branch ? branchExportName(s.branch) : branch,
           [REVIEW_METRIC.cardTaps]: s.scans ?? s.opens,
           [REVIEW_METRIC.reviewInteractions]: s.generated,
           "Copy events": s.copy,
@@ -343,7 +344,7 @@ export function exportReviewIntelligenceReport({
 
   if (showComparison) {
     const rows = comparison.map((b) => ({
-      Branch: branchDisplayName(b.branch_id),
+      Branch: branchExportName(b.branch_id),
       [REVIEW_METRIC.cardTaps]: b.qr_scans,
       [REVIEW_METRIC.reviewInteractions]: b.reviews_generated,
       [REVIEW_METRIC.googleRedirects]: b.google_redirects,

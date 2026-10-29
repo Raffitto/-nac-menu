@@ -5,7 +5,8 @@
 export const BRANCH_LABELS = {
   khobar: { en: "NAC Khobar", ar: "NAC الخبر" },
   jeddah: { en: "NAC Jeddah", ar: "NAC جدة" },
-  riyadh: { en: "NAC Riyadh", ar: "NAC الرياض" },
+  riyadh: { en: "NAC Laysen Valley", ar: "ناك ليسن فالي" },
+  hettin: { en: "NAC Hettin", ar: "ناك حطين" },
 };
 
 const KHOBAR_BREAKFAST = [

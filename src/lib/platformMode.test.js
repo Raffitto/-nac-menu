@@ -61,6 +61,11 @@ describe("platform mode helpers", () => {
 });
 
 describe("resolveRootAppKind routing", () => {
+  test("Hettin QR review works while its guest menu remains closed", () => {
+    expect(resolveRootAppKind({ pathname: "/hettin", platformMode: "public" })).toBe("branch-unavailable");
+    expect(resolveRootAppKind({ pathname: "/hettin/", platformMode: "public" })).toBe("branch-unavailable");
+    expect(resolveRootAppKind({ pathname: "/hettin", isReviewQr: true, platformMode: "public" })).toBe("review");
+  });
   test("public mode default is guest menu at root", () => {
     expect(resolveRootAppKind({ pathname: "/", platformMode: "public" })).toBe("public-menu");
     expect(resolveRootAppKind({ pathname: "/", platformMode: undefined })).toBe("public-menu");

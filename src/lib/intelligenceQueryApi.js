@@ -1,3 +1,4 @@
+import { normalizeReviewBranchId } from "../review/reviewBranchIdentity";
 import { dedupeInflight } from "./requestDedupe";
 import { MONTH_HOURS } from "../dashboard/utils/rangeState";
 import {
@@ -444,7 +445,7 @@ async function withSoftTimeout(promise, ms, fallback) {
 
 export async function fetchReviewEventsSummary(supabase, { branch = null, hours = 24 } = {}) {
   if (!supabase) return null;
-  const pBranch = normalizeBranchForRpc(branch);
+  const pBranch = normalizeReviewBranchId(branch);
   const pHours = Number(hours) || 24;
   return dedupeInflight(`review-summary:${pBranch || "all"}:${pHours}`, () =>
     fetchReviewEventsSummaryOnce(supabase, { pBranch, pHours }),

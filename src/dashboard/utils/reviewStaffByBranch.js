@@ -3,7 +3,7 @@
  */
 
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
-import { CANONICAL_BRANCH_IDS } from "./branchIdentity";
+import { REVIEW_BRANCH_IDS as CANONICAL_BRANCH_IDS } from "../../review/reviewBranchIdentity";
 import { staffFromReviewSummary } from "./reviewSummaryMap";
 
 export async function fetchStaffMergedByBranch(supabase, { hours, activeBranch = null } = {}) {

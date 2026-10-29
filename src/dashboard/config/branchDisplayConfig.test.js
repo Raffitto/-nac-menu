@@ -14,7 +14,7 @@ describe("branchDisplayConfig", () => {
   });
 
   test("riyadh and jeddah have branch-specific public names", () => {
-    expect(branchPublicName("riyadh")).toBe("NAC Riyadh");
+    expect(branchPublicName("riyadh")).toBe("NAC Laysen Valley");
     expect(branchPublicName("jeddah")).toBe("NAC Jeddah");
   });
 

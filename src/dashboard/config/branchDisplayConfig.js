@@ -8,6 +8,7 @@ import { CANONICAL_BRANCH_IDS, normalizeBranchId } from "../utils/branchIdentity
 /** @typedef {'publicName'|'dashboardName'|'exportName'} BranchDisplayField */
 
 export const BRANCH_DISPLAY_CONFIG = {
+  hettin: { id: "hettin", publicName: "NAC Hettin", publicNameAr: "ناك حطين", dashboardName: "Hettin", exportName: "Hettin", routeSlug: "hettin", legacyLabels: [] },
   khobar: {
     id: "khobar",
     publicName: "NAC",
@@ -19,10 +20,10 @@ export const BRANCH_DISPLAY_CONFIG = {
   },
   riyadh: {
     id: "riyadh",
-    publicName: "NAC Riyadh",
-    publicNameAr: "NAC الرياض",
-    dashboardName: "Riyadh",
-    exportName: "Riyadh",
+    publicName: "NAC Laysen Valley",
+    publicNameAr: "ناك ليسن فالي",
+    dashboardName: "Laysen Valley",
+    exportName: "Laysen Valley",
     routeSlug: "riyadh",
     legacyLabels: ["NAC Riyadh", "Riyadh", "الرياض"],
   },

@@ -98,6 +98,12 @@ if (rootKind === "reset-password") {
       </Suspense>
     </React.StrictMode>,
   );
+} else if (rootKind === "branch-unavailable") {
+  root.render(
+    <main style={{ minHeight: "100vh", background: "#0a0908", color: "#f9f9f7", display: "grid", placeItems: "center", fontFamily: "system-ui, sans-serif", textAlign: "center", padding: 24 }}>
+      <div><h1>NAC Hettin</h1><p>The guest menu is not available yet.</p></div>
+    </main>,
+  );
 } else {
   root.render(
     <React.StrictMode>

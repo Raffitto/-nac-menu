@@ -2,7 +2,7 @@
  * Deterministic staff coaching observations — no external AI.
  */
 
-import { branchDisplayName } from "../utils/rangeState";
+import { reviewBranchDisplayName as branchDisplayName } from "../../review/reviewBranchIdentity";
 
 const RECEPTION_ROLES = new Set(["reception", "receptionist", "host", "front desk", "front_desk"]);
 

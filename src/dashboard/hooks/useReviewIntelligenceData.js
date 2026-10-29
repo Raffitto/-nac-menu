@@ -19,6 +19,8 @@ import {
 } from "../utils/staffReviewStats";
 import { buildReviewBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
 import { EMPTY_REVIEW_KPIS } from "../utils/supabaseResilience";
+import { REVIEW_BRANCH_IDS } from "../../review/reviewBranchIdentity";
+import { withVerifiedReviewRoster } from "../../review/verifiedReviewRoster";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
@@ -153,7 +155,10 @@ export function useReviewIntelligenceData(options = {}) {
       setSummary(null);
       setScope(reviewScope);
       setKpis(computeReviewKpis(events));
-      setStaffMerged(mergeStaffStats([], aggregateStaffReviewStats(events)));
+      setStaffMerged(withVerifiedReviewRoster(
+        mergeStaffStats([], aggregateStaffReviewStats(events)),
+        reviewScope.networkWide ? REVIEW_BRANCH_IDS : queryBranch ? [queryBranch] : [],
+      ));
       setDailyTrend(buildDailyScanTrend(events));
       setBranchScans(buildBranchScanTotals(all));
       setBranchComparison(comparison);

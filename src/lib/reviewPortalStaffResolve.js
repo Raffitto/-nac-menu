@@ -39,7 +39,10 @@ export function findReviewPortalStaffBySlug(rows, lookupKey) {
  */
 export function resolveReviewPortalStaff(portalParams = {}, staffRows = []) {
   const lookupKey = getStaffLookupKey(portalParams);
-  const match = findReviewPortalStaffBySlug(staffRows, lookupKey);
+  const scopedRows = portalParams.normalizedBranch === "hettin"
+    ? (staffRows || []).filter(row => row.branch_id === "hettin")
+    : staffRows;
+  const match = findReviewPortalStaffBySlug(scopedRows, lookupKey);
 
   if (match) {
     return {

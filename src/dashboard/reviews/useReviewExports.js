@@ -181,6 +181,7 @@ export function useReviewExports(filters) {
         staffMerged.map((s) => ({
           name: s.name,
           role: s.role,
+          branch: s.branch,
           generated: s.generated,
           google_clicks: s.google,
           opens: s.scans,

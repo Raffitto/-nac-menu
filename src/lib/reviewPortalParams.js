@@ -2,7 +2,7 @@
 
 import { staffNameForTracking } from "../review/reviewGeneratorShared";
 
-const BRANCH_KEYS = ["khobar", "riyadh", "jeddah"];
+const BRANCH_KEYS = ["khobar", "riyadh", "jeddah", "hettin"];
 
 const STAFF_PARAM_KEYS = [
   "s",
@@ -41,6 +41,7 @@ function paramHasValue(params, key) {
 
 export function branchFromHostname(hostname) {
   const h = (hostname || "").toLowerCase();
+  if (/hettin|hittin/.test(h)) return "hettin";
   if (h.includes("khobar")) return "khobar";
   if (h.includes("jeddah")) return "jeddah";
   if (h.includes("riyadh")) return "riyadh";
@@ -51,6 +52,7 @@ export function normalizeBranchFromStore(storeName) {
   if (!storeName) return null;
   const raw = decodeURIComponent(String(storeName)).trim();
   const s = raw.toLowerCase();
+  if (/hettin|hittin|حطين/.test(s)) return "hettin";
   if (s.includes("khobar")) return "khobar";
   if (s.includes("jeddah")) return "jeddah";
   if (s.includes("riyadh")) return "riyadh";
@@ -132,7 +134,10 @@ export function parseReviewPortalParams(search) {
 
   const storeName = params.get("store") || params.get("branch") || null;
 
-  const normalizedBranch =
+  const explicitlyHettin = [storeName, params.get("branch")].some(
+    value => normalizeBranchFromStore(value) === "hettin",
+  ) || branchFromHostname(hostname) === "hettin";
+  const normalizedBranch = explicitlyHettin ? "hettin" :
     normalizeBranchFromStore(storeName) ||
     normalizeBranchFromStore(params.get("branch")) ||
     branchFromHostname(hostname) ||
