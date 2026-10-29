@@ -16,25 +16,31 @@ describe("review staff attribution", () => {
     expect(rows).toHaveLength(2);
   });
 
-  test("excludes only exact synthetic staff identities from RPC staff lists", () => {
+  test("does not infer synthetic status from an RPC staff name", () => {
     const staff = staffFromReviewSummary({ staff: [
       { branch_id: "riyadh", name: "TEST", scans: 5, google: 0 },
       { branch_id: "hettin", name: "Testa", scans: 2, google: 1 },
       { branch_id: "riyadh", name: "Ali", scans: 1, google: 1 },
     ] });
     expect(staff.map((row) => `${row.branch}::${row.name}`)).toEqual([
-      "hettin::Testa", "riyadh::Ali",
+      "riyadh::TEST", "hettin::Testa", "riyadh::Ali",
     ]);
   });
 
-  test("raw review metrics exclude self-test events but retain legitimate names containing Test", () => {
+  test("raw review metrics exclude only marked self-test events and keep totals aligned", () => {
     const rows = [
-      { branch_id: "riyadh", employee_name: "TEST", event_type: "qr_scan" },
+      { branch_id: "riyadh", employee_name: "TEST", event_type: "qr_scan", metadata: { self_test: true } },
       { branch_id: "khobar", employee_name: "Ali", event_type: "qr_scan", metadata: { self_test: true } },
+      { branch_id: "khobar", employee_name: "Ali", event_type: "qr_scan", metadata: { self_test: "true" } },
       { branch_id: "hettin", employee_name: "Testa", event_type: "qr_scan", metadata: {} },
+      { branch_id: "jeddah", employee_name: "TEST", event_type: "qr_scan", metadata: {} },
     ];
-    expect(computeReviewKpis(rows).qr_scans).toBe(1);
+    expect(computeReviewKpis(rows).qr_scans).toBe(2);
     expect(buildBranchReviewComparison(rows).find((row) => row.branch_id === "hettin").qr_scans).toBe(1);
     expect(buildBranchReviewComparison(rows).find((row) => row.branch_id === "riyadh").qr_scans).toBe(0);
+    expect(buildBranchReviewComparison(rows).find((row) => row.branch_id === "jeddah").qr_scans).toBe(1);
+    expect(aggregateStaffReviewStats(rows).map((row) => `${row.branch}::${row.name}`)).toEqual(expect.arrayContaining([
+      "hettin::Testa", "jeddah::Test",
+    ]));
   });
 });

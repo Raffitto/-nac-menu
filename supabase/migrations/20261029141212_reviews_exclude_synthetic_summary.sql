@@ -33,8 +33,6 @@ begin
       and (p_branch is null or e.branch_id = lower(trim(p_branch)))
       and public.nac_reviews_normalize_branch_id(e.branch_id) = any(v_allowed)
       and coalesce(e.metadata->>'self_test', 'false') <> 'true'
-      and lower(trim(coalesce(e.employee_name, ''))) not in
-        ('test', 'testing', 'demo', 'sample', 'admin', 'unknown')
   ),
   by_type as (select event_type, count(*)::int as c from filtered group by 1),
   staff as (

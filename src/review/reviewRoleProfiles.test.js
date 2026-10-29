@@ -2,6 +2,7 @@ import {
   generateHumanizedReview,
   resetReviewDiversityState,
 } from "./reviewGeneratorEngine";
+import { mockSeededMathRandom } from "./reviewGeneratorTestSeed";
 import {
   containsConsultantLanguage,
   containsForbiddenExecutiveLanguage,
@@ -57,8 +58,15 @@ function generateRoleBatch(roleKey, count = 20) {
 }
 
 describe("reviewRoleProfiles", () => {
+  let randomSpy;
+
   beforeEach(() => {
     resetReviewDiversityState();
+    randomSpy = mockSeededMathRandom(0x4e414303);
+  });
+
+  afterEach(() => {
+    randomSpy?.mockRestore();
   });
 
   test("maps leadership roles to correct categories", () => {
