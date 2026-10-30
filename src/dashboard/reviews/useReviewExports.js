@@ -376,6 +376,27 @@ export function useReviewExports(filters) {
     [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange],
   );
 
+  const exportSummaryCsv = useCallback(
+    async (exportRange = null) => {
+      if (!configured || summaryBusy) return;
+      const range = exportRange || dashboardExportRange;
+      setSummaryBusy(true);
+      try {
+        const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
+        const loaded = await loadEvents(range);
+        exportReviewIntelligenceReport({
+          ...buildSummaryContext(loaded, range),
+          format: "csv",
+        });
+      } catch (err) {
+        reportExportFailure(err, "Summary CSV");
+      } finally {
+        setSummaryBusy(false);
+      }
+    },
+    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange],
+  );
+
   return useMemo(
     () => ({
       configured,
@@ -384,6 +405,7 @@ export function useReviewExports(filters) {
       exportBranchAuditPdf,
       exportSummaryPdf,
       exportSummaryXlsx,
+      exportSummaryCsv,
       exportExecutiveSummaryPdf,
       busy: { png: pngBusy, audit: auditBusy, summary: summaryBusy, executive: executiveBusy },
     }),
@@ -394,6 +416,7 @@ export function useReviewExports(filters) {
       exportBranchAuditPdf,
       exportSummaryPdf,
       exportSummaryXlsx,
+      exportSummaryCsv,
       exportExecutiveSummaryPdf,
       pngBusy,
       auditBusy,

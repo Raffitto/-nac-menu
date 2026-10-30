@@ -348,8 +348,8 @@ function buildGuestManagementMention(staff, personality, isAr, tier) {
   const pool = isGm ? enGm : enRm;
   if (personality === "minimalist") {
     return pick([
-      `${name} was around. Smooth visit, would return.`,
-      `Good night. ${name} on the floor, staff worked well.`,
+      `${name} was around. It was a smooth visit, and we would return.`,
+      `Good night. ${name} was on the floor, and the staff worked well.`,
     ]);
   }
   return pick(pool);
@@ -446,6 +446,11 @@ export function containsAiPunctuation(text) {
   return /[\u2013\u2014]/.test(text) || (text.match(/;/g) || []).length > 1;
 }
 
+/** Fragments that read like notes rather than a guest sentence. */
+export function containsAwkwardReviewFragment(text) {
+  return /\bon the floor,\s*staff worked well\b/i.test(String(text || ""));
+}
+
 export function validateRoleLanguage(text, role) {
   const profile = getReviewRoleProfile(role);
   const isGuestManagement =
@@ -460,6 +465,9 @@ export function validateRoleLanguage(text, role) {
   }
   if (containsAiPunctuation(text)) {
     return { ok: false, reason: "ai_punctuation" };
+  }
+  if (containsAwkwardReviewFragment(text)) {
+    return { ok: false, reason: "awkward_fragment" };
   }
   if (isManagementHonorificRole(role) && !managementHonorificPresent(text)) {
     return { ok: false, reason: "missing_management_honorific" };

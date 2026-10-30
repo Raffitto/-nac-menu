@@ -15,6 +15,7 @@ import { branchDisplayName } from "../utils/rangeState";
 import { normalizeBranchId, CANONICAL_BRANCH_IDS } from "../utils/branchIdentity";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
 import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
+import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 
 export const OPERATIONAL_BRANCHES = CANONICAL_BRANCH_IDS;
 
@@ -161,12 +162,7 @@ function enrichStaffRow(staff, events, branchStats) {
   const scans = staff.scans || 0;
   const generated = staff.generated || 0;
   const google = staff.google || 0;
-  const reviewConv =
-    staff.scans > 0
-      ? staff.conversion_pct ?? pct(google, scans)
-      : generated > 0
-        ? pct(google, generated)
-        : 0;
+  const reviewConv = reviewConversionPct(google, scans);
   const cardToReviewEfficiency = scans > 0 ? pct(generated, scans) : 0;
   const classification = classifyBranchOperationalStaff(staff, branchStats);
 
