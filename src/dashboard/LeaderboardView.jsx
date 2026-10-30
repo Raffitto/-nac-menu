@@ -24,7 +24,7 @@ function LeaderboardInner() {
     const since = rangeToSince("today");
     let q = supabase
       .from("review_events")
-      .select("event_type,employee_name,employee_role,branch_id,created_at")
+      .select("event_type,employee_name,employee_role,branch_id,created_at,metadata")
       .limit(5000);
     if (since) q = q.gte("created_at", since);
     const { data } = await q;
@@ -75,9 +75,10 @@ function LeaderboardInner() {
             </h2>
             <motion.div className="nac-leaderboard-staff-grid">
               {staff.map((s, i) => (
-                <motion.div key={s.name} className="nac-leaderboard-staff-card" layout>
+                <motion.div key={`${s.branch || "unknown"}::${String(s.name).toLowerCase()}`} className="nac-leaderboard-staff-card" layout>
                   <span className="nac-leaderboard-rank">#{i + 1}</span>
                   <strong>{s.name}</strong>
+                  <p>{branchDisplayName(s.branch)}</p>
                   <p>{s.scans} scans · {s.conversion_pct}% conversion</p>
                 </motion.div>
               ))}

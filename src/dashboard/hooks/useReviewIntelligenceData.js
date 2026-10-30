@@ -23,7 +23,7 @@ import { REVIEW_BRANCH_IDS } from "../../review/reviewBranchIdentity";
 import { withVerifiedReviewRoster } from "../../review/verifiedReviewRoster";
 
 const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id";
+  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
 /**
  * Shared review intelligence payload — canonical network truth per filterKey.
@@ -124,7 +124,7 @@ export function useReviewIntelligenceData(options = {}) {
 
       let reviewAllQ = supabase
         .from("review_events")
-        .select("event_type,branch_id,created_at,review_session_id,session_id")
+        .select("event_type,branch_id,employee_name,created_at,review_session_id,session_id,metadata")
         .order("created_at", { ascending: false })
         .limit(2000);
 

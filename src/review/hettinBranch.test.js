@@ -40,7 +40,7 @@ describe('Hettin independent review branch',()=>{
  test('all four review buckets stay independent while preserving established branch identities',()=>{
    expect(CANONICAL_BRANCH_IDS).toEqual(['khobar','riyadh','jeddah','hettin']);
    expect(normalizeBranchId('hettin')).toBe('hettin');
-   expect(normalizeBranchId('NAC Riyadh Hittin')).toBe('riyadh');
+   expect(normalizeBranchId('NAC Riyadh Hittin')).toBe('hettin');
    expect(REVIEW_BRANCH_IDS).toEqual(['khobar','riyadh','jeddah','hettin']);
    const events=REVIEW_BRANCH_IDS.flatMap((branch_id,i)=>Array.from({length:i+1},(_,n)=>({branch_id,event_type:'qr_scan',employee_name:'Staff',review_session_id:`${branch_id}-${n}`})));
    expect(buildBranchReviewComparison(events).map(r=>r.qr_scans)).toEqual([1,2,3,4]);

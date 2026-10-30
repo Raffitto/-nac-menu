@@ -89,8 +89,8 @@ describe("SettingsView", () => {
     expect(screen.getAllByText("Super Admin").length).toBeGreaterThan(0);
     expect(screen.getByTestId("settings-access")).toBeInTheDocument();
     expect(screen.getByText("Network-wide")).toBeInTheDocument();
-    expect(screen.getAllByText("Khobar").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Laysen Valley").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NAC Khobar").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NAC Laysen Valley").length).toBeGreaterThan(0);
     expect(screen.getByTestId("settings-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("settings-system")).toBeInTheDocument();
     expect(screen.getByTestId("settings-security")).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe("SettingsView", () => {
 
     expect(screen.getByText("Fady")).toBeInTheDocument();
     expect(screen.getAllByText("Branch Manager").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Khobar").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("NAC Khobar").length).toBeGreaterThan(0);
     expect(screen.queryByText("Riyadh")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-system")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-sign-in")).not.toBeInTheDocument();

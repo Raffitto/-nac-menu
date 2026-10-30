@@ -1,38 +1,43 @@
 /**
  * Centralized branch identity — stable internal IDs + configurable display names.
- * Internal branch_id is always khobar | riyadh | jeddah for RBAC, analytics, imports.
+ * Internal branch_id remains stable for RBAC, analytics, imports, and historical records.
  */
 
 import { CANONICAL_BRANCH_IDS, normalizeBranchId } from "../utils/branchIdentity";
+import { OFFICIAL_BRANCH_NAMES } from "./branchNames";
 
 /** @typedef {'publicName'|'dashboardName'|'exportName'} BranchDisplayField */
 
 export const BRANCH_DISPLAY_CONFIG = {
-  hettin: { id: "hettin", publicName: "NAC Hettin", publicNameAr: "ناك حطين", dashboardName: "Hettin", exportName: "Hettin", routeSlug: "hettin", legacyLabels: [] },
+  hettin: { id: "hettin", city: "Riyadh", publicName: OFFICIAL_BRANCH_NAMES.hettin, publicNameAr: "ناك حطين", dashboardName: OFFICIAL_BRANCH_NAMES.hettin, exportName: OFFICIAL_BRANCH_NAMES.hettin, routeSlug: "hettin", legacyLabels: [] },
   khobar: {
     id: "khobar",
+    city: "Khobar",
+    // The guest-menu brand header remains NAC; branch-facing labels use the official name.
     publicName: "NAC",
     publicNameAr: "NAC",
-    dashboardName: "NAC",
-    exportName: "Khobar",
+    dashboardName: OFFICIAL_BRANCH_NAMES.khobar,
+    exportName: OFFICIAL_BRANCH_NAMES.khobar,
     routeSlug: "khobar",
     legacyLabels: ["NAC Khobar", "Khobar", "الخبر"],
   },
   riyadh: {
     id: "riyadh",
-    publicName: "NAC Laysen Valley",
+    city: "Riyadh",
+    publicName: OFFICIAL_BRANCH_NAMES.riyadh,
     publicNameAr: "ناك ليسن فالي",
-    dashboardName: "Laysen Valley",
-    exportName: "Laysen Valley",
+    dashboardName: OFFICIAL_BRANCH_NAMES.riyadh,
+    exportName: OFFICIAL_BRANCH_NAMES.riyadh,
     routeSlug: "riyadh",
     legacyLabels: ["NAC Riyadh", "Riyadh", "الرياض"],
   },
   jeddah: {
     id: "jeddah",
-    publicName: "NAC Jeddah",
+    city: "Jeddah",
+    publicName: OFFICIAL_BRANCH_NAMES.jeddah,
     publicNameAr: "NAC جدة",
-    dashboardName: "Jeddah",
-    exportName: "Jeddah",
+    dashboardName: OFFICIAL_BRANCH_NAMES.jeddah,
+    exportName: OFFICIAL_BRANCH_NAMES.jeddah,
     routeSlug: "jeddah",
     legacyLabels: ["NAC Jeddah", "Jeddah", "جدة"],
   },

@@ -30,7 +30,7 @@ test("network review export labels each staff row with its actual branch", () =>
     });
     const workbook = write.mock.calls[0][0];
     const staff = XLSX.utils.sheet_to_json(workbook.Sheets.Staff);
-    expect(staff.map((row) => row.Branch)).toEqual(["Hettin", "Laysen Valley"]);
+    expect(staff.map((row) => row.Branch)).toEqual(["NAC Hettin", "NAC Laysen Valley"]);
   } finally {
     write.mockRestore();
   }

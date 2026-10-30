@@ -81,4 +81,5 @@ export function rangeToSince(range, referenceDate = new Date()) {
   return new Date(referenceDate.getTime() - hours * 3600000).toISOString();
 }
 
-export { branchDisplayName, defaultBranchId, normalizeBranchId } from "./branchIdentity";
+export { branchDashboardName as branchDisplayName } from "../config/branchDisplayConfig";
+export { defaultBranchId, normalizeBranchId } from "./branchIdentity";

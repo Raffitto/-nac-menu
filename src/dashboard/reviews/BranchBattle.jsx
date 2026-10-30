@@ -30,7 +30,7 @@ export default function BranchBattle() {
         const since = rangeToSince(filters?.selectedRange || "today");
         let q = supabase
           .from("review_events")
-          .select("event_type,branch_id,created_at")
+          .select("event_type,branch_id,employee_name,created_at,metadata")
           .order("created_at", { ascending: false })
           .limit(3000);
         if (since) q = q.gte("created_at", since);

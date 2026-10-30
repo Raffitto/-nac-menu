@@ -4,7 +4,7 @@ import {
   buildCanonicalBranchComparison,
   normalizeBranchId,
 } from '../dashboard/utils/branchIdentity';
-import { branchDashboardName, branchPublicName } from '../dashboard/config/branchDisplayConfig';
+import { branchDashboardName } from '../dashboard/config/branchDisplayConfig';
 
 export function normalizeReviewBranchId(raw) {
   if (raw != null && /hettin|hittin|حطين/i.test(String(raw))) return 'hettin';
@@ -18,7 +18,7 @@ export function reviewBranchDisplayName(raw) {
 
 export const REVIEW_BRANCH_IDS = [...CANONICAL_BRANCH_IDS];
 export const REVIEW_BRANCH_OPTIONS = REVIEW_BRANCH_IDS.map(id => ({
-  id, label: branchPublicName(id),
+  id, label: branchDashboardName(id),
 }));
 
 export function buildReviewBranchComparison(rows = [], defaults = {}) {

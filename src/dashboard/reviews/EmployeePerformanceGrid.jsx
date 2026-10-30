@@ -12,7 +12,7 @@ import { useRbacOptional } from "../context/RbacContext";
 import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
 import { applyPlatformFilters } from "../utils/platformFilterApply";
 
-const SELECT = "event_type,employee_name,employee_role,branch_id,created_at";
+const SELECT = "event_type,employee_name,employee_role,branch_id,created_at,metadata";
 
 function initials(name) {
   return String(name || "?")
@@ -117,7 +117,7 @@ export default function EmployeePerformanceGrid() {
   const prevMap = useMemo(() => {
     const m = {};
     prevStaff.forEach((s) => {
-      m[s.name] = s;
+      m[`${s.branch || "unknown"}::${String(s.name).toLowerCase()}`] = s;
     });
     return m;
   }, [prevStaff]);
@@ -158,10 +158,11 @@ export default function EmployeePerformanceGrid() {
 
       <div className="nac-emp-grid">
         {sorted.map((emp, idx) => {
-          const prev = prevMap[emp.name];
+          const identity = `${emp.branch || "unknown"}::${String(emp.name).toLowerCase()}`;
+          const prev = prevMap[identity];
           return (
             <motion.div
-              key={emp.name}
+              key={identity}
               className="nac-emp-premium-card"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}

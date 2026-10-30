@@ -13,6 +13,7 @@ import {
   operationalBrandDisplay,
   normalizeOperationalBrandLabel,
 } from "../../dashboard/utils/branchIdentity";
+import { branchDashboardName } from "../../dashboard/config/branchDisplayConfig";
 
 export {
   CANONICAL_BRANCH_IDS,
@@ -29,7 +30,7 @@ export {
 /** Selectors / filters across intelligence modules */
 export const BRANCH_OPTIONS = CANONICAL_BRANCH_IDS.map((id) => ({
   id,
-  label: operationalBrandDisplay(id),
+  label: branchDashboardName(id),
 }));
 
 /** Tracking default when branch is unknown (never use for aggregation buckets). */

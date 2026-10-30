@@ -24,7 +24,7 @@ export default function ReviewExportBar({ snapshotRef }) {
   const modalCopy = {
     audit: {
       title: "Branch audit PDF — date range",
-      subtitle: "Khobar, Riyadh, and Jeddah staff reports for the selected period.",
+      subtitle: "NAC Khobar, NAC Laysen Valley, NAC Jeddah, and NAC Hettin staff reports for the selected period.",
     },
     pdf: {
       title: "Summary PDF — date range",
