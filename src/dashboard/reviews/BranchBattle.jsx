@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Crown } from "lucide-react";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { buildBranchReviewComparison } from "../utils/reviewEventMetrics";
-import { branchDisplayName, rangeToSince } from "../utils/rangeState";
+import { branchDisplayName } from "../utils/rangeState";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
+import { useReviewIntelligenceData } from "../hooks/useReviewIntelligenceData";
 import { useGooglePlaceMetrics } from "../hooks/useGooglePlaceMetrics";
 import GoogleReputationBadge from "../components/GoogleReputationBadge";
 import { usePredictiveIntelligence } from "../hooks/usePredictiveIntelligence";
@@ -14,38 +13,9 @@ import "../styles/predictive-intelligence.css";
 
 export default function BranchBattle() {
   const filters = usePlatformFiltersOptional();
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const reviewData = useReviewIntelligenceData();
+  const { branchComparison: rows, loading } = reviewData;
   const { loading: googleLoading, byBranch: googleByBranch } = useGooglePlaceMetrics(null);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured() || !supabase) {
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const since = rangeToSince(filters?.selectedRange || "today");
-        let q = supabase
-          .from("review_events")
-          .select("event_type,branch_id,employee_name,created_at,metadata")
-          .order("created_at", { ascending: false })
-          .limit(3000);
-        if (since) q = q.gte("created_at", since);
-        const { data } = await q;
-        if (!cancelled) setRows(buildBranchReviewComparison(data || []));
-      } catch {
-        if (!cancelled) setRows([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [filters?.selectedRange]);
 
   const leaderId = useMemo(() => {
     const sorted = [...rows].sort((a, b) => b.qr_scans - a.qr_scans);
@@ -73,6 +43,10 @@ export default function BranchBattle() {
         ))}
       </div>
     );
+  }
+
+  if (reviewData.error || reviewData.partial) {
+    return <p role="alert" className="nac-empty-state">Complete Branch Battle totals are unavailable. {reviewData.error || "Please retry."}</p>;
   }
 
   return (

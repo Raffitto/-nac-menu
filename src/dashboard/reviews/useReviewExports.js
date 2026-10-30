@@ -1,5 +1,9 @@
 import { useState, useCallback, useMemo } from "react";
 import { supabase, isSupabaseConfigured } from "../../lib/supabase";
+import { useRbacOptional } from "../context/RbacContext";
+import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
+import { buildReviewBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
+import { fetchAllReviewEvents } from "./reviewEventPages";
 import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
 import {
   kpisFromReviewSummary,
@@ -29,39 +33,38 @@ import {
   fetchGoogleReviewSnapshots,
 } from "../utils/googleReviewSnapshotHistory";
 import { exportElementToPng } from "../utils/snapshotExport";
-import { withSupabaseFallback } from "../utils/supabaseResilience";
 import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelligenceEngine";
 import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandCenterEngine";
 
 const REVIEW_EVENT_SELECT =
   "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
-function applyEventTimeBounds(query, exportRange) {
-  if (!exportRange) return query;
-  return query
-    .gte("created_at", exportRange.sinceIso)
-    .lte("created_at", exportRange.untilIso);
-}
-
-async function loadStaffAndSnapshots(exportRange) {
-  const hours = exportRange?.rpcHours ?? 24;
-  const staffByBranch = Object.fromEntries(
-    await Promise.all(
-      OPERATIONAL_BRANCHES.map(async (branchId) => {
-        const summary = await withSupabaseFallback(
-          fetchReviewEventsSummary(supabase, { branch: branchId, hours }),
-          null,
-        );
-        return [branchId, staffFromReviewSummary(summary || { staff: [] })];
-      }),
-    ),
-  );
+async function loadStaffAndSnapshots(exportRange, loaded, branchIds) {
+  const staffByBranch = exportRange?.useRpc
+    ? Object.fromEntries(
+        await Promise.all(
+          branchIds.map(async (branchId) => {
+            const summary = await fetchReviewEventsSummary(supabase, {
+              branch: branchId,
+              hours: exportRange.rpcHours,
+            });
+            if (!summary || summary._partial) throw new Error("Complete branch review summary is unavailable; export cancelled.");
+            return [branchId, staffFromReviewSummary(summary)];
+          }),
+        ),
+      )
+    : Object.fromEntries(
+        branchIds.map((branchId) => [
+          branchId,
+          aggregateStaffReviewStats((loaded?.events || []).filter((row) => row.branch_id === branchId)),
+        ]),
+      );
   const { data: snapshots } = await fetchGoogleReviewSnapshots().catch(() => ({ data: [] }));
   return { staffByBranch, snapshots: snapshots || [] };
 }
 
-async function loadPredictivePackage(exportRange, loaded, branch) {
-  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange);
+async function loadPredictivePackage(exportRange, loaded, branch, branchIds) {
+  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange, loaded, branchIds);
   return buildPredictiveIntelligencePackage({
     kpis: loaded?.kpis,
     branchComparison: loaded?.branchComparison || [],
@@ -72,8 +75,8 @@ async function loadPredictivePackage(exportRange, loaded, branch) {
   });
 }
 
-async function loadExecutiveCommandPackage(exportRange, loaded) {
-  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange);
+async function loadExecutiveCommandPackage(exportRange, loaded, branchIds) {
+  const { staffByBranch, snapshots } = await loadStaffAndSnapshots(exportRange, loaded, branchIds);
   return buildExecutiveCommandCenterPackage({
     kpis: loaded?.kpis,
     branchComparison: loaded?.branchComparison || [],
@@ -92,6 +95,8 @@ function reportExportFailure(err, label = "Export") {
 }
 
 export function useReviewExports(filters) {
+  const rbac = useRbacOptional();
+  const profile = rbac?.profile;
   const [pngBusy, setPngBusy] = useState(false);
   const [auditBusy, setAuditBusy] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
@@ -100,6 +105,11 @@ export function useReviewExports(filters) {
 
   const selectedRange = filters?.selectedRange || "7d";
   const branch = filters?.branch || null;
+  const scope = resolveReviewScope(profile, branch);
+  const exportBranchIds = useMemo(
+    () => scope.networkWide ? OPERATIONAL_BRANCHES : [scope.queryBranch].filter(Boolean),
+    [scope.networkWide, scope.queryBranch],
+  );
   const dashboardRangeLabel = rangeExportLabel(selectedRange);
   const branchLabel = branch ? branchDisplayName(branch) : "All branches";
 
@@ -114,59 +124,52 @@ export function useReviewExports(filters) {
       const useRpc = exportRange ? exportRange.useRpc : dashboardExportRange.useRpc;
       const hours = exportRange ? exportRange.rpcHours : dashboardExportRange.rpcHours;
 
-      if (useRpc) {
-        const summary = await withSupabaseFallback(
-          fetchReviewEventsSummary(supabase, {
-            branch: branch || null,
-            hours,
-          }),
-          null,
-        );
+      if (!scope.networkWide && !scope.queryBranch) {
+        throw new Error("Review export is not authorized for this branch.");
+      }
 
-        if (summary) {
-          const allSummary = await withSupabaseFallback(
-            branch != null
-              ? fetchReviewEventsSummary(supabase, { branch: null, hours })
-              : Promise.resolve(summary),
-            summary,
-          );
+      if (useRpc) {
+        const summary = await fetchReviewEventsSummary(supabase, {
+          branch: scope.queryBranch,
+          hours,
+        });
+
+        if (summary && !summary._partial) {
           return {
             events: [],
             all: [],
             summary,
             fromRpc: true,
             kpis: kpisFromReviewSummary(summary),
-            branchComparison: branchComparisonFromReviewSummary(allSummary),
+            branchComparison: buildReviewBranchComparisonForProfile(
+              profile,
+              branchComparisonFromReviewSummary(summary),
+            ),
             exportRange: range,
           };
         }
+        throw new Error("Complete review summary is unavailable; export cancelled.");
       }
 
-      let branchQ = supabase
-        .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(2500);
-      let allQ = supabase
-        .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(3000);
-
-      branchQ = applyEventTimeBounds(branchQ, range);
-      allQ = applyEventTimeBounds(allQ, range);
-
-      if (branch) {
-        branchQ = branchQ.eq("branch_id", branch);
-      }
-
-      const [{ data: branchEvents }, { data: allEvents }] = await Promise.all([branchQ, allQ]);
-
-      const events = applyPlatformFilters(branchEvents || [], filters);
-      const all = applyPlatformFilters(allEvents || [], filters);
-      return { events, all, exportRange: range, fromRpc: false };
+      const raw = await fetchAllReviewEvents(supabase, {
+        select: REVIEW_EVENT_SELECT,
+        range,
+        branch: scope.queryBranch,
+      });
+      const events = applyPlatformFilters(raw, filters);
+      return {
+        events,
+        all: events,
+        kpis: computeReviewKpis(events),
+        branchComparison: buildReviewBranchComparisonForProfile(
+          profile,
+          buildBranchReviewComparison(events),
+        ),
+        exportRange: range,
+        fromRpc: false,
+      };
     },
-    [branch, filters, dashboardExportRange],
+    [filters, dashboardExportRange, profile, scope.queryBranch, scope.networkWide],
   );
 
   const buildSummaryContext = useCallback(
@@ -206,10 +209,10 @@ export function useReviewExports(filters) {
         diagnostics: loaded?.fromRpc
           ? []
           : runReviewDataQualityDiagnostics(events, branch),
-        branchComparison: loaded?.branchComparison || buildBranchReviewComparison(all),
+        branchComparison: loaded?.branchComparison || buildReviewBranchComparisonForProfile(profile, buildBranchReviewComparison(all)),
       };
     },
-    [branch, branchLabel, dashboardExportRange],
+    [branch, branchLabel, dashboardExportRange, profile],
   );
 
   const exportSnapshotPng = useCallback(
@@ -234,38 +237,34 @@ export function useReviewExports(filters) {
   const loadBranchAuditReports = useCallback(
     async (exportRange = null) => {
       const range = exportRange || dashboardExportRange;
+      if (!scope.networkWide && !scope.queryBranch) {
+        throw new Error("Review export is not authorized for this branch.");
+      }
 
       const reports = await Promise.all(
-        OPERATIONAL_BRANCHES.map(async (branchId) => {
+        (scope.networkWide ? OPERATIONAL_BRANCHES : [scope.queryBranch]).map(async (branchId) => {
           if (range.useRpc) {
-            const summary = await withSupabaseFallback(
-              fetchReviewEventsSummary(supabase, {
-                branch: branchId,
-                hours: range.rpcHours,
-              }),
-              null,
-            );
-            if (summary) {
-              return buildBranchOperationalReportFromSummary(summary, branchId);
-            }
+            const summary = await fetchReviewEventsSummary(supabase, {
+              branch: branchId,
+              hours: range.rpcHours,
+            });
+            if (!summary || summary._partial) throw new Error("Complete branch review summary is unavailable; export cancelled.");
+            return buildBranchOperationalReportFromSummary(summary, branchId);
           }
 
-          let q = supabase
-            .from("review_events")
-            .select(REVIEW_EVENT_SELECT)
-            .eq("branch_id", branchId)
-            .order("created_at", { ascending: false })
-            .limit(2500);
-          q = applyEventTimeBounds(q, range);
-          const { data: raw } = await q;
-          const events = applyPlatformFilters(raw || [], filters);
+          const raw = await fetchAllReviewEvents(supabase, {
+            select: REVIEW_EVENT_SELECT,
+            range,
+            branch: branchId,
+          });
+          const events = applyPlatformFilters(raw, filters);
           return buildBranchOperationalReport(events, branchId);
         }),
       );
 
       return reports.filter(Boolean);
     },
-    [filters, dashboardExportRange],
+    [filters, dashboardExportRange, scope.networkWide, scope.queryBranch],
   );
 
   const exportBranchAuditPdf = useCallback(
@@ -287,7 +286,7 @@ export function useReviewExports(filters) {
           periodLabel: range.periodLabel,
         });
         const loaded = await loadEvents(range);
-        const predictive = await loadPredictivePackage(range, loaded, branch);
+        const predictive = await loadPredictivePackage(range, loaded, branch, exportBranchIds);
         exportDetailedBranchOperationalReview({
           reports,
           rangeLabel: range.periodLabel,
@@ -302,7 +301,7 @@ export function useReviewExports(filters) {
         setAuditBusy(false);
       }
     },
-    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange, loadEvents, branch],
+    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange, loadEvents, branch, exportBranchIds],
   );
 
   const exportSummaryPdf = useCallback(
@@ -314,8 +313,8 @@ export function useReviewExports(filters) {
         const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
         const [predictive, commandPackage] = await Promise.all([
-          loadPredictivePackage(range, loaded, branch),
-          loadExecutiveCommandPackage(range, loaded),
+          loadPredictivePackage(range, loaded, branch, exportBranchIds),
+          loadExecutiveCommandPackage(range, loaded, exportBranchIds),
         ]);
         exportReviewIntelligenceReport({
           ...buildSummaryContext(loaded, range),
@@ -329,7 +328,7 @@ export function useReviewExports(filters) {
         setSummaryBusy(false);
       }
     },
-    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, branch],
+    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, branch, exportBranchIds],
   );
 
   const exportExecutiveSummaryPdf = useCallback(
@@ -339,7 +338,7 @@ export function useReviewExports(filters) {
       setExecutiveBusy(true);
       try {
         const loaded = await loadEvents(range);
-        const commandPackage = await loadExecutiveCommandPackage(range, loaded);
+        const commandPackage = await loadExecutiveCommandPackage(range, loaded, exportBranchIds);
         const { exportExecutiveCommandCenterPdf } = await import(
           "../engines/executiveCommandCenterPdfExport"
         );
@@ -353,7 +352,7 @@ export function useReviewExports(filters) {
         setExecutiveBusy(false);
       }
     },
-    [configured, executiveBusy, loadEvents, dashboardExportRange],
+    [configured, executiveBusy, loadEvents, dashboardExportRange, exportBranchIds],
   );
 
   const exportSummaryXlsx = useCallback(
