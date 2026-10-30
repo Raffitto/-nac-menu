@@ -5,25 +5,8 @@ import { supabase, isSupabaseConfigured } from "../../lib/supabase";
 import { fetchUnifiedReviewTruth, resolveReviewScope } from "../../lib/unifiedReviewTruth";
 import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
 import { useRbacOptional } from "../context/RbacContext";
-import { applyPlatformFilters } from "../utils/platformFilterApply";
-import { rangeToSince, rangeToHours } from "../utils/rangeState";
-import {
-  computeReviewKpis,
-  buildBranchReviewComparison,
-} from "../utils/reviewEventMetrics";
-import {
-  aggregateStaffReviewStats,
-  mergeStaffStats,
-  buildDailyScanTrend,
-  buildBranchScanTotals,
-} from "../utils/staffReviewStats";
-import { buildReviewBranchComparisonForProfile } from "../../lib/rbacIntelligenceScope";
+import { rangeToHours } from "../utils/rangeState";
 import { EMPTY_REVIEW_KPIS } from "../utils/supabaseResilience";
-import { REVIEW_BRANCH_IDS } from "../../review/reviewBranchIdentity";
-import { withVerifiedReviewRoster } from "../../review/verifiedReviewRoster";
-
-const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
 /**
  * Shared review intelligence payload — canonical network truth per filterKey.
@@ -72,13 +55,12 @@ export function useReviewIntelligenceData(options = {}) {
     setPartial(false);
 
     const hours = rangeToHours(selectedRange);
-    const platformFilters = options.platformFilters ?? platform;
     let settled = false;
     const settleTimer = setTimeout(() => {
       if (settled) return;
       settled = true;
       setPartial(true);
-      setError((prev) => prev || "Review metrics timed out. Showing whatever loaded.");
+      setError((prev) => prev || "Complete review metrics timed out; please retry.");
       setLoading(false);
     }, 12000);
 
@@ -91,6 +73,18 @@ export function useReviewIntelligenceData(options = {}) {
 
       if (truth?.summary) {
         setScope(truth.scope);
+        if (truth.partial) {
+          setSummary(null);
+          setKpis(null);
+          setStaffMerged([]);
+          setDailyTrend([]);
+          setBranchComparison([]);
+          setBranchScans([]);
+          setIntegrity(null);
+          setPartial(true);
+          setError(truth.note || "Complete review summary is unavailable; please retry.");
+          return;
+        }
         setSummary(truth.summary);
         setKpis(truth.kpis);
         setStaffMerged(truth.staffMerged);
@@ -105,67 +99,21 @@ export function useReviewIntelligenceData(options = {}) {
         return;
       }
 
-      const since = rangeToSince(selectedRange);
-      let reviewQ = supabase
-        .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(2500);
-
-      const queryBranch = truth?.scope?.queryBranch ?? reviewScope.queryBranch;
-      if (queryBranch) reviewQ = reviewQ.eq("branch_id", queryBranch);
-      else if (
-        !reviewScope.networkWide &&
-        rbacProfile?.authenticated &&
-        rbacProfile.branchScope
-      ) {
-        reviewQ = reviewQ.eq("branch_id", rbacProfile.branchScope);
-      }
-
-      let reviewAllQ = supabase
-        .from("review_events")
-        .select("event_type,branch_id,employee_name,created_at,review_session_id,session_id,metadata")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-
-      if (!reviewScope.networkWide) {
-        reviewAllQ = reviewAllQ.eq(
-          "branch_id",
-          queryBranch || rbacProfile?.branchScope || "__rbac_denied__",
-        );
-      }
-
-      if (since) {
-        reviewQ = reviewQ.gte("created_at", since);
-        reviewAllQ = reviewAllQ.gte("created_at", since);
-      }
-
-      const [{ data: branchEvents }, { data: allEvents }] = await Promise.all([
-        reviewQ,
-        reviewAllQ,
-      ]);
-
-      const events = applyPlatformFilters(branchEvents || [], platformFilters);
-      const all = applyPlatformFilters(allEvents || [], platformFilters);
-      const comparison = buildReviewBranchComparisonForProfile(
-        rbacProfile,
-        buildBranchReviewComparison(all),
-      );
+      // Raw-event queries are capped and cannot represent complete period totals.
+      setPartial(true);
+      setError("Complete review summary is unavailable; please retry.");
 
       setSummary(null);
-      setScope(reviewScope);
-      setKpis(computeReviewKpis(events));
-      setStaffMerged(withVerifiedReviewRoster(
-        mergeStaffStats([], aggregateStaffReviewStats(events)),
-        reviewScope.networkWide ? REVIEW_BRANCH_IDS : queryBranch ? [queryBranch] : [],
-      ));
-      setDailyTrend(buildDailyScanTrend(events));
-      setBranchScans(buildBranchScanTotals(all));
-      setBranchComparison(comparison);
+      setKpis(null);
+      setStaffMerged([]);
+      setDailyTrend([]);
+      setBranchScans([]);
+      setBranchComparison([]);
       setIntegrity(null);
     } catch (e) {
+      setPartial(true);
       setError(e.message || "Failed to load review data");
-      setKpis(EMPTY_REVIEW_KPIS);
+      setKpis(null);
       setStaffMerged([]);
       setDailyTrend([]);
       setBranchScans([]);
@@ -176,7 +124,7 @@ export function useReviewIntelligenceData(options = {}) {
       settled = true;
       setLoading(false);
     }
-  }, [rawBranch, reviewScope, selectedRange, platform, options.platformFilters, rbacProfile]);
+  }, [rawBranch, selectedRange, rbacProfile]);
 
   useEffect(() => {
     if (skip) {

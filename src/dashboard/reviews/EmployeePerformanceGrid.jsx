@@ -1,18 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
-import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
-import { rangeToHours } from "../utils/rangeState";
-import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
-import { branchDisplayName, rangeToSince } from "../utils/rangeState";
-import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { useRbacOptional } from "../context/RbacContext";
-import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
-import { applyPlatformFilters } from "../utils/platformFilterApply";
-
-const SELECT = "event_type,employee_name,employee_role,branch_id,created_at,metadata";
+import { branchDisplayName } from "../utils/rangeState";
+import { useReviewIntelligenceData } from "../hooks/useReviewIntelligenceData";
 
 function initials(name) {
   return String(name || "?")
@@ -32,79 +22,9 @@ function TrendBadge({ current, previous }) {
 }
 
 export default function EmployeePerformanceGrid() {
-  const filters = usePlatformFiltersOptional();
-  const rbac = useRbacOptional();
-  const [staff, setStaff] = useState([]);
-  const [prevStaff, setPrevStaff] = useState([]);
+  const reviewData = useReviewIntelligenceData();
+  const { staffMerged: staff, loading } = reviewData;
   const [sort, setSort] = useState("scans");
-  const [loading, setLoading] = useState(true);
-
-  const reviewScope = resolveReviewScope(rbac?.profile, filters?.branch || null);
-  const branch = reviewScope.queryBranch;
-
-  useEffect(() => {
-    if (!isSupabaseConfigured() || !supabase) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const hours = rangeToHours(filters?.selectedRange || "today");
-        const summary = await fetchReviewEventsSummary(supabase, {
-          branch: branch || null,
-          hours,
-        });
-
-        if (summary) {
-          if (cancelled) return;
-          setStaff(staffFromReviewSummary(summary));
-          setPrevStaff([]);
-          return;
-        }
-
-        const since = rangeToSince(filters?.selectedRange || "today");
-        let q = supabase
-          .from("review_events")
-          .select(SELECT)
-          .order("created_at", { ascending: false })
-          .limit(2500);
-        if (branch) q = q.eq("branch_id", branch);
-        if (since) q = q.gte("created_at", since);
-
-        const { data: raw } = await q;
-        const data = applyPlatformFilters(raw || [], filters);
-        if (cancelled) return;
-
-        const prevSince = new Date(since);
-        const windowMs = Date.now() - prevSince.getTime();
-        const prevStart = new Date(prevSince.getTime() - windowMs).toISOString();
-
-        let pq = supabase
-          .from("review_events")
-          .select(SELECT)
-          .gte("created_at", prevStart)
-          .lt("created_at", since)
-          .limit(1500);
-        if (branch) pq = pq.eq("branch_id", branch);
-        const { data: prevRaw } = await pq;
-        const prevData = applyPlatformFilters(prevRaw || [], filters);
-
-        setStaff(aggregateStaffReviewStats(data));
-        setPrevStaff(aggregateStaffReviewStats(prevData));
-      } catch {
-        setStaff([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [branch, filters]);
 
   const sorted = useMemo(() => {
     const list = [...staff];
@@ -114,13 +34,7 @@ export default function EmployeePerformanceGrid() {
     return list;
   }, [staff, sort]);
 
-  const prevMap = useMemo(() => {
-    const m = {};
-    prevStaff.forEach((s) => {
-      m[`${s.branch || "unknown"}::${String(s.name).toLowerCase()}`] = s;
-    });
-    return m;
-  }, [prevStaff]);
+  const prevMap = useMemo(() => ({}), []);
 
   if (loading) {
     return (
@@ -130,6 +44,10 @@ export default function EmployeePerformanceGrid() {
         ))}
       </div>
     );
+  }
+
+  if (reviewData.error || reviewData.partial) {
+    return <p role="alert" className="nac-empty-state">Complete Team totals are unavailable. {reviewData.error || "Please retry."}</p>;
   }
 
   if (sorted.length === 0) {
@@ -175,7 +93,7 @@ export default function EmployeePerformanceGrid() {
                   <div>
                     <strong style={{ fontSize: "1rem" }}>{emp.name}</strong>
                     <p style={{ margin: "0.15rem 0 0", fontSize: "0.75rem", color: "rgba(249,249,247,0.5)" }}>
-                      {emp.role || "Staff"} · {branchDisplayName(emp.branch || branch)}
+                      {emp.role || "Staff"} · {branchDisplayName(emp.branch || reviewData.branch)}
                     </p>
                   </div>
                 </div>
