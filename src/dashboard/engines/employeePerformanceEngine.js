@@ -1,6 +1,7 @@
 /** Employee performance classifications from review + menu attribution signals */
 
 import { filterProductionStaffList } from "../utils/isProductionStaff";
+import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
 
 const MIN_STRONG = 25;
 const MIN_MODERATE = 10;
@@ -11,11 +12,6 @@ function confidenceLabel(sampleSize) {
   if (sampleSize >= MIN_MODERATE) return "moderate confidence";
   if (sampleSize >= MIN_EARLY) return "early signal";
   return "low confidence";
-}
-
-function pct(num, den) {
-  if (!den) return 0;
-  return Math.round((num / den) * 100);
 }
 
 /**
@@ -31,7 +27,9 @@ export function buildEmployeePerformance(employees = [], menuContext = {}) {
     const generated = Number(emp.generated) || Number(emp.reviews_generated) || 0;
     const google = Number(emp.google_clicks) || 0;
     const sample = Math.max(opens, generated);
-    const conv = generated > 0 ? pct(google, generated) : 0;
+    // Coaching and exports describe the same tap-to-Google metric as Team.
+    // Review interactions remain a separate, unaltered event count.
+    const conv = reviewConversionPct(google, opens);
     const avgLen = Math.round(Number(emp.avg_length) || 0);
     const menuInfl = Number(influenced[emp.name]) || 0;
 

@@ -13,7 +13,7 @@ export function kpisFromReviewSummary(summary) {
     google_redirects: Number(summary.google_redirects) || 0,
     review_page_opens: Number(summary.review_page_opens) || 0,
     unique_review_visitors: Number(summary.unique_visitors) || 0,
-    conversion_pct: Number(summary.conversion_pct) || 0,
+    conversion_pct: reviewConversionPct(summary.google_redirects, summary.qr_scans),
     by_event_type: [],
   };
 }
@@ -33,7 +33,9 @@ export function staffFromReviewSummary(summary) {
         opens: Number(s.scans) || 0,
         review_opens: Number(s.review_opens) || 0,
         copy: Number(s.copy) || 0,
-        conversion_pct: Number(s.conversion_pct) || 0,
+        // The RPC ratio counts redirect events, which can exceed card taps.
+        // Derive the same display metric as Performance/Team from preserved counts.
+        conversion_pct: reviewConversionPct(s.google, s.scans),
       };
     });
 }

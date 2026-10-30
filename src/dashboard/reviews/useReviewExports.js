@@ -94,6 +94,10 @@ function reportExportFailure(err, label = "Export") {
   }
 }
 
+export function reviewExportBranchForScope(scope) {
+  return scope?.networkWide ? null : scope?.queryBranch || null;
+}
+
 export function useReviewExports(filters) {
   const rbac = useRbacOptional();
   const profile = rbac?.profile;
@@ -106,12 +110,13 @@ export function useReviewExports(filters) {
   const selectedRange = filters?.selectedRange || "7d";
   const branch = filters?.branch || null;
   const scope = resolveReviewScope(profile, branch);
+  const exportBranch = reviewExportBranchForScope(scope);
   const exportBranchIds = useMemo(
     () => scope.networkWide ? OPERATIONAL_BRANCHES : [scope.queryBranch].filter(Boolean),
     [scope.networkWide, scope.queryBranch],
   );
   const dashboardRangeLabel = rangeExportLabel(selectedRange);
-  const branchLabel = branch ? branchDisplayName(branch) : "All branches";
+  const branchLabel = exportBranch ? branchDisplayName(exportBranch) : "All branches";
 
   const dashboardExportRange = useMemo(
     () => resolveExportRange({ preset: "dashboard", dashboardRange: selectedRange }),
@@ -179,7 +184,7 @@ export function useReviewExports(filters) {
       const kpis = loaded?.kpis || computeReviewKpis(events);
       const staffMerged = loaded?.summary
         ? staffFromReviewSummary(loaded.summary)
-        : mergeStaffStats([], aggregateStaffReviewStats(events, branch));
+        : mergeStaffStats([], aggregateStaffReviewStats(events, exportBranch));
       const employees = buildEmployeePerformance(
         staffMerged.map((s) => ({
           name: s.name,
@@ -208,11 +213,11 @@ export function useReviewExports(filters) {
         employees,
         diagnostics: loaded?.fromRpc
           ? []
-          : runReviewDataQualityDiagnostics(events, branch),
+          : runReviewDataQualityDiagnostics(events, exportBranch),
         branchComparison: loaded?.branchComparison || buildReviewBranchComparisonForProfile(profile, buildBranchReviewComparison(all)),
       };
     },
-    [branch, branchLabel, dashboardExportRange, profile],
+    [exportBranch, branchLabel, dashboardExportRange, profile],
   );
 
   const exportSnapshotPng = useCallback(
@@ -220,7 +225,7 @@ export function useReviewExports(filters) {
       if (!snapshotEl || pngBusy) return;
       setPngBusy(true);
       try {
-        const safeBranch = (branch || "network").toString().toLowerCase();
+        const safeBranch = (exportBranch || "network").toString().toLowerCase();
         await exportElementToPng(
           snapshotEl,
           `nac-${safeBranch}-${selectedRange}-snapshot-${Date.now()}.png`,
@@ -231,7 +236,7 @@ export function useReviewExports(filters) {
         setPngBusy(false);
       }
     },
-    [pngBusy, branch, selectedRange],
+    [pngBusy, exportBranch, selectedRange],
   );
 
   const loadBranchAuditReports = useCallback(
@@ -286,7 +291,7 @@ export function useReviewExports(filters) {
           periodLabel: range.periodLabel,
         });
         const loaded = await loadEvents(range);
-        const predictive = await loadPredictivePackage(range, loaded, branch, exportBranchIds);
+        const predictive = await loadPredictivePackage(range, loaded, exportBranch, exportBranchIds);
         exportDetailedBranchOperationalReview({
           reports,
           rangeLabel: range.periodLabel,
@@ -301,7 +306,7 @@ export function useReviewExports(filters) {
         setAuditBusy(false);
       }
     },
-    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange, loadEvents, branch, exportBranchIds],
+    [configured, auditBusy, loadBranchAuditReports, dashboardExportRange, loadEvents, exportBranch, exportBranchIds],
   );
 
   const exportSummaryPdf = useCallback(
@@ -313,7 +318,7 @@ export function useReviewExports(filters) {
         const { exportReviewIntelligenceReport } = await import("../engines/exportEngine");
         const loaded = await loadEvents(range);
         const [predictive, commandPackage] = await Promise.all([
-          loadPredictivePackage(range, loaded, branch, exportBranchIds),
+          loadPredictivePackage(range, loaded, exportBranch, exportBranchIds),
           loadExecutiveCommandPackage(range, loaded, exportBranchIds),
         ]);
         exportReviewIntelligenceReport({
@@ -328,7 +333,7 @@ export function useReviewExports(filters) {
         setSummaryBusy(false);
       }
     },
-    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, branch, exportBranchIds],
+    [configured, summaryBusy, loadEvents, buildSummaryContext, dashboardExportRange, exportBranch, exportBranchIds],
   );
 
   const exportExecutiveSummaryPdf = useCallback(
