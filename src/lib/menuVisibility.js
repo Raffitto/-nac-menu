@@ -1,4 +1,5 @@
-import { presentGuestMenuItem } from "./canonicalGuestCatalogue";
+import { applyGuestAvailability } from "./guestAvailability";
+import { presentGuestMenuItem, isRetiredBigNac } from "./canonicalGuestCatalogue";
 
 export function parseHiddenUntil(item) {
   const raw = item?.hidden_until ?? item?.hiddenUntil;
@@ -92,7 +93,7 @@ export function computeHiddenUntilIso({ mode, hours, dateTimeLocal }) {
 }
 
 /** Filter menuData tree to guest-visible items only. */
-export function filterPublicMenuData(menuData, nowMs = Date.now()) {
+export function filterPublicMenuData(menuData, nowMs = Date.now(), { requestedBranchId, availabilityOverrides = [] } = {}) {
   if (!menuData) return menuData;
   const next = {};
   for (const [catId, sections] of Object.entries(menuData)) {
@@ -103,9 +104,11 @@ export function filterPublicMenuData(menuData, nowMs = Date.now()) {
           .filter(
             (it) =>
               isPublicMenuItem(it, nowMs)
-              && !isGuestCatalogueDuplicate(it),
+              && !isGuestCatalogueDuplicate(it)
+              && !isRetiredBigNac(it),
           )
-          .map(presentGuestMenuItem),
+          .map(presentGuestMenuItem)
+          .map((item) => applyGuestAvailability(item, requestedBranchId, availabilityOverrides)),
       }))
       .filter((sec) => sec.items.length > 0);
   }
