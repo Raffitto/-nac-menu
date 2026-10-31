@@ -157,6 +157,7 @@ export function parseReviewPortalParams(search) {
     normalizedBranch,
     slug: params.get("slug") || "",
     lang: params.get("lang") || "en",
+    selfTest: params.get("self_test") === "1",
   };
 }
 
@@ -179,6 +180,7 @@ export function buildReviewTrackingContext(params, overrides = {}) {
     employee_name,
     employee_role,
     storeName: p.storeName,
+    ...(p.selfTest ? { metadata: { self_test: true } } : {}),
   };
 }
 

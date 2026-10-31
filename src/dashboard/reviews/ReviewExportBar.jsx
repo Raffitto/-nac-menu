@@ -18,6 +18,7 @@ export default function ReviewExportBar({ snapshotRef }) {
     exportBranchAuditPdf,
     exportSummaryPdf,
     exportSummaryXlsx,
+    exportSummaryCsv,
     busy,
   } = useReviewExports(filters);
 
@@ -34,6 +35,10 @@ export default function ReviewExportBar({ snapshotRef }) {
       title: "Summary XLSX — date range",
       subtitle: "Spreadsheet export for the current branch filter.",
     },
+    csv: {
+      title: "Summary CSV — date range",
+      subtitle: "Staff tap-to-Google rates for the current branch filter.",
+    },
   };
 
   const handleExportConfirm = (exportRange) => {
@@ -42,6 +47,7 @@ export default function ReviewExportBar({ snapshotRef }) {
     if (kind === "audit") exportBranchAuditPdf(exportRange);
     else if (kind === "pdf") exportSummaryPdf(exportRange);
     else if (kind === "xlsx") exportSummaryXlsx(exportRange);
+    else if (kind === "csv") exportSummaryCsv(exportRange);
   };
 
   if (!configured) return null;
@@ -54,8 +60,8 @@ export default function ReviewExportBar({ snapshotRef }) {
         <div className="rev-export-zone-head">
           <h3 className="rev-export-zone-title">Exports</h3>
           <p className="rev-export-zone-sub">
-            Snapshot PNG uses the dashboard view. PDF and XLSX open a date range picker before
-            generating.
+            Snapshot PNG uses the dashboard view. PDF, XLSX, and CSV open a date range picker
+            before generating.
           </p>
         </div>
         <div className="rev-export-zone-actions">
@@ -98,6 +104,16 @@ export default function ReviewExportBar({ snapshotRef }) {
           >
             <FileDown size={14} />
             XLSX
+          </button>
+          <button
+            type="button"
+            className="rev-export-btn"
+            onClick={() => setPendingExport("csv")}
+            disabled={busy.summary}
+            title="Staff rates as CSV, using the same tap-to-Google definition as the dashboard"
+          >
+            <FileDown size={14} />
+            CSV
           </button>
         </div>
       </div>

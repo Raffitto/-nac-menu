@@ -11,6 +11,7 @@ import { businessDayExportNote } from "../utils/businessDay";
 import { branchDisplayName } from "../utils/rangeState";
 import { branchExportName } from "../config/branchDisplayConfig";
 import { REVIEW_METRIC } from "../config/reviewMetricLabels";
+import { visitsFromSummary } from "../utils/reviewVisitMetrics";
 import { exportVisibilityPDF } from "./visibilityPdfExport";
 
 function downloadBlob(blob, filename) {
@@ -261,22 +262,69 @@ export function exportReviewIntelligenceReport({
   commandPackage = null,
   format = "xlsx",
 }) {
-  const comparison = comparisonIn ?? branchComparison ?? [];
+  const comparison = (comparisonIn ?? branchComparison ?? []).map((row) => ({
+    ...row,
+    conversion_pct: visitsFromSummary(row).conversion_pct,
+  }));
+  const normalizedStaff = staffStats.map((s) => ({
+    ...s,
+    conversion_pct: visitsFromSummary(s).conversion_pct,
+  }));
+  const summaryConversion = visitsFromSummary(review).conversion_pct;
+  const staffRows = normalizedStaff.map((s) => ({
+    Staff: s.name,
+    Role: s.role,
+    Branch: s.branch ? branchExportName(s.branch) : branch,
+    [REVIEW_METRIC.cardTaps]: s.scans ?? s.opens,
+    [REVIEW_METRIC.reviewInteractions]: s.generated,
+    "Copy events": s.copy,
+    [REVIEW_METRIC.googleRedirects]: s.google,
+    [REVIEW_METRIC.toGooglePct]: s.conversion_pct ?? "N/A",
+    "Raw QR scan events": s.raw_qr_scans,
+    "Raw Google redirect events": s.raw_google_redirects,
+    "Unmatched redirect events": s.unmatched_redirects,
+    "Unidentifiable scan events": s.unidentifiable_scans,
+  }));
+  const classificationRows = employees.map((e) => ({
+    Employee: e.name,
+    Classification: e.classification?.label,
+    "Coaching note": e.classification?.reason,
+    [REVIEW_METRIC.cardTaps]: e.metrics?.scans_generated,
+    [REVIEW_METRIC.reviewInteractions]: e.metrics?.reviews_generated,
+    [REVIEW_METRIC.googleRedirects]: e.metrics?.google_clicks,
+    [REVIEW_METRIC.toGooglePct]: e.metrics?.review_conversion_pct ?? "N/A",
+    Confidence: e.metrics?.confidence,
+  }));
 
   if (format === "pdf") {
     exportReviewSummaryPdf({
       branch,
       selectedRange,
       rangeLabel,
-      review,
+      review: { ...review, conversion_pct: summaryConversion },
       unified,
-      staffStats,
+      staffStats: normalizedStaff,
       employees,
       comparison,
       branchComparison: comparison,
       predictivePackage,
       commandPackage,
     });
+    return;
+  }
+
+  if (format === "csv") {
+    const headers = staffRows.length
+      ? Object.keys(staffRows[0])
+      : ["Staff", REVIEW_METRIC.toGooglePct];
+    const rows = staffRows.length
+      ? staffRows.map((row) => headers.map((header) => row[header]))
+      : [["Not enough data for this section yet.", ""]];
+    exportCSV(
+      `nac-review-intelligence-${String(branch || "network").replace(/\s+/g, "-").toLowerCase()}-${selectedRange}.csv`,
+      headers,
+      rows,
+    );
     return;
   }
 
@@ -299,46 +347,26 @@ export function exportReviewIntelligenceReport({
     [REVIEW_METRIC.cardTaps, review?.qr_scans ?? 0],
     [REVIEW_METRIC.reviewInteractions, review?.reviews_generated ?? 0],
     [REVIEW_METRIC.googleRedirects, review?.google_clicks ?? 0],
-    [REVIEW_METRIC.tapToGooglePct, review?.conversion_pct ?? 0],
+    [REVIEW_METRIC.tapToGooglePct, summaryConversion ?? "N/A"],
+    ["Raw QR scan events", review?.raw_qr_scans ?? "N/A"],
+    ["Raw Google redirect events", review?.raw_google_redirects ?? "N/A"],
+    ["Unmatched redirect events", review?.unmatched_redirects ?? "N/A"],
+    ["Scans without reliable tracking", review?.unidentifiable_scans ?? "N/A"],
     ["Menu sessions", unified?.sessions ?? 0],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Summary");
 
-  if (staffStats.length) {
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(
-        staffStats.map((s) => ({
-          Staff: s.name,
-          Role: s.role,
-          Branch: s.branch ? branchExportName(s.branch) : branch,
-          [REVIEW_METRIC.cardTaps]: s.scans ?? s.opens,
-          [REVIEW_METRIC.reviewInteractions]: s.generated,
-          "Copy events": s.copy,
-          [REVIEW_METRIC.googleRedirects]: s.google,
-          [REVIEW_METRIC.toGooglePct]: s.conversion_pct,
-        }))
-      ),
-      "Staff"
-    );
+  if (staffRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(staffRows), "Staff");
   } else {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fallbackRow()), "Staff");
   }
 
-  if (employees.length) {
+  if (classificationRows.length) {
     XLSX.utils.book_append_sheet(
       wb,
-      XLSX.utils.json_to_sheet(
-        employees.map((e) => ({
-          Employee: e.name,
-          Classification: e.classification?.label,
-          "Coaching note": e.classification?.reason,
-          [REVIEW_METRIC.reviewInteractions]: e.metrics?.reviews_generated,
-          [REVIEW_METRIC.toGooglePct]: e.metrics?.review_conversion_pct,
-          Confidence: e.metrics?.confidence,
-        }))
-      ),
-      "Classifications"
+      XLSX.utils.json_to_sheet(classificationRows),
+      "Classifications",
     );
   }
 
@@ -348,7 +376,7 @@ export function exportReviewIntelligenceReport({
       [REVIEW_METRIC.cardTaps]: b.qr_scans,
       [REVIEW_METRIC.reviewInteractions]: b.reviews_generated,
       [REVIEW_METRIC.googleRedirects]: b.google_redirects,
-      [REVIEW_METRIC.tapToGooglePct]: b.conversion_pct,
+      [REVIEW_METRIC.tapToGooglePct]: b.conversion_pct ?? "N/A",
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Branch benchmark");
   }

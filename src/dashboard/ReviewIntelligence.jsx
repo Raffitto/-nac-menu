@@ -1,3 +1,4 @@
+import { formatVisitPct } from "./utils/reviewVisitMetrics";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import {
@@ -28,27 +29,14 @@ import { buildEmployeePerformance } from "./engines/employeePerformanceEngine";
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
-  rangeToSince,
   rangeToHours,
   defaultBranchId,
   rangeExportLabel,
 } from "./utils/rangeState";
 import { usePlatformFiltersOptional } from "./context/PlatformFiltersContext";
 import { useRbacOptional } from "./context/RbacContext";
-import { buildReviewBranchComparisonForProfile } from "../lib/rbacIntelligenceScope";
 import { resolveOperationalTrust } from "../lib/analyticsUnifiedAdapter";
 import OperationalTrustBadge from "./components/OperationalTrustBadge";
-import { applyPlatformFilters } from "./utils/platformFilterApply";
-import {
-  aggregateStaffReviewStats,
-  mergeStaffStats,
-  buildDailyScanTrend,
-  buildBranchScanTotals,
-} from "./utils/staffReviewStats";
-import {
-  computeReviewKpis,
-  buildBranchReviewComparison,
-} from "./utils/reviewEventMetrics";
 import { REVIEW_FUNNEL_SUBTITLE, REVIEW_METRIC } from "./config/reviewMetricLabels";
 import { useGooglePlaceMetrics } from "./hooks/useGooglePlaceMetrics";
 import { useGoogleReviewMovement } from "./hooks/useGoogleReviewMovement";
@@ -58,11 +46,7 @@ import ReviewNetworkIntegrityBanner from "./components/ReviewNetworkIntegrityBan
 import "./styles/review-intelligence.css";
 import "./styles/predictive-intelligence.css";
 
-import { REVIEW_BRANCH_IDS, REVIEW_BRANCH_OPTIONS as BRANCH_OPTIONS, reviewBranchDisplayName as branchDisplayName } from "../review/reviewBranchIdentity";
-import { withVerifiedReviewRoster } from "../review/verifiedReviewRoster";
-const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
-
+import { REVIEW_BRANCH_OPTIONS as BRANCH_OPTIONS, reviewBranchDisplayName as branchDisplayName } from "../review/reviewBranchIdentity";
 const CHART_TOOLTIP = {
   background: "rgba(8,10,12,0.94)",
   border: "1px solid rgba(215,188,138,0.35)",
@@ -177,7 +161,6 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     setLoading(true);
     setError("");
     try {
-      const since = rangeToSince(selectedRange);
       const hours = rangeToHours(selectedRange);
 
       const truth = await fetchUnifiedReviewTruth(supabase, {
@@ -197,61 +180,13 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         return;
       }
 
-      let reviewQ = supabase
-        .from("review_events")
-        .select(REVIEW_EVENT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(2500);
-
-      const scopedBranch = reviewScope.queryBranch;
-      if (scopedBranch) {
-        reviewQ = reviewQ.eq("branch_id", scopedBranch);
-      } else if (!reviewScope.networkWide && rbac?.profile) {
-        reviewQ = reviewQ.eq("branch_id", rbac.profile.branchScope || "__rbac_denied__");
-      }
-
-      let reviewAllQ = supabase
-        .from("review_events")
-        .select("event_type,branch_id,employee_name,created_at,review_session_id,session_id,metadata")
-        .order("created_at", { ascending: false })
-        .limit(2000);
-
-      if (!reviewScope.networkWide) {
-        reviewAllQ = reviewAllQ.eq(
-          "branch_id",
-          scopedBranch || rbac?.profile?.branchScope || "__rbac_denied__",
-        );
-      }
-
-      if (since) {
-        reviewQ = reviewQ.gte("created_at", since);
-        reviewAllQ = reviewAllQ.gte("created_at", since);
-      }
-
-      const [{ data: branchEvents }, { data: allEvents }] = await Promise.all([
-        reviewQ,
-        reviewAllQ,
-      ]);
-
-      const events = applyPlatformFilters(branchEvents || [], embedded ? platform : null);
-      const all = applyPlatformFilters(allEvents || [], embedded ? platform : null);
-
-      setKpis(computeReviewKpis(events));
-      setStaffMerged(withVerifiedReviewRoster(
-        mergeStaffStats([], aggregateStaffReviewStats(events)),
-        reviewScope.networkWide ? REVIEW_BRANCH_IDS : scopedBranch ? [scopedBranch] : [],
-      ));
-      setDailyTrend(buildDailyScanTrend(events));
-      setBranchScans(buildBranchScanTotals(all));
-      setBranchComparison(
-        buildReviewBranchComparisonForProfile(rbac?.profile, buildBranchReviewComparison(all)),
-      );
+      throw new Error("Complete review summary is unavailable; please retry.");
     } catch (e) {
       setError(e.message || "Failed to load review intelligence");
     } finally {
       setLoading(false);
     }
-  }, [rawBranch, reviewScope, selectedRange, configured, embedded, platform, prefetched, applyPrefetched, rbac?.profile]);
+  }, [rawBranch, selectedRange, configured, prefetched, applyPrefetched, rbac?.profile]);
 
   useEffect(() => {
     if (prefetched) {
@@ -265,6 +200,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
     () =>
       buildEmployeePerformance(
         staffMerged.map((s) => ({
+          ...s,
           name: s.name,
           role: s.role,
           branch: s.branch,
@@ -411,6 +347,10 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
         <p className="rev-intel-muted">Loading…</p>
       ) : (
         <>
+          <p className="rev-intel-muted">
+            QR visits are identifiable card-entry sessions, not unique people. Conversion counts each visit once after it reaches Google; it does not confirm a published review.
+            {kpis && ` Raw scan events: ${kpis.raw_qr_scans ?? 0}; raw redirects: ${kpis.raw_google_redirects ?? 0}; unmatched redirects: ${kpis.unmatched_redirects ?? 0}; scans without reliable tracking: ${kpis.unidentifiable_scans ?? 0}.`}
+          </p>
           <motion.div className="rev-kpi-grid" layout>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.cardTaps}</span>
@@ -428,14 +368,14 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>{REVIEW_METRIC.tapToGooglePct}</span>
-              <strong>{kpis ? `${kpis.conversion_pct}%` : "—"}</strong>
+              <strong>{kpis ? formatVisitPct(kpis.conversion_pct) : "—"}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
               <span>Review page opens</span>
               <strong>{kpis ? kpis.review_page_opens : "—"}</strong>
             </motion.div>
             <motion.div className="rev-kpi-card" whileHover={{ y: -2 }}>
-              <span>Unique visitors</span>
+              <span>Review session IDs (diagnostic)</span>
               <strong>{kpis ? kpis.unique_review_visitors : "—"}</strong>
             </motion.div>
             {topStaff && (
@@ -445,7 +385,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                 </span>
                 <strong>{topStaff.name}</strong>
                 <small className="rev-kpi-insight">
-                  {topStaff.scans} card taps · {topStaff.conversion_pct}% to Google
+                  {topStaff.scans} QR visits · {topStaff.conversion_pct}% to Google
                 </small>
               </motion.div>
             )}
@@ -462,12 +402,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
           {branchScans.some((row) => row.scans > 0) && (
             <section className="rev-section">
               <h2>
-                <GitBranch size={18} /> Card taps by branch (QR/NFC)
+                <GitBranch size={18} /> QR visits by branch (QR/NFC)
               </h2>
               <motion.div className="rev-branch-table">
                 <motion.div className="rev-branch-row head">
                   <span>Branch</span>
-                  <span>Scans</span>
+                  <span>QR visits</span>
                 </motion.div>
                 {branchScans.map((row) => (
                   <div
@@ -494,12 +434,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                       <th>Staff</th>
                       <th>Role</th>
                       <th>Branch</th>
-                      <th>Card taps</th>
+                      <th>QR visits</th>
                       <th>Page opens</th>
                       <th>Interactions</th>
                       <th>Copies</th>
-                      <th>Google redirects</th>
-                      <th>To Google %</th>
+                      <th>Converted visits</th>
+                      <th>Visit conversion %</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -515,7 +455,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                         <td>{s.generated}</td>
                         <td>{s.copy}</td>
                         <td>{s.google}</td>
-                        <td>{s.conversion_pct}%</td>
+                        <td>{formatVisitPct(s.conversion_pct)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -537,8 +477,8 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                       <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
                       <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
                       <Tooltip contentStyle={CHART_TOOLTIP} />
-                      <Bar dataKey="scans" name="Card taps" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="google" name="Google redirects" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="scans" name="QR visits" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="google" name="Converted visits" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -548,7 +488,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             {dailyTrend.length > 0 && (
               <section className="rev-section rev-chart-panel">
                 <h2>
-                  <TrendingUp size={18} /> Daily card tap trend
+                  <TrendingUp size={18} /> Daily QR visit trend
                 </h2>
                 <motion.div className="rev-chart-box">
                   <ResponsiveContainer width="100%" height={200}>
@@ -603,11 +543,11 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                       <p className="rev-emp-role">{emp.role || perf?.role || "Staff"}</p>
                       {perf && <p className="rev-emp-reason">{perf.classification.reason}</p>}
                       <div className="rev-emp-metrics">
-                        <span>{emp.scans} card taps</span>
+                        <span>{emp.scans} QR visits</span>
                         <span>{emp.generated} interactions</span>
                         <span>{emp.copy} copies</span>
-                        <span>{emp.google} redirects</span>
-                        <span>{emp.conversion_pct}% to Google</span>
+                        <span>{emp.google} converted visits</span>
+                        <span>{formatVisitPct(emp.conversion_pct)} to Google</span>
                       </div>
                     </motion.div>
                   );
@@ -624,10 +564,10 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
               <motion.div className="rev-branch-row head">
                 <span>Branch</span>
                 <span>Google rating</span>
-                <span>Card taps</span>
+                <span>QR visits</span>
                 <span>Interactions</span>
-                <span>Google redirects</span>
-                <span>To Google %</span>
+                <span>Converted visits</span>
+                <span>Visit conversion %</span>
               </motion.div>
               {branchComparison.map((row) => (
                 <div
@@ -646,7 +586,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                   <span>{row.qr_scans}</span>
                   <span>{row.reviews_generated}</span>
                   <span>{row.google_redirects}</span>
-                  <span>{row.conversion_pct}%</span>
+                  <span>{formatVisitPct(row.conversion_pct)}</span>
                 </div>
               ))}
             </div>

@@ -31,7 +31,11 @@ export function withVerifiedReviewRoster(staffRows = [], allowedBranchIds = []) 
       copy: 0,
       google: 0,
       opens: 0,
-      conversion_pct: 0,
+      qr_visits: 0,
+      converted_visits: 0,
+      raw_qr_scans: 0,
+      raw_google_redirects: 0,
+      conversion_pct: null,
       identity_source: "printed_qr_url",
     };
     rows.push(row);

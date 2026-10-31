@@ -4,6 +4,8 @@ import {
 } from "./reviewGeneratorEngine";
 import { mockSeededMathRandom } from "./reviewGeneratorTestSeed";
 import {
+  buildStaffMention,
+  containsAwkwardReviewFragment,
   containsConsultantLanguage,
   containsForbiddenExecutiveLanguage,
   containsAiPunctuation,
@@ -13,7 +15,7 @@ import {
   ROLE_CATEGORIES,
 } from "./reviewRoleProfiles";
 
-const BRANCHES = ["khobar", "riyadh", "jeddah"];
+const BRANCHES = ["khobar", "riyadh", "jeddah", "hettin"];
 const STAFF = "Armel";
 
 const ROLE_SAMPLES = {
@@ -147,6 +149,35 @@ describe("reviewRoleProfiles", () => {
     texts.forEach((t) => {
       expect(managementHonorificPresent(t)).toBe(true);
       expect(containsConsultantLanguage(t)).toBe(false);
+      expect(containsAwkwardReviewFragment(t)).toBe(false);
+    });
+  });
+
+  test("Hettin and Laysen management lines stay grammatical in English and Arabic", () => {
+    const broken = /on the floor,\s*staff worked well/i;
+    ["minimalist", "regular", "foodie", "emotional"].forEach((personality) => {
+      const en = buildStaffMention("Farrukh", "arm", personality, false);
+      const ar = buildStaffMention("Farrukh", "arm", personality, true);
+      expect(en).toMatch(/Mr\.\s+Farrukh/);
+      expect(en).not.toMatch(broken);
+      expect(en).toMatch(/\b(was|kept|felt|worked|checked|around|present)\b/i);
+      expect(ar).toMatch(/[\u0600-\u06FF]/);
+      expect(ar).toMatch(/Farrukh/);
+    });
+
+    ["hettin", "riyadh"].forEach((branchId) => {
+      for (let i = 0; i < 12; i += 1) {
+        const text = generateHumanizedReview({
+          staffName: branchId === "hettin" ? "Farrukh" : "Eusuf",
+          role: branchId === "hettin" ? "arm" : "waiter",
+          branchId,
+          language: i % 2 === 0 ? "en" : "ar",
+          scanTime: new Date("2026-10-30T21:00:00+03:00"),
+        });
+        expect(text.length).toBeGreaterThan(8);
+        expect(containsAwkwardReviewFragment(text)).toBe(false);
+        if (i % 2 === 0) expect(text).toMatch(/Farrukh|Eusuf/);
+      }
     });
   });
 });

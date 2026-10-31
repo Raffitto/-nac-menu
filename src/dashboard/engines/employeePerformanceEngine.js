@@ -1,3 +1,4 @@
+import { visitsFromSummary } from "../utils/reviewVisitMetrics";
 /** Employee performance classifications from review + menu attribution signals */
 
 import { filterProductionStaffList } from "../utils/isProductionStaff";
@@ -13,11 +14,6 @@ function confidenceLabel(sampleSize) {
   return "low confidence";
 }
 
-function pct(num, den) {
-  if (!den) return 0;
-  return Math.round((num / den) * 100);
-}
-
 /**
  * @param {Array} employees — from get_review_intelligence.top_employees or merged client data
  * @param {object} menuContext — optional { influencedSessions, dessertAttachments, beverageAttachments }
@@ -31,11 +27,12 @@ export function buildEmployeePerformance(employees = [], menuContext = {}) {
     const generated = Number(emp.generated) || Number(emp.reviews_generated) || 0;
     const google = Number(emp.google_clicks) || 0;
     const sample = Math.max(opens, generated);
-    const conv = generated > 0 ? pct(google, generated) : 0;
+    const conv = visitsFromSummary(emp).conversion_pct;
     const avgLen = Math.round(Number(emp.avg_length) || 0);
     const menuInfl = Number(influenced[emp.name]) || 0;
 
     const metrics = {
+      ...visitsFromSummary(emp),
       scans_generated: opens,
       reviews_generated: generated,
       google_clicks: google,
@@ -59,6 +56,7 @@ export function buildEmployeePerformance(employees = [], menuContext = {}) {
 }
 
 function classifyEmployee(m, sample) {
+  if (m.review_conversion_pct == null) return { label: "Tracking incomplete", reason: "Visit conversion is unavailable; inspect session coverage before coaching." };
   if (sample < MIN_EARLY) {
     return { label: "Underutilized Staff", reason: "Insufficient data — monitor before acting." };
   }

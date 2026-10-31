@@ -1,19 +1,18 @@
 /** Map get_review_events_summary RPC → Review Intelligence UI shapes */
 
 import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
-import { buildReviewBranchComparison as buildCanonicalBranchComparison } from "../../review/reviewBranchIdentity";
-import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
+import { visitsFromSummary } from "./reviewVisitMetrics";
 import { filterProductionStaffList } from "./isProductionStaff";
 
 export function kpisFromReviewSummary(summary) {
   if (!summary) return null;
   return {
-    qr_scans: Number(summary.qr_scans) || 0,
+    qr_scans: summary.qr_visits ?? null,
     reviews_generated: Number(summary.reviews_generated) || 0,
-    google_redirects: Number(summary.google_redirects) || 0,
+    google_redirects: summary.converted_visits ?? null,
     review_page_opens: Number(summary.review_page_opens) || 0,
     unique_review_visitors: Number(summary.unique_visitors) || 0,
-    conversion_pct: Number(summary.conversion_pct) || 0,
+    ...visitsFromSummary(summary),
     by_event_type: [],
   };
 }
@@ -27,13 +26,13 @@ export function staffFromReviewSummary(summary) {
         name: s.name,
         role: s.role || "",
         branch,
-        scans: Number(s.scans) || 0,
+        scans: s.qr_visits ?? null,
         generated: Number(s.generated) || 0,
-        google: Number(s.google) || 0,
-        opens: Number(s.scans) || 0,
+        google: s.converted_visits ?? null,
+        opens: s.qr_visits ?? null,
         review_opens: Number(s.review_opens) || 0,
         copy: Number(s.copy) || 0,
-        conversion_pct: Number(s.conversion_pct) || 0,
+        ...visitsFromSummary(s),
       };
     });
 }
@@ -47,32 +46,15 @@ export function dailyTrendFromReviewSummary(summary) {
 }
 
 export function branchComparisonFromReviewSummary(summary) {
-  const byBranch = Array.isArray(summary?.by_branch) ? summary.by_branch : [];
-  return buildCanonicalBranchComparison(
-    byBranch.map((b) => ({
-      branch_id: normalizeBranchId(b.branch_id) || b.branch_id,
-      qr_scans: Number(b.qr_scans) || 0,
-      reviews_generated: Number(b.reviews_generated) || 0,
-      google_redirects: Number(b.google_redirects) || 0,
-      review_page_opens: Number(b.review_page_opens) || 0,
-      conversion_pct: Number(b.conversion_pct) || 0,
-    })),
-    {
-      qr_scans: 0,
-      reviews_generated: 0,
-      google_redirects: 0,
-      review_page_opens: 0,
-      unique_visitors: 0,
-      conversion_pct: 0,
-    },
-  ).map((row) => ({
-    ...row,
-    conversion_pct: reviewConversionPct(row.google_redirects, row.qr_scans),
+  return (summary?.by_branch || []).map(b => ({ ...b,
+    branch_id: normalizeBranchId(b.branch_id) || b.branch_id,
+    qr_scans: b.qr_visits ?? null, google_redirects: b.converted_visits ?? null,
+    ...visitsFromSummary(b),
   }));
 }
 
 export function branchScansFromComparison(rows) {
-  return buildCanonicalBranchComparison(rows || [], { qr_scans: 0 }).map((r) => ({
+  return (rows || []).map((r) => ({
     branch_id: r.branch_id,
     scans: Number(r.qr_scans) || 0,
   }));

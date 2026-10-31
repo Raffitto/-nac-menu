@@ -35,7 +35,9 @@ const range = { sinceIso: "2026-10-01T00:00:00Z", untilIso: "2026-10-30T00:00:00
 it("reads every page beyond 3,000 and counts four branches while excluding only explicit self_test", async () => {
   const ids = ["khobar", "riyadh", "jeddah", "hettin"];
   const rows = Array.from({ length: 3601 }, (_, index) => ({
-    id: index,
+    id: String(index),
+    review_session_id: `visit-${index}`,
+    created_at: "2026-10-02T12:00:00Z",
     branch_id: ids[index % 4],
     employee_name: index === 10 ? "TEST" : `Staff ${index % 4}`,
     event_type: "qr_scan",
@@ -54,7 +56,7 @@ it("reads every page beyond 3,000 and counts four branches while excluding only 
 
 it.each(["khobar", "riyadh", "jeddah", "hettin"])("restricts %s exports to the assigned branch", async (branch) => {
   const rows = ["khobar", "riyadh", "jeddah", "hettin"].flatMap((id) =>
-    Array.from({ length: 1001 }, (_, index) => ({ branch_id: id, event_type: "qr_scan", employee_name: "TEST", metadata: index === 0 ? { self_test: true } : {} })),
+    Array.from({ length: 1001 }, (_, index) => ({ review_session_id: `visit-${index}`, created_at: "2026-10-02T12:00:00Z", branch_id: id, event_type: "qr_scan", employee_name: "TEST", metadata: index === 0 ? { self_test: true } : {} })),
   );
   const { supabase, calls } = clientFor(rows);
   const actual = await fetchAllReviewEvents(supabase, { select: "*", range, branch });

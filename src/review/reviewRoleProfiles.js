@@ -281,7 +281,7 @@ function buildSupervisoryMention(staff, personality, isAr) {
       `${honorAr} كان حاضر على الصالة ونسّق الفريق بشكل ممتاز.`,
       `${plain} تابع ضيوفنا بسرعة وحل أي ملاحظة باحتراف.`,
       `تنسيق ${plain} خلّى الخدمة سلسة حتى في وقت الزحمة.`,
-      `${honorAr} دعم الفريق واضح والتجربة كانت مرتبة.`,
+      `${honorAr} دعم الفريق بشكل واضح، وكانت التجربة مرتبة.`,
     ]);
   }
 
@@ -348,8 +348,8 @@ function buildGuestManagementMention(staff, personality, isAr, tier) {
   const pool = isGm ? enGm : enRm;
   if (personality === "minimalist") {
     return pick([
-      `${name} was around. Smooth visit, would return.`,
-      `Good night. ${name} on the floor, staff worked well.`,
+      `${name} was around. It was a smooth visit, and we would return.`,
+      `Good night. ${name} was on the floor, and the staff worked well.`,
     ]);
   }
   return pick(pool);
@@ -426,6 +426,7 @@ export function sanitizeReviewPunctuation(text) {
   }
 
   return out
+    .replace(/(^|[^\p{L}])([\p{L}]{2,})(?:\s+\2)+(?=$|[^\p{L}])/giu, "$1$2")
     .replace(/,\s*,/g, ",")
     .replace(/\.\s*\./g, ".")
     .replace(/,\s*\./g, ".")
@@ -446,6 +447,11 @@ export function containsAiPunctuation(text) {
   return /[\u2013\u2014]/.test(text) || (text.match(/;/g) || []).length > 1;
 }
 
+/** Fragments that read like notes rather than a guest sentence. */
+export function containsAwkwardReviewFragment(text) {
+  return /\bon the floor,\s*staff worked well\b/i.test(String(text || ""));
+}
+
 export function validateRoleLanguage(text, role) {
   const profile = getReviewRoleProfile(role);
   const isGuestManagement =
@@ -460,6 +466,9 @@ export function validateRoleLanguage(text, role) {
   }
   if (containsAiPunctuation(text)) {
     return { ok: false, reason: "ai_punctuation" };
+  }
+  if (containsAwkwardReviewFragment(text)) {
+    return { ok: false, reason: "awkward_fragment" };
   }
   if (isManagementHonorificRole(role) && !managementHonorificPresent(text)) {
     return { ok: false, reason: "missing_management_honorific" };

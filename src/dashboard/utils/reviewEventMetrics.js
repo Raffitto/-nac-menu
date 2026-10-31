@@ -2,13 +2,11 @@
 
 import { filterAnalyticsReviewEvents } from "./isProductionStaff";
 import { normalizeReviewBranchId as normalizeBranchId } from "../../review/reviewBranchIdentity";
-import { buildReviewBranchComparison as buildCanonicalBranchComparison } from "../../review/reviewBranchIdentity";
-import { reviewConversionPct } from "../../platform/engines/funnelAnalyticsEngine";
+import { reviewVisitMetrics } from "./reviewVisitMetrics";
 import {
   REVIEW_GENERATED_TYPES as GENERATED_TYPES,
   REVIEW_GOOGLE_TYPES as GOOGLE_TYPES,
   REVIEW_PAGE_OPEN_TYPES as PAGE_OPEN_TYPES,
-  tapToGooglePct,
 } from "./reviewFunnelMetrics";
 
 export function countByEventType(events = []) {
@@ -42,67 +40,31 @@ export function computeReviewKpis(events = []) {
     if (id) visitorIds.add(id);
   });
 
-  const conversion_pct = tapToGooglePct(google_redirects, qr_scans);
+  const visits = reviewVisitMetrics(rows);
 
   return {
-    qr_scans,
+    qr_scans: visits.qr_visits,
+    raw_qr_scans: qr_scans,
     reviews_generated,
-    google_redirects,
+    google_redirects: visits.converted_visits,
+    raw_google_redirects: google_redirects,
     review_page_opens,
     unique_review_visitors: visitorIds.size,
-    conversion_pct,
+    ...visits,
     by_event_type: countByEventType(rows),
   };
 }
 
 /** Branch-level qr_scan totals for comparison table. */
 export function buildBranchReviewComparison(allEvents = []) {
-  const byBranch = {};
-
-  filterAnalyticsReviewEvents(allEvents).forEach((e) => {
+  const byBranch = new Map();
+  filterAnalyticsReviewEvents(allEvents).forEach(e => {
     const b = normalizeBranchId(e.branch_id);
     if (!b) return;
-    if (!byBranch[b]) {
-      byBranch[b] = {
-        branch_id: b,
-        qr_scans: 0,
-        reviews_generated: 0,
-        google_redirects: 0,
-        review_page_opens: 0,
-        unique_visitors: new Set(),
-      };
-    }
-    const row = byBranch[b];
-
-    if (e.event_type === "qr_scan") row.qr_scans += 1;
-    if (GENERATED_TYPES.has(e.event_type)) row.reviews_generated += 1;
-    if (GOOGLE_TYPES.has(e.event_type)) row.google_redirects += 1;
-    if (PAGE_OPEN_TYPES.has(e.event_type)) row.review_page_opens += 1;
-
-    const sid = e.review_session_id || e.session_id;
-    if (sid) row.unique_visitors.add(sid);
+    if (!byBranch.has(b)) byBranch.set(b, []);
+    byBranch.get(b).push(e);
   });
-
-  return buildCanonicalBranchComparison(
-    Object.values(byBranch).map((row) => ({
-      branch_id: row.branch_id,
-      qr_scans: row.qr_scans,
-      reviews_generated: row.reviews_generated,
-      google_redirects: row.google_redirects,
-      review_page_opens: row.review_page_opens,
-      unique_visitors: row.unique_visitors.size,
-    })),
-    {
-      qr_scans: 0,
-      reviews_generated: 0,
-      google_redirects: 0,
-      review_page_opens: 0,
-      unique_visitors: 0,
-    },
-  ).map((row) => ({
-    ...row,
-    conversion_pct: reviewConversionPct(row.google_redirects, row.qr_scans),
-  }));
+  return [...byBranch].map(([branch_id, rows]) => ({ branch_id, ...computeReviewKpis(rows) }));
 }
 
 export function runReviewDataQualityDiagnostics(reviewEvents = [], branchId = "khobar") {

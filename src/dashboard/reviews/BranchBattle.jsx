@@ -1,3 +1,4 @@
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
 import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Crown } from "lucide-react";
@@ -87,12 +88,12 @@ export default function BranchBattle() {
             </p>
             <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
               <div>
-                <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Scans</p>
+                <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>QR visits</p>
                 <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 500 }}>{row.qr_scans}</p>
               </div>
               <div>
-                <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Conversion</p>
-                <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 500 }}>{row.conversion_pct}%</p>
+                <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Visit conversion</p>
+                <p style={{ margin: 0, fontSize: "1.5rem", fontWeight: 500 }}>{formatVisitPct(row.conversion_pct)}</p>
               </div>
             </div>
             <div className="nac-branch-bar">
@@ -104,7 +105,7 @@ export default function BranchBattle() {
               />
             </div>
             <p style={{ margin: "0.5rem 0 0", fontSize: "0.72rem", color: "rgba(249,249,247,0.45)" }}>
-              {row.qr_scans} card taps · {row.reviews_generated} interactions · {row.google_redirects} redirects
+              {row.qr_scans} QR visits · {row.reviews_generated} interactions · {row.google_redirects} converted visits
             </p>
           </motion.div>
         );
