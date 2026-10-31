@@ -402,7 +402,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
           {branchScans.some((row) => row.scans > 0) && (
             <section className="rev-section">
               <h2>
-                <GitBranch size={18} /> Card taps by branch (QR/NFC)
+                <GitBranch size={18} /> QR visits by branch (QR/NFC)
               </h2>
               <motion.div className="rev-branch-table">
                 <motion.div className="rev-branch-row head">
@@ -434,12 +434,12 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                       <th>Staff</th>
                       <th>Role</th>
                       <th>Branch</th>
-                      <th>Card taps</th>
+                      <th>QR visits</th>
                       <th>Page opens</th>
                       <th>Interactions</th>
                       <th>Copies</th>
-                      <th>Google redirects</th>
-                      <th>To Google %</th>
+                      <th>Converted visits</th>
+                      <th>Visit conversion %</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -477,8 +477,8 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
                       <XAxis dataKey="name" tick={{ fill: "rgba(249,249,247,0.65)", fontSize: 10 }} />
                       <YAxis tick={{ fill: "rgba(249,249,247,0.5)", fontSize: 10 }} />
                       <Tooltip contentStyle={CHART_TOOLTIP} />
-                      <Bar dataKey="scans" name="Card taps" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="google" name="Google redirects" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="scans" name="QR visits" fill="#4ecdc4" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="google" name="Converted visits" fill="#d7bc8a" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -488,7 +488,7 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
             {dailyTrend.length > 0 && (
               <section className="rev-section rev-chart-panel">
                 <h2>
-                  <TrendingUp size={18} /> Daily card tap trend
+                  <TrendingUp size={18} /> Daily QR visit trend
                 </h2>
                 <motion.div className="rev-chart-box">
                   <ResponsiveContainer width="100%" height={200}>
@@ -564,10 +564,10 @@ export default function ReviewIntelligence({ embedded = false, prefetched = null
               <motion.div className="rev-branch-row head">
                 <span>Branch</span>
                 <span>Google rating</span>
-                <span>Card taps</span>
+                <span>QR visits</span>
                 <span>Interactions</span>
-                <span>Google redirects</span>
-                <span>To Google %</span>
+                <span>Converted visits</span>
+                <span>Visit conversion %</span>
               </motion.div>
               {branchComparison.map((row) => (
                 <div

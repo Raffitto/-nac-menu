@@ -281,7 +281,7 @@ function buildSupervisoryMention(staff, personality, isAr) {
       `${honorAr} كان حاضر على الصالة ونسّق الفريق بشكل ممتاز.`,
       `${plain} تابع ضيوفنا بسرعة وحل أي ملاحظة باحتراف.`,
       `تنسيق ${plain} خلّى الخدمة سلسة حتى في وقت الزحمة.`,
-      `${honorAr} دعم الفريق واضح والتجربة كانت مرتبة.`,
+      `${honorAr} دعم الفريق بشكل واضح، وكانت التجربة مرتبة.`,
     ]);
   }
 
@@ -426,6 +426,7 @@ export function sanitizeReviewPunctuation(text) {
   }
 
   return out
+    .replace(/(^|[^\p{L}])([\p{L}]{2,})(?:\s+\2)+(?=$|[^\p{L}])/giu, "$1$2")
     .replace(/,\s*,/g, ",")
     .replace(/\.\s*\./g, ".")
     .replace(/,\s*\./g, ".")

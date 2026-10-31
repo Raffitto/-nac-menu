@@ -60,7 +60,7 @@ export default function EmployeePerformanceGrid() {
       <div className="nac-filter-row" style={{ marginBottom: "1rem" }}>
         <span className="nac-filter-pill-label">Sort by</span>
         {[
-          { id: "scans", label: "Scans" },
+          { id: "scans", label: "QR visits" },
           { id: "google", label: "Google clicks" },
           { id: "conversion", label: "Conversion" },
         ].map((opt) => (

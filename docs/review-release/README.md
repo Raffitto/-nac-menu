@@ -51,3 +51,9 @@ Isolated Postgres/PGlite replay used all 5,266 rows in the fixed October snapsho
 7. Owner prints/scans one physical sample and confirms duplex orientation/alignment/readability before the full batch. Digital decoding does not substitute for that physical acceptance.
 
 Application rollback is a protected revert and controlled redeployment; it does not restore an older Netlify deployment. Database rollback restores only the exact prior function; records remain intact.
+
+## Review wording and owner decision
+
+The owner explicitly chose to preserve the existing editable-draft flow, without adding a factual-confirmation step. Suggestions remain drafts: the generator cannot independently verify what a guest ordered or experienced. It never submits a Google review.
+
+The final wording pass fixes repeated adjacent words in English/Arabic, duplicate English articles, noun agreement in the existing food templates, and the Arabic supervisory fragment. It preserves branch menus, role profiles, selection/diversity behavior and guest editing. A deterministic 960-suggestion batch covers four branches, two languages and three roles; the existing massive audit and Khobar regression suites also run. The audit now uses Unicode word boundaries for Arabic breakfast terms instead of ASCII-only `\b`; its quality thresholds are unchanged.
