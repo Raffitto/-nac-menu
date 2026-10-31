@@ -42,9 +42,9 @@ describe('Hettin independent review branch',()=>{
    expect(normalizeBranchId('hettin')).toBe('hettin');
    expect(normalizeBranchId('NAC Riyadh Hittin')).toBe('hettin');
    expect(REVIEW_BRANCH_IDS).toEqual(['khobar','riyadh','jeddah','hettin']);
-   const events=REVIEW_BRANCH_IDS.flatMap((branch_id,i)=>Array.from({length:i+1},(_,n)=>({branch_id,event_type:'qr_scan',employee_name:'Staff',review_session_id:`${branch_id}-${n}`})));
+   const events=REVIEW_BRANCH_IDS.flatMap((branch_id,i)=>Array.from({length:i+1},(_,n)=>({branch_id,created_at:'2026-10-02T12:00:00Z',event_type:'qr_scan',employee_name:'Staff',review_session_id:`${branch_id}-${n}`})));
    expect(buildBranchReviewComparison(events).map(r=>r.qr_scans)).toEqual([1,2,3,4]);
-   expect(branchComparisonFromReviewSummary({by_branch:REVIEW_BRANCH_IDS.map((branch_id,i)=>({branch_id,qr_scans:i+1}))}).map(r=>r.qr_scans)).toEqual([1,2,3,4]);
+   expect(branchComparisonFromReviewSummary({by_branch:REVIEW_BRANCH_IDS.map((branch_id,i)=>({branch_id,qr_visits:i+1,converted_visits:0}))}).map(r=>r.qr_scans)).toEqual([1,2,3,4]);
    expect(buildReviewBranchComparison([{branch_id:'hettin',qr_scans:5},{branch_id:'riyadh',qr_scans:7}],{qr_scans:0}).map(r=>r.qr_scans)).toEqual([0,7,0,5]);
  });
  test('review filter scopes to Hettin and labels do not become Riyadh',()=>{

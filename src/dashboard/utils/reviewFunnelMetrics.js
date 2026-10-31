@@ -1,6 +1,6 @@
 /**
  * Canonical review funnel math — single source for KPIs, staff rows, and exports.
- * tap-to-Google = google_redirects / card_taps (qr_scans)
+ * Visit conversion uses converted qualifying visits / qualifying QR visits.
  */
 
 export const REVIEW_GENERATED_TYPES = new Set(["review_generate", "review_regenerate"]);
@@ -29,7 +29,7 @@ export function pct(num, den) {
 
 /** Card tap → Google redirect (network KPI) */
 export function tapToGooglePct(googleRedirects, cardTaps) {
-  return pct(googleRedirects, cardTaps);
+  return visitConversionPct(googleRedirects, cardTaps);
 }
 
 /** Review interaction → Google redirect (staff coaching) */
@@ -40,4 +40,12 @@ export function interactionToGooglePct(googleRedirects, interactions) {
 /** Card tap → review interaction */
 export function cardToReviewPct(interactions, cardTaps) {
   return pct(interactions, cardTaps);
+}
+
+/** Qualifying visit conversion. Invalid or incomplete inputs are unavailable. */
+export function visitConversionPct(converted, visits, unidentifiable = 0) {
+  if (unidentifiable > 0 || converted == null || visits == null) return null;
+  const n = Number(converted), d = Number(visits);
+  if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0 || n < 0 || n > d) return null;
+  return Math.round(100 * n / d);
 }

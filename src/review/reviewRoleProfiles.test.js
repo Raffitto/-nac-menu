@@ -15,7 +15,7 @@ import {
   ROLE_CATEGORIES,
 } from "./reviewRoleProfiles";
 
-const BRANCHES = ["khobar", "riyadh", "jeddah"];
+const BRANCHES = ["khobar", "riyadh", "jeddah", "hettin"];
 const STAFF = "Armel";
 
 const ROLE_SAMPLES = {

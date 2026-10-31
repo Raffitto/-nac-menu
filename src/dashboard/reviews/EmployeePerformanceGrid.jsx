@@ -1,3 +1,4 @@
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
 import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -114,23 +115,23 @@ export default function EmployeePerformanceGrid() {
                 }}
               >
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Scans</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>QR visits</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
                     {emp.scans}
                     <TrendBadge current={emp.scans} previous={prev?.scans} />
                   </p>
                 </motion.div>
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Google</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Converted visits</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
                     {emp.google}
                     <TrendBadge current={emp.google} previous={prev?.google} />
                   </p>
                 </motion.div>
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Conversion</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Visit conversion</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
-                    {emp.conversion_pct}%
+                    {formatVisitPct(emp.conversion_pct)}
                   </p>
                 </motion.div>
               </div>

@@ -37,7 +37,7 @@ import { buildPredictiveIntelligencePackage } from "../engines/predictiveIntelli
 import { buildExecutiveCommandCenterPackage } from "../engines/executiveCommandCenterEngine";
 
 const REVIEW_EVENT_SELECT =
-  "event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
+  "id,event_type,employee_name,employee_role,branch_id,source_url,created_at,review_session_id,session_id,metadata";
 
 async function loadStaffAndSnapshots(exportRange, loaded, branchIds) {
   const staffByBranch = exportRange?.useRpc
@@ -182,6 +182,7 @@ export function useReviewExports(filters) {
         : mergeStaffStats([], aggregateStaffReviewStats(events, branch));
       const employees = buildEmployeePerformance(
         staffMerged.map((s) => ({
+          ...s,
           name: s.name,
           role: s.role,
           branch: s.branch,
@@ -199,10 +200,11 @@ export function useReviewExports(filters) {
         rangeLabel: range.periodLabel,
         periodLabel: range.periodLabel,
         review: {
+          ...kpis,
           qr_scans: kpis?.qr_scans ?? 0,
           reviews_generated: kpis?.reviews_generated ?? 0,
           google_clicks: kpis?.google_redirects ?? 0,
-          conversion_pct: kpis?.conversion_pct ?? 0,
+          conversion_pct: kpis?.conversion_pct ?? null,
         },
         staffStats: staffMerged,
         employees,

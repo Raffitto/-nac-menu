@@ -64,7 +64,7 @@ export function buildBranchStaffCoachingInsights(input = {}) {
   }
 
   const reception = staff.filter((s) => isReception(s.role));
-  const lowReception = reception.filter((s) => (s.scans || 0) >= 4 && (s.conversion_pct || 0) < 18);
+  const lowReception = reception.filter((s) => (s.scans || 0) >= 4 && s.conversion_pct != null && s.conversion_pct < 18);
   if (lowReception.length >= 1) {
     insights.push({
       type: "reception",
@@ -74,7 +74,7 @@ export function buildBranchStaffCoachingInsights(input = {}) {
     });
   }
 
-  const dropOff = staff.filter((s) => (s.scans || 0) >= 8 && (s.generated || 0) > 0 && (s.conversion_pct || 0) < 12);
+  const dropOff = staff.filter((s) => (s.scans || 0) >= 8 && (s.generated || 0) > 0 && s.conversion_pct != null && s.conversion_pct < 12);
   if (dropOff.length >= 1) {
     const names = dropOff
       .slice(0, 2)

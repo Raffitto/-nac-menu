@@ -5,7 +5,7 @@ import { staffNameForTracking } from "../review/reviewGeneratorShared";
 
 console.log("REVIEW ANALYTICS MODULE LOADED", window.location?.href || "");
 
-const REVIEW_SESSION_KEY = "nac_review_session_id";
+let activeReviewSessionId = null;
 const DEDUPE_PREFIX = "nac_review_dedupe_";
 const INSERT_TEST_KEY = "nac_review_insert_self_test_done";
 const DEFAULT_BRANCH =
@@ -51,20 +51,16 @@ function getDeviceType() {
   return "desktop";
 }
 
+/** One identifier per loaded portal document, shared by every event in that visit.
+ * A fresh navigation/reload creates a new visit even in the same browser tab.
+ */
 export function getReviewSessionId() {
-  try {
-    let id = sessionStorage.getItem(REVIEW_SESSION_KEY);
-    if (!id) {
-      id =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `rev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      sessionStorage.setItem(REVIEW_SESSION_KEY, id);
-    }
-    return id;
-  } catch {
-    return `rev-${Date.now()}`;
+  if (!activeReviewSessionId) {
+    activeReviewSessionId = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `rev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
+  return activeReviewSessionId;
 }
 
 /** One qr_scan / page_open per browser session per branch per staff (not global per session). */
@@ -158,7 +154,7 @@ export async function insertReviewEvent(ctx = {}) {
     return { data: null, error: err };
   }
 
-  const review_session_id = getReviewSessionId();
+  const review_session_id = ctx.review_session_id || getReviewSessionId();
   if (shouldDedupe(event_type, review_session_id, ctx)) {
     console.log("REVIEW EVENT DEDUPED (skipped insert)", {
       event_type,
@@ -185,7 +181,16 @@ export async function insertReviewEvent(ctx = {}) {
     });
   }
 
-  const { error } = await supabase.from("review_events").insert(payload);
+  let error;
+  try {
+    ({ error } = await supabase.from("review_events").insert(payload));
+  } catch (err) {
+    error = err;
+  }
+  if (error && ONCE_PER_SESSION.has(event_type)) {
+    // A failed delivery must remain retryable; do not lose the visit permanently.
+    try { sessionStorage.removeItem(buildDedupeStorageKey(event_type, review_session_id, ctx)); } catch { /* storage unavailable */ }
+  }
 
   console.log("REVIEW EVENT INSERT OK", !error);
   if (error) {
@@ -250,7 +255,13 @@ export async function runReviewEventsInsertSelfTest(branchId = DEFAULT_BRANCH) {
     return { data: null, error: new Error("supabase not configured") };
   }
 
-  const { error } = await supabase.from("review_events").insert(payload);
+  let error;
+  try {
+    ({ error } = await supabase.from("review_events").insert(payload));
+  } catch (err) {
+    error = err;
+  }
+
 
   console.log("REVIEW EVENT INSERT OK", !error);
   if (error) {

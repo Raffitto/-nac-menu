@@ -11,8 +11,9 @@ import {
   REVIEW_PAGE_OPEN_TYPES,
   REVIEW_GENERATED_TYPES,
   REVIEW_GOOGLE_TYPES,
-  reviewConversionPct,
 } from "../../platform/engines/funnelAnalyticsEngine";
+
+import { reviewVisitMetrics } from "./reviewVisitMetrics";
 
 const COPY_TYPES = new Set(["review_copy", "copy_review"]);
 
@@ -35,7 +36,7 @@ export function aggregateStaffReviewStats(events = []) {
     const name = eventStaffName(e);
     if (!name || !isProductionStaff(name)) return;
     const branch = normalizeBranchId(e.branch_id);
-    const key = `${branch || "unknown"}::${name}`;
+    const key = `${branch || "unknown"}::${name.toLowerCase()}`;
 
     if (!map[key]) {
       map[key] = {
@@ -47,8 +48,10 @@ export function aggregateStaffReviewStats(events = []) {
         generated: 0,
         copy: 0,
         google: 0,
+        events: [],
       };
     }
+    map[key].events.push(e);
     if (e.employee_role && !map[key].role) map[key].role = e.employee_role;
     if (branch && !map[key].branch) map[key].branch = branch;
 
@@ -63,11 +66,10 @@ export function aggregateStaffReviewStats(events = []) {
   });
 
   return Object.values(map)
-    .map((s) => ({
-      ...s,
-      opens: s.scans,
-      conversion_pct: reviewConversionPct(s.google, s.scans),
-    }))
+    .map(({ events: staffEvents, ...s }) => {
+      const visits = reviewVisitMetrics(staffEvents);
+      return { ...s, ...visits, scans: visits.qr_visits, opens: visits.qr_visits, google: visits.converted_visits };
+    })
     .sort((a, b) => b.scans - a.scans || b.google - a.google);
 }
 
@@ -79,7 +81,7 @@ export function mergeStaffStats(_rpcEmployees = [], granular = []) {
     .map((g) => ({
       ...g,
       opens: g.scans,
-      conversion_pct: reviewConversionPct(g.google, g.scans),
+      conversion_pct: g.conversion_pct ?? null,
     }))
     .sort((a, b) => b.scans - a.scans);
 }
@@ -87,10 +89,8 @@ export function mergeStaffStats(_rpcEmployees = [], granular = []) {
 /** Daily review scan trend. */
 export function buildDailyScanTrend(events = []) {
   const byDay = {};
-  filterAnalyticsReviewEvents(events).forEach((e) => {
-    if (e.event_type !== "qr_scan") return;
-    const key = dayKey(e.created_at);
-    if (!key) return;
+  reviewVisitMetrics(events).visit_start_times.forEach(time => {
+    const key = dayKey(new Date(time).toISOString());
     byDay[key] = (byDay[key] || 0) + 1;
   });
   return Object.entries(byDay)

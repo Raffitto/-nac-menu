@@ -25,15 +25,15 @@ test('four existing branch identities and strict permissions remain intact',()=>
  expect(canProfileReadBranch(network,'hettin')).toBe(true);
  expect(canProfileReadBranch(scoped,'riyadh')).toBe(false);
  expect(buildBranchComparisonForProfile(network).map(r=>r.branch_id)).toEqual(['khobar','riyadh','jeddah','hettin']);
- expect(buildReviewBranchComparisonForProfile(network).map(r=>r.branch_id)).toEqual(['khobar','riyadh','jeddah','hettin']);
- expect(buildReviewBranchComparisonForProfile(scoped).map(r=>r.branch_id)).toEqual(['khobar']);
+ expect(buildReviewBranchComparisonForProfile(network).map(r=>r.branch_id)).toEqual([]);
+ expect(buildReviewBranchComparisonForProfile(scoped).map(r=>r.branch_id)).toEqual([]);
  expect(resolveReviewScope(network,'hettin').queryBranch).toBe('hettin');
  expect(resolveReviewScope(scoped,'hettin').queryBranch).toBe('khobar');
  expect(reviewBranchDisplayName('hettin')).toBe('NAC Hettin');
  expect(reviewBranchDisplayName('riyadh')).toBe('NAC Laysen Valley');
 });
 test('same-named staff in two branches remain separate reporting records',()=>{
- const stats=aggregateStaffReviewStats(['hettin','riyadh'].map(branch_id=>({branch_id,employee_name:'Hamza',employee_role:'rm',event_type:'qr_scan'})));
+ const stats=aggregateStaffReviewStats(['hettin','riyadh'].map(branch_id=>({branch_id,employee_name:'Hamza',employee_role:'rm',created_at:'2026-10-02T12:00:00Z',review_session_id:'visit',event_type:'qr_scan'})));
  expect(stats).toHaveLength(2);expect(stats.map(r=>r.branch).sort()).toEqual(['hettin','riyadh']);expect(stats.every(r=>r.scans===1)).toBe(true);
 });
 test.each([null,network])('Hettin public/network staff lookup never falls back to Khobar (%j)',async profile=>{

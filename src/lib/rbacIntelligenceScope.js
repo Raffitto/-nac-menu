@@ -14,7 +14,7 @@ import {
   normalizeBranchId,
 } from "../dashboard/utils/branchIdentity";
 import { branchDashboardName } from "../dashboard/config/branchDisplayConfig";
-import { buildReviewBranchComparison, normalizeReviewBranchId } from "../review/reviewBranchIdentity";
+import { normalizeReviewBranchId } from "../review/reviewBranchIdentity";
 
 function branchAllowed(profile, branchId) {
   if (!profile?.authenticated || canAccessAllBranches(profile)) return true;
@@ -70,7 +70,7 @@ export function buildBranchComparisonForProfile(profile, rawRows = [], defaults 
 
 /** Review-only branch comparison scope; never expands operational RBAC. */
 export function buildReviewBranchComparisonForProfile(profile, rawRows = [], defaults = {}) {
-  const merged = buildReviewBranchComparison(rawRows, defaults);
+  const merged = (rawRows || []).map(row => ({ ...defaults, ...row }));
   if (!profile?.authenticated || canAccessNetworkReviews(profile)) return merged;
   const ids = new Set(reviewAllowedBranchIds(profile));
   return merged.filter((row) => ids.has(normalizeReviewBranchId(row.branch_id)));

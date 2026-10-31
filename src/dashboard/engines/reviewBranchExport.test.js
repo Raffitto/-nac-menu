@@ -3,7 +3,7 @@ import { buildEmployeePerformance } from "./employeePerformanceEngine";
 import { exportReviewIntelligenceReport } from "./exportEngine";
 import { exportCSV } from "../utils/formatters";
 import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
-import { tapToGooglePct } from "../utils/reviewFunnelMetrics";
+
 import { buildBranchOperationalReportFromSummary } from "./branchOperationalReviewEngine";
 
 jest.mock("../utils/formatters", () => {
@@ -13,8 +13,8 @@ jest.mock("../utils/formatters", () => {
 
 test("same-named staff retain separate branch classifications", () => {
   const rows = buildEmployeePerformance([
-    { name: "Sam", branch: "hettin", opens: 12, generated: 10, google_clicks: 5 },
-    { name: "Sam", branch: "riyadh", opens: 1, generated: 0, google_clicks: 0 },
+    { name: "Sam", branch: "hettin", opens: 12, qr_visits: 12, converted_visits: 5, generated: 10, google_clicks: 5 },
+    { name: "Sam", branch: "riyadh", opens: 1, qr_visits: 1, converted_visits: 0, generated: 0, google_clicks: 0 },
   ]);
   expect(rows.map((row) => row.branch)).toEqual(["hettin", "riyadh"]);
   expect(rows[0].classification.label).not.toBe(rows[1].classification.label);
@@ -45,76 +45,34 @@ test("network review export labels each staff row with its actual branch", () =>
   }
 });
 
-test("Laysen month-to-date rates use card taps as the denominator in XLSX, CSV, and coaching rows", () => {
-  expect(tapToGooglePct(2, 1)).toBe(200);
-  expect(tapToGooglePct(17, 36)).toBe(47);
-
-  const summaryStaff = staffFromReviewSummary({
-    staff: [
-      { branch_id: "riyadh", name: "Atik", role: "waiter", scans: 1, generated: 2, google: 2, conversion_pct: 100 },
-      { branch_id: "riyadh", name: "Eusuf", role: "waiter", scans: 36, generated: 76, google: 17, conversion_pct: 47 },
-    ],
-  });
-  expect(summaryStaff.find((row) => row.name === "Atik").conversion_pct).toBe(200);
-  expect(summaryStaff.find((row) => row.name === "Eusuf").conversion_pct).toBe(47);
-
+test("XLSX, CSV, coaching and branch audit preserve visit conversion and raw diagnostics", () => {
+  const summary = { qr_visits: 37, converted_visits: 15, qr_scans: 37, google_redirects: 19, staff: [
+    { branch_id: "riyadh", name: "Atik", scans: 1, google: 2, qr_visits: 1, converted_visits: 1, unmatched_redirects: 1 },
+    { branch_id: "riyadh", name: "Eusuf", scans: 36, generated: 76, google: 17, qr_visits: 36, converted_visits: 14 },
+  ] };
+  const staffStats = staffFromReviewSummary(summary);
+  const employees = buildEmployeePerformance(staffStats.map(s => ({...s, opens:s.scans, google_clicks:s.google})));
   const write = jest.spyOn(XLSX, "writeFile").mockImplementation(() => {});
-  const laysen = {
-    branch: "NAC Laysen Valley",
-    selectedRange: "month",
-    rangeLabel: "1 October 2026 – 30 October 2026",
-    review: { qr_scans: 94, reviews_generated: 199, google_clicks: 48, conversion_pct: 100 },
-    staffStats: summaryStaff,
-    employees: [
-      {
-        name: "Atik",
-        classification: { label: "Underutilized Staff", reason: "Insufficient data — monitor before acting." },
-        metrics: { scans_generated: 1, reviews_generated: 2, google_clicks: 2, review_conversion_pct: 100 },
-      },
-      {
-        name: "Eusuf",
-        classification: { label: "Underutilized Staff", reason: "Present review card more often before guest disengages." },
-        metrics: { scans_generated: 36, reviews_generated: 76, google_clicks: 17, review_conversion_pct: 22 },
-      },
-    ],
-    comparison: [
-      { branch_id: "riyadh", qr_scans: 94, reviews_generated: 199, google_redirects: 48, conversion_pct: 51 },
-    ],
-  };
+  const ctx = { branch:"NAC Laysen Valley", selectedRange:"month", rangeLabel:"October", review:summary, staffStats, employees };
   try {
-    exportReviewIntelligenceReport(laysen);
-    const workbook = write.mock.calls[0][0];
-    const staff = XLSX.utils.sheet_to_json(workbook.Sheets.Staff);
-    const coaching = XLSX.utils.sheet_to_json(workbook.Sheets.Classifications);
-    expect(staff.find((row) => row.Staff === "Atik")["To Google %"]).toBe(200);
-    expect(staff.find((row) => row.Staff === "Eusuf")["To Google %"]).toBe(47);
-    expect(coaching.find((row) => row.Employee === "Atik")["To Google %"]).toBe(200);
-    expect(coaching.find((row) => row.Employee === "Eusuf")["To Google %"]).toBe(47);
-    expect(coaching.find((row) => row.Employee === "Eusuf")["Google Redirects"]).toBe(17);
-    expect(XLSX.utils.sheet_to_json(workbook.Sheets.Summary, { header: 1 })).toEqual(
-      expect.arrayContaining([["Tap→Google %", 51]]),
-    );
-
-    exportCSV.mockClear();
-    exportReviewIntelligenceReport({ ...laysen, format: "csv" });
-    const [, headers, rows] = exportCSV.mock.calls[0];
-    const toGoogle = headers.indexOf("To Google %");
-    const name = headers.indexOf("Staff");
-    expect(rows.find((row) => row[name] === "Atik")[toGoogle]).toBe(200);
-    expect(rows.find((row) => row[name] === "Eusuf")[toGoogle]).toBe(47);
-  } finally {
-    write.mockRestore();
-  }
-
-  const audit = buildBranchOperationalReportFromSummary({
-    qr_scans: 94,
-    reviews_generated: 199,
-    google_redirects: 48,
-    staff: [
-      { name: "Atik", role: "waiter", scans: 1, generated: 2, google: 2, conversion_pct: 100 },
-      { name: "Eusuf", role: "waiter", scans: 36, generated: 76, google: 17, conversion_pct: 47 },
-    ],
-  }, "riyadh");
-  expect(audit.staffRows.find((row) => row.name === "Atik").reviewConv).toBe(200);
-  expect(audit.staffRows.find((row) => row.name === "Eusuf").reviewConv).toBe(47);
+    exportReviewIntelligenceReport(ctx);
+    const wb = write.mock.calls[0][0];
+    const staff = XLSX.utils.sheet_to_json(wb.Sheets.Staff);
+    const coaching = XLSX.utils.sheet_to_json(wb.Sheets.Classifications);
+    for (const rows of [staff,coaching]) {
+      expect(rows[0]["Visit conversion %"]).toBe(100);
+      expect(rows[1]["Visit conversion %"]).toBe(39);
+    }
+    expect(staff[0]["Raw Google redirect events"]).toBe(2);
+    exportReviewIntelligenceReport({...ctx,format:"csv"});
+    const [,headers,rows] = exportCSV.mock.calls.at(-1);
+    expect(rows[0][headers.indexOf("Visit conversion %")]).toBe(100);
+    const audit = buildBranchOperationalReportFromSummary(summary,"riyadh");
+    expect(audit.staffRows.find(s=>s.name==="Eusuf").reviewConv).toBe(39);
+  } finally { write.mockRestore(); }
 });
+
+ test("legacy counts cannot establish visit conversion", () => {
+   const staff = staffFromReviewSummary({staff:[{name:"Atik",branch_id:"riyadh",scans:1,google:2}]});
+   expect(staff[0].conversion_pct).toBeNull();
+ });
