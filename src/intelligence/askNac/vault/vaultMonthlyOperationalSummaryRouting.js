@@ -30,7 +30,14 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
     return false;
   }
 
+  // Date-bounded complaints and operational reviews must use structured logbook facts.
+  // The earlier month-only rule silently routed these questions into chunk search.
+  if (period?.startDate && period?.endDate && !period.isSingleDay
+    && /\b(complaints?|incidents?|operational|operations?|logbooks?|recurring|staff performance)\b/i.test(text)
+    && !/\b(sales|revenue|foodics|cash[\s-]?up|menu qr)\b/i.test(text)) return true;
   if (NON_OPERATIONAL_BLOCK.test(text) && !OPERATIONAL_SUMMARY_SIGNAL.test(text)) return false;
+
+  if (/\b(?:what were|summarize|list|identify)\b.*\b(?:operational|problems?|complaints?|issues?)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) return true;
 
   if (/\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text) && new RegExp(MONTH_TOKEN, "i").test(text)) {
     return OPERATIONAL_SUMMARY_SIGNAL.test(text) || /\boperational\b/.test(text);
@@ -47,9 +54,9 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
     return true;
   }
 
-  if (/\b${MONTH_TOKEN}\s+operations?\b/i.test(text)) return true;
-  if (/\boperations?\s+(?:in|for|during)\s+${MONTH_TOKEN}\b/i.test(text)) return true;
-  if (/\boperationally\s+(?:in|for|during)\s+${MONTH_TOKEN}\b/i.test(text)) return true;
+  if (new RegExp(`\\b${MONTH_TOKEN}\\s+operations?\\b`, "i").test(text)) return true;
+  if (new RegExp(`\\boperations?\\s+(?:in|for|during)\\s+${MONTH_TOKEN}\\b`, "i").test(text)) return true;
+  if (new RegExp(`\\boperationally\\s+(?:in|for|during)\\s+${MONTH_TOKEN}\\b`, "i").test(text)) return true;
 
   if (/\b(daily logbook|logbook)\b/.test(text)
     && /\b(highlights?|summarize|summary)\b/.test(text)
@@ -60,9 +67,50 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
   return false;
 }
 
+const OPERATIONAL_TOPIC =
+  /\b(complaints?|incidents?|operational|operations|logbooks?|recurring|staff performance|how did staff|staff\b.{0,24}\bperform|maintenance|food quality|beverage quality|drink quality|service (?:problems?|issues?|complaints?)|guest feedback)\b/i;
+
+export function requiresStructuredOperationalRetrieval(question = "", vaultPeriod = null) {
+  const text = String(question || "").trim();
+  if (!text) return false;
+  if (/\b(sales|revenue|foodics|cash[\s-]?up|menu qr|top items?)\b/i.test(text)) return false;
+  if (
+    /\bsummarize\b/i.test(text)
+    && /\blogbooks?\b/i.test(text)
+    && !/\b(complaints?|incidents?|maintenance|staff|issues?|operations?|what happened)\b/i.test(text)
+  ) {
+    return false;
+  }
+  const period = vaultPeriod?.startDate && vaultPeriod?.endDate
+    ? vaultPeriod
+    : parseVaultPeriodFromQuestion(text);
+  if (period?.startDate && period?.endDate && OPERATIONAL_TOPIC.test(text)) return true;
+  return isVaultMonthlyOperationalSummaryQuery(text);
+}
+
 export function detectMonthlyOperationalMode(question = "") {
   const text = String(question || "").trim().toLowerCase();
-  if (/\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text)) return "compare";
+  const compare = /\bcompare\b/.test(text) && /\b(vs|versus)\b/.test(text);
+  const topicHits = [
+    /\bcomplaints?\b/.test(text),
+    /\bmaintenance|pest|equipment\b/.test(text),
+    /\bservice (?:problems?|issues?|complaints?)\b/.test(text),
+    /\bstaff performance\b/.test(text),
+  ].filter(Boolean).length;
+  if (/\bcompare\b/.test(text) && /\b(operational issues?|what happened on each)\b/.test(text)) return "executive_operational";
+  if (topicHits > 1 || /\b(executive operational summary|operational improvements|most important|prioriti[sz]e)\b/.test(text)) {
+    return "executive_operational";
+  }
+  if (/\b(resolved|resolution|follow-up|follow up)\b/.test(text) && /\bcomplaints?\b/.test(text)) return "resolution";
+  if (/\bmaintenance|pest-control|pest control|equipment issues?\b/.test(text) && !/\bcomplaints?\b/.test(text)) return "maintenance";
+  if (/\bstaff performance\b|\bhow did staff\b|\bstaff\b.*\b(perform|absence|absent|late)\b/.test(text)) return "staff";
+  if (/\bfood quality\b/.test(text)) return "food_quality";
+  if (/\b(?:beverage|drink) quality\b/.test(text) || (/\bbeverages?\b/.test(text) && /\b(quality|complain|wrong|cold)\b/.test(text))) {
+    return "beverage";
+  }
+  if (/\bservice (?:problems?|issues?|complaints?)\b/.test(text)) return "service";
+  if (/\b(guest complaints?|complaints?)\b/.test(text)) return "complaints";
+  if (compare) return "compare";
   if (/\brecurring\b/.test(text)) return "recurring";
   if (/\b(main|biggest|top)\b.*\b(issues?|problems?|complaints?)\b/.test(text)) return "issues";
   if (/\bhighlights?\b/.test(text)) return "highlights";

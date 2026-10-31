@@ -37,7 +37,7 @@ import {
   searchTermsForOperationalTheme,
 } from "./vaultOperationalIntelligence";
 import {
-  isVaultMonthlyOperationalSummaryQuery,
+  requiresStructuredOperationalRetrieval,
 } from "./vaultMonthlyOperationalSummaryRouting";
 import { fetchExternalContextForNilPeriod } from "./vaultExternalContextRetrieval";
 import { fetchExecutiveMemory } from "../executive/executiveMemory";
@@ -934,12 +934,55 @@ export async function fetchMonthlyLogbookOperationalReview(supabase, context = {
   return fetchReview(supabase, context);
 }
 
+function structuredLogbookMiss(context, error) {
+  const periodLabel = context.vaultPeriod?.label || "the requested period";
+  const branch = resolveBranch(context);
+  const branchLabel = branch ? branchDisplayName(branch) : "the requested branch";
+  const failed = Boolean(error);
+  return {
+    structuredLogbookReview: true,
+    queryStatus: failed ? "connection_error" : "insufficient_evidence",
+    searchError: error?.message || null,
+    branch,
+    branchLabel,
+    periodLabel,
+    groupedFindings: [],
+    vaultSources: [],
+    sources: [{
+      name: "ask_nac_structured_facts",
+      detail: failed ? "Structured logbook query failed" : "Structured logbook lookup returned no narrative rows",
+    }],
+    monthlyLogbookSummary: {
+      title: failed ? "Operational review — retrieval failed" : "Operational review — no structured narratives",
+      directAnswer: failed
+        ? `Structured logbook retrieval failed for ${branchLabel}, ${periodLabel}. This does not establish that no incidents occurred. Database error: ${error.message}`
+        : `No recovered daily logbook narratives were returned for ${branchLabel}, ${periodLabel} from ask_nac_structured_facts. This does not establish that no guest complaints or incidents occurred.`,
+      keyMetrics: [],
+      insights: [],
+      recommendations: [],
+      confidence: "none",
+      logbookDays: 0,
+      groupedFindings: [],
+      vaultSources: [],
+    },
+  };
+}
+
 export async function searchOperationalReviewDocuments(supabase, context = {}) {
   const question = String(context.question || "");
-  if (isVaultMonthlyOperationalSummaryQuery(question)) {
-    const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
-    const structured = await fetchReview(supabase, context);
-    if (structured?.structuredLogbookReview) return structured;
+  const vaultPeriod = context.vaultPeriod?.startDate
+    ? context.vaultPeriod
+    : parseVaultPeriodFromQuestion(question);
+  const enriched = { ...context, vaultPeriod: vaultPeriod || context.vaultPeriod || null };
+  if (requiresStructuredOperationalRetrieval(question, enriched.vaultPeriod)) {
+    try {
+      const { fetchMonthlyLogbookOperationalReview: fetchReview } = await import("./vaultMonthlyLogbookQuery.js");
+      const structured = await fetchReview(supabase, enriched);
+      if (structured?.structuredLogbookReview) return structured;
+      return structuredLogbookMiss(enriched, null);
+    } catch (error) {
+      return structuredLogbookMiss(enriched, error);
+    }
   }
 
   const theme = context.reviewTheme || extractOperationalReviewTheme(question);

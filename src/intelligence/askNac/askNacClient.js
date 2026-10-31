@@ -8,6 +8,8 @@ import { fetchWithDeadline } from "../../lib/fetchDeadline";
 import { processAskNacQuestion } from "./askNacOrchestrator";
 import { createAskNacResponse, ANSWER_TYPES, CONFIDENCE_LEVELS } from "./askNacContract";
 import { ASK_NAC_INTENTS, routeAskNacIntent } from "./intentRouter";
+import { requiresStructuredOperationalRetrieval } from "./vault/vaultMonthlyOperationalSummaryRouting";
+import { prepareAskNacQuestion } from "./conversation/prepareAskNacQuestion";
 
 /**
  * Intents the server hands to the client (explicit hand-off), or that an older
@@ -15,6 +17,35 @@ import { ASK_NAC_INTENTS, routeAskNacIntent } from "./intentRouter";
  * its own read-only tool and labels the answer localFallback (Oracle T3).
  */
 export const CLIENT_EXECUTED_INTENTS = Object.freeze([ASK_NAC_INTENTS.THEORETICAL_CONSUMPTION]);
+
+export function serverAnswerShouldYieldToLocal(question, payload, conversationContext) {
+  const prepared = prepareAskNacQuestion({ question, conversationContext, filters: {} });
+  const local = routeAskNacIntent(prepared.effectiveQuestion);
+  const serverIntent = String(payload?.intent || "");
+  const text = String(payload?.directAnswer || "");
+  if (/could not parse a calendar|vault period missing|no vault period/i.test(text)) return true;
+  if (serverOperationalAnswerNeedsStructuredRetry(prepared.effectiveQuestion, payload)) return true;
+  const localPreferred = local.intent === "vault_operational_review" || local.intent === "top_items" || local.intent === "top_items_compare";
+  if (localPreferred && serverIntent && serverIntent !== local.intent) return true;
+  if (local.intent === "top_items" && /highest sales day|best sales day|sales day/i.test(text)) return true;
+  if (local.intent === "vault_operational_review" && /\bSAR\b/.test(text) && !/\b(complaint|maintenance|staff|incident)\b/i.test(text)) return true;
+  return false;
+}
+
+export function serverOperationalAnswerNeedsStructuredRetry(question, payload) {
+  if (!requiresStructuredOperationalRetrieval(question)) return false;
+  const sources = Array.isArray(payload?.sources) ? payload.sources : [];
+  const citesFacts = sources.some((source) => /structured_facts|get_vault_logbook_month_summary_facts/i.test(String(source?.name || "")));
+  const text = [
+    payload?.directAnswer,
+    ...(payload?.recommendations || []),
+    ...(payload?.insights || []),
+  ].join("\n");
+  const falseZero = /no complaints were recorded|no guest complaints occurred|upload or re-index|re-upload logbook|upload daily logbooks/i.test(text);
+  if (citesFacts && !falseZero) return false;
+  const citesChunks = sources.some((source) => /document_chunks/i.test(String(source?.name || "")));
+  return citesChunks || falseZero || /document_no_match|no_match/.test(String(payload?.answerType || ""));
+}
 
 export function serverAnswerNeedsLocalExecution(payload, question) {
   const handoff = payload?.handoff;
@@ -98,6 +129,26 @@ export async function askNac({
 
       if (res.ok) {
         const payload = await res.json();
+        if (serverAnswerShouldYieldToLocal(question, payload, conversationContext) && supabase) {
+          const local = await processAskNacQuestion({
+            question,
+            supabase,
+            profile,
+            filters,
+            conversationContext,
+            session,
+          });
+          return {
+            ...local,
+            serverConnected: true,
+            localFallback: true,
+            aiConnected: false,
+            warnings: [
+              ...(local.warnings || []),
+              "Structured logbook facts were read in the browser because the Ask NAC server did not return recovered narrative evidence.",
+            ],
+          };
+        }
         const runLocally = serverAnswerNeedsLocalExecution(payload, question);
         if (runLocally) {
           const local = await processAskNacQuestion({
