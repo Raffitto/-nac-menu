@@ -68,10 +68,37 @@ export function buildNarrationPayload(deterministicAnswer, { question = "", inte
       periodLabel: deterministicAnswer.periodLabel,
       branchLabel: deterministicAnswer.branchLabel,
       confidence: deterministicAnswer.confidence,
+      operationalFindings: (deterministicAnswer.operationalFindings || []).slice(0, 12).map((item) => ({
+        date: item.dateLabel || item.date,
+        table: item.tableNumber || null,
+        product: item.product,
+        action: item.action,
+        resolution: item.resolution,
+        quote: String(item.evidenceExcerpt || "").slice(0, 240),
+      })),
     },
     toolFacts: tool ? trimRows(tool) : null,
     diagnostics: diagnostics ? trimRows(diagnostics) : null,
   };
+}
+
+/**
+ * A narrated complaint may name only tables that the quoted register already contains.
+ * Anything else is rejected and the verified answer is kept.
+ */
+export function narrationIntroducesUnsupportedIncident(narratedText = "", findings = []) {
+  const tables = new Set(
+    (findings || []).map((item) => String(item.tableNumber || item.table || "")).filter(Boolean),
+  );
+  const evidence = (findings || [])
+    .map((item) => `${item.product || ""} ${item.evidenceExcerpt || item.quote || ""} ${item.dateLabel || item.date || ""}`)
+    .join(" ")
+    .toLowerCase();
+  const named = String(narratedText || "").matchAll(/\btable\s+(\d+)\b/gi);
+  for (const match of named) {
+    if (!tables.has(match[1]) && !evidence.includes(`table ${match[1]}`)) return true;
+  }
+  return false;
 }
 
 /**
@@ -97,6 +124,16 @@ export function mergeNarratedResponse(deterministicAnswer, aiJson = {}) {
   const directAnswer = String(aiJson.directAnswer || "").trim();
   if (!directAnswer) return deterministicAnswer;
 
+  if (narrationIntroducesUnsupportedIncident(directAnswer, deterministicAnswer.operationalFindings || [])) {
+    return {
+      ...deterministicAnswer,
+      warnings: [
+        ...(deterministicAnswer.warnings || []),
+        "OpenAI named a complaint that is not in the logbook quotes — showing the verified register only.",
+      ],
+    };
+  }
+
   return {
     ...deterministicAnswer,
     directAnswer,
@@ -120,7 +157,8 @@ export function buildNarrationSystemPrompt() {
   return [
     "You are Ask NAC, a business intelligence analyst for NAC restaurants.",
     "You ONLY explain structured facts already retrieved by internal tools.",
-    "NEVER invent numbers, metrics, or data sources.",
+    "NEVER invent numbers, metrics, complaints, dates, actions, or data sources.",
+    "Every incident you mention must already be in operationalFindings, and its wording must stay traceable to that item's quote.",
     "NEVER change numeric values in keyMetrics.",
     "NEVER add unsupported metrics.",
     "Preserve sources, warnings, missingData, and vaultSources exactly.",

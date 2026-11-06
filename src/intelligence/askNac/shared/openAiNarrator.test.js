@@ -1,6 +1,7 @@
 import {
   buildNarrationPayload,
   mergeNarratedResponse,
+  narrationIntroducesUnsupportedIncident,
   validateMetricPreservation,
   extractMetricNumericSignature,
   MAX_FACT_ROWS,
@@ -35,6 +36,19 @@ describe("openAiNarrator", () => {
     });
     expect(payload.deterministicAnswer.keyMetrics.length).toBeLessThanOrEqual(MAX_FACT_ROWS);
     expect(payload.toolFacts.topItems.length).toBeLessThanOrEqual(MAX_FACT_ROWS);
+  });
+
+  test("rejects a narrated complaint whose table is not in the quoted register", () => {
+    const findings = [{ tableNumber: "10", product: "French Toast", evidenceExcerpt: "Table 10 complained about french toast" }];
+    expect(narrationIntroducesUnsupportedIncident("Table 10 was the toast complaint.", findings)).toBe(false);
+    expect(narrationIntroducesUnsupportedIncident("Table 21 also complained about lobster.", findings)).toBe(true);
+    const kept = mergeNarratedResponse(
+      { ...baseAnswer, operationalFindings: findings, directAnswer: "Only French toast is quoted." },
+      { directAnswer: "Table 21 complained about lobster." },
+    );
+    expect(kept.isAiGenerated).not.toBe(true);
+    expect(kept.directAnswer).toMatch(/French toast/);
+    expect(kept.warnings.join(" ")).toMatch(/logbook quotes/i);
   });
 
   test("mergeNarratedResponse preserves numeric metrics", () => {

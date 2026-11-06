@@ -7,7 +7,7 @@ const NEGATED_COMPLAINT =
   /\bno\s+(?:guest\s+)?complain(?:ed|ing|t|ts)?\b|\bno\s+complaints?\b|\bno\s+(?:major\s+)?(?:issues?|problems?)\s*(?:reported|noted|today|recorded)?\b|\bnobody\s+complained\b|\bno\s+one\s+complained\b|\bno\s+issues?\s+reported\b|\bdid(?:\s+not|n['’]t)\s+complain\b/i;
 
 const COMPLAINT_TRIGGER =
-  /\b(complain(?:ed|ing|ts?)|became\s+upset|was\s+upset|guest\s+(?:was\s+)?upset|unhappy|dissatisfied)\b/i;
+  /\b(complain\w*|became\s+upset|was\s+upset|guest\s+(?:was\s+)?(?:upset|angry)|unhappy|dissatisfied|didn['’]?t\s+like|did\s+not\s+like)\b/i;
 
 const MAINTENANCE_TRIGGER =
   /\b(pest\s+control|repair(?:ed|ing)?|replaced|electrician|drainage|leak(?:ing)?|hvac|fly\s+trap|maintenance|equipment\s+(?:down|failed|stopped)|ice cream machine)\b/i;
@@ -16,7 +16,7 @@ const STAFF_TRIGGER =
   /\b(server\s+was\s+late|late\s+arrival|understaffed|short[- ]staffed|sick\s+leave|staff\s+performance|absent)\b/i;
 
 const SATISFACTION =
-  /\b(guest\s+(?:was\s+)?satisfied|left\s+satisfied|happy\s+with\s+the\s+(?:resolution|outcome)|resolution\s+accepted)\b/i;
+  /\b(guest\s+(?:was\s+)?satisfied|left\s+satisfied|happy\s+with\s+the\s+(?:resolution|outcome)|resolution\s+accepted|they\s+are\s+happy|she\s+said\s+she'?s\s+okay|shes\s+okay)\b/i;
 
 export function splitNarrativeClauses(text = "") {
   const normalized = String(text || "").replace(/\s+/g, " ").trim();
@@ -28,16 +28,17 @@ export function splitNarrativeClauses(text = "") {
     .replace(/\s+(?=No\s+issues?\s+reported\b)/gi, "\n")
     .replace(/\s+(?=Nobody\s+complained\b)/gi, "\n")
     .replace(/\s+(?=Pest\s+control\b)/gi, "\n")
+    .replace(/\s*\|\s*/g, "\n")
     .replace(/\s*[•;]\s*/g, "\n");
   return marked
-    .split(/(?<=[.!?])\s+|\n+/)
+    .split(/(?<=[.!?])\s+|(?<=[.!?])(?=[A-Z])|\n+/)
     .map((clause) => clause.trim())
     .filter(Boolean);
 }
 
 export function isNegatedComplaint(clause = "") {
   if (!clause) return false;
-  if (/\btable\s+\d+\s+complain/i.test(clause)) return false;
+  if (/\btable\s+\d+\b[^.\n]{0,40}\bcomplain/i.test(clause)) return false;
   if (/\bno\b[^.]{0,40}\bcomplain/i.test(clause)) return true;
   if (COMPLAINT_TRIGGER.test(clause) && !/\bno\s+(?:guest\s+)?complain/i.test(clause)) return false;
   return NEGATED_COMPLAINT.test(clause);
@@ -61,7 +62,7 @@ function isStaffClause(clause = "", metricKey = "") {
 }
 
 function isActionContinuation(clause = "") {
-  return /\b(offered|removed|tasted|refus(?:ed|al)|declin(?:ed|e)|replacement|comped|refund(?:ed)?|apolog|remade|replaced)\b/i.test(clause)
+  return /\b(offer(?:ed)?|remov(?:e|ed|ing)|tasted|refus(?:ed|al)|declin(?:ed|e)|replacement|comped|refund(?:ed)?|apolog|remade|replaced|cancel(?:ed|led)?|happy|okay|taste|spicy|sauce|powder|mixed|fix it|speak with the guest)\b/i.test(clause)
     && !isComplaintClause(clause)
     && !isMaintenanceClause(clause);
 }
@@ -82,13 +83,20 @@ function titleCase(value = "") {
   });
 }
 
-function subjectFromComplaint(clause = "") {
-  const about = clause.match(/\b(?:complain(?:ed|ing)?\s+about|became\s+upset\s+about|upset\s+about|was\s+upset\s+about)\s+(.+)$/i);
+function subjectFromComplaint(clause = "", previousProduct: string | null = null) {
+  const angryOffer = clause.match(/\b(?:offered|offer)\s+(?:them\s+)?(.+?)\s+because\s+(?:the\s+)?guest\s+was\s+angry\b/i);
+  if (angryOffer) {
+    return { product: titleCase(angryOffer[1]), issue: "service sequence", category: "service" };
+  }
+  const about = clause.match(/\b(?:complain\w*\s+(?:about|regarding)|became\s+upset\s+about|upset\s+about|was\s+upset\s+about|didn['’]?t\s+like(?:\s+the)?|did\s+not\s+like(?:\s+the)?)\s+(.+)$/i);
   const raw = cleanPhrase(about ? about[1] : "");
-  if (!raw) {
+  if (!raw || /^taste$/i.test(raw)) {
     if (/\bservice\s+was\s+slow\b/i.test(clause)) return { product: "Service", issue: "slow service", category: "service" };
     if (/\brude\b/i.test(clause)) return { product: "Service", issue: "rude service", category: "service" };
-    return { product: "Guest complaint", issue: "guest complaint", category: "guest_complaint" };
+    if (previousProduct && /\btaste|didn['’]?t\s+like|did\s+not\s+like/i.test(clause)) {
+      return { product: previousProduct, issue: "inconsistent taste", category: "food_quality" };
+    }
+    return { product: previousProduct || "Guest complaint", issue: "guest complaint", category: previousProduct ? "food_quality" : "guest_complaint" };
   }
   if (/\btasting\s+different\b/i.test(raw)) {
     return {
@@ -145,9 +153,10 @@ function summarizeAction(clauses = []) {
   if (!text.trim()) return null;
   const recovery = text.match(/\boffered\s+(.{2,48}?)\s+as\s+recovery\b/i);
   if (recovery) return `${titleCase(recovery[1])} offered as recovery.`;
-  const offered = /\b(offered|replacement\s+was\s+offered)\b/i.test(text);
-  const declined = /\b(refus(?:ed|al)|declin(?:ed|e))\b/i.test(text);
-  const removed = /\bremoved\b[^.]{0,60}\bfrom\s+(?:the\s+)?bill\b/i.test(text);
+  const offered = /\b(offer(?:ed)?|replacement\s+was\s+offered)\b/i.test(text);
+  const declined = /\b(refus(?:ed|al)|declin(?:ed|e)|wanted\s+to\s+cancel)\b/i.test(text);
+  const removed = /\bremov(?:e|ed|ing)\b[^.]{0,60}\bfrom\s+(?:the\s+)?bill\b/i.test(text)
+    || /\bcancel(?:ed|led)\b[^.]{0,40}\b(?:table|bill)\b/i.test(text);
   if (offered || removed || declined) {
     const parts = [];
     if (offered && declined) parts.push("Replacement offered and declined");
@@ -192,9 +201,14 @@ function incidentConfidence(incident) {
   return "low";
 }
 
-function buildComplaintIncident(clauses, context) {
+function buildComplaintIncident(clauses: string[], context: any) {
   const opening = clauses[0];
-  const subject = subjectFromComplaint(opening);
+  const subject = subjectFromComplaint(opening, context.previousProduct || null);
+  const detail = clauses.slice(1).join(" ");
+  if (subject.category !== "service" && /\b(taste|not same|deferent|different|spicy)\b/i.test(`${opening} ${detail}`)) {
+    subject.category = "food_quality";
+    if (!/inconsistent taste|taste/i.test(subject.issue)) subject.issue = "inconsistent taste";
+  }
   const table = tableNumber(opening);
   const excerpt = clauses.join(" ");
   const action = summarizeAction(clauses);
@@ -252,16 +266,27 @@ function buildObservationIncident(kind, clause, context) {
   };
 }
 
+function rememberedOrder(clause = "") {
+  const match = String(clause).match(/\btable\s+(\d+)\b[^|\n]{0,24}\border(?:ed)?\s+(.+)$/i);
+  if (!match) return null;
+  const product = titleCase(match[2].replace(/[.’']+$/g, ""));
+  if (!product || product.length > 60) return null;
+  return product;
+}
+
 export function extractIncidentsFromNarrative(text = "", context = {}) {
   const clauses = splitNarrativeClauses(text);
   const incidents = [];
   let open = null;
+  let previousProduct: string | null = null;
   const flush = () => {
     if (!open) return;
-    incidents.push(buildComplaintIncident(open, context));
+    incidents.push(buildComplaintIncident(open, { ...context, previousProduct }));
     open = null;
   };
   for (const clause of clauses) {
+    const ordered = rememberedOrder(clause);
+    if (ordered && !isComplaintClause(clause)) previousProduct = ordered;
     if (isNegatedComplaint(clause)) {
       flush();
       continue;
@@ -281,6 +306,18 @@ export function extractIncidentsFromNarrative(text = "", context = {}) {
   }
   flush();
   return incidents.map((incident) => ({ ...incident, confidence: incidentConfidence(incident) }));
+}
+
+export function normalizeEvidence(value = "") {
+  return String(value || "").toLowerCase().replace(/\|/g, " ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function incidentIsQuotedInSource(incident, sourceText = "") {
+  const source = normalizeEvidence(sourceText);
+  const excerpt = normalizeEvidence(incident?.evidenceExcerpt || "");
+  if (!source || excerpt.length < 12) return false;
+  const probe = excerpt.slice(0, 48);
+  return source.includes(probe);
 }
 
 function matchesMode(incident, mode) {
@@ -317,6 +354,8 @@ function renderIncident(incident) {
   const lines = [title, incident.issue];
   if (incident.action) lines.push(`Action: ${incident.action}`);
   lines.push(`Outcome: ${incident.resolution}`);
+  const quote = String(incident.evidenceExcerpt || "").replace(/\s+/g, " ").trim();
+  if (quote) lines.push(`Logbook: “${quote.slice(0, 240)}”`);
   lines.push(sourceLine(incident));
   return lines.join("\n");
 }
@@ -418,6 +457,7 @@ export function buildIncidentRegister({
       metricKey: fact.metricKey,
     });
     for (const incident of extracted) {
+      if (!incidentIsQuotedInSource(incident, text)) continue;
       if (!matchesMode(incident, mode)) continue;
       const key = dedupeKey(incident);
       if (seen.has(key)) continue;

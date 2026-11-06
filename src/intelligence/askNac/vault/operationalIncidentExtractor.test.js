@@ -1,4 +1,4 @@
-import { buildIncidentRegister, extractIncidentsFromNarrative } from "./operationalIncidentExtractor";
+import { buildIncidentRegister, extractIncidentsFromNarrative, incidentIsQuotedInSource } from "./operationalIncidentExtractor";
 
 const SECTION_LABELS = {
   dinner_notes: "Dinner",
@@ -109,6 +109,43 @@ describe("operational incident extraction", () => {
     expect(register.insights.join(" ")).not.toMatch(/quinoa salad tasting different\. Management tasted/i);
     expect(register.recommendations.join(" ")).toMatch(/satisfaction|bill removal/i);
     expect(register.keyMetrics.find((metric) => metric.label === "Documented incidents").value).toBe("4");
+  });
+
+  test("drops an incident that is not a quote from the source note", () => {
+    expect(incidentIsQuotedInSource(
+      { evidenceExcerpt: "Table 10 complained about french toast" },
+      "Table 10 complained about french toast | the taste is not same",
+    )).toBe(true);
+    expect(incidentIsQuotedInSource(
+      { evidenceExcerpt: "Table 4 complained about lobster" },
+      "Table 10 complained about french toast",
+    )).toBe(false);
+  });
+
+  test("reads pipe-separated Khobar wording that does not say complained", () => {
+    const dinner = [
+      "Table 21 have complain regarding quinoa salad | its taste not good | she had before it was good but this time its taste deferent | so we tasted and it was actually good. We offered her another salad | she said shes okay | so we canceled it from her table.",
+      "Table 10 order popcorn chicken as a first cours | Offered them popcorn chicken because guest was angry.",
+      "Table 21 complain about black angus steak | taste is not good and the sauce is spicy | we offered make new one | they refused they wanted to cancel | we remove the steak from the bill | there was no issue.",
+      "Table 16 complains about ice mocha | chocolate powder is not mixed well | we speak with the guest | and offer them to fix it and they are happy.",
+      "Table 24 -ordered jasmine ice tea.Guest didnt like the taste.",
+      "Dinner was smooth. No guest complained. Pest control came and sprayed both for cockroaches and flies.",
+      "Table 10 complained about french toast | the taste is not same as last time | We offered another dessert | but they refused | so we removed it from the bill.",
+    ].join(" ");
+    const incidents = extractIncidentsFromNarrative(dinner, { date: "2026-10-01", servicePeriod: "Dinner" });
+    const complaints = incidents.filter((item) => item.kind === "complaint");
+    expect(complaints.map((item) => item.product)).toEqual([
+      "Quinoa Salad",
+      "Popcorn Chicken",
+      "Black Angus Steak",
+      "Ice Mocha",
+      "Jasmine Ice Tea",
+      "French Toast",
+    ]);
+    expect(complaints.find((item) => item.product === "Ice Mocha").satisfactionKnown).toBe(true);
+    expect(complaints.find((item) => item.product === "French Toast").satisfactionKnown).toBe(false);
+    expect(incidents.filter((item) => item.kind === "maintenance")).toHaveLength(1);
+    expect(incidents.some((item) => /no guest complained/i.test(item.evidenceExcerpt || "") && item.kind === "complaint")).toBe(false);
   });
 
   test("recurring taste notes stay separate incidents", () => {
