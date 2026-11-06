@@ -87,7 +87,7 @@ export function shouldSkipAiNarration(
   if (deterministic?.conversationDataset) return true;
 
   if (tool?.monthlyLogbookSummary || tool?.structuredLogbookReview) {
-    const findings = deterministic?.operationalFindings;
+    const findings = deterministic?.operationalFindings || tool?.operationalFindings;
     const asksForInterpretation = /\b(complain|incident|maintenance|staff|what happened|priorit)/i.test(String(question || ""));
     if (Array.isArray(findings) && findings.length > 0 && asksForInterpretation) return false;
     return true;

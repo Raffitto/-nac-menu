@@ -1766,6 +1766,10 @@ export async function processAskNacOnEdge(
     deterministic.cashUpProductionTrace = cashUpProductionTrace;
   }
 
+  if (!deterministic.operationalFindings && Array.isArray(tool?.operationalFindings)) {
+    deterministic.operationalFindings = tool.operationalFindings;
+  }
+
   const skipAiNarration = shouldSkipAiNarration(
     route.intent,
     tool,
