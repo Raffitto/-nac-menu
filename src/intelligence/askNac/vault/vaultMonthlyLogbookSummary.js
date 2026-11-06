@@ -3,12 +3,14 @@
  */
 
 import { classifyOperationalIssue } from "./vaultDocumentSearchRanking";
-import { extractDateFromFileTitle } from "./vaultOperationalIntelligence";
+import { buildIncidentRegister } from "./operationalIncidentExtractor";
 
 const TEXT_KEYS = [
   "complaints",
   "operational_issues",
   "operational_highlights",
+  "breakfast_notes",
+  "lunch_notes",
   "dinner_notes",
   "training_notes",
   "staff_performance_notes",
@@ -40,7 +42,7 @@ const GOOGLE_KEYS = [
 const THEME_RULES = [
   { id: "traffic_quiet", label: "Quiet / low demand", re: /\b(quiet|slow|empty mall|mall empty|few reservations|low covers|mostly coffee|coffee and dessert)\b/i },
   { id: "traffic_busy", label: "Busy / strong demand", re: /\b(busy|full house|high covers|strong dinner|packed)\b/i },
-  { id: "complaint", label: "Guest complaints", re: /\b(complain|complaint|refused|undercooked|charge|remove from bill|insect|fly|halloumi|cappuccino|spanish|upset)\b/i },
+  { id: "complaint", label: "Guest complaints", re: /\b(complain(?:ed|ing|s)?|complaint|refused|undercooked|charge|remove from bill|insect in (?:the )?(?:food|drink|plate)|fly in (?:the )?(?:food|drink|plate)|upset)\b/i },
   { id: "maintenance", label: "Maintenance / facilities", re: /\b(drainage|electrician|pest|gel|powder|trap|battery|ccm|router|repair|leak)\b/i },
   { id: "staffing_system", label: "Staffing / systems", re: /\b(jisr|punch|inventory|upselling|training|staff)\b/i },
   { id: "service_win", label: "Service recovery / wins", re: /\b(satisfied|smooth|well|recovered|apologize|new one|resolved)\b/i },
@@ -146,8 +148,56 @@ function extractThemes(days) {
   return [...themes.values()].sort((a, b) => b.count - a.count);
 }
 
+/**
+ * Preserve source sections rather than classifying a concatenated daily blob.
+ * Each record remains traceable to its date, source and shift/section.
+ */
+export function buildOperationalEvidenceLedger(facts = []) {
+  const entries = [];
+  const seen = new Set();
+  for (const fact of facts) {
+    if (!TEXT_KEYS.includes(fact.metricKey)) continue;
+    const text = String(fact.dimensions?.text_value || "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    const date = fact.periodStart || null;
+    const dedupeKey = `${date}|${fact.metricKey}|${text.toLowerCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    const themes = THEME_RULES.filter((rule) => rule.re.test(text)).map((rule) => rule.id);
+    entries.push({
+      date, section: fact.metricKey, text,
+      themes, issueType: classifyOperationalIssue(text),
+      fileId: fact.fileId, fileTitle: fact.fileTitle,
+    });
+  }
+  return entries.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+export function compareOperationalEvidenceWindows(ledger, first, second) {
+  const within = (entry, period) => entry.date && entry.date >= period.startDate && entry.date <= period.endDate;
+  const summarize = (period) => {
+    const entries = ledger.filter((entry) => within(entry, period));
+    const days = new Set(entries.map((entry) => entry.date));
+    const themeDays = {};
+    for (const rule of THEME_RULES) {
+      themeDays[rule.id] = new Set(entries.filter((entry) => entry.themes.includes(rule.id)).map((entry) => entry.date)).size;
+    }
+    return { label: period.label, daysCovered: days.size, themeDays, entries };
+  };
+  const a = summarize(first);
+  const b = summarize(second);
+  return {
+    first: a, second: b,
+    changes: THEME_RULES.map((rule) => ({
+      id: rule.id, label: rule.label,
+      firstDays: a.themeDays[rule.id], secondDays: b.themeDays[rule.id],
+      deltaDays: b.themeDays[rule.id] - a.themeDays[rule.id],
+    })),
+  };
+}
+
 function recurringThemes(themes) {
-  return themes.filter((theme) => theme.count >= 2 || /complaint|maintenance|staffing_system/.test(theme.id));
+  return themes.filter((theme) => theme.count >= 2);
 }
 
 function confidenceFromCoverage(logbookDays, readyDays) {
@@ -170,6 +220,74 @@ function buildSection(title, lines) {
   return `**${title}**\n${body.map((line) => `- ${line}`).join("\n")}`;
 }
 
+const SECTION_LABELS = {
+  breakfast_notes: "Breakfast",
+  lunch_notes: "Lunch",
+  dinner_notes: "Dinner",
+  complaints: "Complaints",
+  operational_issues: "Operational issues",
+  operational_highlights: "Highlights",
+  training_notes: "Training",
+  staff_performance_notes: "Staff performance",
+};
+
+const FOCUS_LABELS = {
+  complaints: "guest complaints",
+  maintenance: "maintenance incidents",
+  staff: "staff performance notes",
+  food_quality: "food-quality issues",
+  beverage: "beverage-quality issues",
+  service: "service problems",
+};
+
+function narrativeText(fact) {
+  const dims = fact?.dimensions || {};
+  return String(dims.text_value || "").replace(/\s+/g, " ").trim();
+}
+
+
+function narrativeCoverage(facts = []) {
+  const breakfast = new Set();
+  const lunch = new Set();
+  const dinner = new Set();
+  const any = new Set();
+  for (const fact of facts) {
+    if (!TEXT_KEYS.includes(fact.metricKey) || !narrativeText(fact)) continue;
+    const date = fact.periodStart || "undated";
+    any.add(date);
+    if (fact.metricKey === "breakfast_notes") breakfast.add(date);
+    if (fact.metricKey === "lunch_notes") lunch.add(date);
+    if (fact.metricKey === "dinner_notes") dinner.add(date);
+  }
+  return { days: any.size, breakfast: breakfast.size, lunch: lunch.size, dinner: dinner.size };
+}
+
+export function buildFocusedNarrativeSummary({
+  facts = [],
+  coverage = [],
+  branchLabel = "Branch",
+  periodLabel = "Period",
+  mode = "complaints",
+  compareSummary = null,
+}) {
+  const register = buildIncidentRegister({
+    facts,
+    branchLabel,
+    periodLabel,
+    mode,
+    textKeys: TEXT_KEYS,
+    sectionLabels: SECTION_LABELS,
+    compareSummary,
+  });
+  const readyDays = (coverage || []).filter((row) => row.readinessStatus === "ready").length;
+  return {
+    ...register,
+    readyDays,
+    logbookDays: register.logbookDays || narrativeCoverage(facts).days,
+  };
+}
+
+
 export function buildMonthlyLogbookExecutiveSummary({
   facts = [],
   coverage = [],
@@ -186,10 +304,10 @@ export function buildMonthlyLogbookExecutiveSummary({
   if (!logbookDays) {
     return {
       title: `Operational summary · ${periodLabel}`,
-      directAnswer: `No recovered daily logbook structured facts were found for ${branchLabel} in ${periodLabel}.`,
+      directAnswer: `No recovered daily logbook narratives were returned for ${branchLabel} in ${periodLabel} from ask_nac_structured_facts. This does not establish that no incidents occurred. Check branch access, the date window, and structured-fact coverage before treating the result as a verified zero.`,
       keyMetrics: [],
       insights: [],
-      recommendations: ["Upload or re-index daily logbooks for this month, then retry."],
+      recommendations: [],
       confidence: "none",
       logbookDays: 0,
       readyDays,
@@ -198,6 +316,18 @@ export function buildMonthlyLogbookExecutiveSummary({
     };
   }
 
+  if (FOCUS_LABELS[mode] || mode === "executive_operational" || mode === "resolution") {
+    return buildFocusedNarrativeSummary({
+      facts,
+      coverage,
+      branchLabel,
+      periodLabel,
+      mode,
+      compareSummary,
+    });
+  }
+
+  const evidenceLedger = buildOperationalEvidenceLedger(facts);
   const themes = extractThemes(days);
   const recurring = recurringThemes(themes);
   const reception = aggregateReception(days);
@@ -258,18 +388,16 @@ export function buildMonthlyLogbookExecutiveSummary({
 
   const directAnswer = sections.join("\n\n");
 
-  const groupedFindings = days.flatMap((day) => {
-    const blob = collectDayTexts(day);
-    if (!blob) return [];
-    return [{
-      date: day.date || extractDateFromFileTitle(day.fileTitle),
-      issueType: classifyOperationalIssue(blob),
-      severity: "medium",
-      excerpt: snippet(blob, 180),
-      source: day.fileTitle || day.date,
-      fileTitle: day.fileTitle,
-    }];
-  }).slice(0, 12);
+  const groupedFindings = evidenceLedger.map((entry) => ({
+    date: entry.date,
+    issueType: entry.issueType,
+    severity: "medium",
+    excerpt: snippet(entry.text, 180),
+    source: entry.fileTitle || entry.date,
+    fileTitle: entry.fileTitle,
+    section: entry.section,
+    themes: entry.themes,
+  }));
 
   const vaultSources = [...new Map(
     days.filter((d) => d.fileId && d.fileTitle).map((d) => [d.fileId, {
@@ -305,6 +433,7 @@ export function buildMonthlyLogbookExecutiveSummary({
     logbookDays,
     readyDays,
     groupedFindings,
+    evidenceLedger,
     vaultSources,
   };
 }

@@ -351,7 +351,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  m = q.match(new RegExp(`\\bbetween\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\s+and\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\bbetween\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\s+and\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\b(?:(?:\\s*,\\s*|\\s+)(20\\d{2}))?`));
   if (m) {
     const startMonth = MONTH_MAP[m[1]];
     const endMonth = MONTH_MAP[m[3]];
@@ -361,7 +361,7 @@ export function parseExplicitDateRangeFromText(text = "", referenceDate = new Da
     if (startDate <= endDate) return buildCustomRangePeriod(startDate, endDate, formatRangeLabel(startDate, endDate));
   }
 
-  m = q.match(new RegExp(`\\bbetween\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\s+and\\s+(\\d{1,2})\\b(?:\\s+(20\\d{2}))?`));
+  m = q.match(new RegExp(`\\bbetween\\s+${MONTH_PATTERN}\\s+(\\d{1,2})\\s+and\\s+(\\d{1,2})\\b(?:(?:\\s*,\\s*|\\s+)(20\\d{2}))?`));
   if (m) {
     const monthIndex = MONTH_MAP[m[1]];
     const year = resolveYearForMonth(monthIndex, m[4], referenceDate);
@@ -575,7 +575,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     }
 
     const dayMonthYear = q.match(
-      new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:\\s+(20\\d{2}))?`),
+      new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_PATTERN}\\b(?:(?:\\s*,\\s*|\\s+)(20\\d{2}))?`),
     );
     if (dayMonthYear) {
       const day = Number(dayMonthYear[1]);
@@ -587,7 +587,7 @@ export function parseVaultPeriodFromQuestion(question = "", referenceDate = new 
     }
 
     const monthDay = q.match(
-      new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(20\\d{2}))?`),
+      new RegExp(`\\b${MONTH_PATTERN}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:(?:\\s*,\\s*|\\s+)(20\\d{2}))?`),
     );
     if (monthDay) {
       const monthIndex = MONTH_MAP[monthDay[1]];
@@ -752,9 +752,42 @@ function firstNDaysOfMonth(token, dayCount, referenceDate) {
   return clipOpenPeriod(bounded, referenceDate);
 }
 
+function explicitDayPeriod(monthToken, dayToken, yearToken, referenceDate) {
+  const monthIndex = MONTH_MAP[String(monthToken || "").toLowerCase()];
+  const day = Number(dayToken);
+  if (monthIndex == null || !day) return null;
+  const year = resolveYearForMonth(monthIndex, yearToken, referenceDate);
+  const iso = isoDate(year, monthIndex + 1, day);
+  return {
+    startDate: iso,
+    endDate: iso,
+    label: formatDayMonthLabel(year, monthIndex, day),
+    periodType: "single_day",
+    isSingleDay: true,
+  };
+}
+
 export function parseVaultComparePeriodsFromQuestion(question = "", referenceDate = new Date()) {
   const q = normalizeRangePunctuation(String(question || "").toLowerCase().trim());
   if (!q) return null;
+
+  if (!/\bbetween\b/.test(q)) {
+    const dayHits = [...q.matchAll(new RegExp(`\\b(${MONTH_TOKEN})\\s+(\\d{1,2})(?!\\s*[-–]\\s*\\d)`, "g"))];
+    if (dayHits.length >= 2 && /\b(compare|and|versus|vs)\b/.test(q)) {
+      const year = (q.match(/\b(20\d{2})\b/) || [])[1] || null;
+      const current = explicitDayPeriod(dayHits[0][1], dayHits[0][2], year, referenceDate);
+      const previous = explicitDayPeriod(dayHits[1][1], dayHits[1][2], year, referenceDate);
+      if (current?.startDate && previous?.startDate && current.startDate !== previous.startDate) {
+        return {
+          current,
+          previous,
+          isComparison: true,
+          periodType: "two_day_compare",
+          likeForLike: true,
+        };
+      }
+    }
+  }
 
   if (
     /\b(week over week|wow|w\/w)\b/.test(q)
@@ -922,9 +955,9 @@ export function parseVaultComparePeriodsFromQuestion(question = "", referenceDat
     }
   }
 
-  if (/\b(which|better)\b/.test(q)) {
+  if (/\b(which|better)\b/.test(q) && !parseExplicitDateRangeFromText(q, referenceDate)) {
     const months = [...q.matchAll(new RegExp(MONTH_TOKEN, "g"))].map((match) => match[0]);
-    if (months.length >= 2) {
+    if (months.length >= 2 && months[0] !== months[1]) {
       const sided = clipOpenSides(
         monthBoundsFromToken(months[0], null, referenceDate),
         monthBoundsFromToken(months[1], null, referenceDate),

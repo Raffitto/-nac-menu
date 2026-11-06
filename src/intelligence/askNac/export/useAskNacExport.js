@@ -3,6 +3,7 @@ import {
   buildAskNacExportPayload,
   hasExportableContent,
   hasTabularKeyMetrics,
+  hasOperationalFindings,
   EXPORT_FORMATS,
 } from "./askNacExportPayload";
 import { exportAskNacRawJson, exportAskNacRawCsv } from "./askNacCsvExport";
@@ -34,7 +35,10 @@ export function useAskNacExport({ question, response, filters = {}, onStatus }) 
     () => (canExport ? buildAskNacExportPayload({ question, response, filters }) : null),
     [canExport, question, response, filters],
   );
-  const csvAvailable = useMemo(() => hasTabularKeyMetrics(payload), [payload]);
+  const csvAvailable = useMemo(
+    () => hasTabularKeyMetrics(payload) || hasOperationalFindings(payload),
+    [payload],
+  );
 
   const notify = useCallback(
     (message) => {
@@ -75,7 +79,7 @@ export function useAskNacExport({ question, response, filters = {}, onStatus }) 
             break;
           case EXPORT_FORMATS.CSV:
             if (!csvAvailable) {
-              notify("CSV unavailable — no tabular key metrics.");
+              notify("CSV unavailable — this answer has no incident rows or metrics.");
               return;
             }
             exportAskNacRawCsv(payload);

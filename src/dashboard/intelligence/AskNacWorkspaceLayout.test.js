@@ -63,9 +63,10 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(screen.getByLabelText("Ask NAC a question")).toBeInTheDocument();
   });
 
-  test("composer remains available on Ask NAC", () => {
+  test("conversation history can be opened and the composer stays available", () => {
     render(<AskNacTab />);
     expect(screen.getByRole("button", { name: /send question/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /conversations/i })).toHaveAttribute("aria-expanded", "false");
   });
 
   test("suggestions hide once conversation has messages", () => {
@@ -107,11 +108,12 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(css).not.toMatch(/min-height:\s*min\(calc\(100dvh/);
     expect(css).toMatch(/overflow-x:\s*hidden/);
     expect(css).toMatch(/nac-ask-nac-suggestions__track[\s\S]*overflow-x:\s*auto/);
-    // Mobile fullscreen chat body must not keep an internal overflow scroller
-    expect(css).toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow:\s*visible/s);
-    expect(css).not.toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow-y:\s*auto/s);
-    expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*position:\s*sticky/s);
-    expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*visible/);
+    // Mobile messages scroll independently; the composer stays in the footer.
+    expect(css).toMatch(/\.nac-ask-nac-mobile__body\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*flex-shrink:\s*0/s);
+    expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-chat--page\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-composer\s*\{[^}]*position:\s*relative/s);
+    expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*hidden/);
 
     const { container } = render(<AskNacTab showVaultPanel={false} />);
     const chat = screen.getByTestId("ask-nac-chat-page");

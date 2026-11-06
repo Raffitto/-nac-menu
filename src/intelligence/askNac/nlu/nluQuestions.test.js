@@ -152,7 +152,7 @@ const NLU_CASES = [
   { q: "delivery sales yesterday", intent: I.VAULT_CASH_UP_SUMMARY },
   { q: "compare cash up vs foodics", intent: I.VAULT_CASH_UP_SUMMARY },
   { q: "reception covers 5 june", intent: I.VAULT_RECEPTION_SUMMARY },
-  { q: "logbook complaints 5 june", intent: I.VAULT_LOGBOOK_SUMMARY },
+  { q: "logbook complaints 5 june", intent: I.VAULT_OPERATIONAL_REVIEW },
   { q: "summarize daily briefing this month", intent: I.VAULT_DAILY_BRIEFING_SUMMARY },
   { q: "show breakage issues this month", intent: I.VAULT_BREAKAGE_SUMMARY },
   { q: "ccm reconciliation june", intent: I.VAULT_CCM_RECONCILIATION_SUMMARY },

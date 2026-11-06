@@ -88,4 +88,21 @@ describe("shouldSkipAiNarration", () => {
       { directAnswer: "**Executive Summary**", isAiGenerated: false },
     )).toBe(true);
   });
+
+  test("lets ChatGPT explain a quoted complaint register", () => {
+    expect(shouldSkipAiNarration(
+      ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW,
+      { structuredLogbookReview: true },
+      { periodType: "custom_range" },
+      { operationalFindings: [{ product: "French Toast", evidenceExcerpt: "Table 10 complained about french toast" }] },
+      "What guest complaints occurred in Khobar?",
+    )).toBe(false);
+    expect(shouldSkipAiNarration(
+      ASK_NAC_INTENTS.VAULT_OPERATIONAL_REVIEW,
+      { structuredLogbookReview: true, operationalFindings: [{ product: "French Toast" }] },
+      { periodType: "custom_range" },
+      { directAnswer: "Verified register" },
+      "What guest complaints occurred in Khobar?",
+    )).toBe(false);
+  });
 });

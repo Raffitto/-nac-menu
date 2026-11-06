@@ -20,6 +20,7 @@ import {
   formatExportAnswerText,
   hasExecutiveBriefPayload,
 } from "./executiveBriefExport";
+import { executiveReportWarnings } from "./askNacExportPayload";
 
 const BRAND = "NAC Hospitality OS · Ask NAC";
 const MARGIN = 44;
@@ -48,11 +49,22 @@ function drawAccentRule(doc, y, width = CONTENT_W) {
 }
 
 function drawSectionHeading(doc, y, title) {
-  y = ensurePageSpace(doc, y, 40);
+  y = ensurePageSpace(doc, y, 88);
   y = drawAccentRule(doc, y, 72);
-  setExportFont(doc, "bold", 11);
+  setExportFont(doc, "bold", 12);
   paintExportText(doc, title, MARGIN, y, { tier: "gold", shadow: true });
-  return y + 18;
+  return y + 20;
+}
+
+function drawWrappedLine(doc, y, text, { size = 10, tier = "primary", indent = 0 } = {}) {
+  setExportFont(doc, "normal", size);
+  const lines = doc.splitTextToSize(sanitizeExportText(text), CONTENT_W - indent);
+  lines.forEach((line) => {
+    y = ensurePageSpace(doc, y, size + 8);
+    paintExportText(doc, line, MARGIN + indent, y, { tier });
+    y += size + 5;
+  });
+  return y;
 }
 
 function drawParagraph(doc, y, text, tier = "primary") {
@@ -149,17 +161,81 @@ function drawMetricsAppendix(doc, y, payload) {
   return drawMetricsTable(doc, y, payload);
 }
 
-function drawProvenanceFooter(doc, payload, y) {
-  y = ensurePageSpace(doc, y, 40);
-  const pageH = doc.internal.pageSize.getHeight();
-  setExportFont(doc, "normal", 7);
-  paintExportText(
-    doc,
-    `${payload.meta.provenance.label} · ${payload.meta.generatedAtLabel} · ${BRAND}`,
-    MARGIN,
-    pageH - 28,
-    { tier: "muted", maxWidth: CONTENT_W },
-  );
+function stampReportChrome(doc, payload) {
+  const total = doc.getNumberOfPages();
+  for (let page = 1; page <= total; page += 1) {
+    doc.setPage(page);
+    setExportFont(doc, "normal", 8);
+    paintExportText(
+      doc,
+      sanitizeExportText(`${BRAND} · ${payload.context.branchLabel} · ${payload.context.periodLabel}`),
+      MARGIN,
+      PAGE_H - 28,
+      { tier: "muted", maxWidth: 360 },
+    );
+    paintExportText(doc, `Page ${page} of ${total}`, PAGE_W - MARGIN - 78, PAGE_H - 28, { tier: "muted" });
+  }
+}
+
+function drawIncidentRegister(doc, y, findings) {
+  findings.forEach((finding, index) => {
+    y = ensurePageSpace(doc, y, 108);
+    setExportFont(doc, "bold", 11);
+    const heading = `${index + 1}. ${finding.dateLabel || finding.date || "Undated"}${finding.product ? ` — ${finding.product}` : ""}`;
+    paintExportText(doc, sanitizeExportText(heading), MARGIN, y, { tier: "primary" });
+    y += 16;
+    y = drawWrappedLine(doc, y, finding.issue || "", { size: 10 });
+    if (finding.tableNumber) y = drawWrappedLine(doc, y, `Table ${finding.tableNumber}`, { size: 9, tier: "secondary" });
+    if (finding.action) y = drawWrappedLine(doc, y, `Action: ${finding.action}`, { size: 10, tier: "secondary" });
+    y = drawWrappedLine(doc, y, `Outcome: ${finding.resolution || "Final satisfaction not documented."}`, { size: 10, tier: "secondary" });
+    y = drawWrappedLine(
+      doc,
+      y,
+      `Source: ${finding.sourceDocument || "logbook"}${finding.sourceSection ? `, ${finding.sourceSection}` : ""}.`,
+      { size: 9, tier: "muted" },
+    );
+    y += 8;
+  });
+  return y;
+}
+
+function drawOperationalIntelligence(doc, y, payload) {
+  const findings = payload.operationalFindings || [];
+  y = drawSectionHeading(doc, y, "Executive summary");
+  const summary = [
+    `${payload.context.branchLabel}, ${payload.context.periodLabel}.`,
+    `${findings.length} documented item${findings.length === 1 ? "" : "s"} identified from recovered logbook narratives.`,
+    ...(payload.insights || []).slice(0, 3),
+  ].join(" ");
+  y = drawWrappedLine(doc, y, summary, { size: 11 });
+  y += 6;
+  y = drawExecutiveKpiCards(doc, y, payload);
+  y = drawSectionHeading(doc, y, "Incident register");
+  y = drawIncidentRegister(doc, y, findings);
+  const actions = findings.filter((finding) => finding.action);
+  if (actions.length) {
+    y = drawSectionHeading(doc, y, "Management actions");
+    y = drawBulletList(doc, y, actions.map((finding) => `${finding.dateLabel || finding.date} · ${finding.product}: ${finding.action}`), 12);
+  }
+  const recurring = (payload.insights || []).filter((line) => /recurring/i.test(line));
+  if (recurring.length) {
+    y = drawSectionHeading(doc, y, "Recurring themes");
+    y = drawBulletList(doc, y, recurring, 4);
+  }
+  const openItems = findings.filter((finding) => /not documented/i.test(finding.resolution || ""));
+  if (openItems.length) {
+    y = drawSectionHeading(doc, y, "Open follow-up");
+    y = drawWrappedLine(
+      doc,
+      y,
+      `${openItems.length} item(s) do not record final guest satisfaction. A bill removal or recovery offer is not a confirmed resolution.`,
+      { size: 10 },
+    );
+  }
+  if (payload.recommendations?.length) {
+    y = drawSectionHeading(doc, y, "Recommendations");
+    y = drawBulletList(doc, y, payload.recommendations, 6);
+  }
   return y;
 }
 
@@ -230,30 +306,39 @@ function resolveLegacyAnswerText(payload) {
   return "No narrative answer available.";
 }
 
-/** Clean one-page answer report */
-export function exportAskNacPdf(payload) {
-  const { doc, y: startY } = createBaseDoc(payload, "Intelligence answer report");
+function renderAnswerDocument(payload, subtitle) {
+  const { doc, y: startY } = createBaseDoc(payload, subtitle);
   let y = startY;
-
-  y = drawSectionHeading(doc, y, "Question");
-  y = drawParagraph(doc, y, payload.question, "primary");
-
-  if (hasExecutiveBriefPayload(payload)) {
+  const findings = payload.operationalFindings || [];
+  if (findings.length) {
+    y = drawOperationalIntelligence(doc, y, payload);
+    y = drawSourcesTable(doc, y, payload);
+  } else if (hasExecutiveBriefPayload(payload)) {
     y = drawExecutiveBriefSections(doc, y, payload);
     y = drawMetricsAppendix(doc, y, payload);
+    y = drawSourcesTable(doc, y, payload);
   } else {
     y = drawSectionHeading(doc, y, "Answer");
     y = drawParagraph(doc, y, resolveLegacyAnswerText(payload), "primary");
     y = drawMetricsTable(doc, y, payload);
+    y = drawSourcesTable(doc, y, payload);
   }
-
-  if (payload.warnings?.length) {
-    y = drawSectionHeading(doc, y, "Warnings");
-    y = drawBulletList(doc, y, payload.warnings, 4);
+  const visibleWarnings = executiveReportWarnings(payload.warnings);
+  if (!findings.length && visibleWarnings.length) {
+    y = drawSectionHeading(doc, y, "Coverage notes");
+    y = drawBulletList(doc, y, visibleWarnings, 4);
   }
+  stampReportChrome(doc, payload);
+  return y ? doc : doc;
+}
 
-  drawProvenanceFooter(doc, payload, y);
-  doc.save(buildAskNacExportFilename(EXPORT_FORMATS.PDF));
+/** Clean answer report. Operational answers use the incident register, not one paragraph. */
+export function composeAskNacPdfDocument(payload) {
+  return renderAnswerDocument(payload, "Intelligence answer report");
+}
+
+export function exportAskNacPdf(payload) {
+  composeAskNacPdfDocument(payload).save(buildAskNacExportFilename(EXPORT_FORMATS.PDF));
 }
 
 /** CEO-ready executive report */
@@ -261,7 +346,9 @@ function buildExecutiveReportPdf(payload) {
   const { doc, y: startY } = createBaseDoc(payload, "Executive intelligence brief");
   let y = startY;
 
-  if (hasExecutiveBriefPayload(payload)) {
+  if (payload.operationalFindings?.length) {
+    y = drawOperationalIntelligence(doc, y, payload);
+  } else if (hasExecutiveBriefPayload(payload)) {
     y = drawExecutiveBriefSections(doc, y, payload);
     y = drawMetricsAppendix(doc, y, payload);
   } else {
@@ -272,7 +359,7 @@ function buildExecutiveReportPdf(payload) {
   }
 
   const riskNotes = [
-    ...(payload.warnings || []),
+    ...executiveReportWarnings(payload.warnings),
     ...(payload.diagnostics?.partialLive
       ? ["Month-to-date uses hybrid rollup + live Today — treat as operational signal, not final close."]
       : []),
@@ -282,14 +369,14 @@ function buildExecutiveReportPdf(payload) {
     y = drawBulletList(doc, y, riskNotes, 6);
   }
 
-  if (!hasExecutiveBriefPayload(payload) && payload.recommendations?.length) {
+  if (!hasExecutiveBriefPayload(payload) && !payload.operationalFindings?.length && payload.recommendations?.length) {
     y = drawSectionHeading(doc, y, "Recommendations");
     y = drawBulletList(doc, y, payload.recommendations, 6);
   }
 
   y = drawSourcesTable(doc, y, payload);
-  drawProvenanceFooter(doc, payload, y);
-  return doc;
+  stampReportChrome(doc, payload);
+  return y ? doc : doc;
 }
 
 export function exportAskNacExecutiveReportToBuffer(payload) {
@@ -308,7 +395,9 @@ export function exportAskNacDetailedAnalysis(payload) {
   y = drawSectionHeading(doc, y, "Question");
   y = drawBulletList(doc, y, [payload.question], 1);
 
-  if (hasExecutiveBriefPayload(payload)) {
+  if (payload.operationalFindings?.length) {
+    y = drawOperationalIntelligence(doc, y, payload);
+  } else if (hasExecutiveBriefPayload(payload)) {
     y = drawExecutiveBriefSections(doc, y, payload);
     y = drawMetricsAppendix(doc, y, payload);
   } else {
@@ -318,7 +407,7 @@ export function exportAskNacDetailedAnalysis(payload) {
     y = drawMetricsTable(doc, y, payload);
   }
 
-  if (payload.insights?.length) {
+  if (!payload.operationalFindings?.length && payload.insights?.length) {
     y = drawSectionHeading(doc, y, "Insights");
     y = drawBulletList(doc, y, payload.insights, 10);
   }
@@ -342,9 +431,15 @@ export function exportAskNacDetailedAnalysis(payload) {
   y = drawSectionHeading(doc, y, "Data completeness");
   y = drawBulletList(doc, y, payload.dataCompleteness, 10);
 
-  if (payload.warnings?.length) {
-    y = drawSectionHeading(doc, y, "Warnings");
-    y = drawBulletList(doc, y, payload.warnings, 12);
+  const visibleWarnings = executiveReportWarnings(payload.warnings);
+  const internalWarnings = (payload.warnings || []).filter((warning) => !visibleWarnings.includes(warning));
+  if (visibleWarnings.length) {
+    y = drawSectionHeading(doc, y, "Coverage notes");
+    y = drawBulletList(doc, y, visibleWarnings, 8);
+  }
+  if (internalWarnings.length) {
+    y = drawSectionHeading(doc, y, "Technical diagnostics");
+    y = drawBulletList(doc, y, internalWarnings, 8);
   }
 
   if (payload.missingData?.length) {
@@ -359,12 +454,13 @@ export function exportAskNacDetailedAnalysis(payload) {
 
   y = drawSourcesTable(doc, y, payload);
 
-  if (payload.recommendations?.length) {
+  if (payload.recommendations?.length && !(payload.operationalFindings || []).length) {
     y = drawSectionHeading(doc, y, "Recommendations");
     y = drawBulletList(doc, y, payload.recommendations, 8);
   }
 
-  drawProvenanceFooter(doc, payload, y);
+  stampReportChrome(doc, payload);
+  if (y < 0) return;
   doc.save(buildAskNacExportFilename(EXPORT_FORMATS.DETAILED));
 }
 

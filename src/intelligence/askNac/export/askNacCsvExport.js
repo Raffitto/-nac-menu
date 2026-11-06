@@ -2,7 +2,7 @@
  * Ask NAC CSV + JSON raw exports.
  */
 
-import { downloadBlob, buildAskNacExportFilename, EXPORT_FORMATS, hasTabularKeyMetrics } from "./askNacExportPayload";
+import { downloadBlob, buildAskNacExportFilename, EXPORT_FORMATS, hasTabularKeyMetrics, hasOperationalFindings } from "./askNacExportPayload";
 
 function escapeCsvCell(value) {
   const s = String(value ?? "");
@@ -12,7 +12,47 @@ function escapeCsvCell(value) {
   return s;
 }
 
+function buildIncidentCsv(payload) {
+  const header = [
+    "date",
+    "branch",
+    "service_period",
+    "table_number",
+    "category",
+    "product",
+    "issue",
+    "action",
+    "resolution",
+    "source_document",
+    "source_section",
+    "provenance",
+    "confidence",
+    "evidence_excerpt",
+  ];
+  const rows = payload.operationalFindings.map((finding) => header.map((column) => {
+    const key = {
+      date: "date",
+      branch: "branch",
+      service_period: "servicePeriod",
+      table_number: "tableNumber",
+      category: "categoryLabel",
+      product: "product",
+      issue: "issue",
+      action: "action",
+      resolution: "resolution",
+      source_document: "sourceDocument",
+      source_section: "sourceSection",
+      provenance: "provenance",
+      confidence: "confidence",
+      evidence_excerpt: "evidenceExcerpt",
+    }[column];
+    return escapeCsvCell(finding[key]);
+  }).join(","));
+  return ["# Ask NAC incident register", header.join(","), ...rows].join("\n");
+}
+
 export function buildAskNacCsvContent(payload) {
+  if (hasOperationalFindings(payload)) return buildIncidentCsv(payload);
   if (!hasTabularKeyMetrics(payload)) {
     return null;
   }
@@ -45,6 +85,7 @@ export function exportAskNacRawJson(payload) {
     keyMetrics: payload.keyMetrics,
     insights: payload.insights,
     recommendations: payload.recommendations,
+    operationalFindings: payload.operationalFindings || [],
     sources: payload.sources,
     warnings: payload.warnings,
     missingData: payload.missingData,

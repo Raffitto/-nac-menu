@@ -198,6 +198,42 @@ export async function processAskNacQuestion({
     deterministic.warnings = [...(deterministic.warnings || []), ...periodFallbackWarnings];
   }
 
+  if (/\bcomplaints?\b/i.test(effectiveQuestion) && /\b(best[\s-]?selling|best sellers?|top selling|top items?|menu items|by quantity)\b/i.test(effectiveQuestion)) {
+    let overlapNote = "Item-level quantity ranking was not available, so no overlap with best sellers is confirmed. Daily sales totals were not used as a substitute.";
+    try {
+      const ranking = await runAskNacQueryTool(supabase, "top_items", {
+        question: effectiveQuestion,
+        branchMention: route.branchMention,
+        filters: effectiveFilters,
+        profile,
+        session,
+        userEmail,
+        foodicsPeriod: route.foodicsPeriod,
+        rankingBasis: "quantity",
+        topLimit: 5,
+      });
+      const names = (ranking?.topItems || []).map((item) => item.name || item.item_name || item.productName).filter(Boolean);
+      const findings = deterministic.operationalFindings || [];
+      const matched = findings.filter((finding) => names.some((name) => {
+        const left = String(finding.product || "").toLowerCase();
+        const right = String(name).toLowerCase();
+        return left && right && (right.includes(left) || left.includes(right.split(" ")[0]));
+      }));
+      overlapNote = names.length
+        ? (matched.length
+          ? `Products named in both the complaint register and the quantity ranking: ${matched.map((item) => item.product).join(", ")}.`
+          : `Quantity ranking returned ${names.slice(0, 5).join(", ")}. None of those names matched a complaint product in this register.`)
+        : overlapNote;
+    } catch (error) {
+      overlapNote = `Item-level quantity ranking could not be read (${error?.message || "query failed"}). The complaint register stands on the logbooks. Daily sales totals were not substituted.`;
+    }
+    deterministic = {
+      ...deterministic,
+      directAnswer: `${deterministic.directAnswer}\n\n${overlapNote}`,
+      insights: [...(deterministic.insights || []), overlapNote],
+    };
+  }
+
   if (!tool?.authorizationDenied && !tool?.comparison) {
     deterministic = await applyExecutiveIntelligenceV2({
       supabase,

@@ -49,6 +49,14 @@ export function buildNarrationPayload(
       confidence: deterministic.confidence,
       periodLabel: deterministic.periodLabel,
       branchLabel: deterministic.branchLabel,
+      operationalFindings: ((deterministic.operationalFindings as Record<string, unknown>[]) || []).slice(0, 12).map((item) => ({
+        date: item.dateLabel || item.date,
+        table: item.tableNumber || null,
+        product: item.product,
+        action: item.action,
+        resolution: item.resolution,
+        quote: String(item.evidenceExcerpt || "").slice(0, 240),
+      })),
     },
     toolFacts: trimToolFacts(tool),
     diagnostics: diagnostics || deterministic.diagnostics || null,
@@ -58,6 +66,7 @@ export function buildNarrationPayload(
       "Never invent or change numeric metric values.",
       "Do not remove or alter sources, warnings, missingData, or vaultSources.",
       "Keep answers grounded in verified facts only.",
+      "Do not name a table, product, date, or action that is not already in operationalFindings. Every incident must stay traceable to its quote.",
       "Use coverage.spokenLabel as the only period window you may name.",
       "Never include coverage.requestedEnd if it is listed in coverage.missingDates.",
       "If coverage.coverageStatus is PARTIAL or CURRENT_DAY_NOT_COMPLETE, say so far this period through coverage.availableEnd.",
@@ -66,6 +75,20 @@ export function buildNarrationPayload(
         : "",
     ].filter(Boolean),
   };
+}
+
+export function narrationIntroducesUnsupportedIncident(narratedText = "", findings: Record<string, unknown>[] = []) {
+  const tables = new Set(
+    (findings || []).map((item) => String(item.tableNumber || item.table || "")).filter(Boolean),
+  );
+  const evidence = (findings || [])
+    .map((item) => `${item.product || ""} ${item.evidenceExcerpt || item.quote || ""} ${item.dateLabel || item.date || ""}`)
+    .join(" ")
+    .toLowerCase();
+  for (const match of String(narratedText || "").matchAll(/\btable\s+(\d+)\b/gi)) {
+    if (!tables.has(match[1]) && !evidence.includes(`table ${match[1]}`)) return true;
+  }
+  return false;
 }
 
 function extractNumericValue(value: unknown): number | null {
@@ -108,7 +131,7 @@ export async function narrateWithOpenAi(
 
   const payload = buildNarrationPayload(deterministic, context);
   const systemPrompt =
-    "You are Ask NAC, a restaurant operations analyst. Improve clarity of verified facts. Return JSON only with keys: directAnswer, executiveSummary (optional), insights, recommendations. Do not include keyMetrics, sources, warnings, missingData, or vaultSources. Never describe a requested end date as included when coverage says it is missing. Prefer 'through {availableEnd}' wording.";
+    "You are Ask NAC, a restaurant operations analyst. Improve clarity of verified facts. Return JSON only with keys: directAnswer, executiveSummary (optional), insights, recommendations. Do not include keyMetrics, sources, warnings, missingData, or vaultSources. Never invent a complaint, date, table, action, or number. Every incident you mention must already be in operationalFindings and stay traceable to its quote. Never describe a requested end date as included when coverage says it is missing. Prefer 'through {availableEnd}' wording.";
 
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -196,6 +219,23 @@ export async function narrateWithOpenAi(
 
     if (!parsed.directAnswer) {
       return { answer: { ...deterministic, isAiGenerated: false }, aiConnected: true };
+    }
+
+    if (narrationIntroducesUnsupportedIncident(
+      parsed.directAnswer,
+      (deterministic.operationalFindings as Record<string, unknown>[]) || [],
+    )) {
+      return {
+        answer: {
+          ...deterministic,
+          isAiGenerated: false,
+          warnings: [
+            ...((deterministic.warnings as string[]) || []),
+            "OpenAI named a complaint that is not in the logbook quotes — showing the verified register only.",
+          ],
+        },
+        aiConnected: true,
+      };
     }
 
     const coercedDirectAnswer = coercePlainTextDirectAnswer(

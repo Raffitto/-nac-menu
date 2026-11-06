@@ -61,6 +61,7 @@ export function createAskNacResponse(fields = {}) {
     executiveBrief: fields.executiveBrief || null,
     dataConfidence: fields.dataConfidence || null,
     weeklyDashboardPackage: fields.weeklyDashboardPackage || null,
+    operationalFindings: Array.isArray(fields.operationalFindings) ? fields.operationalFindings : [],
     awaitingInput: Boolean(fields.awaitingInput),
     pendingSessionId: fields.pendingSessionId ?? null,
     pendingSession: fields.pendingSession ?? null,

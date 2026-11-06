@@ -17,6 +17,7 @@ export function createEmptyConversationContext() {
     lastIntent: null,
     lastBranch: null,
     lastPeriod: null,
+    lastVaultPeriod: null,
     lastMetric: null,
     lastEntity: null,
     lastAnswerSummary: null,
@@ -105,6 +106,11 @@ export function updateConversationContext(context = {}, payload = {}) {
     lastIntent: nextIntent,
     lastBranch: nextBranch,
     lastPeriod: nextPeriod,
+    lastVaultPeriod: route?.vaultPeriod?.startDate ? {
+      startDate: route.vaultPeriod.startDate,
+      endDate: route.vaultPeriod.endDate,
+      label: route.vaultPeriod.label || null,
+    } : base.lastVaultPeriod || null,
     lastMetric: nextMetric,
     lastEntity: pickEntityFromResponse(response) ?? base.lastEntity,
     lastAnswerSummary: response?.directAnswer

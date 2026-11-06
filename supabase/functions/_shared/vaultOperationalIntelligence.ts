@@ -12,8 +12,10 @@ import {
   scoreChunkRelevance,
 } from "./vaultDocumentSearchRanking.ts";
 import {
+  isVaultMonthlyOperationalSummaryQuery,
   scoreVaultMonthlyOperationalSummaryIntent,
   preferredMonthlyOperationalIntent,
+  requiresStructuredOperationalRetrieval,
 } from "./vaultMonthlyOperationalSummaryRouting.ts";
 import { parseVaultPeriodFromQuestion } from "./vaultPeriodParser.ts";
 
@@ -227,7 +229,7 @@ export function buildCrossDocumentOperationalSummary(
   if (!groupedFindings.length) {
     return {
       answer: "No operational findings matched this review under your access scope.",
-      managementNote: "Upload or re-index daily logbooks for the period, then retry.",
+      managementNote: "No matching evidence was returned. This does not prove there were no incidents; check the branch, dates, and structured logbook retrieval before concluding.",
       relatedFindings: [] as Record<string, unknown>[],
       source: null as string | null,
     };
@@ -312,8 +314,18 @@ export function buildOperationalManagerAnswer(searchTerms: string, matches: Reco
 export function scoreVaultOperationalReviewIntent(q = "") {
   const text = String(q || "").trim();
   if (!text) return 0;
+  if (/\bcomplaints?\b/i.test(text) && /\b(best[\s-]?selling|best sellers?|top selling|top items?|menu items|by quantity)\b/i.test(text)) return 50;
   if (/\bexecutive summary\b/i.test(text)) return 0;
   if (/\bsearch company knowledge\b/i.test(text)) return 0;
+
+  if (
+    isVaultMonthlyOperationalSummaryQuery(text)
+    && preferredMonthlyOperationalIntent(text) === "vault_document_summary"
+  ) {
+    return 0;
+  }
+
+  if (requiresStructuredOperationalRetrieval(text)) return 42;
 
   const monthlyScore = scoreVaultMonthlyOperationalSummaryIntent(text);
   if (monthlyScore && preferredMonthlyOperationalIntent(text) === "vault_operational_review") {

@@ -14,12 +14,33 @@ export default function AskNacMessageList({
 }) {
   const localAnchorRef = useRef(null);
   const anchorRef = scrollAnchorRef || localAnchorRef;
+  const stickToBottomRef = useRef(true);
+
+  useEffect(() => {
+    const node = anchorRef.current;
+    const scroller = node?.closest?.(".nac-ask-nac-chat--page, .nac-ask-nac-mobile__body");
+    if (!scroller) return undefined;
+    const onScroll = () => {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      stickToBottomRef.current = distance < 120;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [anchorRef, messages.length]);
 
   useEffect(() => {
     if (!messages.length && !loading) return;
     const node = anchorRef.current;
-    if (!node || typeof node.scrollIntoView !== "function") return;
-    node.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (!node) return;
+    const scroller = node.closest?.(".nac-ask-nac-chat--page, .nac-ask-nac-mobile__body");
+    if (!stickToBottomRef.current) return;
+    if (scroller) {
+      scroller.scrollTop = scroller.scrollHeight;
+      return;
+    }
+    if (typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   }, [messages.length, loading, anchorRef]);
 
   if (!messages.length && !loading) return null;

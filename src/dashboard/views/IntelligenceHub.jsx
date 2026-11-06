@@ -46,6 +46,7 @@ function IntelligenceHubDesktop() {
   const [askNacPrefill, setAskNacPrefill] = useState("");
   const [askNacPrefillSeed, setAskNacPrefillSeed] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [workspaceControlsOpen, setWorkspaceControlsOpen] = useState(false);
   const rbac = useRbac();
 
   const visibleTabs = useMemo(
@@ -165,9 +166,10 @@ function IntelligenceHubDesktop() {
   }, [paletteOpen]);
 
   const showExecutiveExport = rbac.hasPermission(PERMISSIONS.VIEW_EXECUTIVE_EXPORT);
+  const askFocus = activeTab === "ask";
 
-  return (
-    <motion.div className="nac-intelligence-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+  const workspaceChrome = (
+    <>
       <header className="nac-platform-header">
         <div className="nac-platform-header-row">
           <div>
@@ -203,6 +205,28 @@ function IntelligenceHubDesktop() {
           className="nac-hub-tabs--secondary"
         />
       ) : null}
+    </>
+  );
+
+  return (
+    <motion.div
+      className={`nac-intelligence-hub${askFocus ? " nac-intelligence-hub--ask-focus" : ""}${askFocus && workspaceControlsOpen ? " is-controls-open" : ""}`}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      {askFocus ? (
+        <section className="nac-workspace-controls">
+          <button
+            type="button"
+            className="nac-workspace-controls__toggle"
+            aria-expanded={workspaceControlsOpen}
+            onClick={() => setWorkspaceControlsOpen((open) => !open)}
+          >
+            {workspaceControlsOpen ? "Hide workspace controls" : "Workspace controls"}
+          </button>
+          {workspaceControlsOpen ? workspaceChrome : null}
+        </section>
+      ) : workspaceChrome}
 
       <IntelligenceTabPanels
         activeTab={activeTab}

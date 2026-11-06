@@ -264,6 +264,7 @@ export function isPerformanceOverviewQuery(question = "") {
   if (!q) return false;
   // Avoid staff / Google Maps / cross-branch "which branch performing" traps.
   if (/\b(waiter|waitress|server|employee|staff member|google maps)\b/.test(q)) return false;
+  if (/\b(staff|complaints?|maintenance|logbooks?|food quality|beverage)\b/.test(q)) return false;
   if (/\bwhich branch\b.*\b(perform|performing|best|winning)\b/.test(q)) return false;
   if (/\b(performing best|performing better|best overall|location is winning)\b/.test(q)) return false;
   // Strongest/weakest day ranking is a dedicated focus, not a full KPI overview.
