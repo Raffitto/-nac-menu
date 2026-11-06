@@ -787,6 +787,15 @@
     align-items: stretch;
   }
 
+  .rev-branch-table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .rev-branch-row {
+    min-width: 760px;
+  }
+
   .rev-staff-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;

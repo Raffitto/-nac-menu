@@ -25,6 +25,7 @@ import {
   withHonorificEN,
   withHonorificAR,
 } from "./reviewGenerator";
+import { BRANCH_LABELS } from "./reviewGeneratorMenus";
 import "./review-portal.css";
 
 const COPY = {
@@ -68,6 +69,9 @@ function formatRoleLabel(role, lang) {
 
 export default function ReviewPortal() {
   const portalParams = useMemo(() => parseReviewPortalParams(), []);
+  useEffect(() => {
+    document.title = `${BRANCH_LABELS[portalParams.normalizedBranch]?.en || "NAC"} Reviews`;
+  }, [portalParams.normalizedBranch]);
   const [language, setLanguage] = useState(portalParams.lang === "ar" ? "ar" : "en");
   const [text, setText] = useState("");
   const [staffName, setStaffName] = useState(portalParams.employeeName || "");
@@ -101,6 +105,7 @@ export default function ReviewPortal() {
 
   const copy = COPY[language] || COPY.en;
   const storeLabel =
+    BRANCH_LABELS[portalParams.normalizedBranch]?.[language] ||
     portalParams.storeName ||
     (portalParams.normalizedBranch
       ? `NAC ${portalParams.normalizedBranch.charAt(0).toUpperCase()}${portalParams.normalizedBranch.slice(1)}`

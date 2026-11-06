@@ -29,7 +29,8 @@ const DEPRECATED_ITEMS = [
 
 const COFFEE_DESSERT_RE = /\b(coffee|cappuccino|latte|espresso|flat white|dessert|churros|pavlova|affogato|cookies|mocha|macchiato|iced latte|قهوة|حلى|كابتشينو|لاتيه)\b/i;
 const MAIN_FOOD_RE = /\b(steak|risotto|burger|sliders|pasta|rigatoni|burrata|chicken|prawn|salad|popcorn|sumac|asparagus|hummus|aubergine|mains|sharing|truffle|angus|halloumi|eggs|shakshuka|toast|pancake|فطور|برانش|بيض|أطباق|ستيك|ريزوتو|برجر|باستا|دجاج|بوراتا|سلطة|سلايدر)\b/i;
-const BREAKFAST_RE = /\b(eggs florentine|french toast|pancakes|shakshuka|avocado toast|scrambled eggs|poached eggs|turkish eggs|mediterranean breakfast|pastries basket|halloumi|breakfast tea|البيض|فطور|فرنش توست|بانكيك)\b/i;
+// Unicode boundaries also recognize Arabic breakfast words; ASCII \b does not.
+const BREAKFAST_RE = /(?:^|[^\p{L}])(eggs florentine|french toast|pancakes|shakshuka|avocado toast|scrambled eggs|poached eggs|turkish eggs|mediterranean breakfast|pastries basket|halloumi|breakfast tea|البيض|فطور|فرنش توست|بانكيك)(?=$|[^\p{L}])/iu;
 
 function norm(s) {
   return String(s || "")

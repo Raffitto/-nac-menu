@@ -1,3 +1,4 @@
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
 import React, { forwardRef } from "react";
 import SnapshotShareCard from "../components/SnapshotShareCard";
 import ReviewExportBar from "./ReviewExportBar";
@@ -22,7 +23,7 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(
     { label: REVIEW_METRIC.googleRedirects, value: String(kpis?.google_redirects ?? "-"), accent: "gold" },
     {
       label: REVIEW_METRIC.tapToGooglePct,
-      value: `${conv ?? "-"}%`,
+      value: formatVisitPct(conv),
       accent: convAccent,
     },
   ];
@@ -39,7 +40,7 @@ const ReviewSnapshotPanel = forwardRef(function ReviewSnapshotPanel(
         metrics={metrics}
         highlight={
           kpis
-            ? `${REVIEW_FUNNEL_SUBTITLE}. ${kpis.qr_scans ?? 0} card taps | ${kpis.reviews_generated ?? 0} review interactions | ${kpis.google_redirects ?? 0} Google redirects.`
+            ? `${REVIEW_FUNNEL_SUBTITLE}. ${kpis.qr_scans ?? 0} QR visits | ${kpis.reviews_generated ?? 0} review interactions | ${kpis.google_redirects ?? 0} converted visits.`
             : data?.loading
               ? "Loading review metrics..."
               : "No review activity in this period yet."

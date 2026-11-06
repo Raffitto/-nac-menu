@@ -15,6 +15,7 @@ import { branchDisplayName } from "../utils/rangeState";
 import { normalizeBranchId, CANONICAL_BRANCH_IDS } from "../utils/branchIdentity";
 import { staffNameForTracking } from "../../review/reviewGeneratorShared";
 import { filterAnalyticsReviewEvents } from "../utils/isProductionStaff";
+import { visitsFromSummary, formatVisitPct } from "../utils/reviewVisitMetrics";
 
 export const OPERATIONAL_BRANCHES = CANONICAL_BRANCH_IDS;
 
@@ -70,8 +71,8 @@ export function inferStaffShiftBehavior(events = [], staffName) {
 export function classifyBranchOperationalStaff(staff, branchStats) {
   const scans = staff.scans || 0;
   const generated = staff.generated || 0;
-  const google = staff.google || 0;
-  const reviewConv = generated > 0 ? pct(google, generated) : 0;
+  const reviewConv = visitsFromSummary(staff).conversion_pct;
+  if (reviewConv == null) return { key: "incomplete", label: "Tracking incomplete", tone: "neutral", coaching: "Visit conversion unavailable; inspect tracking before coaching." };
 
   if (scans < MIN_SAMPLE && generated < MIN_SAMPLE) {
     return {
@@ -161,12 +162,7 @@ function enrichStaffRow(staff, events, branchStats) {
   const scans = staff.scans || 0;
   const generated = staff.generated || 0;
   const google = staff.google || 0;
-  const reviewConv =
-    staff.scans > 0
-      ? staff.conversion_pct ?? pct(google, scans)
-      : generated > 0
-        ? pct(google, generated)
-        : 0;
+  const reviewConv = visitsFromSummary(staff).conversion_pct;
   const cardToReviewEfficiency = scans > 0 ? pct(generated, scans) : 0;
   const classification = classifyBranchOperationalStaff(staff, branchStats);
 
@@ -216,7 +212,7 @@ function buildBranchSummary(staffRows, kpis) {
     strongestName: strongest?.name || "—",
     strongestValue: strongest ? `${strongest.google} redirects` : "—",
     weakestName: weakestConv?.name || "—",
-    weakestValue: weakestConv ? `${weakestConv.reviewConv}%` : "—",
+    weakestValue: weakestConv ? formatVisitPct(weakestConv.reviewConv) : "—",
     bestVisName: bestVisibility?.name || "—",
     bestVisValue: bestVisibility ? `${bestVisibility.scans} presentations` : "—",
     hiddenName: hiddenOpp?.name || "None flagged",

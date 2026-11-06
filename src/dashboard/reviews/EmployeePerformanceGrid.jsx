@@ -1,18 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
+import React, { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Trophy, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { supabase, isSupabaseConfigured } from "../../lib/supabase";
-import { fetchReviewEventsSummary } from "../../lib/intelligenceQueryApi";
-import { staffFromReviewSummary } from "../utils/reviewSummaryMap";
-import { rangeToHours } from "../utils/rangeState";
-import { aggregateStaffReviewStats } from "../utils/staffReviewStats";
-import { branchDisplayName, rangeToSince } from "../utils/rangeState";
-import { usePlatformFiltersOptional } from "../context/PlatformFiltersContext";
-import { useRbacOptional } from "../context/RbacContext";
-import { resolveReviewScope } from "../../lib/unifiedReviewTruth";
-import { applyPlatformFilters } from "../utils/platformFilterApply";
-
-const SELECT = "event_type,employee_name,employee_role,branch_id,created_at";
+import { branchDisplayName } from "../utils/rangeState";
+import { useReviewIntelligenceData } from "../hooks/useReviewIntelligenceData";
 
 function initials(name) {
   return String(name || "?")
@@ -32,79 +23,9 @@ function TrendBadge({ current, previous }) {
 }
 
 export default function EmployeePerformanceGrid() {
-  const filters = usePlatformFiltersOptional();
-  const rbac = useRbacOptional();
-  const [staff, setStaff] = useState([]);
-  const [prevStaff, setPrevStaff] = useState([]);
+  const reviewData = useReviewIntelligenceData();
+  const { staffMerged: staff, loading } = reviewData;
   const [sort, setSort] = useState("scans");
-  const [loading, setLoading] = useState(true);
-
-  const reviewScope = resolveReviewScope(rbac?.profile, filters?.branch || null);
-  const branch = reviewScope.queryBranch;
-
-  useEffect(() => {
-    if (!isSupabaseConfigured() || !supabase) {
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const hours = rangeToHours(filters?.selectedRange || "today");
-        const summary = await fetchReviewEventsSummary(supabase, {
-          branch: branch || null,
-          hours,
-        });
-
-        if (summary) {
-          if (cancelled) return;
-          setStaff(staffFromReviewSummary(summary));
-          setPrevStaff([]);
-          return;
-        }
-
-        const since = rangeToSince(filters?.selectedRange || "today");
-        let q = supabase
-          .from("review_events")
-          .select(SELECT)
-          .order("created_at", { ascending: false })
-          .limit(2500);
-        if (branch) q = q.eq("branch_id", branch);
-        if (since) q = q.gte("created_at", since);
-
-        const { data: raw } = await q;
-        const data = applyPlatformFilters(raw || [], filters);
-        if (cancelled) return;
-
-        const prevSince = new Date(since);
-        const windowMs = Date.now() - prevSince.getTime();
-        const prevStart = new Date(prevSince.getTime() - windowMs).toISOString();
-
-        let pq = supabase
-          .from("review_events")
-          .select(SELECT)
-          .gte("created_at", prevStart)
-          .lt("created_at", since)
-          .limit(1500);
-        if (branch) pq = pq.eq("branch_id", branch);
-        const { data: prevRaw } = await pq;
-        const prevData = applyPlatformFilters(prevRaw || [], filters);
-
-        setStaff(aggregateStaffReviewStats(data));
-        setPrevStaff(aggregateStaffReviewStats(prevData));
-      } catch {
-        setStaff([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [branch, filters]);
 
   const sorted = useMemo(() => {
     const list = [...staff];
@@ -114,13 +35,7 @@ export default function EmployeePerformanceGrid() {
     return list;
   }, [staff, sort]);
 
-  const prevMap = useMemo(() => {
-    const m = {};
-    prevStaff.forEach((s) => {
-      m[s.name] = s;
-    });
-    return m;
-  }, [prevStaff]);
+  const prevMap = useMemo(() => ({}), []);
 
   if (loading) {
     return (
@@ -132,6 +47,10 @@ export default function EmployeePerformanceGrid() {
     );
   }
 
+  if (reviewData.error || reviewData.partial) {
+    return <p role="alert" className="nac-empty-state">Complete Team totals are unavailable. {reviewData.error || "Please retry."}</p>;
+  }
+
   if (sorted.length === 0) {
     return <p className="nac-empty-state">No staff-tagged review activity in this period.</p>;
   }
@@ -141,7 +60,7 @@ export default function EmployeePerformanceGrid() {
       <div className="nac-filter-row" style={{ marginBottom: "1rem" }}>
         <span className="nac-filter-pill-label">Sort by</span>
         {[
-          { id: "scans", label: "Scans" },
+          { id: "scans", label: "QR visits" },
           { id: "google", label: "Google clicks" },
           { id: "conversion", label: "Conversion" },
         ].map((opt) => (
@@ -158,10 +77,11 @@ export default function EmployeePerformanceGrid() {
 
       <div className="nac-emp-grid">
         {sorted.map((emp, idx) => {
-          const prev = prevMap[emp.name];
+          const identity = `${emp.branch || "unknown"}::${String(emp.name).toLowerCase()}`;
+          const prev = prevMap[identity];
           return (
             <motion.div
-              key={emp.name}
+              key={identity}
               className="nac-emp-premium-card"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -174,7 +94,7 @@ export default function EmployeePerformanceGrid() {
                   <div>
                     <strong style={{ fontSize: "1rem" }}>{emp.name}</strong>
                     <p style={{ margin: "0.15rem 0 0", fontSize: "0.75rem", color: "rgba(249,249,247,0.5)" }}>
-                      {emp.role || "Staff"} · {branchDisplayName(emp.branch || branch)}
+                      {emp.role || "Staff"} · {branchDisplayName(emp.branch || reviewData.branch)}
                     </p>
                   </div>
                 </div>
@@ -195,23 +115,23 @@ export default function EmployeePerformanceGrid() {
                 }}
               >
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Scans</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>QR visits</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
                     {emp.scans}
                     <TrendBadge current={emp.scans} previous={prev?.scans} />
                   </p>
                 </motion.div>
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Google</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Converted visits</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
                     {emp.google}
                     <TrendBadge current={emp.google} previous={prev?.google} />
                   </p>
                 </motion.div>
                 <motion.div>
-                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Conversion</p>
+                  <p style={{ margin: 0, fontSize: "0.65rem", color: "rgba(249,249,247,0.45)" }}>Visit conversion</p>
                   <p style={{ margin: "0.2rem 0 0", fontSize: "1.25rem", fontWeight: 500 }}>
-                    {emp.conversion_pct}%
+                    {formatVisitPct(emp.conversion_pct)}
                   </p>
                 </motion.div>
               </div>

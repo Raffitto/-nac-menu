@@ -1,3 +1,4 @@
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
 /**
  * Detailed Branch Operational Review — executive boardroom PDF.
  */
@@ -179,7 +180,7 @@ function drawCoverPage(
   const cardY = 152;
   const cards = [
     { label: "Branches", value: String(reports.length), accent: NAC_GOLD },
-    { label: "Network card taps", value: String(net.scans), accent: NAC_TEAL },
+    { label: "Network QR visits", value: String(net.scans), accent: NAC_TEAL },
     { label: REVIEW_METRIC_PDF.reviewInteractions, value: String(net.reviews), accent: NAC_TEAL },
     { label: REVIEW_METRIC_PDF.googleRedirects, value: String(net.google), accent: NAC_GOLD },
   ];
@@ -210,9 +211,9 @@ function drawCoverPage(
   const brief = topBranch
     ? `${topBranch.branchLabel} leads Google follow-through (${topBranch.kpis?.google_redirects ?? 0}). ${
         leakBranch
-          ? `${leakBranch.branchLabel} weakest tap/scan-to-Google (${leakBranch.kpis?.conversion_pct ?? 0}%).`
+          ? `${leakBranch.branchLabel} weakest visit conversion (${leakBranch.kpis?.conversion_pct ?? 0}%).`
           : ""
-      } ${net.staff} staff | ${net.scans} card taps in period.`
+      } ${net.staff} staff | ${net.scans} QR visits in period.`
     : "Insufficient card-handoff events for network narrative.";
 
   drawCallout(doc, margin, movementY + 8, contentW, {
@@ -243,7 +244,7 @@ function drawBranchHeader(doc, margin, contentW, report, rangeLabel, googleMovem
   setExportFont(doc, 500, 9);
   paintExportText(
     doc,
-    `${rangeLabel} | ${report.staffRows.length} staff | ${report.summary.branchConversion}% tap-to-Google`,
+    `${rangeLabel} | ${report.staffRows.length} staff | ${report.summary.branchConversion}% visit conversion`,
     margin,
     68,
     { tier: "secondary", shadow: true },
@@ -315,8 +316,8 @@ function staffTableBody(staffRows) {
     String(s.scans),
     String(s.generated),
     String(s.google),
-    `${s.reviewConv}%`,
-    `${s.cardToReviewEfficiency ?? s.visibilityEfficiency}%`,
+    formatVisitPct(s.reviewConv),
+    String(s.cardToReviewEfficiency ?? s.visibilityEfficiency),
     s.archetype,
     s.classification.label,
     clip(s.coaching, 48),
@@ -339,6 +340,9 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
     body: tableData.body,
     margin: { left: margin, right: margin },
     tableWidth: contentW,
+    willDrawPage: ({ pageNumber }) => {
+      if (pageNumber > 1) fillPage(doc);
+    },
     didParseCell: (data) => {
       if (data.section === "head") {
         applyExportTableHeadCellStyles(data);
@@ -378,7 +382,12 @@ function drawStaffAuditTable(doc, margin, contentW, startY, staffRows) {
         data.cell.styles.minCellWidth = 36;
       }
     },
-    columnStyles: STAFF_AUDIT_EXPORT_COLUMN_STYLES,
+    columnStyles: {
+      ...STAFF_AUDIT_EXPORT_COLUMN_STYLES,
+      9: { ...STAFF_AUDIT_EXPORT_COLUMN_STYLES[9], cellWidth:
+        STAFF_AUDIT_EXPORT_COLUMN_STYLES[9].cellWidth + contentW -
+        Object.values(STAFF_AUDIT_EXPORT_COLUMN_STYLES).reduce((n, c) => n + c.cellWidth, 0) },
+    },
   });
 }
 

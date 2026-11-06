@@ -2,7 +2,7 @@
  * Funnel analytics — review tap→Google and menu engagement funnels.
  */
 
-import { tapToGooglePct } from "../../dashboard/utils/reviewFunnelMetrics";
+import { visitConversionPct } from "../../dashboard/utils/reviewVisitMetrics";
 import { canonicalCategoryOpenCount } from "../../lib/menuEventTypes";
 
 export {
@@ -59,7 +59,7 @@ export function buildMenuFunnelFromPayload(payload = {}) {
 
 /** Staff / branch row conversion (card taps → Google). */
 export function reviewConversionPct(googleRedirects, cardTaps) {
-  return tapToGooglePct(googleRedirects, cardTaps);
+  return visitConversionPct(googleRedirects, cardTaps);
 }
 
 /** Deep interest rate for menu items (opens / impressions). */

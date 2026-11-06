@@ -66,7 +66,7 @@ describe("executive metrics", () => {
       staff: [{ name: "Ali", scans: 20, google: 10 }],
     });
 
-    expect(row.branch_name).toBe("Khobar");
+    expect(row.branch_name).toBe("NAC Khobar");
     expect(row.score).toBeGreaterThan(0);
     expect(row.components.googleRatingScore).toBeGreaterThan(0);
     expect(row.components.reviewGrowthScore).toBeGreaterThan(50);

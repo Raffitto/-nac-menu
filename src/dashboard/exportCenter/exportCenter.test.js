@@ -228,7 +228,7 @@ describe("Fady reports RBAC", () => {
 
   test("can open Reports across all branches", () => {
     expect(canAccessNav(fady, "reports")).toBe(true);
-    expect(allowedBranchIds(fady)).toEqual(["khobar", "riyadh", "jeddah"]);
+    expect(allowedBranchIds(fady)).toEqual(["khobar", "riyadh", "jeddah", "hettin"]);
     expect(resolveEffectiveBranch(fady, "riyadh")).toBe("riyadh");
   });
 });

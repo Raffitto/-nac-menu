@@ -3,43 +3,42 @@
  */
 
 import { paintExportText, setExportFont } from "../engines/pdfVisualTheme";
-import { getMetricLabel, METRIC_IDS } from "../../intelligence/metrics/metricDefinitions";
 
 export const REVIEW_FUNNEL_SUBTITLE =
-  "Card tap → Review interaction → Google redirect";
+  "QR visits → Converted visits (Google step)";
 
 /** PDF / Helvetica-safe funnel subtitle */
 export const REVIEW_FUNNEL_SUBTITLE_PDF =
-  "Card tap to Review interaction to Google redirect";
+  "QR visits to Converted visits (Google step)";
 
 export const REVIEW_METRIC = {
-  cardTaps: "Review QR scans",
+  cardTaps: "QR visits",
   reviewInteractions: "Review interactions",
-  googleRedirects: getMetricLabel(METRIC_IDS.GOOGLE_REDIRECT),
-  toGooglePct: "To Google %",
-  cardToReviewPct: "Card→Review %",
-  tapToGooglePct: "Tap→Google %",
+  googleRedirects: "Converted visits",
+  toGooglePct: "Visit conversion %",
+  cardToReviewPct: "Interactions /100 visits",
+  tapToGooglePct: "Visit conversion %",
 };
 
 /** PDF-safe metric labels (no unicode arrows or separators) */
 export const REVIEW_METRIC_PDF = {
-  cardTaps: "Card taps",
+  cardTaps: "QR visits",
   reviewInteractions: "Review interactions",
-  googleRedirects: "Google redirects",
-  toGooglePct: "To Google %",
-  cardToReviewPct: "Card to Review %",
-  tapToGooglePct: "tap-to-Google",
+  googleRedirects: "Converted visits",
+  toGooglePct: "Visit conversion %",
+  cardToReviewPct: "Interactions /100 visits",
+  tapToGooglePct: "Visit conversion %",
 };
 
 /** Compact staff audit table (branch operational PDF). */
 export const STAFF_AUDIT_TABLE_HEAD = [
   "Staff",
   "Role",
-  "Review QR scans",
+  "QR visits",
   "Interactions",
-  "Google Redirects",
-  "To Google %",
-  "Card→Review %",
+  "Converted visits",
+  "Visit conversion %",
+  "Interactions /100 visits",
   "Profile",
   "Status",
   "Action",
@@ -50,11 +49,11 @@ export const STAFF_AUDIT_TABLE_HEAD = [
 export const STAFF_AUDIT_TABLE_HEAD_PDF = [
   "Staff",
   "Role",
-  "Taps",
+  "QR visits",
   "Interactions",
-  "Google",
-  "To Google %",
-  "Review %",
+  "Converted",
+  "Visit %",
+  "Interactions/100",
   "Profile",
   "Status",
   "Action",
@@ -80,34 +79,34 @@ export const STAFF_AUDIT_EXPORT_COLUMN_STYLES = {
 export const STAFF_SUMMARY_TABLE_HEAD = [
   "Staff",
   "Role",
-  "Review QR scans",
+  "QR visits",
   "Interactions",
-  "Google Redirects",
-  "To Google %",
+  "Converted visits",
+  "Visit conversion %",
 ];
 
 export const BRANCH_BENCHMARK_TABLE_HEAD = [
   "Branch",
-  "Review QR scans",
+  "QR visits",
   "Interactions",
-  "Google Redirects",
-  "To Google %",
+  "Converted visits",
+  "Visit conversion %",
 ];
 
 export const STAFF_AUDIT_LEGEND_LINES = [
-  "Review QR scans = review portal QR / NFC entry (not menu QR)",
+  "QR visits = identifiable QR/NFC card-entry sessions; not unique people",
   "Interactions = generated review pages (not published Google reviews)",
-  "Google = Google Redirects to the public review page",
-  "To Google % = tap-to-Google redirect conversion",
-  "Card→Review % = review QR scans converted into review interactions",
+  "Converted = qualifying visits reaching the Google step, counted once per visit",
+  "Visit conversion = converted qualifying QR visits / qualifying QR visits; N/A when tracking is incomplete",
+  "Interactions/100 = review interaction events per 100 qualifying visits; an activity ratio",
 ];
 
 export const STAFF_AUDIT_LEGEND_LINES_PDF = [
-  "Card taps = QR/NFC card taps",
+  "QR visits = identifiable QR/NFC card-entry sessions; not unique people",
   "Interactions = generated review pages (not published Google reviews)",
-  "Google = redirected to Google review page",
-  "To Google % = tap-to-Google redirect conversion",
-  "Card to Review % = taps converted into review interactions",
+  "Converted = qualifying visits reaching the Google step, counted once per visit",
+  "Visit conversion = converted qualifying QR visits / qualifying QR visits; N/A when tracking is incomplete",
+  "Interactions/100 = review interaction events per 100 qualifying visits; an activity ratio",
 ];
 
 /** @param {import('jspdf').jsPDF} doc */

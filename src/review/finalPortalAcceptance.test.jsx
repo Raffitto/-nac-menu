@@ -1,0 +1,21 @@
+import React from 'react';
+import {render,screen,fireEvent,waitFor} from '@testing-library/react';
+import ReviewPortal from './ReviewPortal';
+import {trackReviewGoogleClick} from '../lib/reviewAnalytics';
+jest.mock('../dashboard/utils/unifiedIntelligenceApi',()=>({fetchReviewPortalStaff:jest.fn().mockResolvedValue([])}));
+jest.mock('../lib/reviewAnalytics',()=>({runReviewEventsInsertSelfTest:jest.fn().mockResolvedValue({}),trackReviewQrScan:jest.fn(),trackReviewPageOpen:jest.fn(),trackReviewGenerate:jest.fn(),trackReviewCopy:jest.fn(),trackReviewGoogleClick:jest.fn(),trackReviewLanguageChange:jest.fn()}));
+it('retains guest edits and logs one Google event per click, without submitting a review',async()=>{
+ window.history.replaceState({},'', '/?store=NAC%20Hettin&s=Farrukh&role=arm');
+ render(<ReviewPortal/>);
+ const text=await screen.findByRole('textbox');
+ await waitFor(()=>expect(text.value.length).toBeGreaterThan(0));
+ fireEvent.change(text,{target:{value:'My own feedback.'}});
+ expect(text.value).toBe('My own feedback.');
+ const link=screen.getByRole('link',{name:/Google Review/i});
+ expect(link.href).toContain('placeid=ChIJ0QpbRgDhLj4ROUIXHjFIVIo');
+ fireEvent.click(link);
+ expect(trackReviewGoogleClick).toHaveBeenCalledTimes(1);
+ fireEvent.click(link);
+ expect(trackReviewGoogleClick).toHaveBeenCalledTimes(2);
+ expect(text.value).toBe('My own feedback.');
+});

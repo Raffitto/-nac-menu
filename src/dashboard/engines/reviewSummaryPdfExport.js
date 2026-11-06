@@ -1,3 +1,4 @@
+import { formatVisitPct } from "../utils/reviewVisitMetrics";
 /**
  * Review Intelligence summary PDF — boardroom layout (dark, dense).
  */
@@ -79,7 +80,7 @@ export function buildExecutiveBrief(review, staffStats, comparison, branch) {
   return {
     topOpportunity: clip(topOpportunity, 90),
     strongestBranch: strongest
-      ? `${branchDisplayName(strongest.branch_id)} | ${strongest.google_redirects} redirects`
+      ? `${branchDisplayName(strongest.branch_id)} | ${strongest.google_redirects} converted visits`
       : "-",
     weakestFunnel: weakest
       ? `${branchDisplayName(weakest.branch_id)} | ${weakest.conversion_pct}% conversion`
@@ -166,7 +167,7 @@ export function exportReviewSummaryPdf(ctx) {
     { label: REVIEW_METRIC_PDF.cardTaps, value: reviewMetrics?.qr_scans ?? 0, accent: NAC_TEAL },
     { label: REVIEW_METRIC_PDF.reviewInteractions, value: reviewMetrics?.reviews_generated ?? 0, accent: NAC_TEAL },
     { label: REVIEW_METRIC_PDF.googleRedirects, value: reviewMetrics?.google_clicks ?? 0, accent: NAC_GOLD },
-    { label: REVIEW_METRIC_PDF.tapToGooglePct, value: `${reviewMetrics?.conversion_pct ?? 0}%`, accent: NAC_GOLD },
+    { label: REVIEW_METRIC_PDF.tapToGooglePct, value: formatVisitPct(reviewMetrics?.conversion_pct), accent: NAC_GOLD },
   ];
   metrics.forEach((m, i) => {
     drawKpiCard(doc, margin + i * (cardW + 8), cardY, cardW, 52, m.label, m.value, m.accent);
@@ -227,7 +228,7 @@ export function exportReviewSummaryPdf(ctx) {
         margin,
         y,
         chartW,
-        "Card taps by staff (QR/NFC)",
+        "QR visits by staff",
         productionStaff.map((s) => ({ name: s.name, scans: s.opens })),
         "scans",
         NAC_TEAL,
@@ -239,7 +240,7 @@ export function exportReviewSummaryPdf(ctx) {
         margin + chartW + 12,
         y,
         chartW,
-        "Google redirects by branch",
+        "Converted visits by branch",
         comparison.map((b) => ({
           branch_id: branchDisplayName(b.branch_id),
           google: b.google_redirects,
@@ -255,17 +256,17 @@ export function exportReviewSummaryPdf(ctx) {
     setExportFont(doc, 600, 10);
     paintExportText(doc, "Staff summary", margin, y, { tier: "gold", shadow: true });
     y += 6;
-    drawContentPanel(doc, margin - 4, y, contentW + 8, Math.min(320, 36 + productionStaff.length * 18));
+    drawContentPanel(doc, margin - 4, y, contentW + 8, Math.min(320, doc.internal.pageSize.getHeight() - y - 36, 36 + productionStaff.length * 18));
 
     const staffTable = sanitizeTableForPdf(
       [STAFF_SUMMARY_TABLE_HEAD],
-      productionStaff.slice(0, 14).map((s) => [
+      productionStaff.map((s) => [
         clip(s.name, 18),
         clip(s.role, 8),
         s.opens,
         s.generated,
         s.google,
-        `${s.conversion_pct}%`,
+        `${formatVisitPct(s.conversion_pct)}`,
       ]),
     );
 
@@ -276,6 +277,9 @@ export function exportReviewSummaryPdf(ctx) {
       body: staffTable.body,
       margin: { left: margin, right: margin },
       tableWidth: contentW,
+      willDrawPage: ({ pageNumber }) => {
+        if (pageNumber > 1) fillPage(doc);
+      },
       didParseCell: (data) => {
         if (data.section !== "body") return;
         const row = productionStaff[data.row.index];
@@ -294,7 +298,10 @@ export function exportReviewSummaryPdf(ctx) {
     });
 
     if (comparison.length > 0) {
-      const y2 = doc.lastAutoTable.finalY + 18;
+      let y2 = doc.lastAutoTable.finalY + 18;
+      if (y2 + 75 > doc.internal.pageSize.getHeight() - 36) {
+        doc.addPage(); fillPage(doc); y2 = 46;
+      }
       setExportFont(doc, 600, 10);
       paintExportText(doc, "Branch benchmark", margin, y2, { tier: "gold", shadow: true });
       drawContentPanel(doc, margin - 4, y2 + 6, contentW + 8, 28 + comparison.length * 18);
@@ -306,7 +313,7 @@ export function exportReviewSummaryPdf(ctx) {
           b.qr_scans,
           b.reviews_generated,
           b.google_redirects,
-          `${b.conversion_pct}%`,
+          formatVisitPct(b.conversion_pct),
         ]),
       );
 
@@ -317,6 +324,9 @@ export function exportReviewSummaryPdf(ctx) {
         body: branchTable.body,
         margin: { left: margin, right: margin },
         tableWidth: contentW,
+        willDrawPage: ({ pageNumber }) => {
+          if (pageNumber > 1) fillPage(doc);
+        },
         didParseCell: (data) => {
           if (data.section !== "body") return;
           const row = comparison[data.row.index];

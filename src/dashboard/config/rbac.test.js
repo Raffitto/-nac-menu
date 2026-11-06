@@ -29,7 +29,7 @@ describe("NAC OS RBAC", () => {
     test("has full branch access", () => {
       expect(profile.role).toBe(RBAC_ROLES.DEVELOPER);
       expect(profile.allBranches).toBe(true);
-      expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
+      expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah", "hettin"]);
     });
 
     test("maps Drive login email to developer Reports access", () => {
@@ -108,7 +108,7 @@ describe("NAC OS RBAC", () => {
     test("has all branch operational visibility but no system ownership", () => {
       expect(profile.role).toBe(RBAC_ROLES.NETWORK_GM);
       expect(profile.allBranches).toBe(true);
-      expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
+      expect(allowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah", "hettin"]);
       expect(resolveEffectiveBranch(profile, "riyadh")).toBe("riyadh");
       expect(canAccessNav(profile, "branches")).toBe(true);
       expect(canAccessIntelligenceTab(profile, "competitive")).toBe(true);
@@ -127,7 +127,7 @@ describe("NAC OS RBAC", () => {
       ];
       expect(filterRowsByRbacProfile(profile, rows)).toHaveLength(3);
       expect(buildBranchFilterOptions(profile)[0].value).toBe("all");
-      expect(reviewAllowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah"]);
+      expect(reviewAllowedBranchIds(profile)).toEqual(["khobar", "riyadh", "jeddah", "hettin"]);
     });
   });
 

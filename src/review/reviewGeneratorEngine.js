@@ -400,14 +400,15 @@ function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
   const genericPool = genericFoodPool(isAr, meal);
   if (useGeneric || chance(meal.period === "breakfast" ? 0.45 : 0.58)) {
     const g = pick(genericPool);
+    const withArticle = /^(the|a|an|something)\s+/i.test(g) ? g : `the ${g}`;
     const templates =
       meal.period === "breakfast"
         ? isAr
-          ? [`${g} كان ممتاز.`, `أحببنا ${g}.`, `${g} 👌`, `فطورنا ${g} وكان مضبوط.`]
-          : [`Loved the ${g}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} was good.`, `${g} hit the spot.`, `Breakfast ${g} was on point.`]
+          ? [`نكهة ${g} كانت ممتازة.`, `أحببنا ${g}.`, `${g} 👌`, `في الفطور، أحببنا ${g}.`]
+          : [`Loved ${withArticle}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} tasted good.`, `${g} hit the spot.`, `Enjoyed ${withArticle} at breakfast.`]
         : isAr
-          ? [`${g} كان ممتاز.`, `أحببنا ${g}.`, `${g} 👌`]
-          : [`Loved the ${g}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} was good.`, `${g} hit the spot.`];
+          ? [`نكهة ${g} كانت ممتازة.`, `أحببنا ${g}.`, `${g} 👌`]
+          : [`Loved ${withArticle}.`, `${g.charAt(0).toUpperCase() + g.slice(1)} tasted good.`, `${g} hit the spot.`];
     return pick(templates);
   }
 
@@ -420,19 +421,19 @@ function buildFoodLine(menu, meal, personality, isAr, useGeneric) {
     return isAr
       ? `جربنا ${a} و ${b}, ممتازين.`
       : pick([
-          `The ${a} was crazy good.`,
+          `Really enjoyed the ${a}.`,
           `${a} and ${b} both slapped honestly.`,
           `Ordered ${a} with ${b}, no regrets.`,
         ]);
   }
 
   const templates = isAr
-    ? [`${item} كان لذيذ.`, `أعجبنا ${item}.`, `طلبنا ${item} وكان مضبوط.`]
+    ? [`طبق ${item} كان لذيذاً.`, `أعجبنا ${item}.`, `طلبنا طبق ${item} وكان لذيذاً.`]
     : [
-        `The ${item} was really good.`,
+        `Really enjoyed the ${item}.`,
         `${item.charAt(0).toUpperCase() + item.slice(1)} surprised us.`,
         `Got the ${item}, worth it.`,
-        `Sliders were crazy good lol`.replace("Sliders", item.includes("slider") ? "Sliders" : item),
+        `${item} tasted great.`,
       ];
   return pick(templates);
 }
