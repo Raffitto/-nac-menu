@@ -113,7 +113,7 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(css).toMatch(/\.nac-ask-nac-mobile__footer\s*\{[^}]*flex-shrink:\s*0/s);
     expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-chat--page\s*\{[^}]*overflow-y:\s*auto/s);
     expect(css).toMatch(/@media \(min-width: 921px\)[\s\S]*\.nac-ask-nac-composer\s*\{[^}]*position:\s*relative/s);
-    expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*visible/);
+    expect(mobileCss).toMatch(/nac-intelligence-hub--ask[\s\S]*overflow:\s*hidden/);
 
     const { container } = render(<AskNacTab showVaultPanel={false} />);
     const chat = screen.getByTestId("ask-nac-chat-page");
