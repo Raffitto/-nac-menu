@@ -55,6 +55,15 @@ describe("unified catalogue identity", () => {
       menu_item_id: frenchToast.id,
     })).toBe("foodics_product");
     expect(resolveCatalogueIdentity({ id: "orphan", name_en: "French Toast" }).catalogueId).toBeNull();
+    expect(resolveCatalogueIdentity(frenchToast).networkCatalogueId).toBeNull();
+    const riyadhClone = {
+      ...frenchToast,
+      id: "placement-riyadh",
+      branch_id: "riyadh",
+      placement_group_id: "riyadh-french-toast-group",
+    };
+    expect(resolveCatalogueIdentity(riyadhClone).catalogueId).not.toBe("product-french-toast");
+    expect(resolveCatalogueIdentity(riyadhClone).networkCatalogueId).toBeNull();
   });
 
   test("a description change lists loaded linked placements and does not publish or rewrite sales", () => {
@@ -76,6 +85,8 @@ describe("unified catalogue identity", () => {
     expect(impact.lines.find((line) => line.id === "guest").value).toBe("3");
     expect(impact.lines.find((line) => line.id === "recipes").value).toBe("1");
     expect(impact.lines.find((line) => line.id === "drafts").value).toContain("1");
+    expect(impact.lines.find((line) => line.id === "catalogue").value).toBe("product-french-toast");
+    expect(impact.lines.find((line) => line.id === "network").value).toContain("not in the schema");
     expect(impact.lines.find((line) => line.id === "history").value).toContain("unchanged");
     expect(JSON.stringify(sales)).toBe(before);
     expect(propagationTargetIds(frenchToast, [frenchToast, frenchToastEvening], "active")).toEqual([
@@ -95,6 +106,7 @@ describe("unified catalogue identity", () => {
       foodicsMappings: [
         { id: "map-a", normalized_key: "french-toast", foodics_name: "French Toast", menu_item_id: "deleted-placement", match_confidence: 0.4 },
         { id: "map-b", normalized_key: "french-toast", foodics_name: "French Toast copy", menu_item_id: frenchToast.id, match_confidence: 1 },
+        { id: "map-c", normalized_key: "french-toast-pos", foodics_name: "French Toast", menu_item_id: "other-placement", match_confidence: 1 },
       ],
       conversions: [{ id: "bad", from_unit: "gram", to_unit: "millilitre", factor: 1 }],
     });
@@ -103,6 +115,8 @@ describe("unified catalogue identity", () => {
     expect(report.findings.some((row) => row.code === "unlinked_placement")).toBe(true);
     expect(report.findings.some((row) => row.code === "orphaned_recipe")).toBe(true);
     expect(report.findings.some((row) => row.code === "duplicate_foodics_mapping")).toBe(true);
+    expect(report.findings.some((row) => row.code === "conflicting_foodics_target")).toBe(true);
+    expect(report.findings.some((row) => row.code === "network_catalogue_id_absent")).toBe(true);
     expect(report.findings.some((row) => row.code === "invalid_unit_conversion")).toBe(true);
     expect(report.repairs).toEqual([]);
   });

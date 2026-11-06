@@ -1,6 +1,8 @@
 /**
  * Finished-menu identity for NAC.
- * menu_items.id is a placement. placement_group_id is the stable product id.
+ * menu_items.id is one placement. placement_group_id links sections of that
+ * dish inside a branch. Branch clones receive a new group id, so this is not
+ * a four-branch product id. No network catalogue column exists yet.
  * Names, prices, and Foodics labels are not relationship keys.
  */
 
@@ -39,16 +41,19 @@ export function describeCatalogueEntity(record = {}) {
 
 /**
  * Identity for one placement. Unlinked rows stay unlinked.
- * This never invents a product id from a name.
+ * catalogueId is the placement group only. networkCatalogueId stays null
+ * until a real cross-branch column exists. Names never become that id.
  */
 export function resolveCatalogueIdentity(item) {
   const placementId = item?.id ? String(item.id) : null;
-  const catalogueId = catalogueIdentityId(item);
+  const placementGroupId = catalogueIdentityId(item);
   return {
-    entity: catalogueId ? CATALOGUE_ENTITY.FINISHED_PRODUCT : CATALOGUE_ENTITY.PLACEMENT,
+    entity: placementGroupId ? CATALOGUE_ENTITY.FINISHED_PRODUCT : CATALOGUE_ENTITY.PLACEMENT,
     placementId,
-    catalogueId,
+    placementGroupId,
+    catalogueId: placementGroupId,
+    networkCatalogueId: null,
     branchId: item?.branch_id || item?.branchId || null,
-    status: catalogueId ? "linked" : "unlinked",
+    status: placementGroupId ? "placement_group" : "unlinked",
   };
 }

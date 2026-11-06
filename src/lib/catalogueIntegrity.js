@@ -40,6 +40,11 @@ export function scanCatalogueIntegrity({
 } = {}) {
   const findings = [];
   const knownIds = new Set((menuItems || []).map((item) => item.id).filter(Boolean));
+  findings.push(finding(
+    CATALOGUE_SEVERITY.INFORMATIONAL,
+    "network_catalogue_id_absent",
+    "No network-wide catalogue id exists. placement_group_id links sections, and a branch clone receives a new group id.",
+  ));
 
   for (const [catalogueId, rows] of sameIdentityRows(menuItems).entries()) {
     const prices = [...new Set(rows.map((row) => priceAmount(row.price)).filter((n) => n != null))];
@@ -149,6 +154,24 @@ export function scanCatalogueIntegrity({
           "duplicate_foodics_mapping",
           `Foodics key ${key} is mapped ${rows.length} times.`,
           { mappingIds: rows.map((row) => row.id) },
+        ));
+      }
+    }
+    const byName = new Map();
+    for (const row of foodicsMappings) {
+      const name = String(row.foodics_name || row.product_sku || "").trim().toLowerCase();
+      if (!name) continue;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(row);
+    }
+    for (const [name, rows] of byName.entries()) {
+      const targets = [...new Set(rows.map((row) => row.menu_item_id).filter(Boolean))];
+      if (targets.length > 1) {
+        findings.push(finding(
+          CATALOGUE_SEVERITY.WARNING,
+          "conflicting_foodics_target",
+          `Foodics name “${name}” points at ${targets.length} menu placements. It was left for review.`,
+          { itemIds: targets },
         ));
       }
     }

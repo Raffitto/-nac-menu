@@ -102,8 +102,13 @@ export function buildCatalogueChangeImpact({
       },
       {
         id: "catalogue",
-        label: "Canonical product",
-        value: groupId || "not linked — this row stays a placement until a placement group exists",
+        label: "Placement group",
+        value: groupId || "not linked — sections of this dish are not grouped",
+      },
+      {
+        id: "network",
+        label: "Network catalogue id",
+        value: "not in the schema — a branch clone keeps its own placement group",
       },
       {
         id: "recipes",
