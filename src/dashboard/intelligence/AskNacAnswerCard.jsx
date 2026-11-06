@@ -170,9 +170,36 @@ function PrimaryAnswerContent({ response }) {
   }
   return (
     <>
-      <p className="nac-ask-nac-response__answer">{resolveAskNacDirectAnswer(response)}</p>
+      <StructuredAnswer text={resolveAskNacDirectAnswer(response)} />
       <ConversationVisualizationSection response={response} />
     </>
+  );
+}
+
+function StructuredAnswer({ text }) {
+  const blocks = String(text || "").split(/\n{2,}/).filter((block) => block.trim());
+  if (!blocks.length) return null;
+  return (
+    <div className="nac-ask-nac-response__answer">
+      {blocks.map((block) => {
+        const lines = block.split("\n").filter((line) => line.trim());
+        const quotes = lines.filter((line) => /^Logbook:/i.test(line));
+        const body = lines.filter((line) => !/^Logbook:/i.test(line));
+        return (
+          <section key={block.slice(0, 80)} className="nac-ask-nac-answer-block">
+            {body.map((line) => (
+              <p key={line} className={/^Outcome:/i.test(line) ? "nac-ask-nac-outcome" : undefined}>{line}</p>
+            ))}
+            {quotes.map((quote) => (
+              <details key={quote} className="nac-ask-nac-quote">
+                <summary>Logbook quote</summary>
+                <p>{quote.replace(/^Logbook:\s*/i, "")}</p>
+              </details>
+            ))}
+          </section>
+        );
+      })}
+    </div>
   );
 }
 
@@ -568,7 +595,6 @@ export default function AskNacAnswerCard({
   }
 
   const isMissing = response.answerType === ANSWER_TYPES.MISSING_DATA;
-  const isError = response.answerType === ANSWER_TYPES.ERROR;
   const showExport =
     hasExportableContent(response) && response.answerType !== ANSWER_TYPES.UNKNOWN;
 
@@ -588,7 +614,7 @@ export default function AskNacAnswerCard({
             <span className="nac-ask-nac-badge nac-ask-nac-badge--verified">Verified data</span>
           )}
           {response.localFallback ? (
-            <span className="nac-ask-nac-badge nac-ask-nac-badge--local">Local fallback</span>
+            <span className="nac-ask-nac-badge nac-ask-nac-badge--local">Checked here</span>
           ) : null}
           {response.confidence ? (
             <span className="nac-ask-nac-badge">{response.confidence} confidence</span>
@@ -666,14 +692,14 @@ export default function AskNacAnswerCard({
       ) : null}
 
       {response.warnings?.length ? (
-        <div className={`nac-ask-nac-warnings ${isMissing || isError ? "nac-ask-nac-warnings--alert" : ""}`}>
-          <AlertTriangle size={14} aria-hidden />
+        <details className="nac-ask-nac-quote">
+          <summary>Notes</summary>
           <ul>
             {response.warnings.map((w) => (
               <li key={w}>{w}</li>
             ))}
           </ul>
-        </div>
+        </details>
       ) : null}
 
       {isMissing ? (

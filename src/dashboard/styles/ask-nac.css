@@ -1365,7 +1365,36 @@
 .nac-ask-nac-threads__privacy, .nac-ask-nac-threads__empty { padding: 12px 10px; color: #b6c5c0; font-size: 11px; line-height: 1.5; }
 .nac-ask-nac-threads__privacy { border-top: 1px solid rgba(205,178,117,.15); margin: 10px 0 0; }
 .nac-ask-nac-threads button:focus-visible { outline: 2px solid #d7c7a1; outline-offset: 2px; }
-@media (max-width: 920px) { .nac-ask-nac-workspace { grid-template-columns: minmax(0, 1fr); } .nac-ask-nac-threads { min-height: auto; max-height: 190px; } .nac-ask-nac-threads__privacy { display: none; } }
+.nac-ask-nac-workspace.is-history-collapsed { grid-template-columns: minmax(0, 1fr); }
+.nac-workspace-controls { margin: 0 0 0.75rem; }
+.nac-workspace-controls__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.65rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(215, 183, 124, 0.35);
+  background: rgba(16, 41, 45, 0.9);
+  color: #d7b77c;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.nac-intelligence-hub--ask-focus .nac-ask-nac-workspace {
+  height: calc(100dvh - 8.75rem);
+  min-height: 420px;
+}
+.nac-intelligence-hub--ask-focus.is-controls-open .nac-ask-nac-workspace {
+  height: min(720px, calc(100dvh - 290px));
+}
+.nac-ask-nac-answer-block { margin: 0 0 0.85rem; }
+.nac-ask-nac-answer-block p { margin: 0.15rem 0; line-height: 1.55; }
+.nac-ask-nac-outcome { color: #d7b77c; }
+.nac-ask-nac-quote { margin: 0.35rem 0 0.15rem; color: #b9c5c2; font-size: 0.86rem; }
+.nac-ask-nac-quote summary { cursor: pointer; color: #d7b77c; }
+.nac-ask-nac-response__answer { white-space: normal; }
+@media (max-width: 920px) { .nac-ask-nac-workspace { grid-template-columns: minmax(0, 1fr); } .nac-ask-nac-threads { min-height: auto; max-height: 190px; } .nac-ask-nac-threads__privacy { display: none; } .nac-intelligence-hub--ask-focus .nac-ask-nac-workspace { height: auto; min-height: 0; } }
 
 /* Keep the chat input visible on desktop: only the conversation scrolls. */
 @media (min-width: 921px) {

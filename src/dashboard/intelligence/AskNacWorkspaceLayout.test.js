@@ -63,9 +63,10 @@ describe("Ask NAC workspace vs Knowledge separation", () => {
     expect(screen.getByLabelText("Ask NAC a question")).toBeInTheDocument();
   });
 
-  test("composer remains available on Ask NAC", () => {
+  test("conversation history can be opened and the composer stays available", () => {
     render(<AskNacTab />);
     expect(screen.getByRole("button", { name: /send question/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /conversations/i })).toHaveAttribute("aria-expanded", "false");
   });
 
   test("suggestions hide once conversation has messages", () => {

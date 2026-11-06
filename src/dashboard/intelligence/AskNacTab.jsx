@@ -91,6 +91,7 @@ export default function AskNacTab({
   const [moreOpen, setMoreOpen] = useState(false);
   const [threads, setThreads] = useState([]);
   const [activeThreadId, setActiveThreadId] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const inputRef = useRef(null);
   const scrollAnchorRef = useRef(null);
@@ -341,7 +342,8 @@ export default function AskNacTab({
   const inConversation = messages.length > 0 || loading;
 
   return (
-    <div className="nac-ask-nac-tab nac-ask-nac-workspace" data-testid="ask-nac-workspace">
+    <div className={`nac-ask-nac-tab nac-ask-nac-workspace${historyOpen ? "" : " is-history-collapsed"}`} data-testid="ask-nac-workspace">
+      {historyOpen ? (
       <aside className="nac-ask-nac-threads" aria-label="Conversation history">
         <div className="nac-ask-nac-threads__header">
           <strong>Conversations</strong>
@@ -360,6 +362,7 @@ export default function AskNacTab({
         </div>
         <p className="nac-ask-nac-threads__privacy">Stored on this browser for up to 7 days. Not synced across devices.</p>
       </aside>
+      ) : null}
       <div className="nac-ask-nac-workspace__column">
         <header
           className={`nac-glass-panel nac-ask-nac-hero${inConversation ? " nac-ask-nac-hero--compact" : ""}`.trim()}
@@ -375,6 +378,15 @@ export default function AskNacTab({
               ) : null}
             </div>
             <div className="nac-ask-nac-hero__actions">
+              <button
+                type="button"
+                className="nac-ask-nac-new-chat"
+                aria-expanded={historyOpen}
+                onClick={() => setHistoryOpen((open) => !open)}
+              >
+                <MessageSquare size={16} aria-hidden />
+                <span>{historyOpen ? "Hide conversations" : "Conversations"}</span>
+              </button>
               {messages.length ? (
                 <button
                   type="button"
