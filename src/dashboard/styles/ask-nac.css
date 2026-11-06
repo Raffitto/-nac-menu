@@ -867,8 +867,8 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
-  height: 100dvh;
-  max-height: 100dvh;
+  height: 100%;
+  max-height: 100%;
   overflow: hidden;
 }
 
