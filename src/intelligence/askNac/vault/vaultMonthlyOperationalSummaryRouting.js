@@ -68,7 +68,7 @@ export function isVaultMonthlyOperationalSummaryQuery(question = "") {
 }
 
 const OPERATIONAL_TOPIC =
-  /\b(complaints?|incidents?|operational|operations|logbooks?|recurring|staff performance|how did staff|staff\b.{0,24}\bperform|maintenance|food quality|beverage quality|drink quality|service (?:problems?|issues?|complaints?)|guest feedback)\b/i;
+  /\b(complaints?|incidents?|operational|operations|logbooks?|recurring|staff performance|how did staff|staff\b.{0,24}\bperform|maintenance|food quality|food related|beverage quality|drink quality|service (?:problems?|issues?|complaints?)|guest feedback)\b/i;
 
 export function requiresStructuredOperationalRetrieval(question = "", vaultPeriod = null) {
   const text = String(question || "").trim();
@@ -104,7 +104,7 @@ export function detectMonthlyOperationalMode(question = "") {
   if (/\b(resolved|resolution|follow-up|follow up)\b/.test(text) && /\bcomplaints?\b/.test(text)) return "resolution";
   if (/\bmaintenance|pest-control|pest control|equipment issues?\b/.test(text) && !/\bcomplaints?\b/.test(text)) return "maintenance";
   if (/\bstaff performance\b|\bhow did staff\b|\bstaff\b.*\b(perform|absence|absent|late)\b/.test(text)) return "staff";
-  if (/\bfood quality\b/.test(text)) return "food_quality";
+  if (/\bfood quality\b/.test(text) || /\bfood related\b/.test(text)) return "food_quality";
   if (/\b(?:beverage|drink) quality\b/.test(text) || (/\bbeverages?\b/.test(text) && /\b(quality|complain|wrong|cold)\b/.test(text))) {
     return "beverage";
   }

@@ -23,7 +23,7 @@ export function serverAnswerShouldYieldToLocal(question, payload, conversationCo
   const local = routeAskNacIntent(prepared.effectiveQuestion);
   const serverIntent = String(payload?.intent || "");
   const text = String(payload?.directAnswer || "");
-  if (/could not parse a calendar|vault period missing|no vault period/i.test(text)) return true;
+  if (/could not parse a calendar|could not be parsed|vault period missing|no vault period|vault data is not available/i.test(text)) return true;
   if (serverOperationalAnswerNeedsStructuredRetry(prepared.effectiveQuestion, payload)) return true;
   const localPreferred = local.intent === "vault_operational_review" || local.intent === "top_items" || local.intent === "top_items_compare";
   if (localPreferred && serverIntent && serverIntent !== local.intent) return true;
