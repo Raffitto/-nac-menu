@@ -111,6 +111,37 @@ describe("operational incident extraction", () => {
     expect(register.keyMetrics.find((metric) => metric.label === "Documented incidents").value).toBe("4");
   });
 
+  test("1 October popcorn chicken is a service-sequence complaint, not food quality", () => {
+    const note = "Table 10 order popcorn chicken as a first cours | and truffle burger and fries as second cours | but while popcorn chicken served on the table | after taking one pece of popcorn they received the rest. Offered them popcorn chicken because guest was angry.";
+    const incidents = extractIncidentsFromNarrative(note, {
+      date: "2026-10-01",
+      servicePeriod: "Dinner",
+      sourceDocument: "1 Oct logbook Nac Logbook.docx",
+    }).filter((item) => item.kind === "complaint");
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]).toMatchObject({
+      product: "Popcorn Chicken",
+      category: "service",
+      issue: expect.stringMatching(/service sequence/i),
+    });
+    expect(incidents[0].evidenceExcerpt).toMatch(/guest was angry/i);
+    const food = buildIncidentRegister({
+      facts: [{
+        periodStart: "2026-10-01",
+        metricKey: "dinner_notes",
+        fileTitle: "1 Oct logbook Nac Logbook.docx",
+        dimensions: { text_value: note, provenance: "historical_docx_recovery" },
+      }],
+      branchLabel: "Khobar",
+      periodLabel: "1–14 October 2026",
+      mode: "food_quality",
+      textKeys: ["dinner_notes"],
+      sectionLabels: { dinner_notes: "Dinner" },
+    });
+    expect(food.directAnswer).not.toMatch(/Popcorn Chicken/);
+    expect(food.operationalFindings).toHaveLength(0);
+  });
+
   test("drops an incident that is not a quote from the source note", () => {
     expect(incidentIsQuotedInSource(
       { evidenceExcerpt: "Table 10 complained about french toast" },
