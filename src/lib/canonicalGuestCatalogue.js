@@ -53,6 +53,26 @@ export function isRetiredBigNac(item) {
   return !isActiveBigNac(item);
 }
 
+/**
+ * One sellable identity per branch and portion.
+ * Price separates legitimate portions (Kale & Cabbage / Quinoa at 59 vs 45).
+ * A missing price is not an identity, so unnamed or unpriced rows are never merged.
+ */
+export function canonicalPlacementKey(item) {
+  const name = itemName(item);
+  if (!name) return null;
+  const price = amount(item?.price);
+  if (price == null) return null;
+  const branch = String(item?.branch_id || item?.branchId || "");
+  return `${branch}|${name}|${price}`;
+}
+
+export function isSameCanonicalPlacement(left, right) {
+  const leftKey = canonicalPlacementKey(left);
+  const rightKey = canonicalPlacementKey(right);
+  return Boolean(leftKey) && leftKey === rightKey;
+}
+
 /** Khobar is the reference guest presentation. Branch ids on the row stay unchanged. */
 export function presentGuestMenuItem(item) {
   const name = itemName(item);

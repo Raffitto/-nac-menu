@@ -3,6 +3,7 @@
  */
 
 import { isVerificationFixture } from "../../inventory/foodBible";
+import { scanCatalogueIntegrity } from "../../lib/catalogueIntegrity";
 import { classifyKitchenRecipeGaps, RECIPE_GAP_CLASS, recipeGapIssueCode } from "./recipeMappingClassification";
 
 export const INTEGRITY_SEVERITY = Object.freeze({
@@ -441,8 +442,16 @@ export function scanIntegrityBundle(input = {}) {
     else if (row.code === "missing_ingredient_cost") costClasses.ACTIVE_OPERATIONAL += 1;
     else if (row.code === "zero_cost_suspicious" || row.code === "missing_uom") costClasses.UNKNOWN += 1;
   }
+  const catalogueIntegrity = scanCatalogueIntegrity({
+    menuItems,
+    recipes: input.recipes || [],
+    foodicsMappings: input.foodicsMappings,
+    allergenItemIds: input.allergenItemIds,
+    conversions: input.conversions || [],
+  });
   return {
     ...summary,
+    catalogueIntegrity,
     groups: groupIntegrityIssues(issues),
     actionCounts: summary.actionCounts,
     capabilityGaps: [...extraGaps, ...mapping.capabilityGaps],
