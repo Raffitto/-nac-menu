@@ -90,7 +90,7 @@ function subjectFromComplaint(clause = "", previousProduct = null) {
   }
   const about = clause.match(/\b(?:complain\w*\s+(?:about|regarding)|became\s+upset\s+about|upset\s+about|was\s+upset\s+about|didn['’]?t\s+like(?:\s+the)?|did\s+not\s+like(?:\s+the)?)\s+(.+)$/i);
   const raw = cleanPhrase(about ? about[1] : "");
-  if (!raw || /^taste$/i.test(raw)) {
+  if (!raw || /^taste\b/i.test(raw)) {
     if (/\bservice\s+was\s+slow\b/i.test(clause)) return { product: "Service", issue: "slow service", category: "service" };
     if (/\brude\b/i.test(clause)) return { product: "Service", issue: "rude service", category: "service" };
     if (previousProduct && /\btaste|didn['’]?t\s+like|did\s+not\s+like/i.test(clause)) {
@@ -171,8 +171,14 @@ function summarizeAction(clauses = []) {
 }
 
 function resolutionStatus(text = "") {
-  if (SATISFACTION.test(text)) return "Guest satisfaction recorded.";
-  return "Final satisfaction not documented.";
+  if (SATISFACTION.test(text)) return "Guest explicitly confirmed satisfied.";
+  if (/\b(refus(?:ed|al)|declin(?:ed|e)|wanted\s+to\s+cancel|still\s+unhappy|not\s+happy)\b/i.test(text)) {
+    return "Guest declined the remedy. Satisfaction was not confirmed.";
+  }
+  if (/\b(offer(?:ed)?|remov(?:e|ed)|cancel(?:ed|led)|replacement)\b/i.test(text)) {
+    return "Management action recorded. Guest satisfaction was not documented.";
+  }
+  return "No resolution documented.";
 }
 
 function formatDay(iso) {
@@ -267,7 +273,7 @@ function buildObservationIncident(kind, clause, context) {
 }
 
 function rememberedOrder(clause = "") {
-  const match = String(clause).match(/\btable\s+(\d+)\b[^|\n]{0,24}\border(?:ed)?\s+(.+)$/i);
+  const match = String(clause).match(/\btable\s+(\d+)\b[^|\n]{0,24}\border(?:ed)?\s+(.+?)(?:\.|$)/i);
   if (!match) return null;
   const product = titleCase(match[2].replace(/[.’']+$/g, ""));
   if (!product || product.length > 60) return null;

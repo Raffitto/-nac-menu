@@ -82,7 +82,7 @@ describe("operational incident extraction", () => {
     expect(incident.product).toBe("Black Angus Steak");
     expect(incident.action).toMatch(/declined/i);
     expect(incident.action).toMatch(/removed from bill/i);
-    expect(incident.resolution).toBe("Final satisfaction not documented.");
+    expect(incident.resolution).toBe("Guest declined the remedy. Satisfaction was not confirmed.");
     expect(incident.sourceDocument).toBe("2026-10-07 logbook");
     expect(incident.sourceSection).toBe("Dinner");
   });
@@ -128,7 +128,7 @@ describe("operational incident extraction", () => {
       "Table 10 order popcorn chicken as a first cours | Offered them popcorn chicken because guest was angry.",
       "Table 21 complain about black angus steak | taste is not good and the sauce is spicy | we offered make new one | they refused they wanted to cancel | we remove the steak from the bill | there was no issue.",
       "Table 16 complains about ice mocha | chocolate powder is not mixed well | we speak with the guest | and offer them to fix it and they are happy.",
-      "Table 24 -ordered jasmine ice tea.Guest didnt like the taste.",
+      "Table 24 -ordered jasmine ice tea.Guest didnt like the taste ' said it teates like green tea.",
       "Dinner was smooth. No guest complained. Pest control came and sprayed both for cockroaches and flies.",
       "Table 10 complained about french toast | the taste is not same as last time | We offered another dessert | but they refused | so we removed it from the bill.",
     ].join(" ");
