@@ -4,6 +4,7 @@
 
 import { areUnitsCompatible } from "../inventory/inventoryIntelligence";
 import { catalogueIdentityId } from "./catalogueIdentity";
+import { classifyFoodicsSkuOverlap, scanNacCodes } from "./nacSku";
 
 export const CATALOGUE_SEVERITY = Object.freeze({
   CRITICAL: "CRITICAL",
@@ -35,6 +36,9 @@ export function scanCatalogueIntegrity({
   menuItems = [],
   recipes = [],
   foodicsMappings = null,
+  foodicsRecords = null,
+  nacIdentities = null,
+  activeTargets = null,
   allergenItemIds = null,
   conversions = [],
 } = {}) {
@@ -43,7 +47,7 @@ export function scanCatalogueIntegrity({
   findings.push(finding(
     CATALOGUE_SEVERITY.INFORMATIONAL,
     "network_catalogue_id_absent",
-    "No network-wide catalogue id exists. placement_group_id links sections, and a branch clone receives a new group id.",
+    "NAC codes are allocated explicitly. placement_group_id still only links sections inside a branch, and no code is assigned from a name.",
   ));
 
   for (const [catalogueId, rows] of sameIdentityRows(menuItems).entries()) {
@@ -52,7 +56,7 @@ export function scanCatalogueIntegrity({
       findings.push(finding(
         CATALOGUE_SEVERITY.CRITICAL,
         "conflicting_shared_price",
-        `Canonical product ${catalogueId} has different current prices: ${prices.join(", ")}. Branch prices were not changed.`,
+        `Placement group ${catalogueId} has different current prices: ${prices.join(", ")}. Branch prices were not changed.`,
         { catalogueId, itemIds: rows.map((row) => row.id) },
       ));
     }
@@ -194,6 +198,17 @@ export function scanCatalogueIntegrity({
         `Invalid conversion ${from || "?"} → ${to || "?"}. No quantity was invented.`,
         { conversionId: conversion.id },
       ));
+    }
+  }
+
+  if (Array.isArray(foodicsRecords)) {
+    for (const row of classifyFoodicsSkuOverlap(foodicsRecords)) {
+      findings.push(finding(row.severity, row.code, row.message, { sku: row.sku }));
+    }
+  }
+  if (Array.isArray(nacIdentities)) {
+    for (const row of scanNacCodes(nacIdentities, { activeTargets })) {
+      findings.push(finding(row.severity, row.code, row.message, { itemId: row.itemId }));
     }
   }
 
