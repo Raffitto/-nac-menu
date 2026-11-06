@@ -33,7 +33,7 @@ function yesterdayRiyadh() {
 
 async function loadIntegrityPayload() {
   const settled = await Promise.allSettled([
-    supabase.from("menu_items").select("id,name_en,name_ar,active,price,section_id,branch_id,placement_group_id").limit(2000),
+    supabase.from("menu_items").select("id,name_en,name_ar,active,price,calories,section_id,branch_id,placement_group_id").limit(2000),
     supabase.from("inventory_recipes").select("id,name,normalized_name,menu_item_id,active").limit(2000),
     supabase.from("inventory_recipe_versions").select("id,recipe_id,version_number,status").limit(1200),
     supabase.from("inventory_recipe_version_lines").select("id,recipe_version_id,ingredient_id,sub_recipe_id,quantity").limit(4000),
@@ -41,6 +41,8 @@ async function loadIntegrityPayload() {
     supabase.from("inventory_ingredient_cost_state").select("ingredient_id,branch_id,weighted_average_cost,last_purchase_price,last_purchase_at").limit(2000),
     supabase.from("inventory_movements").select("id", { count: "exact", head: true }).limit(1),
     supabase.from("inventory_stock_counts").select("id", { count: "exact", head: true }).eq("status", "posted").limit(1),
+    supabase.from("foodics_name_mapping").select("id,foodics_name,normalized_key,menu_item_id,match_confidence").limit(2000),
+    supabase.from("item_allergens").select("item_id").limit(4000),
   ]);
   const pick = (i) => (settled[i].status === "fulfilled" ? settled[i].value.data || [] : []);
   const costRows = pick(5);
@@ -53,6 +55,8 @@ async function loadIntegrityPayload() {
   const movementCount = settled[6].status === "fulfilled" ? Number(settled[6].value.count || 0) : 0;
   const postedCounts = settled[7].status === "fulfilled" ? Number(settled[7].value.count || 0) : 0;
   const ingredients = pick(4);
+  const foodicsResult = settled[8];
+  const allergenResult = settled[9];
   const scan = scanIntegrityBundle({
     menuItems: pick(0),
     recipes: pick(1),
@@ -61,6 +65,12 @@ async function loadIntegrityPayload() {
     ingredients,
     costByIngredientId,
     inventoryItems: null,
+    foodicsMappings: foodicsResult?.status === "fulfilled" && !foodicsResult.value.error
+      ? foodicsResult.value.data || []
+      : null,
+    allergenItemIds: allergenResult?.status === "fulfilled" && !allergenResult.value.error
+      ? [...new Set((allergenResult.value.data || []).map((row) => row.item_id))]
+      : null,
     scannedAt: new Date().toISOString(),
   });
   const truth = buildInventoryTruthResult({
@@ -225,6 +235,24 @@ export default function DataHealthPanel() {
           {(integrity.capabilityGaps || []).map((gap) => (
             <p key={gap.code} className="nac-settings-muted">{gap.message}</p>
           ))}
+          {integrity.catalogueIntegrity ? (
+            <div data-testid="settings-catalogue-integrity">
+              <p className="nac-settings-muted">
+                Catalogue critical {integrity.catalogueIntegrity.counts?.CRITICAL || 0}
+                {" · "}review {integrity.catalogueIntegrity.counts?.WARNING || 0}
+                {" · "}informational {integrity.catalogueIntegrity.counts?.INFORMATIONAL || 0}
+                . Unlinked placements are not merged.
+              </p>
+              <dl className="nac-settings-dl">
+                {(integrity.catalogueIntegrity.findings || []).slice(0, 8).map((row) => (
+                  <div key={`${row.code}-${row.itemId || row.recipeId || row.mappingId || row.message}`}>
+                    <dt>{row.severity} · {row.code}</dt>
+                    <dd>{row.message}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
           {integrity.identityClusters ? (
             <div data-testid="settings-identity-clusters">
               <p className="nac-settings-muted">
