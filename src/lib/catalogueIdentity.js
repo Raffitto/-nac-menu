@@ -21,10 +21,10 @@ export function catalogueIdentityId(item) {
 }
 
 export function describeCatalogueEntity(record = {}) {
-  if (record.recipe_version_id || record.version_number != null && record.recipe_id) {
+  if (record.recipe_version_id || (record.version_number != null && record.recipe_id)) {
     return CATALOGUE_ENTITY.RECIPE_VERSION;
   }
-  if (record.recipe_type || record.normalized_name && record.menu_item_id) {
+  if (record.recipe_type || (record.normalized_name && record.menu_item_id)) {
     return CATALOGUE_ENTITY.RECIPE;
   }
   if (record.base_inventory_unit || record.canonical_name) {
