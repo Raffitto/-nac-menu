@@ -225,6 +225,12 @@ function inferTimeExpression(question = ""): string | null {
   if (/\b(week before|prior week|previous week|week before that)\b/.test(q)) return "previous_week_compare";
   if (/\b(this week|current week)\b/.test(q)) return "this_week";
   if (/\blast week\b/.test(q)) return "last_week";
+  if (/\b(\d{1,3}|a|an|one|two|three)\s+days?\s+ago\b/.test(q)) {
+    const m = q.match(/\b(\d{1,3}|a|an|one|two|three)\s+days?\s+ago\b/);
+    const words: Record<string, string> = { a: "1", an: "1", one: "1", two: "2", three: "3" };
+    const n = m ? (words[m[1]] || m[1]) : null;
+    return n ? `days_ago:${n}` : null;
+  }
   if (/\b(last|past)\s+(\d{1,3})\s+days?\b/.test(q)) {
     const m = q.match(/\b(last|past)\s+(\d{1,3})\s+days?\b/);
     return m ? `last_${m[2]}_days` : "last_7_days";
@@ -590,11 +596,16 @@ export function resolvePlannerTimeExpression(
   if (expr === "today") {
     return parseVaultPeriodFromQuestion("today", referenceDate) || fromQuestion;
   }
+  if (fromQuestion?.isSingleDay) return fromQuestion;
   if (
     (expr === "last_7_days" || expr === "last_14_days" || expr === "lately" || expr === "recently" || expr === "last_weekend")
-    && (fromQuestion?.periodType === "named_month" || fromQuestion?.isMonth)
+    && (fromQuestion?.periodType === "named_month" || fromQuestion?.isMonth || fromQuestion?.isSingleDay)
   ) {
     return fromQuestion;
+  }
+  if (expr.startsWith("days_ago:")) {
+    const n = expr.slice("days_ago:".length);
+    return parseVaultPeriodFromQuestion(`${n} days ago`, referenceDate) || fromQuestion;
   }
   if (expr === "last_14_days" || expr === "lately" || expr === "recently") {
     return parseVaultPeriodFromQuestion("last 14 days", referenceDate) || fromQuestion;
