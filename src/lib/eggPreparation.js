@@ -1,3 +1,5 @@
+import { resolveConfirmedMenuIdentity, isKnownMenuPlacementId } from "./menuIdentity";
+
 /**
  * Preparation choice for the canonical "2 Eggs Any Style" product.
  * Price does not change.
@@ -5,7 +7,8 @@
  * menu_items.id is a per-row UUID and this dish is placed more than once,
  * so those ids differ by section and by environment. menu_items.slug exists
  * but menu_seed does not set one. Identity is the official catalogue
- * signature: English name, 31 SAR, and 461.4 calories.
+ * signature is retained only for unbound legacy/fallback environments.
+ * Confirmed placement UUIDs take precedence over editable presentation fields.
  */
 
 export const EGG_ITEM_NAME_EN = "2 Eggs Any Style";
@@ -31,6 +34,8 @@ function amount(value) {
 
 export function isTwoEggsAnyStyle(item) {
   if (!item || typeof item !== "object") return false;
+  const identity = resolveConfirmedMenuIdentity(item);
+  if (isKnownMenuPlacementId(item.id)) return identity?.foodicsSku === "sk-1320";
   if (normalizeName(item.en) !== normalizeName(EGG_ITEM_NAME_EN)) return false;
   if (amount(item.price) !== EGG_PRICE_SAR) return false;
   const calories = amount(item.calories);

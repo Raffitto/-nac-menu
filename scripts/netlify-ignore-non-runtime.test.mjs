@@ -1,6 +1,6 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { shouldBuild } from "./netlify-ignore-non-runtime.mjs";
+import { shouldBuild, isReviewOnlyBranch } from "./netlify-ignore-non-runtime.mjs";
 
 describe("netlify ignore", () => {
   test("docs and tests skip", () => {
@@ -20,4 +20,11 @@ describe("netlify ignore", () => {
   test("an empty diff skips", () => {
     assert.equal(shouldBuild([]), false);
   });
+});
+
+test("review branch skips all automatic Netlify builds, without blocking main or other branches", () => {
+  assert.equal(isReviewOnlyBranch("codex/nac-master-menu-reconciliation"), true);
+  assert.equal(isReviewOnlyBranch("main"), false);
+  assert.equal(isReviewOnlyBranch("another-feature"), false);
+  assert.equal(isReviewOnlyBranch(undefined), false);
 });

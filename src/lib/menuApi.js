@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { BREAKFAST_ICON_EN, BREAKFAST_ICON_AR } from "./menuPresentation";
-import { filterPublicMenuData } from "./menuVisibility";
+import { filterPublicMenuData, nextVisibilityExpiryMs } from "./menuVisibility";
 import { mapGuestMenuHighlightFields } from "./guestMenuFeatured";
 import { withEggPreparations } from "./eggPreparation";
 import {
@@ -42,7 +42,9 @@ function setCache(key, data) {
 
 export function invalidateMenuCache() {
   try {
-    localStorage.removeItem(MENU_CACHE_KEY);
+    for (const key of Object.keys(localStorage)) {
+      if (key === MENU_CACHE_KEY || key.startsWith(`${MENU_CACHE_KEY}:`)) localStorage.removeItem(key);
+    }
     localStorage.removeItem("nac_menu_cache");
   } catch {
     /* ignore */
@@ -724,6 +726,7 @@ export async function getFullMenu(options = {}) {
       title: { en: sec.name_en, ar: sec.name_ar },
       items: (itemsBySec[sec.id] || []).map((it) => withEggPreparations({
         id: it.id,
+        branch_id: it.branch_id,
         slug: it.slug || "",
         en: it.name_en,
         ar: it.name_ar,
@@ -780,6 +783,7 @@ export async function getFullMenu(options = {}) {
   const result = {
     categories: formattedCategories,
     menuData: filterPublicMenuData(menuData),
+    visibilityExpiryMs: nextVisibilityExpiryMs(menuData),
     addOns,
     allergenLabels,
   };
@@ -851,6 +855,7 @@ export async function getMenuByCategory(categorySlug) {
     title: { en: sec.name_en, ar: sec.name_ar },
     items: (itemsBySec[sec.id] || []).map((it) => withEggPreparations({
       id: it.id,
+      branch_id: it.branch_id,
       slug: it.slug || "",
       en: it.name_en,
       ar: it.name_ar,
@@ -1001,7 +1006,7 @@ export async function fetchPlacementGroupMembers(placementGroupId) {
   if (!placementGroupId) return { data: [], error: null };
   const { data, error } = await supabase
     .from("menu_items")
-    .select("id, section_id, placement_group_id, name_en")
+    .select("id, section_id, placement_group_id, name_en, branch_id")
     .eq("placement_group_id", placementGroupId)
     .order("created_at");
   return { data: data || [], error };
@@ -1021,7 +1026,7 @@ export async function resolveLinkedPlacementTargetIds(itemId) {
       return { ids: [], error: membersErr, placementGroupId: item.placement_group_id };
     }
     for (const member of members || []) {
-      if (member?.id) ids.push(member.id);
+      if (member?.id && member.branch_id === item.branch_id) ids.push(member.id);
     }
   }
 
@@ -1143,8 +1148,16 @@ export async function updateMenuItemPlacements({
 
   let members = [];
   if (groupId) {
-    const { data } = await fetchPlacementGroupMembers(groupId);
-    members = (data || []).filter((m) => !removed.has(m.id));
+    const { data, error: membersError } = await fetchPlacementGroupMembers(groupId);
+    if (membersError) return { data: null, error: membersError };
+    const sourceMember = (data || []).find((m) => m.id === itemId);
+    if (sourceMember?.branch_id && contentOnly.branch_id
+      && sourceMember.branch_id !== contentOnly.branch_id) {
+      return { data: null, error: new Error("Linked placements cannot be moved to another branch.") };
+    }
+    const sourceBranchId = sourceMember?.branch_id ?? contentOnly.branch_id;
+    members = (data || []).filter((m) => !removed.has(m.id)
+      && m.branch_id === sourceBranchId);
     if (!members.some((m) => m.id === itemId)) {
       members.push({ id: itemId, section_id: primarySectionId });
     }

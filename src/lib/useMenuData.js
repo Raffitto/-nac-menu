@@ -54,6 +54,7 @@ export function useMenuData(fallback) {
           menuData: filterPublicMenuData(data.menuData),
           addOns: data.addOns,
           allergenLabels: data.allergenLabels,
+          visibilityExpiryMs: data.visibilityExpiryMs ?? nextVisibilityExpiryMs(data.menuData),
         };
         setCachedMenu(payload);
         setMenuState({
@@ -135,12 +136,12 @@ export function useMenuData(fallback) {
   }, [loadFromSupabase, supabaseReady]);
 
   useEffect(() => {
-    const expiry = nextVisibilityExpiryMs(menuState.menuData);
+    const expiry = menuState.visibilityExpiryMs ?? nextVisibilityExpiryMs(menuState.menuData);
     if (!expiry || !menuState.fromSupabase) return undefined;
-    const delay = Math.max(1000, expiry - Date.now() + 500);
+    const delay = Math.min(2147483647, Math.max(1000, expiry - Date.now() + 500));
     const t = setTimeout(() => loadFromSupabase(), delay);
     return () => clearTimeout(t);
-  }, [menuState.menuData, menuState.fromSupabase, loadFromSupabase]);
+  }, [menuState.menuData, menuState.visibilityExpiryMs, menuState.fromSupabase, loadFromSupabase]);
 
   if (!supabaseReady) {
     return { ...fallback, loading: false, fromSupabase: false, menuError: null };

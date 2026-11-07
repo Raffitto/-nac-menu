@@ -1,0 +1,14 @@
+{
+  "status": "review_only_not_applied",
+  "asOf": "2026-10-24",
+  "table": "menu_items",
+  "recordId": "2fa6a037-5b2e-4841-a2c4-e5df28a40136",
+  "branchId": "khobar",
+  "foodicsProductId": "9edc6edc-b6cb-4d01-88df-a693829694e5",
+  "foodicsSku": "sk-2385",
+  "proposedChange": { "sold_out": true },
+  "preconditions": { "branch_id": "khobar", "price": "17 SAR", "active": true, "sold_out": false },
+  "reason": "Supplied confirmed temporary-unavailability decision. Reconfirm stock before any future application; no expiry or stock-return date is known.",
+  "blockedOn": "Shared-source routes currently render Khobar data; stored-row write could affect all routes until branch-specific data retrieval/overrides are verified. Not enabled by default in code.",
+  "recipeMutation": false
+}

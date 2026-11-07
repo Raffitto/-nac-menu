@@ -509,6 +509,10 @@ export default function App() {
   const publicBrandEn = useMemo(() => branchPublicName(publicBranchId, { lang: "en" }), [publicBranchId]);
   const publicBrandAr = useMemo(() => branchPublicName(publicBranchId, { lang: "ar" }), [publicBranchId]);
 
+  useEffect(() => {
+    document.title = publicBrandEn;
+  }, [publicBrandEn]);
+
   const {
     categories,
     menuData: rawMenuData,
@@ -518,8 +522,8 @@ export default function App() {
   } = useMenuData(_fallback);
   const menuData = useMemo(() => {
     const ordered = applyMenuOrdering(rawMenuData);
-    return fromSupabase ? filterPublicMenuData(ordered) : ordered;
-  }, [rawMenuData, fromSupabase]);
+    return fromSupabase ? filterPublicMenuData(ordered, Date.now(), { requestedBranchId: publicBranchId }) : ordered;
+  }, [rawMenuData, fromSupabase, publicBranchId]);
   const [loading, setLoading] = useState(true);
 
   const menuHasContent = useMemo(
