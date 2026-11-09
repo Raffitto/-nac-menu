@@ -16,6 +16,7 @@ done
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/scripts/restaurant-foundation-fixture.sql" >/dev/null
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/supabase/migrations/20261109183000_restaurant_service_foundation.sql" >/dev/null
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/supabase/migrations/20261109193000_restaurant_service_permissions.sql" >/dev/null
+docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/supabase/migrations/20261109201000_restaurant_service_turnover.sql" >/dev/null
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 <<'SQL'
 insert into public.restaurant_staff_grants (email, branch_id, role) values
   ('host.khobar@nac.test', 'khobar', 'host'),
