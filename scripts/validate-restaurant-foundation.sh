@@ -15,6 +15,15 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/scripts/restaurant-foundation-fixture.sql" >/dev/null
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/supabase/migrations/20261109183000_restaurant_service_foundation.sql" >/dev/null
+docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/supabase/migrations/20261109193000_restaurant_service_permissions.sql" >/dev/null
+docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 <<'SQL'
+insert into public.restaurant_staff_grants (email, branch_id, role) values
+  ('host.khobar@nac.test', 'khobar', 'host'),
+  ('host.riyadh@nac.test', 'riyadh', 'host'),
+  ('kitchen.khobar@nac.test', 'khobar', 'kitchen'),
+  ('cashier.khobar@nac.test', 'khobar', 'cashier')
+on conflict do nothing;
+SQL
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 < "$root/scripts/restaurant-foundation-checks.sql"
 docker exec -i "$name" psql -U postgres -d nac_res -v ON_ERROR_STOP=1 <<'SQL'
 select set_config('request.jwt.claim.email', 'host.khobar@nac.test', false);

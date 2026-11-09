@@ -19,9 +19,13 @@ This branch adds only the database foundation. It does not copy the simulated ho
 
 ## What the migration does
 
-It creates empty tables for layouts, layout versions, stable table ids, guests, reservations, waitlist entries, dining sessions, orders, joins, and audit events. Staff mutations go through security-definer functions that reuse `nac_menu_can_edit_branch`. Direct table writes are not granted. Anonymous access is revoked. Occupied tables cannot be renamed or retired. A stale revision returns `service_conflict`. An open session blocks cancellation. Moving a table keeps the order on the same session.
+It creates empty tables for layouts, layout versions, stable table ids, guests, reservations, waitlist entries, dining sessions, orders, order items, unpaid bills, joins, and audit events. A second migration adds `restaurant_staff_grants`. Menu-edit permission does not grant restaurant access. Host and manager roles can read guest contact details. Kitchen can read item names and allergy text through `restaurant_kitchen_items` and cannot select guest rows. Bills may be `open` or `closed_unpaid` only. No card payment is stored or captured.
+
+Direct table writes are not granted. Anonymous access is revoked. Occupied tables cannot be renamed or retired. A stale revision returns `service_conflict`. An open session blocks cancellation. Moving a table keeps the order on the same session.
 
 No historical guests, reservations, capacities, or Khobar coordinates are inserted.
+
+The host desk on `feature/nac-restaurant-reservations` is still browser-local. These functions are not called by that interface. Hosted Supabase multi-device sync has not been verified. The isolated proof is `scripts/validate-restaurant-foundation.sh` against a throwaway Postgres container.
 
 ## Rollback
 

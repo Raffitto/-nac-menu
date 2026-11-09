@@ -40,6 +40,7 @@ begin
 
   perform public.restaurant_open_session('session-hana', reservation_id, seated_revision);
   perform public.restaurant_add_order('order-hana', 'session-hana');
+  perform public.restaurant_add_item('order-hana', 'Olives', 1, null, 'no nuts');
   select revision into session_revision from public.restaurant_sessions where id = 'session-hana';
   perform public.restaurant_move_table('session-hana', 'khobar:23', session_revision);
   if (select session_id from public.restaurant_orders where id = 'order-hana') <> 'session-hana' then
@@ -107,6 +108,33 @@ begin
   exception when others then
     if sqlerrm <> 'branch_forbidden' then raise; end if;
   end;
+end $$;
+reset role;
+
+select set_config('request.jwt.claim.email', 'menu.only@nac.test', false);
+do $$
+begin
+  begin
+    perform public.restaurant_create_guest('khobar', 'Menu Only', null);
+    raise exception 'menu_editor_received_restaurant_access';
+  exception when others then
+    if sqlerrm <> 'branch_forbidden' then raise; end if;
+  end;
+end $$;
+
+select set_config('request.jwt.claim.email', 'kitchen.khobar@nac.test', false);
+set role authenticated;
+do $$
+begin
+  if (select count(*) from public.restaurant_guests) <> 0 then
+    raise exception 'kitchen_saw_guest_contact';
+  end if;
+  if (select count(*) from public.restaurant_kitchen_items('khobar')) < 1 then
+    raise exception 'kitchen_missed_order_item';
+  end if;
+  if (select allergy_alert from public.restaurant_kitchen_items('khobar') limit 1) <> 'no nuts' then
+    raise exception 'kitchen_missed_allergy_alert';
+  end if;
 end $$;
 reset role;
 

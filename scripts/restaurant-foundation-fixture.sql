@@ -55,5 +55,6 @@ $$;
 insert into public.menu_staff_scope (email, branch_id, role) values
   ('host.khobar@nac.test', 'khobar', 'branch_gm'),
   ('host.riyadh@nac.test', 'riyadh', 'branch_gm'),
-  ('outsider@nac.test', 'jeddah', 'restricted')
+  ('outsider@nac.test', 'jeddah', 'restricted'),
+  ('menu.only@nac.test', 'khobar', 'branch_gm')
 on conflict (email) do nothing;
