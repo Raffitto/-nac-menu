@@ -40,6 +40,7 @@ grant execute on function public.restaurant_open_unpaid_check(text, text) to aut
 grant execute on function public.restaurant_open_unpaid_check(text, text) to nac_restaurant_api;
 
 drop function if exists public.restaurant_record_adjustment(text, text, uuid, text, integer, integer, text);
+drop function if exists public.restaurant_record_adjustment(text, text, uuid, text, integer, integer, text, text, text);
 
 create function public.restaurant_record_adjustment(
   p_bill_id text,
