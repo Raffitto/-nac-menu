@@ -45,8 +45,8 @@ test("an unverified Khobar table does not invent a seat count", () => {
   expect(screen.getByRole("button", { name: "Mark arrived" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Cancel reservation" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Mark no-show" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Change covers" })).toBeDisabled();
-  expect(screen.getByText(/cover changes are not a separate action/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save reservation change" })).toBeEnabled();
+  expect(screen.getByText(/capacity is unverified/i)).toBeInTheDocument();
 });
 
 test("the waiting list stays on the screen until it is booked", () => {
@@ -137,7 +137,9 @@ test("host, waiter, kitchen, and cashier share one simulated service", () => {
   const card = screen.getByRole("article");
   expect(within(card).getByText(/No nuts/)).toBeInTheDocument();
   expect(within(card).getByText(/Each item keeps its own status/i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Grill/ })).toBeDisabled();
+  const stations = within(screen.getByRole("group", { name: "Preparation stations" }));
+  expect(stations.getByRole("button", { name: "Kitchen" })).toHaveAttribute("aria-pressed", "true");
+  expect(stations.getByRole("button", { name: "Bar" })).toBeEnabled();
   fireEvent.click(within(card).getByRole("button", { name: "Start preparing" }));
   expect(screen.getByRole("article")).toHaveAttribute("data-status", "preparing");
   expect(within(screen.getByRole("article")).getAllByText("Preparing").length).toBeGreaterThan(1);

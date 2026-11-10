@@ -13,6 +13,15 @@ import {
   verifyRegistration,
 } from "./passkeys.mjs";
 import { GUEST_ORDER_MODE, OWNER_EMAILS, guestMenu, issueGuestToken, readGuestToken } from "./guestAccess.mjs";
+import { EGG_PREPARATIONS, validateOrderLine } from "./orderSelections.mjs";
+import { verifySupabaseAccessToken } from "./hostedAuth.mjs";
+import { selectStaffGrant } from "./staffGrant.mjs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+
+const require = createRequire(import.meta.url);
+const { RECONSTRUCTED_LIMIT, buildPriceSnapshot, decimalToMinor, sumStoredMinor } = require("../../src/restaurant/priceSnapshot.js");
+const { inclusiveVat, percentMinor } = require("../../src/restaurant/halala.js");
 
 const port = Number(process.env.LOCAL_API_PORT || 4193);
 const devPassword = process.env.LOCAL_DEV_PASSWORD || "local-dev";
@@ -29,6 +38,15 @@ const adminPool = new pg.Pool({
 let appPool = null;
 const loginAttempts = new Map();
 const SESSION_HOURS = 12;
+const usage = {
+  since: new Date().toISOString(),
+  requests: 0,
+  unchanged: 0,
+  snapshots: 0,
+  errors: 0,
+  authFailures: 0,
+  durationMs: 0,
+};
 
 const menu = JSON.parse(readFileSync(new URL("../../src/catalogue/guest-menu-baseline-khobar.json", import.meta.url)));
 const menuById = new Map((menu.items || []).map((item) => [String(item.id), item]));
@@ -60,9 +78,7 @@ function moneyAmount(value) {
 }
 
 function minorUnits(value) {
-  const amount = moneyAmount(value);
-  if (amount == null) return null;
-  return Math.round(amount * 100);
+  return decimalToMinor(value);
 }
 
 function lineMinor(name, quantity, modifierIds) {
@@ -71,6 +87,7 @@ function lineMinor(name, quantity, modifierIds) {
   const unit = units.length === 1 ? units[0] : null;
   let extra = 0;
   for (const id of modifierIds || []) {
+    if (EGG_PREPARATIONS.some((option) => option.id === String(id))) continue;
     const amount = minorUnits(addonById.get(String(id))?.price);
     if (amount == null) return null;
     extra += amount;
@@ -82,6 +99,72 @@ function lineMinor(name, quantity, modifierIds) {
 function linePrice(name, quantity, modifierIds) {
   const minor = lineMinor(name, quantity, modifierIds);
   return minor == null ? null : minor / 100;
+}
+
+function presentMoney(minor) {
+  return Number.isInteger(minor) ? minor / 100 : null;
+}
+
+function presentModifiers(item) {
+  if (Array.isArray(item.modifier_snapshot)) {
+    return item.modifier_snapshot.map((row) => ({
+      id: row.id,
+      name: row.name,
+      price: Number.isInteger(row.unitMinor) ? row.unitMinor / 100 : null,
+    }));
+  }
+  return (Array.isArray(item.modifier_ids) ? item.modifier_ids : []).map((id) => {
+    const preparation = EGG_PREPARATIONS.find((option) => option.id === String(id));
+    const addon = addonById.get(String(id));
+    if (preparation) return { id: preparation.id, name: preparation.name, price: 0 };
+    if (!addon || addon.active === false) return null;
+    const minor = decimalToMinor(addon.price);
+    return { id: addon.id, name: addon.name_en || addon.name, price: presentMoney(minor) };
+  }).filter(Boolean);
+}
+
+function presentItem(item) {
+  const quantity = Number(item.quantity);
+  const storedLine = Number.isInteger(item.line_minor) ? item.line_minor : (typeof item.line_minor === "string" && /^-?\d+$/.test(item.line_minor) ? Number(item.line_minor) : null);
+  const storedUnit = Number.isInteger(item.unit_minor) ? item.unit_minor : (typeof item.unit_minor === "string" && /^-?\d+$/.test(item.unit_minor) ? Number(item.unit_minor) : null);
+  const snapshotted = storedLine != null;
+  const reconstructed = snapshotted ? null : lineMinor(item.item_name, quantity, Array.isArray(item.modifier_ids) ? item.modifier_ids : []);
+  const line = snapshotted ? storedLine : reconstructed;
+  return {
+    id: item.id,
+    itemId: item.catalogue_item_id || item.id,
+    catalogueItemId: item.catalogue_item_id || null,
+    name: item.item_name,
+    quantity,
+    price: presentMoney(line),
+    unitPrice: snapshotted ? presentMoney(storedUnit) : null,
+    priceMinor: snapshotted ? storedLine : null,
+    unitMinor: snapshotted ? storedUnit : null,
+    baseUnitMinor: snapshotted ? item.base_unit_minor : null,
+    priceProvenance: snapshotted ? "snapshot" : (line == null ? "unavailable" : "reconstructed"),
+    priceLimitation: snapshotted ? null : RECONSTRUCTED_LIMIT,
+    currency: snapshotted ? item.currency : null,
+    taxMinor: snapshotted ? item.tax_minor : null,
+    taxNote: "Tax is not recorded on this check.",
+    pricedAt: item.priced_at ? new Date(item.priced_at).toISOString() : null,
+    status: item.status,
+    statusAt: item.status_at ? new Date(item.status_at).toISOString() : null,
+    modifiers: presentModifiers(item),
+    instructions: item.note,
+    allergyAlert: item.allergy_alert,
+    station: item.station_code || null,
+    stationName: item.station_name || null,
+    routing: snapshotted ? (item.station_code ? "routed" : "unassigned") : "not_recorded",
+  };
+}
+
+function ticketStatus(rows) {
+  if (!rows.length) return "queued";
+  if (rows.every((item) => item.status === "served")) return "served";
+  if (rows.every((item) => item.status === "ready" || item.status === "served")) return "ready";
+  if (rows.some((item) => item.status === "preparing" || item.status === "ready")) return "preparing";
+  if (rows.some((item) => item.status === "accepted")) return "accepted";
+  return "queued";
 }
 
 function hashToken(token) {
@@ -262,29 +345,37 @@ function limitedLogin(email) {
 }
 
 function send(res, status, body) {
+  usage.requests += 1;
+  usage.durationMs += Math.max(0, Date.now() - (res.started || Date.now()));
+  if (status === 401 || status === 403) usage.authFailures += 1;
+  else if (status >= 400) usage.errors += 1;
+  if (res.usageKind === "unchanged") usage.unchanged += 1;
+  if (res.usageKind === "snapshot") usage.snapshots += 1;
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": res.reqOrigin || "http://localhost:4192",
-    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-headers": "authorization, content-type, x-nac-branch",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     vary: "origin",
   });
   res.end(JSON.stringify(body));
 }
 
-async function withStaff(email, branchId, fn) {
+async function withStaff(email, branchId, fn, options = {}) {
   const client = await appPool.connect();
   try {
     await client.query("begin");
     await client.query("select set_config('request.jwt.claim.email', $1, true)", [email]);
     await client.query("select set_config('nac.branch', $1, true)", [branchId]);
     const result = await fn(client);
-    const notice = JSON.stringify({
-      id: randomBytes(12).toString("hex"),
-      branchId,
-      revision: result?.revision ?? null,
-    });
-    await client.query("select pg_notify('restaurant_service', $1)", [notice]);
+    if (options.notify !== false) {
+      const notice = JSON.stringify({
+        id: randomBytes(12).toString("hex"),
+        branchId,
+        revision: result?.revision ?? null,
+      });
+      await client.query("select pg_notify('restaurant_service', $1)", [notice]);
+    }
     await client.query("commit");
     return result;
   } catch (error) {
@@ -340,14 +431,43 @@ async function snapshot(client, branchId) {
     [branchId],
   )).rows;
   const items = (await client.query(
-    `select id, order_id, item_name, quantity, note, allergy_alert, status, status_at, modifier_ids
+    `select id, order_id, item_name, quantity, note, allergy_alert, status, status_at, modifier_ids,
+            catalogue_item_id, base_unit_minor, modifier_snapshot, unit_minor, line_minor, currency,
+            tax_minor, priced_at, station_id, station_code, station_name
      from restaurant_order_items where branch_id = $1`,
     [branchId],
   )).rows;
-  const bills = (await client.query(
-    `select id, session_id, branch_id, status from restaurant_bills where branch_id = $1`,
+  const stations = (await client.query(
+    `select id, code, name, active from restaurant_stations where branch_id = $1 order by name`,
     [branchId],
   )).rows;
+  const itemStations = (await client.query(
+    `select a.catalogue_item_id, a.station_id, s.code, s.name
+     from restaurant_item_stations a
+     join restaurant_stations s on s.id = a.station_id
+     where a.branch_id = $1`,
+    [branchId],
+  )).rows;
+  const bills = (await client.query(
+    `select id, session_id, branch_id, status, tax_treatment, taxable_minor, vat_minor, gross_minor, finalized_at
+     from restaurant_bills where branch_id = $1`,
+    [branchId],
+  )).rows;
+  const payments = (await client.query(
+    `select id, bill_id, method, amount_minor, actor_email, created_at
+     from restaurant_payments where branch_id = $1 order by created_at`,
+    [branchId],
+  )).rows;
+  const shifts = (await client.query(
+    `select id, status, opening_float_minor, expected_cash_minor, counted_cash_minor, variance_minor, detail
+     from restaurant_shifts where branch_id = $1 order by opened_at desc limit 5`,
+    [branchId],
+  )).rows;
+  const taxSetting = (await client.query(
+    `select treatment, rate_numerator, rate_denominator, source_note
+     from restaurant_tax_settings where branch_id = $1`,
+    [branchId],
+  )).rows[0] || null;
   const waitlist = (await client.query(
     `select id, name, party_size, status, estimate_note from restaurant_waitlist
      where branch_id = $1 and status = 'waiting' order by created_at`,
@@ -362,24 +482,29 @@ function sessionMinor(sessionId) {
     const orderIds = new Set(orders.filter((row) => row.session_id === sessionId).map((row) => row.id));
     const lines = items.filter((item) => orderIds.has(item.order_id) && item.status !== "cancelled");
     if (!lines.length) return null;
-    const minors = lines.map((item) => lineMinor(item.item_name, item.quantity, item.modifier_ids || []));
-    if (minors.some((amount) => amount == null)) return null;
-    return minors.reduce((sum, amount) => sum + amount, 0);
+    const priced = lines.map((item) => {
+      const storedMinor = Number.isInteger(item.line_minor) ? item.line_minor : (typeof item.line_minor === "string" && /^-?\d+$/.test(item.line_minor) ? Number(item.line_minor) : null);
+      if (storedMinor != null) return { lineMinor: storedMinor, provenance: "snapshot" };
+      return { lineMinor: lineMinor(item.item_name, Number(item.quantity), item.modifier_ids || []), provenance: "reconstructed" };
+    });
+    return sumStoredMinor(priced);
   }
   function sessionTotal(sessionId) {
-    const minor = sessionMinor(sessionId);
-    return minor == null ? null : minor / 100;
+    const priced = sessionMinor(sessionId);
+    if (!priced || priced.minor == null) return null;
+    return { amount: priced.minor / 100, minor: priced.minor, provenance: priced.provenance };
   }
   function visitTotal(sessionId) {
-    const base = sessionMinor(sessionId);
-    if (base == null) return null;
+    const priced = sessionMinor(sessionId);
+    if (!priced || priced.minor == null) return null;
     const discounts = adjustments
       .filter((row) => row.session_id === sessionId && row.kind === "discount" && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    return Math.max(0, base - discounts) / 100;
+    return Math.max(0, priced.minor - discounts) / 100;
   }
   function outstanding(sessionId) {
-    const base = sessionMinor(sessionId);
+    const priced = sessionMinor(sessionId);
+    const base = priced?.minor;
     if (base == null) return null;
     const discounted = adjustments
       .filter((row) => row.session_id === sessionId && row.kind === "discount" && !row.item_id && Number.isInteger(row.amount_minor))
@@ -387,10 +512,11 @@ function sessionMinor(sessionId) {
     const itemDiscounts = adjustments
       .filter((row) => row.session_id === sessionId && row.kind === "discount" && row.item_id && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    const allocated = adjustments
-      .filter((row) => row.session_id === sessionId && row.kind === "split" && row.check_bill_id && Number.isInteger(row.amount_minor))
+    const sessionBillIds = new Set(bills.filter((row) => row.session_id === sessionId).map((row) => row.id));
+    const paid = payments
+      .filter((row) => sessionBillIds.has(row.bill_id) && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    return Math.max(0, base - discounted - itemDiscounts - allocated) / 100;
+    return Math.max(0, base - discounted - itemDiscounts - paid) / 100;
   }
   const adjustments = (await client.query(
       `select id, bill_id, session_id, kind, item_id, basis, amount_minor, parts, reason, actor_email, idempotency_key, check_bill_id
@@ -478,43 +604,47 @@ function sessionMinor(sessionId) {
       sessionId: row.session_id,
       branchId: row.branch_id,
       status: row.status,
-      items: items.filter((item) => item.order_id === row.id).map((item) => ({
-        id: item.id,
-        itemId: item.id,
-        name: item.item_name,
-        price: linePrice(item.item_name, item.quantity, item.modifier_ids || []),
-        status: item.status,
-        statusAt: item.status_at ? new Date(item.status_at).toISOString() : null,
-        modifiers: [],
-        instructions: item.note,
-        allergyAlert: item.allergy_alert,
-      })),
+      items: items.filter((item) => item.order_id === row.id).map(presentItem),
     })),
-    tickets: orders.filter((row) => sessions.some((session) => session.id === row.session_id && session.status === "open")).map((row) => {
-      const rows = items.filter((item) => item.order_id === row.id && item.status !== "cancelled");
-      const status = !rows.length
-        ? "queued"
-        : rows.every((item) => item.status === "served")
-          ? "served"
-          : rows.every((item) => item.status === "ready" || item.status === "served")
-            ? "ready"
-            : rows.some((item) => item.status === "preparing" || item.status === "ready")
-              ? "preparing"
-              : rows.some((item) => item.status === "accepted")
-                ? "accepted"
-                : "queued";
-      return { id: `ticket:${row.id}`, orderId: row.id, sessionId: row.session_id, status, station: "pass" };
+    tickets: orders.filter((row) => sessions.some((session) => session.id === row.session_id && session.status === "open")).flatMap((row) => {
+      const groups = new Map();
+      items.filter((item) => item.order_id === row.id && item.status !== "cancelled" && item.station_code).forEach((item) => {
+        const list = groups.get(item.station_code) || [];
+        list.push(item);
+        groups.set(item.station_code, list);
+      });
+      return [...groups.entries()].map(([code, rows]) => ({
+        id: `ticket:${row.id}:${code}`,
+        orderId: row.id,
+        sessionId: row.session_id,
+        status: ticketStatus(rows),
+        station: code,
+        stationName: rows[0].station_name || code,
+      }));
     }),
     bills: bills.map((row) => {
       const part = adjustments.find((entry) => entry.check_bill_id === row.id);
-      const partAmount = part && Number.isInteger(part.amount_minor) ? part.amount_minor / 100 : null;
+      const partMinor = part && Number.isInteger(part.amount_minor) ? part.amount_minor : null;
+      const paidOnBill = payments
+        .filter((entry) => entry.bill_id === row.id && Number.isInteger(entry.amount_minor))
+        .reduce((sum, entry) => sum + entry.amount_minor, 0);
+      const partAmount = partMinor == null ? null : partMinor / 100;
       return {
         id: row.id,
         sessionId: row.session_id,
         branchId: row.branch_id,
         status: row.status,
-        total: part ? partAmount : sessionTotal(row.session_id),
-        outstanding: part ? partAmount : outstanding(row.session_id),
+        total: part ? partAmount : sessionTotal(row.session_id)?.amount ?? null,
+        totalMinor: part ? null : sessionTotal(row.session_id)?.minor ?? null,
+        amountProvenance: part ? "allocated" : sessionTotal(row.session_id)?.provenance || "unavailable",
+        amountLimitation: sessionTotal(row.session_id)?.provenance === "reconstructed" ? RECONSTRUCTED_LIMIT : null,
+        taxTreatment: row.tax_treatment || (sessionTotal(row.session_id)?.provenance === "snapshot" ? taxSetting?.treatment || "unconfigured" : "unknown"),
+        vatMinor: Number.isInteger(row.vat_minor) ? row.vat_minor : null,
+        taxableMinor: Number.isInteger(row.taxable_minor) ? row.taxable_minor : null,
+        grossMinor: Number.isInteger(row.gross_minor) ? row.gross_minor : null,
+        finalizedAt: row.finalized_at ? new Date(row.finalized_at).toISOString() : null,
+        taxSource: row.finalized_at ? "snapshot" : "not_finalized",
+        outstanding: partMinor == null ? outstanding(row.session_id) : Math.max(0, partMinor - paidOnBill) / 100,
         paid: false,
         partId: row.id.startsWith(`bill:${row.session_id}:`) && row.id !== `bill:${row.session_id}`
           ? row.id.slice(`bill:${row.session_id}:`.length)
@@ -534,7 +664,19 @@ function sessionMinor(sessionId) {
       actorEmail: row.actor_email,
       paymentCaptured: false,
     })),
-    payments: [],
+    payments: payments.map((row) => ({
+      id: row.id,
+      billId: row.bill_id,
+      method: "simulated",
+      tender: row.method === "other" ? "transfer" : row.method,
+      amount: row.amount_minor / 100,
+      amountMinor: row.amount_minor,
+      testMode: true,
+      recordedAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+      actorEmail: row.actor_email,
+    })),
+    shifts,
+    taxSetting,
     visits: sessions.filter((row) => row.status === "closed" && row.guest_id).map((row) => ({
       id: `visit:${row.id}`,
       sessionId: row.id,
@@ -553,8 +695,78 @@ function sessionMinor(sessionId) {
       estimateNote: row.estimate_note,
     })),
     layouts,
+    stations: stations.map((row) => ({ id: row.id, code: row.code, name: row.name, active: row.active === true })),
+    itemStations: itemStations.map((row) => ({
+      catalogueItemId: row.catalogue_item_id,
+      stationId: row.station_id,
+      stationCode: row.code,
+      stationName: row.name,
+    })),
   };
   return { ok: true, state, revision: version, writes: 0 };
+}
+
+async function submitPricedItem(client, { orderId, known, quantity, checked, note, allergy, clientKey, branchId }) {
+  if (!clientKey) throw new Error("client_key_required");
+  const existing = (await client.query(
+    `select station_code, station_name, line_minor from restaurant_order_items where order_id = $1 and client_key = $2`,
+    [orderId, clientKey],
+  )).rows[0];
+  if (existing) {
+    return {
+      ok: true,
+      idempotent: true,
+      routed: Boolean(existing.station_code),
+      stationName: existing.station_name,
+      lineMinor: existing.line_minor,
+      reason: existing.station_code ? null : "station_not_configured",
+    };
+  }
+  const modifiers = [];
+  if (checked.preparation) modifiers.push({ id: checked.preparation.id, name: checked.preparation.name, price: 0 });
+  for (const id of checked.modifierIds) {
+    const addon = addonById.get(String(id));
+    if (!addon) throw new Error("modifier_not_available");
+    modifiers.push({ id: addon.id, name: addon.name_en || addon.name, price: addon.price });
+  }
+  const priced = buildPriceSnapshot({ item: known, quantity, modifiers });
+  if (!priced) throw new Error("price_unavailable");
+  const station = (await client.query(
+    `select s.id
+     from restaurant_item_stations a
+     join restaurant_stations s on s.id = a.station_id
+     where a.branch_id = $1 and a.catalogue_item_id = $2 and s.active = true`,
+    [branchId, String(known.id)],
+  )).rows[0] || null;
+  const inserted = (await client.query(
+    `select station_code, station_name, line_minor from restaurant_submit_priced_item(
+      $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14
+    )`,
+    [
+      orderId,
+      priced.catalogueItemId,
+      priced.name,
+      priced.quantity,
+      note,
+      allergy,
+      clientKey,
+      priced.baseUnitMinor,
+      JSON.stringify(priced.modifiers),
+      priced.unitMinor,
+      priced.lineMinor,
+      priced.currency,
+      priced.taxMinor,
+      station?.id || null,
+    ],
+  )).rows[0];
+  return {
+    ok: true,
+    idempotent: false,
+    routed: Boolean(inserted.station_code),
+    stationName: inserted.station_name,
+    lineMinor: inserted.line_minor,
+    reason: inserted.station_code ? null : "station_not_configured",
+  };
 }
 
 async function act(client, email, action, payload) {
@@ -607,6 +819,34 @@ async function act(client, email, action, payload) {
     await client.query("select restaurant_add_order($1, $2)", [orderId, sessionId]);
     return { ok: true };
   }
+  if (action === "createStation") {
+    const row = (await client.query(
+      "select id, code, name from restaurant_create_station($1, $2, $3)",
+      [grant.branch_id, payload?.code, payload?.name],
+    )).rows[0];
+    return { ok: true, station: row };
+  }
+  if (action === "assignItemStation") {
+    await client.query(
+      "select restaurant_assign_item_station($1, $2, $3)",
+      [grant.branch_id, payload?.itemId, payload?.stationId],
+    );
+    return { ok: true };
+  }
+  if (action === "updateStation") {
+    await client.query(
+      "select restaurant_update_station($1, $2, $3)",
+      [payload?.stationId, payload?.name, payload?.active !== false],
+    );
+    return { ok: true };
+  }
+  if (action === "routeItem") {
+    const row = (await client.query(
+      "select id, station_code, line_minor from restaurant_route_unassigned_item($1, $2)",
+      [payload?.itemId, payload?.stationId],
+    )).rows[0];
+    return { ok: true, routed: Boolean(row?.station_code), lineMinor: row?.line_minor ?? null };
+  }
   if (action === "addItem") {
     const [sessionId, item] = payload;
     const order = (await client.query(
@@ -615,38 +855,48 @@ async function act(client, email, action, payload) {
     )).rows[0];
     if (!order) throw new Error("order_not_found");
     const known = menuItem(item?.itemId);
-    const name = known?.name_en || known?.name || null;
-    if (!name) throw new Error("item_not_in_menu");
+    if (!known) throw new Error("item_not_in_menu");
     const quantity = Number(item?.quantity || 1);
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error("quantity_invalid");
-    const modifierIds = Array.isArray(item?.modifierIds) ? item.modifierIds.map(String) : [];
-    const allowed = addonIdsByItem.get(String(known.id)) || new Set();
-    if (modifierIds.some((id) => !allowed.has(id) || !addonById.has(id))) throw new Error("modifier_not_available");
-    const modifierNames = modifierIds.map((id) => addonById.get(id)?.name_en).filter(Boolean);
-    const note = [item?.instructions, modifierNames.length ? modifierNames.join(", ") : null].filter(Boolean).join(" · ") || null;
+    const requestedIds = Array.isArray(item?.modifierIds) ? item.modifierIds.map(String) : [];
+    const preparationId = item?.preparationId || requestedIds.find((id) => EGG_PREPARATIONS.some((option) => option.id === id)) || "";
+    const modifierIds = requestedIds.filter((id) => !EGG_PREPARATIONS.some((option) => option.id === id));
+    const checked = validateOrderLine({
+      item: known,
+      preparationId,
+      modifierIds,
+      allowedAddonIds: addonIdsByItem.get(String(known.id)) || new Set(),
+      addonById,
+      branchId: grant.branch_id,
+    });
+    if (!checked.ok) throw new Error(checked.reason);
+    const note = item?.instructions ? String(item.instructions).slice(0, 140) : null;
     const allergyNames = allergenIdsByItem.get(String(known.id)) || [];
     const allergy = allergyNames.length ? allergyNames.join(", ") : null;
     const clientKey = item?.clientKey ? String(item.clientKey).slice(0, 80) : "";
-    const inserted = clientKey
-      ? (await client.query(
-        "select id from restaurant_add_keyed_item($1, $2, $3, $4, $5, $6)",
-        [order.id, name, quantity, note, allergy, clientKey],
-      )).rows[0]
-      : (await client.query(
-        "select id from restaurant_add_item($1, $2, $3, $4, $5)",
-        [order.id, name, quantity, note, allergy],
-      )).rows[0];
-    await client.query("select restaurant_set_item_modifiers($1, $2::jsonb)", [inserted.id, JSON.stringify(modifierIds)]);
-    return { ok: true };
+    return submitPricedItem(client, {
+      orderId: order.id,
+      known,
+      quantity,
+      checked,
+      note,
+      allergy,
+      clientKey,
+      branchId: grant.branch_id,
+    });
   }
   if (action === "markServed" || action === "setKitchenStatus") {
     const orderId = action === "markServed" ? (Array.isArray(payload) ? payload[0] : payload) : payload[0];
     const status = action === "markServed" ? "served" : payload[1];
+    const station = action === "setKitchenStatus" ? payload[2] : null;
     const id = String(orderId).startsWith("order-") ? orderId : (await client.query(
       "select id from restaurant_orders where id = $1 or session_id = $1 limit 1",
       [orderId],
     )).rows[0]?.id;
-    await client.query("select restaurant_set_order_status($1, $2)", [id, status]);
+    if (station && station !== "pass") {
+      await client.query("select restaurant_set_station_status($1, $2, $3)", [id, station, status]);
+    } else {
+      await client.query("select restaurant_set_order_status($1, $2)", [id, status]);
+    }
     return { ok: true };
   }
   if (action === "setItemStatus") {
@@ -667,6 +917,21 @@ async function act(client, email, action, payload) {
       await client.query("select restaurant_join_tables($1, $2, $3)", [sessionId, tableId, revision]);
       revision += 1;
     }
+    return { ok: true };
+  }
+  if (action === "markNoShow") {
+    const id = Array.isArray(payload) ? payload[0] : payload?.id || payload;
+    const revision = (await client.query("select revision from restaurant_reservations where id = $1", [id])).rows[0]?.revision;
+    await client.query("select restaurant_mark_no_show($1, $2)", [id, revision]);
+    return { ok: true };
+  }
+  if (action === "updateReservation") {
+    const body = payload || {};
+    const revision = (await client.query("select revision from restaurant_reservations where id = $1", [body.id])).rows[0]?.revision;
+    await client.query(
+      "select restaurant_update_reservation($1, $2, $3, $4, $5)",
+      [body.id, revision, Number(body.partySize), body.date || null, body.time || null],
+    );
     return { ok: true };
   }
   if (action === "cancelReservation") {
@@ -717,14 +982,22 @@ async function act(client, email, action, payload) {
         });
       });
       const busy = (await client.query(
-        `select id from restaurant_tables t
+        `select t.id, t.label from restaurant_tables t
          where t.branch_id = $1 and (
            exists (select 1 from restaurant_sessions s where s.table_id = t.id and s.status = 'open')
-           or exists (select 1 from restaurant_reservations r where r.table_id = t.id and r.status = 'seated')
+           or exists (
+             select 1 from restaurant_reservations r
+             where r.table_id = t.id and r.status in ('booked', 'arrived', 'seated')
+           )
          )`,
         [grant.branch_id],
       )).rows;
-      if (busy.some((row) => !kept.has(row.id))) throw new Error("active_service_protected");
+      const placed = layouts.flatMap((layout) => layout.tables || []);
+      if (busy.some((row) => {
+        if (!kept.has(row.id)) return true;
+        const next = placed.find((table) => String(table.id) === String(row.id));
+        return next && String(next.label) !== String(row.label);
+      })) throw new Error("active_service_protected");
     }
     const saved = (await client.query(
       "select id, revision from restaurant_save_layout($1, $2, $3::jsonb)",
@@ -739,13 +1012,63 @@ async function act(client, email, action, payload) {
     return { ok: true };
   }
   if (action === "pay") {
-    return { ok: false, reason: "payment_not_authorized" };
+    return { ok: false, reason: "payment_not_authorized", paymentCaptured: false };
+  }
+  if (action === "recordSimulatedPayment") {
+    const body = Array.isArray(payload) ? payload[1] || {} : payload || {};
+    const method = body.tender === "cash" ? "cash" : body.tender === "card" ? "card" : body.tender === "transfer" || body.tender === "other" ? "other" : null;
+    if (!method) throw new Error("tender_not_configured");
+    const amountMinor = decimalToMinor(body.amount);
+    if (amountMinor == null || amountMinor <= 0) throw new Error("amount_invalid");
+    const bill = (await client.query(
+      "select id from restaurant_bills where id = $1 or session_id = $1 order by created_at limit 1",
+      [body.billId || body.sessionId],
+    )).rows[0];
+    if (!bill) throw new Error("bill_not_found");
+    const row = (await client.query(
+      "select id, amount_minor, method from restaurant_record_simulated_payment($1, $2, $3, $4)",
+      [bill.id, method, amountMinor, body.idempotencyKey || null],
+    )).rows[0];
+    return { ok: true, paymentCaptured: false, testMode: true, payment: row };
+  }
+  if (action === "finalizeBill") {
+    const billId = payload?.billId || payload;
+    const row = (await client.query(
+      "select gross_minor, vat_minor, taxable_minor, tax_treatment from restaurant_finalize_simulated_bill($1)",
+      [billId],
+    )).rows[0];
+    return { ok: true, paymentCaptured: false, testMode: true, bill: row };
+  }
+  if (action === "openShift") {
+    const row = (await client.query(
+      "select id, opening_float_minor from restaurant_open_shift($1, $2)",
+      [grant.branch_id, decimalToMinor(payload?.openingFloat)],
+    )).rows[0];
+    return { ok: true, testMode: true, shift: row, paymentCaptured: false };
+  }
+  if (action === "closeShift") {
+    const row = (await client.query(
+      "select id, expected_cash_minor, counted_cash_minor, variance_minor, detail from restaurant_close_shift($1, $2, $3)",
+      [payload?.shiftId, decimalToMinor(payload?.countedCash), payload?.note],
+    )).rows[0];
+    return { ok: true, testMode: true, shift: row, paymentCaptured: false };
   }
   if (action === "discountBill" || action === "voidItem" || action === "splitBill") {
     const body = payload || {};
     const reason = String(body.reason || "").trim();
     if (!reason) throw new Error("reason_required");
-    if (body.basis === "guest") throw new Error("guest_assignment_missing");
+    if (body.basis === "guest" && !Number.isInteger(Number(body.partySize))) {
+      const party = (await client.query(
+        `select r.party_size from restaurant_bills b
+         join restaurant_sessions s on s.id = b.session_id
+         join restaurant_reservations r on r.id = s.reservation_id
+         where b.id = $1`,
+        [body.billId || body.sessionId],
+      )).rows[0];
+      if (!Number.isInteger(party?.party_size) || party.party_size < 2) throw new Error("guest_assignment_missing");
+      body.parts = party.party_size;
+      body.basis = "guest";
+    }
     const bill = (await client.query(
       "select id, session_id, status from restaurant_bills where id = $1 or session_id = $1 limit 1",
       [body.billId || body.sessionId],
@@ -760,7 +1083,7 @@ async function act(client, email, action, payload) {
       if (existing) return { ok: true, paymentCaptured: false, idempotent: true };
     }
     const lines = (await client.query(
-      `select i.id, i.item_name, i.quantity, i.modifier_ids, i.status
+      `select i.id, i.item_name, i.quantity, i.modifier_ids, i.status, i.line_minor
        from restaurant_order_items i
        join restaurant_orders o on o.id = i.order_id
        where o.session_id = $1 and i.status <> 'cancelled'`,
@@ -768,9 +1091,10 @@ async function act(client, email, action, payload) {
     )).rows;
     const priced = lines.map((line) => ({
       ...line,
-      minor: lineMinor(line.item_name, line.quantity, line.modifier_ids || []),
+      minor: Number.isInteger(line.line_minor) ? line.line_minor : (/^\d+$/.test(String(line.line_minor ?? "")) ? Number(line.line_minor) : null),
+      provenance: Number.isInteger(line.line_minor) ? "snapshot" : "reconstructed",
     }));
-    if (priced.some((line) => line.minor == null)) throw new Error("price_unconfigured");
+    if (priced.some((line) => line.minor == null)) throw new Error("price_snapshot_required");
     const totalMinor = priced.reduce((sum, line) => sum + line.minor, 0);
     const prior = (await client.query(
       "select kind, item_id, amount_minor, check_bill_id from restaurant_adjustments where bill_id = $1",
@@ -782,14 +1106,18 @@ async function act(client, email, action, payload) {
       if (row.kind === "split" && row.check_bill_id) return sum + row.amount_minor;
       return sum;
     }, 0);
-    const availableMinor = totalMinor - usedMinor;
+    const paidMinor = (await client.query(
+      "select coalesce(sum(amount_minor), 0)::int as minor from restaurant_payments where bill_id = $1",
+      [bill.id],
+    )).rows[0].minor;
+    const availableMinor = totalMinor - usedMinor - paidMinor;
     if (action === "discountBill") {
       const target = body.itemId ? priced.find((line) => line.id === body.itemId) : null;
       if (body.itemId && !target) throw new Error("item_not_found");
       const baseMinor = target ? target.minor : availableMinor;
       const basis = body.basis === "amount" ? "amount" : "percent";
       const value = Number(body.value);
-      const amountMinor = basis === "percent" ? Math.round(baseMinor * value / 100) : Math.round(value * 100);
+      const amountMinor = basis === "percent" ? percentMinor(baseMinor, value) : decimalToMinor(value);
       if (!Number.isFinite(value) || value <= 0 || (basis === "percent" && value > 100) || amountMinor <= 0 || amountMinor > baseMinor || amountMinor > availableMinor) {
         throw new Error("discount_exceeds_total");
       }
@@ -800,6 +1128,13 @@ async function act(client, email, action, payload) {
       return { ok: true, paymentCaptured: false };
     }
     if (action === "voidItem") {
+      const target = priced.find((line) => line.id === body.itemId);
+      if (!target) throw new Error("item_not_found");
+      const paid = (await client.query(
+        "select coalesce(sum(amount_minor), 0)::int as minor from restaurant_payments where bill_id = $1",
+        [bill.id],
+      )).rows[0].minor;
+      if (paid > totalMinor - target.minor) throw new Error("void_after_payment");
       await client.query(
         "select restaurant_record_adjustment($1, 'void', $2, 'item', null, null, $3, $4, null)",
         [bill.id, body.itemId, reason, key],
@@ -824,6 +1159,23 @@ async function act(client, email, action, payload) {
         [bill.id, selectedMinor, chosen.length, reason, key, checkId],
       );
       return { ok: true, paymentCaptured: false, checks: [checkId] };
+    }
+    if (Array.isArray(body.amounts)) {
+      const amounts = body.amounts.map((value) => decimalToMinor(value));
+      if (amounts.some((value) => value == null || value < 0) || amounts.reduce((sum, value) => sum + value, 0) !== availableMinor) {
+        throw new Error("allocation_mismatch");
+      }
+      const checks = [];
+      for (let index = 0; index < amounts.length; index += 1) {
+        const checkId = `${bill.id}:check:custom:${index + 1}:${key || "custom"}`;
+        await client.query("select restaurant_open_unpaid_check($1, $2)", [bill.session_id, checkId]);
+        await client.query(
+          "select restaurant_record_adjustment($1, 'split', null, 'custom', $2, $3, $4, $5, $6)",
+          [bill.id, amounts[index], amounts.length, reason, key ? `${key}:${index + 1}` : null, checkId],
+        );
+        checks.push(checkId);
+      }
+      return { ok: true, paymentCaptured: false, checks };
     }
     const parts = Number(body.parts || 2);
     if (!Number.isInteger(parts) || parts < 2 || parts > 12) throw new Error("split_not_supported");
@@ -913,16 +1265,34 @@ async function act(client, email, action, payload) {
     const order = (await client.query("select id from restaurant_orders where session_id = $1 limit 1", [access.session_id])).rows[0];
     if (!order) throw new Error("order_not_found");
     const lines = (await client.query(
-      "select id, item_name, quantity, modifier_ids, note from restaurant_guest_baskets where access_id = $1 and status = 'pending_staff'",
+      "select id, item_id, item_name, quantity, modifier_ids, note from restaurant_guest_baskets where access_id = $1 and status = 'pending_staff'",
       [access.id],
     )).rows;
     for (const line of lines) {
-      const modifiers = Array.isArray(line.modifier_ids) ? line.modifier_ids : JSON.parse(line.modifier_ids || "[]");
-      const inserted = (await client.query(
-        "select id from restaurant_add_keyed_item($1, $2, $3, $4, $5, $6)",
-        [order.id, line.item_name, line.quantity, line.note, null, `guest:${line.id}`],
-      )).rows[0];
-      await client.query("select restaurant_set_item_modifiers($1, $2::jsonb)", [inserted.id, JSON.stringify(modifiers)]);
+      const known = menuItem(line.item_id);
+      if (!known) throw new Error("item_not_in_menu");
+      const requestedIds = Array.isArray(line.modifier_ids) ? line.modifier_ids.map(String) : [];
+      const preparationId = requestedIds.find((id) => EGG_PREPARATIONS.some((option) => option.id === id)) || "";
+      const modifierIds = requestedIds.filter((id) => !EGG_PREPARATIONS.some((option) => option.id === id));
+      const checked = validateOrderLine({
+        item: known,
+        preparationId,
+        modifierIds,
+        allowedAddonIds: addonIdsByItem.get(String(known.id)) || new Set(),
+        addonById,
+        branchId: grant.branch_id,
+      });
+      if (!checked.ok) throw new Error(checked.reason);
+      await submitPricedItem(client, {
+        orderId: order.id,
+        known,
+        quantity: Number(line.quantity),
+        checked,
+        note: line.note,
+        allergy: null,
+        clientKey: `guest:${line.id}`,
+        branchId: grant.branch_id,
+      });
       await client.query("update restaurant_guest_baskets set status = 'confirmed' where id = $1", [line.id]);
     }
     return { ok: true, confirmed: lines.length, paymentCaptured: false };
@@ -930,7 +1300,17 @@ async function act(client, email, action, payload) {
   throw new Error("action_not_in_development_api");
 }
 
-const server = http.createServer(async (req, res) => {
+const authFailures = new Map();
+
+function limitedAuth(key) {
+  const now = Date.now();
+  const recent = (authFailures.get(key) || []).filter((stamp) => now - stamp < 60000);
+  recent.push(now);
+  authFailures.set(key, recent);
+  return recent.length > 60;
+}
+
+export async function handleNodeRequest(req, res) {
   const origin = req.headers.origin || "http://localhost:4192";
   res.reqOrigin = origin;
   if (req.method === "OPTIONS") {
@@ -943,21 +1323,40 @@ const server = http.createServer(async (req, res) => {
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
       const text = Buffer.concat(chunks).toString("utf8");
-      resolve(text ? JSON.parse(text) : {});
+      if (Buffer.concat(chunks).length > 100000) {
+        resolve({ __invalidJson: true, __tooLarge: true });
+        return;
+      }
+      if (!text) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        resolve({ __invalidJson: true });
+      }
     });
   });
+  if (body?.__invalidJson) {
+    send(res, body.__tooLarge ? 413 : 400, { ok: false, reason: body.__tooLarge ? "payload_too_large" : "invalid_json" });
+    return;
+  }
   try {
     const requestId = req.headers["x-request-id"] || randomBytes(8).toString("hex");
     res.setHeader("x-request-id", requestId);
     const started = Date.now();
+    res.started = started;
     res.on("finish", () => {
       if (url.pathname === "/events") return;
+      const ms = Date.now() - started;
       process.stdout.write(`${JSON.stringify({
         requestId,
         method: req.method,
         path: url.pathname,
         status: res.statusCode,
-        ms: Date.now() - started,
+        ms,
+        usageKind: res.usageKind || "other",
       })}\n`);
     });
     if (url.pathname === "/pilot-status") {
@@ -981,7 +1380,26 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/health") {
       const ping = await appPool.query("select 1 as ok");
-      send(res, 200, { ok: ping.rows[0].ok === 1, database: "local", production: false, db: "up" });
+      send(res, 200, {
+        ok: ping.rows[0].ok === 1,
+        database: process.env.RESTAURANT_AUTH_MODE === "supabase" ? "supabase" : "local",
+        production: false,
+        db: "up",
+        realtime: process.env.RESTAURANT_AUTH_MODE === "supabase" ? "poll" : "events",
+        usage: {
+          since: usage.since,
+          requests: usage.requests,
+          unchanged: usage.unchanged,
+          snapshots: usage.snapshots,
+          errors: usage.errors,
+          authFailures: usage.authFailures,
+          durationMs: usage.durationMs,
+        },
+      });
+      return;
+    }
+    if (process.env.RESTAURANT_AUTH_MODE === "supabase" && (url.pathname === "/login" || url.pathname.startsWith("/passkey/"))) {
+      send(res, 403, { ok: false, reason: "dev_auth_disabled" });
       return;
     }
     if (url.pathname === "/login" && req.method === "POST") {
@@ -1063,7 +1481,11 @@ const server = http.createServer(async (req, res) => {
       if (await handleGuest(res, url.pathname, body)) return;
     }
     const token = String(req.headers.authorization || "").replace(/^Bearer /, "");
-    const session = await loadSession(token);
+    const session = await loadSession(token, req.headers);
+    if (session?.error) {
+      send(res, session.error === "rate_limited" ? 429 : 403, { ok: false, reason: session.error, paymentCaptured: false });
+      return;
+    }
     if (!session) {
       send(res, 401, { ok: false, reason: "sign_in_required" });
       return;
@@ -1094,6 +1516,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/events" && req.method === "GET") {
+      if (process.env.RESTAURANT_AUTH_MODE === "supabase") {
+        send(res, 200, { ok: true, mode: "poll", realtime: "poll" });
+        return;
+      }
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -1136,8 +1562,21 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/state") {
+      const known = Number(url.searchParams.get("revision"));
+      if (Number.isInteger(known)) {
+        const current = await withStaff(session.email, session.branchId, async (client) => (
+          (await client.query("select count(*)::int as revision from restaurant_audit_events")).rows[0].revision
+        ), { notify: false });
+        if (current === known) {
+          res.usageKind = "unchanged";
+          send(res, 200, { ok: true, unchanged: true, revision: current, role: session.role, email: session.email, sync: "revision" });
+          return;
+        }
+      }
+      const started = Date.now();
       const data = await withStaff(session.email, session.branchId, (client) => snapshot(client, session.branchId));
-      send(res, 200, { ...data, role: session.role, email: session.email });
+      res.usageKind = "snapshot";
+      send(res, 200, { ...data, role: session.role, email: session.email, syncMs: Date.now() - started });
       return;
     }
     if (url.pathname === "/act" && req.method === "POST") {
@@ -1157,9 +1596,25 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     send(res, 400, { ok: false, reason: reasonFrom(error) });
   }
-});
+}
 
-async function loadSession(token) {
+async function loadSupabaseSession(token, headers) {
+  const ip = String(headers["x-nf-client-connection-ip"] || headers["x-forwarded-for"] || "local").split(",")[0].trim();
+  if (limitedAuth(ip)) return { error: "rate_limited" };
+  const user = await verifySupabaseAccessToken(token);
+  if (!user?.email) return null;
+  const grants = (await appPool.query(
+    `select role, branch_id from restaurant_staff_grants
+     where lower(email) = lower($1) and revoked_at is null and branch_id <> '*'`,
+    [user.email],
+  )).rows;
+  const selected = selectStaffGrant(grants, headers["x-nac-branch"]);
+  if (!selected.ok) return { error: selected.reason };
+  return { email: user.email, role: selected.role, branchId: selected.branchId };
+}
+
+async function loadSession(token, headers = {}) {
+  if (process.env.RESTAURANT_AUTH_MODE === "supabase") return loadSupabaseSession(token, headers);
   if (!token) return null;
   const row = (await appPool.query(
     `select s.email, s.role, s.branch_id
@@ -1171,6 +1626,22 @@ async function loadSession(token) {
   )).rows[0];
   if (!row) return null;
   return { email: row.email, role: row.role, branchId: row.branch_id };
+}
+
+export async function ensureRestaurantPool() {
+  if (appPool) return appPool;
+  if (process.env.RESTAURANT_DATABASE_URL) {
+    appPool = new pg.Pool({
+      connectionString: process.env.RESTAURANT_DATABASE_URL,
+      max: 1,
+      connectionTimeoutMillis: 8000,
+      idleTimeoutMillis: 1000,
+    });
+    await appPool.query("select 1");
+    return appPool;
+  }
+  await assertMigrated();
+  return appPool;
 }
 
 async function assertMigrated() {
@@ -1201,11 +1672,58 @@ async function assertMigrated() {
   });
 }
 
-assertMigrated().then(() => {
-  server.listen(port, "127.0.0.1", () => {
-    process.stdout.write(`local restaurant api on 127.0.0.1:${port}\n`);
+export async function handleWebRequest(request) {
+  await ensureRestaurantPool();
+  const url = new URL(request.url);
+  let pathname = url.pathname;
+  for (const prefix of ["/api/restaurant", "/.netlify/functions/restaurant"]) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      pathname = pathname.slice(prefix.length) || "/";
+      break;
+    }
+  }
+  const text = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  const headers = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
   });
-}).catch((error) => {
-  process.stderr.write(`${error.message}\n`);
-  process.exit(1);
-});
+  const req = {
+    method: request.method,
+    url: `${pathname}${url.search}`,
+    headers,
+    on(event, callback) {
+      if (event === "data" && text) callback(Buffer.from(text));
+      if (event === "end") queueMicrotask(callback);
+    },
+  };
+  let status = 200;
+  const headerBag = {};
+  let payload = "";
+  const res = {
+    reqOrigin: headers.origin || "",
+    statusCode: 200,
+    setHeader(name, value) { headerBag[name] = value; },
+    writeHead(code, extra) {
+      status = code;
+      if (extra) Object.assign(headerBag, extra);
+    },
+    end(body) { payload = body || ""; },
+    write() {},
+    on() {},
+  };
+  await handleNodeRequest(req, res);
+  return new Response(payload, { status, headers: headerBag });
+}
+
+const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (direct) {
+  assertMigrated().then(() => {
+    const server = http.createServer(handleNodeRequest);
+    server.listen(port, "127.0.0.1", () => {
+      process.stdout.write(`local restaurant api on 127.0.0.1:${port}\n`);
+    });
+  }).catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  });
+}

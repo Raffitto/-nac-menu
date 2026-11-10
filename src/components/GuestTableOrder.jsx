@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-
-const API = process.env.REACT_APP_RESTAURANT_API || "http://127.0.0.1:4193";
+import { restaurantApiBase } from "../restaurant/devApi/endpoint";
 const basket = [];
 const listeners = new Set();
 
@@ -14,7 +13,9 @@ export function guestOrderToken() {
 }
 
 async function guestCall(path, body) {
-  const response = await fetch(`${API}${path}`, {
+  const base = restaurantApiBase();
+  if (!base) return { ok: false, guestOrdering: false, guestPayments: false, paymentCaptured: false };
+  const response = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

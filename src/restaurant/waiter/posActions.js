@@ -33,6 +33,9 @@ const NOTICE = Object.freeze({
   item_not_available: "That product is not on this menu.",
   item_unavailable: "That product is unavailable.",
   modifier_not_available: "That add-on is not on this product.",
+  preparation_required: "Choose the preparation before adding this item.",
+  preparation_not_available: "That preparation is not on this product.",
+  modifier_duplicate: "That add-on is already selected.",
   item_not_in_menu: "That product is not on the published menu.",
   sign_in_failed: "Sign-in failed.",
   sign_in_required: "Sign in again.",
@@ -41,6 +44,8 @@ const NOTICE = Object.freeze({
   nothing_to_send: "Nothing new to send.",
   bar_route_not_posted: "These drinks stay on the check. A bar ticket cannot be posted yet.",
   station_not_recorded: "Station is not recorded for these items, so they stayed on the check.",
+  station_not_configured: "Pending Routing. The price was saved. This item was not sent to a preparation station.",
+  price_unavailable: "The price could not be recorded, so the item was not submitted.",
   ticket_not_ready: "The kitchen has not marked this ready.",
   ticket_closed: "This ticket is already served.",
   service_conflict: "This table changed. Try that again.",
@@ -258,40 +263,65 @@ export function sendStagedItems(restaurant, sessionId, lines) {
   };
 }
 
-const FOOD_CATEGORIES = new Set(["breakfast", "brunch", "daytime", "evening", "desserts"]);
-
 function normalizeStation(value) {
   const station = String(value || "").trim().toLowerCase();
-  if (station === "kitchen" || station === "pass") return "pass";
-  if (station === "bar" || station === "grill" || station === "pastry") return station;
-  return null;
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(station)) return null;
+  if (station === "kitchen") return "pass";
+  return station;
 }
 
 export function resolveStation(line) {
-  if (line?.station) {
-    const explicit = normalizeStation(line.station);
-    if (!explicit) return { station: null, source: "product", reason: "station_not_recorded", writes: 0 };
-    return { station: explicit, source: "product", writes: 0 };
-  }
-  const slug = String(line?.categorySlug || "").toLowerCase();
-  if (slug === "drinks") return { station: "bar", source: "category", categorySlug: slug, writes: 0 };
-  if (FOOD_CATEGORIES.has(slug)) return { station: "pass", source: "category", categorySlug: slug, writes: 0 };
-  return { station: null, source: "missing", reason: "station_not_recorded", writes: 0 };
+  const explicit = normalizeStation(line?.station);
+  if (!explicit) return { station: null, source: "missing", reason: "station_not_configured", writes: 0 };
+  return { station: explicit, source: "configuration", writes: 0 };
 }
 
 export function stationLabel(station) {
   if (station === "bar") return "Bar";
-  if (station === "pass") return "Kitchen";
-  if (station === "grill") return "Grill";
-  if (station === "pastry") return "Pastry";
+  if (station === "pass" || station === "kitchen") return "Kitchen";
   return "Station not recorded";
+}
+
+function moneyNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const match = String(value ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : null;
 }
 
 export function unitPriceOf(line) {
   if (Number.isFinite(line?.unitPrice)) return line.unitPrice;
   const quantity = Number(line?.quantity);
-  if (!Number.isFinite(line?.price) || !Number.isInteger(quantity) || quantity < 1) return null;
-  return line.price / quantity;
+  const price = moneyNumber(line?.price);
+  if (price == null || !Number.isInteger(quantity) || quantity < 1) return null;
+  return price / quantity;
+}
+
+export function orderLineSummary(line) {
+  const quantity = Number(line?.quantity);
+  const total = moneyNumber(line?.price);
+  const modifiers = (line?.modifiers || []).map((modifier) => ({
+    id: modifier.id,
+    name: modifier.name,
+    amount: moneyNumber(modifier.price),
+    required: modifier.required === true,
+  }));
+  const preparations = modifiers.filter((modifier) => modifier.required || modifier.amount === 0 || ["fried", "scrambled", "poached"].includes(String(modifier.id)));
+  const addons = modifiers.filter((modifier) => !preparations.includes(modifier) && modifier.amount != null && modifier.amount > 0);
+  const names = new Set([...preparations, ...addons].map((modifier) => String(modifier.name || "").toLowerCase()));
+  const instructions = String(line?.instructions || "")
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter((part) => part && !names.has(part.toLowerCase()))
+    .join(" · ");
+  const unit = total != null && Number.isInteger(quantity) && quantity >= 1 ? total / quantity : null;
+  return {
+    quantity: Number.isInteger(quantity) ? quantity : null,
+    unit,
+    total,
+    preparations,
+    addons,
+    instructions,
+  };
 }
 
 export function sendToStation(restaurant, sessionId, lines, destination) {
@@ -368,6 +398,36 @@ export function checkTotal(sentItems, stagedLines) {
   return [...sent, ...waiting].reduce((sum, value) => sum + value, 0);
 }
 
+export function selectionError(line, modifierIds) {
+  const selected = modifierIds || [];
+  const groups = new Map();
+  for (const modifier of line?.modifiers || []) {
+    if (modifier.required !== true) continue;
+    const key = modifier.groupId || modifier.id;
+    const group = groups.get(key) || {
+      min: modifier.min ?? 1,
+      max: modifier.max ?? 1,
+      count: 0,
+      name: modifier.groupName || modifier.name,
+    };
+    if (selected.includes(modifier.id)) group.count += 1;
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.count < group.min) return `Choose ${group.name}.`;
+    if (group.count > group.max) return `Choose no more than ${group.max} ${group.name}.`;
+  }
+  const optional = new Set();
+  for (const id of selected) {
+    const modifier = (line?.modifiers || []).find((row) => row.id === id);
+    if (!modifier) return "That add-on is not on this product.";
+    if (modifier.required === true) continue;
+    if (optional.has(id)) return "That add-on is already selected.";
+    optional.add(id);
+  }
+  return null;
+}
+
 export function stagedPrice(product, modifierIds, quantity) {
   const picked = (modifierIds || [])
     .map((id) => product.modifiers.find((modifier) => modifier.id === id))
@@ -393,6 +453,6 @@ export function kitchenLabel(ticket, itemStatus) {
   if (itemStatus === "preparing" || ticket?.status === "preparing") return "Preparing";
   if (itemStatus === "accepted" || ticket?.status === "accepted") return "Accepted";
   if (itemStatus === "cancelled") return "Cancelled";
-  if (ticket?.status === "queued" || itemStatus === "ordered") return "Sent";
+  if (ticket?.status === "queued" || itemStatus === "ordered" || itemStatus === "queued") return "Sent";
   return "Not sent";
 }

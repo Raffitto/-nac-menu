@@ -895,8 +895,35 @@
   cursor: nwse-resize;
 }
 .le-shift { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+.le-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.le-bar button, .desk-tools button { min-height: 44px; }
+.kh-area {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  border: 2px dashed #8fd0ff;
+  background: rgba(47, 111, 237, 0.14);
+  color: #e8eef4;
+  min-width: 44px;
+  min-height: 44px;
+  touch-action: none;
+  padding: 6px;
+}
 @media (max-width: 1200px) {
-  .svc-live .svc-roles button { min-height: 44px; padding: 8px 12px; }
+  .svc-live .svc-roles button,
+  .svc .desk .desk-group,
+  .svc .desk .desk-list ul button,
+  .svc .desk-ghost-btn,
+  .svc button.svc-primary,
+  .svc .desk-date button,
+  .svc .desk-shifts button,
+  .svc .desk-tools button,
+  .svc .desk-floor-tools button,
+  .svc .kh-zoom button,
+  .svc .desk-top button {
+    min-height: 44px;
+  }
+  .svc, .pos { max-width: 100%; overflow-x: clip; }
 }
 @media (max-width: 800px) {
   .svc-live { height: auto; max-height: none; overflow: auto; }

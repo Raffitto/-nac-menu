@@ -1,10 +1,22 @@
 /**
- * Local development client for the waiter POS.
- * The browser receives a staff token, never the database password.
- * Simulation stays on the in-memory service unless databaseMode is on.
+ * Waiter POS client. Network calls go through the shared restaurant API client.
+ * Hosted mode uses the Supabase session. Local mode keeps the development token.
  */
-const BASE = process.env.REACT_APP_RESTAURANT_API || "http://127.0.0.1:4193";
-const KEY = "nac-dev-restaurant-token";
+import {
+  devAct,
+  devJson,
+  devListen,
+  devLogin,
+  devState,
+  devToken,
+  setDevToken,
+} from "../devApi/client";
+
+export { devAct, devListen, devLogin, devState, devToken, setDevToken };
+
+export function devLogout() {
+  return devJson("/logout");
+}
 
 export function emptyServiceState() {
   return {
@@ -23,73 +35,6 @@ export function emptyServiceState() {
     visits: [],
     waitlist: [],
   };
-}
-
-export function devToken() {
-  if (typeof sessionStorage === "undefined") return "";
-  return sessionStorage.getItem(KEY) || "";
-}
-
-export function setDevToken(token) {
-  if (typeof sessionStorage === "undefined") return;
-  if (token) sessionStorage.setItem(KEY, token);
-  else sessionStorage.removeItem(KEY);
-}
-
-async function request(path, body) {
-  try {
-    const response = await fetch(`${BASE}${path}`, {
-      method: body ? "POST" : "GET",
-      headers: {
-        "content-type": "application/json",
-        authorization: devToken() ? `Bearer ${devToken()}` : "",
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return response.json();
-  } catch {
-    return { ok: false, reason: "service_unavailable" };
-  }
-}
-
-export function devLogin(email, password, role) {
-  return request("/login", { email, password, role });
-}
-
-export function devLogout() {
-  return request("/logout", {});
-}
-
-export function devState() {
-  return request("/state");
-}
-
-export function devAct(action, payload, expectedRevision) {
-  return request("/act", { action, payload, expectedRevision });
-}
-
-export function devListen(onEvent) {
-  if (typeof fetch === "undefined" || !devToken()) return () => {};
-  const controller = new AbortController();
-  fetch(`${BASE}/events`, {
-    headers: { authorization: `Bearer ${devToken()}` },
-    signal: controller.signal,
-  }).then(async (response) => {
-    if (!response.ok || !response.body) return;
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      if (buffer.includes("data:")) {
-        buffer = "";
-        onEvent();
-      }
-    }
-  }).catch(() => {});
-  return () => controller.abort();
 }
 
 export async function openTableOnServer(state, { tableId, partySize, guestName, now = new Date() }) {

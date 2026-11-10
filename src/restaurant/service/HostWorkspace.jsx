@@ -55,7 +55,7 @@ function coversOf(rows) {
   return rows.reduce((sum, row) => sum + row.partySize, 0);
 }
 
-export default function HostWorkspace({ restaurant, dispatch, report, screen, setScreen, currentTime, onRole, layoutDoc }) {
+export default function HostWorkspace({ restaurant, dispatch, report, screen, setScreen, currentTime, onRole, layoutDoc, onEditFloor }) {
   const state = restaurant.state;
   const khobar = state.branchId === "khobar";
   const today = dateValue(new Date(currentTime));
@@ -434,6 +434,7 @@ export default function HostWorkspace({ restaurant, dispatch, report, screen, se
               </button>
             ))}
           </div>
+          {onEditFloor && <button type="button" className="desk-ghost-btn" onClick={onEditFloor}>Edit Floor Plan</button>}
           <button type="button" className="desk-ghost-btn" onClick={() => openDraft("walk")}>Walk in</button>
           <button type="button" className="svc-primary" onClick={() => openDraft("book")}>Add reservation</button>
         </div>
@@ -709,7 +710,23 @@ export default function HostWorkspace({ restaurant, dispatch, report, screen, se
               {tooBig && (
                 <p>Party of {selectedReservation.partySize} is larger than this table&apos;s {mapService.maxSeats} seats.</p>
               )}
-              <p>Party size is set when the reservation is created. Cover changes are not a separate action.</p>
+              {["booked", "arrived"].includes(selectedReservation.status) && (
+                <form className="desk-drawer-actions" onSubmit={(event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  dispatch("updateReservation", {
+                    id: selectedReservation.id,
+                    partySize: Number(data.get("party")),
+                    date: String(data.get("date") || "") || null,
+                    time: String(data.get("time") || "") || null,
+                  }, "Reservation updated.");
+                }}>
+                  <label>Party size<input name="party" type="number" min="1" max="99" defaultValue={selectedReservation.partySize} /></label>
+                  <label>Date<input name="date" type="date" defaultValue={selectedReservation.date || ""} /></label>
+                  <label>Time<input name="time" defaultValue={selectedReservation.time || ""} /></label>
+                  <button type="submit">Save reservation change</button>
+                </form>
+              )}
               {seating?.ok && (
                 <section aria-label="Suggested tables">
                   <h3>Suggested tables</h3>

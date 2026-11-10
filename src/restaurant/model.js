@@ -333,6 +333,22 @@ export function createRestaurant({ branchId = "khobar", layout, snapshot, menu =
     markNoShow(reservationId, expectedRevision) {
       return endReservation(reservationId, "no_show", "reservation_no_show", expectedRevision);
     },
+    updateReservation(patch, expectedRevision) {
+      const body = patch || {};
+      const conflict = guard(expectedRevision);
+      if (conflict) return conflict;
+      const reservation = state.reservations.find((row) => row.id === body.id && row.branchId === state.branchId);
+      if (!reservation) return deny("reservation_not_found");
+      if (!["booked", "arrived"].includes(reservation.status)) return deny("reservation_closed");
+      const party = Number(body.partySize);
+      if (!Number.isInteger(party) || party < 1 || party > 99) return deny("party_size_invalid");
+      reservation.partySize = party;
+      if (body.date) reservation.date = String(body.date).slice(0, 10);
+      if (body.time) reservation.time = String(body.time).slice(0, 8);
+      audit("reservation_updated", reservation.id);
+      commit();
+      return { ok: true, reservation, revision: state.revision, writes: 0 };
+    },
     transferTable(sessionId, toTableId, expectedRevision) {
       const conflict = guard(expectedRevision);
       if (conflict) return conflict;

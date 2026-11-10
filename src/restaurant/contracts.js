@@ -16,6 +16,7 @@ export const ROLE_ACTIONS = Object.freeze({
     "markArrived",
     "cancelReservation",
     "markNoShow",
+    "updateReservation",
     "transferTable",
     "combineTables",
     "configureCapacity",

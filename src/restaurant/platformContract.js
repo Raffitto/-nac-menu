@@ -61,7 +61,7 @@ export function orderLine({ itemId, quantity = 1, modifierIds = [], instructions
 export function ticketIdFor(orderId, stationId = "pass") {
   if (!orderId) return null;
   if (!stationId || stationId === "pass") return `ticket:${orderId}`;
-  if (!KITCHEN_STATIONS.includes(stationId)) return null;
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(String(stationId))) return null;
   return `ticket:${orderId}:${stationId}`;
 }
 

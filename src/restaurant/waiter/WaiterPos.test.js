@@ -11,6 +11,7 @@ const lines = [{
   categoryId: "breakfast",
   categoryName: "Breakfast",
   categorySlug: "breakfast",
+  station: "pass",
   categorySort: 2,
   sectionId: "sweets",
   sectionName: "Sweets",

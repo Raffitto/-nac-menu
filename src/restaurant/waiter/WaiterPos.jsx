@@ -8,6 +8,8 @@ import {
   reservationByTable,
   ticketForOrder,
 } from "../service/serviceShared";
+import { usesHostedRestaurantAuth } from "../devApi/endpoint";
+import { createRestaurantSync, restaurantSyncIntervalMs } from "../devApi/sync";
 import { khobarCatalogueLines, menuFromLines } from "./catalogueView";
 import {
   devAct,
@@ -38,8 +40,10 @@ import {
   seatCaption,
   resolveStation,
   sendToStation,
+  selectionError,
   stagedPrice,
   stationLabel,
+  orderLineSummary,
   unitPriceOf,
   tableTone,
   CLOCK_KEY,
@@ -132,6 +136,8 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   const revisionRef = useRef(0);
   const [devSession, setDevSession] = useState(null);
   const [pilotClosed, setPilotClosed] = useState(false);
+  const [serviceLoaded, setServiceLoaded] = useState(false);
+  const hostedAuth = usesHostedRestaurantAuth();
   const [restaurant, setRestaurant] = useState(() => {
     const menu = menuFromLines(lines || khobarCatalogueLines());
     if (databaseMode) return { state: emptyServiceState(), menu };
@@ -186,16 +192,21 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   }, [databaseMode, localStore, restaurant, frame]);
 
   useEffect(() => {
-    if (!databaseMode || !devToken()) return undefined;
+    if (!databaseMode || (!hostedAuth && !devToken())) return undefined;
     let stop = false;
     devState().then((data) => {
       if (stop) return;
+      if (data?.reason === "service_unavailable") {
+        setNotice("The restaurant service did not respond. Open tables are unavailable.");
+        return;
+      }
       if (data?.reason === "pilot_disabled") {
         setPilotClosed(true);
         setDevSession(null);
         return;
       }
       if (!data?.state || !data.role) return;
+      setServiceLoaded(true);
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state }));
       setDevSession({ ok: true, role: data.role, email: data.email });
@@ -203,36 +214,63 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     return () => {
       stop = true;
     };
-  }, [databaseMode]);
+  }, [databaseMode, hostedAuth]);
 
   useEffect(() => {
     if (!databaseMode || !devSession) return undefined;
     let stop = false;
-    async function pull() {
-      const data = await devState();
-      if (stop) return;
-      if (!data?.state) {
-        if (data?.reason === "pilot_disabled") {
-          setPilotClosed(true);
-          setDevSession(null);
+    const sync = createRestaurantSync({
+      isHidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
+      pull: async () => {
+        const started = Date.now();
+        const data = await devState(revisionRef.current || undefined);
+        if (stop) return;
+        if (data?.unchanged) {
+          revisionRef.current = data.revision;
           return;
         }
-        if (data?.reason === "sign_in_required") {
-          setDevToken("");
-          setDevSession(null);
+        if (!data?.state) {
+          if (data?.reason === "service_unavailable") {
+            setNotice("The restaurant service did not respond. Nothing was changed.");
+            return;
+          }
+          if (data?.reason === "pilot_disabled") {
+            setPilotClosed(true);
+            setDevSession(null);
+            return;
+          }
+          if (data?.reason === "sign_in_required") {
+            setDevToken("");
+            setDevSession(null);
+          }
+          return;
         }
-        return;
-      }
-      revisionRef.current = data.revision || data.state.revision || 0;
-      setRestaurant((prev) => ({ ...prev, state: data.state }));
+        setServiceLoaded(true);
+        setNotice("");
+        revisionRef.current = data.revision || data.state.revision || 0;
+        setRestaurant((prev) => ({ ...prev, state: data.state }));
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.restaurantSyncMs = String(Date.now() - started);
+        }
+      },
+    });
+    sync.request(true);
+    const timer = setInterval(() => sync.request(false), restaurantSyncIntervalMs("waiter"));
+    const stopListen = devListen(() => sync.request(true));
+    function onVisible() {
+      if (document.visibilityState === "visible") sync.request(true);
     }
-    pull();
-    const timer = setInterval(pull, 2000);
-    const stopListen = devListen(() => pull());
+    function onOnline() {
+      sync.request(true);
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
     return () => {
       stop = true;
       clearInterval(timer);
       stopListen();
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
     };
   }, [databaseMode, devSession]);
 
@@ -385,10 +423,9 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
 
   function commitComposer() {
     if (!composer || !session) return;
-    const required = (composer.line.modifiers || []).filter((modifier) => modifier.required === true);
-    const missing = required.filter((modifier) => !composer.modifierIds.includes(modifier.id));
-    if (missing.length) {
-      setNotice(`Choose ${missing[0].name}.`);
+    const missing = selectionError(composer.line, composer.modifierIds);
+    if (missing) {
+      setNotice(missing);
       return;
     }
     const priced = stagedPrice(composer.line, composer.modifierIds, composer.quantity);
@@ -448,17 +485,17 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     setSendBusy(true);
     setNotice("Sending to the kitchen…");
     if (databaseMode) {
-      const kitchen = staged.filter((line) => resolveStation(line).station === "pass");
-      const held = staged.filter((line) => resolveStation(line).station !== "pass");
-      if (!kitchen.length) {
+      if (!staged.length) {
         sending.current = false;
         setSendBusy(false);
-        setNotice(noticeFor(held.length ? "station_not_recorded" : "nothing_to_send"));
+        setNotice(noticeFor("nothing_to_send"));
         return;
       }
       let latest = null;
+      let unrouted = 0;
+      const sentLocal = [];
       try {
-      for (const line of kitchen) {
+      for (const line of staged) {
         latest = await devAct("addItem", [session.id, {
           itemId: line.itemId,
           quantity: line.quantity,
@@ -468,6 +505,8 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
         }], revisionRef.current);
         if (!latest?.ok) break;
         revisionRef.current = latest.revision ?? revisionRef.current;
+        sentLocal.push(line.localId);
+        if (latest.routed === false) unrouted += 1;
       }
       } catch {
         latest = { ok: false, reason: "service_unavailable" };
@@ -476,19 +515,21 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
       setSendBusy(false);
       }
       if (latest?.state) setRestaurant((prev) => ({ ...prev, state: latest.state }));
+      if (sentLocal.length) {
+        const sent = new Set(sentLocal);
+        setDrafts((prev) => ({
+          ...prev,
+          [session.id]: (prev[session.id] || []).filter((line) => !sent.has(line.localId)),
+        }));
+        setSelectedKey(null);
+      }
       if (!latest?.ok) {
         setNotice(noticeFor(latest?.reason));
         return;
       }
-      const sentLocal = new Set(kitchen.map((line) => line.localId));
-      setDrafts((prev) => ({
-        ...prev,
-        [session.id]: (prev[session.id] || []).filter((line) => !sentLocal.has(line.localId)),
-      }));
-      setSelectedKey(null);
-      setNotice(held.some((line) => resolveStation(line).station === "bar")
-        ? "Sent to the kitchen. Drinks stayed on the check."
-        : "Sent to the kitchen.");
+      setNotice(unrouted
+        ? noticeFor("station_not_configured")
+        : `Sent to ${latest.stationName || "the configured station"}.`);
       return;
     }
     const result = sendToStation(restaurant, session.id, staged, destination);
@@ -666,6 +707,33 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     );
   }
 
+  if (databaseMode && !devSession && hostedAuth) {
+    return (
+      <form className="pos pos-gate" data-testid="waiter-pos" onSubmit={async (event) => {
+        event.preventDefault();
+        const result = await devState();
+        if (result?.reason === "pilot_disabled") {
+          setPilotClosed(true);
+          return;
+        }
+        if (!result?.state) {
+          setNotice(result?.reason === "sign_in_required"
+            ? "Sign in to NAC OS first. The waiter does not use a separate password."
+            : "The restaurant service did not respond. Open tables are unavailable.");
+          return;
+        }
+        setServiceLoaded(true);
+        setDevSession({ ok: true, role: result.role, email: result.email });
+        setRestaurant((prev) => ({ ...prev, state: result.state }));
+      }}>
+        <p>TEST MODE — NOT LIVE RESTAURANT OPERATIONS</p>
+        <h1>NAC Waiter</h1>
+        <p>Uses the NAC OS session already on this device.</p>
+        <button type="submit" className="pos-primary">Continue</button>
+      </form>
+    );
+  }
+
   if (databaseMode && !devSession) {
     return (
       <form
@@ -730,7 +798,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
           <section className="pos-home" aria-label="Home">
             <p className="pos-brand">NAC</p>
             <h1>Khobar</h1>
-            <p className="pos-quiet">{openChecks.length === 0 ? "No open tables." : `${openChecks.length} open ${openChecks.length === 1 ? "table" : "tables"}.`}</p>
+            <p className="pos-quiet">{!serviceLoaded && databaseMode ? "Open tables are unavailable until the restaurant service responds." : openChecks.length === 0 ? "No open tables." : `${openChecks.length} open ${openChecks.length === 1 ? "table" : "tables"}.`}</p>
             {openChecks.filter((check) => check.seat).map((check) => (
               <button key={check.session.id} type="button" className="pos-check" onClick={() => openOrder(check.seat.id)}>
                 <span>
@@ -908,13 +976,25 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
                           >
                             <span>
                               <b>{item.quantity} × {item.name}</b>
-                              <small>{posMoney(unitPriceOf(item))} each</small>
-                              {item.modifiers.map((modifier) => <small key={modifier.id}>+ {modifier.name}</small>)}
-                              {item.instructions ? <small>{item.instructions}</small> : null}
+                              {(() => {
+                                const summary = orderLineSummary(item);
+                                return (
+                                  <>
+                                    <small>{posMoney(summary.unit)} each</small>
+                                    {summary.preparations.map((modifier) => <small key={modifier.id}>Preparation: {modifier.name}</small>)}
+                                    {summary.addons.map((modifier) => <small key={modifier.id}>Add-on: {modifier.name} (+{posMoney(modifier.amount)} per item)</small>)}
+                                    {summary.instructions ? <small>Special instructions: <span>{summary.instructions}</span></small> : null}
+                                    {item.priceProvenance === "reconstructed" ? <small>{item.priceLimitation}</small> : null}
+                                    {item.allergyAlert ? <small>Allergy: {item.allergyAlert}</small> : null}
+                                  </>
+                                );
+                              })()}
                               {courseMap[item.id] ? <span className="pos-course-pill">{courseMap[item.id]}</span> : null}
-                              <span className="pos-sent">{stationLabel(item.station)} · {kitchenLabel(ticket, item.status)}</span>
+                              <span className="pos-sent">{item.routing === "unassigned"
+                                ? "Pending Routing"
+                                : `${item.stationName || stationLabel(item.station)} · ${kitchenLabel(ticket, item.status)}`}</span>
                             </span>
-                            <span className="pos-price">{posMoney(item.price)}</span>
+                            <span className="pos-price">{posMoney(orderLineSummary(item).total)}</span>
                           </button>
                         </li>
                       ))}
@@ -1108,30 +1188,44 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
             <h2>{composer.line.name}</h2>
             {composer.line.description ? <p className="pos-quiet">{composer.line.description}</p> : null}
             <p className="pos-quiet" style={{ textAlign: "center" }}>{posMoney(stagedPrice(composer.line, composer.modifierIds, composer.quantity)?.price)}</p>
-            {composer.line.modifiers.length > 0 && (
-              <fieldset className="pos-mods">
-                <legend>{composer.line.modifiers.some((modifier) => modifier.required) ? "Required" : "Add-ons"}</legend>
-                {composer.line.modifiers.map((modifier) => {
-                  const on = composer.modifierIds.includes(modifier.id);
-                  return (
-                    <button
-                      key={modifier.id}
-                      type="button"
-                      className="pos-chip"
-                      aria-pressed={on}
-                      onClick={() => setComposer((current) => ({
-                        ...current,
-                        modifierIds: on
-                          ? current.modifierIds.filter((id) => id !== modifier.id)
-                          : [...current.modifierIds, modifier.id],
-                      }))}
-                    >
-                      {modifier.name} · {posMoney(modifier.price)}
-                    </button>
-                  );
-                })}
-              </fieldset>
-            )}
+            {["Preparation", "Add-ons"].map((label) => {
+              const requiredGroup = label === "Preparation";
+              const choices = composer.line.modifiers.filter((modifier) => (modifier.required === true) === requiredGroup);
+              if (!choices.length) return null;
+              return (
+                <fieldset className="pos-mods" key={label}>
+                  <legend>{requiredGroup ? "Preparation" : "Add-ons"}</legend>
+                  {choices.map((modifier) => {
+                    const on = composer.modifierIds.includes(modifier.id);
+                    return (
+                      <button
+                        key={modifier.id}
+                        type="button"
+                        className="pos-chip"
+                        aria-pressed={on}
+                        onClick={() => setComposer((current) => {
+                          if (modifier.required === true) {
+                            const others = current.line.modifiers
+                              .filter((row) => row.required === true && row.groupId === modifier.groupId)
+                              .map((row) => row.id);
+                            const kept = current.modifierIds.filter((id) => !others.includes(id));
+                            return { ...current, modifierIds: on ? kept : [...kept, modifier.id] };
+                          }
+                          return {
+                            ...current,
+                            modifierIds: on
+                              ? current.modifierIds.filter((id) => id !== modifier.id)
+                              : [...current.modifierIds, modifier.id],
+                          };
+                        })}
+                      >
+                        {modifier.name}{modifier.price ? ` · ${posMoney(modifier.price)}` : ""}
+                      </button>
+                    );
+                  })}
+                </fieldset>
+              );
+            })}
             <div className="pos-step" aria-label="Quantity">
               <button type="button" aria-label="Decrease quantity" onClick={() => setComposer((current) => ({ ...current, quantity: Math.max(1, current.quantity - 1) }))}>−</button>
               <strong>{composer.quantity}</strong>

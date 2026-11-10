@@ -45,6 +45,10 @@ test("the canonical Khobar menu keeps portions apart and does not map Watermelon
   expect(kale).toEqual([45, 59]);
   const chicken = catalogue.lines.find((line) => line.modifiers.some((modifier) => modifier.name === "Add Chicken"));
   expect(chicken.modifiers.find((modifier) => modifier.name === "Add Chicken").price).toBe(25);
+  const eggs = catalogue.lines.find((line) => line.name === "2 Eggs Any Style" && line.price === 31);
+  expect(eggs.modifiers.filter((modifier) => modifier.required).map((modifier) => modifier.name)).toEqual(["Fried", "Scrambled", "Poached"]);
+  expect(eggs.modifiers.filter((modifier) => modifier.required).every((modifier) => modifier.price === 0 && modifier.max === 1)).toBe(true);
+  expect(eggs.modifiers.find((modifier) => modifier.name === "Beef Bacon")).toMatchObject({ price: 19, required: false });
   expect(filterOrderingCatalogue(catalogue.lines, { query: "بطيخ", availableOnly: true }).length).toBeGreaterThan(0);
   expect(catalogue.guestChanged).toBe(false);
 });
