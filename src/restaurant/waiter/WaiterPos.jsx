@@ -131,6 +131,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   const sending = useRef(false);
   const revisionRef = useRef(0);
   const [devSession, setDevSession] = useState(null);
+  const [pilotClosed, setPilotClosed] = useState(false);
   const [restaurant, setRestaurant] = useState(() => {
     const menu = menuFromLines(lines || khobarCatalogueLines());
     if (databaseMode) return { state: emptyServiceState(), menu };
@@ -188,7 +189,13 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     if (!databaseMode || !devToken()) return undefined;
     let stop = false;
     devState().then((data) => {
-      if (stop || !data?.state || !data.role) return;
+      if (stop) return;
+      if (data?.reason === "pilot_disabled") {
+        setPilotClosed(true);
+        setDevSession(null);
+        return;
+      }
+      if (!data?.state || !data.role) return;
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state }));
       setDevSession({ ok: true, role: data.role, email: data.email });
@@ -205,6 +212,11 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
       const data = await devState();
       if (stop) return;
       if (!data?.state) {
+        if (data?.reason === "pilot_disabled") {
+          setPilotClosed(true);
+          setDevSession(null);
+          return;
+        }
         if (data?.reason === "sign_in_required") {
           setDevToken("");
           setDevSession(null);
@@ -644,6 +656,16 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   const pickedSession = picked ? openSessionForTable(state, picked.id) : null;
   const statusWord = !ticket || ticket.status === "queued" ? "ACTIVE" : kitchenLabel(ticket).toUpperCase();
 
+  if (pilotClosed) {
+    return (
+      <main data-testid="pilot-closed" style={{ minHeight: "100vh", background: "#0a0908", color: "#f9f9f7", fontFamily: "system-ui, sans-serif", padding: 24 }}>
+        <p>TEST MODE — NOT LIVE RESTAURANT OPERATIONS</p>
+        <h1>Restaurant Pilot Mode is off</h1>
+        <p>This session is closed. Guest ordering and guest payments stay off.</p>
+      </main>
+    );
+  }
+
   if (databaseMode && !devSession) {
     return (
       <form
@@ -701,6 +723,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
       data-order={order?.id || ""}
       data-ticket={ticket?.id || ""}
     >
+      <p className="pos-notice" role="status">TEST MODE — NOT LIVE RESTAURANT OPERATIONS</p>
       {notice ? <p className="pos-notice" role="status">{notice}</p> : null}
       <div className="pos-body">
         {view === "home" && (

@@ -78,6 +78,7 @@ export default function ServiceShell({
   const [devEmail, setDevEmail] = useState("host.khobar@nac.test");
   const [devPassword, setDevPassword] = useState("");
   const [devSession, setDevSession] = useState(null);
+  const [pilotClosed, setPilotClosed] = useState(false);
   const revisionRef = useRef(0);
   const layoutStorage = developmentStorage(storage);
   const [layoutDoc, setLayoutDoc] = useState(() => loadLayoutDocument(layoutStorage));
@@ -152,7 +153,13 @@ export default function ServiceShell({
     if (!databaseMode || !devToken()) return undefined;
     let stop = false;
     devState().then((data) => {
-      if (stop || !data?.state || !data.role) return;
+      if (stop) return;
+      if (data?.reason === "pilot_disabled") {
+        setPilotClosed(true);
+        setDevSession(null);
+        return;
+      }
+      if (!data?.state || !data.role) return;
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
       setRevision(revisionRef.current);
@@ -170,7 +177,13 @@ export default function ServiceShell({
     let stop = false;
     async function pull() {
       const data = await devState();
-      if (stop || !data?.state) return;
+      if (stop) return;
+      if (data?.reason === "pilot_disabled") {
+        setPilotClosed(true);
+        setDevSession(null);
+        return;
+      }
+      if (!data?.state) return;
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
       setRevision(revisionRef.current);
@@ -290,6 +303,16 @@ export default function ServiceShell({
     layoutStorage,
     layoutDoc,
   };
+
+  if (pilotClosed) {
+    return (
+      <main data-testid="pilot-closed" style={{ minHeight: "100vh", background: "#0a0908", color: "#f9f9f7", fontFamily: "system-ui, sans-serif", padding: 24 }}>
+        <p>TEST MODE — NOT LIVE RESTAURANT OPERATIONS</p>
+        <h1>Restaurant Pilot Mode is off</h1>
+        <p>This session is closed. Guest ordering and guest payments stay off.</p>
+      </main>
+    );
+  }
 
   return (
     <div className={`svc${role === "host" && !editing ? " svc-live" : ""}`} data-testid="restaurant-sim" data-branch={branchId} data-revision={revision} data-role={role}>

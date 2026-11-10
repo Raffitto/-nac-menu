@@ -142,6 +142,7 @@ function renderPlatform() {
       </Suspense>
     </React.StrictMode>,
   );
+  }
 }
 
 if (waiterPos || serviceSim || serviceDb) {

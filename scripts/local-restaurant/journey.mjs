@@ -54,28 +54,33 @@ async function shot(page, name) {
 
 function restartApi() {
   return new Promise((resolve, reject) => {
-    const child = spawn("zsh", ["-lc", `PID=$(lsof -nP -t -iTCP:${apiPort} -sTCP:LISTEN || true); if [ -n "$PID" ]; then kill "$PID"; sleep 1; fi; set -a; . scripts/local-restaurant/.env; set +a; exec node scripts/local-restaurant/server.mjs`], {
+    const child = spawn("zsh", ["-lc", `PID=$(lsof -nP -t -iTCP:${apiPort} -sTCP:LISTEN || true); if [ -n "$PID" ]; then kill "$PID"; sleep 1; fi; set -a; . scripts/local-restaurant/.env; set +a; nohup node scripts/local-restaurant/server.mjs >> /tmp/nac-restaurant-api.log 2>&1 & disown`], {
       cwd: root,
-      detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let text = "";
-    const timer = setTimeout(() => reject(new Error("API restart timed out")), 20000);
-    child.stdout.on("data", (chunk) => {
-      text += chunk.toString();
-      if (text.includes("local restaurant api on")) {
-        clearTimeout(timer);
-        child.unref();
-        resolve();
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(text || "API restart timed out"));
+    }, 20000);
+    const probe = setInterval(async () => {
+      try {
+        const response = await fetch(`${api}/health`);
+        const body = await response.json();
+        if (body?.db === "up") {
+          clearTimeout(timer);
+          clearInterval(probe);
+          resolve();
+        }
+      } catch {
+        text += ".";
       }
-    });
-    child.stderr.on("data", (chunk) => {
-      text += chunk.toString();
-    });
+    }, 300);
     child.on("exit", (code) => {
       if (code) {
         clearTimeout(timer);
-        reject(new Error(text || `API exited ${code}`));
+        clearInterval(probe);
+        reject(new Error(text || `API restart shell exited ${code}`));
       }
     });
   });

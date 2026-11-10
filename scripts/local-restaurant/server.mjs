@@ -116,6 +116,18 @@ async function loadGuestAccess(token) {
   }
 }
 
+async function branchPilotEnabled(branchId) {
+  try {
+    const row = (await appPool.query(
+      "select restaurant_pilot_enabled from restaurant_owner_settings where branch_id = $1",
+      [branchId],
+    )).rows[0];
+    return row?.restaurant_pilot_enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 async function ownerSwitches(branchId) {
   try {
     const row = (await appPool.query(
@@ -1054,6 +1066,11 @@ const server = http.createServer(async (req, res) => {
     const session = await loadSession(token);
     if (!session) {
       send(res, 401, { ok: false, reason: "sign_in_required" });
+      return;
+    }
+    const ownerControl = url.pathname === "/act" && (body.action === "setRestaurantPilot" || body.action === "setOwnerControls");
+    if (url.pathname !== "/logout" && !ownerControl && !(await branchPilotEnabled(session.branchId))) {
+      send(res, 403, { ok: false, reason: "pilot_disabled", paymentCaptured: false });
       return;
     }
     if (url.pathname === "/passkey/register/options" && req.method === "POST") {

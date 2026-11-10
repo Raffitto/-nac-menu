@@ -557,9 +557,12 @@
   border-radius: 0;
   color: #c5d4e2;
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+}
+.svc-live:has(form.svc-card) {
+  height: auto;
+  max-height: none;
+  overflow: auto;
 }
 .svc-live .svc-roles {
   position: static;
@@ -892,6 +895,9 @@
   cursor: nwse-resize;
 }
 .le-shift { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+@media (max-width: 1200px) {
+  .svc-live .svc-roles button { min-height: 44px; padding: 8px 12px; }
+}
 @media (max-width: 800px) {
   .svc-live { height: auto; max-height: none; overflow: auto; }
   .svc-live .svc-header { flex-wrap: wrap; }
