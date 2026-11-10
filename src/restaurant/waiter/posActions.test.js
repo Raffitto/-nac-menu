@@ -8,6 +8,7 @@ import {
   placeTables,
   resolveStation,
   seatCaption,
+  orderLineSummary,
   selectionError,
   sendStagedItems,
   sendToStation,
@@ -170,6 +171,25 @@ test("2 Eggs Any Style cannot be added until one preparation is chosen", () => {
   expect(selectionError(line, ["fried", "bacon"])).toBeNull();
   expect(selectionError(line, ["fried", "scrambled"])).toMatch(/no more than 1/);
   expect(selectionError(line, ["fried", "bacon", "bacon"])).toMatch(/already selected/);
+});
+
+test("a persisted eggs line shows one unit price and does not repeat modifiers in the note", () => {
+  const summary = orderLineSummary({
+    name: "2 Eggs Any Style",
+    quantity: 2,
+    price: 100,
+    modifiers: [
+      { id: "fried", name: "Fried", price: 0 },
+      { id: "f8bc8ee0-562c-47f5-821b-23714ad8aa5f", name: "Beef Bacon", price: 19 },
+    ],
+    instructions: "No salt · Fried · Beef Bacon",
+  });
+  expect(summary.unit).toBe(50);
+  expect(summary.total).toBe(100);
+  expect(summary.preparations.map((row) => row.name)).toEqual(["Fried"]);
+  expect(summary.addons.map((row) => row.name)).toEqual(["Beef Bacon"]);
+  expect(summary.addons[0].amount).toBe(19);
+  expect(summary.instructions).toBe("No salt");
 });
 
 test("Khobar capacity stays unverified until a manager records it", () => {

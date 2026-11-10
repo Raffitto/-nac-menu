@@ -77,6 +77,7 @@ export default function KitchenWorkspace({ restaurant, dispatch, screen, current
                         <li key={item.id}>
                           <span>{item.name}</span>
                           <span className="svc-status" data-status={item.status}>{statusLabel(item.status)}</span>
+                          {(item.modifiers || []).map((modifier) => <span key={modifier.id}>{modifier.price ? `Add-on: ${modifier.name}` : `Preparation: ${modifier.name}`}</span>)}
                           {item.instructions ? <span>Instruction: {item.instructions}</span> : null}
                           {item.statusAt ? <span>Status recorded {new Date(item.statusAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> : null}
                           {item.status !== "cancelled" && (

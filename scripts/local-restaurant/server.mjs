@@ -504,7 +504,13 @@ function sessionMinor(sessionId) {
         id: item.id,
         itemId: item.id,
         name: item.item_name,
-        price: linePrice(item.item_name, item.quantity, item.modifier_ids || []),
+        quantity: Number(item.quantity),
+        price: linePrice(item.item_name, Number(item.quantity), Array.isArray(item.modifier_ids) ? item.modifier_ids : []),
+        unitPrice: (() => {
+          const total = linePrice(item.item_name, Number(item.quantity), Array.isArray(item.modifier_ids) ? item.modifier_ids : []);
+          const quantity = Number(item.quantity);
+          return total == null || !Number.isInteger(quantity) || quantity < 1 ? null : total / quantity;
+        })(),
         status: item.status,
         statusAt: item.status_at ? new Date(item.status_at).toISOString() : null,
         modifiers: (Array.isArray(item.modifier_ids) ? item.modifier_ids : []).map((id) => {
@@ -512,7 +518,8 @@ function sessionMinor(sessionId) {
           const addon = addonById.get(String(id));
           if (preparation) return { id: preparation.id, name: preparation.name, price: 0 };
           if (!addon || addon.active === false) return null;
-          return { id: addon.id, name: addon.name_en || addon.name, price: addon.price };
+          const match = String(addon.price ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+          return { id: addon.id, name: addon.name_en || addon.name, price: match ? Number(match[1]) : null };
         }).filter(Boolean),
         instructions: item.note,
         allergyAlert: item.allergy_alert,
@@ -659,8 +666,7 @@ async function act(client, email, action, payload) {
       branchId: grant.branch_id,
     });
     if (!checked.ok) throw new Error(checked.reason);
-    const modifierNames = checked.modifierIds.map((id) => addonById.get(id)?.name_en).filter(Boolean);
-    const note = [item?.instructions, checked.preparation?.name, modifierNames.join(", ") || null].filter(Boolean).join(" · ") || null;
+    const note = item?.instructions ? String(item.instructions).slice(0, 140) : null;
     const allergyNames = allergenIdsByItem.get(String(known.id)) || [];
     const allergy = allergyNames.length ? allergyNames.join(", ") : null;
     const clientKey = item?.clientKey ? String(item.clientKey).slice(0, 80) : "";

@@ -290,12 +290,46 @@ export function stationLabel(station) {
   return "Station not recorded";
 }
 
+function moneyNumber(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const match = String(value ?? "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : null;
+}
+
 export function unitPriceOf(line) {
   if (Number.isFinite(line?.unitPrice)) return line.unitPrice;
   const quantity = Number(line?.quantity);
-  const price = Number(line?.price);
-  if (!Number.isFinite(price) || !Number.isInteger(quantity) || quantity < 1) return null;
+  const price = moneyNumber(line?.price);
+  if (price == null || !Number.isInteger(quantity) || quantity < 1) return null;
   return price / quantity;
+}
+
+export function orderLineSummary(line) {
+  const quantity = Number(line?.quantity);
+  const total = moneyNumber(line?.price);
+  const modifiers = (line?.modifiers || []).map((modifier) => ({
+    id: modifier.id,
+    name: modifier.name,
+    amount: moneyNumber(modifier.price),
+    required: modifier.required === true,
+  }));
+  const preparations = modifiers.filter((modifier) => modifier.required || modifier.amount === 0 || ["fried", "scrambled", "poached"].includes(String(modifier.id)));
+  const addons = modifiers.filter((modifier) => !preparations.includes(modifier) && modifier.amount != null && modifier.amount > 0);
+  const names = new Set([...preparations, ...addons].map((modifier) => String(modifier.name || "").toLowerCase()));
+  const instructions = String(line?.instructions || "")
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter((part) => part && !names.has(part.toLowerCase()))
+    .join(" · ");
+  const unit = total != null && Number.isInteger(quantity) && quantity >= 1 ? total / quantity : null;
+  return {
+    quantity: Number.isInteger(quantity) ? quantity : null,
+    unit,
+    total,
+    preparations,
+    addons,
+    instructions,
+  };
 }
 
 export function sendToStation(restaurant, sessionId, lines, destination) {

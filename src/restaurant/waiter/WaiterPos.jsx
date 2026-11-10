@@ -43,6 +43,7 @@ import {
   selectionError,
   stagedPrice,
   stationLabel,
+  orderLineSummary,
   unitPriceOf,
   tableTone,
   CLOCK_KEY,
@@ -971,13 +972,21 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
                           >
                             <span>
                               <b>{item.quantity} × {item.name}</b>
-                              <small>{posMoney(unitPriceOf(item))} each</small>
-                              {item.modifiers.map((modifier) => <small key={modifier.id}>+ {modifier.name}</small>)}
-                              {item.instructions ? <small>{item.instructions}</small> : null}
+                              {(() => {
+                                const summary = orderLineSummary(item);
+                                return (
+                                  <>
+                                    <small>{posMoney(summary.unit)} each</small>
+                                    {summary.preparations.map((modifier) => <small key={modifier.id}>Preparation: {modifier.name}</small>)}
+                                    {summary.addons.map((modifier) => <small key={modifier.id}>Add-on: {modifier.name} (+{posMoney(modifier.amount)} per item)</small>)}
+                                    {summary.instructions ? <small>Special instructions: <span>{summary.instructions}</span></small> : null}
+                                  </>
+                                );
+                              })()}
                               {courseMap[item.id] ? <span className="pos-course-pill">{courseMap[item.id]}</span> : null}
                               <span className="pos-sent">{stationLabel(item.station)} · {kitchenLabel(ticket, item.status)}</span>
                             </span>
-                            <span className="pos-price">{posMoney(item.price)}</span>
+                            <span className="pos-price">{posMoney(orderLineSummary(item).total)}</span>
                           </button>
                         </li>
                       ))}
