@@ -689,6 +689,21 @@ async function act(client, email, action, payload) {
     }
     return { ok: true };
   }
+  if (action === "markNoShow") {
+    const id = Array.isArray(payload) ? payload[0] : payload?.id || payload;
+    const revision = (await client.query("select revision from restaurant_reservations where id = $1", [id])).rows[0]?.revision;
+    await client.query("select restaurant_mark_no_show($1, $2)", [id, revision]);
+    return { ok: true };
+  }
+  if (action === "updateReservation") {
+    const body = payload || {};
+    const revision = (await client.query("select revision from restaurant_reservations where id = $1", [body.id])).rows[0]?.revision;
+    await client.query(
+      "select restaurant_update_reservation($1, $2, $3, $4, $5)",
+      [body.id, revision, Number(body.partySize), body.date || null, body.time || null],
+    );
+    return { ok: true };
+  }
   if (action === "cancelReservation") {
     const id = Array.isArray(payload) ? payload[0] : payload;
     const revision = (await client.query("select revision from restaurant_reservations where id = $1", [id])).rows[0]?.revision;

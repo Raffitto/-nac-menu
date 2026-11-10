@@ -34,6 +34,11 @@ test("arrival, cancellation, transfer, and combination stay on one session", () 
   expect(performServiceAction(restaurant, "host", "cancelReservation", arrived.reservation.id).reservation.status).toBe("cancelled");
   const noShow = performServiceAction(restaurant, "host", "reserve", { guestName: "Sami" });
   expect(performServiceAction(restaurant, "host", "markNoShow", noShow.reservation.id).reservation.status).toBe("no_show");
+  const changed = performServiceAction(restaurant, "host", "reserve", { guestName: "Hana", partySize: 2 });
+  const updated = performServiceAction(restaurant, "host", "updateReservation", { id: changed.reservation.id, partySize: 5, time: "21:00" });
+  expect(updated.reservation.partySize).toBe(5);
+  expect(updated.reservation.time).toBe("21:00");
+  expect(performServiceAction(restaurant, "waiter", "updateReservation", { id: changed.reservation.id, partySize: 3 }).reason).toBe("role_forbidden");
 
   const opened = performServiceAction(restaurant, "waiter", "openSession", first.tableId);
   const moved = performServiceAction(restaurant, "host", "transferTable", [opened.session.id, "khobar:14"]);
