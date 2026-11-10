@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import "./styles.css";
 import AdminDashboard from "./dashboard/AdminDashboard";
 import ContextualMenuView from "./components/ContextualMenuView";
+import { GuestOrderTray, GuestTableOrder } from "./components/GuestTableOrder";
 import CategoryCard from "./components/CategoryCard";
 import { getContextualFlow, getContextualGreeting } from "./lib/contextualMenu";
 import { activeEggPreparation, eggHeroImage, openEggPreparation, resetEggPreparation, selectEggPreparation, withEggPreparations } from "./lib/eggPreparation";
@@ -1335,6 +1336,7 @@ if (adminMode) {
         )}
       </AnimatePresence>
 
+      <GuestOrderTray isArabic={isArabic} />
       <AnimatePresence mode="wait">
         {activeItem && (
           <motion.div className="lux-overlay" onClick={() => closeActiveItem("overlay")} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -1451,6 +1453,7 @@ onDragEnd={(e, info) => {
                   {activeItem.calories !== "-" && <span>{activeItem.calories} cal</span>}
                   <span>{activeItem.price}</span>
                 </div>
+                <GuestTableOrder item={activeItem} isArabic={isArabic} />
                 {activeItem.allergens?.length > 0 && (
   <div className="allergen-chips">
     {activeItem.allergens.map((code) => (

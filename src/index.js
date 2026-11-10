@@ -26,6 +26,14 @@ const ResetPasswordView = lazy(() => import("./dashboard/views/ResetPasswordView
 const AdminDashboard = lazy(() => import("./dashboard/AdminDashboard"));
 const InventoryApp = lazy(() => import("./inventory/InventoryApp"));
 const MenuApp = lazy(() => import("./App"));
+const RestaurantSim = lazy(() => import("./restaurant/RestaurantSim"));
+const WaiterPos = lazy(() => import("./restaurant/waiter/WaiterPos"));
+
+const searchParams =
+  typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+const waiterPos = searchParams?.get("waiter-pos") === "1";
+const serviceDb = searchParams?.get("restaurant-db") === "1";
+const serviceSim = searchParams?.get("restaurant-sim") === "1";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
@@ -37,7 +45,23 @@ const rootKind =
       })
     : "public-menu";
 
-if (rootKind === "reset-password") {
+if (waiterPos) {
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#ebe6df" }} />}>
+        <WaiterPos databaseMode={serviceDb} />
+      </Suspense>
+    </React.StrictMode>,
+  );
+} else if (serviceSim || serviceDb) {
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#efeae2" }} />}>
+        <RestaurantSim databaseMode={serviceDb} />
+      </Suspense>
+    </React.StrictMode>,
+  );
+} else if (rootKind === "reset-password") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
