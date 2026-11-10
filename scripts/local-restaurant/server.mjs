@@ -275,19 +275,21 @@ function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
-async function withStaff(email, branchId, fn) {
+async function withStaff(email, branchId, fn, options = {}) {
   const client = await appPool.connect();
   try {
     await client.query("begin");
     await client.query("select set_config('request.jwt.claim.email', $1, true)", [email]);
     await client.query("select set_config('nac.branch', $1, true)", [branchId]);
     const result = await fn(client);
-    const notice = JSON.stringify({
-      id: randomBytes(12).toString("hex"),
-      branchId,
-      revision: result?.revision ?? null,
-    });
-    await client.query("select pg_notify('restaurant_service', $1)", [notice]);
+    if (options.notify !== false) {
+      const notice = JSON.stringify({
+        id: randomBytes(12).toString("hex"),
+        branchId,
+        revision: result?.revision ?? null,
+      });
+      await client.query("select pg_notify('restaurant_service', $1)", [notice]);
+    }
     await client.query("commit");
     return result;
   } catch (error) {
@@ -1183,8 +1185,19 @@ export async function handleNodeRequest(req, res) {
       return;
     }
     if (url.pathname === "/state") {
+      const known = Number(url.searchParams.get("revision"));
+      if (Number.isInteger(known)) {
+        const current = await withStaff(session.email, session.branchId, async (client) => (
+          (await client.query("select count(*)::int as revision from restaurant_audit_events")).rows[0].revision
+        ), { notify: false });
+        if (current === known) {
+          send(res, 200, { ok: true, unchanged: true, revision: current, role: session.role, email: session.email, sync: "revision" });
+          return;
+        }
+      }
+      const started = Date.now();
       const data = await withStaff(session.email, session.branchId, (client) => snapshot(client, session.branchId));
-      send(res, 200, { ...data, role: session.role, email: session.email });
+      send(res, 200, { ...data, role: session.role, email: session.email, syncMs: Date.now() - started });
       return;
     }
     if (url.pathname === "/act" && req.method === "POST") {

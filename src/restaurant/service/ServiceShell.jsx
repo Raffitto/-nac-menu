@@ -16,6 +16,7 @@ import { loadLayoutDocument, saveLayoutDocument } from "./layoutDocument";
 import LayoutEditor from "./LayoutEditor";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { devAct, devJson, devListen, devLogin, devState, devToken, setDevToken, setRestaurantBranch } from "../devApi/client";
+import { createRestaurantSync, restaurantSyncIntervalMs } from "../devApi/sync";
 import { usesHostedRestaurantAuth } from "../devApi/endpoint";
 import "./service.css";
 
@@ -184,43 +185,59 @@ export default function ServiceShell({
   useEffect(() => {
     if (!databaseMode || !devSession) return undefined;
     let stop = false;
-    async function pull() {
-      const data = await devState();
-      if (stop) return;
-      if (data?.reason === "service_unavailable") {
-        setBanner("The restaurant service did not respond. Shown figures were not changed.");
-        return;
-      }
-      if (data?.reason === "pilot_disabled") {
-        setPilotClosed(true);
-        setDevSession(null);
-        return;
-      }
-      if (!data?.state) return;
-      setServiceLoaded(true);
-      setBanner((current) => (
-        String(current).startsWith("The restaurant service did not respond")
-          ? "Connected to the local development database."
-          : current
-      ));
-      revisionRef.current = data.revision || data.state.revision || 0;
-      setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
-      setRevision(revisionRef.current);
-    }
-    pull();
-    const timer = setInterval(pull, 2000);
-    const stopListen = devListen(() => pull());
+    const sync = createRestaurantSync({
+      isHidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
+      pull: async () => {
+        const started = Date.now();
+        const data = await devState(revisionRef.current || undefined);
+        if (stop) return;
+        if (data?.reason === "service_unavailable") {
+          setBanner("The restaurant service did not respond. Shown figures were not changed.");
+          return;
+        }
+        if (data?.reason === "pilot_disabled") {
+          setPilotClosed(true);
+          setDevSession(null);
+          return;
+        }
+        if (data?.unchanged) {
+          revisionRef.current = data.revision;
+          return;
+        }
+        if (!data?.state) return;
+        setServiceLoaded(true);
+        setBanner((current) => (
+          String(current).startsWith("The restaurant service did not respond")
+            ? "Connected to the local development database."
+            : current
+        ));
+        revisionRef.current = data.revision || data.state.revision || 0;
+        setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
+        setRevision(revisionRef.current);
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.restaurantSyncMs = String(Date.now() - started);
+        }
+      },
+    });
+    sync.request(true);
+    const timer = setInterval(() => sync.request(false), restaurantSyncIntervalMs(role));
+    const stopListen = devListen(() => sync.request(true));
     function onVisible() {
-      if (document.visibilityState === "visible") pull();
+      if (document.visibilityState === "visible") sync.request(true);
+    }
+    function onOnline() {
+      sync.request(true);
     }
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
     return () => {
       stop = true;
       clearInterval(timer);
       stopListen();
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
     };
-  }, [databaseMode, devSession]);
+  }, [databaseMode, devSession, role]);
 
   useEffect(() => {
     if (!databaseMode || editing) return undefined;

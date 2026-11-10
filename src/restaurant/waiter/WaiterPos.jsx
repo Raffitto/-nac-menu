@@ -9,6 +9,7 @@ import {
   ticketForOrder,
 } from "../service/serviceShared";
 import { usesHostedRestaurantAuth } from "../devApi/endpoint";
+import { createRestaurantSync, restaurantSyncIntervalMs } from "../devApi/sync";
 import { khobarCatalogueLines, menuFromLines } from "./catalogueView";
 import {
   devAct,
@@ -216,42 +217,58 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   useEffect(() => {
     if (!databaseMode || !devSession) return undefined;
     let stop = false;
-    async function pull() {
-      const data = await devState();
-      if (stop) return;
-      if (!data?.state) {
-        if (data?.reason === "service_unavailable") {
-          setNotice("The restaurant service did not respond. Nothing was changed.");
+    const sync = createRestaurantSync({
+      isHidden: () => typeof document !== "undefined" && document.visibilityState === "hidden",
+      pull: async () => {
+        const started = Date.now();
+        const data = await devState(revisionRef.current || undefined);
+        if (stop) return;
+        if (data?.unchanged) {
+          revisionRef.current = data.revision;
           return;
         }
-        if (data?.reason === "pilot_disabled") {
-          setPilotClosed(true);
-          setDevSession(null);
+        if (!data?.state) {
+          if (data?.reason === "service_unavailable") {
+            setNotice("The restaurant service did not respond. Nothing was changed.");
+            return;
+          }
+          if (data?.reason === "pilot_disabled") {
+            setPilotClosed(true);
+            setDevSession(null);
+            return;
+          }
+          if (data?.reason === "sign_in_required") {
+            setDevToken("");
+            setDevSession(null);
+          }
           return;
         }
-        if (data?.reason === "sign_in_required") {
-          setDevToken("");
-          setDevSession(null);
+        setServiceLoaded(true);
+        setNotice("");
+        revisionRef.current = data.revision || data.state.revision || 0;
+        setRestaurant((prev) => ({ ...prev, state: data.state }));
+        if (typeof document !== "undefined") {
+          document.documentElement.dataset.restaurantSyncMs = String(Date.now() - started);
         }
-        return;
-      }
-      setServiceLoaded(true);
-      setNotice("");
-      revisionRef.current = data.revision || data.state.revision || 0;
-      setRestaurant((prev) => ({ ...prev, state: data.state }));
-    }
-    pull();
-    const timer = setInterval(pull, 2000);
-    const stopListen = devListen(() => pull());
+      },
+    });
+    sync.request(true);
+    const timer = setInterval(() => sync.request(false), restaurantSyncIntervalMs("waiter"));
+    const stopListen = devListen(() => sync.request(true));
     function onVisible() {
-      if (document.visibilityState === "visible") pull();
+      if (document.visibilityState === "visible") sync.request(true);
+    }
+    function onOnline() {
+      sync.request(true);
     }
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
     return () => {
       stop = true;
       clearInterval(timer);
       stopListen();
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
     };
   }, [databaseMode, devSession]);
 

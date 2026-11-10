@@ -51,8 +51,9 @@ export function devLogin(email, password, role) {
   return request("/login", { email, password, role });
 }
 
-export function devState() {
-  return request("/state");
+export function devState(revision) {
+  const query = Number.isInteger(revision) ? `?revision=${revision}` : "";
+  return request(`/state${query}`);
 }
 
 export function devAct(action, payload, expectedRevision) {

@@ -12,7 +12,9 @@ The database connection is `RESTAURANT_DATABASE_URL`, a server-side connection s
 
 Local development can still use the password session on `127.0.0.1`. That path is refused when `RESTAURANT_AUTH_MODE=supabase`. Production builds do not call `127.0.0.1` unless `REACT_APP_RESTAURANT_API` is set. Leave that unset. Set `REACT_APP_RESTAURANT_HOSTED=1` only on a non-production admin build when a hosted test is approved.
 
-Screens poll every 2 seconds and refetch when the browser tab becomes visible. The hosted function answers `/events` with `realtime: "poll"` after the pilot gate. It does not hold a Postgres `LISTEN`.
+A visible waiter or kitchen screen polls every 4 seconds. Reception and cashier poll every 8 seconds. Management polls every 20 seconds. A hidden tab or a locked phone does not poll. Unlocking the phone, returning to the tab, or reconnecting the network refreshes immediately. A poll that finds the same audit revision does not replace the screen data. The worst case before a visible screen shows another station's change is one interval plus the request time. On the isolated local database a full state read took 22 ms, including 14 ms to build the snapshot. The same revision returned in 4 ms and did not replace the screen. A waiter therefore sees a kitchen change within about 4 seconds. The hosted function answers `/events` with `realtime: "poll"` after the pilot gate. It does not hold a Postgres `LISTEN`.
+
+Supabase Realtime is already part of the current Supabase project. It is not a separate product, and this change does not enable it for restaurant tables. A direct browser subscription would skip the API snapshot that removes guest phone numbers from the kitchen view, and it would not apply the pilot gate. Polling stays the hosted path until a reviewed publication and a phone-safe view exist.
 
 ## Gates
 
@@ -34,7 +36,16 @@ Apply PR #83 migrations only to an isolated database until a separate production
 
 Netlify synchronous functions on the current platform: 60 second timeout, 1024 MB memory, 6 MB buffered payload. This adapter returns after 20 seconds with `timeout` rather than holding the request. Use one pooled connection per warm instance (`max: 1`).
 
-The screens poll every 2 seconds while open. One signed-in device is about 30 requests a minute. Ten devices are about 18,000 requests an hour, each doing a short read. That can consume included function invocations and database connections on the existing Netlify and Supabase plans. It is not a new subscription, and it is not free beyond those included quotas. Read the current invocation and connection limits in the Netlify and Supabase dashboards before a hosted test. Do not buy a larger plan for this step.
+These counts assume a visible screen for a 12-hour service and the new intervals. A hidden device adds no polls. A realistic mix is 60 percent waiter or kitchen (900 calls an hour), 30 percent reception or cashier (450), and 10 percent management (180). That is 693 calls an hour per active device.
+
+| Active visible devices | Calls per hour | Calls per 12-hour service |
+| --- | ---: | ---: |
+| 5 | 3,465 | 41,580 |
+| 10 | 6,930 | 83,160 |
+| 20 | 13,860 | 166,320 |
+| 40 | 27,720 | 332,640 |
+
+If every device is a waiter, use 900 calls an hour each: 4,500, 9,000, 18,000, and 36,000 an hour. The previous 2-second poll was 1,800 an hour per device. An unchanged revision still invokes the function, and the response is a small JSON object instead of the full floor. This uses the existing Netlify and Supabase plans. It is not a new subscription, and it is not free beyond the included quotas. Verified account quotas are listed separately when the dashboards can be read.
 
 ## Rollback
 
