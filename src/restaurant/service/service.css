@@ -896,7 +896,20 @@
 }
 .le-shift { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
 @media (max-width: 1200px) {
-  .svc-live .svc-roles button { min-height: 44px; padding: 8px 12px; }
+  .svc-live .svc-roles button,
+  .svc .desk .desk-group,
+  .svc .desk .desk-list ul button,
+  .svc .desk-ghost-btn,
+  .svc button.svc-primary,
+  .svc .desk-date button,
+  .svc .desk-shifts button,
+  .svc .desk-tools button,
+  .svc .desk-floor-tools button,
+  .svc .kh-zoom button,
+  .svc .desk-top button {
+    min-height: 44px;
+  }
+  .svc, .pos { max-width: 100%; overflow-x: clip; }
 }
 @media (max-width: 800px) {
   .svc-live { height: auto; max-height: none; overflow: auto; }

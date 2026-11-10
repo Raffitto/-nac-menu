@@ -15,7 +15,8 @@ import {
 import { loadLayoutDocument, saveLayoutDocument } from "./layoutDocument";
 import LayoutEditor from "./LayoutEditor";
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import { devAct, devJson, devListen, devLogin, devState, devToken, setDevToken } from "../devApi/client";
+import { devAct, devJson, devListen, devLogin, devState, devToken, setDevToken, setRestaurantBranch } from "../devApi/client";
+import { usesHostedRestaurantAuth } from "../devApi/endpoint";
 import "./service.css";
 
 const ROLES = [
@@ -79,6 +80,8 @@ export default function ServiceShell({
   const [devPassword, setDevPassword] = useState("");
   const [devSession, setDevSession] = useState(null);
   const [pilotClosed, setPilotClosed] = useState(false);
+  const [serviceLoaded, setServiceLoaded] = useState(false);
+  const hostedAuth = usesHostedRestaurantAuth();
   const revisionRef = useRef(0);
   const layoutStorage = developmentStorage(storage);
   const [layoutDoc, setLayoutDoc] = useState(() => loadLayoutDocument(layoutStorage));
@@ -150,16 +153,22 @@ export default function ServiceShell({
   }, [restaurant, revision, storage, databaseMode]);
 
   useEffect(() => {
-    if (!databaseMode || !devToken()) return undefined;
+    if (!databaseMode || (!hostedAuth && !devToken())) return undefined;
     let stop = false;
     devState().then((data) => {
       if (stop) return;
+      if (data?.reason === "service_unavailable") {
+        setBanner("The restaurant service did not respond. Counts are not shown.");
+        return;
+      }
       if (data?.reason === "pilot_disabled") {
         setPilotClosed(true);
         setDevSession(null);
         return;
       }
       if (!data?.state || !data.role) return;
+      setServiceLoaded(true);
+      if (data.state.branchId) setRestaurantBranch(data.state.branchId);
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
       setRevision(revisionRef.current);
@@ -170,7 +179,7 @@ export default function ServiceShell({
     return () => {
       stop = true;
     };
-  }, [databaseMode]);
+  }, [databaseMode, hostedAuth]);
 
   useEffect(() => {
     if (!databaseMode || !devSession) return undefined;
@@ -178,12 +187,22 @@ export default function ServiceShell({
     async function pull() {
       const data = await devState();
       if (stop) return;
+      if (data?.reason === "service_unavailable") {
+        setBanner("The restaurant service did not respond. Shown figures were not changed.");
+        return;
+      }
       if (data?.reason === "pilot_disabled") {
         setPilotClosed(true);
         setDevSession(null);
         return;
       }
       if (!data?.state) return;
+      setServiceLoaded(true);
+      setBanner((current) => (
+        String(current).startsWith("The restaurant service did not respond")
+          ? "Connected to the local development database."
+          : current
+      ));
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state, menu: prev.menu }));
       setRevision(revisionRef.current);
@@ -191,10 +210,15 @@ export default function ServiceShell({
     pull();
     const timer = setInterval(pull, 2000);
     const stopListen = devListen(() => pull());
+    function onVisible() {
+      if (document.visibilityState === "visible") pull();
+    }
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stop = true;
       clearInterval(timer);
       stopListen();
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [databaseMode, devSession]);
 
@@ -272,6 +296,10 @@ export default function ServiceShell({
   }
 
   async function chooseRole(next) {
+    if (hostedAuth) {
+      setBanner("The restaurant role comes from the NAC staff grant.");
+      return;
+    }
     if (!databaseMode) {
       setRole(next);
       if (next !== "host") setEditing(false);
@@ -333,6 +361,7 @@ export default function ServiceShell({
               key={row.id}
               type="button"
               aria-current={role === row.id ? "page" : undefined}
+              disabled={hostedAuth && row.id !== (devSession?.role || role)}
               onClick={() => chooseRole(row.id)}
             >
               {row.label}
@@ -364,13 +393,43 @@ export default function ServiceShell({
             <p role="alert" data-testid="service-identity">{reasonText(identity.reason)}</p>
           )}
           <p className="svc-truth" data-testid="service-summary">
-            {branch ? branch.label : "Branch unavailable"} · open sessions {summary.openSessions} · paid bills {summary.paidBills} · visits {summary.visits} · consumption previews {consumption.length} · stock posted {consumption.filter((row) => row.postsStock).length} · {databaseMode ? "local development database, not production" : "simulated, nothing written"}
+            {databaseMode && !serviceLoaded
+              ? "Restaurant service unavailable. Counts are not shown."
+              : `${branch ? branch.label : "Branch unavailable"} · open sessions ${summary.openSessions} · paid bills ${summary.paidBills} · visits ${summary.visits} · consumption previews ${consumption.length} · stock posted ${consumption.filter((row) => row.postsStock).length} · ${databaseMode ? "local development database, not production" : "simulated, nothing written"}`}
             {serviceRead?.directAnswer ? ` Ask NAC: ${serviceRead.directAnswer}` : ""}
           </p>
         </details>
       </header>
       <p className="svc-banner" role="status" data-testid="service-banner">TEST MODE — NOT LIVE RESTAURANT OPERATIONS. {banner}</p>
-      {databaseMode && !devSession ? (
+      {databaseMode && !devSession && hostedAuth ? (
+        <form className="svc-card" onSubmit={async (event) => {
+          event.preventDefault();
+          const result = await devState();
+          if (result?.reason === "pilot_disabled") {
+            setPilotClosed(true);
+            return;
+          }
+          if (!result?.ok || !result.state) {
+            setBanner(result?.reason === "sign_in_required"
+              ? "Sign in to NAC OS first. The restaurant does not use a separate password."
+              : "The restaurant service did not respond. Counts are not shown.");
+            return;
+          }
+          setServiceLoaded(true);
+          setDevSession({ ok: true, role: result.role, branchId: result.state.branchId, email: result.email });
+          setRole(result.role);
+          if (result.state.branchId) {
+            setBranchId(result.state.branchId);
+            setRestaurantBranch(result.state.branchId);
+          }
+          setRestaurant((prev) => ({ ...prev, state: result.state, menu: prev.menu }));
+          setBanner("Signed in with the NAC OS session.");
+        }}>
+          <h2>NAC staff sign-in</h2>
+          <p>Uses the NAC OS session already on this device. No restaurant password is stored here.</p>
+          <button type="submit" className="svc-primary">Continue</button>
+        </form>
+      ) : databaseMode && !devSession ? (
         <form className="svc-card" onSubmit={async (event) => {
           event.preventDefault();
           const data = new FormData(event.currentTarget);

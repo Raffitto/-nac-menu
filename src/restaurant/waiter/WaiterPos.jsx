@@ -8,6 +8,7 @@ import {
   reservationByTable,
   ticketForOrder,
 } from "../service/serviceShared";
+import { usesHostedRestaurantAuth } from "../devApi/endpoint";
 import { khobarCatalogueLines, menuFromLines } from "./catalogueView";
 import {
   devAct,
@@ -132,6 +133,8 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   const revisionRef = useRef(0);
   const [devSession, setDevSession] = useState(null);
   const [pilotClosed, setPilotClosed] = useState(false);
+  const [serviceLoaded, setServiceLoaded] = useState(false);
+  const hostedAuth = usesHostedRestaurantAuth();
   const [restaurant, setRestaurant] = useState(() => {
     const menu = menuFromLines(lines || khobarCatalogueLines());
     if (databaseMode) return { state: emptyServiceState(), menu };
@@ -186,16 +189,21 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
   }, [databaseMode, localStore, restaurant, frame]);
 
   useEffect(() => {
-    if (!databaseMode || !devToken()) return undefined;
+    if (!databaseMode || (!hostedAuth && !devToken())) return undefined;
     let stop = false;
     devState().then((data) => {
       if (stop) return;
+      if (data?.reason === "service_unavailable") {
+        setNotice("The restaurant service did not respond. Open tables are unavailable.");
+        return;
+      }
       if (data?.reason === "pilot_disabled") {
         setPilotClosed(true);
         setDevSession(null);
         return;
       }
       if (!data?.state || !data.role) return;
+      setServiceLoaded(true);
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state }));
       setDevSession({ ok: true, role: data.role, email: data.email });
@@ -203,7 +211,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     return () => {
       stop = true;
     };
-  }, [databaseMode]);
+  }, [databaseMode, hostedAuth]);
 
   useEffect(() => {
     if (!databaseMode || !devSession) return undefined;
@@ -212,6 +220,10 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
       const data = await devState();
       if (stop) return;
       if (!data?.state) {
+        if (data?.reason === "service_unavailable") {
+          setNotice("The restaurant service did not respond. Nothing was changed.");
+          return;
+        }
         if (data?.reason === "pilot_disabled") {
           setPilotClosed(true);
           setDevSession(null);
@@ -223,16 +235,23 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
         }
         return;
       }
+      setServiceLoaded(true);
+      setNotice("");
       revisionRef.current = data.revision || data.state.revision || 0;
       setRestaurant((prev) => ({ ...prev, state: data.state }));
     }
     pull();
     const timer = setInterval(pull, 2000);
     const stopListen = devListen(() => pull());
+    function onVisible() {
+      if (document.visibilityState === "visible") pull();
+    }
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       stop = true;
       clearInterval(timer);
       stopListen();
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [databaseMode, devSession]);
 
@@ -666,6 +685,33 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     );
   }
 
+  if (databaseMode && !devSession && hostedAuth) {
+    return (
+      <form className="pos pos-gate" data-testid="waiter-pos" onSubmit={async (event) => {
+        event.preventDefault();
+        const result = await devState();
+        if (result?.reason === "pilot_disabled") {
+          setPilotClosed(true);
+          return;
+        }
+        if (!result?.state) {
+          setNotice(result?.reason === "sign_in_required"
+            ? "Sign in to NAC OS first. The waiter does not use a separate password."
+            : "The restaurant service did not respond. Open tables are unavailable.");
+          return;
+        }
+        setServiceLoaded(true);
+        setDevSession({ ok: true, role: result.role, email: result.email });
+        setRestaurant((prev) => ({ ...prev, state: result.state }));
+      }}>
+        <p>TEST MODE — NOT LIVE RESTAURANT OPERATIONS</p>
+        <h1>NAC Waiter</h1>
+        <p>Uses the NAC OS session already on this device.</p>
+        <button type="submit" className="pos-primary">Continue</button>
+      </form>
+    );
+  }
+
   if (databaseMode && !devSession) {
     return (
       <form
@@ -730,7 +776,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
           <section className="pos-home" aria-label="Home">
             <p className="pos-brand">NAC</p>
             <h1>Khobar</h1>
-            <p className="pos-quiet">{openChecks.length === 0 ? "No open tables." : `${openChecks.length} open ${openChecks.length === 1 ? "table" : "tables"}.`}</p>
+            <p className="pos-quiet">{!serviceLoaded && databaseMode ? "Open tables are unavailable until the restaurant service responds." : openChecks.length === 0 ? "No open tables." : `${openChecks.length} open ${openChecks.length === 1 ? "table" : "tables"}.`}</p>
             {openChecks.filter((check) => check.seat).map((check) => (
               <button key={check.session.id} type="button" className="pos-check" onClick={() => openOrder(check.seat.id)}>
                 <span>

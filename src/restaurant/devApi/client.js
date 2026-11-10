@@ -1,5 +1,8 @@
-const BASE = process.env.REACT_APP_RESTAURANT_API || "http://127.0.0.1:4193";
+import { supabase } from "../../lib/supabase";
+import { restaurantApiBase, usesHostedRestaurantAuth } from "./endpoint";
+
 const KEY = "nac-dev-restaurant-token";
+const BRANCH_KEY = "nac-restaurant-branch";
 
 export function devToken() {
   if (typeof sessionStorage === "undefined") return "";
@@ -10,14 +13,32 @@ export function setDevToken(token) {
   sessionStorage.setItem(KEY, token || "");
 }
 
+export function setRestaurantBranch(branchId) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(BRANCH_KEY, branchId || "");
+}
+
+async function authorizationHeader() {
+  if (usesHostedRestaurantAuth()) {
+    const token = supabase ? (await supabase.auth.getSession()).data?.session?.access_token : "";
+    return token ? `Bearer ${token}` : "";
+  }
+  return devToken() ? `Bearer ${devToken()}` : "";
+}
+
 async function request(path, body) {
+  const base = restaurantApiBase();
+  if (!base) return { ok: false, reason: "service_unavailable" };
   try {
-    const response = await fetch(`${BASE}${path}`, {
+    const headers = {
+      "content-type": "application/json",
+      authorization: await authorizationHeader(),
+    };
+    const branch = typeof sessionStorage !== "undefined" ? sessionStorage.getItem(BRANCH_KEY) : "";
+    if (branch) headers["x-nac-branch"] = branch;
+    const response = await fetch(`${base}${path}`, {
       method: body ? "POST" : "GET",
-      headers: {
-        "content-type": "application/json",
-        authorization: devToken() ? `Bearer ${devToken()}` : "",
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
     return response.json();
@@ -43,9 +64,10 @@ export function devJson(path, body) {
 }
 
 export function devListen(onEvent) {
-  if (typeof fetch === "undefined" || !devToken()) return () => {};
+  const base = restaurantApiBase();
+  if (usesHostedRestaurantAuth() || !base || typeof fetch === "undefined" || !devToken()) return () => {};
   const controller = new AbortController();
-  fetch(`${BASE}/events`, {
+  fetch(`${base}/events`, {
     headers: { authorization: `Bearer ${devToken()}` },
     signal: controller.signal,
   }).then(async (response) => {

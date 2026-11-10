@@ -1,8 +1,12 @@
-const API = process.env.REACT_APP_RESTAURANT_API || "http://127.0.0.1:4193";
+import { restaurantApiBase } from "./devApi/endpoint";
+
+const CLOSED = { restaurantPilot: false, guestOrdering: false, guestPayments: false };
 
 export async function readRestaurantPilot(fetchImpl = fetch) {
+  const base = restaurantApiBase();
+  if (!base) return CLOSED;
   try {
-    const response = await fetchImpl(`${API}/pilot-status`);
+    const response = await fetchImpl(`${base}/pilot-status`);
     const body = await response.json();
     return {
       restaurantPilot: body?.restaurantPilot === true,
@@ -10,6 +14,6 @@ export async function readRestaurantPilot(fetchImpl = fetch) {
       guestPayments: body?.guestPayments === true,
     };
   } catch {
-    return { restaurantPilot: false, guestOrdering: false, guestPayments: false };
+    return CLOSED;
   }
 }

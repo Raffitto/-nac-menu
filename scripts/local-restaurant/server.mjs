@@ -13,6 +13,9 @@ import {
   verifyRegistration,
 } from "./passkeys.mjs";
 import { GUEST_ORDER_MODE, OWNER_EMAILS, guestMenu, issueGuestToken, readGuestToken } from "./guestAccess.mjs";
+import { verifySupabaseAccessToken } from "./hostedAuth.mjs";
+import { selectStaffGrant } from "./staffGrant.mjs";
+import { pathToFileURL } from "node:url";
 
 const port = Number(process.env.LOCAL_API_PORT || 4193);
 const devPassword = process.env.LOCAL_DEV_PASSWORD || "local-dev";
@@ -265,7 +268,7 @@ function send(res, status, body) {
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": res.reqOrigin || "http://localhost:4192",
-    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-headers": "authorization, content-type, x-nac-branch",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     vary: "origin",
   });
@@ -930,7 +933,17 @@ async function act(client, email, action, payload) {
   throw new Error("action_not_in_development_api");
 }
 
-const server = http.createServer(async (req, res) => {
+const authFailures = new Map();
+
+function limitedAuth(key) {
+  const now = Date.now();
+  const recent = (authFailures.get(key) || []).filter((stamp) => now - stamp < 60000);
+  recent.push(now);
+  authFailures.set(key, recent);
+  return recent.length > 60;
+}
+
+export async function handleNodeRequest(req, res) {
   const origin = req.headers.origin || "http://localhost:4192";
   res.reqOrigin = origin;
   if (req.method === "OPTIONS") {
@@ -943,9 +956,25 @@ const server = http.createServer(async (req, res) => {
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => {
       const text = Buffer.concat(chunks).toString("utf8");
-      resolve(text ? JSON.parse(text) : {});
+      if (Buffer.concat(chunks).length > 100000) {
+        resolve({ __invalidJson: true, __tooLarge: true });
+        return;
+      }
+      if (!text) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(text));
+      } catch {
+        resolve({ __invalidJson: true });
+      }
     });
   });
+  if (body?.__invalidJson) {
+    send(res, body.__tooLarge ? 413 : 400, { ok: false, reason: body.__tooLarge ? "payload_too_large" : "invalid_json" });
+    return;
+  }
   try {
     const requestId = req.headers["x-request-id"] || randomBytes(8).toString("hex");
     res.setHeader("x-request-id", requestId);
@@ -981,7 +1010,17 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/health") {
       const ping = await appPool.query("select 1 as ok");
-      send(res, 200, { ok: ping.rows[0].ok === 1, database: "local", production: false, db: "up" });
+      send(res, 200, {
+        ok: ping.rows[0].ok === 1,
+        database: process.env.RESTAURANT_AUTH_MODE === "supabase" ? "supabase" : "local",
+        production: false,
+        db: "up",
+        realtime: process.env.RESTAURANT_AUTH_MODE === "supabase" ? "poll" : "events",
+      });
+      return;
+    }
+    if (process.env.RESTAURANT_AUTH_MODE === "supabase" && (url.pathname === "/login" || url.pathname.startsWith("/passkey/"))) {
+      send(res, 403, { ok: false, reason: "dev_auth_disabled" });
       return;
     }
     if (url.pathname === "/login" && req.method === "POST") {
@@ -1063,7 +1102,11 @@ const server = http.createServer(async (req, res) => {
       if (await handleGuest(res, url.pathname, body)) return;
     }
     const token = String(req.headers.authorization || "").replace(/^Bearer /, "");
-    const session = await loadSession(token);
+    const session = await loadSession(token, req.headers);
+    if (session?.error) {
+      send(res, session.error === "rate_limited" ? 429 : 403, { ok: false, reason: session.error, paymentCaptured: false });
+      return;
+    }
     if (!session) {
       send(res, 401, { ok: false, reason: "sign_in_required" });
       return;
@@ -1094,6 +1137,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (url.pathname === "/events" && req.method === "GET") {
+      if (process.env.RESTAURANT_AUTH_MODE === "supabase") {
+        send(res, 200, { ok: true, mode: "poll", realtime: "poll" });
+        return;
+      }
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-cache",
@@ -1157,9 +1204,25 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     send(res, 400, { ok: false, reason: reasonFrom(error) });
   }
-});
+}
 
-async function loadSession(token) {
+async function loadSupabaseSession(token, headers) {
+  const ip = String(headers["x-nf-client-connection-ip"] || headers["x-forwarded-for"] || "local").split(",")[0].trim();
+  if (limitedAuth(ip)) return { error: "rate_limited" };
+  const user = await verifySupabaseAccessToken(token);
+  if (!user?.email) return null;
+  const grants = (await appPool.query(
+    `select role, branch_id from restaurant_staff_grants
+     where lower(email) = lower($1) and revoked_at is null and branch_id <> '*'`,
+    [user.email],
+  )).rows;
+  const selected = selectStaffGrant(grants, headers["x-nac-branch"]);
+  if (!selected.ok) return { error: selected.reason };
+  return { email: user.email, role: selected.role, branchId: selected.branchId };
+}
+
+async function loadSession(token, headers = {}) {
+  if (process.env.RESTAURANT_AUTH_MODE === "supabase") return loadSupabaseSession(token, headers);
   if (!token) return null;
   const row = (await appPool.query(
     `select s.email, s.role, s.branch_id
@@ -1171,6 +1234,22 @@ async function loadSession(token) {
   )).rows[0];
   if (!row) return null;
   return { email: row.email, role: row.role, branchId: row.branch_id };
+}
+
+export async function ensureRestaurantPool() {
+  if (appPool) return appPool;
+  if (process.env.RESTAURANT_DATABASE_URL) {
+    appPool = new pg.Pool({
+      connectionString: process.env.RESTAURANT_DATABASE_URL,
+      max: 1,
+      connectionTimeoutMillis: 8000,
+      idleTimeoutMillis: 1000,
+    });
+    await appPool.query("select 1");
+    return appPool;
+  }
+  await assertMigrated();
+  return appPool;
 }
 
 async function assertMigrated() {
@@ -1201,11 +1280,58 @@ async function assertMigrated() {
   });
 }
 
-assertMigrated().then(() => {
-  server.listen(port, "127.0.0.1", () => {
-    process.stdout.write(`local restaurant api on 127.0.0.1:${port}\n`);
+export async function handleWebRequest(request) {
+  await ensureRestaurantPool();
+  const url = new URL(request.url);
+  let pathname = url.pathname;
+  for (const prefix of ["/api/restaurant", "/.netlify/functions/restaurant"]) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      pathname = pathname.slice(prefix.length) || "/";
+      break;
+    }
+  }
+  const text = request.method === "GET" || request.method === "HEAD" ? "" : await request.text();
+  const headers = {};
+  request.headers.forEach((value, key) => {
+    headers[key] = value;
   });
-}).catch((error) => {
-  process.stderr.write(`${error.message}\n`);
-  process.exit(1);
-});
+  const req = {
+    method: request.method,
+    url: `${pathname}${url.search}`,
+    headers,
+    on(event, callback) {
+      if (event === "data" && text) callback(Buffer.from(text));
+      if (event === "end") queueMicrotask(callback);
+    },
+  };
+  let status = 200;
+  const headerBag = {};
+  let payload = "";
+  const res = {
+    reqOrigin: headers.origin || "",
+    statusCode: 200,
+    setHeader(name, value) { headerBag[name] = value; },
+    writeHead(code, extra) {
+      status = code;
+      if (extra) Object.assign(headerBag, extra);
+    },
+    end(body) { payload = body || ""; },
+    write() {},
+    on() {},
+  };
+  await handleNodeRequest(req, res);
+  return new Response(payload, { status, headers: headerBag });
+}
+
+const direct = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (direct) {
+  assertMigrated().then(() => {
+    const server = http.createServer(handleNodeRequest);
+    server.listen(port, "127.0.0.1", () => {
+      process.stdout.write(`local restaurant api on 127.0.0.1:${port}\n`);
+    });
+  }).catch((error) => {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  });
+}
