@@ -70,4 +70,11 @@ record("another branch is rejected from the database grant", foreign.payload.rea
 const events = await call("/api/restaurant/events", { token: "header.payload.signature", branch: "khobar" });
 record("a closed pilot does not open an event stream", events.payload.reason === "pilot_disabled" && events.payload.realtime !== "events");
 
-process.stdout.write("hosted gate steps 6\n");
+const health = await call("/api/restaurant/health");
+record(
+  "usage counts requests without guest records",
+  health.payload.usage?.requests >= 6
+    && health.payload.usage.authFailures >= 1
+    && !JSON.stringify(health.payload.usage).includes("@"),
+);
+process.stdout.write("hosted gate steps 7\n");

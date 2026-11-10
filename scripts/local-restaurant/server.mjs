@@ -32,6 +32,15 @@ const adminPool = new pg.Pool({
 let appPool = null;
 const loginAttempts = new Map();
 const SESSION_HOURS = 12;
+const usage = {
+  since: new Date().toISOString(),
+  requests: 0,
+  unchanged: 0,
+  snapshots: 0,
+  errors: 0,
+  authFailures: 0,
+  durationMs: 0,
+};
 
 const menu = JSON.parse(readFileSync(new URL("../../src/catalogue/guest-menu-baseline-khobar.json", import.meta.url)));
 const menuById = new Map((menu.items || []).map((item) => [String(item.id), item]));
@@ -265,6 +274,12 @@ function limitedLogin(email) {
 }
 
 function send(res, status, body) {
+  usage.requests += 1;
+  usage.durationMs += Math.max(0, Date.now() - (res.started || Date.now()));
+  if (status === 401 || status === 403) usage.authFailures += 1;
+  else if (status >= 400) usage.errors += 1;
+  if (res.usageKind === "unchanged") usage.unchanged += 1;
+  if (res.usageKind === "snapshot") usage.snapshots += 1;
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": res.reqOrigin || "http://localhost:4192",
@@ -981,14 +996,17 @@ export async function handleNodeRequest(req, res) {
     const requestId = req.headers["x-request-id"] || randomBytes(8).toString("hex");
     res.setHeader("x-request-id", requestId);
     const started = Date.now();
+    res.started = started;
     res.on("finish", () => {
       if (url.pathname === "/events") return;
+      const ms = Date.now() - started;
       process.stdout.write(`${JSON.stringify({
         requestId,
         method: req.method,
         path: url.pathname,
         status: res.statusCode,
-        ms: Date.now() - started,
+        ms,
+        usageKind: res.usageKind || "other",
       })}\n`);
     });
     if (url.pathname === "/pilot-status") {
@@ -1018,6 +1036,15 @@ export async function handleNodeRequest(req, res) {
         production: false,
         db: "up",
         realtime: process.env.RESTAURANT_AUTH_MODE === "supabase" ? "poll" : "events",
+        usage: {
+          since: usage.since,
+          requests: usage.requests,
+          unchanged: usage.unchanged,
+          snapshots: usage.snapshots,
+          errors: usage.errors,
+          authFailures: usage.authFailures,
+          durationMs: usage.durationMs,
+        },
       });
       return;
     }
@@ -1191,12 +1218,14 @@ export async function handleNodeRequest(req, res) {
           (await client.query("select count(*)::int as revision from restaurant_audit_events")).rows[0].revision
         ), { notify: false });
         if (current === known) {
+          res.usageKind = "unchanged";
           send(res, 200, { ok: true, unchanged: true, revision: current, role: session.role, email: session.email, sync: "revision" });
           return;
         }
       }
       const started = Date.now();
       const data = await withStaff(session.email, session.branchId, (client) => snapshot(client, session.branchId));
+      res.usageKind = "snapshot";
       send(res, 200, { ...data, role: session.role, email: session.email, syncMs: Date.now() - started });
       return;
     }
