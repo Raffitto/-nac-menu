@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { RECONSTRUCTED_LIMIT, buildPriceSnapshot, decimalToMinor, sumStoredMinor } = require("../../src/restaurant/priceSnapshot.js");
+const { inclusiveVat, percentMinor } = require("../../src/restaurant/halala.js");
 
 const port = Number(process.env.LOCAL_API_PORT || 4193);
 const devPassword = process.env.LOCAL_DEV_PASSWORD || "local-dev";
@@ -448,9 +449,25 @@ async function snapshot(client, branchId) {
     [branchId],
   )).rows;
   const bills = (await client.query(
-    `select id, session_id, branch_id, status from restaurant_bills where branch_id = $1`,
+    `select id, session_id, branch_id, status, tax_treatment, taxable_minor, vat_minor, gross_minor, finalized_at
+     from restaurant_bills where branch_id = $1`,
     [branchId],
   )).rows;
+  const payments = (await client.query(
+    `select id, bill_id, method, amount_minor, actor_email, created_at
+     from restaurant_payments where branch_id = $1 order by created_at`,
+    [branchId],
+  )).rows;
+  const shifts = (await client.query(
+    `select id, status, opening_float_minor, expected_cash_minor, counted_cash_minor, variance_minor, detail
+     from restaurant_shifts where branch_id = $1 order by opened_at desc limit 5`,
+    [branchId],
+  )).rows;
+  const taxSetting = (await client.query(
+    `select treatment, rate_numerator, rate_denominator, source_note
+     from restaurant_tax_settings where branch_id = $1`,
+    [branchId],
+  )).rows[0] || null;
   const waitlist = (await client.query(
     `select id, name, party_size, status, estimate_note from restaurant_waitlist
      where branch_id = $1 and status = 'waiting' order by created_at`,
@@ -498,7 +515,11 @@ function sessionMinor(sessionId) {
     const allocated = adjustments
       .filter((row) => row.session_id === sessionId && row.kind === "split" && row.check_bill_id && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    return Math.max(0, base - discounted - itemDiscounts - allocated) / 100;
+    const sessionBillIds = new Set(bills.filter((row) => row.session_id === sessionId).map((row) => row.id));
+    const paid = payments
+      .filter((row) => sessionBillIds.has(row.bill_id) && Number.isInteger(row.amount_minor))
+      .reduce((sum, row) => sum + row.amount_minor, 0);
+    return Math.max(0, base - discounted - itemDiscounts - allocated - paid) / 100;
   }
   const adjustments = (await client.query(
       `select id, bill_id, session_id, kind, item_id, basis, amount_minor, parts, reason, actor_email, idempotency_key, check_bill_id
@@ -616,6 +637,12 @@ function sessionMinor(sessionId) {
         totalMinor: part ? null : sessionTotal(row.session_id)?.minor ?? null,
         amountProvenance: part ? "allocated" : sessionTotal(row.session_id)?.provenance || "unavailable",
         amountLimitation: sessionTotal(row.session_id)?.provenance === "reconstructed" ? RECONSTRUCTED_LIMIT : null,
+        taxTreatment: row.tax_treatment || (sessionTotal(row.session_id)?.provenance === "snapshot" ? taxSetting?.treatment || "unconfigured" : "unknown"),
+        vatMinor: Number.isInteger(row.vat_minor) ? row.vat_minor : null,
+        taxableMinor: Number.isInteger(row.taxable_minor) ? row.taxable_minor : null,
+        grossMinor: Number.isInteger(row.gross_minor) ? row.gross_minor : null,
+        finalizedAt: row.finalized_at ? new Date(row.finalized_at).toISOString() : null,
+        taxSource: row.finalized_at ? "snapshot" : "not_finalized",
         outstanding: part ? partAmount : outstanding(row.session_id),
         paid: false,
         partId: row.id.startsWith(`bill:${row.session_id}:`) && row.id !== `bill:${row.session_id}`
@@ -636,7 +663,19 @@ function sessionMinor(sessionId) {
       actorEmail: row.actor_email,
       paymentCaptured: false,
     })),
-    payments: [],
+    payments: payments.map((row) => ({
+      id: row.id,
+      billId: row.bill_id,
+      method: "simulated",
+      tender: row.method === "other" ? "transfer" : row.method,
+      amount: row.amount_minor / 100,
+      amountMinor: row.amount_minor,
+      testMode: true,
+      recordedAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+      actorEmail: row.actor_email,
+    })),
+    shifts,
+    taxSetting,
     visits: sessions.filter((row) => row.status === "closed" && row.guest_id).map((row) => ({
       id: `visit:${row.id}`,
       sessionId: row.id,
@@ -972,13 +1011,63 @@ async function act(client, email, action, payload) {
     return { ok: true };
   }
   if (action === "pay") {
-    return { ok: false, reason: "payment_not_authorized" };
+    return { ok: false, reason: "payment_not_authorized", paymentCaptured: false };
+  }
+  if (action === "recordSimulatedPayment") {
+    const body = Array.isArray(payload) ? payload[1] || {} : payload || {};
+    const method = body.tender === "cash" ? "cash" : body.tender === "card" ? "card" : body.tender === "transfer" || body.tender === "other" ? "other" : null;
+    if (!method) throw new Error("tender_not_configured");
+    const amountMinor = decimalToMinor(body.amount);
+    if (amountMinor == null || amountMinor <= 0) throw new Error("amount_invalid");
+    const bill = (await client.query(
+      "select id from restaurant_bills where id = $1 or session_id = $1 order by created_at limit 1",
+      [body.billId || body.sessionId],
+    )).rows[0];
+    if (!bill) throw new Error("bill_not_found");
+    const row = (await client.query(
+      "select id, amount_minor, method from restaurant_record_simulated_payment($1, $2, $3, $4)",
+      [bill.id, method, amountMinor, body.idempotencyKey || null],
+    )).rows[0];
+    return { ok: true, paymentCaptured: false, testMode: true, payment: row };
+  }
+  if (action === "finalizeBill") {
+    const billId = payload?.billId || payload;
+    const row = (await client.query(
+      "select gross_minor, vat_minor, taxable_minor, tax_treatment from restaurant_finalize_simulated_bill($1)",
+      [billId],
+    )).rows[0];
+    return { ok: true, paymentCaptured: false, testMode: true, bill: row };
+  }
+  if (action === "openShift") {
+    const row = (await client.query(
+      "select id, opening_float_minor from restaurant_open_shift($1, $2)",
+      [grant.branch_id, decimalToMinor(payload?.openingFloat)],
+    )).rows[0];
+    return { ok: true, testMode: true, shift: row, paymentCaptured: false };
+  }
+  if (action === "closeShift") {
+    const row = (await client.query(
+      "select id, expected_cash_minor, counted_cash_minor, variance_minor, detail from restaurant_close_shift($1, $2, $3)",
+      [payload?.shiftId, decimalToMinor(payload?.countedCash), payload?.note],
+    )).rows[0];
+    return { ok: true, testMode: true, shift: row, paymentCaptured: false };
   }
   if (action === "discountBill" || action === "voidItem" || action === "splitBill") {
     const body = payload || {};
     const reason = String(body.reason || "").trim();
     if (!reason) throw new Error("reason_required");
-    if (body.basis === "guest") throw new Error("guest_assignment_missing");
+    if (body.basis === "guest" && !Number.isInteger(Number(body.partySize))) {
+      const party = (await client.query(
+        `select r.party_size from restaurant_bills b
+         join restaurant_sessions s on s.id = b.session_id
+         join restaurant_reservations r on r.id = s.reservation_id
+         where b.id = $1`,
+        [body.billId || body.sessionId],
+      )).rows[0];
+      if (!Number.isInteger(party?.party_size) || party.party_size < 2) throw new Error("guest_assignment_missing");
+      body.parts = party.party_size;
+      body.basis = "guest";
+    }
     const bill = (await client.query(
       "select id, session_id, status from restaurant_bills where id = $1 or session_id = $1 limit 1",
       [body.billId || body.sessionId],
@@ -993,7 +1082,7 @@ async function act(client, email, action, payload) {
       if (existing) return { ok: true, paymentCaptured: false, idempotent: true };
     }
     const lines = (await client.query(
-      `select i.id, i.item_name, i.quantity, i.modifier_ids, i.status
+      `select i.id, i.item_name, i.quantity, i.modifier_ids, i.status, i.line_minor
        from restaurant_order_items i
        join restaurant_orders o on o.id = i.order_id
        where o.session_id = $1 and i.status <> 'cancelled'`,
@@ -1001,9 +1090,10 @@ async function act(client, email, action, payload) {
     )).rows;
     const priced = lines.map((line) => ({
       ...line,
-      minor: lineMinor(line.item_name, line.quantity, line.modifier_ids || []),
+      minor: Number.isInteger(line.line_minor) ? line.line_minor : (/^\d+$/.test(String(line.line_minor ?? "")) ? Number(line.line_minor) : null),
+      provenance: Number.isInteger(line.line_minor) ? "snapshot" : "reconstructed",
     }));
-    if (priced.some((line) => line.minor == null)) throw new Error("price_unconfigured");
+    if (priced.some((line) => line.minor == null)) throw new Error("price_snapshot_required");
     const totalMinor = priced.reduce((sum, line) => sum + line.minor, 0);
     const prior = (await client.query(
       "select kind, item_id, amount_minor, check_bill_id from restaurant_adjustments where bill_id = $1",
@@ -1015,14 +1105,18 @@ async function act(client, email, action, payload) {
       if (row.kind === "split" && row.check_bill_id) return sum + row.amount_minor;
       return sum;
     }, 0);
-    const availableMinor = totalMinor - usedMinor;
+    const paidMinor = (await client.query(
+      "select coalesce(sum(amount_minor), 0)::int as minor from restaurant_payments where bill_id = $1",
+      [bill.id],
+    )).rows[0].minor;
+    const availableMinor = totalMinor - usedMinor - paidMinor;
     if (action === "discountBill") {
       const target = body.itemId ? priced.find((line) => line.id === body.itemId) : null;
       if (body.itemId && !target) throw new Error("item_not_found");
       const baseMinor = target ? target.minor : availableMinor;
       const basis = body.basis === "amount" ? "amount" : "percent";
       const value = Number(body.value);
-      const amountMinor = basis === "percent" ? Math.round(baseMinor * value / 100) : Math.round(value * 100);
+      const amountMinor = basis === "percent" ? percentMinor(baseMinor, value) : decimalToMinor(value);
       if (!Number.isFinite(value) || value <= 0 || (basis === "percent" && value > 100) || amountMinor <= 0 || amountMinor > baseMinor || amountMinor > availableMinor) {
         throw new Error("discount_exceeds_total");
       }
@@ -1033,6 +1127,13 @@ async function act(client, email, action, payload) {
       return { ok: true, paymentCaptured: false };
     }
     if (action === "voidItem") {
+      const target = priced.find((line) => line.id === body.itemId);
+      if (!target) throw new Error("item_not_found");
+      const paid = (await client.query(
+        "select coalesce(sum(amount_minor), 0)::int as minor from restaurant_payments where bill_id = $1",
+        [bill.id],
+      )).rows[0].minor;
+      if (paid > totalMinor - target.minor) throw new Error("void_after_payment");
       await client.query(
         "select restaurant_record_adjustment($1, 'void', $2, 'item', null, null, $3, $4, null)",
         [bill.id, body.itemId, reason, key],
@@ -1057,6 +1158,23 @@ async function act(client, email, action, payload) {
         [bill.id, selectedMinor, chosen.length, reason, key, checkId],
       );
       return { ok: true, paymentCaptured: false, checks: [checkId] };
+    }
+    if (Array.isArray(body.amounts)) {
+      const amounts = body.amounts.map((value) => decimalToMinor(value));
+      if (amounts.some((value) => value == null || value < 0) || amounts.reduce((sum, value) => sum + value, 0) !== availableMinor) {
+        throw new Error("allocation_mismatch");
+      }
+      const checks = [];
+      for (let index = 0; index < amounts.length; index += 1) {
+        const checkId = `${bill.id}:check:custom:${index + 1}:${key || "custom"}`;
+        await client.query("select restaurant_open_unpaid_check($1, $2)", [bill.session_id, checkId]);
+        await client.query(
+          "select restaurant_record_adjustment($1, 'split', null, 'custom', $2, $3, $4, $5, $6)",
+          [bill.id, amounts[index], amounts.length, reason, key ? `${key}:${index + 1}` : null, checkId],
+        );
+        checks.push(checkId);
+      }
+      return { ok: true, paymentCaptured: false, checks };
     }
     const parts = Number(body.parts || 2);
     if (!Number.isInteger(parts) || parts < 2 || parts > 12) throw new Error("split_not_supported");

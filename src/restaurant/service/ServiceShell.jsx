@@ -516,7 +516,7 @@ export default function ServiceShell({
             {(role === "host" || role === "manager") && <HostWorkspace key={branchId} {...shared} />}
             {role === "waiter" && <WaiterWorkspace key={branchId} {...shared} />}
             {role === "kitchen" && <KitchenWorkspace key={branchId} {...shared} />}
-            {role === "cashier" && <CashierWorkspace key={branchId} {...shared} />}
+            {(role === "cashier" || (role === "manager" && databaseMode)) && <CashierWorkspace key={branchId} {...shared} />}
           </>
         )}
       </main>

@@ -41,9 +41,13 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
   function pay(tender) {
     if (!selected || !bill || bill.status === "paid") return;
     const result = dispatch(
-      "pay",
-      [selected.id, paymentCall(amount, tender.id)],
-      `${tender.name} recorded as a simulated payment.`,
+      state.developmentDatabase ? "recordSimulatedPayment" : "pay",
+      state.developmentDatabase
+        ? { billId: bill.id, sessionId: selected.id, amount, tender: tender.id, idempotencyKey: `${tender.id}:${amount}:${bill.id}:${paid}` }
+        : [selected.id, paymentCall(amount, tender.id)],
+      state.developmentDatabase
+        ? `${tender.name} recorded in TEST MODE. No payment was captured.`
+        : `${tender.name} recorded as a simulated payment.`,
     );
     if (!result.ok) return;
     setScreen((prev) => ({
@@ -112,7 +116,10 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
             {!state.developmentDatabase && bill && totalKnown && paid === 0 && due > 0 && <p>No payments yet · Remaining {money(due)}</p>}
             {!state.developmentDatabase && bill && totalKnown && paid > 0 && due > 0 && <p>Paid {money(paid)} · Remaining {money(due)}</p>}
             {!state.developmentDatabase && bill && totalKnown && due === 0 && <p>Paid in full · {money(bill.total)}</p>}
-            {state.developmentDatabase && bill && <p>Outstanding {money(bill.outstanding)}. Unpaid.</p>}
+            {state.developmentDatabase && bill && <p>Outstanding {money(bill.outstanding)}. TEST MODE. No payment was captured.</p>}
+            {bill?.taxTreatment === "unknown" && <p>Tax treatment is not recorded for this bill. No VAT amount was added.</p>}
+            {bill?.taxTreatment === "inclusive" && bill.taxSource === "not_finalized" && <p>Prices are VAT-inclusive at 15%. VAT is recorded when the simulated balance is settled.</p>}
+            {Number.isInteger(bill?.vatMinor) && <p>Taxable {(bill.taxableMinor / 100).toFixed(2)} SAR · VAT {(bill.vatMinor / 100).toFixed(2)} SAR · TEST MODE snapshot.</p>}
             {checks.length > 0 && (
               <ul className="svc-lines">
                 {checks.map((check, index) => (
@@ -155,7 +162,7 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
               <legend>Simulated tender</legend>
               <div className="svc-actions">
                 {SIMULATED_TENDERS.map((tender) => (
-                  <button key={tender.id} type="button" disabled={!bill || bill.status === "paid"} onClick={() => pay(tender)}>
+                  <button key={tender.id} type="button" disabled={!bill || bill.finalizedAt || bill.taxTreatment === "unknown"} onClick={() => pay(tender)}>
                     {tender.label}
                   </button>
                 ))}
@@ -194,7 +201,7 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
                 }}>
                   Split selected items
                 </button>
-                <button type="button" onClick={() => dispatch("splitBill", { billId: bill.id, basis: "guest", reason: "Split by guest" }, "Guest split was not recorded.")}>
+                <button type="button" onClick={() => dispatch("splitBill", { billId: bill.id, basis: "guest", reason: "Split by recorded party size" }, "Split by the recorded party size. TEST MODE.")}>
                   Split by guest
                 </button>
                 <button type="button" onClick={() => dispatch("discountBill", { billId: bill.id, basis: "percent", value: 10, reason: "Manager test discount", idempotencyKey: `percent-10:${bill.id}` }, "Ten percent recorded. The bill stays unpaid.")}>
@@ -203,7 +210,20 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
                 <button type="button" onClick={() => dispatch("splitBill", { billId: bill.id, parts: 2, reason: "Split equally for preparation" }, "Split prepared. Nothing was collected.")}>
                   Prepare equal split
                 </button>
-                <p className="svc-gap">Tax is not configured, so no tax was added. A missing price blocks these adjustments. The bill is not marked paid.</p>
+                <p className="svc-gap">TEST MODE. A missing price snapshot blocks these adjustments. VAT is taken from the inclusive price when the bill is settled. The bill is not marked paid.</p>
+            <button type="button" disabled={!bill || bill.finalizedAt || bill.taxTreatment === "unknown"} onClick={() => dispatch("finalizeBill", { billId: bill.id }, "Simulated balance settled. TEST MODE. No payment was captured.")}>Settle simulated balance</button>
+            <label>Opening float<input id="opening-float" inputMode="decimal" /></label>
+            <button type="button" onClick={() => {
+              const opening = document.getElementById("opening-float")?.value;
+              dispatch("openShift", { openingFloat: opening }, "TEST MODE shift opened.");
+            }}>Open shift</button>
+            <label>Counted cash<input id="counted-cash" inputMode="decimal" /></label>
+            <button type="button" onClick={() => {
+              const counted = document.getElementById("counted-cash")?.value;
+              const shift = (state.shifts || []).find((row) => row.status === "open");
+              if (!shift) return;
+              dispatch("closeShift", { shiftId: shift.id, countedCash: counted, note: "Counted in TEST MODE" }, "TEST MODE shift closed. The variance is kept.");
+            }}>Close shift</button>
               </>
             )}
             <button type="button" disabled aria-describedby="split-gap">Split into separate bills</button>

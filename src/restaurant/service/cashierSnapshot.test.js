@@ -15,6 +15,7 @@ function renderCashier(bill, items) {
           bills: [bill],
           payments: [],
           visits: [],
+          shifts: [],
           adjustments: [],
         },
       }}
