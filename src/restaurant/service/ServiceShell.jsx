@@ -510,7 +510,9 @@ export default function ServiceShell({
           />
         ) : (
           <>
-            {role === "manager" && databaseMode && <ManagerDashboard restaurant={restaurant} />}
+            {role === "manager" && databaseMode && (
+              <ManagerDashboard restaurant={restaurant} orderMenu={orderMenu} dispatch={dispatch} />
+            )}
             {(role === "host" || role === "manager") && <HostWorkspace key={branchId} {...shared} />}
             {role === "waiter" && <WaiterWorkspace key={branchId} {...shared} />}
             {role === "kitchen" && <KitchenWorkspace key={branchId} {...shared} />}

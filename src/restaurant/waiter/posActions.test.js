@@ -3,6 +3,7 @@ import { createRestaurant } from "../model";
 import {
   checkTotal,
   discountAttempt,
+  kitchenLabel,
   MISSING_CONTRACT_ACTIONS,
   openTableOrder,
   placeTables,
@@ -98,10 +99,10 @@ test("kitchen and bar stay on one ticket and drinks are not posted", () => {
     now: new Date("2026-11-08T10:00:00"),
   });
   const lines = [
-    { localId: "a", itemId: "toast", quantity: 1, modifiers: [{ id: "honey" }], instructions: "Cut in half", categorySlug: "breakfast", price: 63 },
-    { localId: "b", itemId: "eggs", quantity: 1, modifiers: [{ id: "pita" }], instructions: "", categorySlug: "daytime", price: 55 },
-    { localId: "c", itemId: "juice", quantity: 1, modifiers: [], instructions: "", categorySlug: "drinks", price: 22 },
-    { localId: "d", itemId: "tea", quantity: 2, modifiers: [], instructions: "", categorySlug: "drinks", price: 36 },
+    { localId: "a", itemId: "toast", quantity: 1, modifiers: [{ id: "honey" }], instructions: "Cut in half", station: "pass", price: 63 },
+    { localId: "b", itemId: "eggs", quantity: 1, modifiers: [{ id: "pita" }], instructions: "", station: "pass", price: 55 },
+    { localId: "c", itemId: "juice", quantity: 1, modifiers: [], instructions: "", station: "bar", price: 22 },
+    { localId: "d", itemId: "tea", quantity: 2, modifiers: [], instructions: "", station: "bar", price: 36 },
   ];
   const kitchen = sendToStation(restaurant, opened.session.id, lines, "kitchen");
   expect(kitchen.ok).toBe(true);
@@ -113,11 +114,11 @@ test("kitchen and bar stay on one ticket and drinks are not posted", () => {
   expect(restaurant.state.tickets).toHaveLength(1);
   expect(restaurant.state.orders[0].items).toHaveLength(2);
 
-  const drinksOnKitchen = sendToStation(restaurant, opened.session.id, lines.filter((line) => line.categorySlug === "drinks"), "kitchen");
+  const drinksOnKitchen = sendToStation(restaurant, opened.session.id, lines.filter((line) => line.station === "bar"), "kitchen");
   expect(drinksOnKitchen.ok).toBe(false);
   expect(restaurant.state.orders[0].items).toHaveLength(2);
 
-  const bar = sendToStation(restaurant, opened.session.id, lines.filter((line) => line.categorySlug === "drinks"), "bar");
+  const bar = sendToStation(restaurant, opened.session.id, lines.filter((line) => line.station === "bar"), "bar");
   expect(bar).toMatchObject({ ok: false, applied: false, reason: "bar_route_not_posted", tickets: 1, writes: 0 });
   expect(bar.held.map((line) => line.itemId)).toEqual(["juice", "tea"]);
   expect(restaurant.state.tickets.map((row) => row.id)).toEqual([opened.ticket.id]);
@@ -128,11 +129,15 @@ test("kitchen and bar stay on one ticket and drinks are not posted", () => {
   expect(restaurant.state.orders[0].items).toHaveLength(2);
 });
 
-test("a recorded product station overrides the category", () => {
-  expect(resolveStation({ categorySlug: "drinks" })).toMatchObject({ station: "bar", source: "category" });
-  expect(resolveStation({ categorySlug: "drinks", station: "pass" })).toMatchObject({ station: "pass", source: "product" });
-  expect(resolveStation({ categorySlug: "daytime" }).station).toBe("pass");
-  expect(resolveStation({ name: "Special" })).toMatchObject({ station: null, reason: "station_not_recorded" });
+test("a queued item without a ticket still reads as sent", () => {
+  expect(kitchenLabel(null, "queued")).toBe("Sent");
+});
+
+test("a menu category does not assign a preparation station", () => {
+  expect(resolveStation({ categorySlug: "drinks" })).toMatchObject({ station: null, reason: "station_not_configured" });
+  expect(resolveStation({ categorySlug: "daytime", station: "pass" })).toMatchObject({ station: "pass", source: "configuration" });
+  expect(resolveStation({ categorySlug: "drinks", station: "bar" })).toMatchObject({ station: "bar", source: "configuration" });
+  expect(resolveStation({ name: "Special" })).toMatchObject({ station: null, reason: "station_not_configured" });
 });
 
 test("a zero guest count is refused before a session exists", () => {

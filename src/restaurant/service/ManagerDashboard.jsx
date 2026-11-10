@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 
-export default function ManagerDashboard({ restaurant }) {
+export default function ManagerDashboard({ restaurant, orderMenu = [], dispatch = null }) {
   const state = restaurant.state;
   const tables = state.tables || [];
   const occupied = tables.filter((table) => table.status === "occupied" || table.status === "assigned");
@@ -39,6 +39,8 @@ export default function ManagerDashboard({ restaurant }) {
   ];
 
   return (
+    <>
+    <StationAssignments restaurant={restaurant} orderMenu={orderMenu} dispatch={dispatch} />
     <section className="svc-card" aria-label="Live management">
       <h2>Live floor</h2>
       <p className="svc-gap">Counts come from this branch in the local development database. Collected payments are not shown. Tax is not configured.</p>
@@ -47,6 +49,66 @@ export default function ManagerDashboard({ restaurant }) {
           <li key={label}>{label}: {value}</li>
         ))}
       </ul>
+    </section>
+    </>
+  );
+}
+
+function StationAssignments({ restaurant, orderMenu, dispatch }) {
+  const stations = restaurant.state.stations || [];
+  const assignments = restaurant.state.itemStations || [];
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [query, setQuery] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [stationId, setStationId] = useState(stations[0]?.id || "");
+  const catalogue = Array.isArray(orderMenu) ? orderMenu : (orderMenu?.lines || []);
+  const choices = catalogue
+    .filter((line) => String(line.name || "").toLowerCase().includes(query.trim().toLowerCase()))
+    .slice(0, 20);
+  if (!dispatch) return null;
+
+  return (
+    <section className="svc-card" aria-label="Preparation stations">
+      <h2>Preparation stations</h2>
+      <p className="svc-gap">Assignments are explicit for this branch. A menu category does not choose a station. Nothing is sent to a printer.</p>
+      {stations.length === 0 && <p>No preparation station is configured.</p>}
+      <ul className="svc-list">
+        {stations.map((station) => <li key={station.id}>{station.name} · {station.code}</li>)}
+      </ul>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        dispatch("createStation", { code, name }, "Station saved for this branch.");
+      }}>
+        <label>Station name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Station code<input value={code} onChange={(event) => setCode(event.target.value)} /></label>
+        <button type="submit">Save station</button>
+      </form>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        if (!itemId || !stationId) return;
+        dispatch("assignItemStation", { itemId, stationId }, "Product station saved. Earlier orders keep the station they were submitted with.");
+      }}>
+        <label>Find product<input value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <label>Product
+          <select value={itemId} onChange={(event) => setItemId(event.target.value)}>
+            <option value="">Select a product</option>
+            {choices.map((line) => <option key={line.itemId} value={line.itemId}>{line.name}</option>)}
+          </select>
+        </label>
+        <label>Station
+          <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
+            <option value="">Select a station</option>
+            {stations.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}
+          </select>
+        </label>
+        <button type="submit">Assign product</button>
+      </form>
+      {assignments.length > 0 && (
+        <ul className="svc-list">
+          {assignments.map((row) => <li key={`${row.catalogueItemId}:${row.stationId}`}>{row.catalogueItemId} · {row.stationName}</li>)}
+        </ul>
+      )}
     </section>
   );
 }

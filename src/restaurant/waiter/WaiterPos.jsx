@@ -485,17 +485,17 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
     setSendBusy(true);
     setNotice("Sending to the kitchen…");
     if (databaseMode) {
-      const kitchen = staged.filter((line) => resolveStation(line).station === "pass");
-      const held = staged.filter((line) => resolveStation(line).station !== "pass");
-      if (!kitchen.length) {
+      if (!staged.length) {
         sending.current = false;
         setSendBusy(false);
-        setNotice(noticeFor(held.length ? "station_not_recorded" : "nothing_to_send"));
+        setNotice(noticeFor("nothing_to_send"));
         return;
       }
       let latest = null;
+      let unrouted = 0;
+      const sentLocal = [];
       try {
-      for (const line of kitchen) {
+      for (const line of staged) {
         latest = await devAct("addItem", [session.id, {
           itemId: line.itemId,
           quantity: line.quantity,
@@ -505,6 +505,8 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
         }], revisionRef.current);
         if (!latest?.ok) break;
         revisionRef.current = latest.revision ?? revisionRef.current;
+        sentLocal.push(line.localId);
+        if (latest.routed === false) unrouted += 1;
       }
       } catch {
         latest = { ok: false, reason: "service_unavailable" };
@@ -513,19 +515,21 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
       setSendBusy(false);
       }
       if (latest?.state) setRestaurant((prev) => ({ ...prev, state: latest.state }));
+      if (sentLocal.length) {
+        const sent = new Set(sentLocal);
+        setDrafts((prev) => ({
+          ...prev,
+          [session.id]: (prev[session.id] || []).filter((line) => !sent.has(line.localId)),
+        }));
+        setSelectedKey(null);
+      }
       if (!latest?.ok) {
         setNotice(noticeFor(latest?.reason));
         return;
       }
-      const sentLocal = new Set(kitchen.map((line) => line.localId));
-      setDrafts((prev) => ({
-        ...prev,
-        [session.id]: (prev[session.id] || []).filter((line) => !sentLocal.has(line.localId)),
-      }));
-      setSelectedKey(null);
-      setNotice(held.some((line) => resolveStation(line).station === "bar")
-        ? "Sent to the kitchen. Drinks stayed on the check."
-        : "Sent to the kitchen.");
+      setNotice(unrouted
+        ? noticeFor("station_not_configured")
+        : `Sent to ${latest.stationName || "the configured station"}.`);
       return;
     }
     const result = sendToStation(restaurant, session.id, staged, destination);
@@ -980,11 +984,15 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
                                     {summary.preparations.map((modifier) => <small key={modifier.id}>Preparation: {modifier.name}</small>)}
                                     {summary.addons.map((modifier) => <small key={modifier.id}>Add-on: {modifier.name} (+{posMoney(modifier.amount)} per item)</small>)}
                                     {summary.instructions ? <small>Special instructions: <span>{summary.instructions}</span></small> : null}
+                                    {item.priceProvenance === "reconstructed" ? <small>{item.priceLimitation}</small> : null}
+                                    {item.allergyAlert ? <small>Allergy: {item.allergyAlert}</small> : null}
                                   </>
                                 );
                               })()}
                               {courseMap[item.id] ? <span className="pos-course-pill">{courseMap[item.id]}</span> : null}
-                              <span className="pos-sent">{stationLabel(item.station)} · {kitchenLabel(ticket, item.status)}</span>
+                              <span className="pos-sent">{item.routing === "unassigned"
+                                ? "Station not configured · Not routed"
+                                : `${item.stationName || stationLabel(item.station)} · ${kitchenLabel(ticket, item.status)}`}</span>
                             </span>
                             <span className="pos-price">{posMoney(orderLineSummary(item).total)}</span>
                           </button>

@@ -103,6 +103,8 @@ export default function CashierWorkspace({ restaurant, dispatch, screen, setScre
               <p>Nothing to bill yet.</p>
             )}
             {bill ? <p>Bill total {money(bill.total)} · {statusLabel(bill.status)}</p> : <p>No bill open.</p>}
+            {bill?.amountProvenance === "reconstructed" && <p>{bill.amountLimitation}</p>}
+            {bill?.amountProvenance === "snapshot" && Number.isInteger(bill.totalMinor) && <p>Persisted total {money(bill.totalMinor / 100)}.</p>}
             {bill && !totalKnown && <p>Bill total is not recorded. No payment was captured.</p>}
             {bill && totalKnown && Number.isFinite(itemSum) && itemSum !== bill.total && (
               <p>Items now total {money(itemSum)}. The bill total was fixed when it opened. A bill amendment is not in the service contract.</p>

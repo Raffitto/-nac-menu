@@ -137,7 +137,9 @@ test("host, waiter, kitchen, and cashier share one simulated service", () => {
   const card = screen.getByRole("article");
   expect(within(card).getByText(/No nuts/)).toBeInTheDocument();
   expect(within(card).getByText(/Each item keeps its own status/i)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Grill/ })).toBeDisabled();
+  const stations = within(screen.getByRole("group", { name: "Preparation stations" }));
+  expect(stations.getByRole("button", { name: "Kitchen" })).toHaveAttribute("aria-pressed", "true");
+  expect(stations.getByRole("button", { name: "Bar" })).toBeEnabled();
   fireEvent.click(within(card).getByRole("button", { name: "Start preparing" }));
   expect(screen.getByRole("article")).toHaveAttribute("data-status", "preparing");
   expect(within(screen.getByRole("article")).getAllByText("Preparing").length).toBeGreaterThan(1);
