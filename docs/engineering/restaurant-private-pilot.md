@@ -75,9 +75,64 @@ The safe shape, which was not created:
 
 Deploy previews of the existing production sites were not used. They would still be deploys of those sites.
 
-## What remains an owner decision
+## 7.5 cost stop
 
-- Confirm the Supabase organization plan and whether a second project is free.
-- Confirm auto recharge should stay on. It can charge $10 without another approval once 3,000 credits are spent.
-- Approve the new project and the isolated migration.
-- Approve turning Restaurant Pilot Mode on for the test branch only.
+No Supabase project was created. No Netlify project was created. Billing settings were not changed. Auto recharge is still on.
+
+The production Supabase host, read from the `nac-os` production environment without printing the key, is `zeyhvjuraqnlbdycgrme.supabase.co`. The Supabase dashboard in this session is at the sign-in page. The saved CLI token returns 401. The organization plan and the number of free project slots are therefore not verified. A second schema inside that production database is not an acceptable shortcut.
+
+Official Supabase billing, which is not this organization’s invoice:
+
+- A Free organization may have two active projects at $0. Free projects pause after one week without activity. The two-project limit counts across every organization where the user is an owner or administrator. Paused projects do not count.
+- Plans cannot be mixed in one organization. A paid organization cannot hold a Free project.
+- Paid organizations cannot launch Nano compute. A new project is Micro or larger.
+- Micro compute is $0.01344 per hour, about $10 per month. Paid plans include $10 of compute credit, which covers one Micro or Nano project. A second running project is extra compute. Compute credits do not cover the spend cap, and paused projects are not billed for compute.
+- If the existing organization is Pro, the verified incremental charge for one isolated Micro project is about **$10 per month**, billed hourly, on top of the subscription already paid. The first project continues to consume the $10 credit.
+- If the organization is Free and fewer than two projects are active, a second project is **$0** until it is paused or the quota is exceeded. That condition was not verified, so the project was not created.
+
+Netlify does not need a new subscription for one private test site. The Pro team includes 500 projects and password protection. Creating the site is not a new plan. Publishing it on a production branch costs 15 credits. Branch deploys cost 0 credits. Because auto recharge is on, crossing 3,000 credits buys 1,500 more for $10 without another approval. Leave auto recharge unchanged until the owner turns it off for the test period.
+
+## Prepared configuration, not applied
+
+Set these only on the future private Netlify project. Do not set them on `nac-os` or `nacmenu`.
+
+| Name | Where | Rule |
+| --- | --- | --- |
+| `RESTAURANT_DATABASE_URL` | Server only | Pooled URL for `nac_restaurant_api` on the isolated project. Not a `REACT_APP_` variable. |
+| `SUPABASE_URL` | Server only | Isolated project URL. |
+| `SUPABASE_ANON_KEY` | Server, and `REACT_APP_SUPABASE_ANON_KEY` for staff sign-in | Public anon key of the isolated project. Never the service-role key. |
+| `REACT_APP_SUPABASE_URL` | Build of the private site | Isolated project URL. |
+| `REACT_APP_PLATFORM_MODE` | Build of the private site | `admin`. |
+| `REACT_APP_RESTAURANT_HOSTED` | Build of the private site | `1` only after the isolated database exists. |
+| `REACT_APP_RESTAURANT_API` | Leave unset | The hosted build uses `/api/restaurant`. |
+
+Hosted mode already refuses the development password. Staff role and branch come from `restaurant_staff_grants`. Do not insert `@nac.test` accounts. Create real Supabase users for the people who will test, then grant only the branch they may use.
+
+Migration order on the empty project only, after owner approval:
+
+1. The NAC branch helpers the restaurant SQL calls: `nac_normalize_branch_id` and `nac_auth_email`.
+2. PR #83, in filename order, from `20261109183000` through `20261110133000`.
+3. Do not run `scripts/local-restaurant/seed.sql`.
+4. Leave `restaurant_owner_settings` empty. Missing rows mean Pilot Mode, Guest Ordering, and Guest Payments are off.
+5. After a separate approval, the owner may set Pilot Mode on for one test branch. That call must not set the other two flags.
+
+Access control:
+
+- Netlify password protection on the private project.
+- Supabase Auth session on every staff request.
+- Row security and `restaurant_staff_grants` for branch scope.
+- No Foodics or SevenRooms credentials on the project.
+
+Rollback:
+
+- Pause or delete the isolated Supabase project. Pausing stops compute charges.
+- Delete the private Netlify project.
+- Do not change `nac-os` or `nacmenu` environment variables.
+- Do not merge PR #83, #84, or #85.
+
+## Owner approval required before any provisioning
+
+1. Sign in to Supabase and confirm whether a free project slot exists. If it does not, the isolated database is about $10 per month on Micro compute.
+2. Turn off Netlify auto recharge for the test period, or accept that a credit overrun charges $10 automatically.
+3. Approve creation of the empty project and the private Netlify site.
+4. Approve Restaurant Pilot Mode for that isolated branch only, after the migration. Guest Ordering and Guest Payments stay off.
