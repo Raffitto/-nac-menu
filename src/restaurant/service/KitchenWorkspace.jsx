@@ -1,4 +1,5 @@
 import React from "react";
+import { orderLineSummary } from "../waiter/posActions";
 import {
   dedupeTickets,
   formatElapsed,
@@ -77,8 +78,16 @@ export default function KitchenWorkspace({ restaurant, dispatch, screen, current
                         <li key={item.id}>
                           <span>{item.name}</span>
                           <span className="svc-status" data-status={item.status}>{statusLabel(item.status)}</span>
-                          {(item.modifiers || []).map((modifier) => <span key={modifier.id}>{modifier.price ? `Add-on: ${modifier.name}` : `Preparation: ${modifier.name}`}</span>)}
-                          {item.instructions ? <span>Instruction: {item.instructions}</span> : null}
+                          {(() => {
+                            const summary = orderLineSummary(item);
+                            return (
+                              <>
+                                {summary.preparations.map((modifier) => <span key={modifier.id}>Preparation: {modifier.name}</span>)}
+                                {summary.addons.map((modifier) => <span key={modifier.id}>Add-on: {modifier.name}</span>)}
+                                {summary.instructions ? <span>Instruction: {summary.instructions}</span> : null}
+                              </>
+                            );
+                          })()}
                           {item.statusAt ? <span>Status recorded {new Date(item.statusAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span> : null}
                           {item.status !== "cancelled" && (
                             <span className="svc-actions">
