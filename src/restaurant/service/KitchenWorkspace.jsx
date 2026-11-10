@@ -22,10 +22,45 @@ function viewCode(station) {
   return station || "";
 }
 
-export default function KitchenWorkspace({ restaurant, dispatch, screen, currentTime, onRole }) {
+function RouteControl({ item, stations, dispatch }) {
+  const active = (stations || []).filter((station) => station.active !== false);
+  const [stationId, setStationId] = useState(active[0]?.id || "");
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      if (!stationId) return;
+      dispatch("routeItem", { itemId: item.id, stationId }, "Item routed. The saved price was not changed.");
+    }}>
+      <label>Destination
+        <select aria-label={`Destination for ${item.name}`} value={stationId} onChange={(event) => setStationId(event.target.value)}>
+          <option value="">Select a station</option>
+          {active.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}
+        </select>
+      </label>
+      <button type="submit">Route item</button>
+    </form>
+  );
+}
+
+function pendingItems(state) {
+  return (state.orders || []).flatMap((order) => (
+    (order.items || [])
+      .filter((item) => item.routing === "unassigned" && item.status !== "cancelled")
+      .map((item) => ({ item, order }))
+  ));
+}
+
+function submittedAgo(pricedAt, currentTime) {
+  const at = Date.parse(pricedAt || "");
+  if (!Number.isFinite(at) || !Number.isFinite(currentTime)) return "Submission time not recorded";
+  return `Submitted ${formatElapsed(Math.max(0, currentTime - at))} ago`;
+}
+
+export default function KitchenWorkspace({ restaurant, dispatch, screen, currentTime, onRole, canRoute = false }) {
   const state = restaurant.state;
   const { tickets, duplicates } = dedupeTickets(state.tickets);
   const ready = tickets.some((ticket) => ticket.status === "ready");
+  const pending = pendingItems(state);
   const views = new Map([["kitchen", "Kitchen"]]);
   (state.stations || []).filter((station) => station.active !== false).forEach((station) => {
     views.set(viewCode(station.code), station.name);
@@ -36,7 +71,7 @@ export default function KitchenWorkspace({ restaurant, dispatch, screen, current
   });
   if (!views.has("bar")) views.set("bar", "Bar");
   const [stationCode, setStationCode] = useState("kitchen");
-  const selected = views.has(stationCode) ? stationCode : "kitchen";
+  const selected = stationCode === "unassigned" || views.has(stationCode) ? stationCode : "kitchen";
   const visibleTickets = tickets.filter((ticket) => viewCode(ticket.station) === selected);
 
   return (
@@ -48,15 +83,43 @@ export default function KitchenWorkspace({ restaurant, dispatch, screen, current
           {[...views.entries()].map(([code, name]) => (
             <button key={code} type="button" aria-pressed={selected === code} onClick={() => setStationCode(code)}>{name}</button>
           ))}
+          <button type="button" aria-pressed={selected === "unassigned"} onClick={() => setStationCode("unassigned")}>
+            Unassigned{pending.length ? ` ${pending.length}` : ""}
+          </button>
         </div>
-        <p className="svc-gap">Items without a configured station stay off this screen.</p>
+        <p className="svc-gap">Items without a configured station stay in Unassigned until a manager routes them.</p>
         {duplicates > 0 && (
           <p role="alert">{duplicates} duplicate ticket ids were hidden. The service keeps one ticket per order.</p>
         )}
         {ready && <button type="button" onClick={() => onRole("waiter")}>Continue to waiter</button>}
       </header>
       <div className="svc-kds" data-testid="kitchen-board">
-        {KITCHEN_COLUMNS.map((column) => {
+        {selected === "unassigned" && (
+          <section aria-label="Unassigned orders">
+            <h3>Unassigned orders</h3>
+            <p role="status">Pending Routing. These items were not sent to a preparation station.</p>
+            {pending.length === 0 && <p>No items are pending routing.</p>}
+            {pending.map(({ item, order }) => {
+              const session = state.sessions.find((row) => row.id === order.sessionId) || null;
+              const table = session ? state.tables.find((row) => row.id === session.tableId) : null;
+              const summary = orderLineSummary(item);
+              return (
+                <article key={item.id} className="svc-ticket" data-routing="unassigned">
+                  <p className="svc-table-label">{table ? `Table ${table.label}` : "Table unavailable"}</p>
+                  <p><span className="svc-status" data-status="queued">Pending Routing</span></p>
+                  <p>{item.quantity} × {item.name}</p>
+                  <p>{submittedAgo(item.pricedAt, currentTime)}</p>
+                  {summary.preparations.map((modifier) => <p key={modifier.id}>Preparation: {modifier.name}</p>)}
+                  {summary.addons.map((modifier) => <p key={modifier.id}>Add-on: {modifier.name}</p>)}
+                  {summary.instructions ? <p>Special instructions: {summary.instructions}</p> : null}
+                  {item.allergyAlert ? <p>Allergy: {item.allergyAlert}</p> : null}
+                  {canRoute && <RouteControl item={item} stations={state.stations || []} dispatch={dispatch} />}
+                </article>
+              );
+            })}
+          </section>
+        )}
+        {selected !== "unassigned" && KITCHEN_COLUMNS.map((column) => {
           const rows = visibleTickets.filter((ticket) => ticket.status === column.id);
           return (
             <section key={column.id} aria-label={`${column.label} tickets`}>
@@ -92,8 +155,10 @@ export default function KitchenWorkspace({ restaurant, dispatch, screen, current
                     <ul className="svc-lines">
                       {items.filter((item) => item.routing === "unassigned" ? false : (!item.station || viewCode(item.station) === viewCode(ticket.station))).map((item) => (
                         <li key={item.id}>
-                          <span>{item.name}</span>
+                          <span>{item.quantity ? `${item.quantity} × ` : ""}{item.name}</span>
                           <span className="svc-status" data-status={item.status}>{statusLabel(item.status)}</span>
+                          <span>{item.stationName || stationLabel(item.station)}</span>
+                          <span>{submittedAgo(item.pricedAt, currentTime)}</span>
                           {(() => {
                             const summary = orderLineSummary(item);
                             return (

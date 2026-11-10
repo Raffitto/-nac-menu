@@ -991,7 +991,7 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
                               })()}
                               {courseMap[item.id] ? <span className="pos-course-pill">{courseMap[item.id]}</span> : null}
                               <span className="pos-sent">{item.routing === "unassigned"
-                                ? "Station not configured · Not routed"
+                                ? "Pending Routing"
                                 : `${item.stationName || stationLabel(item.station)} · ${kitchenLabel(ticket, item.status)}`}</span>
                             </span>
                             <span className="pos-price">{posMoney(orderLineSummary(item).total)}</span>

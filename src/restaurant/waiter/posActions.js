@@ -44,7 +44,7 @@ const NOTICE = Object.freeze({
   nothing_to_send: "Nothing new to send.",
   bar_route_not_posted: "These drinks stay on the check. A bar ticket cannot be posted yet.",
   station_not_recorded: "Station is not recorded for these items, so they stayed on the check.",
-  station_not_configured: "No preparation station is configured for this item. The price was saved and the item was not routed.",
+  station_not_configured: "Pending Routing. The price was saved. This item was not sent to a preparation station.",
   price_unavailable: "The price could not be recorded, so the item was not submitted.",
   ticket_not_ready: "The kitchen has not marked this ready.",
   ticket_closed: "This ticket is already served.",

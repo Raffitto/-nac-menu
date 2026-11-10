@@ -39,11 +39,15 @@ test("kitchen and bar views show only items routed to that station", () => {
       onRole={() => {}}
     />,
   );
-  expect(screen.getByText("2 Eggs Any Style")).toBeInTheDocument();
+  expect(screen.getByText(/2 Eggs Any Style/)).toBeInTheDocument();
   expect(screen.queryByText("Orange Juice")).not.toBeInTheDocument();
   expect(screen.queryByText("Unassigned Toast")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Unassigned/ }));
+  expect(screen.getByRole("status").textContent).toMatch(/Pending Routing/);
+  expect(screen.getByText(/Unassigned Toast/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Route item" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Bar" }));
-  expect(screen.getByText("Orange Juice")).toBeInTheDocument();
-  expect(screen.queryByText("2 Eggs Any Style")).not.toBeInTheDocument();
-  expect(screen.queryByText("Unassigned Toast")).not.toBeInTheDocument();
+  expect(screen.getByText(/Orange Juice/)).toBeInTheDocument();
+  expect(screen.queryByText(/2 Eggs Any Style/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Unassigned Toast/)).not.toBeInTheDocument();
 });

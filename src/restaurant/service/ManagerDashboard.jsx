@@ -54,6 +54,57 @@ export default function ManagerDashboard({ restaurant, orderMenu = [], dispatch 
   );
 }
 
+function StationEditor({ station, dispatch }) {
+  const [name, setName] = useState(station.name || "");
+  const [active, setActive] = useState(station.active !== false);
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      dispatch("updateStation", { stationId: station.id, name, active }, "Station updated. Submitted tickets keep their recorded station.");
+    }}>
+      <span>{station.code}</span>
+      <label>Name<input aria-label={`Name for ${station.code}`} value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label><input type="checkbox" aria-label={`Active ${station.code}`} checked={active} onChange={(event) => setActive(event.target.checked)} /> Active</label>
+      <button type="submit">Save station changes</button>
+    </form>
+  );
+}
+
+function PendingItems({ restaurant, stations, dispatch }) {
+  const pending = (restaurant.state.orders || []).flatMap((order) => (
+    (order.items || []).filter((item) => item.routing === "unassigned" && item.status !== "cancelled")
+  ));
+  const active = stations.filter((station) => station.active !== false);
+  const [stationId, setStationId] = useState(active[0]?.id || "");
+  if (!pending.length) return <p>No items are pending routing.</p>;
+  return (
+    <div>
+      <h3>Unassigned orders</h3>
+      <p role="status">Pending Routing. These items were not sent to a preparation station.</p>
+      <ul className="svc-list">
+        {pending.map((item) => (
+          <li key={item.id}>
+            {item.quantity} × {item.name}
+            <form onSubmit={(event) => {
+              event.preventDefault();
+              if (!stationId) return;
+              dispatch("routeItem", { itemId: item.id, stationId }, "Item routed. The saved price was not changed.");
+            }}>
+              <label>Destination
+                <select aria-label={`Destination for ${item.name}`} value={stationId} onChange={(event) => setStationId(event.target.value)}>
+                  <option value="">Select a station</option>
+                  {active.map((station) => <option key={station.id} value={station.id}>{station.name}</option>)}
+                </select>
+              </label>
+              <button type="submit">Route item</button>
+            </form>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function StationAssignments({ restaurant, orderMenu, dispatch }) {
   const stations = restaurant.state.stations || [];
   const assignments = restaurant.state.itemStations || [];
@@ -74,8 +125,14 @@ function StationAssignments({ restaurant, orderMenu, dispatch }) {
       <p className="svc-gap">Assignments are explicit for this branch. A menu category does not choose a station. Nothing is sent to a printer.</p>
       {stations.length === 0 && <p>No preparation station is configured.</p>}
       <ul className="svc-list">
-        {stations.map((station) => <li key={station.id}>{station.name} · {station.code}</li>)}
+        {stations.map((station) => (
+          <li key={station.id}>
+            <StationEditor station={station} dispatch={dispatch} />
+          </li>
+        ))}
       </ul>
+      <PendingItems restaurant={restaurant} stations={stations} dispatch={dispatch} />
+      <p>{catalogue.filter((line) => line.itemId && !assignments.some((row) => row.catalogueItemId === line.itemId)).length} products have no preparation station.</p>
       <form onSubmit={(event) => {
         event.preventDefault();
         dispatch("createStation", { code, name }, "Station saved for this branch.");
@@ -87,7 +144,7 @@ function StationAssignments({ restaurant, orderMenu, dispatch }) {
       <form onSubmit={(event) => {
         event.preventDefault();
         if (!itemId || !stationId) return;
-        dispatch("assignItemStation", { itemId, stationId }, "Product station saved. Earlier orders keep the station they were submitted with.");
+        dispatch("assignItemStation", { itemId, stationId }, "Future orders for this product use this station. Submitted items keep the station they already have.");
       }}>
         <label>Find product<input value={query} onChange={(event) => setQuery(event.target.value)} /></label>
         <label>Product

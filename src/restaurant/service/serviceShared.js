@@ -40,7 +40,7 @@ export const KITCHEN_COLUMNS = Object.freeze([
   { id: "accepted", label: "Accepted", hint: "The kitchen has accepted the ticket. No preparation time is assumed." },
   { id: "preparing", label: "Preparing", hint: "The pass is working these tickets." },
   { id: "ready", label: "Ready", hint: "Waiting for the waiter to run them." },
-  { id: "served", label: "Completed", hint: "Served tickets land here. Completed is not a separate status." },
+  { id: "served", label: "Served", hint: "Served tickets land here." },
 ]);
 
 export const DELAY_MS = Object.freeze({

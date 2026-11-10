@@ -793,6 +793,20 @@ async function act(client, email, action, payload) {
     );
     return { ok: true };
   }
+  if (action === "updateStation") {
+    await client.query(
+      "select restaurant_update_station($1, $2, $3)",
+      [payload?.stationId, payload?.name, payload?.active !== false],
+    );
+    return { ok: true };
+  }
+  if (action === "routeItem") {
+    const row = (await client.query(
+      "select id, station_code, line_minor from restaurant_route_unassigned_item($1, $2)",
+      [payload?.itemId, payload?.stationId],
+    )).rows[0];
+    return { ok: true, routed: Boolean(row?.station_code), lineMinor: row?.line_minor ?? null };
+  }
   if (action === "addItem") {
     const [sessionId, item] = payload;
     const order = (await client.query(
