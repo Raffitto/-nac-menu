@@ -346,7 +346,7 @@ export default function ServiceShell({
           </p>
         </details>
       </header>
-      <p className="svc-banner" role="status" data-testid="service-banner">{banner}</p>
+      <p className="svc-banner" role="status" data-testid="service-banner">TEST MODE — NOT LIVE RESTAURANT OPERATIONS. {banner}</p>
       {databaseMode && !devSession ? (
         <form className="svc-card" onSubmit={async (event) => {
           event.preventDefault();

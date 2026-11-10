@@ -9,6 +9,7 @@ import {
 } from "./lib/reviewPortalParams";
 import { resolveRootAppKind } from "./lib/platformMode";
 import { markBoot } from "./lib/bootTelemetry";
+import { readRestaurantPilot } from "./restaurant/pilotGate";
 
 markBoot("index_start");
 
@@ -45,15 +46,17 @@ const rootKind =
       })
     : "public-menu";
 
-if (waiterPos) {
-  root.render(
-    <React.StrictMode>
-      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#ebe6df" }} />}>
-        <WaiterPos databaseMode={serviceDb} />
-      </Suspense>
-    </React.StrictMode>,
-  );
-} else if (serviceSim || serviceDb) {
+function renderRestaurant() {
+  if (waiterPos) {
+    root.render(
+      <React.StrictMode>
+        <Suspense fallback={<div style={{ minHeight: "100vh", background: "#ebe6df" }} />}>
+          <WaiterPos databaseMode={serviceDb} />
+        </Suspense>
+      </React.StrictMode>,
+    );
+    return;
+  }
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#efeae2" }} />}>
@@ -61,7 +64,10 @@ if (waiterPos) {
       </Suspense>
     </React.StrictMode>,
   );
-} else if (rootKind === "reset-password") {
+}
+
+function renderPlatform() {
+  if (rootKind === "reset-password") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
@@ -136,6 +142,15 @@ if (waiterPos) {
       </Suspense>
     </React.StrictMode>,
   );
+}
+
+if (waiterPos || serviceSim || serviceDb) {
+  readRestaurantPilot().then((flags) => {
+    if (flags.restaurantPilot) renderRestaurant();
+    else renderPlatform();
+  });
+} else {
+  renderPlatform();
 }
 
 if (rootKind !== "review") {

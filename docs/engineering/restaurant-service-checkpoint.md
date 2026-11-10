@@ -22,6 +22,7 @@ Apply these files, in order, to an empty local database first, then the later fi
 10. `20261109230000_restaurant_passkeys.sql`
 11. `20261109231000_restaurant_guest_access.sql`
 12. `20261110120000_restaurant_owner_controls.sql` — guest ordering and guest payments, both default off. A missing row is off. Only the owner emails in the NAC directory can change them. Hettin is rejected. Laysen Valley uses `riyadh`.
+13. `20261110133000_restaurant_pilot_mode.sql` — Restaurant Pilot Mode, default off. A separate function changes only that flag. It does not turn guest ordering or guest payments on.
 
 The same SQL is on `feature/nac-reservations-persistence`, PR #83, unmerged. The API does not create schema on startup.
 

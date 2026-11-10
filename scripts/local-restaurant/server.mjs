@@ -835,6 +835,14 @@ async function act(client, email, action, payload) {
     await client.query("select restaurant_close_unpaid($1)", [sessionId]);
     return { ok: true };
   }
+  if (action === "setRestaurantPilot") {
+    if (!OWNER_EMAILS.has(String(email || "").toLowerCase())) throw new Error("owner_required");
+    const saved = (await client.query(
+      "select restaurant_pilot_enabled, guest_ordering_enabled, guest_payments_enabled from restaurant_set_pilot_mode($1, $2)",
+      [payload?.branchId, payload?.enabled === true],
+    )).rows[0];
+    return { ok: true, ...saved, paymentCaptured: false };
+  }
   if (action === "setOwnerControls") {
     if (!OWNER_EMAILS.has(String(email || "").toLowerCase())) throw new Error("owner_required");
     const saved = (await client.query(
@@ -940,6 +948,25 @@ const server = http.createServer(async (req, res) => {
         ms: Date.now() - started,
       })}\n`);
     });
+    if (url.pathname === "/pilot-status") {
+      let restaurantPilot = false;
+      let guestOrdering = false;
+      let guestPayments = false;
+      try {
+        const rows = (await appPool.query(
+          "select restaurant_pilot_enabled, guest_ordering_enabled, guest_payments_enabled from restaurant_owner_settings",
+        )).rows;
+        restaurantPilot = rows.some((row) => row.restaurant_pilot_enabled === true);
+        guestOrdering = rows.some((row) => row.guest_ordering_enabled === true);
+        guestPayments = rows.some((row) => row.guest_payments_enabled === true);
+      } catch {
+        restaurantPilot = false;
+        guestOrdering = false;
+        guestPayments = false;
+      }
+      send(res, 200, { ok: true, restaurantPilot, guestOrdering, guestPayments, paymentCaptured: false, mode: "test" });
+      return;
+    }
     if (url.pathname === "/health") {
       const ping = await appPool.query("select 1 as ok");
       send(res, 200, { ok: ping.rows[0].ok === 1, database: "local", production: false, db: "up" });
