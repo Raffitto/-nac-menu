@@ -74,7 +74,28 @@ try {
     await client.query("rollback to savepoint overpay");
   }
   if (!overpaid) throw new Error("overpayment was accepted");
-  await client.query("select restaurant_record_simulated_payment('bill:cash-check', 'card', 5000, 'pay-2')");
+  await client.query("select restaurant_open_unpaid_check('session-cash-check', 'bill:cash-check:check:1')");
+  await client.query("select restaurant_open_unpaid_check('session-cash-check', 'bill:cash-check:check:2')");
+  await client.query("select restaurant_record_adjustment('bill:cash-check', 'split', null, 'guest', 2500, 2, 'Guest check 1', 'split-1', 'bill:cash-check:check:1')");
+  await client.query("select restaurant_record_adjustment('bill:cash-check', 'split', null, 'guest', 2500, 2, 'Guest check 2', 'split-2', 'bill:cash-check:check:2')");
+  let settledWithoutPayment = false;
+  await client.query("savepoint unpaid_split");
+  try {
+    await client.query("select restaurant_finalize_simulated_bill('bill:cash-check')");
+    settledWithoutPayment = true;
+  } catch (error) {
+    await client.query("rollback to savepoint unpaid_split");
+    if (!/balance_unexplained/.test(error.message)) throw error;
+  }
+  if (settledWithoutPayment) throw new Error("split checks were treated as payment");
+  const openChecks = (await client.query(
+    "select count(*)::int as rows from restaurant_bills where id in ('bill:cash-check:check:1', 'bill:cash-check:check:2') and status = 'open' and finalized_at is null",
+  )).rows[0].rows;
+  if (openChecks !== 2) throw new Error("unpaid split checks did not stay open");
+  const owed = 9000 - 4000;
+  if (owed !== 5000) throw new Error("partial payment did not leave the unpaid balance");
+  await client.query("select restaurant_record_simulated_payment('bill:cash-check:check:1', 'card', 2500, 'pay-check-1')");
+  await client.query("select restaurant_record_simulated_payment('bill:cash-check:check:2', 'other', 2500, 'pay-check-2')");
   const settled = (await client.query("select gross_minor, vat_minor, taxable_minor, tax_treatment from restaurant_finalize_simulated_bill('bill:cash-check')")).rows[0];
   if (settled.gross_minor !== 9000 || settled.vat_minor !== 1174 || settled.taxable_minor !== 7826 || settled.tax_treatment !== "inclusive") {
     throw new Error(`tax snapshot mismatch ${JSON.stringify(settled)}`);

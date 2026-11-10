@@ -512,14 +512,11 @@ function sessionMinor(sessionId) {
     const itemDiscounts = adjustments
       .filter((row) => row.session_id === sessionId && row.kind === "discount" && row.item_id && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    const allocated = adjustments
-      .filter((row) => row.session_id === sessionId && row.kind === "split" && row.check_bill_id && Number.isInteger(row.amount_minor))
-      .reduce((sum, row) => sum + row.amount_minor, 0);
     const sessionBillIds = new Set(bills.filter((row) => row.session_id === sessionId).map((row) => row.id));
     const paid = payments
       .filter((row) => sessionBillIds.has(row.bill_id) && Number.isInteger(row.amount_minor))
       .reduce((sum, row) => sum + row.amount_minor, 0);
-    return Math.max(0, base - discounted - itemDiscounts - allocated - paid) / 100;
+    return Math.max(0, base - discounted - itemDiscounts - paid) / 100;
   }
   const adjustments = (await client.query(
       `select id, bill_id, session_id, kind, item_id, basis, amount_minor, parts, reason, actor_email, idempotency_key, check_bill_id
@@ -627,7 +624,11 @@ function sessionMinor(sessionId) {
     }),
     bills: bills.map((row) => {
       const part = adjustments.find((entry) => entry.check_bill_id === row.id);
-      const partAmount = part && Number.isInteger(part.amount_minor) ? part.amount_minor / 100 : null;
+      const partMinor = part && Number.isInteger(part.amount_minor) ? part.amount_minor : null;
+      const paidOnBill = payments
+        .filter((entry) => entry.bill_id === row.id && Number.isInteger(entry.amount_minor))
+        .reduce((sum, entry) => sum + entry.amount_minor, 0);
+      const partAmount = partMinor == null ? null : partMinor / 100;
       return {
         id: row.id,
         sessionId: row.session_id,
@@ -643,7 +644,7 @@ function sessionMinor(sessionId) {
         grossMinor: Number.isInteger(row.gross_minor) ? row.gross_minor : null,
         finalizedAt: row.finalized_at ? new Date(row.finalized_at).toISOString() : null,
         taxSource: row.finalized_at ? "snapshot" : "not_finalized",
-        outstanding: part ? partAmount : outstanding(row.session_id),
+        outstanding: partMinor == null ? outstanding(row.session_id) : Math.max(0, partMinor - paidOnBill) / 100,
         paid: false,
         partId: row.id.startsWith(`bill:${row.session_id}:`) && row.id !== `bill:${row.session_id}`
           ? row.id.slice(`bill:${row.session_id}:`.length)

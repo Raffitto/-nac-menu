@@ -1,4 +1,4 @@
-const { equalSplit, inclusiveVat, percentMinor, sumMinor } = require("./halala");
+const { amountStillOwed, canSettle, equalSplit, inclusiveVat, percentMinor, sumMinor } = require("./halala");
 
 test("a VAT-inclusive price separates the taxable amount without changing the gross", () => {
   const tax = inclusiveVat(10000, 15, 100);
@@ -13,6 +13,13 @@ test("a VAT-inclusive price separates the taxable amount without changing the gr
   expect(tax.taxableMinor + tax.vatMinor).toBe(10000);
   expect(inclusiveVat(1, 15, 100)).toMatchObject({ vatMinor: 0, taxableMinor: 1 });
   expect(inclusiveVat(115, 15, 100)).toMatchObject({ vatMinor: 15, taxableMinor: 100 });
+});
+
+test("split checks do not reduce the amount still owed", () => {
+  expect(amountStillOwed(9500, 4000)).toBe(5500);
+  expect(canSettle(9500, 4000)).toBe(false);
+  expect(canSettle(9500, 9500)).toBe(true);
+  expect(amountStillOwed(9000, 0)).toBe(9000);
 });
 
 test("equal splits keep the odd halala on the last share", () => {

@@ -39,10 +39,22 @@ function sumMinor(values) {
   return values.reduce((sum, value) => sum + value, 0);
 }
 
+function amountStillOwed(payableMinor, paymentMinor) {
+  if (!Number.isInteger(payableMinor) || payableMinor < 0 || !Number.isInteger(paymentMinor) || paymentMinor < 0) return null;
+  if (paymentMinor > payableMinor) return null;
+  return payableMinor - paymentMinor;
+}
+
+function canSettle(payableMinor, paymentMinor) {
+  return Number.isInteger(payableMinor) && payableMinor >= 0 && paymentMinor === payableMinor;
+}
+
 module.exports = {
   divRoundHalfUp,
   inclusiveVat,
   percentMinor,
   equalSplit,
   sumMinor,
+  amountStillOwed,
+  canSettle,
 };
