@@ -4,6 +4,8 @@ import {
   activeLayout,
   addCombination,
   addStructure,
+  AREA_LABELS,
+  addArea,
   addTable,
   alignTables,
   commitHistory,
@@ -11,6 +13,7 @@ import {
   defaultLayoutDocument,
   duplicateLayout,
   duplicateTable,
+  editArea,
   editTable,
   publishLayout,
   redoHistory,
@@ -150,6 +153,9 @@ export default function LayoutEditor({ serviceState, layoutStorage, initialDocum
         <button type="button" onClick={() => setHistory(undoHistory)} disabled={!history.past.length}>Undo</button>
         <button type="button" onClick={() => setHistory(redoHistory)} disabled={!history.future.length}>Redo</button>
         <button type="button" onClick={() => apply(addTable(document, layout.id))}>Add table</button>
+        {AREA_LABELS.map((label) => (
+          <button key={label} type="button" onClick={() => apply(addArea(document, layout.id, label))}>{label}</button>
+        ))}
         <button type="button" disabled={!selected} onClick={() => selected && apply(duplicateTable(document, layout.id, selected.id))}>Duplicate table</button>
         <button type="button" onClick={() => apply(addStructure(document, layout.id, "entrance"))}>Add entrance</button>
         <button type="button" onClick={() => {
@@ -257,6 +263,8 @@ export default function LayoutEditor({ serviceState, layoutStorage, initialDocum
         <FloorCanvas
           state={serviceState}
           tables={layout.tables}
+          areas={layout.areas || []}
+          initialFit
           selectedLabel={selected?.label}
           showGrid={grid}
           showInactive
@@ -272,6 +280,10 @@ export default function LayoutEditor({ serviceState, layoutStorage, initialDocum
               x: snapValue(next.x, snap),
               y: snapValue(next.y, snap),
             }, serviceState);
+            if (result.ok) setHistory((current) => ({ ...current, present: result.document }));
+          }}
+          onMoveArea={(areaId, next) => {
+            const result = editArea(document, layout.id, areaId, next);
             if (result.ok) setHistory((current) => ({ ...current, present: result.document }));
           }}
           onResize={(label, size) => {

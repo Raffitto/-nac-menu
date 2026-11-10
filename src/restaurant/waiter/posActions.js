@@ -33,6 +33,9 @@ const NOTICE = Object.freeze({
   item_not_available: "That product is not on this menu.",
   item_unavailable: "That product is unavailable.",
   modifier_not_available: "That add-on is not on this product.",
+  preparation_required: "Choose the preparation before adding this item.",
+  preparation_not_available: "That preparation is not on this product.",
+  modifier_duplicate: "That add-on is already selected.",
   item_not_in_menu: "That product is not on the published menu.",
   sign_in_failed: "Sign-in failed.",
   sign_in_required: "Sign in again.",
@@ -290,8 +293,9 @@ export function stationLabel(station) {
 export function unitPriceOf(line) {
   if (Number.isFinite(line?.unitPrice)) return line.unitPrice;
   const quantity = Number(line?.quantity);
-  if (!Number.isFinite(line?.price) || !Number.isInteger(quantity) || quantity < 1) return null;
-  return line.price / quantity;
+  const price = Number(line?.price);
+  if (!Number.isFinite(price) || !Number.isInteger(quantity) || quantity < 1) return null;
+  return price / quantity;
 }
 
 export function sendToStation(restaurant, sessionId, lines, destination) {
@@ -366,6 +370,36 @@ export function checkTotal(sentItems, stagedLines) {
   const waiting = (stagedLines || []).map((line) => line.price);
   if ([...sent, ...waiting].some((value) => !Number.isFinite(value))) return null;
   return [...sent, ...waiting].reduce((sum, value) => sum + value, 0);
+}
+
+export function selectionError(line, modifierIds) {
+  const selected = modifierIds || [];
+  const groups = new Map();
+  for (const modifier of line?.modifiers || []) {
+    if (modifier.required !== true) continue;
+    const key = modifier.groupId || modifier.id;
+    const group = groups.get(key) || {
+      min: modifier.min ?? 1,
+      max: modifier.max ?? 1,
+      count: 0,
+      name: modifier.groupName || modifier.name,
+    };
+    if (selected.includes(modifier.id)) group.count += 1;
+    groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.count < group.min) return `Choose ${group.name}.`;
+    if (group.count > group.max) return `Choose no more than ${group.max} ${group.name}.`;
+  }
+  const optional = new Set();
+  for (const id of selected) {
+    const modifier = (line?.modifiers || []).find((row) => row.id === id);
+    if (!modifier) return "That add-on is not on this product.";
+    if (modifier.required === true) continue;
+    if (optional.has(id)) return "That add-on is already selected.";
+    optional.add(id);
+  }
+  return null;
 }
 
 export function stagedPrice(product, modifierIds, quantity) {

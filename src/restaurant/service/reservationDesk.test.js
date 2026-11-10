@@ -22,12 +22,12 @@ test("the timeline and guest profile follow the booked reservation", () => {
 
 test("managers edit the floor and hosts cannot move tables", () => {
   render(<ServiceShell />);
-  expect(screen.queryByRole("button", { name: "Edit layout" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit Floor Plan" })).not.toBeInTheDocument();
   const before = screen.getByRole("button", { name: /Table 12/ }).getAttribute("data-x");
   fireEvent.keyDown(screen.getByRole("button", { name: /Table 12/ }), { key: "ArrowRight" });
   expect(screen.getByRole("button", { name: /Table 12/ }).getAttribute("data-x")).toBe(before);
   fireEvent.change(screen.getByLabelText("Desk access"), { target: { value: "manager" } });
-  fireEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Floor Plan" }));
   const table = screen.getByRole("button", { name: /Table 12/ });
   const start = Number(table.getAttribute("data-x"));
   fireEvent.keyDown(table, { key: "ArrowRight" });
@@ -78,7 +78,7 @@ test("a moved Khobar table is stored apart from the service snapshot", () => {
   };
   const first = render(<ServiceShell storage={storage} />);
   fireEvent.change(screen.getByLabelText("Desk access"), { target: { value: "manager" } });
-  fireEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Floor Plan" }));
   const table = screen.getByRole("button", { name: /Table 12/ });
   const next = String(Number(table.getAttribute("data-x")) + 4);
   fireEvent.keyDown(table, { key: "ArrowRight" });

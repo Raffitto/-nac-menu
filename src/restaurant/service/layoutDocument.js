@@ -101,7 +101,32 @@ export function serviceLock(serviceState, label) {
   const row = (serviceState?.tables || []).find((table) => String(table.label) === String(label));
   if (!row || row.removed) return null;
   if (row.sessionId || row.combinedWith || ["occupied", "assigned", "combined"].includes(row.status)) return row.status;
+  const reserved = (serviceState?.reservations || []).some((item) => item.tableId === row.id && ["booked", "arrived", "seated"].includes(item.status));
+  if (reserved) return "reserved";
   return null;
+}
+
+export const AREA_LABELS = Object.freeze(["Kitchen", "Bar", "Indoor", "Outdoor", "Waiting Area"]);
+
+export function addArea(document, layoutId, label) {
+  const seq = document.seq + 1;
+  const area = { id: `area-${seq}`, label, x: 12, y: 12, w: 28, h: 18 };
+  const next = withAudit({
+    ...mapLayout(document, layoutId, (row) => ({ ...row, areas: [...(row.areas || []), area] })),
+    seq,
+  }, "area_added", area.id);
+  return { ok: true, document: next, area };
+}
+
+export function editArea(document, layoutId, areaId, patch) {
+  const layout = document.layouts.find((row) => row.id === layoutId);
+  const area = (layout?.areas || []).find((row) => row.id === areaId);
+  if (!area) return { ok: false, reason: "area_not_in_layout", document };
+  const next = withAudit(mapLayout(document, layoutId, (row) => ({
+    ...row,
+    areas: (row.areas || []).map((item) => (item.id === areaId ? { ...item, ...patch } : item)),
+  })), "area_edited", areaId);
+  return { ok: true, document: next };
 }
 
 function withAudit(document, action, entityId) {

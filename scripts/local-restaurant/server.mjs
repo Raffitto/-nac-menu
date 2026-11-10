@@ -13,6 +13,7 @@ import {
   verifyRegistration,
 } from "./passkeys.mjs";
 import { GUEST_ORDER_MODE, OWNER_EMAILS, guestMenu, issueGuestToken, readGuestToken } from "./guestAccess.mjs";
+import { EGG_PREPARATIONS, validateOrderLine } from "./orderSelections.mjs";
 import { verifySupabaseAccessToken } from "./hostedAuth.mjs";
 import { selectStaffGrant } from "./staffGrant.mjs";
 import { pathToFileURL } from "node:url";
@@ -83,6 +84,7 @@ function lineMinor(name, quantity, modifierIds) {
   const unit = units.length === 1 ? units[0] : null;
   let extra = 0;
   for (const id of modifierIds || []) {
+    if (EGG_PREPARATIONS.some((option) => option.id === String(id))) continue;
     const amount = minorUnits(addonById.get(String(id))?.price);
     if (amount == null) return null;
     extra += amount;
@@ -505,7 +507,13 @@ function sessionMinor(sessionId) {
         price: linePrice(item.item_name, item.quantity, item.modifier_ids || []),
         status: item.status,
         statusAt: item.status_at ? new Date(item.status_at).toISOString() : null,
-        modifiers: [],
+        modifiers: (Array.isArray(item.modifier_ids) ? item.modifier_ids : []).map((id) => {
+          const preparation = EGG_PREPARATIONS.find((option) => option.id === String(id));
+          const addon = addonById.get(String(id));
+          if (preparation) return { id: preparation.id, name: preparation.name, price: 0 };
+          if (!addon || addon.active === false) return null;
+          return { id: addon.id, name: addon.name_en || addon.name, price: addon.price };
+        }).filter(Boolean),
         instructions: item.note,
         allergyAlert: item.allergy_alert,
       })),
@@ -639,14 +647,30 @@ async function act(client, email, action, payload) {
     if (!name) throw new Error("item_not_in_menu");
     const quantity = Number(item?.quantity || 1);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error("quantity_invalid");
-    const modifierIds = Array.isArray(item?.modifierIds) ? item.modifierIds.map(String) : [];
-    const allowed = addonIdsByItem.get(String(known.id)) || new Set();
-    if (modifierIds.some((id) => !allowed.has(id) || !addonById.has(id))) throw new Error("modifier_not_available");
-    const modifierNames = modifierIds.map((id) => addonById.get(id)?.name_en).filter(Boolean);
-    const note = [item?.instructions, modifierNames.length ? modifierNames.join(", ") : null].filter(Boolean).join(" · ") || null;
+    const requestedIds = Array.isArray(item?.modifierIds) ? item.modifierIds.map(String) : [];
+    const preparationId = item?.preparationId || requestedIds.find((id) => EGG_PREPARATIONS.some((option) => option.id === id)) || "";
+    const modifierIds = requestedIds.filter((id) => !EGG_PREPARATIONS.some((option) => option.id === id));
+    const checked = validateOrderLine({
+      item: known,
+      preparationId,
+      modifierIds,
+      allowedAddonIds: addonIdsByItem.get(String(known.id)) || new Set(),
+      addonById,
+      branchId: grant.branch_id,
+    });
+    if (!checked.ok) throw new Error(checked.reason);
+    const modifierNames = checked.modifierIds.map((id) => addonById.get(id)?.name_en).filter(Boolean);
+    const note = [item?.instructions, checked.preparation?.name, modifierNames.join(", ") || null].filter(Boolean).join(" · ") || null;
     const allergyNames = allergenIdsByItem.get(String(known.id)) || [];
     const allergy = allergyNames.length ? allergyNames.join(", ") : null;
     const clientKey = item?.clientKey ? String(item.clientKey).slice(0, 80) : "";
+    if (clientKey) {
+      const existing = (await client.query(
+        "select id from restaurant_order_items where order_id = $1 and client_key = $2",
+        [order.id, clientKey],
+      )).rows[0];
+      if (existing) return { ok: true, idempotent: true };
+    }
     const inserted = clientKey
       ? (await client.query(
         "select id from restaurant_add_keyed_item($1, $2, $3, $4, $5, $6)",
@@ -656,7 +680,8 @@ async function act(client, email, action, payload) {
         "select id from restaurant_add_item($1, $2, $3, $4, $5)",
         [order.id, name, quantity, note, allergy],
       )).rows[0];
-    await client.query("select restaurant_set_item_modifiers($1, $2::jsonb)", [inserted.id, JSON.stringify(modifierIds)]);
+    const storedIds = [...(checked.preparation ? [checked.preparation.id] : []), ...checked.modifierIds];
+    await client.query("select restaurant_set_item_modifiers($1, $2::jsonb)", [inserted.id, JSON.stringify(storedIds)]);
     return { ok: true };
   }
   if (action === "markServed" || action === "setKitchenStatus") {
@@ -752,14 +777,22 @@ async function act(client, email, action, payload) {
         });
       });
       const busy = (await client.query(
-        `select id from restaurant_tables t
+        `select t.id, t.label from restaurant_tables t
          where t.branch_id = $1 and (
            exists (select 1 from restaurant_sessions s where s.table_id = t.id and s.status = 'open')
-           or exists (select 1 from restaurant_reservations r where r.table_id = t.id and r.status = 'seated')
+           or exists (
+             select 1 from restaurant_reservations r
+             where r.table_id = t.id and r.status in ('booked', 'arrived', 'seated')
+           )
          )`,
         [grant.branch_id],
       )).rows;
-      if (busy.some((row) => !kept.has(row.id))) throw new Error("active_service_protected");
+      const placed = layouts.flatMap((layout) => layout.tables || []);
+      if (busy.some((row) => {
+        if (!kept.has(row.id)) return true;
+        const next = placed.find((table) => String(table.id) === String(row.id));
+        return next && String(next.label) !== String(row.label);
+      })) throw new Error("active_service_protected");
     }
     const saved = (await client.query(
       "select id, revision from restaurant_save_layout($1, $2, $3::jsonb)",

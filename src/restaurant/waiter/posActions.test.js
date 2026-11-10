@@ -8,6 +8,7 @@ import {
   placeTables,
   resolveStation,
   seatCaption,
+  selectionError,
   sendStagedItems,
   sendToStation,
 } from "./posActions";
@@ -155,6 +156,20 @@ test("indoor tables stay in separate cards", () => {
       expect(dx < 100 && dy < 74).toBe(false);
     }
   }
+});
+
+test("2 Eggs Any Style cannot be added until one preparation is chosen", () => {
+  const line = {
+    modifiers: [
+      { id: "fried", name: "Fried", price: 0, required: true, groupId: "egg_preparation", groupName: "Preparation", min: 1, max: 1 },
+      { id: "scrambled", name: "Scrambled", price: 0, required: true, groupId: "egg_preparation", groupName: "Preparation", min: 1, max: 1 },
+      { id: "bacon", name: "Beef Bacon", price: 19, required: false, groupId: "addons", max: 1 },
+    ],
+  };
+  expect(selectionError(line, [])).toMatch(/Preparation/);
+  expect(selectionError(line, ["fried", "bacon"])).toBeNull();
+  expect(selectionError(line, ["fried", "scrambled"])).toMatch(/no more than 1/);
+  expect(selectionError(line, ["fried", "bacon", "bacon"])).toMatch(/already selected/);
 });
 
 test("Khobar capacity stays unverified until a manager records it", () => {

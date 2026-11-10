@@ -45,8 +45,8 @@ test("an unverified Khobar table does not invent a seat count", () => {
   expect(screen.getByRole("button", { name: "Mark arrived" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Cancel reservation" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Mark no-show" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: "Change covers" })).toBeDisabled();
-  expect(screen.getByText(/cover changes are not a separate action/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save reservation change" })).toBeEnabled();
+  expect(screen.getByText(/capacity is unverified/i)).toBeInTheDocument();
 });
 
 test("the waiting list stays on the screen until it is booked", () => {

@@ -40,6 +40,7 @@ import {
   seatCaption,
   resolveStation,
   sendToStation,
+  selectionError,
   stagedPrice,
   stationLabel,
   unitPriceOf,
@@ -421,10 +422,9 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
 
   function commitComposer() {
     if (!composer || !session) return;
-    const required = (composer.line.modifiers || []).filter((modifier) => modifier.required === true);
-    const missing = required.filter((modifier) => !composer.modifierIds.includes(modifier.id));
-    if (missing.length) {
-      setNotice(`Choose ${missing[0].name}.`);
+    const missing = selectionError(composer.line, composer.modifierIds);
+    if (missing) {
+      setNotice(missing);
       return;
     }
     const priced = stagedPrice(composer.line, composer.modifierIds, composer.quantity);
@@ -1171,30 +1171,44 @@ export default function WaiterPos({ lines = null, storage = null, clockStorage =
             <h2>{composer.line.name}</h2>
             {composer.line.description ? <p className="pos-quiet">{composer.line.description}</p> : null}
             <p className="pos-quiet" style={{ textAlign: "center" }}>{posMoney(stagedPrice(composer.line, composer.modifierIds, composer.quantity)?.price)}</p>
-            {composer.line.modifiers.length > 0 && (
-              <fieldset className="pos-mods">
-                <legend>{composer.line.modifiers.some((modifier) => modifier.required) ? "Required" : "Add-ons"}</legend>
-                {composer.line.modifiers.map((modifier) => {
-                  const on = composer.modifierIds.includes(modifier.id);
-                  return (
-                    <button
-                      key={modifier.id}
-                      type="button"
-                      className="pos-chip"
-                      aria-pressed={on}
-                      onClick={() => setComposer((current) => ({
-                        ...current,
-                        modifierIds: on
-                          ? current.modifierIds.filter((id) => id !== modifier.id)
-                          : [...current.modifierIds, modifier.id],
-                      }))}
-                    >
-                      {modifier.name} · {posMoney(modifier.price)}
-                    </button>
-                  );
-                })}
-              </fieldset>
-            )}
+            {["Preparation", "Add-ons"].map((label) => {
+              const requiredGroup = label === "Preparation";
+              const choices = composer.line.modifiers.filter((modifier) => (modifier.required === true) === requiredGroup);
+              if (!choices.length) return null;
+              return (
+                <fieldset className="pos-mods" key={label}>
+                  <legend>{requiredGroup ? "Preparation" : "Add-ons"}</legend>
+                  {choices.map((modifier) => {
+                    const on = composer.modifierIds.includes(modifier.id);
+                    return (
+                      <button
+                        key={modifier.id}
+                        type="button"
+                        className="pos-chip"
+                        aria-pressed={on}
+                        onClick={() => setComposer((current) => {
+                          if (modifier.required === true) {
+                            const others = current.line.modifiers
+                              .filter((row) => row.required === true && row.groupId === modifier.groupId)
+                              .map((row) => row.id);
+                            const kept = current.modifierIds.filter((id) => !others.includes(id));
+                            return { ...current, modifierIds: on ? kept : [...kept, modifier.id] };
+                          }
+                          return {
+                            ...current,
+                            modifierIds: on
+                              ? current.modifierIds.filter((id) => id !== modifier.id)
+                              : [...current.modifierIds, modifier.id],
+                          };
+                        })}
+                      >
+                        {modifier.name}{modifier.price ? ` · ${posMoney(modifier.price)}` : ""}
+                      </button>
+                    );
+                  })}
+                </fieldset>
+              );
+            })}
             <div className="pos-step" aria-label="Quantity">
               <button type="button" aria-label="Decrease quantity" onClick={() => setComposer((current) => ({ ...current, quantity: Math.max(1, current.quantity - 1) }))}>−</button>
               <strong>{composer.quantity}</strong>

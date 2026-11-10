@@ -4,6 +4,7 @@
  * This module does not write Foodics, menu tables, or the guest menu.
  */
 import { assertServiceBranch, catalogueLine } from "./contracts";
+import { EGG_PREPARATIONS, isTwoEggsAnyStyle } from "../lib/eggPreparation";
 
 function text(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -110,7 +111,33 @@ export function buildOrderingCatalogue(snapshot, { branchId, availability = [], 
         seenModifiers.add(addon.id);
         return true;
       })
-      .map((addon) => ({ id: addon.id, name: addon.name_en || addon.name, price: addon.price }));
+      .map((addon) => ({
+        id: addon.id,
+        name: addon.name_en || addon.name,
+        price: addon.price,
+        required: false,
+        groupId: "addons",
+        min: 0,
+        max: 1,
+      }));
+    const eggRow = rows.find((row) => isTwoEggsAnyStyle({
+      en: row.name_en || row.name,
+      price: row.price,
+      calories: row.calories,
+    }));
+    const preparations = eggRow
+      ? EGG_PREPARATIONS.map((option) => ({
+        id: option.id,
+        name: option.en,
+        price: 0,
+        required: true,
+        groupId: "egg_preparation",
+        groupName: "Preparation",
+        min: 1,
+        max: 1,
+      }))
+      : [];
+    const orderModifiers = [...preparations, ...modifiers];
     const branchAvailability = availabilityFor(primary, branchId, availability, now);
     const priced = catalogueLine({
       itemId: identity.itemId,
@@ -118,7 +145,7 @@ export function buildOrderingCatalogue(snapshot, { branchId, availability = [], 
       price: primary.price,
       branchId,
       available: branchAvailability.available,
-      modifiers,
+      modifiers: orderModifiers,
     });
     if (!priced.ok) return;
     const section = sections.get(primary.section_id);
@@ -128,6 +155,12 @@ export function buildOrderingCatalogue(snapshot, { branchId, availability = [], 
     const distinctPrices = new Set(sameName.map((row) => priceNumber(row.price)));
     lines.push({
       ...priced.line,
+      modifiers: orderModifiers.map((modifier) => ({
+        ...modifier,
+        price: typeof modifier.price === "number"
+          ? modifier.price
+          : Number(String(modifier.price || "").replace(/[^\d.]/g, "")),
+      })),
       catalogueKey: identity.catalogueKey,
       nameAr: primary.name_ar || "",
       calories: calories == null || primary.calories === "-" ? null : calories,

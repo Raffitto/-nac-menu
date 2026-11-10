@@ -55,7 +55,7 @@ function coversOf(rows) {
   return rows.reduce((sum, row) => sum + row.partySize, 0);
 }
 
-export default function HostWorkspace({ restaurant, dispatch, report, screen, setScreen, currentTime, onRole, layoutDoc }) {
+export default function HostWorkspace({ restaurant, dispatch, report, screen, setScreen, currentTime, onRole, layoutDoc, onEditFloor }) {
   const state = restaurant.state;
   const khobar = state.branchId === "khobar";
   const today = dateValue(new Date(currentTime));
@@ -434,6 +434,7 @@ export default function HostWorkspace({ restaurant, dispatch, report, screen, se
               </button>
             ))}
           </div>
+          {onEditFloor && <button type="button" className="desk-ghost-btn" onClick={onEditFloor}>Edit Floor Plan</button>}
           <button type="button" className="desk-ghost-btn" onClick={() => openDraft("walk")}>Walk in</button>
           <button type="button" className="svc-primary" onClick={() => openDraft("book")}>Add reservation</button>
         </div>

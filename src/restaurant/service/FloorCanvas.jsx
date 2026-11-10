@@ -6,6 +6,8 @@ import { nudgePosition } from "./floorLayout";
 export default function FloorCanvas({
   state,
   tables,
+  areas = [],
+  onMoveArea,
   selectedLabel,
   onSelect,
   onMove,
@@ -109,6 +111,9 @@ export default function FloorCanvas({
               return <text key={`${zone.id}-label`} x={x} y={Number(y) + 3}>{zone.name}</text>;
             })}
           </svg>
+          {areas.map((area) => (
+            <AreaBox key={area.id} area={area} onMove={onMoveArea} />
+          ))}
           {placed.map((table) => (
             <MapTable
               key={table.id || table.label}
@@ -125,6 +130,55 @@ export default function FloorCanvas({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AreaBox({ area, onMove }) {
+  const drag = useRef(null);
+  function pointerDown(event) {
+    if (!onMove) return;
+    event.stopPropagation();
+    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, pos: { x: area.x, y: area.y } };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+  function pointerMove(event) {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId || !onMove) return;
+    const parent = event.currentTarget.offsetParent;
+    const width = parent?.clientWidth || 1;
+    const height = parent?.clientHeight || 1;
+    const dx = ((event.clientX - active.x) / width) * 100;
+    const dy = ((event.clientY - active.y) / height) * 100;
+    if (Math.abs(dx) + Math.abs(dy) < 0.8) return;
+    onMove(area.id, { x: active.pos.x + dx, y: active.pos.y + dy });
+  }
+  function pointerUp(event) {
+    if (drag.current?.pointerId === event.pointerId) drag.current = null;
+  }
+  return (
+    <div
+      className="kh-area"
+      role="group"
+      aria-label={area.label}
+      style={{ left: `${area.x}%`, top: `${area.y}%`, width: `${area.w}%`, height: `${area.h}%` }}
+      onPointerDown={pointerDown}
+      onPointerMove={pointerMove}
+      onPointerUp={pointerUp}
+    >
+      <span>{area.label}</span>
+      {onMove && (
+        <button
+          type="button"
+          className="kh-handle"
+          aria-label={`Resize ${area.label}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onMove(area.id, { w: Number(area.w) + 4, h: Number(area.h) + 3 });
+          }}
+        />
+      )}
     </div>
   );
 }

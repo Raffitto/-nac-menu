@@ -1,6 +1,7 @@
 import {
   activeLayout,
   addCombination,
+  addArea,
   addTable,
   canonicalLayoutId,
   commitHistory,
@@ -101,4 +102,17 @@ test("publishing a layout keeps table identity and a locked table cannot move", 
   const copy = duplicateTable(document, "weekday", table.id);
   expect(copy.table.id).toMatch(/^layout-/);
   expect(copy.table.id).not.toBe(table.id);
+});
+
+test("an area can be added and a reserved table cannot be renumbered", () => {
+  const document = defaultLayoutDocument();
+  const added = addArea(document, "weekday", "Kitchen");
+  expect(added.ok).toBe(true);
+  expect(activeLayout(added.document).areas[0]).toMatchObject({ label: "Kitchen" });
+  const addedTable = addTable(document, "weekday");
+  const blocked = editTable(addedTable.document, "weekday", addedTable.table.id, { label: "99" }, {
+    tables: [{ id: addedTable.table.id, label: addedTable.table.label }],
+    reservations: [{ tableId: addedTable.table.id, status: "booked" }],
+  });
+  expect(blocked.reason).toBe("table_in_service");
 });

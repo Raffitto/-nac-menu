@@ -117,6 +117,9 @@ export default function ServiceShell({
     order.items.map(() => ({ postsStock: false, writes: 0 }))
   ));
   const serviceRead = null;
+  const canEditFloor = databaseMode
+    ? ["manager", "administrator"].includes(devSession?.role)
+    : role === "manager" || access === "manager";
   const identity = assertSingleServiceIdentity(restaurant.state);
   const summary = serviceSummary(restaurant.state);
   const branch = BRANCHES.find((row) => row.id === branchId);
@@ -347,6 +350,7 @@ export default function ServiceShell({
     onRole: setRole,
     layoutStorage,
     layoutDoc,
+    onEditFloor: canEditFloor && !editing ? () => setEditing(true) : null,
   };
 
   if (pilotClosed) {
@@ -395,8 +399,8 @@ export default function ServiceShell({
         {databaseMode && devSession && (
           <button type="button" onClick={registerPasskey}>Register passkey</button>
         )}
-        {((role === "manager") || (access === "manager" && role === "host")) && branchId === "khobar" && (
-          <button type="button" onClick={() => setEditing((value) => !value)}>{editing ? "Back to service" : "Edit layout"}</button>
+        {editing && canEditFloor && (
+          <button type="button" onClick={() => setEditing(false)}>Back to service</button>
         )}
         <details className="svc-dev">
           <summary>Developer</summary>
@@ -487,7 +491,7 @@ export default function ServiceShell({
         </form>
       ) : (
       <main>
-        {editing && ((role === "manager") || (access === "manager" && role === "host")) && branchId === "khobar" ? (
+        {editing && canEditFloor ? (
           <LayoutEditor
             serviceState={restaurant.state}
             layoutStorage={layoutStorage}
@@ -497,7 +501,10 @@ export default function ServiceShell({
             onSaved={(document) => {
               saveLayoutDocument(layoutStorage, document);
               setLayoutDoc(document);
-              if (databaseMode) dispatch("saveLayout", { name: document.name || "Khobar draft", document });
+              if (databaseMode) {
+                const active = (document.layouts || []).find((row) => row.id === document.activeId) || document.layouts?.[0];
+                dispatch("saveLayout", { name: active?.name || "Draft", document });
+              }
             }}
             onClose={() => setEditing(false)}
           />

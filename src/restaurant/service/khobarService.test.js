@@ -19,12 +19,12 @@ test("a no-show stays on the reservation and does not take a table", () => {
 
 test("table 22 is configured by a manager and then served through the bill", () => {
   render(<ServiceShell />);
-  expect(screen.queryByRole("button", { name: "Edit layout" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit Floor Plan" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Desk access"), { target: { value: "manager" } });
   role("Waiter");
-  expect(screen.queryByRole("button", { name: "Edit layout" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Edit Floor Plan" })).not.toBeInTheDocument();
   role("Host");
-  fireEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Floor Plan" }));
   fireEvent.click(screen.getByRole("button", { name: /Table 22/ }));
   expect(screen.getByLabelText("Table number")).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Minimum seats"), { target: { value: "2" } });
@@ -52,7 +52,7 @@ test("table 22 is configured by a manager and then served through the bill", () 
   fireEvent.click(screen.getByRole("button", { name: "Seat on selected table" }));
   expect(screen.getByRole("button", { name: /Table 22/ })).toHaveTextContent("Assigned");
 
-  fireEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Floor Plan" }));
   fireEvent.click(screen.getByRole("button", { name: /Table 22/ }));
   expect(screen.getByRole("button", { name: "Delete table" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "Back to service" }));
