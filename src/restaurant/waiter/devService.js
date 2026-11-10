@@ -97,7 +97,6 @@ export async function openTableOnServer(state, { tableId, partySize, guestName, 
   if (existing) return { ok: true, created: false, session: existing, state, revision: state.revision };
   const seated = (state.reservations || []).find((row) => row.tableId === tableId && row.status === "seated");
   let revision = state.revision;
-  let current = state;
   if (!seated) {
     const covers = Number(partySize);
     if (!Number.isInteger(covers) || covers < 1 || covers > 20) return { ok: false, reason: "party_size_invalid" };
@@ -110,11 +109,9 @@ export async function openTableOnServer(state, { tableId, partySize, guestName, 
     }, revision);
     if (!reserved.ok) return reserved;
     revision = reserved.revision;
-    current = reserved.state;
     const assigned = await devAct("assignTable", [reserved.reservation.id, tableId], revision);
     if (!assigned.ok) return assigned;
     revision = assigned.revision;
-    current = assigned.state;
   }
   const opened = await devAct("openSession", tableId, revision);
   if (!opened.ok) return opened;

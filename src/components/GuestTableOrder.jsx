@@ -39,23 +39,22 @@ export function GuestTableOrder({ item, isArabic = false }) {
   const [status, setStatus] = useState("");
   const [match, setMatch] = useState(null);
   const [modifierIds, setModifierIds] = useState([]);
+  const [orderingEnabled, setOrderingEnabled] = useState(false);
   const lines = useBasket();
   useEffect(() => {
     if (!token || !item) return undefined;
     let stop = false;
-    guestCall("/guest/menu", { token }).then((menu) => {
-      if (stop) return;
-      if (!menu?.ok) {
-        setStatus(isArabic ? "الطلب غير متاح. يمكنك متابعة التصفح." : "Ordering is unavailable. You can keep browsing.");
-        return;
-      }
+    guestCall("/guest/ordering-status", { token }).then((status) => {
+      if (stop || status?.guestOrdering !== true) return;
+      setOrderingEnabled(true);
+      return guestCall("/guest/menu", { token });
+    }).then((menu) => {
+      if (stop || !menu?.ok) return;
       setMatch((menu.items || []).find((row) => row.id === item.id || row.name === item.en) || null);
-    }).catch(() => {
-      if (!stop) setStatus(isArabic ? "الطلب غير متاح. يمكنك متابعة التصفح." : "Ordering is unavailable. You can keep browsing.");
-    });
+    }).catch(() => {});
     return () => { stop = true; };
-  }, [token, item, isArabic]);
-  if (!token || !item) return null;
+  }, [token, item]);
+  if (!token || !item || !orderingEnabled) return null;
 
   async function add() {
     if (!match) {
@@ -119,7 +118,16 @@ export function GuestOrderTray({ isArabic = false }) {
   const token = guestOrderToken();
   const lines = useBasket();
   const [status, setStatus] = useState("");
-  if (!token) return null;
+  const [orderingEnabled, setOrderingEnabled] = useState(false);
+  useEffect(() => {
+    if (!token) return undefined;
+    let stop = false;
+    guestCall("/guest/ordering-status", { token }).then((result) => {
+      if (!stop && result?.guestOrdering === true) setOrderingEnabled(true);
+    }).catch(() => {});
+    return () => { stop = true; };
+  }, [token]);
+  if (!token || !orderingEnabled) return null;
 
   async function submit() {
     setStatus(isArabic ? "جارٍ الإرسال…" : "Sending for confirmation…");

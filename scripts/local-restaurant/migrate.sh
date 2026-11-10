@@ -36,7 +36,8 @@ for file in \
   "$ROOT/20261109224000_restaurant_kitchen_items.sql" \
   "$ROOT/20261109225000_restaurant_waitlist_visits.sql" \
   "$ROOT/20261109230000_restaurant_passkeys.sql" \
-  "$ROOT/20261109231000_restaurant_guest_access.sql"
+  "$ROOT/20261109231000_restaurant_guest_access.sql" \
+  "$ROOT/20261110120000_restaurant_owner_controls.sql"
 do
   echo "apply $(basename "$file")"
   $PSQL < "$file"

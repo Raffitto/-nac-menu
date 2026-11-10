@@ -9,8 +9,11 @@ import { chromium } from "playwright";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../..");
 const outDir = path.join(root, "scripts/local-restaurant/journey-output");
-const api = "http://127.0.0.1:4193";
-const desk = "http://localhost:4192/?restaurant-db=1";
+const apiPort = process.env.JOURNEY_API_PORT || "4193";
+const api = process.env.JOURNEY_API || `http://127.0.0.1:${apiPort}`;
+const desk = process.env.JOURNEY_DESK || "http://localhost:4192/?restaurant-db=1";
+const dbContainer = process.env.JOURNEY_DB_CONTAINER || "nac-reservations-dev";
+const dbName = process.env.JOURNEY_DB_NAME || "nac_reservations_dev";
 const password = process.env.LOCAL_DEV_PASSWORD || "local-dev";
 const stamp = String(Date.now()).slice(-6);
 const guestName = `Journey ${stamp}`;
@@ -51,7 +54,7 @@ async function shot(page, name) {
 
 function restartApi() {
   return new Promise((resolve, reject) => {
-    const child = spawn("zsh", ["-lc", "PID=$(lsof -nP -t -iTCP:4193 -sTCP:LISTEN || true); if [ -n \"$PID\" ]; then kill \"$PID\"; sleep 1; fi; set -a; . scripts/local-restaurant/.env; set +a; exec node scripts/local-restaurant/server.mjs"], {
+    const child = spawn("zsh", ["-lc", `PID=$(lsof -nP -t -iTCP:${apiPort} -sTCP:LISTEN || true); if [ -n "$PID" ]; then kill "$PID"; sleep 1; fi; set -a; . scripts/local-restaurant/.env; set +a; exec node scripts/local-restaurant/server.mjs`], {
       cwd: root,
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -187,7 +190,7 @@ async function main() {
   record("split checks stay unpaid", split.ok === true && unpaid, `minor units ${sum}`);
 
   const layoutText = await new Promise((resolve, reject) => {
-    const child = spawn("docker", ["exec", "nac-reservations-dev", "psql", "-U", "postgres", "-d", "nac_reservations_dev", "-tA", "-c", "select document::text from restaurant_floor_layouts where branch_id = 'khobar' and status = 'published' and document ? 'layouts' order by created_at desc limit 1"], { cwd: root });
+    const child = spawn("docker", ["exec", dbContainer, "psql", "-U", "postgres", "-d", dbName, "-tA", "-c", "select document::text from restaurant_floor_layouts where branch_id = 'khobar' and status = 'published' and document ? 'layouts' order by created_at desc limit 1"], { cwd: root });
     let text = "";
     child.stdout.on("data", (chunk) => { text += chunk; });
     child.on("exit", (code) => (code === 0 ? resolve(text.trim()) : reject(new Error("layout query failed"))));

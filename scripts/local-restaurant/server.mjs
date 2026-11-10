@@ -12,7 +12,7 @@ import {
   verifyAuthentication,
   verifyRegistration,
 } from "./passkeys.mjs";
-import { GUEST_ORDER_MODE, guestMenu, issueGuestToken, readGuestToken } from "./guestAccess.mjs";
+import { GUEST_ORDER_MODE, OWNER_EMAILS, guestMenu, issueGuestToken, readGuestToken } from "./guestAccess.mjs";
 
 const port = Number(process.env.LOCAL_API_PORT || 4193);
 const devPassword = process.env.LOCAL_DEV_PASSWORD || "local-dev";
@@ -116,9 +116,40 @@ async function loadGuestAccess(token) {
   }
 }
 
+async function ownerSwitches(branchId) {
+  try {
+    const row = (await appPool.query(
+      "select guest_ordering_enabled, guest_payments_enabled from restaurant_owner_settings where branch_id = $1",
+      [branchId],
+    )).rows[0];
+    return {
+      ordering: row?.guest_ordering_enabled === true,
+      payments: row?.guest_payments_enabled === true,
+    };
+  } catch {
+    return { ordering: false, payments: false };
+  }
+}
+
 async function handleGuest(res, pathname, body) {
+  if (pathname === "/guest/ordering-status") {
+    let ordering = false;
+    let payments = false;
+    try {
+      const access = await loadGuestAccess(body.token);
+      const flags = await ownerSwitches(access.branch_id);
+      ordering = flags.ordering;
+      payments = flags.payments;
+    } catch {
+      ordering = false;
+      payments = false;
+    }
+    send(res, 200, { ok: true, guestOrdering: ordering, guestPayments: payments, paymentCaptured: false });
+    return true;
+  }
   if (pathname === "/guest/menu") {
     const access = await loadGuestAccess(body.token);
+    if (!(await ownerSwitches(access.branch_id)).ordering) throw new Error("guest_ordering_disabled");
     send(res, 200, {
       ok: true,
       mode: GUEST_ORDER_MODE,
@@ -132,6 +163,7 @@ async function handleGuest(res, pathname, body) {
   }
   if (pathname === "/guest/basket") {
     const access = await loadGuestAccess(body.token);
+    if (!(await ownerSwitches(access.branch_id)).ordering) throw new Error("guest_ordering_disabled");
     const known = menuItem(body.itemId);
     const name = known?.name_en || known?.name || null;
     if (!known || known.active === false || known.sold_out === true || !name) throw new Error("item_not_in_menu");
@@ -164,6 +196,7 @@ async function handleGuest(res, pathname, body) {
   if (pathname === "/guest/submit") {
     if (GUEST_ORDER_MODE !== "staff_confirmation") throw new Error("guest_order_mode_not_enabled");
     const access = await loadGuestAccess(body.token);
+    if (!(await ownerSwitches(access.branch_id)).ordering) throw new Error("guest_ordering_disabled");
     const key = String(body.idempotencyKey || "").slice(0, 80);
     if (!key) throw new Error("idempotency_key_required");
     const inserted = await appPool.query(
@@ -183,6 +216,12 @@ async function handleGuest(res, pathname, body) {
   }
   if (pathname === "/guest/plan") {
     const access = await loadGuestAccess(body.token);
+    const flags = await ownerSwitches(access.branch_id);
+    if (!flags.ordering) throw new Error("guest_ordering_disabled");
+    if (!flags.payments) {
+      send(res, 200, { ok: false, paymentCaptured: false, reason: "guest_payments_disabled" });
+      return true;
+    }
     const lines = (await appPool.query(
       "select item_name, quantity, modifier_ids from restaurant_guest_baskets where access_id = $1 and status in ('draft', 'pending_staff')",
       [access.id],
@@ -795,6 +834,14 @@ async function act(client, email, action, payload) {
     const sessionId = Array.isArray(payload) ? payload[0] : payload;
     await client.query("select restaurant_close_unpaid($1)", [sessionId]);
     return { ok: true };
+  }
+  if (action === "setOwnerControls") {
+    if (!OWNER_EMAILS.has(String(email || "").toLowerCase())) throw new Error("owner_required");
+    const saved = (await client.query(
+      "select guest_ordering_enabled, guest_payments_enabled from restaurant_set_owner_controls($1, $2, $3)",
+      [payload?.branchId, payload?.guestOrdering === true, payload?.guestPayments === true],
+    )).rows[0];
+    return { ok: true, ...saved };
   }
   if (action === "issueGuestAccess") {
     const allowed = (await client.query("select public.restaurant_can($1, 'service_write') as ok", [grant.branch_id])).rows[0].ok;

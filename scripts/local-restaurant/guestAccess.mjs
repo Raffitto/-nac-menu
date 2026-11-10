@@ -1,6 +1,12 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const GUEST_ORDER_MODE = "staff_confirmation";
+export const OWNER_EMAILS = new Set([
+  "raffi@nac.com",
+  "raffiazarian@gmail.com",
+  "raffiazarian2@gmail.com",
+  "raffi@nac-khobar.com",
+]);
 const TTL_MS = 2 * 60 * 60 * 1000;
 
 function secret() {
