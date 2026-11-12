@@ -1,0 +1,12 @@
+{
+  "short_name": "NAC Waiter",
+  "name": "NAC Waiter",
+  "start_url": "/?waiter-pos=1&restaurant-db=1",
+  "display": "standalone",
+  "background_color": "#f4f0e8",
+  "theme_color": "#1a3f31",
+  "icons": [
+    { "src": "logo192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "logo512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

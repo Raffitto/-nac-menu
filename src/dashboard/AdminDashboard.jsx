@@ -30,6 +30,7 @@ import GlobalFilterBar from "./components/GlobalFilterBar";
 import AdminBootShell from "./components/AdminBootShell";
 import NacActionPresenter from "./components/NacActionPresenter";
 import { NAV_ITEMS, isScrollableView, OVERVIEW_TABS, adminViewFromLocation, syncAdminViewLocation } from "./navigation";
+import { readRestaurantPilot } from "../restaurant/pilotGate";
 import { isUnifiedOverviewEnabled } from "./config/unifiedOverview";
 import { useMobileIntelligenceLayout } from "./hooks/useMobileIntelligenceLayout";
 import HubTabs from "./components/HubTabs";
@@ -105,6 +106,19 @@ function ViewFallback({ label }) {
 
 function ev(byType, key) {
   return Number(byType?.[key]) || 0;
+}
+
+function RestaurantPilotLink() {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    readRestaurantPilot().then((flags) => setEnabled(flags.restaurantPilot === true));
+  }, []);
+  if (!enabled) return null;
+  return (
+    <a className="sidebar-item" href="/?restaurant-db=1">
+      Restaurant test
+    </a>
+  );
 }
 
 export default function AdminDashboard(props) {
@@ -482,6 +496,7 @@ function AdminDashboardContent({ onBack, session = null, authChecked = true, rba
                 </motion.button>
               );
             })}
+            <RestaurantPilotLink />
           </div>
         </div>
         {!isAdminPlatformMode() && onBack && (

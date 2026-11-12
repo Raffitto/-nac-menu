@@ -9,6 +9,7 @@ import {
 } from "./lib/reviewPortalParams";
 import { resolveRootAppKind } from "./lib/platformMode";
 import { markBoot } from "./lib/bootTelemetry";
+import { readRestaurantPilot } from "./restaurant/pilotGate";
 
 markBoot("index_start");
 
@@ -26,6 +27,14 @@ const ResetPasswordView = lazy(() => import("./dashboard/views/ResetPasswordView
 const AdminDashboard = lazy(() => import("./dashboard/AdminDashboard"));
 const InventoryApp = lazy(() => import("./inventory/InventoryApp"));
 const MenuApp = lazy(() => import("./App"));
+const RestaurantSim = lazy(() => import("./restaurant/RestaurantSim"));
+const WaiterPos = lazy(() => import("./restaurant/waiter/WaiterPos"));
+
+const searchParams =
+  typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+const waiterPos = searchParams?.get("waiter-pos") === "1";
+const serviceDb = searchParams?.get("restaurant-db") === "1";
+const serviceSim = searchParams?.get("restaurant-sim") === "1";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
@@ -37,7 +46,28 @@ const rootKind =
       })
     : "public-menu";
 
-if (rootKind === "reset-password") {
+function renderRestaurant() {
+  if (waiterPos) {
+    root.render(
+      <React.StrictMode>
+        <Suspense fallback={<div style={{ minHeight: "100vh", background: "#ebe6df" }} />}>
+          <WaiterPos databaseMode={serviceDb} />
+        </Suspense>
+      </React.StrictMode>,
+    );
+    return;
+  }
+  root.render(
+    <React.StrictMode>
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "#efeae2" }} />}>
+        <RestaurantSim databaseMode={serviceDb} />
+      </Suspense>
+    </React.StrictMode>,
+  );
+}
+
+function renderPlatform() {
+  if (rootKind === "reset-password") {
   root.render(
     <React.StrictMode>
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0a0908" }} />}>
@@ -112,6 +142,16 @@ if (rootKind === "reset-password") {
       </Suspense>
     </React.StrictMode>,
   );
+  }
+}
+
+if (waiterPos || serviceSim || serviceDb) {
+  readRestaurantPilot().then((flags) => {
+    if (flags.restaurantPilot) renderRestaurant();
+    else renderPlatform();
+  });
+} else {
+  renderPlatform();
 }
 
 if (rootKind !== "review") {
