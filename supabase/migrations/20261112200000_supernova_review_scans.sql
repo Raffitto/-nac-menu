@@ -11,19 +11,22 @@ create index supernova_review_scans_scanned_at_idx
 alter table public.supernova_review_scans enable row level security;
 revoke all on public.supernova_review_scans from public, anon, authenticated;
 grant insert (visitor_id) on public.supernova_review_scans to anon;
-grant select on public.supernova_review_scans to authenticated;
 
 create policy supernova_scans_insert on public.supernova_review_scans
   for insert to anon with check (visitor_id is not null);
 
-create policy supernova_scans_read on public.supernova_review_scans
-  for select to authenticated using ((select auth.uid()) is not null);
-
 create or replace function public.get_supernova_scan_summary(p_days integer default 30)
 returns jsonb
-language sql stable security invoker
+language plpgsql stable security definer
 set search_path = ''
 as $$
+declare
+  result jsonb;
+begin
+  if (select auth.uid()) is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
   with bounds as (
     select (now() at time zone 'Asia/Riyadh')::date as today,
            least(greatest(coalesce(p_days, 30), 1), 365) as history_days
@@ -53,8 +56,11 @@ as $$
     'approximate_unique_scans', c.approximate_unique_scans,
     'repeat_scans', c.total_scans - c.approximate_unique_scans,
     'daily_history', (select coalesce(jsonb_agg(jsonb_build_object('date', h.day, 'scans', h.scans) order by h.day), '[]'::jsonb) from history h)
-  )
+  ) into result
   from counts c;
+
+  return result;
+end;
 $$;
 
 revoke all on function public.get_supernova_scan_summary(integer) from public, anon;
