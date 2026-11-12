@@ -13,6 +13,7 @@ const RUNTIME_PREFIXES = [
   "src/",
   "public/",
   "supabase/",
+  "netlify/",
   "scripts/",
 ];
 const RUNTIME_EXACT = new Set([
