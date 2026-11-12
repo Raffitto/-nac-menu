@@ -1,4 +1,9 @@
-import { presentGuestMenuItem } from "./canonicalGuestCatalogue";
+import {
+  canonicalPlacementKey,
+  isActiveBigNac,
+  isRetiredBigNac,
+  presentGuestMenuItem,
+} from "./canonicalGuestCatalogue";
 
 export function parseHiddenUntil(item) {
   const raw = item?.hidden_until ?? item?.hiddenUntil;
@@ -91,21 +96,60 @@ export function computeHiddenUntilIso({ mode, hours, dateTimeLocal }) {
   return null;
 }
 
+function sectionGuestItems(items, nowMs, scheduledHideKeys) {
+  const visible = (items || []).filter(
+    (it) => isPublicMenuItem(it, nowMs) && !isGuestCatalogueDuplicate(it),
+  );
+  const currentBigNacIsPresent = visible.some((it) => isActiveBigNac(it));
+  const withoutRetiredBigNac = currentBigNacIsPresent
+    ? visible.filter((it) => !isRetiredBigNac(it))
+    : visible;
+
+  const seen = new Set();
+  const collapsed = [];
+  for (const item of withoutRetiredBigNac) {
+    const key = canonicalPlacementKey(item);
+    if (key && scheduledHideKeys.has(key)) continue;
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    collapsed.push(presentGuestMenuItem(item));
+  }
+  return collapsed;
+}
+
+/**
+ * Active rows with a future hidden_until are a branch-wide 86 for that
+ * portion. Other placements of the same identity hide with them and return
+ * when the timestamp passes. Inactive historical rows do not trigger this.
+ */
+function scheduledHideKeysForMenu(menuData, nowMs) {
+  const keys = new Set();
+  for (const sections of Object.values(menuData || {})) {
+    for (const sec of sections || []) {
+      for (const item of sec?.items || []) {
+        if (!item || item.active === false) continue;
+        const until = parseHiddenUntil(item);
+        if (until == null || until <= nowMs) continue;
+        const key = canonicalPlacementKey(item);
+        if (key) keys.add(key);
+      }
+    }
+  }
+  return keys;
+}
+
 /** Filter menuData tree to guest-visible items only. */
 export function filterPublicMenuData(menuData, nowMs = Date.now()) {
   if (!menuData) return menuData;
+  const scheduledHideKeys = scheduledHideKeysForMenu(menuData, nowMs);
   const next = {};
   for (const [catId, sections] of Object.entries(menuData)) {
     next[catId] = (sections || [])
       .map((sec) => ({
         ...sec,
-        items: (sec.items || [])
-          .filter(
-            (it) =>
-              isPublicMenuItem(it, nowMs)
-              && !isGuestCatalogueDuplicate(it),
-          )
-          .map(presentGuestMenuItem),
+        items: sectionGuestItems(sec.items, nowMs, scheduledHideKeys),
       }))
       .filter((sec) => sec.items.length > 0);
   }

@@ -119,6 +119,42 @@ describe("linked placement sync", () => {
     expect(ids.sort()).toEqual(["a", "b"]);
   });
 
+  test("resolveLinkedPlacementTargetIds includes same-branch same-price placements only", async () => {
+    let menuItemsCalls = 0;
+    mockFrom.mockImplementation((table) => {
+      if (table !== "menu_items") throw new Error(`unexpected table ${table}`);
+      menuItemsCalls += 1;
+      if (menuItemsCalls === 1) {
+        return menuItemByIdChain({
+          id: "mt-brunch",
+          name_en: "Mushroom Toast",
+          price: "59 SAR",
+          branch_id: "khobar",
+          placement_group_id: null,
+        });
+      }
+      return {
+        select: jest.fn(() => ({
+          eq: jest.fn(() => ({
+            ilike: jest.fn(() => Promise.resolve({
+              data: [
+                { id: "mt-brunch", name_en: "Mushroom Toast", price: "59 SAR", branch_id: "khobar" },
+                { id: "mt-breakfast", name_en: "Mushroom Toast", price: "59 SAR", branch_id: "khobar" },
+                { id: "mt-small", name_en: "Mushroom Toast", price: "45 SAR", branch_id: "khobar" },
+                { id: "mt-riyadh", name_en: "Mushroom Toast", price: "59 SAR", branch_id: "riyadh" },
+              ],
+              error: null,
+            })),
+          })),
+        })),
+      };
+    });
+
+    const { ids, error } = await resolveLinkedPlacementTargetIds("mt-brunch");
+    expect(error).toBeNull();
+    expect(ids.sort()).toEqual(["mt-breakfast", "mt-brunch"]);
+  });
+
   test("patchLinkedPlacementMembers writes the same patch to every linked row", async () => {
     const updates = [];
     let menuItemsCalls = 0;

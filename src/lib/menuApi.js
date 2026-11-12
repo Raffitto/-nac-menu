@@ -8,6 +8,7 @@ import {
   publicationNeedsVerification,
 } from "./menuPublishPipeline";
 import { newPlacementGroupId } from "./menuPlacements";
+import { canonicalPlacementKey } from "./canonicalGuestCatalogue";
 import { normalizeBranchId } from "../dashboard/utils/branchIdentity";
 import { menuBranchQueryFilter } from "./menuBranchScope";
 
@@ -1007,7 +1008,32 @@ export async function fetchPlacementGroupMembers(placementGroupId) {
   return { data: data || [], error };
 }
 
-/** All menu_item ids in the same placement_group_id as itemId (includes itemId). */
+/**
+ * Same branch, same name, same price. Portion variants and other branches stay out.
+ * Rows without a branch are left to their placement group so an unscoped edit
+ * cannot cross Khobar, Riyadh, and Jeddah.
+ */
+async function fetchCanonicalPlacementSiblingIds(item) {
+  if (!item?.branch_id || !item?.name_en) return { ids: [], error: null };
+  const sourceKey = canonicalPlacementKey(item);
+  if (!sourceKey) return { ids: [], error: null };
+
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("id, name_en, price, branch_id")
+    .eq("branch_id", item.branch_id)
+    .ilike("name_en", item.name_en);
+  if (error) return { ids: [], error };
+
+  const ids = [];
+  for (const row of data || []) {
+    if (!row?.id) continue;
+    if (canonicalPlacementKey(row) === sourceKey) ids.push(row.id);
+  }
+  return { ids, error: null };
+}
+
+/** Placement-group members plus same-branch placements of the same portion. */
 export async function resolveLinkedPlacementTargetIds(itemId) {
   const { data: item, error: fetchErr } = await selectMenuItemById(itemId);
   if (fetchErr) return { ids: [], error: fetchErr, placementGroupId: null };
@@ -1024,6 +1050,12 @@ export async function resolveLinkedPlacementTargetIds(itemId) {
       if (member?.id) ids.push(member.id);
     }
   }
+
+  const siblings = await fetchCanonicalPlacementSiblingIds(item);
+  if (siblings.error) {
+    return { ids: [], error: siblings.error, placementGroupId: item.placement_group_id || null };
+  }
+  ids.push(...siblings.ids);
 
   return {
     ids: [...new Set(ids)],

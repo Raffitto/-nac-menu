@@ -8,6 +8,8 @@ import React, {
   Suspense,
 } from "react";
 import { beginGuardedAction, endGuardedAction } from "../lib/nacActionGuard";
+import { buildCatalogueChangeImpact } from "../lib/catalogueChangeImpact";
+import CatalogueChangeImpact from "./CatalogueChangeImpact";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -495,6 +497,30 @@ export default function MenuManager() {
   const [branchCatalogue, setBranchCatalogue] = useState([]);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [addItemSaving, setAddItemSaving] = useState(false);
+  const catalogueImpact = useMemo(() => {
+    if (!editorOpen || editorMode !== "edit") return null;
+    const placements = (menuData || []).flatMap((section) => section.items || []);
+    return buildCatalogueChangeImpact({
+      placement: {
+        ...editingItem,
+        id: editingItemId,
+        placement_group_id: placementGroupId,
+        branch_id: menuBranch,
+      },
+      placements,
+      allergenIds: itemAllergenIds,
+      field: "desc_en",
+    });
+  }, [
+    editorOpen,
+    editorMode,
+    menuData,
+    editingItem,
+    editingItemId,
+    placementGroupId,
+    menuBranch,
+    itemAllergenIds,
+  ]);
 
   const sectionsCatalogRef = useRef([]);
   const categoriesRef = useRef([]);
@@ -3707,6 +3733,7 @@ export default function MenuManager() {
                     This dish is linked — changes here update every section where it appears.
                   </p>
                 )}
+                {catalogueImpact ? <CatalogueChangeImpact impact={catalogueImpact} /> : null}
 
                 {/* Toggles */}
                 <div className="mm-field">
