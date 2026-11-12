@@ -8,6 +8,7 @@ import LiveActivityFeed from "../reviews/LiveActivityFeed";
 import EmployeePerformanceGrid from "../reviews/EmployeePerformanceGrid";
 import BranchBattle from "../reviews/BranchBattle";
 import ReviewPerformanceSection from "../reviews/ReviewPerformanceSection";
+import SupernovaReviews from "../reviews/SupernovaReviews";
 import { GooglePlacesProvider } from "../context/GooglePlacesContext";
 import { useRbac } from "../context/RbacContext";
 import {
@@ -50,31 +51,35 @@ export default function ReviewsHub() {
   };
 
   return (
-    <GooglePlacesProvider branchIds={reviewBranchIds}>
     <motion.div className="nac-reviews-hub" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="nac-platform-header">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
           <div>
-            <p className="nac-platform-kicker">NAC Reviews</p>
+            <p className="nac-platform-kicker">{tab === "supernova" ? "Supernova Reviews" : "NAC Reviews"}</p>
             <h1>Reviews</h1>
-            <p className="nac-platform-sub">Staff performance, live activity, and branch competition</p>
+            <p className="nac-platform-sub">{tab === "supernova" ? "Supernova review QR scans" : "Staff performance, live activity, and branch competition"}</p>
           </div>
-          <button type="button" className="nac-filter-action" onClick={openLeaderboard}>
-            <Monitor size={16} />
-            TV Leaderboard
-          </button>
+          {tab !== "supernova" && (
+            <button type="button" className="nac-filter-action" onClick={openLeaderboard}>
+              <Monitor size={16} />
+              TV Leaderboard
+            </button>
+          )}
         </div>
       </header>
 
-      <GlobalFilterBar variant="extended" branchOptions={reviewBranchOptions} />
+      {tab !== "supernova" && <GlobalFilterBar variant="extended" branchOptions={reviewBranchOptions} />}
 
       <HubTabs tabs={visibleTabs} active={tab} onChange={setTab} />
 
-      {tab === "performance" && <ReviewPerformanceSection />}
-      {tab === "live" && <LiveActivityFeed />}
-      {tab === "team" && <EmployeePerformanceGrid />}
-      {tab === "branches" && <BranchBattle />}
+      {tab === "supernova" ? <SupernovaReviews /> : (
+        <GooglePlacesProvider branchIds={reviewBranchIds}>
+          {tab === "performance" && <ReviewPerformanceSection />}
+          {tab === "live" && <LiveActivityFeed />}
+          {tab === "team" && <EmployeePerformanceGrid />}
+          {tab === "branches" && <BranchBattle />}
+        </GooglePlacesProvider>
+      )}
     </motion.div>
-    </GooglePlacesProvider>
   );
 }

@@ -135,6 +135,7 @@ export const REVIEWS_TABS = [
   { id: "live", label: "Live Activity" },
   { id: "team", label: "Team" },
   { id: "branches", label: "Branch Battle" },
+  { id: "supernova", label: "Supernova" },
 ];
 
 export const OVERVIEW_TABS_LEGACY = [
